@@ -1,5 +1,74 @@
 # InTempo Edit Log
 
+## 2026-09-08 — Two accessibility stores were one store twice, and said so in a comment
+
+Loop tick, first run of the window duplication scan against `mobile/src` since
+the two extractions three ticks ago. Ten groups across 247 files. Two were
+worth acting on, both in `lib/`; the rest are screens, which §2 puts behind the
+owner's gate, and one is the query-builder shape that is not duplication.
+
+**`lib/useReducedMotion.ts` and `lib/glass/reducedTransparency.ts` were the
+same store twice** — four of the ten groups overlap on it. A cached boolean, a
+`Set` of listeners, a `listening` flag so the second subscriber does not
+register a second platform listener, a `publish` that short-circuits on an
+unchanged value, `subscribe` and `getSnapshot`. Identical. Only the *source*
+differs: one asks `AccessibilityInfo` about motion, the other about
+transparency and, on the web, a media query instead.
+
+`reducedTransparency.ts` said so out loud: *"Shaped exactly like
+`useReducedMotion`."* **That is the third prose claim of sameness this week
+that the code was not keeping** — after `diagnostics.py`'s "everything here
+calls the same functions `analyze()` calls" (one argument short, and it cost
+the tuning dashboard twice the onsets) and `signed_urls`' three `or` chains in
+three orders. A shape described in a comment is a shape nothing keeps.
+
+Now `lib/systemPreference.ts`: `systemPreference(watch)` owns the value, the
+listeners and the one-time start; the caller passes only how to read the
+platform. Each call site keeps its own quirks, because they are real and not
+shared — the transparency one catches its promise and the motion one does not,
+and unifying that would have been a behaviour change wearing a refactor's
+clothes.
+
+**The scaffolding is now tested, which it never was.** There is no React Native
+testing library here (`DECISIONS.md`, 2026-08-24), so a store living inside a
+hook module is a store nothing can reach. Out of the hook it is a plain object:
+`systemPreference.test.ts`, seven cases including the two properties the shape
+exists for — watch starts once however many subscribe, and never again after
+the first subscriber leaves — and the no-op publish, which matters because
+`reduceTransparencyChanged` is not promised to fire only for its own setting.
+Three mutations, all failing as they should: watch on every subscribe, publish
+when unchanged, unsubscribe that unsubscribes nothing.
+
+**The second: one regex for `"N/N"`, not two.** `reading.beatsPerMeasure` and
+`keySignature.timeSignatureDigits` each carried
+`/^(\d+)\s*\/\s*(\d+)$/` with a comment explaining the same hard-won
+spacing tolerance — a metre OCR read as `" 4 / 4 "` is a metre, and the app's
+beat check used to switch itself off on one while the server went on reporting
+the bars as short. `fixtures/meters/parity.json` guards `beatsPerMeasure`
+against the server's answers and guarded only that copy, so tightening the
+other would have been silent. `beatsPerMeasure` now reads through
+`timeSignatureDigits`; the parity fixture covers the shared parse.
+
+`timeSignatureDigits` living in `keySignature.ts` is the wrong home —
+`lib/notation/meter.ts` is the right one — and it is **left where it is on
+purpose**. Moving it is pure re-filing with no defect behind it and touches two
+screens, and this tick already carries a real extraction.
+
+Not acted on, and reported rather than done: five modules under `src/data/`
+hand-roll the same mutable external store (`practiceTempo`, `preferences`,
+`captureSession`, `pendingAnalysis`, `redirectNotice`). Same family, larger
+change, touches data flow across the app — worth its own tick.
+
+Tests: mobile `1670 passed` across 154 files, seven of them the new suite;
+`tsc --noEmit` and `eslint .` clean. `check-dead-exports` 575/575.
+
+Known side effects: none. Both call sites keep their exact platform behaviour,
+including the one that swallows a rejected promise and the one that does not.
+
+Rollback: `git revert`. `systemPreference.ts` and its test are new files.
+
+---
+
 ## 2026-09-08 — The one duplication in the audio pipeline had already drifted
 
 Loop tick. The window scan's last unexamined backend finding was

@@ -1,6 +1,8 @@
 import { useSyncExternalStore } from 'react';
 import { AccessibilityInfo, Platform } from 'react-native';
 
+import { systemPreference } from '../systemPreference';
+
 /**
  * Whether the person has asked their device to cut back on translucency.
  *
@@ -11,10 +13,12 @@ import { AccessibilityInfo, Platform } from 'react-native';
  * the fallback itself. Nothing here did, so the setting was inert on every
  * surface the app draws.
  *
- * Shaped exactly like `useReducedMotion`: one platform read and one listener
- * for the whole app, published through `useSyncExternalStore`. Every glass
- * surface subscribes, and a tab bar plus four buttons registering five
- * accessibility listeners between them is the cost that shape avoids.
+ * Built on `systemPreference`, which `useReducedMotion` also uses: one platform
+ * read and one listener for the whole app, published through
+ * `useSyncExternalStore`. Every glass surface subscribes, and a tab bar plus
+ * four buttons registering five accessibility listeners between them is the
+ * cost that shape avoids. This file used to say it was "shaped exactly like
+ * `useReducedMotion`" and carry its own copy of the shape.
  *
  * Two platforms, two sources:
  *
@@ -29,24 +33,7 @@ import { AccessibilityInfo, Platform } from 'react-native';
 /** The web build's equivalent of the native setting. */
 const WEB_QUERY = '(prefers-reduced-transparency: reduce)';
 
-let systemReducedTransparency = false;
-let listening = false;
-const listeners = new Set<() => void>();
-
-function publishSystemPreference(value: boolean): void {
-  if (systemReducedTransparency === value) {
-    return;
-  }
-  systemReducedTransparency = value;
-  listeners.forEach((listener) => listener());
-}
-
-function startListening(): void {
-  if (listening) {
-    return;
-  }
-  listening = true;
-
+const systemReducedTransparency = systemPreference((publish) => {
   if (Platform.OS === 'web') {
     // Guarded rather than assumed: this module is imported by components that
     // render under Vitest, where there is no `window`, and by older browsers
@@ -59,9 +46,9 @@ function startListening(): void {
     if (!media) {
       return;
     }
-    publishSystemPreference(media.matches);
+    publish(media.matches);
     media.addEventListener('change', (event) => {
-      publishSystemPreference(event.matches);
+      publish(event.matches);
     });
     return;
   }
@@ -69,24 +56,15 @@ function startListening(): void {
   // Never allowed to throw outward: a platform without the switch should leave
   // the material as it is, not take the screen down with it.
   AccessibilityInfo.isReduceTransparencyEnabled()
-    .then(publishSystemPreference)
+    .then(publish)
     .catch(() => {});
-  AccessibilityInfo.addEventListener(
-    'reduceTransparencyChanged',
-    publishSystemPreference,
-  );
-}
-
-function subscribe(listener: () => void): () => void {
-  listeners.add(listener);
-  startListening();
-  return () => listeners.delete(listener);
-}
-
-function getSnapshot(): boolean {
-  return systemReducedTransparency;
-}
+  AccessibilityInfo.addEventListener('reduceTransparencyChanged', publish);
+});
 
 export function useReducedTransparency(): boolean {
-  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  return useSyncExternalStore(
+    systemReducedTransparency.subscribe,
+    systemReducedTransparency.getSnapshot,
+    systemReducedTransparency.getSnapshot,
+  );
 }

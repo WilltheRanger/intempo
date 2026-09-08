@@ -1,5 +1,6 @@
 import type { Duration, MeasureConcern, ScoreJson } from '../../data/types';
 import { BEATS } from '../score/schedule';
+import { timeSignatureDigits } from './keySignature';
 import { timeSignaturesByMeasure } from './meter';
 
 /**
@@ -31,23 +32,27 @@ export interface ReadingNotes {
 
 /** Beats in one bar of a `"N/N"` time signature, or null if it isn't one. */
 export function beatsPerMeasure(timeSignature: string | null): number | null {
-  if (!timeSignature) {
-    return null;
-  }
+  // The reading of `"N/N"` is `timeSignatureDigits`, not a second regex here.
+  //
   // Spaces around the slash are tolerated because the backend tolerates them
   // — `int(" 4 ")` strips, so `ocr/validate.beats_per_measure` reads " 4 / 4 "
   // as 4 beats. This regex did not, so a meter OCR happened to read with
   // spaces switched the app's beat check off while the server went on
   // reporting the same bars as short. Found by running both over the same
   // cases; see `fixtures/meters/parity.json`.
-  const match = /^(\d+)\s*\/\s*(\d+)$/.exec(timeSignature.trim());
-  if (!match) {
-    // Includes the literal "unknown", which the OCR prompt authorises when a
-    // score's header is illegible. Not an error — just nothing to check against.
+  //
+  // That lesson was then written down twice, in two regexes, and only this one
+  // is guarded by the parity fixture. Tightening the other would have been
+  // silent.
+  //
+  // A null covers the literal "unknown" too, which the OCR prompt authorises
+  // when a score's header is illegible. Not an error — just nothing to check
+  // against.
+  const digits = timeSignatureDigits(timeSignature);
+  if (!digits) {
     return null;
   }
-  const [, beats, unit] = match;
-  const perBar = (Number(beats) * 4) / Number(unit);
+  const perBar = (digits.beats * 4) / digits.unit;
   return Number.isFinite(perBar) && perBar > 0 ? perBar : null;
 }
 
