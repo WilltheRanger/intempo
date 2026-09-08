@@ -1,5 +1,68 @@
 # InTempo Edit Log
 
+## 2026-09-08 — The overlay mount-and-leave lifecycle, written twice by me, is now written once
+
+Asked to refactor specifically without breaking anything. This is the specific
+part; the not-breaking part is at the bottom and is most of the work.
+
+**The duplication was mine, from two days ago.** A 12-line-window scan across
+`mobile/src` found `ConfirmDialog.tsx:79` and `BottomSheet.tsx:106` carrying the
+same block. That is not a coincidence: I wrote `ConfirmDialog`'s entrance on
+2026-09-06 by copying `BottomSheet`'s, which is exactly how this kind of
+duplication arrives.
+
+**What was shared is the subtle part.** Both overlays keep a `mounted` flag that
+stays true *through the exit animation* and only flips false in the animation's
+completion callback. Miss that ordering and React unmounts the element mid-exit,
+so the overlay vanishes instead of closing — a bug that reads as "it doesn't
+animate out" and is easy to reintroduce, because the obvious code
+(`if (!visible) return null`) is wrong in a way nothing type-checks.
+
+`useOverlayPresence(visible, reduceMotion, enter)` now owns it: the `mounted`
+flag, the shared `progress` value, and the exit. **The enter stays with the
+caller**, because the two genuinely differ — the sheet slides in on a timed
+curve, the dialog springs — and collapsing them would be the wrong kind of
+sharing. The sheet's `drag.setValue(0)` reset rides along in its own enter
+callback, where it belongs.
+
+**The linter proved the extraction was real.** After rewriting `ConfirmDialog`,
+ESLint reported `EASE_OUT` and `motion` unused, and `useEffect` unused in
+`BottomSheet` — those imports existed only for the code that moved. An
+extraction that leaves its imports behind has not actually extracted anything.
+
+**A scare worth recording.** The first full run after the refactor read 1,657
+tests where the run before it read 1,659, which would mean two tests had
+silently stopped existing. Re-run: 1,659 across 152 files. The first number came
+from a `tail -4` that caught the summary mid-write. Two tests going missing is
+the kind of thing that must never be waved through, so it was checked rather
+than assumed — and the motion contract was checked by name too, because it
+counts `Animated.timing(` against `easing: EASE_OUT` inside `BottomSheet` and
+this change moved one of them across a file boundary. Still 2 and 2. Still 9
+passing.
+
+**Verified in a browser, because nothing else can verify this.** There is no
+React Native testing library here, so the unit suite cannot mount either
+component; the presence lifecycle is invisible to it. Driven against the built
+bundle:
+
+- the sheet opens, tracks the finger (545 → 555 on a 30pt drag), springs back to
+  exactly 545, dismisses on 220pt, and a tap on a row inside still routes to
+  `/scan`
+- the dialog opens, a tap on the card does **not** dismiss it, and a tap on the
+  scrim **does** — that last one is the shared exit path, which is precisely
+  what the hook took ownership of
+- no page errors in either
+
+Scope: 1 new hook, 2 components rewritten onto it. No behaviour intended to
+change, and none observed.
+
+Validation: 1,659 mobile tests (152 files), `tsc` 0, ESLint 0,
+`check-dead-exports.py` clean at 572, `audit-a11y.mjs` PASS on all 30 routes,
+`walk-app.mjs` PASS 51 of 51.
+
+**Side effects:** none. **Rollback:** revert; both components return to their
+own copies.
+
 ## 2026-09-08 — A refactor pass: two dead barrels gone, the conversion that actually records pinned to the one that is tested, and six features found built-but-unwired
 
 Asked to refactor, remove dead code, and clean up my own mistakes. Everything

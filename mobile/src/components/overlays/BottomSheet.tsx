@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Animated,
   Modal,
@@ -25,6 +25,7 @@ import { useReducedMotion } from '../../lib/useReducedMotion';
 import { IconButton } from '../primitives/IconButton';
 import { Text } from '../primitives/Text';
 import { useInertAppRoot } from './modalAccessibility';
+import { useOverlayPresence } from './useOverlayPresence';
 
 export interface BottomSheetProps {
   visible: boolean;
@@ -66,7 +67,6 @@ export function BottomSheet({
 }: BottomSheetProps) {
   const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
-  const progress = useRef(new Animated.Value(0)).current;
   /**
    * The finger's contribution, kept apart from `progress`.
    *
@@ -75,7 +75,6 @@ export function BottomSheet({
    * animation depend on how far the sheet had been pulled.
    */
   const drag = useRef(new Animated.Value(0)).current;
-  const [mounted, setMounted] = useState(visible);
   const [sheetHeight, setSheetHeight] = useState(0);
   // Read inside the responder, which is created once and would otherwise close
   // over the height as it was on first render — zero.
@@ -88,36 +87,23 @@ export function BottomSheet({
    */
   const samplesRef = useRef<DragSample[]>([]);
 
+  const { mounted, progress } = useOverlayPresence(visible, reduceMotion, (value) => {
+    // From nothing each time, or a sheet dismissed by a swipe reopens already
+    // pushed off-screen.
+    drag.setValue(0);
+    return Animated.timing(value, {
+      toValue: 1,
+      duration: reduceMotion ? 0 : motion.base,
+      easing: EASE_OUT,
+      useNativeDriver: Platform.OS !== 'web',
+    });
+  });
+
   // The web Modal is a portal next to #root. Keep that root inert for the
   // complete enter/exit animation so keyboard focus cannot slip behind it.
   useInertAppRoot(mounted);
 
-  useEffect(() => {
-    if (visible) {
-      setMounted(true);
-      // From nothing each time, or a sheet dismissed by a swipe reopens
-      // already pushed off-screen.
-      drag.setValue(0);
-      Animated.timing(progress, {
-        toValue: 1,
-        duration: reduceMotion ? 0 : motion.base,
-        easing: EASE_OUT,
-        useNativeDriver: Platform.OS !== 'web',
-      }).start();
-      return;
-    }
 
-    Animated.timing(progress, {
-      toValue: 0,
-      duration: reduceMotion ? 0 : motion.fast,
-      easing: EASE_OUT,
-      useNativeDriver: Platform.OS !== 'web',
-    }).start(({ finished }) => {
-      if (finished) {
-        setMounted(false);
-      }
-    });
-  }, [drag, progress, reduceMotion, visible]);
 
   function handleLayout(event: LayoutChangeEvent) {
     const next = event.nativeEvent.layout.height;

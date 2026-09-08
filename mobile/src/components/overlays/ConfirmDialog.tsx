@@ -1,11 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
 import { Animated, Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
 
 import {
   colors,
   DIALOG_ENTER_SCALE,
-  EASE_OUT,
-  motion,
   radii,
   spacing,
   SPRING,
@@ -15,6 +12,7 @@ import { PrimaryButton } from '../primitives/PrimaryButton';
 import { SecondaryButton } from '../primitives/SecondaryButton';
 import { Text } from '../primitives/Text';
 import { useInertAppRoot } from './modalAccessibility';
+import { useOverlayPresence } from './useOverlayPresence';
 
 export interface ConfirmDialogProps {
   visible: boolean;
@@ -55,42 +53,20 @@ export function ConfirmDialog({
   onCancel,
 }: ConfirmDialogProps) {
   const reduceMotion = useReducedMotion();
-  const progress = useRef(new Animated.Value(0)).current;
-  const [mounted, setMounted] = useState(visible);
+  // A spring in, so the card settles rather than stopping dead; the shared exit
+  // is a timing, because an overshoot on the way to gone is motion with nothing
+  // left to confirm.
+  const { mounted, progress } = useOverlayPresence(visible, reduceMotion, (value) =>
+    Animated.spring(value, {
+      toValue: 1,
+      useNativeDriver: Platform.OS !== 'web',
+      ...SPRING,
+    }),
+  );
 
   // Held for the whole enter/exit, not just while `visible` — the web Modal is
   // a portal beside #root, and focus must not slip behind a card still leaving.
   useInertAppRoot(mounted);
-
-  useEffect(() => {
-    if (visible) {
-      setMounted(true);
-      if (reduceMotion) {
-        progress.setValue(1);
-        return;
-      }
-      // A spring in, so the card settles rather than stopping dead; a timing
-      // out, because an overshoot on the way to gone is motion with nothing
-      // left to confirm.
-      Animated.spring(progress, {
-        toValue: 1,
-        useNativeDriver: Platform.OS !== 'web',
-        ...SPRING,
-      }).start();
-      return;
-    }
-
-    Animated.timing(progress, {
-      toValue: 0,
-      duration: reduceMotion ? 0 : motion.fast,
-      easing: EASE_OUT,
-      useNativeDriver: Platform.OS !== 'web',
-    }).start(({ finished }) => {
-      if (finished) {
-        setMounted(false);
-      }
-    });
-  }, [progress, reduceMotion, visible]);
 
   if (!mounted) {
     return null;
