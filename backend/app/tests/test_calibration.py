@@ -18,10 +18,6 @@ SR = 22050
 PROJECT_HOST = "https://test.supabase.invalid"
 
 
-def _jitter(times: list[float], sr: int = SR, seed: int = 0) -> np.ndarray:
-    return synth_click_track(times, sr=sr)
-
-
 # ---- service-level edge cases --------------------------------------------
 
 

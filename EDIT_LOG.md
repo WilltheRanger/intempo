@@ -1,5 +1,87 @@
 # InTempo Edit Log
 
+## 2026-09-08 — The signed-URL memo leaves the router, and two of my own mutations survived
+
+Loop tick, two findings and one extraction.
+
+**First, a scan that came back almost empty, which is the result.** Wrote the
+counterpart to `tools/check-dead-exports.py`: module-level *private* names —
+`_helper`, `_Class`, `_CONSTANT` — defined in `backend/app` and mentioned
+nowhere else in the repository. Reference counting is whole-word text across
+every `.py`, `.md`, `.toml`, `.yml`, `.ts`, `.sql` and `.html` in the tree, so
+a name that appears only in a docstring or a comment counts as referenced and
+stays off the list. Five candidates from 164 files; four are `@pytest.fixture
+(autouse=True)`, which pytest injects by name and no scanner sees.
+
+The fifth was real: `_jitter` in `test_calibration.py`, a helper that takes a
+`seed` it ignores, jitters nothing, and forwards to `synth_click_track`.
+Nothing has ever called it. Removed.
+
+**Second, `scripts/concurrency_probe.py` was broken by yesterday's commit and
+would not have said so.** It does `scores._service_client = lambda: …` — a
+name that stopped existing when the three copies became
+`require_service_client`. Assigning to a module attribute that nothing reads
+raises nothing: the probe would have run against the *real* Supabase client
+and reported a concurrency number measured on the wrong thing. Repointed at
+`app.db`. Nothing in CI runs this script, which is why it took a grep to find.
+
+**Third, and the actual refactor: `app/services/display_urls.py`.**
+`routers/scores.py` carried ~87 lines that are not request handling — a
+process-global dict of signed storage URLs, a lock, a reuse floor, a cache cap
+and a batching call. None of it needs a request to exist; none of the router's
+other 1,600 lines touch it. `scores.py` is now 1,665 lines rather than 1,752,
+and the module it left behind imports no FastAPI.
+
+It reaches the client through `app.db`, matching yesterday's `deps.py`
+decision — which retires the wart yesterday's entry had to describe. The
+"two bindings, one fake" comment in `_install_supabase` is gone, along with
+`scores.py`'s own `get_service_client` import: **one patch point for the whole
+HTTP layer**, as claimed.
+
+`display_urls` is imported as a *module* in the router (`pending_uploads`
+beside it is the same), because two tests and the concurrency probe swap the
+signer out, and a `from … import` binding would give each importer its own
+copy to patch. That is the third time this session that the choice between a
+module import and a name import has decided whether a test can reach the code
+it is testing.
+
+**Now the part worth the entry: two of the four mutations I ran survived, and
+the tests I had just written were the reason.**
+
+`app/tests/test_display_urls.py` is new — eleven cases, and the two that matter
+were never testable before, because reaching them through HTTP meant building a
+score row and counting calls on a storage double. The cache **cap** had no test
+at all.
+
+- **The stale-eviction loop could be deleted and my test still passed.** I had
+  made every entry stale, so evicting the stale ones and clearing the whole
+  memo produce the same three keys. The test now reaches the cap with a
+  *mixture* — two expired, one with fifty minutes left — and asserts the live
+  one survives. Deleting the loop now fails it.
+- **`REUSE_FLOOR_SECONDS` could be set to zero and my test still passed.** It
+  aged the entry to `REUSE_FLOOR_SECONDS - 60`, so the input moved with the
+  constant under test and the assertion held for every value of it. The
+  lifetimes are now literal minutes — five (re-signs) and fifty (reused) — with
+  a comment saying why, because the derived version looks *more* careful than
+  the literal one.
+
+Both are the same mistake in different clothes: a test whose expected value is
+computed from the thing it is checking. Four mutations, all four now fail:
+drop the eviction, drop the clear, floor to zero, and raise instead of
+degrading when storage is down. `display_urls.py` restored byte-identical and
+re-confirmed green after each.
+
+Tests: `2100 passed, 2 skipped, 2 xfailed` (was 2,089 — eleven new).
+`check-dead-exports` 574/574, `check-migrations` and `check-brand-assets` OK.
+
+Known side effects: none. Behaviour is byte-for-byte the same code, moved; the
+signing call, the floor, the cap and the degrade paths are unchanged.
+
+Rollback: `git revert`. `display_urls.py` and `test_display_urls.py` are new
+files; the rest is imports and call sites.
+
+---
+
 ## 2026-09-08 — One service-role check for the HTTP layer, and the first test it has ever had
 
 Loop tick. Ran the cross-file duplication detector over `backend/app` for the

@@ -302,6 +302,7 @@ def _signed_rows(rows, *, all_pages):
     """`_with_image_urls` over a stub signer, so the assertions are about which
     keys were asked for rather than about Supabase."""
     from app.routers import scores as scores_module
+    from app.services import display_urls as display_urls_module
 
     asked: list[list[str]] = []
 
@@ -311,12 +312,12 @@ def _signed_rows(rows, *, all_pages):
             key: (f"https://signed.example/{key}?token=t", _EXPIRY) for key in keys
         }
 
-    original = scores_module._sign_downloads
-    scores_module._sign_downloads = _sign
+    original = display_urls_module.signed_display_urls
+    display_urls_module.signed_display_urls = _sign
     try:
         return scores_module._with_image_urls(rows, all_pages=all_pages), asked
     finally:
-        scores_module._sign_downloads = original
+        display_urls_module.signed_display_urls = original
 
 
 def _three_page_row(user_id, score_id) -> dict:

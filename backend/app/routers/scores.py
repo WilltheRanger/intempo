@@ -9,7 +9,6 @@ read so the same access rules apply at the API layer.
 from __future__ import annotations
 
 import logging
-import threading
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 from urllib.parse import urlparse
@@ -30,12 +29,10 @@ from app.services.ocr.validate import MeasureFinding, validate_measures
 
 from app.auth import current_user_id, current_user_id_provisioned
 from app.config import settings
-from app.db import get_service_client
 from app.routers.deps import require_service_client
-from app.routers.upload import SCORE_BUCKET
 from app.services import pending_uploads
 from app.services.audio_storage import InvalidAudioReference, owned_audio_key
-from app.services.buckets import AUDIO_BUCKET
+from app.services.buckets import AUDIO_BUCKET, SCORE_BUCKET
 from app.services.ocr.musicxml import MusicXMLError, score_json_from_musicxml
 from app.workers.dispatch import start_transcription
 from app.services.score_pages import pages_of, select_with_pages
@@ -51,13 +48,16 @@ from app.services.training import (
 )
 
 # Fetching the page lives in `services/page_image.py` so the transcription
-# worker can reach it without importing this module, which imports the worker.
-# What is left here is what a *request* still needs: recognising a storage URL,
-# and signing readable ones for display.
-from app.services.page_image import (
-    SIGNED_DOWNLOAD_TTL_SECONDS,
-    object_key_from as _object_key_from,
-)
+# worker can reach it without importing this module, which imports the worker;
+# signing a page for display lives in `services/display_urls.py` because it is
+# a memo with a lock and a bound, not request handling. What is left here is
+# recognising a storage URL and deciding which keys a response needs.
+#
+# Imported as a module, not a name: `pending_uploads` beside it is the same,
+# and a test or the concurrency probe swapping the signer out has one place to
+# do it rather than one per importer.
+from app.services import display_urls
+from app.services.page_image import object_key_from as _object_key_from
 
 router = APIRouter(prefix="/scores", tags=["scores"])
 
@@ -327,7 +327,7 @@ class ScoreResponse(BaseModel):
     #: part could not look at the bar flagged on page three.
     #:
     #: The cost objection that kept it a count no longer describes this code:
-    #: `_sign_downloads` batches, so signing every page of a piece is the same
+    #: `display_urls` batches, so signing every page is the same
     #: single storage call as signing its first. Populated only when reading one
     #: piece, not on the library listing — see `_with_image_urls`.
     #:
@@ -430,95 +430,6 @@ def _durable_image_url(reference: str, user_id: UUID) -> str:
     )
 
 
-#: Display URLs already signed, by object key, with their real expiry.
-#: See the comment inside `_sign_downloads` for why reuse is the whole point.
-_display_urls: dict[str, tuple[str, datetime]] = {}
-_display_url_lock = threading.Lock()
-#: A URL is only reused while at least this much of its life remains — a
-#: screen that fetched a list and then sat is still holding URLs that work.
-_REUSE_FLOOR_SECONDS = 10 * 60
-_DISPLAY_URL_CACHE_MAX = 4096
-
-
-def reset_display_url_cache() -> None:
-    """For tests. The memo is process state, and tests must not share it."""
-    with _display_url_lock:
-        _display_urls.clear()
-
-
-def _sign_downloads(keys: list[str]) -> dict[str, tuple[str, datetime]]:
-    """Object key → signed download URL, for as many as storage will give us.
-
-    Batched: a library of forty scores is one storage call, not forty. Missing
-    keys are simply absent from the result, and a signing failure degrades the
-    whole batch to no images rather than failing the request — a list of scores
-    with no thumbnails is a usable screen; a 500 is not.
-    """
-    if not keys:
-        return {}
-
-    # **Signed once, reused for most of the hour — because a fresh signature is
-    # a fresh URL, and a fresh URL is a cache miss.** Every response used to
-    # mint a new token per image, so the URL string differed on every fetch and
-    # every image cache — expo-image's, keyed on the URL, and the browser's
-    # HTTP cache alike — missed on every one. The screen showing the photograph
-    # *while a scan is read* polls every three seconds, so watching one
-    # sixty-second read re-downloaded the photograph twenty times: measured
-    # against this library's pages, 50–100 MB of egress per scan watched, on a
-    # bucket holding 53 MB in total.
-    #
-    # Reused only while comfortably inside its life (`_REUSE_FLOOR_SECONDS`),
-    # so nothing on screen holds a URL that dies mid-scroll, and the reported
-    # `image_url_expires_at` is the *reused* URL's real expiry rather than a
-    # promise the token does not keep.
-    now = datetime.now(tz=timezone.utc)
-    with _display_url_lock:
-        floor = now + timedelta(seconds=_REUSE_FLOOR_SECONDS)
-        cached = {
-            key: _display_urls[key]
-            for key in keys
-            if key in _display_urls and _display_urls[key][1] > floor
-        }
-    missing = [key for key in keys if key not in cached]
-    if not missing:
-        return cached
-
-    client = get_service_client()
-    if client is None:
-        return cached
-
-    bucket = client.storage.from_(SCORE_BUCKET)
-    try:
-        signed = bucket.create_signed_urls(missing, SIGNED_DOWNLOAD_TTL_SECONDS)
-    except Exception:
-        return cached
-
-    expires_at = now + timedelta(seconds=SIGNED_DOWNLOAD_TTL_SECONDS)
-    fresh: dict[str, tuple[str, datetime]] = {}
-    for entry in signed or []:
-        if not isinstance(entry, dict) or entry.get("error"):
-            continue
-        url = entry.get("signedUrl") or entry.get("signedURL") or entry.get("signed_url")
-        path = entry.get("path")
-        if url and path:
-            # Supabase echoes the key back; it may or may not carry the bucket.
-            fresh[str(path).removeprefix(f"{SCORE_BUCKET}/")] = (str(url), expires_at)
-
-    with _display_url_lock:
-        # Bounded, because an unbounded memo is a slow leak on a host that
-        # stays up for weeks. Past the cap the stale entries are dropped; if
-        # every entry is live the memo is simply cleared — the cost is one
-        # extra signing call per key, which is where this started.
-        if len(_display_urls) + len(fresh) > _DISPLAY_URL_CACHE_MAX:
-            for key in [k for k, (_, exp) in _display_urls.items() if exp <= floor]:
-                del _display_urls[key]
-        if len(_display_urls) + len(fresh) > _DISPLAY_URL_CACHE_MAX:
-            _display_urls.clear()
-        _display_urls.update(fresh)
-
-    return {**cached, **fresh}
-
-
 def _object_keys_in(urls: list[str]) -> list[str]:
     """The storage keys inside a list of upload references, skipping any that
     are not one — a hand-entered piece has none, and a malformed reference is
@@ -563,11 +474,13 @@ def _with_image_urls(
             keys[row["id"]] = found
 
     # Still one storage call for the whole request, however many pages it
-    # covers: `_sign_downloads` takes a list and `create_signed_urls` is
+    # covers: `signed_display_urls` takes a list and `create_signed_urls` is
     # batched. That is what makes signing every page of a single piece cost the
     # same as signing its first — and it is why `page_count`'s note about "one
     # storage call per page" no longer describes this code.
-    signed = _sign_downloads(sorted({key for found in keys.values() for key in found}))
+    signed = display_urls.signed_display_urls(
+        sorted({key for found in keys.values() for key in found})
+    )
 
     out = []
     for row in rows:

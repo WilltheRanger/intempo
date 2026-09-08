@@ -19,6 +19,7 @@ from fastapi.testclient import TestClient
 from app import db as db_module
 from app.main import app
 from app.routers import scores as scores_module
+from app.services import display_urls
 
 
 GOOD_PAYLOAD = {
@@ -119,13 +120,9 @@ def _install_supabase(monkeypatch: pytest.MonkeyPatch, *, returning_row: dict | 
         delete_chain.execute.return_value = MagicMock(
             data=[returning_row] if returning_row else []
         )
-    # Two bindings, one fake. Routes reach the service client through
-    # `require_service_client`, which resolves it on the `db` module; the
-    # display-URL cache in `scores.py` keeps its own import because it
-    # degrades to the cached URLs instead of raising when there is no
-    # client, which is not what `require_service_client` does.
+    # One binding for the whole HTTP layer: `require_service_client` and the
+    # display-URL memo both resolve the client on the `db` module.
     monkeypatch.setattr(db_module, "get_service_client", lambda: client)
-    monkeypatch.setattr(scores_module, "get_service_client", lambda: client)
     return client
 
 
@@ -747,7 +744,6 @@ def test_delete_with_history_removes_dependents_then_owned_media(
     }
     sb.storage.from_.side_effect = lambda name: buckets[name]
     monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
-    monkeypatch.setattr(scores_module, "get_service_client", lambda: sb)
 
     res = client.delete(
         f"/v1/scores/{score_id}",
@@ -802,7 +798,6 @@ def test_delete_never_uses_a_foreign_audio_reference_as_storage_authority(
     audio_bucket = MagicMock()
     sb.storage.from_.return_value = audio_bucket
     monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
-    monkeypatch.setattr(scores_module, "get_service_client", lambda: sb)
 
     res = client.delete(
         f"/v1/scores/{score_id}",
@@ -2039,9 +2034,9 @@ def test_nothing_is_removed_until_the_row_is_actually_gone(
 
 @pytest.fixture(autouse=True)
 def _fresh_url_cache():
-    scores_module.reset_display_url_cache()
+    display_urls.reset_cache()
     yield
-    scores_module.reset_display_url_cache()
+    display_urls.reset_cache()
 
 
 def _signed_for(user_id, name: str = "abc.jpg"):
@@ -2105,9 +2100,9 @@ def test_a_url_near_the_end_of_its_life_is_signed_afresh(
 
     client.get("/v1/scores", headers=headers)
     # Age the memo entry to just inside the floor.
-    with scores_module._display_url_lock:
-        for key, (url, _) in list(scores_module._display_urls.items()):
-            scores_module._display_urls[key] = (
+    with display_urls._lock:
+        for key, (url, _) in list(display_urls._urls.items()):
+            display_urls._urls[key] = (
                 url,
                 datetime.now(tz=timezone.utc) + timedelta(seconds=60),
             )
