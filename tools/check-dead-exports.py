@@ -25,9 +25,26 @@ form: a named export that appears **nowhere else in the corpus at all** — not
 in a screen, not in a test, not in a tool. One hit today, out of 512.
 
 What it cannot see, said plainly: a name common enough to appear in unrelated
-text is matched by that text and passes. That makes the failures here false
-*negatives*, never false alarms — which is the direction a check has to fail in
-if people are going to keep running it.
+text is matched by that text and passes, so most of what this misses are false
+*negatives*.
+
+**It claimed those were the only kind it could produce, and that was wrong.**
+`StbVorbis` in `lib/score/sf2OnlyDecoder.ts` was reported dead on every run for
+weeks, and it is not: `metro.config.js` aliases the module `stb-vorbis` to that
+file, so `spessasynth_core` imports it under a name that never appears in this
+corpus. A source-text scan cannot see a bundler alias keyed by package name.
+
+The cost was not the wrong line of output. Four separate `EDIT_LOG.md` entries
+recorded it as "the one pre-existing finding" and moved on, which is what a
+check that cries wolf trains people to do — and on the same day, the same habit
+let `walk-app.mjs`'s standing failure sit unexamined through three commits
+before it turned out to be a real recording bug. A false alarm is not a
+cosmetic defect in a check; it is the thing that makes the true alarms
+invisible.
+
+So the entry points are now **read from the build configuration** rather than
+kept in a list here. Delete the alias and the export is reported again, which is
+correct — it would genuinely be dead.
 
 There is **no allowlist**, on purpose. An exclusion list is a thing that rots
 (`fixtures/timeline/parity.json`'s `excluded_on_purpose` listed repeats long
@@ -52,6 +69,29 @@ SOURCES = (ROOT / "mobile" / "src",)
 #: bench importing from `src` is a real use, and missing one would be the one
 #: kind of false alarm this check must not produce.
 ALSO_REFERENCED_BY = (ROOT / "mobile" / "scripts", ROOT / "tools")
+
+#: Metro's resolver config, read for the modules it redirects to our own files.
+#:
+#: A file aliased here is imported by a *package name* — `stb-vorbis` — from
+#: inside `node_modules`, which is not in this corpus and never should be. The
+#: reference is real and unfindable by text search, so the config is parsed for
+#: it instead of the name being exempted by hand. This is not an allowlist: it
+#: is derived, and it stops being true the moment the alias is deleted.
+_METRO_CONFIG = ROOT / "mobile" / "metro.config.js"
+_ALIAS_TARGET = re.compile(
+    r"""filePath:\s*path\.resolve\(\s*__dirname\s*,\s*['"]([^'"]+)['"]""",
+)
+
+
+def _bundler_entry_points() -> set[Path]:
+    """Files the bundler redirects a package import to."""
+    if not _METRO_CONFIG.is_file():
+        return set()
+    config = _METRO_CONFIG.read_text(encoding="utf-8")
+    return {
+        (_METRO_CONFIG.parent / relative).resolve()
+        for relative in _ALIAS_TARGET.findall(config)
+    }
 
 _EXPORT = re.compile(
     r"^export\s+(?:async\s+)?(?:function|const|class)\s+([A-Za-z_][A-Za-z0-9_]*)",
@@ -79,11 +119,19 @@ def main() -> int:
     corpus = defining + _files(ALSO_REFERENCED_BY, (".ts", ".tsx", ".mjs", ".js"))
     text = {p: p.read_text(encoding="utf-8") for p in corpus}
 
+    aliased = _bundler_entry_points()
+
     scanned = 0
     dead: list[tuple[str, Path]] = []
     for path in defining:
         # A test file defines nothing the app ships.
         if ".test." in path.name:
+            continue
+        # Whatever imports this does so by the package name the bundler
+        # redirects, from outside this corpus. Counted, so the total still
+        # means "every export", and not reported.
+        if path.resolve() in aliased:
+            scanned += len(_EXPORT.findall(text[path]))
             continue
         for match in _EXPORT.finditer(text[path]):
             scanned += 1
@@ -120,6 +168,11 @@ def main() -> int:
         return 1
 
     print(f"check-dead-exports: {scanned} exports, all of them referenced.")
+    for path in sorted(aliased):
+        print(
+            f"  (via the bundler alias in {_METRO_CONFIG.relative_to(ROOT)}: "
+            f"{path.relative_to(ROOT)})"
+        )
     return 0
 
 

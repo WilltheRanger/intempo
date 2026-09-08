@@ -1,5 +1,61 @@
 # InTempo Edit Log
 
+## 2026-09-08 — `check-dead-exports.py` was crying wolf, and this log has four entries proving what that costs
+
+`StbVorbis` in `lib/score/sf2OnlyDecoder.ts` has been reported dead on every run
+for weeks. Four entries in this file — all written today — recorded it as "the
+one pre-existing finding", "pre-existing on `main` and untouched", and moved on.
+
+**It was never dead.** `mobile/metro.config.js` aliases the module `stb-vorbis`
+to that file, so `spessasynth_core` imports it under a package name that appears
+nowhere in this corpus. The comment on the alias says why it exists: Spessa's
+optional SF3 Vorbis decoder "eagerly starts WASM, unavailable on Hermes and
+disallowed by our web CSP". The shim is load-bearing. Deleting the export — the
+remedy the check itself printed on every run, *"wire it or unexport it; there is
+no allowlist"* — would have pointed the alias at a missing file.
+
+**The check's docstring claimed this could not happen.** It said what it misses
+are "false *negatives*, never false alarms — which is the direction a check has
+to fail in if people are going to keep running it." The reasoning was right and
+the claim was false: a source-text scan cannot see a bundler alias keyed by
+package name.
+
+**And the cost is measurable in this very file.** Four entries wrote the finding
+off. On the same day, the same habit let `walk-app.mjs`'s standing 50-of-51 sit
+unexamined across three commits while I described it three times as pre-existing
+— and it turned out to be a real, total failure of recording. Two checks, the
+same lesson: a false alarm is not a cosmetic defect, it is the thing that makes
+the true alarms invisible.
+
+**The fix reads the build configuration instead of keeping a list.** The check
+now parses `metro.config.js` for the files its resolver redirects a package
+import to, and treats those as entry points — their consumer is in
+`node_modules`, which is not in the corpus and never should be. That is not an
+allowlist, which this check refuses on purpose: it is derived. Delete the alias
+and the export is reported dead again, because then it would be. The exemption
+is printed on every clean run rather than applied silently, so it cannot become
+the next thing nobody looks at.
+
+**Mutation-tested in both directions**, which is the only way to know a check
+still bites after you have changed it:
+
+- a genuinely dead export added to `schedule.ts` — still reported, exit 1
+- the alias pointed at a different file — `StbVorbis` reported again, exit 1
+- restored — 571 exports, all referenced, exit 0
+
+`check-store-readiness.py` exits 1 while items are outstanding, which is by
+design and not a CI gate. Noted because I had previously read its status through
+a pipe and got `tail`'s exit code instead — the same wiring mistake an earlier
+entry in this log records, made again.
+
+Scope: `tools/check-dead-exports.py` only. No application code.
+
+Validation: `check-dead-exports.py` clean (571 exports) and mutation-tested both
+ways, `check-brand-assets.py` clean. No source change, so the mobile suite is
+untouched at 1,654.
+
+**Side effects:** none. **Rollback:** revert; the false alarm returns.
+
 ## 2026-09-06 — Recording was broken on every route, by a relative URL that resolved to the app's own HTML
 
 Reported: "can you fix the listen feature and record both not working."
