@@ -1,5 +1,58 @@
 # InTempo Edit Log
 
+## 2026-09-08 — A rollback instruction that would fail, and an audit of what `CLAUDE.md` claims
+
+Loop tick, continuing the vein that paid last time: documentation that
+contradicts reality. `CLAUDE.md` is binding and read at the start of every
+session, so a false claim there misleads every future one.
+
+**Most of what it asserts is true**, checked rather than assumed:
+
+- "Batches 0, 1 and 2 are tagged and pushed" — `batch-0-done`, `batch-1-done`
+  and `batch-2-done` exist locally *and* on the remote; 3 and 4 have no tag, so
+  §4's "by this file's own Definition of Done they are not done" stands.
+- `docs/subsystems.md` is 10,501 words against a claimed "~10,600".
+- It covers exactly the five parts §5 names, one section each.
+- The four Python checks §1 names are all in `.github/workflows/ci.yml`.
+
+**One durable defect: a rollback instruction that fails on a fresh clone.**
+`EDIT_LOG.md` referred to the pre-glass anchor three times and disagreed with
+itself — twice as a *branch*, once as *"reset to tag `pre-liquid-glass`"*.
+`git ls-remote` shows `refs/heads/pre-liquid-glass` and **no tag of that name**,
+so the third instruction would have failed at exactly the moment someone
+reached for it. Corrected to "branch". All three now say the same true thing,
+and each still carries the `2b11ead` SHA, which is what actually makes the
+rollback recoverable either way.
+
+**And a mistake of mine that turned out not to matter.** This container also
+held a *local* tag `pre-liquid-glass` shadowing the remote branch, so every
+`git log pre-liquid-glass` warned "refname is ambiguous". I created it earlier
+in this session after concluding tag pushes were blocked, then used a branch
+instead and left the tag behind. Deleted — but worth being precise about the
+value: it was never pushed, so no clone but this one ever had it, and the fix
+is ephemeral. The durable half of that mistake is the wrong word in
+`EDIT_LOG.md`, which is the part above.
+
+`2b11ead` is an ancestor of `origin/main` and also the tip of
+`origin/pre-liquid-glass`, so the anchor was never at risk; the defect was the
+instruction, not the history.
+
+**What I could not verify, stated rather than guessed.** §5 says "roughly
+fifteen comments and test docstrings across the repository" cite `CLAUDE.md`
+for rules that moved to `docs/subsystems.md`. A grep finds 49 mentions of
+`CLAUDE.md` in the corpus — but that counts every citation, including the many
+that correctly point at rules still in `CLAUDE.md` (§1 logging, §2 the UI gate,
+§3 the design laws). It does not measure the claim, so it does not refute it,
+and I have left the number alone rather than "correcting" a figure I have not
+actually tested.
+
+Scope: one word in `EDIT_LOG.md`. Nothing executable.
+
+Validation: no source changed, so the suite is untouched at 1,663. The three
+`pre-liquid-glass` references now agree with `git ls-remote`.
+
+**Side effects:** none. **Rollback:** revert.
+
 ## 2026-09-08 — The deploy guide promised scanning would degrade gracefully; it stopped being able to two weeks ago
 
 Loop tick. Code duplication is exhausted and the lint and type surfaces are
@@ -1402,7 +1455,7 @@ with `script-src` still pinned. `check-dead-exports.py` reports one export,
 50 of 51 with the same silent-take finding recorded in PR #70; this diff does
 not touch the recording path.
 
-Rollback: `git revert` this commit, or reset to tag `pre-liquid-glass`
+Rollback: `git revert` this commit, or reset to branch `pre-liquid-glass`
 (`2b11ead`). `expo-blur` would come out with it.
 
 ## 2026-09-05 — Comparable takes and TestFlight preparation
