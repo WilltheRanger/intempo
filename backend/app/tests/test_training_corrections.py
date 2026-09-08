@@ -23,7 +23,6 @@ from fastapi.testclient import TestClient
 
 from app import db as db_module
 from app.main import app
-from app.routers import me as me_module
 from app.routers import scores as scores_module
 from app.services import display_urls
 from app.services.score_schema import Measure, Note, ScoreJson
@@ -241,7 +240,6 @@ def db(monkeypatch: pytest.MonkeyPatch) -> FakeSupabase:
     )
     fake.storage = MagicMock()
     monkeypatch.setattr(db_module, "get_service_client", lambda: fake)
-    monkeypatch.setattr(me_module, "get_service_client", lambda: fake, raising=False)
     display_urls.reset_cache()
     return fake
 

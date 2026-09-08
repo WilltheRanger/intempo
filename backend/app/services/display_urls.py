@@ -20,6 +20,7 @@ from datetime import datetime, timedelta, timezone
 from app import db
 from app.services.buckets import SCORE_BUCKET
 from app.services.page_image import SIGNED_DOWNLOAD_TTL_SECONDS
+from app.services.signed_urls import absolute, signed_url_in
 
 #: A URL is only reused while at least this much of its life remains — a
 #: screen that fetched a list and then sat is still holding URLs that work.
@@ -93,11 +94,14 @@ def signed_display_urls(keys: list[str]) -> dict[str, tuple[str, datetime]]:
     for entry in signed or []:
         if not isinstance(entry, dict) or entry.get("error"):
             continue
-        url = entry.get("signedUrl") or entry.get("signedURL") or entry.get("signed_url")
+        url = signed_url_in(entry)
         path = entry.get("path")
         if url and path:
             # Supabase echoes the key back; it may or may not carry the bucket.
-            fresh[str(path).removeprefix(f"{SCORE_BUCKET}/")] = (str(url), expires_at)
+            fresh[str(path).removeprefix(f"{SCORE_BUCKET}/")] = (
+                absolute(url),
+                expires_at,
+            )
 
     with _lock:
         # Past the cap the stale entries are dropped; if every entry is live

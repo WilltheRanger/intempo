@@ -13,6 +13,7 @@ from uuid import UUID
 
 from app.config import settings
 from app.services.buckets import AUDIO_BUCKET
+from app.services.signed_urls import absolute, signed_url_in
 
 STORAGE_PREFIXES = (
     "/storage/v1/object/sign/",
@@ -113,16 +114,8 @@ def readable_audio_url(client, reference: str) -> str:
             return reference
         raise AudioStorageError(f"could not sign recording download: {exc}") from exc
 
-    if isinstance(signed, dict):
-        fresh = (
-            signed.get("signedURL")
-            or signed.get("signedUrl")
-            or signed.get("signed_url")
-        )
-        if fresh:
-            fresh = str(fresh)
-            if fresh.startswith("http"):
-                return fresh
-            return f"{settings.SUPABASE_URL.rstrip('/')}/storage/v1{fresh}"
+    fresh = signed_url_in(signed)
+    if fresh:
+        return absolute(fresh)
 
     raise AudioStorageError("storage did not return a recording download URL")

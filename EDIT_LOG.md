@@ -1,5 +1,66 @@
 # InTempo Edit Log
 
+## 2026-09-08 — Five more copies of the same check, and the three ways Supabase spells one key
+
+Loop tick. Yesterday's `require_service_client` extraction caught **three of
+eight** copies, and the reason is a blind spot in the detector rather than in
+the reading: it compared whole functions, so it saw the three standalone
+`_service_client()` helpers and none of the **five inline copies** of the same
+eight lines sitting in the middle of route handlers — four in `routers/me.py`,
+one in `routers/upload.py`. Rewrote the scan to slide a window of significant
+lines *inside* functions. All five gone; the scan now finds no copy of that
+check anywhere.
+
+**A branch that no request could reach, found by trying to test it.** `me.py`'s
+`_to_response` called `get_service_client()` a second time — every one of its
+three callers had already called `require_service_client()` and would have
+raised — so its `None` case was unreachable. I had started by making the
+degrade explicit with a `client is None` guard in `_avatar_url`, which would
+have added dead code to describe dead code. It takes the caller's client now:
+one lookup per request, one way into the client in the whole file, and no
+branch to explain.
+
+**And the real find: three modules each carrying their own knowledge of a
+Supabase quirk, in three different orders.** `create_signed_url` answers with
+`signedURL`, `signedUrl` or `signed_url` depending on version and call form,
+and returns **either a path or an absolute URL**. `audio_storage.py`,
+`page_image.py` and `display_urls.py` each had an `or` chain for the first
+fact; only the first two handled the second. So a Supabase version answering
+the *batch* call with paths would have put unloadable URLs on the library
+screen, silently, while the two readers beside it handled exactly that case.
+
+Now `app/services/signed_urls.py`: `signed_url_in` and `absolute`, thirteen
+tests. The batch reader absolutises too — **unverified against a live project,
+and safe either way**: `absolute` is a no-op on anything starting with `http`,
+so it changes nothing or replaces a value the app could not have loaded. Said
+plainly in the test rather than presented as a fix.
+
+`routers/upload.py` has a fourth `or` chain and it was deliberately left alone:
+it reads an *upload* response (`upload_url`, `url`), not a download signing —
+merging them would have been wrong, and only reading it said so.
+
+Also dropped `from app.config import settings` from `page_image.py`, dead once
+the URL-building moved out.
+
+**The patch point is now genuinely one.** `me.py`, `upload.py` and their tests
+join the rest: `monkeypatch.setattr(app.db, "get_service_client", …)` fakes the
+service client for the entire HTTP layer, and no router keeps a private
+binding. That is 38 test patch sites repointed across `test_me.py` and
+`test_upload.py`, and two module imports that had nothing left to patch.
+
+Mutations, all failing as they should: drop the third spelling, never
+absolutise. `signed_urls.py` restored byte-identical after each.
+
+Tests: `2114 passed, 2 skipped, 2 xfailed` (was 2,100 — fourteen new).
+`check-dead-exports` 574/574, `check-brand-assets` OK.
+
+Known side effects: one deliberate behaviour change, the batch absolutising
+above. Everything else is the same code in fewer places.
+
+Rollback: `git revert`. `signed_urls.py` and `test_signed_urls.py` are new.
+
+---
+
 ## 2026-09-08 — The signed-URL memo leaves the router, and two of my own mutations survived
 
 Loop tick, two findings and one extraction.

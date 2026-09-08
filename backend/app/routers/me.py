@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from app.services import pending_uploads
 from app.auth import current_jwt_payload
-from app.db import get_service_client
+from app.routers.deps import require_service_client
 from app.models.user import (
     Instrument,
     MeResponse,
@@ -101,12 +101,7 @@ def get_me(payload: dict[str, Any] = Depends(current_jwt_payload)) -> MeResponse
             detail="Token subject is not a UUID",
         ) from exc
 
-    client = get_service_client()
-    if client is None:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Supabase service-role client is not configured",
-        )
+    client = require_service_client()
 
     existing = client.table("users").select("*").eq("id", str(user_id)).limit(1).execute()
     rows = existing.data or []
@@ -128,7 +123,7 @@ def get_me(payload: dict[str, Any] = Depends(current_jwt_payload)) -> MeResponse
     except Exception:  # noqa: BLE001
         analyses = None
 
-    return _to_response(user_id, row, tier, analyses)
+    return _to_response(client, user_id, row, tier, analyses)
 
 
 def _rows_owned_by(
@@ -163,12 +158,7 @@ def export_me(
     omission is explicit rather than silent.
     """
     user_id = _user_id_from(payload)
-    client = get_service_client()
-    if client is None:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Supabase service-role client is not configured",
-        )
+    client = require_service_client()
 
     account_rows = (
         client.table("users")
@@ -269,6 +259,7 @@ def _avatar_url(client: Any, key: str | None) -> str | None:
 
 
 def _to_response(
+    client: Any,
     user_id: UUID,
     row: dict[str, Any],
     tier: UserTier,
@@ -279,8 +270,12 @@ def _to_response(
     Two builders drift, and the field that drifts is the one nobody notices —
     a PATCH that returns the row without the freshly signed avatar looks fine
     until a client trusts the response instead of refetching.
+
+    The client is passed in rather than fetched here. It used to call
+    `get_service_client()` a second time, which every caller had already done
+    and checked — so the `None` it could return was a branch no request could
+    reach, and the only honest thing to write for it was nothing at all.
     """
-    client = get_service_client()
     return MeResponse(
         id=user_id,
         email=row["email"],
@@ -315,12 +310,7 @@ def update_me(
     "omitted" cannot mean both "leave it" and "remove it".
     """
     user_id = _user_id_from(payload)
-    client = get_service_client()
-    if client is None:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Supabase service-role client is not configured",
-        )
+    client = require_service_client()
 
     sent = body.model_fields_set
 
@@ -394,6 +384,7 @@ def update_me(
             # second tap, a retried request, a screen saving its own state back
             # — not an error, and not a reason to write.
             return _to_response(
+                client,
                 user_id,
                 current,
                 UserTier(current.get("tier", UserTier.free.value)),
@@ -435,7 +426,9 @@ def update_me(
     if withdrawing:
         _forget_training_data(client, user_id)
 
-    return _to_response(user_id, row, UserTier(row.get("tier", UserTier.free.value)), None)
+    return _to_response(
+        client, user_id, row, UserTier(row.get("tier", UserTier.free.value)), None
+    )
 
 
 def _forget_training_data(client: Any, user_id: UUID) -> None:
@@ -639,12 +632,7 @@ def delete_me(
     would create partially deleted accounts when a later call failed.
     """
     user_id = _user_id_from(payload)
-    client = get_service_client()
-    if client is None:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Supabase service-role client is not configured",
-        )
+    client = require_service_client()
 
     owned_studios = (
         client.table("studios")

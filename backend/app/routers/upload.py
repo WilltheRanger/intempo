@@ -29,7 +29,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.auth import current_user_id
-from app.db import get_service_client
+from app.routers.deps import require_service_client
 from app.services import pending_uploads
 
 router = APIRouter(prefix="/upload", tags=["upload"])
@@ -96,12 +96,7 @@ def _extract_ext(filename: str, allowed: set[str]) -> str:
 
 
 def _sign_upload(bucket: str, object_key: str) -> dict[str, Any]:
-    client = get_service_client()
-    if client is None:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Supabase service-role client is not configured",
-        )
+    client = require_service_client()
     storage = client.storage.from_(bucket)
     # Supabase python SDK exposes create_signed_upload_url on the bucket; the
     # exact method name varies by version, so we check both.

@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from app import db as db_module
+from app.config import settings
 from app.services import display_urls
 from app.services.buckets import SCORE_BUCKET
 from app.services.page_image import SIGNED_DOWNLOAD_TTL_SECONDS
@@ -23,10 +24,17 @@ from app.services.page_image import SIGNED_DOWNLOAD_TTL_SECONDS
 class _Storage:
     """`client.storage.from_(bucket).create_signed_urls(keys, ttl)`."""
 
-    def __init__(self, *, raises: Exception | None = None, prefix_bucket: bool = False):
+    def __init__(
+        self,
+        *,
+        raises: Exception | None = None,
+        prefix_bucket: bool = False,
+        relative: bool = False,
+    ):
         self.calls: list[list[str]] = []
         self.raises = raises
         self.prefix_bucket = prefix_bucket
+        self.relative = relative
 
     def from_(self, bucket: str):
         assert bucket == SCORE_BUCKET
@@ -40,7 +48,11 @@ class _Storage:
         return [
             {
                 "path": f"{SCORE_BUCKET}/{key}" if self.prefix_bucket else key,
-                "signedUrl": f"https://signed.example/{key}?token=t{len(self.calls)}",
+                "signedUrl": (
+                    f"/object/sign/{SCORE_BUCKET}/{key}?token=t"
+                    if self.relative
+                    else f"https://signed.example/{key}?token=t{len(self.calls)}"
+                ),
             }
             for key in keys
         ]
@@ -93,6 +105,27 @@ def test_a_library_is_one_signing_call_not_forty(monkeypatch: pytest.MonkeyPatch
 
     assert len(signed) == 40
     assert storage.calls == [keys]
+
+
+def test_a_path_is_stored_as_a_url_the_app_can_load(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The batch call returns a path on some SDK versions and an absolute URL
+    on others — the same fact the two single-URL readers in `audio_storage` and
+    `page_image` have always handled and this one did not.
+
+    Unverified against a live project, and safe regardless: `absolute` is a
+    no-op on a URL that already starts with `http`, so it either changes
+    nothing or replaces a value the app could not have loaded."""
+    _install(monkeypatch, _Storage(relative=True))
+
+    signed = display_urls.signed_display_urls(["u/a.jpg"])
+
+    url, _ = signed["u/a.jpg"]
+    assert url == (
+        f"{settings.SUPABASE_URL.rstrip('/')}/storage/v1"
+        f"/object/sign/{SCORE_BUCKET}/u/a.jpg?token=t"
+    )
 
 
 def test_the_bucket_is_stripped_when_supabase_echoes_it(

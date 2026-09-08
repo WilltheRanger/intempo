@@ -25,9 +25,9 @@ from urllib.parse import urlparse
 import httpx
 from fastapi import HTTPException, status
 
-from app.config import settings
 from app.db import get_service_client
 from app.services.buckets import SCORE_BUCKET
+from app.services.signed_urls import absolute, signed_url_in
 
 log = logging.getLogger("intempo.scores")
 
@@ -263,19 +263,8 @@ def readable_url(image_url: str) -> str:
     except Exception as exc:  # storage unreachable, key gone, permissions
         log.info("could not sign a download URL for %s, using it as given: %s", key, exc)
         return image_url
-    if isinstance(signed, dict):
-        fresh = (
-            signed.get("signedURL")
-            or signed.get("signedUrl")
-            or signed.get("signed_url")
-        )
-        if fresh:
-            # Supabase returns a path on some SDK versions and an absolute URL
-            # on others.
-            if fresh.startswith("http"):
-                return fresh
-            return f"{settings.SUPABASE_URL.rstrip('/')}/storage/v1{fresh}"
-    return image_url
+    fresh = signed_url_in(signed)
+    return absolute(fresh) if fresh else image_url
 
 
 # =============================================================

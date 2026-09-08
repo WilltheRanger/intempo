@@ -19,7 +19,6 @@ from fastapi.testclient import TestClient
 
 from app import db as db_module
 from app.main import app
-from app.routers import me as me_module
 from app.tests.fake_supabase import FakeSupabase
 
 
@@ -71,7 +70,6 @@ def test_existing_user_returns_row(
         "studio_id": str(studio_id),
     }
     mock_client = _build_supabase_mock(existing_row=row)
-    monkeypatch.setattr(me_module, "get_service_client", lambda: mock_client)
     monkeypatch.setattr(db_module, "get_service_client", lambda: mock_client)
 
     res = client.get(
@@ -110,7 +108,6 @@ def test_first_touch_provisioning(
     table = mock_client.table.return_value
     table.select.return_value.eq.return_value.limit.return_value.execute.return_value = MagicMock(data=[])
     table.insert.return_value.execute.return_value = MagicMock(data=[new_row])
-    monkeypatch.setattr(me_module, "get_service_client", lambda: mock_client)
     monkeypatch.setattr(db_module, "get_service_client", lambda: mock_client)
 
     res = client.get(
@@ -197,7 +194,7 @@ def test_an_instrument_nobody_has_chosen_is_null_not_violin(
     """
     user_id = uuid4()
     monkeypatch.setattr(
-        me_module, "get_service_client", lambda: _profile_mock(row=_row(id=str(user_id)))
+        db_module, "get_service_client", lambda: _profile_mock(row=_row(id=str(user_id)))
     )
 
     body = client.get(
@@ -214,7 +211,7 @@ def test_the_profile_comes_back_on_get(
 ) -> None:
     user_id = uuid4()
     monkeypatch.setattr(
-        me_module,
+        db_module,
         "get_service_client",
         lambda: _profile_mock(
             row=_row(
@@ -243,7 +240,7 @@ def test_the_avatar_is_signed_fresh_and_never_stored_as_a_url(
     someone's picture quietly stops loading."""
     user_id = uuid4()
     sb = _profile_mock(row=_row(id=str(user_id), avatar_key=f"{user_id}/face.jpg"))
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     client.get("/v1/me", headers={"Authorization": f"Bearer {make_token(sub=user_id)}"})
 
@@ -259,7 +256,7 @@ def test_storage_being_down_does_not_fail_the_call_that_provisions_an_account(
     user_id = uuid4()
     sb = _profile_mock(row=_row(id=str(user_id), avatar_key=f"{user_id}/face.jpg"))
     sb.storage.from_.return_value.create_signed_url.side_effect = RuntimeError("down")
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     res = client.get(
         "/v1/me", headers={"Authorization": f"Bearer {make_token(sub=user_id)}"}
@@ -274,7 +271,7 @@ def test_patching_one_field_leaves_the_others_alone(
 ) -> None:
     user_id = uuid4()
     sb = _profile_mock(row=_row(id=str(user_id), display_name="Aryam"))
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     res = _patch(client, make_token(sub=user_id), {"instrument": "cello"})
     assert res.status_code == 200, res.text
@@ -293,7 +290,7 @@ def test_an_explicit_null_clears_and_an_omission_does_not(
     "omitted" cannot mean both "leave it" and "remove it"."""
     user_id = uuid4()
     sb = _profile_mock(row=_row(id=str(user_id), avatar_key=f"{user_id}/face.jpg"))
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     _patch(client, make_token(sub=user_id), {"avatar_key": None})
 
@@ -307,7 +304,7 @@ def test_a_name_of_spaces_is_no_name(
     """Storing "   " shows as a blank greeting that nothing reads as absent."""
     user_id = uuid4()
     sb = _profile_mock(row=_row(id=str(user_id)))
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     _patch(client, make_token(sub=user_id), {"display_name": "   "})
 
@@ -329,7 +326,7 @@ def test_finishing_onboarding_stamps_the_time(
 ) -> None:
     user_id = uuid4()
     sb = _profile_mock(row=_row(id=str(user_id)))
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     res = _patch(client, make_token(sub=user_id), _finished(user_id))
 
@@ -350,7 +347,7 @@ def test_onboarding_is_refused_until_all_three_are_answered(
     """
     user_id = uuid4()
     sb = _profile_mock(row=_row(id=str(user_id)))
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     res = _patch(client, make_token(sub=user_id), {"onboarded": True})
 
@@ -374,7 +371,7 @@ def test_any_one_missing_answer_refuses_the_finish(
     that only looked at one would pass a two-thirds test."""
     user_id = uuid4()
     sb = _profile_mock(row=_row(id=str(user_id)))
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     body = _finished(user_id)
     body.pop(withheld)
@@ -396,7 +393,7 @@ def test_an_answer_already_on_the_row_counts(
     """
     user_id = uuid4()
     sb = _profile_mock(row=_row(id=str(user_id), display_name="Aryam"))
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     res = _patch(
         client,
@@ -420,7 +417,7 @@ def test_an_empty_name_on_the_row_does_not_count(
     blank has not answered the question."""
     user_id = uuid4()
     sb = _profile_mock(row=_row(id=str(user_id), display_name=""))
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     res = _patch(
         client,
@@ -448,7 +445,7 @@ def test_finishing_twice_is_a_no_op_rather_than_an_error(
     sb = _profile_mock(
         row=_row(id=str(user_id), onboarded_at="2026-08-24T00:00:00Z")
     )
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     res = _patch(client, make_token(sub=user_id), {"onboarded": True})
 
@@ -463,7 +460,7 @@ def test_onboarding_cannot_be_un_done(
     reappear over a musician who had already dealt with it."""
     user_id = uuid4()
     sb = _profile_mock(row=_row(id=str(user_id), onboarded_at="2026-08-24T00:00:00Z"))
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     _patch(client, make_token(sub=user_id), {"onboarded": False, "instrument": "viola"})
 
@@ -476,7 +473,7 @@ def test_an_empty_patch_is_refused(
 ) -> None:
     user_id = uuid4()
     monkeypatch.setattr(
-        me_module, "get_service_client", lambda: _profile_mock(row=_row(id=str(user_id)))
+        db_module, "get_service_client", lambda: _profile_mock(row=_row(id=str(user_id)))
     )
 
     assert _patch(client, make_token(sub=user_id), {}).status_code == 400
@@ -489,7 +486,7 @@ def test_an_instrument_the_app_does_not_have_is_refused(
     that passes here and fails at the database is a 500 for a typo."""
     user_id = uuid4()
     monkeypatch.setattr(
-        me_module, "get_service_client", lambda: _profile_mock(row=_row(id=str(user_id)))
+        db_module, "get_service_client", lambda: _profile_mock(row=_row(id=str(user_id)))
     )
 
     assert _patch(client, make_token(sub=user_id), {"instrument": "trombone"}).status_code == 422
@@ -502,7 +499,7 @@ def test_an_unknown_field_is_refused(
     have it ignored — it must be told the field is not theirs to set."""
     user_id = uuid4()
     monkeypatch.setattr(
-        me_module, "get_service_client", lambda: _profile_mock(row=_row(id=str(user_id)))
+        db_module, "get_service_client", lambda: _profile_mock(row=_row(id=str(user_id)))
     )
 
     assert _patch(client, make_token(sub=user_id), {"tier": "pro"}).status_code == 422
@@ -515,7 +512,7 @@ def test_a_patch_only_ever_touches_the_callers_own_row(
     forbid` means it cannot even be offered."""
     user_id = uuid4()
     sb = _profile_mock(row=_row(id=str(user_id)))
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     _patch(client, make_token(sub=user_id), {"instrument": "viola"})
 
@@ -541,7 +538,7 @@ def test_a_key_belonging_to_someone_else_is_refused(
     """
     user_id, stranger = uuid4(), uuid4()
     sb = _profile_mock(row=_row(id=str(user_id)))
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     res = _patch(client, make_token(sub=user_id), {"avatar_key": f"{stranger}/face.jpg"})
 
@@ -556,7 +553,7 @@ def test_a_key_that_escapes_the_prefix_is_refused(
     this account's object. The check is the whole key, not just its start."""
     user_id, stranger = uuid4(), uuid4()
     sb = _profile_mock(row=_row(id=str(user_id)))
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     res = _patch(
         client, make_token(sub=user_id), {"avatar_key": f"{user_id}/../{stranger}/face.jpg"}
@@ -572,7 +569,7 @@ def test_the_accounts_own_key_is_accepted(
     user_id = uuid4()
     key = f"{user_id}/abc.jpg"
     sb = _profile_mock(row=_row(id=str(user_id)), updated=_row(id=str(user_id), avatar_key=key))
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     res = _patch(client, make_token(sub=user_id), {"avatar_key": key})
 
@@ -591,7 +588,7 @@ def test_replacing_a_picture_removes_the_one_it_replaced(
         row=_row(id=str(user_id), avatar_key=old_key),
         updated=_row(id=str(user_id), avatar_key=new_key),
     )
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     _patch(client, make_token(sub=user_id), {"avatar_key": new_key})
 
@@ -613,7 +610,7 @@ def test_clearing_a_picture_removes_it_too(
         row=_row(id=str(user_id), avatar_key=old_key),
         updated=_row(id=str(user_id), avatar_key=None),
     )
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     _patch(client, make_token(sub=user_id), {"avatar_key": None})
 
@@ -631,7 +628,7 @@ def test_a_patch_that_does_not_touch_the_picture_removes_nothing(
     """Changing your name must not cost you your photograph."""
     user_id = uuid4()
     sb = _profile_mock(row=_row(id=str(user_id), avatar_key=f"{user_id}/face.jpg"))
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     _patch(client, make_token(sub=user_id), {"display_name": "Aryam"})
 
@@ -647,7 +644,7 @@ def test_storage_being_down_does_not_fail_a_picture_change(
         updated=_row(id=str(user_id), avatar_key=f"{user_id}/new.jpg"),
     )
     sb.storage.from_.return_value.remove.side_effect = RuntimeError("storage unreachable")
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     res = _patch(client, make_token(sub=user_id), {"avatar_key": f"{user_id}/new.jpg"})
 
@@ -673,7 +670,7 @@ def test_setting_the_same_picture_again_does_not_delete_it(
         row=_row(id=str(user_id), avatar_key=key),
         updated=_row(id=str(user_id), avatar_key=key),
     )
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     res = _patch(client, make_token(sub=user_id), {"avatar_key": key})
 
@@ -795,7 +792,7 @@ def test_account_deletion_removes_identity_then_owned_storage(
     sb.storage.from_.return_value.remove.side_effect = (
         lambda _keys: events.append("storage")
     )
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     res = _delete_me(client, make_token(sub=user_id))
 
@@ -836,7 +833,7 @@ def test_deleting_an_account_takes_its_abandoned_uploads_with_it(
     """
     user_id = uuid4()
     sb = _delete_account_mock(user_id)
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     assert _delete_me(client, make_token(sub=user_id)).status_code == 204
 
@@ -868,7 +865,7 @@ def test_the_inventory_reads_pending_uploads_before_the_identity_goes(
         MagicMock(data=[{"bucket": "score-images", "object_key": f"{user_id}/x.jpg"}]),
     )[1]
     sb.auth.admin.delete_user.side_effect = lambda _uid: order.append("identity")
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     assert _delete_me(client, make_token(sub=user_id)).status_code == 204
     assert order == ["inventory", "identity"]
@@ -898,7 +895,7 @@ def test_an_account_can_still_be_deleted_where_migration_014_never_ran(
         if name in tables
         else (_ for _ in ()).throw(RuntimeError('relation "pending_uploads" does not exist'))
     )
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     assert _delete_me(client, make_token(sub=user_id)).status_code == 204
     sb.auth.admin.delete_user.assert_called_once_with(str(user_id))
@@ -935,7 +932,7 @@ def test_an_empty_page_array_does_not_hide_the_legacy_page(
     sb.table("scores").select.return_value.execute.return_value = MagicMock(
         data=[{"source_image_url": legacy, "source_image_urls": []}]
     )
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     assert _delete_me(client, make_token(sub=user_id)).status_code == 204
 
@@ -954,7 +951,7 @@ def test_account_deletion_refuses_to_orphan_a_owned_studio(
 ) -> None:
     user_id = uuid4()
     sb = _delete_account_mock(user_id, owns_studio=True)
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     res = _delete_me(client, make_token(sub=user_id))
 
@@ -971,7 +968,7 @@ def test_identity_failure_leaves_storage_in_place_for_retry(
     user_id = uuid4()
     sb = _delete_account_mock(user_id)
     sb.auth.admin.delete_user.side_effect = RuntimeError("provider unavailable")
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     res = _delete_me(client, make_token(sub=user_id))
 
@@ -987,7 +984,7 @@ def test_storage_failure_does_not_resurrect_a_deleted_account(
     user_id = uuid4()
     sb = _delete_account_mock(user_id)
     sb.storage.from_.return_value.remove.side_effect = RuntimeError("storage down")
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     res = _delete_me(client, make_token(sub=user_id))
 
@@ -1128,7 +1125,7 @@ def test_account_export_contains_owned_records_without_storage_tokens(
         "sync_events",
         [{"id": "sync", "user_id": str(user_id), "payload": {"take": 1}}],
     )
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     res = client.get(
         "/v1/me/export",
