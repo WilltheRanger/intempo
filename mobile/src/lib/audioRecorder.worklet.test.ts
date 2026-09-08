@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import worklet from '../../public/pcm-recorder.worklet.js?raw';
+import wav from './audio/wav.ts?raw';
 import headers from '../../public/_headers?raw';
 import recorder from './audioRecorder.web.ts?raw';
 import { WORKLET_FILE } from './audioRecorder.web';
@@ -86,5 +87,51 @@ describe('the policy it has to satisfy', () => {
     expect(directive).toBeDefined();
     expect(directive).not.toContain('unsafe-inline');
     expect(directive).not.toContain('*');
+  });
+});
+
+/**
+ * The float-to-int16 rule exists twice, and only one copy is the one that runs.
+ *
+ * `floatToPcm16` in `audio/wav.ts` is tested exactly — ±1 maps to -32768 and
+ * 32767, out-of-range input clamps, silence stays silence. **No production
+ * code calls it.** The conversion that actually turns a musician's playing into
+ * samples is the loop inside `pcm-recorder.worklet.js`, which is a separate
+ * file on purpose: a worklet runs in `AudioWorkletGlobalScope` and cannot
+ * import from the app bundle, so the rule cannot simply be shared.
+ *
+ * That leaves the worst arrangement available — the copy with the tests is not
+ * the copy with the microphone — and nothing noticed the two could drift. This
+ * is what notices.
+ *
+ * The asymmetry is the part worth pinning. Two's complement gives the negative
+ * range one more step than the positive, so the scales are `0x8000` down and
+ * `0x7fff` up; "tidying" both to `0x7fff` is the obvious-looking change that
+ * would quietly clip every take by one step and make the tested copy a lie.
+ */
+describe('the conversion the worklet actually performs', () => {
+  /** The clamp-and-scale, with identifiers normalised so the two are comparable. */
+  const rule = (source: string) => {
+    const clamped = /Math\.max\(\s*-1\s*,\s*Math\.min\(\s*1\s*,/.test(source);
+    const scale = source.match(
+      /(\w+)\s*<\s*0\s*\?\s*\1\s*\*\s*(0x[0-9a-fA-F]+)\s*:\s*\1\s*\*\s*(0x[0-9a-fA-F]+)/,
+    );
+    return scale
+      ? { clamped, negative: scale[2].toLowerCase(), positive: scale[3].toLowerCase() }
+      : null;
+  };
+
+  it('clamps and scales exactly as the tested helper does', () => {
+    const inWorklet = rule(worklet);
+    const inHelper = rule(wav);
+    // A null here means the rule was rewritten past recognition on one side —
+    // which is itself the drift this guards, so it fails rather than passes.
+    expect(inHelper).not.toBeNull();
+    expect(inWorklet).not.toBeNull();
+    expect(inWorklet).toEqual(inHelper);
+  });
+
+  it('keeps the asymmetric scale on the copy that records', () => {
+    expect(rule(worklet)).toEqual({ clamped: true, negative: '0x8000', positive: '0x7fff' });
   });
 });

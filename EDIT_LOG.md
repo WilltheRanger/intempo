@@ -1,5 +1,76 @@
 # InTempo Edit Log
 
+## 2026-09-08 — A refactor pass: two dead barrels gone, the conversion that actually records pinned to the one that is tested, and six features found built-but-unwired
+
+Asked to refactor, remove dead code, and clean up my own mistakes. Everything
+below came out of measurement rather than reading around for things to tidy —
+a broad rewrite of working code is how I would break this app again.
+
+**My own residue: none.** Grepped for every symbol from the reverted screen
+transition — `ScreenTransition`, `screenTransition`, `SCRIM_OPACITY`,
+`popOffset`, `isPopGesture` — across `mobile/src`, `tools` and `docs`. Clean.
+`tsc` 0 and ESLint 0 before touching anything.
+
+**Two dead barrels, removed.** `components/overlays/index.ts` and
+`components/pieces/index.ts` re-export components that every caller imports
+directly by path. Nothing imports either barrel — checked twice, because a
+first shell heuristic claimed `pieces` had one importer and that turned out to
+be the string `/v1/pieces` in a query-client test. Deleted.
+
+**The float-to-int16 conversion exists twice, and the tested copy is not the
+one that runs.** `floatToPcm16` in `audio/wav.ts` is tested exactly — ±1 maps
+to -32768 and 32767, out-of-range clamps, silence stays silence — and **no
+production code calls it**. The conversion that turns a musician's playing into
+samples is the loop inside `public/pcm-recorder.worklet.js`, duplicated
+verbatim down to the asymmetric `0x8000` / `0x7fff` scaling.
+
+The duplication is not removable: a worklet runs in `AudioWorkletGlobalScope`
+and cannot import from the app bundle, which is why that file is standalone.
+So the fix is not extraction, it is a guard — `audioRecorder.worklet.test.ts`
+now parses the clamp-and-scale out of both sources, normalises the identifiers,
+and requires them to be identical. Mutation-tested against the two changes
+somebody would actually make: "tidying" the worklet to a symmetric `0x7fff`
+(which would clip every take by one step) and dropping the clamp. Both fail two
+tests; restored, the worklet is byte-identical.
+
+I checked whether the worklet *also* clamped before assuming the helper was the
+stricter one. It does. There is no live defect here — only two copies of a
+numeric rule with no rope between them, and now there is rope.
+
+**Six exports are referenced only by their own tests, which is the defect this
+project says it repeats most.** `check-dead-exports.py` cannot see them,
+because its corpus includes test files and a test counts as a reference. Its
+docstring names three historical instances of exactly this — a boot line nobody
+called, an endpoint no client posted to, an instrument reconciliation nothing
+invoked — so this is a fourth, fifth and sixth of the same thing:
+
+| Export | Module | What it was for |
+|---|---|---|
+| `factFor` | `lib/facts.ts` | "A short fact a day, **on Today**" — 24 curated entries, a test forbidding echoes. Today does not render it. |
+| `practiceLessonFor`, `notationSetupLesson` | `lib/practiceLesson.ts` | Practice drills with a daily rotation. Nothing renders them. |
+| `recordFailure`, `nextDue` | `lib/sync/takeQueue.ts` | Offline retry queue. Batch 10 is unstarted, so this may be deliberate. |
+| `tempoLadderFor` | `data/practiceTempo.ts` | A tempo ladder. Nothing calls it. |
+| `pathsByScreen` | `navigation/linking.ts` | Reads as a route-parity seam for its test. |
+| `resetAudioContextForTests` | `lib/audio/context.web.ts` | Named for what it is. Legitimate. |
+
+**Deliberately not acted on.** Wiring `factFor` onto Today is a screen change
+and behind the `CLAUDE.md` §2 gate; deleting carefully written, tested features
+because nothing calls them yet is a product decision and not mine. Two of the
+six are plainly legitimate. That triage is the owner's, and it is recorded here
+rather than done quietly.
+
+**The check was not extended to catch them**, on purpose. It would fail on day
+one with nine findings, several correct, and this repository has no allowlist by
+design — so the honest sequence is decide first, enforce after.
+
+Scope: 2 files deleted, 1 test file extended. No application code changed.
+
+Validation: 1,659 mobile tests (2 new), `tsc` 0, ESLint 0,
+`check-dead-exports.py` clean at 571, `check-brand-assets.py` clean. The new
+guard mutation-tested in both directions.
+
+**Side effects:** none — the barrels had no importers. **Rollback:** revert.
+
 ## 2026-09-08 — `check-dead-exports.py` was crying wolf, and this log has four entries proving what that costs
 
 `StbVorbis` in `lib/score/sf2OnlyDecoder.ts` has been reported dead on every run
