@@ -23,6 +23,7 @@ import re
 import xml.etree.ElementTree as ET
 from typing import Final
 
+from app.services.ocr.meter import quarter_beats
 from app.services.ocr.validate import infer_beats_per_measure
 from app.services.score_schema import (
     DURATION_BEATS,
@@ -412,26 +413,6 @@ _BAR_REST_FOR: Final[dict[float, str]] = {
 }
 
 
-def _quarter_beats(time_signature: str | None) -> float | None:
-    """Quarter-note beats in one bar of this metre, or None.
-
-    A local copy of the one line `validate.beats_per_measure` computes, kept
-    here rather than imported so the importer does not depend on the validator
-    — this module is what the validator reads, and the arrow has only ever
-    pointed one way.
-    """
-    if not time_signature or time_signature == "unknown":
-        return None
-    try:
-        upper, lower = time_signature.split("/")
-        count, unit = int(upper), int(lower)
-    except (ValueError, AttributeError):
-        return None
-    if count <= 0 or unit <= 0:
-        return None
-    return count * (4.0 / unit)
-
-
 def _multiple_rest_count(measure_el: ET.Element) -> int | None:
     """How many bars this measure stands for, if it is a multi-bar rest.
 
@@ -549,11 +530,11 @@ def _stated_bar_lengths(
     alone rather than guessed at. On the route this reaches — a file, not a
     photograph — an engraver always writes `<time>`.
     """
-    running = _quarter_beats(header_metre)
+    running = quarter_beats(header_metre)
     out: list[float | None] = []
     for measure in measures:
         if measure.time_signature is not None:
-            running = _quarter_beats(measure.time_signature)
+            running = quarter_beats(measure.time_signature)
         out.append(running)
     return out
 
@@ -1075,11 +1056,11 @@ def _bar_lengths(
             if measure.notes and not _is_lone_whole_rest(measure)
         ]
     )
-    running = _quarter_beats(header_metre)
+    running = quarter_beats(header_metre)
     out: list[float | None] = []
     for measure in measures:
         if measure.time_signature is not None:
-            running = _quarter_beats(measure.time_signature)
+            running = quarter_beats(measure.time_signature)
         out.append(running if running is not None else inferred)
     return out
 
@@ -1214,7 +1195,7 @@ def _expand_multiple_rests(
             )
             continue
         count, metre = entry
-        beats = _quarter_beats(metre) or lengths[index]
+        beats = quarter_beats(metre) or lengths[index]
         rest = _BAR_REST_FOR.get(beats) if beats is not None else None
         if rest is None:
             out.append(

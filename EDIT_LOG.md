@@ -1,5 +1,82 @@
 # InTempo Edit Log
 
+## 2026-09-08 — The metre rule was written three times, and the parity fixture guarded one
+
+Loop tick. Two findings, and one of them is me correcting a call I made
+yesterday.
+
+**I was wrong about the time-signature duplication, and had been for three
+ticks.** `musicxml._quarter_beats` and `validate.beats_per_measure` first came
+up in the backend scan on 2026-09-08 and I left them alone, writing that "the
+two callers disagree about what a malformed value means (`musicxml.py` raises,
+`validate.py` records a finding)". Widening the window from five lines to seven
+showed the whole function, and they are **byte-identical**: same guard, same
+`except (ValueError, AttributeError)`, same `return None`, same
+`count * (4.0 / unit)`. Nothing raises. I had reasoned about the callers and
+never read the bodies.
+
+The copy's own docstring gave the honest reason for it: *"kept here rather than
+imported so the importer does not depend on the validator — this module is what
+the validator reads, and the arrow has only ever pointed one way."* That
+concern is correct and copying is not the answer to it. `services/buckets.py`
+already records the answer for a constant shared by a router and a worker: a
+thing shared by two modules belongs to neither, and lives somewhere that
+imports nothing. So `app/services/ocr/meter.py`, holding `quarter_beats`, which
+imports nothing and creates no arrow in either direction.
+
+**What the copy actually cost.** `fixtures/meters/parity.json` exists because
+the app and the server have to agree about `" 4 / 4 "` — a metre OCR read with
+spaces once switched the app's beat check off while the server went on
+reporting the same bars as short. `test_meter_parity.py` holds the server to
+that fixture, and it held **one** of the two copies. The other is the importer,
+which stamps the beats the validator then checks bars against. It could have
+drifted without a test firing — and this is the same shape as the mobile fix
+one tick earlier, where `beatsPerMeasure` and `timeSignatureDigits` each
+carried the regex and the fixture guarded one.
+
+Both copies gone; five call sites in `musicxml.py`, three in `validate.py`, two
+in `pipeline.py` and three tests now read the one function. Renamed to
+`quarter_beats` on the way, which is what the surviving docstring spends a
+paragraph insisting it computes — 6/8 is 3.0, not 6.
+
+**A rename that nearly went wrong, caught by the suite.** A blanket
+`beats_per_measure(` → `quarter_beats(` in the test file also rewrote
+`infer_beats_per_measure(`, a different function that lives on in `validate.py`.
+Eight tests failed on the next run and named it. Repaired; `validate.py` and
+`pipeline.py` had targeted replacements and were untouched by it.
+
+**Mutation run, and one survivor that is correct.** Returning notated beats
+instead of quarter beats fails four tests including the parity fixture. Dropping
+the explicit `time_signature == "unknown"` guard fails **nothing** — and should
+not: `"unknown".split("/")` unpacks to one value, `ValueError`, `None`. The
+guard is a named fast path for a value the OCR prompt authorises, not a distinct
+behaviour, and `("unknown", None)` is pinned in the parametrisation either way.
+Left as it is.
+
+**And the correction to yesterday's recommendation.** I closed the last entry
+saying the five `src/data/` modules that hand-roll a mutable external store
+were "worth its own tick". Having now read all five: **they are not.** A cached
+value, a `Set` of listeners, `subscribe` and `getSnapshot` is the interface
+`useSyncExternalStore` requires — React's own documented shape — not incidental
+duplication, and the five differ where it matters: two persist through
+`AsyncStorage` inside their commit, one persists asynchronously beside it, two
+do not persist at all, and one short-circuits on an unchanged value because its
+value is a string. Extracting the six lines they share would put an indirection
+between each module and the React API it implements, and save nothing.
+
+The accessibility pair yesterday was a different thing: those shared the lazy
+one-time platform start, the `listening` flag and the change short-circuit —
+domain logic — and one of them documented itself as a copy of the other.
+
+Tests: `2115 passed, 2 skipped, 2 xfailed` — the same count as before, since
+nothing was added or lost, only moved. `check-dead-exports` 575/575.
+
+Known side effects: none. Same function, one copy, better name.
+
+Rollback: `git revert`. `meter.py` is a new file; the rest is imports.
+
+---
+
 ## 2026-09-08 — Two accessibility stores were one store twice, and said so in a comment
 
 Loop tick, first run of the window duplication scan against `mobile/src` since

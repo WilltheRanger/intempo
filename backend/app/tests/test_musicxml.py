@@ -578,7 +578,7 @@ def test_the_header_is_the_metre_the_piece_starts_in() -> None:
     )
     # And the validator reads it from there, which is the whole point.
     #
-    # 3/4 rather than the 2/2 this was written with first: `beats_per_measure`
+    # 3/4 rather than the 2/2 this was written with first: `quarter_beats`
     # answers in *quarter* beats, so 2/2 and 4/4 are both 4.0 and the assertion
     # could not have failed whatever the code did.
     assert validate_measures(score)[1].expected_beats == 3.0

@@ -1,6 +1,6 @@
 """The meter table both sides read, and the tolerance both sides use.
 
-`ocr/validate.beats_per_measure` and `mobile/src/lib/notation/reading.ts`
+`ocr/meter.quarter_beats` and `mobile/src/lib/notation/reading.ts`
 answer the same question — how many quarter-note beats a bar should hold — and
 the app keeps its own copy so a musician editing a measure sees the count move
 as they type, without a round trip.
@@ -22,7 +22,8 @@ import json
 import re
 from pathlib import Path
 
-from app.services.ocr.validate import TOLERANCE, beats_per_measure
+from app.services.ocr.meter import quarter_beats
+from app.services.ocr.validate import TOLERANCE
 
 REPO = Path(__file__).resolve().parents[3]
 FIXTURE = REPO / "fixtures" / "meters" / "parity.json"
@@ -38,7 +39,7 @@ def test_the_server_still_answers_what_the_fixture_says() -> None:
     assert len(cases) > 30, "the fixture shrank; the app's side is checking less than it thinks"
 
     for written, expected in cases.items():
-        got = beats_per_measure(None if written == "__null__" else written)
+        got = quarter_beats(None if written == "__null__" else written)
         assert got == expected, f"{written!r}: now {got}, fixture says {expected}"
 
 

@@ -38,6 +38,7 @@ from dataclasses import dataclass
 from statistics import median
 from typing import Literal
 
+from app.services.ocr.meter import quarter_beats
 from app.services.score_schema import (
     DURATION_BEATS,
     BrokenTie,
@@ -471,25 +472,6 @@ class MeasureFinding:
         )
 
 
-def beats_per_measure(time_signature: str | None) -> float | None:
-    """Quarter-note beats in one measure, or None when it cannot be known.
-
-    Quarter-note beats rather than notated beats, to match `alignment.py`,
-    where `target_bpm` is always quarter-notes-per-minute regardless of the
-    time signature's lower number. So 6/8 is 3.0 quarter-beats, not 6.
-    """
-    if not time_signature or time_signature == "unknown":
-        return None
-    try:
-        upper, lower = time_signature.split("/")
-        count, unit = int(upper), int(lower)
-    except (ValueError, AttributeError):
-        return None
-    if count <= 0 or unit <= 0:
-        return None
-    return count * (4.0 / unit)
-
-
 def infer_beats_per_measure(sums: list[float]) -> float | None:
     """The meter, read off the music, or None when the music does not agree.
 
@@ -551,11 +533,11 @@ def meters_in_force(score: ScoreJson) -> list[float | None]:
     done here, because it looks at the whole piece at once and a piece that
     changes meter has no single answer to give it.
     """
-    running = beats_per_measure(score.time_signature)
+    running = quarter_beats(score.time_signature)
     out: list[float | None] = []
     for measure in score.measures:
         if measure.time_signature is not None:
-            changed = beats_per_measure(measure.time_signature)
+            changed = quarter_beats(measure.time_signature)
             # "unknown" on a measure means the change is visible but illegible,
             # which is worse than no change at all — it invalidates the meter
             # that was running rather than continuing it.
@@ -627,7 +609,7 @@ def validate_measures(score: ScoreJson) -> list[MeasureFinding]:
     # it against the header called every one of those bars short, on a page
     # written and read correctly. See `Measure.time_signature`.
     meters = meters_in_force(score)
-    stated = meters[0] if meters else beats_per_measure(score.time_signature)
+    stated = meters[0] if meters else quarter_beats(score.time_signature)
     inferred = None
     densities: list[float] = []
     if all(m is None for m in meters):

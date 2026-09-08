@@ -24,6 +24,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable
 
+from app.services.ocr.meter import quarter_beats
 from app.services.ocr.base import OCRProvider, OCRResponse
 from app.services.ocr.claude_provider import (
     claude_opus_provider,
@@ -32,7 +33,6 @@ from app.services.ocr.claude_provider import (
 from app.services.page_image import crop_systems
 from app.services.ocr.validate import (
     TOLERANCE,
-    beats_per_measure,
     numbering_gaps,
 )
 from app.services.ocr.validate import problems as beat_problems
@@ -531,7 +531,7 @@ def _restate_meter_changes(parts: list[ScoreJson]) -> list[ScoreJson]:
     running: float | None = None
 
     for part in parts:
-        stated = beats_per_measure(part.time_signature)
+        stated = quarter_beats(part.time_signature)
         if stated is not None and stated != running:
             if running is None:
                 running = stated
@@ -551,7 +551,7 @@ def _restate_meter_changes(parts: list[ScoreJson]) -> list[ScoreJson]:
         # metre on a measure clears the running one rather than continuing it.
         for measure in part.measures:
             if measure.time_signature is not None:
-                running = beats_per_measure(measure.time_signature)
+                running = quarter_beats(measure.time_signature)
 
         out.append(part)
 

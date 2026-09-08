@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from app.services.ocr.meter import quarter_beats
 from app.services.score_schema import Measure, Note, ScoreJson
 from app.services.ocr.validate import (
     MIN_AGREEMENT,
@@ -19,7 +20,6 @@ from app.services.ocr.validate import (
     describe_repeats,
     numbering_gaps,
     repeated_runs,
-    beats_per_measure,
     describe_for_retry,
     infer_beats_per_measure,
     problems,
@@ -77,8 +77,8 @@ QUARTERS = ["quarter"] * 4
         ("0/4", None),
     ],
 )
-def test_beats_per_measure(signature, expected) -> None:
-    assert beats_per_measure(signature) == expected
+def test_quarter_beats(signature, expected) -> None:
+    assert quarter_beats(signature) == expected
 
 
 def test_a_correct_score_produces_no_problems() -> None:
