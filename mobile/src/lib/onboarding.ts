@@ -62,7 +62,7 @@ export type OnboardingRequirement = 'name' | 'photo' | 'instrument';
 /** What each missing answer is called in front of a musician. */
 export const MISSING_LABELS: Record<OnboardingRequirement, string> = {
   name: 'your name',
-  photo: 'a photo',
+  photo: 'a profile picture',
   instrument: 'your instrument',
 };
 

@@ -959,6 +959,154 @@ console.log('\n## A microphone that is on and silent');
   await quiet.close();
 }
 
+/**
+ * **A take that is actually recorded**, which nothing here checked.
+ *
+ * Every microphone leg above this one is a *failure*: no device, a refusal, a
+ * muted input. All three are worth having and none of them can tell you the
+ * recorder works — an app that could not capture a single sample would pass
+ * all three, because the only thing they assert is that the right complaint
+ * appears.
+ *
+ * That gap is not hypothetical. The recorder loads its `AudioWorklet` by URL,
+ * and for weeks it asked for `pcm-recorder.worklet.js` relative to the current
+ * route — so on `/pieces/:id/record`, the one route it is used from, the
+ * request went to `/pieces/:id/pcm-recorder.worklet.js` and a single-page app
+ * answered **200 with `index.html`**. It failed with a success: no failed
+ * request, no console error, and every check in this file still passing.
+ *
+ * An oscillator into `createMediaStreamDestination()` is the silent leg's
+ * stream with something connected to it — a real `MediaStream` carrying real
+ * samples, through the real worklet and the real WAV encoder.
+ */
+console.log('\n## A take that records');
+{
+  const loud = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  loud.on('pageerror', (e) => errors.push(e.message));
+  await loud.addInitScript(() => {
+    navigator.mediaDevices.getUserMedia = async () => {
+      const context = new AudioContext();
+      const destination = context.createMediaStreamDestination();
+      const tone = context.createOscillator();
+      const gain = context.createGain();
+      tone.frequency.value = 440;
+      // Well clear of the floor a muted input sits at, and well clear of
+      // clipping — this is checking that samples arrive, not how they sound.
+      gain.gain.value = 0.3;
+      tone.connect(gain).connect(destination);
+      tone.start();
+      return destination.stream;
+    };
+  });
+  await loud.goto(`${BASE}/pieces/fixture-bach-bwv1001/record`, {
+    waitUntil: 'domcontentloaded',
+    timeout: 30000,
+  });
+  await loud
+    .getByText('Set tempo & record')
+    .first()
+    .click({ timeout: 15000 })
+    .catch(() => {});
+  await loud.getByRole('button', { name: /Start recording/i }).first().click({ timeout: 15000 });
+
+  const lines = async () =>
+    loud.evaluate(() =>
+      [...document.querySelectorAll('*')]
+        .filter((el) => el.children.length === 0 && (el.textContent ?? '').trim())
+        .map((el) => el.textContent.trim()),
+    );
+  const awaitLine = async (test, ms) => {
+    const deadline = Date.now() + ms;
+    for (;;) {
+      const hit = (await lines()).find(test);
+      if (hit || Date.now() > deadline) return hit ?? null;
+      await loud.waitForTimeout(200);
+    }
+  };
+
+  // The screen says so while the take is running, which is the earliest point
+  // the worklet can be shown to have delivered anything at all.
+  const arriving = await awaitLine((l) => /audio received/i.test(l), 15000);
+  if (arriving) pass('the microphone reaches the recorder: "' + arriving + '"');
+  else fail('nothing arrived from a microphone that is producing a tone — the worklet did not deliver');
+
+  await loud.waitForTimeout(2500);
+  await loud.getByRole('button', { name: /Stop/i }).first().click({ timeout: 15000 }).catch(() => {});
+
+  const refused = await awaitLine((l) => /silent|muted/i.test(l), 6000);
+  if (refused) fail(`a take with a tone in it was called silent: "${refused}"`);
+  else {
+    // Matched on something **only the verdict screen says**. This was
+    // `/measures|tempo|rushed|dragged/`, which the record screen satisfies on
+    // its own — "Target tempo" is right there above the button — so the check
+    // passed without the take going anywhere, including under a mutation that
+    // stopped the worklet delivering a single sample.
+    const verdict = await awaitLine((l) => /across the take|measure by measure/i.test(l), 20000);
+    if (verdict) pass('a real take is accepted and comes back with a reading');
+    else fail('a real take produced neither a complaint nor a result');
+  }
+  await loud.close();
+}
+
+/**
+ * **Listen makes a sound, twice.**
+ *
+ * The owner's report was *"Listen only works on the first listen"* — the
+ * button flipped to Stop before the player had agreed to start, so a playback
+ * that declined left the label lying and the next press stopped silence. It is
+ * fixed, and nothing watches it: every other check in this file reads text,
+ * and a button whose label is right while nothing sounds passes all of them.
+ *
+ * So this counts `start()` on the nodes that make the noise. Twice, because
+ * once is exactly the case that was broken.
+ */
+console.log('\n## Listen');
+{
+  const ear = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  ear.on('pageerror', (e) => errors.push(e.message));
+  await ear.addInitScript(() => {
+    window.__sources = 0;
+    const count = (Klass) => {
+      if (!Klass) return;
+      const real = Klass.prototype.start;
+      Klass.prototype.start = function (...args) {
+        window.__sources += 1;
+        return real.apply(this, args);
+      };
+    };
+    count(window.AudioBufferSourceNode);
+    count(window.OscillatorNode);
+  });
+  await ear.goto(`${BASE}/pieces/fixture-bach-bwv1001/score`, {
+    waitUntil: 'domcontentloaded',
+    timeout: 30000,
+  });
+
+  const listen = ear.getByRole('button', { name: /Listen/i }).first();
+  const sounded = async (from, ms) => {
+    const deadline = Date.now() + ms;
+    for (;;) {
+      const n = await ear.evaluate(() => window.__sources ?? 0);
+      if (n > from || Date.now() > deadline) return n > from;
+      await ear.waitForTimeout(200);
+    }
+  };
+
+  await listen.click({ timeout: 20000 });
+  // The soundfont is a megabyte and is decoded and rendered before anything
+  // sounds, so this waits for the work rather than for a frame.
+  if (await sounded(0, 40000)) pass('Listen starts an audio source');
+  else fail('Listen sounded nothing — the label moved and no audio node started');
+
+  const first = await ear.evaluate(() => window.__sources ?? 0);
+  await ear.getByRole('button', { name: /Stop|Listen/i }).first().click({ timeout: 15000 }).catch(() => {});
+  await ear.waitForTimeout(600);
+  await ear.getByRole('button', { name: /Listen/i }).first().click({ timeout: 15000 }).catch(() => {});
+  if (await sounded(first, 40000)) pass('and again on the second press');
+  else fail('the second Listen sounded nothing — "Listen only works on the first listen" is back');
+  await ear.close();
+}
+
 console.log('\n## Page errors');
 if (errors.length === 0) pass('none across the whole walk');
 else for (const e of errors) fail(`page error: ${e.slice(0, 120)}`);

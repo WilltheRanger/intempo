@@ -52,7 +52,7 @@ export async function saveProfilePhoto(
     throw new ProfilePhotoSaveError(
       cause instanceof Error
         ? cause.message
-        : 'That photo could not be saved. Try again.',
+        : 'That profile picture could not be saved. Try again.',
       resume,
       cause,
     );

@@ -1,5 +1,82 @@
 # InTempo Edit Log
 
+## 2026-09-08 — "Profile picture", and the first checks that recording and Listen work
+
+Two owner requests.
+
+**"Photo" is "profile picture" everywhere it means the account's picture.**
+Thirteen strings across seven files: the field label, the still-needed line,
+both accessibility labels, the upload and save failures on onboarding *and*
+Profile, and the "running on sample data" refusal. The word **photograph** is
+left alone wherever it means a page of sheet music, which is most of the
+places it appears.
+
+One of them was not a string. `api/upload.ts` built its messages as
+`` `your ${subject}` `` off the `UploadSubject` union, so renaming what a
+musician reads would have meant renaming an internal type — and every message
+that said "your photo" *implicitly* was invisible next to the one that spelled
+it out. There is a `SUBJECT_NAMES` table now.
+
+The label fits: "Profile picture" above a 64pt circle keeps its row on one
+line, and the screen still measures **clean at 2x text on 375pt**. The
+still-needed line now wraps, so it is centred as text rather than only as a
+block — a centred box holding two left-aligned lines reads as a mistake.
+
+---
+
+**And the second request, which had no bug in it.** Recording and Listen were
+driven end to end in a browser: the soundfont loads (200), a real
+`AudioBufferSourceNode` starts, the label moves to Stop; the microphone reaches
+the recorder, the take is accepted and comes back with a reading. Every
+iOS-specific hazard is already handled in the tree — one shared `AudioContext`
+never closed, resumed inside the gesture, and `navigator.audioSession` for the
+ring/silent switch, which is the one that silently mutes Web Audio on an
+iPhone. The worklet fix (#87) is on `main`.
+
+**So the finding is the absence of a check, and that is what shipped.**
+`walk-app.mjs` had three microphone legs — no device, a refusal, a silent take
+— and every one of them asserts that the right *complaint* appears. An app that
+could not capture a single sample passes all three. It had no Listen leg at
+all.
+
+That gap is not hypothetical: it is exactly how the worklet bug survived for
+weeks. `addModule('pcm-recorder.worklet.js')` resolved against the route, so on
+`/pieces/:id/record` the request went to `/pieces/:id/pcm-recorder.worklet.js`
+and a single-page app answered **200 with `index.html`**. It failed *with a
+success* — no failed request, no console error, every check still green.
+
+| New leg | What it asserts |
+|---|---|
+| A take that records | An oscillator into `createMediaStreamDestination()` — the silent leg's stream with something connected — reaches the recorder, and the take comes back with a reading |
+| Listen | `start()` is called on a real audio node, **and again on the second press** |
+
+Listen is checked twice because once is the case that was broken: the owner's
+*"Listen only works on the first listen"*. 51 checks became 55.
+
+**Mutation-tested, and the first version of one was worthless.** Reinstating
+the worklet bug fails "nothing arrived from a microphone that is producing a
+tone" — but the take's *second* assertion still passed, because it matched
+`/measures|tempo|rushed|dragged/` and the record screen says "Target tempo"
+right above the button. It would have gone green on a build that recorded
+nothing. It matches `across the take|measure by measure` now — text only the
+verdict screen carries — and both assertions fail under the mutation. Breaking
+`playSchedule` so nothing sounds fails both Listen assertions. Sources restored
+byte-identical and the clean build re-run.
+
+**What this does not cover, and cannot here.** There is no iPhone in this
+environment, so "works" means Chromium. The two things that would still differ
+on an iOS device are the ring/silent switch and `AudioWorklet` inside a
+home-screen web app — both handled in code, neither observable from here. If
+Listen is still silent on the phone, the switch and whether it was opened from
+Safari or the home screen are the two things worth knowing.
+
+Tests: mobile `1701 passed` across 155 files; `tsc` and `eslint` clean;
+`walk-app` **55/55**; `audit-a11y` clean.
+
+Rollback: `git revert`.
+
+---
+
 ## 2026-09-08 — Onboarding moved in front of the sign-up form
 
 Owner's request, and a §2 gate: the plan and the one wrinkle went to the owner

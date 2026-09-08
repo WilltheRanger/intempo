@@ -59,7 +59,7 @@ export function useUploadAvatar() {
     mutationFn: async ({ uri, mimeType }) => {
       if (!IS_LIVE_BACKEND) {
         throw new Error(
-          'Uploading a photo needs the backend. This build is running on sample data.',
+          'Uploading a profile picture needs the backend. This build is running on sample data.',
         );
       }
       const response = await fetch(uri);

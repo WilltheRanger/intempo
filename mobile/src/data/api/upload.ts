@@ -82,6 +82,13 @@ export class UploadError extends Error {
 
 export type UploadSubject = 'page' | 'recording' | 'photo';
 
+/** What each subject is called in front of a musician. */
+const SUBJECT_NAMES: Record<UploadSubject, string> = {
+  page: 'page',
+  recording: 'your recording',
+  photo: 'your profile picture',
+};
+
 export interface UploadOptions {
   /** The thing being sent, so recovery copy names what the musician chose. */
   subject?: UploadSubject;
@@ -133,7 +140,12 @@ export function uploadToSignedUrl(
   contentType: string,
   { onProgress, signal, subject = 'page' }: UploadOptions = {},
 ): Promise<void> {
-  const thing = subject === 'page' ? 'page' : `your ${subject}`;
+  // Named from a table, not interpolated from the subject. The enum member
+  // used to be the word the musician read, so renaming "photo" to "profile
+  // picture" in front of people would have meant renaming an internal union —
+  // and every message that quietly said "your photo" was invisible until the
+  // one that spelled it out was found.
+  const thing = SUBJECT_NAMES[subject];
   const retry = subject === 'page' ? 'Take the photograph again.' : 'Try sending it again.';
 
   return new Promise((resolve, reject) => {
@@ -209,7 +221,7 @@ export function uploadToSignedUrl(
             'from your camera roll.'
           : subject === 'recording'
             ? 'Storage refused your recording for being too large. Record a shorter take.'
-            : 'Storage refused your photo for being too large. Choose a smaller photo.';
+            : 'Storage refused your profile picture for being too large. Choose a smaller one.';
         settle(() => reject(new UploadError(message)));
         return;
       }

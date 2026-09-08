@@ -156,8 +156,8 @@ describe('what the musician is told', () => {
     ['recording', 413, /record a shorter take/i],
     ['recording', 500, /your recording/i],
     ['photo', 403, /try sending it again/i],
-    ['photo', 413, /choose a smaller photo/i],
-    ['photo', 500, /your photo/i],
+    ['photo', 413, /choose a smaller one/i],
+    ['photo', 500, /your profile picture/i],
   ] as const)(
     'names a %s and gives recovery that fits it for status %s',
     async (subject, status, recovery) => {

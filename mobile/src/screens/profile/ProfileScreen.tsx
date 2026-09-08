@@ -95,7 +95,7 @@ export function ProfileScreen() {
       setPhotoError(
         cause instanceof Error
           ? cause.message
-          : 'That photo could not be saved. Try again.',
+          : 'That profile picture could not be saved. Try again.',
       );
     }
   }
@@ -199,7 +199,9 @@ export function ProfileScreen() {
           onPress={() => void pickPhoto()}
           disabled={photoBusy}
           accessibilityRole="button"
-          accessibilityLabel={photoBusy ? 'Changing photo' : 'Change photo'}
+          accessibilityLabel={
+            photoBusy ? 'Changing profile picture' : 'Change profile picture'
+          }
           style={({ pressed }) => (pressed ? styles.pressed : undefined)}
         >
           <Avatar source={photoPreview ?? musician.avatarUrl} size={AVATAR_SIZE} />
@@ -218,16 +220,16 @@ export function ProfileScreen() {
         {photoError
           ? photoError
           : photoBusy
-            ? 'Saving your photo…'
-            : 'Choose your photo to change it.'}
+            ? 'Saving your profile picture…'
+            : 'Choose your profile picture to change it.'}
       </Text>
 
       {photoError && pendingPhoto ? (
         <SecondaryButton
           label={
             pendingPhoto.avatarKey
-              ? 'Try saving photo again'
-              : 'Try sending photo again'
+              ? 'Try saving profile picture again'
+              : 'Try sending profile picture again'
           }
           onPress={() => void persistPhoto(pendingPhoto)}
           disabled={photoBusy}

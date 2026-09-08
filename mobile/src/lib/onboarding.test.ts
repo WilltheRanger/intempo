@@ -163,18 +163,18 @@ describe('saying what is still needed', () => {
   });
 
   it('names one', () => {
-    expect(describeMissing(['photo'])).toBe('Still needed: a photo.');
+    expect(describeMissing(['photo'])).toBe('Still needed: a profile picture.');
   });
 
   it('joins two with "and", not a comma', () => {
     expect(describeMissing(['name', 'photo'])).toBe(
-      'Still needed: your name and a photo.',
+      'Still needed: your name and a profile picture.',
     );
   });
 
   it('joins three the way English does', () => {
     expect(describeMissing(['name', 'photo', 'instrument'])).toBe(
-      'Still needed: your name, a photo and your instrument.',
+      'Still needed: your name, a profile picture and your instrument.',
     );
   });
 });

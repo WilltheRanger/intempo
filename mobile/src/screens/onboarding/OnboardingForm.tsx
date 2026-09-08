@@ -203,12 +203,14 @@ export function OnboardingForm({
       <View style={styles.identity}>
         <View>
           <Text variant="sectionLabel" color="textSecondary" style={styles.photoLabel}>
-            Photo
+            Profile picture
           </Text>
           <Pressable
             onPress={() => void pickPhoto()}
             accessibilityRole="button"
-            accessibilityLabel={shownPhoto ? 'Change photo' : 'Add a photo'}
+            accessibilityLabel={
+              shownPhoto ? 'Change profile picture' : 'Add a profile picture'
+            }
             style={({ pressed }) => (pressed ? styles.pressed : null)}
           >
             {/*
@@ -317,6 +319,10 @@ const styles = StyleSheet.create({
   },
   stillNeeded: {
     alignSelf: 'center',
+    // Centred as text, not merely as a block: "a profile picture" is long
+    // enough to wrap on a narrow phone, and a centred box holding two
+    // left-aligned lines reads as a mistake rather than as a caption.
+    textAlign: 'center',
     marginTop: spacing.md,
   },
 });

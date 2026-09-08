@@ -79,7 +79,7 @@ export function OnboardingScreen() {
         setError(
           cause instanceof Error
             ? `${cause.message} Try Continue again.`
-            : 'That photo could not be sent. Try Continue again.',
+            : 'That profile picture could not be sent. Try Continue again.',
         );
         return;
       }
@@ -89,7 +89,7 @@ export function OnboardingScreen() {
       // The button is disabled in this state; this guard also protects direct
       // calls and future changes to the form rules. A photograph already on
       // the account counts — the server reads the resulting row, not the body.
-      setError('Choose a photo before continuing.');
+      setError('Choose a profile picture before continuing.');
       return;
     }
 
@@ -122,7 +122,7 @@ export function OnboardingScreen() {
       }}
       storedPhotoUrl={me?.avatarUrl ?? null}
       busy={save.isPending || upload.isPending}
-      note={upload.isPending ? 'Sending your photo…' : null}
+      note={upload.isPending ? 'Sending your profile picture…' : null}
       error={error}
       onSubmit={(answers) => void finish(answers)}
     />
