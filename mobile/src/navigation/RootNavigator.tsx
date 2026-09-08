@@ -9,6 +9,7 @@ import { useMe } from '../data/hooks/useMe';
 import { preferences } from '../data/preferences';
 import { EASE_OUT, colors, motion } from '../design';
 import { shouldOnboard } from '../lib/onboarding';
+import { useApplyOnboardingDraft } from '../data/hooks/useApplyOnboardingDraft';
 import { useReducedMotion } from '../lib/useReducedMotion';
 import { AcknowledgementsScreen } from '../screens/account/AcknowledgementsScreen';
 import { AccountStartupScreen } from '../screens/account/AccountStartupScreen';
@@ -19,7 +20,7 @@ import { ExportDataScreen } from '../screens/account/ExportDataScreen';
 import { LegalScreen } from '../screens/legal/LegalScreen';
 import { HelpScreen } from '../screens/account/HelpScreen';
 import { AddPieceScreen } from '../screens/addPiece/AddPieceScreen';
-import { AuthScreen } from '../screens/auth/AuthScreen';
+import { SignedOutFlow } from '../screens/auth/SignedOutFlow';
 import { SetPasswordScreen } from '../screens/auth/SetPasswordScreen';
 import { CapturedPagesScreen } from '../screens/capturedPages/CapturedPagesScreen';
 import { InsightsScreen } from '../screens/insights/InsightsScreen';
@@ -203,7 +204,7 @@ export function RootNavigator() {
   }
 
   if (status === 'signedOut') {
-    return <AuthScreen />;
+    return <SignedOutFlow />;
   }
 
   // A reset link establishes a real session, so this would otherwise read as
@@ -251,6 +252,16 @@ function SignedInApp() {
     preferences.adoptAccountInstrument(me?.instrument);
   }, [me?.instrument]);
 
+  /*
+   * The answers given before this account existed, put on it now that it does.
+   *
+   * Onboarding runs ahead of the sign-up form, and creating an account returns
+   * no session — so the answers waited on the device through a confirmation
+   * link. This is where they land. Above the early returns for the same reason
+   * as the effect above it.
+   */
+  const applyingDraft = useApplyOnboardingDraft(me);
+
   // Restore the account before mounting any tab. A failed /v1/me used to open
   // the app anyway, so Today, Library, Insights and Profile each rendered a
   // different error for the same unavailable account. It also bypassed
@@ -274,6 +285,14 @@ function SignedInApp() {
   // Held in front of the app the way sign-in and password recovery are. Saving
   // invalidates `me`; the refetched profile carries `onboarded_at`, and this
   // gate falls away without a navigation reset.
+  //
+  // The draft is applied first, and the holding screen is not politeness: the
+  // answers are already given, so showing the form while they are being sent
+  // would ask for them a second time and let somebody answer it twice.
+  if (applyingDraft) {
+    return <AccountStartupScreen />;
+  }
+
   if (shouldOnboard(me)) {
     return <OnboardingScreen />;
   }

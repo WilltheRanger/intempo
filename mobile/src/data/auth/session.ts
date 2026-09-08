@@ -8,6 +8,7 @@ import {
   authRedirectPayload,
   authRedirectUrl,
 } from '../../lib/authRedirect';
+import { onboardingDraft } from '../onboardingDraft';
 
 /**
  * Supabase client for auth only. The backend verifies the access token this
@@ -310,8 +311,15 @@ export async function getAuthAvatarUrl(): Promise<string | null> {
  *
  * A no-op when Supabase isn't configured, which is the state the app boots in
  * until the env vars are set.
+ *
+ * **The onboarding draft goes with it**, before the request rather than after:
+ * unanswered answers on a shared device would be applied to whoever signs in
+ * next, which is somebody else's name and instrument on their account. Dropped
+ * even if the sign-out request then fails, because the intent to leave is what
+ * makes them the wrong person's.
  */
 export async function signOut(): Promise<void> {
+  onboardingDraft.clear();
   const supabase = getSupabaseClient();
   if (!supabase) {
     return;

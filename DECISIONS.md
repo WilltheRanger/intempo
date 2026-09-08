@@ -1,5 +1,64 @@
 # InTempo Decisions
 
+## 2026-09-08 — Onboarding before sign-up, with the answers held on the device
+
+**Context.** Onboarding — name, photograph, instrument — ran *after* sign-in,
+gated on `me.onboarded === false`. The owner asked for it to run before
+sign-up: someone deciding whether to try InTempo answers who they are and what
+they play, and only then hands over an email and a password.
+
+The obstacle is that creating an account usually returns **no session**.
+Supabase emails a confirmation link, the musician leaves for their inbox, and
+the app may be relaunched — possibly on another device — before there is
+anything to save a profile to. And two of the three answers need a session
+anyway: the photograph is an authenticated upload, and the profile is
+`PATCH /v1/me`.
+
+**Decision.** Ask all three before the sign-up form; hold the answers in a
+device-local draft (`data/onboardingDraft.ts`); apply them from
+`useApplyOnboardingDraft` the first time `/v1/me` says the account is not
+onboarded. **Keep the post-sign-in gate** as the fallback rather than removing
+it.
+
+**The photograph is deliberately not persisted.** A picked URI is a cache path
+on native and a `blob:` URL on the web; neither reliably survives a relaunch. A
+persisted URI that no longer resolves is *worse* than none — it fails at the
+one moment the upload matters, after the account exists and the musician
+believes they are done. Name and instrument are text and do persist.
+
+**Alternatives considered.**
+
+- *Move only name and instrument, leave the photo after sign-in.* Cleaner —
+  neither needs a session — but it splits one question into two screens on
+  either side of an email round trip, and the photograph is the answer people
+  are most likely to abandon. Offered to the owner and not chosen.
+- *A short "what InTempo does" intro instead.* Does not answer the request; it
+  adds a screen rather than moving one.
+- *Persist the photograph as a data URL.* Would close the relaunch gap, and
+  costs a multi-hundred-kilobyte write to a store with a 2 MB per-item limit on
+  Android and 5 MB total on the web. Failing that write silently is the same
+  outcome with more ways to go wrong.
+- *Drop the post-sign-in gate.* Cannot: the confirmation link can be opened on
+  a device the draft never existed on, and `PATCH /v1/me` is reachable without
+  this app at all.
+
+**Trade-offs accepted.**
+
+- Someone who confirms on another device, or relaunches before confirming, is
+  asked for the photograph a second time. The name and instrument still land,
+  so the gate opens pre-filled asking only for the picture — a degrade, not a
+  reset.
+- `draftUpdateFor` claims `onboarded` only when all three answers are present,
+  because `PATCH /v1/me` answers **400** to `onboarded: true` against an
+  incomplete row. Claiming it anyway would land nothing at all.
+- The draft is cleared on sign-out and whenever the account reads as onboarded.
+  A draft left behind would be applied to the *next* account signed in on that
+  device — somebody else's name and instrument on their profile.
+- `AuthScreen` grows two optional props (`initialMode`, `onRequestSignUp`) so
+  the flow above it owns the ordering. Absent, it behaves exactly as before,
+  which keeps it usable on its own.
+
+
 ## 2026-09-06 — The web build gets its own push transition; `native-stack` keeps the phone
 
 **Context.** Measured on the built bundle: pushing a screen in a browser

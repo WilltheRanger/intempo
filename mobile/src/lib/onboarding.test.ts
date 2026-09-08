@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  describeMissing,
   MISSING_LABELS,
+  describeMissing,
+  draftIsWorthSending,
+  draftUpdateFor,
   missingFromOnboarding,
   profileUpdateFor,
+  reusableAvatarKey,
   shouldOnboard,
 } from './onboarding';
 import type { Musician } from '../data/types';
@@ -213,5 +216,96 @@ describe('coming back to a half-answered onboarding', () => {
       'name',
       'instrument',
     ]);
+  });
+});
+
+// --- answers given before the account existed -----------------------------
+
+/** A complete set, so each case below changes exactly one thing. */
+const COMPLETE = {
+  name: 'Arya',
+  instrument: 'cello' as const,
+  avatarKey: 'u/1.jpg',
+};
+
+describe('draftUpdateFor', () => {
+  it('claims onboarded when all three answers are there', () => {
+    expect(draftUpdateFor(COMPLETE)).toEqual({
+      onboarded: true,
+      display_name: 'Arya',
+      instrument: 'cello',
+      avatar_key: 'u/1.jpg',
+    });
+  });
+
+  it.each([
+    ['the photograph', { ...COMPLETE, avatarKey: null }],
+    ['the name', { ...COMPLETE, name: '   ' }],
+    ['the instrument', { ...COMPLETE, instrument: null }],
+  ])('does not claim onboarded without %s', (_what, answers) => {
+    /**
+     * `PATCH /v1/me` answers 400 to `onboarded: true` against a row still
+     * missing one. Claiming it anyway would fail the whole request and land
+     * *nothing* — including the answers that were given, which are what stop
+     * the gate asking for everything a second time.
+     */
+    expect(draftUpdateFor(answers)).not.toHaveProperty('onboarded');
+  });
+
+  it('sends the answers it does have', () => {
+    expect(draftUpdateFor({ ...COMPLETE, avatarKey: null })).toEqual({
+      display_name: 'Arya',
+      instrument: 'cello',
+    });
+  });
+
+  it('never sends a null that would erase an answer already on the account', () => {
+    // `UpdateMeInput` reads an explicit null as "clear it". A draft with no
+    // name must leave a name the account already carries alone.
+    expect(draftUpdateFor({ name: '  ', instrument: null, avatarKey: null })).toEqual(
+      {},
+    );
+  });
+});
+
+describe('draftIsWorthSending', () => {
+  it.each([
+    ['a name', { name: 'Arya', instrument: null, avatarKey: null }],
+    ['an instrument', { name: '', instrument: 'viola' as const, avatarKey: null }],
+    ['an uploaded photo', { name: '', instrument: null, avatarKey: 'u/1.jpg' }],
+    [
+      'a photo not yet uploaded',
+      { name: '', instrument: null, avatarKey: null, photoSelected: true },
+    ],
+  ])('is true for %s', (_what, answers) => {
+    expect(draftIsWorthSending(answers)).toBe(true);
+  });
+
+  it('is false when nothing was answered', () => {
+    expect(
+      draftIsWorthSending({ name: '   ', instrument: null, avatarKey: null }),
+    ).toBe(false);
+  });
+});
+
+describe('reusableAvatarKey', () => {
+  const uploaded = { uri: 'file:///a.jpg', key: 'u/1.jpg' };
+
+  it('reuses the key for the file it came from', () => {
+    expect(reusableAvatarKey({ uri: 'file:///a.jpg' }, uploaded)).toBe('u/1.jpg');
+  });
+
+  it('refuses it for a different file', () => {
+    // The case a boolean flag gets wrong, and gets wrong silently: the account
+    // would end up pointing at the picture they backed out of.
+    expect(reusableAvatarKey({ uri: 'file:///b.jpg' }, uploaded)).toBeNull();
+  });
+
+  it.each([
+    ['nothing chosen', null, uploaded],
+    ['nothing uploaded', { uri: 'file:///a.jpg' }, null],
+    ['neither', null, null],
+  ])('is null with %s', (_what, photo, previous) => {
+    expect(reusableAvatarKey(photo, previous)).toBeNull();
   });
 });

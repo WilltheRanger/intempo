@@ -69,8 +69,29 @@ const COPY: Record<AuthMode, { lede: string; submit: string }> = {
  * success. Supabase emits the new session, `useAuthStatus` hears it, and the
  * app replaces this screen with the tabs. Nothing here has to know that.
  */
-export function AuthScreen() {
-  const [mode, setMode] = useState<AuthMode>('signIn');
+export interface AuthScreenProps {
+  /**
+   * Which form to open on. `signUp` is how `SignedOutFlow` comes back from
+   * onboarding — the questions are answered, so the account form is what is
+   * left, not the sign-in one somebody would have to switch away from again.
+   */
+  initialMode?: AuthMode;
+  /**
+   * Called instead of switching to the sign-up form.
+   *
+   * Onboarding runs **before** creating an account (2026-09-08), and this
+   * screen is where that is asked for — so the flow above it takes the tap and
+   * decides what comes first. Absent, the switch works as it always did, which
+   * keeps this screen usable on its own.
+   */
+  onRequestSignUp?: () => void;
+}
+
+export function AuthScreen({
+  initialMode = 'signIn',
+  onRequestSignUp,
+}: AuthScreenProps = {}) {
+  const [mode, setMode] = useState<AuthMode>(initialMode);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [revealed, setRevealed] = useState(false);
@@ -401,7 +422,14 @@ export function AuthScreen() {
         </View>
 
         <Pressable
-          onPress={() => go(mode === 'signUp' ? 'signIn' : 'signUp')}
+          onPress={() => {
+            if (mode !== 'signUp' && onRequestSignUp) {
+              clearAuthRedirectNotice();
+              onRequestSignUp();
+              return;
+            }
+            go(mode === 'signUp' ? 'signIn' : 'signUp');
+          }}
           accessibilityRole="button"
           accessibilityLabel={
             mode === 'signUp' ? 'Sign in instead' : 'Create an account'

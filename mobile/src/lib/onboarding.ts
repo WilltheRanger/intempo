@@ -149,6 +149,76 @@ export function profileUpdateFor(answers: OnboardingAnswers): UpdateMeInput {
 }
 
 /**
+ * The PATCH body for answers given **before** the account existed.
+ *
+ * The same fields as `profileUpdateFor`, with one difference that matters:
+ * `onboarded` is claimed only when all three answers are actually present.
+ *
+ * `PATCH /v1/me` **refuses** `onboarded: true` against a row still missing
+ * one — a 400 naming what is absent — so a draft that lost its photograph on
+ * the way through a confirmation link would fail the request outright and land
+ * nothing, including the name and instrument it *did* carry. Sending what
+ * there is leaves the account un-onboarded on purpose: the gate opens with
+ * those two already filled and asks only for the picture.
+ */
+export function draftUpdateFor(answers: OnboardingAnswers): UpdateMeInput {
+  const name = answers.name.trim();
+  const complete = missingFromOnboarding(answers).length === 0;
+  return {
+    ...(complete ? { onboarded: true } : {}),
+    ...(name ? { display_name: name } : {}),
+    ...(answers.instrument ? { instrument: answers.instrument } : {}),
+    ...(answers.avatarKey ? { avatar_key: answers.avatarKey } : {}),
+  };
+}
+
+/**
+ * Whether a draft is worth sending at all.
+ *
+ * Nothing answered means nothing to apply, and the difference is visible: a
+ * request that sets no fields would still cost a round trip in front of
+ * someone waiting for the app to open, and `PATCH /v1/me` reads an empty body
+ * as a 400 rather than a no-op.
+ *
+ * A photograph on its own counts, and counts before it has been uploaded —
+ * `photoSelected`, not `avatarKey`. It is the answer with the real cost, and
+ * the upload has not happened yet at the moment this is asked: reading only
+ * the key would decide there was nothing to send and throw the picture away.
+ */
+export function draftIsWorthSending(answers: OnboardingAnswers): boolean {
+  return Boolean(
+    answers.name.trim() ||
+      answers.instrument ||
+      answers.avatarKey ||
+      answers.photoSelected,
+  );
+}
+
+/**
+ * The object key to reuse for this photograph, if the upload already happened.
+ *
+ * Saving is two requests — put the bytes in the avatars bucket, then save the
+ * key with the rest of the profile — and only the second one usually fails. A
+ * retry that uploaded again would leave an orphan in storage every time, on
+ * exactly the connection least able to afford it.
+ *
+ * Keyed on the file, not on a flag. The screen used to hold `avatarKey` in
+ * state and clear it inside the photo picker, so "is this key still the right
+ * one" was a fact spread across two handlers; picking a *different* photograph
+ * and retrying is the case that gets that wrong, and it is silent — the
+ * account ends up pointing at the picture they backed out of.
+ */
+export function reusableAvatarKey(
+  photo: { uri: string } | null,
+  uploaded: { uri: string; key: string } | null,
+): string | null {
+  if (!photo || !uploaded) {
+    return null;
+  }
+  return photo.uri === uploaded.uri ? uploaded.key : null;
+}
+
+/**
  * Whether to put the onboarding screen in front of this musician.
  *
  * **Only on a definite no.** `undefined` — the query still in flight, or

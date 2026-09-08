@@ -1,5 +1,91 @@
 # InTempo Edit Log
 
+## 2026-09-08 — Onboarding moved in front of the sign-up form
+
+Owner's request, and a §2 gate: the plan and the one wrinkle went to the owner
+before anything was written, because creating an account usually returns **no
+session** — Supabase emails a confirmation link — and two of the three answers
+need one. All three questions before sign-up was the choice.
+
+**The shape.** `SignedOutFlow` owns two steps. *Create an account* asks who is
+playing first; Continue keeps the answers and lands on the account form.
+**Signing in is untouched** — that is the whole reason this is a step in front
+of the sign-up form rather than a screen in front of `AuthScreen`.
+
+| New | What it is |
+|---|---|
+| `data/onboardingDraft.ts` | The answers, on the device, until there is an account |
+| `data/hooks/useApplyOnboardingDraft.ts` | Sends them the first time `/v1/me` says un-onboarded |
+| `screens/onboarding/OnboardingForm.tsx` | The three questions, extracted so both callers share one composition |
+| `screens/onboarding/SignUpOnboardingScreen.tsx` | Asks them before the account exists |
+| `screens/auth/SignedOutFlow.tsx` | The two steps |
+
+`OnboardingScreen` keeps its name and its job — the account save — and is now
+59 lines of that instead of 382 lines of both. `AuthScreen` grows two optional
+props so the flow above it owns the ordering; absent, it behaves exactly as
+before.
+
+**The photograph is deliberately not persisted**, and the reasoning is in
+`DECISIONS.md`: a picked URI is a cache path on native and a `blob:` URL on the
+web, and a persisted one that no longer resolves fails at the one moment it
+matters. The degrade is graceful because name and instrument do persist —
+`draftUpdateFor` sends what there is, `PATCH /v1/me` stores it without stamping
+`onboarded_at`, and the old gate opens pre-filled asking only for the picture.
+That is also why the gate stays: a confirmation link can be opened on a device
+the draft never existed on.
+
+**Two things the browser probe caught that reading did not.**
+
+1. **Answers typed and then abandoned through the exit link were lost.** My own
+   docstring claimed "it does not clear the draft" — true, and it never *saved*
+   it either. `renderFooterLink` is a render prop now, so the way out is handed
+   the answers as they stand and keeps them. Verified: type a name, tap *Sign
+   in*, tap *Create an account* — `name kept: Arya`, still-needed down to "a
+   photo".
+2. **`hydrateOnboardingDraft` was written and never called.** Without it the
+   draft never comes back from disk, which is the entire point of writing it
+   down: the confirmation link relaunches the app. Wired into `App.tsx` beside
+   the other three.
+
+**The three-foot test, on the screenshot at 390pt.**
+
+1. **"Who's playing?"** — the serif hero line, the screen's only editorial
+   moment.
+2. **The four instruments** — the widest block of contrast, and the answer that
+   changes what the app does.
+3. **Continue**, in the thumb zone, with the still-needed line under it.
+4. **"Already have an account? Sign in"** — quiet, grey, last, and meant to be.
+   It is an exit for somebody who tapped the wrong thing, not an invitation.
+   Without it this screen is a trap, and the trap is worse here than on a form
+   because nothing on it looks like authentication.
+
+The hierarchy is the one the owner already art-directed; the new element does
+not compete with it.
+
+**Verified.** `tsc --noEmit`, `eslint .` clean. Mobile `1701 passed` across 155
+files (was 1,670 — 31 new: the draft store, the three new rules). Three
+mutations on the rules all fail as they should: always claim `onboarded`, reuse
+an upload key for a different file, ignore a photo not yet uploaded.
+`walk-app.mjs` **51/51** and `audit-a11y.mjs` clean against the fixtures build,
+so the signed-in routes are untouched. The new screen measured **clean at 2x
+text on a 375pt viewport**, the narrowest iPhone this app installs on.
+
+**Not verified, and it cannot be in-session.** The live round trip — create an
+account, follow a real confirmation link, watch the draft land on the account —
+needs Supabase keys and a device. What *is* verified is every step this side of
+it, driven through the app's own controls in a browser.
+
+**Found next door and not fixed.** The a11y audit run against a signed-out
+build reports `"Forgot your password?"` on `AuthScreen` spilling **129pt off
+the right edge at 2x text** — the two sign-in links sit in a row that does not
+wrap. Pre-existing, on a screen this change does not touch, and outside what
+was asked for. Reported rather than folded in.
+
+Rollback: `git revert`. Six new files; `OnboardingScreen.tsx` is the only
+rewrite, and its behaviour is unchanged.
+
+---
+
 ## 2026-09-08 — A comment crediting a mechanism the handler had stopped using
 
 Loop tick, new axis: **parameters nothing reads.** A signature is a claim about
