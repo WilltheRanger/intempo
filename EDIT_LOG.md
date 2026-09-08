@@ -1,5 +1,68 @@
 # InTempo Edit Log
 
+## 2026-09-08 — The deploy guide promised scanning would degrade gracefully; it stopped being able to two weeks ago
+
+Loop tick. Code duplication is exhausted and the lint and type surfaces are
+clean, so this pass went at references — comments and docs pointing at things
+that no longer exist. Eight candidates, six of them false alarms, and one of the
+two real ones is the most consequential thing found in several ticks.
+
+**`docs/deploy-backend.md` §4 would have cost a deploy.** It read:
+
+> ## 4. Adding the OMR second opinion (optional, later)
+> Get the API up first. Then see `docs/deploy-omr.md` — it means rebuilding the
+> Until then the step is skipped automatically: one failed lookup on `PATH`, a
+> log line, and the vision chain answers exactly as before.
+
+Three defects in five lines:
+
+1. **The sentence is truncated.** "it means rebuilding the" stops mid-clause and
+   the next line starts a new sentence. `git log -S` shows it arrived that way
+   in the commit that created the file, so no text was lost later and there is
+   nothing to restore — I did not invent the missing clause.
+2. **`docs/deploy-omr.md` has never existed.** Checked the whole tree, not just
+   `docs/`.
+3. **The promise is false, and that is the part that matters.** "The vision
+   chain answers exactly as before" was true while a vision model sat behind
+   homr. Since the chain became homr alone (`config.py`, 2026-08-24) there is
+   nothing behind it, and `transcription_runner.py` says so plainly: homr is
+   installed *only in the Modal container*, `_nothing_here_can_read()` catches
+   an API host with no reader, and the row fails with a message that blames the
+   server rather than the photograph.
+
+So an owner deploying the API on its own, reading §4, would have understood that
+scanning still works and only the "second opinion" is missing. **Every scan
+would refuse.** The heading was wrong twice over: not a second opinion, and not
+optional.
+
+Rewritten to say what the code says, with the old text quoted so the correction
+is legible rather than silent, and pointed at `docs/deploy-modal.md` — which
+exists, and is where the reader actually lives.
+
+**Two test docstrings cited `switchState.test.ts`, which does not exist.**
+`composerField.test.ts` and `loadErrors.test.ts` both name it as the precedent
+for testing screens as source text. The file is `ariaState.test.ts` — confirmed
+by reading it rather than guessing from the name: its subject is exactly a
+switch's `accessibilityState` not reaching ARIA. Both citations updated.
+
+**Six candidates rejected, each checked rather than pattern-matched.**
+`radii.md` in `PrimaryButton` is the design token `radii.md`, not a file — my
+scanner matched the `.md` suffix. `_worker.js` is one of three alternatives
+`pages-spa-fallback.md` weighs, not a claim that a file exists. `tools/x.py` is
+a generic invocation example in two tool docstrings.
+`intempo-data-not-a-dat.json` is an example of the *malformed* filename
+`accountExport.ts` exists to prevent. And the one surviving `docs/deploy-omr.md`
+hit is now my own sentence saying it never existed.
+
+**Nothing executable changed.** Two docstrings and one markdown section. The
+value is that the deployment guide no longer contradicts the deployment code.
+
+Validation: 1,663 mobile tests (153 files), `tsc` 0, ESLint 0, the reference
+scan clean of everything except the six explained above, and
+`docs/deploy-modal.md` confirmed present as the new link target.
+
+**Side effects:** none. **Rollback:** revert.
+
 ## 2026-09-08 — The add-piece routing rule was written three times and checked nowhere; now written once and tested
 
 Loop tick. The first candidate it turned up was a false alarm, which is worth

@@ -14,7 +14,7 @@ import { describe, expect, it } from 'vitest';
  * A flaky connection is the ordinary case on a phone, which makes this the
  * most-reached broken state in the app rather than an edge one.
  *
- * Source text, for the same reason as `switchState.test.ts`: there is no React
+ * Source text, for the same reason as `ariaState.test.ts`: there is no React
  * Native testing library here (`DECISIONS.md`, 2026-08-24).
  */
 const screens = import.meta.glob('./**/*.tsx', {

@@ -15,7 +15,7 @@ import { describe, expect, it } from 'vitest';
  * the route most likely to produce a variant spelling and it offered no way to
  * settle it.
  *
- * Source text, for the same reason as `switchState.test.ts` and
+ * Source text, for the same reason as `ariaState.test.ts` and
  * `loadErrors.test.ts`: there is no React Native testing library here
  * (`DECISIONS.md`, 2026-08-24).
  */
