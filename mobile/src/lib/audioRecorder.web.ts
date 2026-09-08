@@ -12,6 +12,7 @@ import {
   shouldRetryUnconstrained,
 } from './audio/microphoneFailure';
 import { durationOf, encodeWav } from './audio/wav';
+import { resolveWorkletUrl, WORKLET_FILE as WORKLET } from './audio/workletUrl';
 
 /**
  * Audio capture for a practice take, in a browser.
@@ -36,10 +37,11 @@ const CHANNELS = 1;
 /**
  * The worklet, copied verbatim into the build from `public/`.
  *
- * Named here and asserted by `audioRecorder.web.test.ts`, so renaming the file
- * without renaming this fails a test rather than a musician's recording.
+ * Re-exported rather than declared: the name and the rule for resolving it now
+ * live together in `audio/workletUrl.ts`, because getting the *name* right was
+ * never the part that broke.
  */
-export const WORKLET_FILE = 'pcm-recorder.worklet.js';
+export { WORKLET_FILE } from './audio/workletUrl';
 
 /**
  * Quanta buffered in the worklet before it posts.
@@ -49,15 +51,6 @@ export const WORKLET_FILE = 'pcm-recorder.worklet.js';
  * 85 ms, which is a message every twelfth of a second instead.
  */
 const QUANTA_PER_MESSAGE = 32;
-
-/**
- * The worklet, as source.
- *
- * Loaded from a blob URL rather than a file in `public/`: a worklet fetched by
- * path breaks the moment the app is served from a sub-path, and this keeps the
- * processor beside the code that registers it.
- */
-
 
 export async function startRecording(): Promise<Recorder> {
   if (!navigator.mediaDevices?.getUserMedia) {
@@ -159,15 +152,25 @@ export async function startRecording(): Promise<Recorder> {
     // saw it because `npx serve` ignores `_headers` — see
     // `tools/serve-with-headers.mjs`, which is now what the walk runs against.
     //
-    // Relative, and left for `addModule` to resolve. It resolves against the
-    // document's base URL, which is what a build served from a sub-path needs
-    // — and doing it here would mean reaching for `document`, which the
-    // recorder otherwise never touches.
+    // **Resolved from the app's root, never from the route.**
+    //
+    // This was the bare filename, left for `addModule` to resolve, on the
+    // reasoning that a relative path is what a build served from a sub-path
+    // needs. A relative URL resolves against the *document's* base, and this is
+    // a single page app: on `/pieces/<id>/record` that is `/pieces/<id>/`. The
+    // browser fetched `/pieces/<id>/pcm-recorder.worklet.js`, the server
+    // answered with `index.html` as a single page app must, and `addModule` was
+    // handed a page of HTML to parse as a module.
+    //
+    // It failed with a **200**, so there was no failed request and no console
+    // error — only the sentence below, on the one screen whose job is to
+    // record. The record screen is always nested under a piece, so this was
+    // every take. See `audio/workletUrl.ts` for the measurements.
     try {
-      await context.audioWorklet.addModule(WORKLET_FILE);
+      await context.audioWorklet.addModule(resolveWorkletUrl());
     } catch {
       throw new MicrophoneUnavailableError(
-        'The recording worklet could not be loaded.',
+        `The recording worklet (${WORKLET}) could not be loaded.`,
       );
     }
 
