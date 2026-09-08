@@ -112,8 +112,6 @@ def test_skipping_a_rest_the_timeline_still_holds_destroys_the_analysis() -> Non
     True of a two-bar rest as much as a twenty-bar one, which is why the rule
     is not "only skip the long ones and hope".
     """
-    import numpy as np
-
     from app.services.alignment import align_take, apply_fuzzy_match, build_timeline
 
     bpm = 60.0
@@ -137,8 +135,6 @@ def test_skipping_a_rest_the_timeline_still_holds_destroys_the_analysis() -> Non
 
 def test_the_same_take_is_perfect_against_the_shortened_score() -> None:
     """And the fix: the worker shortens the score the same way the app did."""
-    import numpy as np
-
     from app.services.alignment import align_take, build_timeline
 
     bpm = 60.0

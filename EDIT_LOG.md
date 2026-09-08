@@ -1,5 +1,55 @@
 # InTempo Edit Log
 
+## 2026-09-08 — The backend has never been linted, and it turns out to need it barely at all
+
+Loop tick. `backend/` has **no Python linter** — no `ruff`, `flake8` or
+`pylint` config anywhere, nothing in `pyproject.toml` beyond pytest, and the CI
+lint step runs `npm run lint` in `mobile/` only. So 21,510 lines of application
+Python plus its tests have never had an unused import, an unreachable branch or
+a shadowed name pointed at.
+
+That is the same state `CLAUDE.md` records the *app* being in until 2026-09-03,
+when a linter went in after `react-hooks/rules-of-hooks` turned out to be worth
+it. The other tree never got the same treatment.
+
+**And the finding is that it hardly matters: one dead import, twice.**
+`test_long_rest_parity.py` imported `numpy as np` inside two test functions and
+used it in neither — `np` appears nowhere in the file but on those two lines.
+Both removed, along with the blank line each left behind. That is the entire
+haul from an unlinted 21,510-line tree, which is a real result about this
+codebase rather than a disappointing tick.
+
+**My scanner was wrong 148 times out of 149, and the failure is worth naming.**
+The first pass reported 149 unused imports across 148 files. Every one but a
+single `np` was `from __future__ import annotations` — a **compiler directive**,
+not a binding. It is never referenced by name and removing it would change how
+every annotation in the file is evaluated. Had I acted on that list instead of
+reading it, this tick would have been a 148-file breakage.
+
+It under-reported too: it flagged line 140 and not line 115, because bindings
+were collected into a dict keyed by name and the second import overwrote the
+first. Same conclusion, arrived at only because I grepped the file rather than
+trusting the count.
+
+**Four times this session a scan has been wrong in a way only reading caught**:
+the Metro alias hiding `StbVorbis`, the multi-line decorator hiding
+`create_corrections`, the dynamic `get_*_client` enumeration hiding
+`get_client`, and now a compiler directive that looks exactly like an import.
+The pattern is that name-based scanning cannot see any reference that is not a
+name, and the remedy each time was to check a candidate before believing it.
+
+**Not done, and offered rather than assumed:** adding `ruff` to `backend/` with
+a CI job. It is the obvious next step and it is a bigger change than a loop tick
+— a config, a workflow step, and whatever the first run turns up — and the CI
+that would enforce it is not currently running at all.
+
+Scope: two import lines and two blank lines in one test file.
+
+Validation: **2,086 backend tests passing**, 2 skipped, 2 xfailed — unchanged
+from before the removal. No source file touched, no mobile file touched.
+
+**Side effects:** none. **Rollback:** revert.
+
 ## 2026-09-08 — The backend suite had a failing test nobody could see, and it was a real contract gap
 
 Loop tick. The `mobile/` refactor axes are exhausted and the documentation vein
