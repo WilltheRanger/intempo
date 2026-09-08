@@ -16,7 +16,6 @@ from uuid import UUID
 
 from fastapi import (
     APIRouter,
-    BackgroundTasks,
     Depends,
     HTTPException,
     Query,
@@ -811,7 +810,6 @@ def _hand_entered(body: CreateScoreRequest) -> ScoreJson:
 @router.post("", response_model=ScoreResponse, status_code=status.HTTP_201_CREATED)
 def create_score(
     body: CreateScoreRequest,
-    background_tasks: BackgroundTasks,
     user_id: UUID = Depends(current_user_id_provisioned),
 ) -> ScoreResponse:
     """Create the piece, and — if it came from a photograph — start reading it.
@@ -879,8 +877,14 @@ def create_score(
 
     if not manual:
         # After the insert, so the worker cannot look for a row that is not
-        # there yet, and after the response is sent, which is what
-        # `BackgroundTasks` guarantees.
+        # there yet.
+        #
+        # It used to say "and after the response is sent, which is what
+        # `BackgroundTasks` guarantees" — and this handler took a
+        # `BackgroundTasks` it never added anything to. `start_transcription`
+        # puts the id on a queue that reader threads drain, so a worker can
+        # pick it up before this function returns; the insert above is what
+        # makes that safe, and the only ordering claim worth making.
         start_transcription(str(rows[0]["id"]))
 
     # Signed like every other read, so a client can render the page it just
@@ -1437,7 +1441,6 @@ def _remove_object(client, key: str) -> bool:
 @router.post("/{score_id}/transcribe", response_model=ScoreResponse)
 def retranscribe(
     score_id: UUID,
-    background_tasks: BackgroundTasks,
     user_id: UUID = Depends(current_user_id),
 ) -> ScoreResponse:
     """Read the page again.

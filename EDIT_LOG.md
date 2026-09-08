@@ -1,5 +1,71 @@
 # InTempo Edit Log
 
+## 2026-09-08 — A comment crediting a mechanism the handler had stopped using
+
+Loop tick, new axis: **parameters nothing reads.** A signature is a claim about
+what a function needs, so a parameter the body never touches is either a caller
+passing something into a void or a body that forgot what it was given. 97 hits
+across `backend/app`, 92 of them in tests — provider fakes conforming to
+`parse(image_bytes, mime_type, note)`, and pytest fixtures requested for their
+side effects. Five in production; three were real.
+
+**`create_score` and `retranscribe` each took a `BackgroundTasks` they never
+added anything to**, left over from before transcription moved to a queue.
+FastAPI dutifully injected one per request. Removed, and the import with them.
+
+**And the comment above the dispatch was crediting it for an ordering it no
+longer provides:**
+
+> After the insert, so the worker cannot look for a row that is not there yet,
+> and after the response is sent, which is what `BackgroundTasks` guarantees.
+
+Half true. `start_transcription` puts the id on a queue that reader threads
+drain, so a worker can pick it up *before* the handler returns. The insert
+above it is what makes that safe, and it is the only ordering claim worth
+making — which is now what the comment says. **The fourth stale claim-of-fact
+this week**, after `diagnostics.py`'s "calls the same functions `analyze()`
+calls", `reducedTransparency`'s "shaped exactly like `useReducedMotion`", and
+my own note that the two metre parsers disagreed about malformed input.
+
+**`musicxml._only(measure_el, notes)` never read `measure_el`** — it builds a
+stub from `notes` alone. Both call sites now pass what it uses. Mutation-checked
+(return an empty stub) and covered by two cases in `test_staves.py`; my first
+run of that mutation looked like a coverage hole only because I had not
+included that file.
+
+**Two production hits are deliberate and the codebase already said so** —
+worth recording, because a scan that reports them again next month should be
+answered from here rather than re-investigated. `generate_verdict(config)`
+carries a comment explaining that the run-finding is pure geometry over deltas
+already banded with it, and that every function in the module taking `config`
+beats a caller having to remember which ones use it. `homr_provider.parse(note)`
+is the provider protocol; its docstring says "`note` is accepted and ignored —
+there is no prompt."
+
+**`mobile/` was measured clean on the same axis, and the check is now on.**
+`tsc --noEmit --noUnusedParameters --noUnusedLocals` across 248 files: **zero
+of either.** So the flags went into `tsconfig.json`, which costs nothing today
+and is the only moment adopting them is free. `npm run typecheck` already runs
+`tsc --noEmit`, so no new CI job and no extra Actions minutes.
+
+ESLint here does not cover it: `@typescript-eslint/no-unused-vars` defaults
+`args` to `after-used`, so a parameter with a used one after it is never
+reported. The escape hatch is an underscore and it works for **parameters
+only** — a `const _x` is still an error. Checked against `tsc` rather than
+assumed, and the tsconfig comment says so.
+
+Tests: backend `2115 passed, 2 skipped, 2 xfailed` (unchanged); mobile `1670
+passed` across 154 files, `tsc` and `eslint` clean. `check-dead-exports`
+575/575.
+
+Known side effects: none. Removing an injected-and-unused `BackgroundTasks` is
+invisible to the API — it is a framework-injected type, never part of the
+request schema.
+
+Rollback: `git revert`.
+
+---
+
 ## 2026-09-08 — The metre rule was written three times, and the parity fixture guarded one
 
 Loop tick. Two findings, and one of them is me correcting a call I made

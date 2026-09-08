@@ -1,7 +1,22 @@
 {
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
-    "strict": true
+    "strict": true,
+    // A parameter or local nothing reads is either a caller passing something
+    // into a void or a body that forgot what it was given, and `tsc` already
+    // knows about both — it just was not asked. Turned on the day the tree was
+    // measured clean: 0 of either across 248 files, so this costs nothing to
+    // adopt and is the only moment adopting it is free.
+    //
+    // ESLint's `no-unused-vars` is configured here too and does not cover
+    // this: its `args` default is `after-used`, so a parameter with a used one
+    // after it is never reported.
+    //
+    // The escape hatch is an underscore, and it works for *parameters* only —
+    // `_note: string` on a provider that has no prompt is fine, and a
+    // `const _x` is still an error. Checked, not assumed.
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
   },
   // `dist*` rather than `dist`: the test harness builds a second bundle into
   // `dist-live/` (the same app with EXPO_PUBLIC_* set), and tsc happily walked

@@ -977,7 +977,7 @@ def _staff_carrying_the_music(part_el: ET.Element) -> str | None:
     return min(staff for staff, n in counts.items() if n == best)
 
 
-def _only(measure_el: ET.Element, notes: list[ET.Element]) -> ET.Element:
+def _only(notes: list[ET.Element]) -> ET.Element:
     """A stand-in measure holding just these notes.
 
     So `_voice_carrying_the_music` can be asked about one staff without
@@ -1742,7 +1742,7 @@ def score_json_from_musicxml(
         on_staff = [el for el in measure_el.iterfind("note") if on_kept_staff(el)]
         voices = [(el.findtext("voice") or "").strip() for el in on_staff]
         kept_voice = _voice_carrying_the_music(
-            _only(measure_el, on_staff) if kept_staff is not None else measure_el
+            _only(on_staff) if kept_staff is not None else measure_el
         )
         multi_voice = rewound and len({v for v in voices if v}) > 1
 
