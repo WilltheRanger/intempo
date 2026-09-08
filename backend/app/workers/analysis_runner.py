@@ -169,8 +169,10 @@ def run_analysis(analysis_id: str) -> None:
             float(row["target_bpm"]),
             double_bass=row.get("instrument") == Instrument.double_bass.value,
         )
+        # Stamped on the model, not bolted onto the dump, so `AnalysisResult`
+        # stays the whole truth about what an analysis result contains.
+        result.comparison_key = comparison_key(score.model_dump(mode="json"), row)
         result_payload = result.model_dump(mode="json")
-        result_payload["comparison_key"] = comparison_key(score.model_dump(mode="json"), row)
     except (AudioFetchError, AudioStorageError) as exc:
         log.warning("analysis %s: %s", analysis_id, exc)
         _finish_failed(client, analysis_id, "audio_unavailable")

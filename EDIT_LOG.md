@@ -1,5 +1,68 @@
 # InTempo Edit Log
 
+## 2026-09-08 — The backend suite had a failing test nobody could see, and it was a real contract gap
+
+Loop tick. The `mobile/` refactor axes are exhausted and the documentation vein
+is spent, so this pass went somewhere I had not looked at all: **`backend/`** —
+171 Python files, 21,510 lines, and every refactor this session had been in the
+app.
+
+**The suite was not green, and there was no way to know.** `2085 passed, 1
+failed`. The failure is standing, on `main`, unrelated to anything in this
+branch — and GitHub Actions has been dying at the billing level for the whole
+session, so the "Backend tests (pytest)" job has never actually run. A red
+suite, invisible.
+
+**`AnalysisResultJson reads ['comparison_key']; AnalysisResult has no such
+field.`** The app's TypeScript interface declares a field the backend's Pydantic
+model does not, and `test_client_body_fields.py` exists precisely to catch that.
+
+Neither side was simply wrong, which is why it survived:
+
+- the backend **does** write it — `analysis_runner.py` computed
+  `comparison_key(score, row)` and assigned it onto the *payload dict*, after
+  `model_dump()`;
+- the app **does** read it — `lib/insights/comparison.ts` decides which takes
+  may be compared by matching `comparisonKey`, and refuses any take whose key
+  does not start with `v1:`;
+- and `AnalysisResult`, the model that is supposed to say what an analysis
+  result contains, mentioned neither.
+
+**Nothing was broken in production, and I checked before assuming either way.**
+`result_json` is read back as `dict[str, Any]` in both the router and the model
+layer and is never revalidated through `AnalysisResult`, so the key survives to
+the client and take comparison works. This was a **latent trap**, not a live
+bug: a field that exists only between the dump and the database is one
+strip-and-revalidate away from vanishing, which is exactly the failure the
+test's own message describes — "coming back on a corrected score it is dropped,
+and the correction never persists".
+
+**Fixed by making the model the truth.** `comparison_key: str | None = None`
+joins `AnalysisResult`, following the shape `tolerance` already uses for a field
+that is null on older rows, and the runner now stamps it **on the model** before
+the dump instead of bolting it onto the dict afterwards. It cannot be computed
+inside `analyze()`, which is handed audio and a score and has never seen the
+analyses row — the key depends on the target tempo and the instrument, which
+live on it. So the runner is the right place to set it; the dict was the wrong
+place to keep it.
+
+**Mutation-tested**: renaming the new field makes
+`test_the_app_reads_no_nested_field_that_is_never_written[AnalysisResultJson]`
+fail again, so the guard still bites. Restored, and the file diff is the
+addition alone.
+
+Scope: one field on one model, two lines moved in the runner. No app code.
+
+Validation: **2,086 backend tests passing, 0 failing** — green for the first
+time this session. No mobile file changed, so that suite stands at 1,663.
+
+**Side effects:** `model_dump()` now emits `comparison_key` for every result
+rather than only where the runner attached it. The runner always attached it, so
+stored payloads are unchanged in shape; a result built anywhere else now carries
+an explicit `null` where the key was previously absent, which is what the app
+already handles (`typeof result.comparison_key === 'string' ? … : null`).
+**Rollback:** revert.
+
 ## 2026-09-08 — A rollback instruction that would fail, and an audit of what `CLAUDE.md` claims
 
 Loop tick, continuing the vein that paid last time: documentation that

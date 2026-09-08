@@ -156,6 +156,21 @@ class AnalysisResult(BaseModel):
     n_expected_onsets: int = 0
     n_missed_notes: int = 0
     n_extra_notes: int = 0
+    #: Which takes may be compared with which, stamped by the runner.
+    #:
+    #: **Not computed here**, because `analyze` is given audio and a score and
+    #: has never seen the analyses row — the key depends on the target tempo and
+    #: the instrument, which live on it. The runner sets it before the dump.
+    #:
+    #: It was set on the *payload dict* after the dump instead, so this model —
+    #: the thing that documents what an analysis result is — did not mention a
+    #: field the app reads on every take (`lib/insights/comparison.ts` decides
+    #: which takes are comparable by matching it). Nothing was lost in practice,
+    #: because `result_json` is read back as a plain dict and never revalidated
+    #: through this class. But `test_client_body_fields.py` had been failing on
+    #: exactly that gap, and a field that only exists between the dump and the
+    #: database is one strip-and-revalidate away from disappearing.
+    comparison_key: str | None = None
 
 
 _BAND_SEVERITY = {Band.on: 0, Band.slight: 1, Band.rush_drag: 2, Band.severe: 3}
