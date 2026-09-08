@@ -1,5 +1,84 @@
 # InTempo Edit Log
 
+## 2026-09-08 — The add-piece routing rule was written three times and checked nowhere; now written once and tested
+
+Loop tick. The first candidate it turned up was a false alarm, which is worth
+recording before the real one.
+
+**Rejected: the "duplicated" skeletons.** The 12-line-window scan had flagged
+`InsightsSkeleton.tsx:43` against `VerdictSkeleton.tsx:65`. Read in full, the
+match is closing JSX tags plus two identical one-property style keys
+(`section: { marginTop }`, `heading: { marginBottom }`). Extracting a shared
+object for that would add indirection and make each file harder to read alone.
+The scanner was matching *structure*, not logic. Refined it to require a window
+to carry calls, returns or comparisons and to reject punctuation-only lines,
+which took 43 windows down to 3 real cross-file duplications.
+
+**The real one: `handleSelectOption`, byte-identical in three screens.**
+`LibraryScreen`, `TodayScreen` and `InsightsScreen` each carried the same
+function — close the sheet, wait `motion.fast`, then send `scan` to the camera
+and everything else to the add form. Insights' copy even documented the
+duplication in a comment ("the same wait Today and Library use") rather than
+removing it.
+
+This is not a style complaint. `CLAUDE.md` §3: *screen rules live in modules,
+not components* — a rule inside a `.tsx` is a rule nothing checks. Which screen
+each way of adding a piece opens is such a rule, and it existed in triplicate
+with no test anywhere. A fifth option would have needed all three found.
+
+Split in two, along the line that matters:
+
+- `navigation/addPieceDestination.ts` — the **rule**, pure and tested. It
+  mirrors what the route types already say: `AddPiece` accepts
+  `Exclude<AddPieceOption, 'scan'>`, because a scan is a camera session and not
+  a form.
+- `navigation/useAddPieceOption.ts` — the **behaviour**: close, wait, navigate.
+  The wait stays `motion.fast` because that is the sheet's own exit duration,
+  so it is the same number rather than a guess that matches.
+
+**The exhaustiveness guard is the point of the test.** A `Record<AddPieceOption,
+true>` listing every option fails `tsc` the moment a fifth is added to the
+union, and then fails the test until it has a destination. Three hand-copied
+versions could each have missed a new option silently, and the only symptom
+would be a menu entry that does nothing.
+
+**ESLint proved the extraction, again.** `motion` and `AddPieceOption` went
+unused in all three screens — those imports existed solely for the code that
+moved.
+
+**Verified in a browser across both branches and all three screens**, because
+this is navigation and the unit suite cannot route:
+
+| Screen | Choice | Lands |
+|---|---|---|
+| Today | Photograph sheet music | `/scan` |
+| Today | Enter it by hand | `/add/manual` |
+| Today | Open a MusicXML file | `/add/notation` |
+| Library | Photograph sheet music | `/scan` |
+| Library | Choose photos | `/add/import` |
+| Library | Enter it by hand | `/add/manual` |
+| Insights *(empty build)* | Photograph sheet music | `/scan` |
+| Insights *(empty build)* | Enter it by hand | `/add/manual` |
+
+**Two probe failures that were the probe, not the code**, and both had to be
+run down rather than assumed. Today's control is "Add a new piece" and my
+selector asked for "Add a piece". Insights showed no add control at all — its
+sheet is reachable **only** from the empty state ("No practice recorded yet"),
+which the populated fixtures never render, so it needed `build:web:empty` and
+`dist-empty` to reach. Reporting either as a regression would have been wrong;
+skipping Insights because it was awkward would have left the third screen I
+changed unverified.
+
+Scope: 2 new modules + 1 new test file, 3 screens each losing a duplicated
+function and two imports.
+
+Validation: 1,663 mobile tests (153 files, 4 new), `tsc` 0, ESLint 0,
+`check-dead-exports.py` clean at 574, `audit-a11y.mjs` PASS on all 30 routes,
+`walk-app.mjs` PASS 51 of 51, no page errors in any of the eight flows.
+
+**Side effects:** none intended and none observed. **Rollback:** revert; the
+three screens return to their own copies.
+
 ## 2026-09-08 — The overlay mount-and-leave lifecycle, written twice by me, is now written once
 
 Asked to refactor specifically without breaking anything. This is the specific

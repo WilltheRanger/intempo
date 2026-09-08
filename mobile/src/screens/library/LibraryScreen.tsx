@@ -16,14 +16,14 @@ import {
 import { describeLoadError } from '../../data/api/describeError';
 import { useLibrary } from '../../data/hooks/usePieces';
 import type { Piece } from '../../data/types';
-import { motion, spacing } from '../../design';
+import { spacing } from '../../design';
 import { groupByRecency } from '../../lib/library';
 import type {
-  AddPieceOption,
   TabScreenNavigation,
 } from '../../navigation/types';
 import { AddPieceSheet } from '../../components/pieces/AddPieceSheet';
 import { PieceRow } from './PieceRow';
+import { useAddPieceOption } from '../../navigation/useAddPieceOption';
 
 /** Case- and accent-insensitive match across title and composer. */
 function matches(piece: Piece, query: string): boolean {
@@ -66,18 +66,9 @@ export function LibraryScreen() {
 
   const [addSheetVisible, setAddSheetVisible] = useState(false);
 
-  function handleSelectOption(option: AddPieceOption) {
-    setAddSheetVisible(false);
-    // Let the sheet finish dismissing before the push, so the two animations
-    // don't overlap.
-    setTimeout(() => {
-      if (option === 'scan') {
-        navigation.navigate('Scanner');
-        return;
-      }
-      navigation.navigate('AddPiece', { option });
-    }, motion.fast);
-  }
+  const handleSelectOption = useAddPieceOption(() =>
+    setAddSheetVisible(false),
+  );
 
   return (
     <ScreenContainer onRefresh={refresh}>

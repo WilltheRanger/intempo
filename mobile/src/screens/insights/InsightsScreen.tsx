@@ -18,7 +18,7 @@ import { useInsights } from '../../data/hooks/useInsights';
 import { useLibrary } from '../../data/hooks/usePieces';
 import { useRecentTakes } from '../../data/hooks/useLatestTake';
 import { describeLoadError } from '../../data/api/describeError';
-import { motion, spacing } from '../../design';
+import { spacing } from '../../design';
 import {
   formatLastPracticedShort,
   joinMetadata,
@@ -26,11 +26,12 @@ import {
 import { readTendency } from '../../lib/insights/tendency';
 import { compareLatest } from '../../lib/insights/comparison';
 import { formatVerdict } from '../../lib/tempo';
-import type { AddPieceOption, TabScreenNavigation } from '../../navigation/types';
+import type { TabScreenNavigation } from '../../navigation/types';
 import { TodayRow } from '../today/TodayRow';
 import { DeviationBar } from './DeviationBar';
 import { PieceInsightRow } from './PieceInsightRow';
 import { firstStep, focusReason, windowLabel } from './copy';
+import { useAddPieceOption } from '../../navigation/useAddPieceOption';
 
 /**
  * Practice history that explains the pattern and makes it useful.
@@ -77,18 +78,9 @@ export function InsightsScreen() {
     await Promise.all([insightsQuery.refetch(), recentTakes.refetch()]);
   }
 
-  function handleSelectOption(option: AddPieceOption) {
-    setAddSheetVisible(false);
-    // Let the sheet finish dismissing before the push, so the two animations
-    // don't overlap — the same wait Today and Library use.
-    setTimeout(() => {
-      if (option === 'scan') {
-        navigation.navigate('Scanner');
-        return;
-      }
-      navigation.navigate('AddPiece', { option });
-    }, motion.fast);
-  }
+  const handleSelectOption = useAddPieceOption(() =>
+    setAddSheetVisible(false),
+  );
 
   if (isPending) {
     return (

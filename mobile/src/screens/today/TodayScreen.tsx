@@ -38,7 +38,6 @@ import {
   CONTROL_PRESSED_SCALE,
   ICON_SIZE,
   ICON_STROKE_WIDTH,
-  motion,
   radii,
   spacing,
 } from '../../design';
@@ -50,10 +49,11 @@ import { getGreeting } from '../../lib/greeting';
 import { formatTempo, formatVerdict } from '../../lib/tempo';
 import { readTendency } from '../../lib/insights/tendency';
 import { suggestionsFor } from '../../lib/today';
-import type { AddPieceOption, TabScreenNavigation } from '../../navigation/types';
+import type { TabScreenNavigation } from '../../navigation/types';
 import { WarmupPanel } from './WarmupPanel';
 import { PracticeCard } from './PracticeCard';
 import { TodayRow } from './TodayRow';
+import { useAddPieceOption } from '../../navigation/useAddPieceOption';
 
 const AVATAR_SIZE = 52;
 const WIDE_HOME_BREAKPOINT = 900;
@@ -187,18 +187,9 @@ export function TodayScreen() {
 
   // The same three destinations the Library's button reaches, by the same
   // route — one definition of "add a piece", not two that can drift.
-  function handleSelectOption(option: AddPieceOption) {
-    setAddSheetVisible(false);
-    // Let the sheet finish dismissing before the push, so the two animations
-    // don't overlap.
-    setTimeout(() => {
-      if (option === 'scan') {
-        navigation.navigate('Scanner');
-        return;
-      }
-      navigation.navigate('AddPiece', { option });
-    }, motion.fast);
-  }
+  const handleSelectOption = useAddPieceOption(() =>
+    setAddSheetVisible(false),
+  );
 
   const takes = recentTakes.data ?? [];
   const take = takes[0] ?? null;
