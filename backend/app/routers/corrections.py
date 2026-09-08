@@ -25,7 +25,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.auth import current_user_id, current_user_id_provisioned
-from app.db import get_service_client
+from app.routers.deps import require_service_client
 
 router = APIRouter(prefix="/analyses", tags=["corrections"])
 
@@ -70,16 +70,6 @@ class CorrectionResponse(BaseModel):
     created_at: datetime
 
 
-def _service_client():
-    client = get_service_client()
-    if client is None:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Supabase service-role client is not configured",
-        )
-    return client
-
-
 def _assert_owns_analysis(analysis_id: UUID, user_id: UUID) -> None:
     """404 rather than 403 for someone else's analysis.
 
@@ -87,7 +77,7 @@ def _assert_owns_analysis(analysis_id: UUID, user_id: UUID) -> None:
     that doesn't exist, so probing can't confirm one is real.
     """
     response = (
-        _service_client()
+        require_service_client()
         .table("analyses")
         .select("id")
         .eq("id", str(analysis_id))
@@ -131,7 +121,9 @@ def create_corrections(
         for c in body.corrections
     ]
 
-    inserted = _service_client().table("verdict_corrections").insert(rows).execute()
+    inserted = (
+        require_service_client().table("verdict_corrections").insert(rows).execute()
+    )
     written = inserted.data or []
     if not written:
         raise HTTPException(
@@ -158,7 +150,7 @@ def list_corrections(
     _assert_owns_analysis(analysis_id, user_id)
 
     response = (
-        _service_client()
+        require_service_client()
         .table("verdict_corrections")
         .select("*")
         .eq("analysis_id", str(analysis_id))

@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.services import pending_uploads
 from app.auth import current_user_id, current_user_id_provisioned
+from app.routers.deps import require_service_client
 from app.services.audio_storage import (
     SIGNED_AUDIO_DOWNLOAD_TTL_SECONDS,
     AudioStorageError,
@@ -27,7 +28,6 @@ from app.services.audio_storage import (
     readable_audio_url,
 )
 from app.services.tier_limits import tier_of, usage_for
-from app.db import get_service_client
 from app.models.analysis import (
     MAX_TARGET_BPM,
     MIN_TARGET_BPM,
@@ -120,16 +120,6 @@ class RecordingPlaybackResponse(BaseModel):
 
     url: str
     expires_in: int
-
-
-def _service_client():
-    client = get_service_client()
-    if client is None:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Supabase service-role client is not configured",
-        )
-    return client
 
 
 def _object_keys_in(urls: list[str]) -> list[str]:
@@ -250,7 +240,7 @@ def create_analysis(
     background_tasks: BackgroundTasks,
     user_id: UUID = Depends(current_user_id_provisioned),
 ) -> CreateAnalysisResponse:
-    client = _service_client()
+    client = require_service_client()
     try:
         audio_reference = durable_audio_reference(body.audio_reference(), user_id)
     except InvalidAudioReference as exc:
@@ -374,7 +364,7 @@ def list_analyses(
     is an index scan.
     """
     query = (
-        _service_client()
+        require_service_client()
         .table("analyses")
         .select("*")
         .eq("user_id", str(user_id))
@@ -394,7 +384,7 @@ def get_analysis(
     user_id: UUID = Depends(current_user_id),
 ) -> AnalysisResponse:
     res = (
-        _service_client()
+        require_service_client()
         .table("analyses")
         .select("*")
         .eq("id", str(analysis_id))
@@ -425,7 +415,7 @@ def get_analysis_recording(
     The response itself must never be cached: the URL is a bearer credential,
     even though it is short-lived.
     """
-    client = _service_client()
+    client = require_service_client()
     rows = (
         client.table("analyses")
         .select("audio_url")

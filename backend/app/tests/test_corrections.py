@@ -16,8 +16,8 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi.testclient import TestClient
 
+from app import db as db_module
 from app.main import app
-from app.routers import corrections as corrections_module
 
 
 @pytest.fixture()
@@ -61,7 +61,7 @@ def _install_supabase(
     )
     table.insert.return_value.execute.return_value = MagicMock(data=inserted or [])
 
-    monkeypatch.setattr(corrections_module, "get_service_client", lambda: client)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: client)
     return client
 
 

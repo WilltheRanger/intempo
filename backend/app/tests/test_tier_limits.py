@@ -15,6 +15,7 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi.testclient import TestClient
 
+from app import db as db_module
 from app.main import app
 from app.routers import analyses as analyses_module
 from app.services.tier_limits import (
@@ -152,7 +153,7 @@ def test_free_user_can_submit_up_to_the_limit(
     user_id = uuid4()
     score_id = _seed(fake, user_id, analyses=FREE_MONTHLY_ANALYSES - 1,
                      created_at=datetime.now(tz=timezone.utc).isoformat())
-    monkeypatch.setattr(analyses_module, "get_service_client", lambda: fake)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: fake)
     monkeypatch.setattr(analyses_module, "start_analysis", lambda *_a, **_k: None)
 
     assert _submit(client, make_token, user_id, score_id).status_code == 202
@@ -165,7 +166,7 @@ def test_the_fourth_is_refused(
     user_id = uuid4()
     score_id = _seed(fake, user_id, analyses=FREE_MONTHLY_ANALYSES,
                      created_at=datetime.now(tz=timezone.utc).isoformat())
-    monkeypatch.setattr(analyses_module, "get_service_client", lambda: fake)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: fake)
     monkeypatch.setattr(analyses_module, "start_analysis", lambda *_a, **_k: None)
 
     res = _submit(client, make_token, user_id, score_id)
@@ -189,7 +190,7 @@ def test_a_refused_analysis_leaves_no_row(
     user_id = uuid4()
     score_id = _seed(fake, user_id, analyses=FREE_MONTHLY_ANALYSES,
                      created_at=datetime.now(tz=timezone.utc).isoformat())
-    monkeypatch.setattr(analyses_module, "get_service_client", lambda: fake)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: fake)
     monkeypatch.setattr(analyses_module, "start_analysis", lambda *_a, **_k: None)
 
     before = len(fake.table("analyses").rows)
@@ -204,7 +205,7 @@ def test_a_pro_user_is_never_refused(
     user_id = uuid4()
     score_id = _seed(fake, user_id, tier="pro", analyses=50,
                      created_at=datetime.now(tz=timezone.utc).isoformat())
-    monkeypatch.setattr(analyses_module, "get_service_client", lambda: fake)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: fake)
     monkeypatch.setattr(analyses_module, "start_analysis", lambda *_a, **_k: None)
 
     assert _submit(client, make_token, user_id, score_id).status_code == 202
@@ -217,7 +218,7 @@ def test_last_months_analyses_do_not_block_this_month(
     user_id = uuid4()
     old = (datetime.now(tz=timezone.utc) - timedelta(days=45)).isoformat()
     score_id = _seed(fake, user_id, analyses=10, created_at=old)
-    monkeypatch.setattr(analyses_module, "get_service_client", lambda: fake)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: fake)
     monkeypatch.setattr(analyses_module, "start_analysis", lambda *_a, **_k: None)
 
     assert _submit(client, make_token, user_id, score_id).status_code == 202

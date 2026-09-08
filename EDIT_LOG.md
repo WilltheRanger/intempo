@@ -1,5 +1,83 @@
 # InTempo Edit Log
 
+## 2026-09-08 — One service-role check for the HTTP layer, and the first test it has ever had
+
+Loop tick. Ran the cross-file duplication detector over `backend/app` for the
+first time — it had only ever been pointed at `mobile/src`. Four real
+duplications came back:
+
+| Where | Windows | What |
+|---|---|---|
+| `services/ocr/musicxml.py` ↔ `services/ocr/validate.py` | 4 | time-signature parsing (`upper, lower = time_signature.split("/")`) |
+| `services/ocr/gemini_provider.py` ↔ `claude_provider.py` | 2 | `OCRResponse` construction |
+| `auth.py` ↔ `routers/me.py` | 1 | JWT `sub` → `UUID` with a 401 |
+| `routers/analyses.py` ↔ `corrections.py` ↔ `scores.py` | 1 | **byte-identical `_service_client()`** |
+
+**Only the fourth was worth acting on**, and the other three are left alone
+deliberately. The provider one is interface symmetry — two providers building
+the same response type is the point of having a provider interface, and merging
+it would couple two vendors' quirks. The time-signature one sits inside OCR
+parsing, where the two callers disagree about what a malformed value means
+(`musicxml.py` raises, `validate.py` records a finding). The auth one is one
+window: a `try/except ValueError` around `UUID(...)`, and the cost of a shared
+helper exceeds the cost of the second copy.
+
+**What shipped: `app/routers/deps.py`, holding `require_service_client()`.**
+Three copies of a six-line check, one each in the three routers that touch
+another user's rows or storage. `analyses.py` called it at 4 sites,
+`corrections.py` at 3, `scores.py` at 13 — twenty call sites, three definitions
+that had to keep agreeing with one another.
+
+Deliberately **not** in `app/db.py`: it raises `HTTPException`, and `db.py` is
+imported by `analysis_runner` and `transcription_runner`, which run in the Modal
+container. There is no reason for a worker to pull FastAPI in behind a database
+helper.
+
+**It resolves the client through the `db` module, not a `from … import`
+binding** — `db.get_service_client()`. That is not style, it is the patch
+point: tests fake the service client by `monkeypatch.setattr` on a module
+attribute, and with a from-import the fake would have to be installed on
+`deps.py` — one more module a test has to know the name of. Pointing it at
+`app.db` means one `setattr` fakes the whole HTTP layer.
+
+**Two things went wrong doing it, and both were caught before the commit.**
+
+1. The script that removed the three helpers also removed
+   `from app.db import get_service_client` from `scores.py` — which still has a
+   *fourth* use of it, in the display-URL cache, and that one deliberately
+   degrades to the cached URLs rather than raising. So the import had to come
+   back; `scores.py` keeps both names, and `test_scores_router._install_supabase`
+   now patches both bindings with the same fake, with a comment saying why.
+2. **76 tests failed on the first full run** — every one of them a test that
+   patched `analyses_module`/`corrections_module`/`scores_module`'s
+   `get_service_client` and now got the *real* client, which tried to reach
+   Supabase and returned `httpx.ProxyError: 403 Forbidden` from the agent proxy.
+   Five test files, but only six patch lines: `_install_supabase` in
+   `test_scores_router.py` is the shared harness behind `test_attach_score_pages`,
+   `test_multi_page_api`, `test_durable_score_references` and `test_provisioning`.
+   All repointed at `app.db`.
+
+**The check had never been tested — in any of its three copies.** That is the
+part of this tick worth keeping. A deployment with `SUPABASE_SERVICE_ROLE_KEY`
+unset would have gone through twenty call sites into a check nothing verified,
+and deduplicating an unverified check just moves it. `app/tests/test_router_deps.py`
+is new: the 500 and its detail, the configured client returned unchanged, and a
+route-level proof that it sits in front of a handler rather than in a module
+nothing calls. **Mutation-tested** — replacing the body with
+`return db.get_service_client()` fails 2 of the 3; `deps.py` restored
+byte-identical afterwards and re-confirmed green.
+
+Tests: `2089 passed, 2 skipped, 2 xfailed` (was 2,086 — the three new ones).
+`check-dead-exports` 574/574 referenced, `check-brand-assets` OK.
+
+Known side effects: none at runtime. The behaviour is unchanged — same status
+code, same detail string, same twenty call sites.
+
+Rollback: `git revert` the commit. `deps.py` and `test_router_deps.py` are new
+files and the rest is a mechanical repoint, so nothing else depends on it.
+
+---
+
 ## 2026-09-08 — The backend has never been linted, and it turns out to need it barely at all
 
 Loop tick. `backend/` has **no Python linter** — no `ruff`, `flake8` or

@@ -9,6 +9,7 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi.testclient import TestClient
 
+from app import db as db_module
 from app.main import app
 from app.routers import analyses as analyses_module
 from app.tests.audio_helpers import evenly_spaced, synth_click_track
@@ -63,7 +64,7 @@ def _wav_bytes(bpm: float = 120.0, n: int = 8) -> bytes:
 def _install(monkeypatch: pytest.MonkeyPatch, fake: FakeSupabase) -> None:
     # Router and worker must share the SAME fake so the enqueue→run→poll
     # flow is consistent.
-    monkeypatch.setattr(analyses_module, "get_service_client", lambda: fake)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: fake)
     monkeypatch.setattr(analysis_runner, "get_service_client", lambda: fake)
     # Storage signing itself is covered in test_audio_storage. This fake models
     # database state only, so worker-flow tests keep their supplied readable URL.

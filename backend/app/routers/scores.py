@@ -31,6 +31,7 @@ from app.services.ocr.validate import MeasureFinding, validate_measures
 from app.auth import current_user_id, current_user_id_provisioned
 from app.config import settings
 from app.db import get_service_client
+from app.routers.deps import require_service_client
 from app.routers.upload import SCORE_BUCKET
 from app.services import pending_uploads
 from app.services.audio_storage import InvalidAudioReference, owned_audio_key
@@ -587,14 +588,6 @@ def _with_image_urls(
     return out
 
 
-def _service_client():
-    client = get_service_client()
-    if client is None:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Supabase service-role client is not configured",
-        )
-    return client
 
 
 def _concerns_for(score_json: Any) -> list[MeasureConcern]:
@@ -691,7 +684,7 @@ def _consents_to_training(user_id: UUID) -> bool:
     """
     try:
         rows = (
-            _service_client()
+            require_service_client()
             .table("users")
             .select("training_consent_at")
             .eq("id", str(user_id))
@@ -742,7 +735,7 @@ def _record_corrections(
             # a multi-page one. See the column comment in migration 013.
             page_image_key=keys[0] if keys else None,
         )
-        _service_client().table("training_corrections").insert(rows).execute()
+        require_service_client().table("training_corrections").insert(rows).execute()
         log.info(
             "kept %d correction(s) for score %s", len(rows), score_id
         )
@@ -761,7 +754,7 @@ def _score_before_edit(score_id: UUID, user_id: UUID) -> tuple[dict[str, Any], S
     """
     def run(columns: str):
         return (
-            _service_client()
+            require_service_client()
             .table("scores")
             .select(columns)
             .eq("id", str(score_id))
@@ -811,7 +804,7 @@ def _insert_score(payload: dict[str, Any]) -> list[dict[str, Any]]:
     week, and it is recoverable — `POST /:id/transcribe` re-reads the row once
     the column arrives.
     """
-    client = _service_client()
+    client = require_service_client()
     try:
         return client.table("scores").insert(payload).execute().data or []
     except Exception:  # noqa: BLE001 — retry once without the newest column
@@ -1007,7 +1000,7 @@ def attach_score_pages(
         for reference in body.pages()
     ]
 
-    client = _service_client()
+    client = require_service_client()
     existing = (
         client.table("scores")
         .select("*")
@@ -1151,7 +1144,7 @@ def import_score(
         )
 
     inserted = (
-        _service_client()
+        require_service_client()
         .table("scores")
         .insert(
             {
@@ -1183,7 +1176,7 @@ def list_scores(
     offset: int = Query(default=0, ge=0),
 ) -> list[ScoreResponse]:
     response = (
-        _service_client()
+        require_service_client()
         .table("scores")
         .select("*")
         .eq("user_id", str(user_id))
@@ -1200,7 +1193,7 @@ def get_score(
     user_id: UUID = Depends(current_user_id),
 ) -> ScoreResponse:
     response = (
-        _service_client()
+        require_service_client()
         .table("scores")
         .select("*")
         .eq("id", str(score_id))
@@ -1277,7 +1270,7 @@ def update_score(
         # sent a whole `score_json` — if they have, theirs already carries a
         # clef and two sources for one field is how they disagree.
         current = (
-            _service_client()
+            require_service_client()
             .table("scores")
             .select("score_json")
             .eq("id", str(score_id))
@@ -1299,7 +1292,7 @@ def update_score(
         )
 
     response = (
-        _service_client()
+        require_service_client()
         .table("scores")
         .update(update)
         .eq("id", str(score_id))
@@ -1352,7 +1345,7 @@ def accept_transcription(
     Idempotent. Accepting twice is a double tap or a retried request, not an
     error, and the second call finds the object already gone.
     """
-    client = _service_client()
+    client = require_service_client()
     rows = (
         client.table("scores")
         .select("*")
@@ -1563,7 +1556,7 @@ def retranscribe(
     looking at a transcription they can see is wrong should not have to fail
     first to ask for another go.
     """
-    client = _service_client()
+    client = require_service_client()
     rows = (
         client.table("scores")
         .select("*")
@@ -1643,7 +1636,7 @@ def delete_score(
     already destroyed. The sequence is idempotent at every dependent step:
     assignments, analyses, then the score.
     """
-    client = _service_client()
+    client = require_service_client()
 
     # Inventory everything while its owner row still exists. The ownership
     # check is the boundary for all later score-id-only deletes, including

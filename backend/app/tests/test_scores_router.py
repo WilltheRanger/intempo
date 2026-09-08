@@ -16,6 +16,7 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi.testclient import TestClient
 
+from app import db as db_module
 from app.main import app
 from app.routers import scores as scores_module
 
@@ -118,6 +119,12 @@ def _install_supabase(monkeypatch: pytest.MonkeyPatch, *, returning_row: dict | 
         delete_chain.execute.return_value = MagicMock(
             data=[returning_row] if returning_row else []
         )
+    # Two bindings, one fake. Routes reach the service client through
+    # `require_service_client`, which resolves it on the `db` module; the
+    # display-URL cache in `scores.py` keeps its own import because it
+    # degrades to the cached URLs instead of raising when there is no
+    # client, which is not what `require_service_client` does.
+    monkeypatch.setattr(db_module, "get_service_client", lambda: client)
     monkeypatch.setattr(scores_module, "get_service_client", lambda: client)
     return client
 
@@ -739,6 +746,7 @@ def test_delete_with_history_removes_dependents_then_owned_media(
         scores_module.AUDIO_BUCKET: audio_bucket,
     }
     sb.storage.from_.side_effect = lambda name: buckets[name]
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
     monkeypatch.setattr(scores_module, "get_service_client", lambda: sb)
 
     res = client.delete(
@@ -793,6 +801,7 @@ def test_delete_never_uses_a_foreign_audio_reference_as_storage_authority(
     )
     audio_bucket = MagicMock()
     sb.storage.from_.return_value = audio_bucket
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
     monkeypatch.setattr(scores_module, "get_service_client", lambda: sb)
 
     res = client.delete(
