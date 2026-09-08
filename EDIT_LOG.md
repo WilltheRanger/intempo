@@ -1,5 +1,70 @@
 # InTempo Edit Log
 
+## 2026-09-08 — The one duplication in the audio pipeline had already drifted
+
+Loop tick. The window scan's last unexamined backend finding was
+`services/analysis.py:389` ↔ `services/diagnostics.py:137` — five lines of the
+detection preamble, copied. I had noted it two ticks ago as "riskier, touches
+the audio pipeline" and moved on. Reading it was the whole tick.
+
+**The copy had already drifted, by one keyword, and the drift is a real
+defect.**
+
+`analyze()` calls `closest_expected_gap(expected, optional=grace_onsets)`.
+`analyze_with_diagnostics` called `closest_expected_gap(expected)`. That
+argument is what keeps an acciaccatura from sizing the onset detector's window
+for the whole take, and `closest_expected_gap`'s docstring records what its
+absence costs, measured: *"14 onsets detected for 8 clicks, three of them
+called extra, quality 0.665 and a low-confidence caveat on a take that was
+perfect."*
+
+So the **tuning dashboard** — the tool whose entire purpose is choosing audio
+thresholds — has been showing that failure to whoever tunes with it. Measured
+here on eight quarters on the grid with one ornament printed:
+
+| | `min_gap_s` | detected |
+|---|---|---|
+| `analyze()` | 1.00 s | 8 for 8 clicks |
+| dashboard | 0.15 s | **16** for 8 clicks |
+
+**Two things made it invisible.** `diagnostics.py`'s module docstring says *"It
+is deliberately not a second implementation. Everything here calls the same
+functions `analyze()` calls … so a number on the dashboard is the number the
+pipeline used"* — a claim, in prose, that the code was one argument short of
+keeping. And `test_diagnostics.py`, whose own docstring names exactly this
+property (*"If these two ever drift apart, tuning is being done against a model
+of the pipeline rather than the pipeline"*), tests it with a score that has no
+ornaments — where the two arguments produce the same value.
+
+**The fix is the extraction, not a patched argument.** `analysis.
+prepare_for_alignment` now holds decode, high-pass, build-timeline, the grace
+mask and detection, returning a `Heard`; both callers use it. Patching the
+keyword would have left two implementations that have to be read against each
+other to stay in step, which is what produced this.
+
+`test_diagnostics.py` gains the ornamented case. Verified the way it has to be:
+the shared function cannot show the bug (mutating it moves both callers
+equally), so I reproduced the *old* diagnostics call in place — the new test
+fails, the existing eight-quarters one passes — then restored byte-identically.
+
+Also removed two imports that went dead with the move: `audio as audio_svc`,
+`build_timeline` and `closest_expected_gap` from `diagnostics.py`.
+
+Recorded in `TUNING_LOG.md` as well, because it is a statement about readings
+taken from the dashboard rather than about code: no threshold moved, nothing
+already logged needs revising, and any onset count read off an ornamented clip
+should be taken again.
+
+Tests: `2115 passed, 2 skipped, 2 xfailed` (was 2,114 — one new).
+
+Known side effects: `analyze()` is byte-for-byte the same steps in the same
+order, now behind a call. `analyze_with_diagnostics` changes behaviour on
+scores with grace notes, which is the point.
+
+Rollback: `git revert`.
+
+---
+
 ## 2026-09-08 — Five more copies of the same check, and the three ways Supabase spells one key
 
 Loop tick. Yesterday's `require_service_client` extraction caught **three of

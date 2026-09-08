@@ -21,15 +21,13 @@ from pathlib import Path
 
 import numpy as np
 
-from app.services import audio as audio_svc
 from app.services.alignment import (
     align_dtw,
     apply_fuzzy_match,
-    build_timeline,
     is_alignment_broken,
     to_timeline_base,
-    closest_expected_gap,
 )
+from app.services.analysis import prepare_for_alignment
 from app.services.audio_config import AudioConfig, load_audio_config
 from app.services.classification import Delta, compute_deltas, generate_verdict, rolling_trend
 from app.services.score_schema import ScoreJson
@@ -131,27 +129,18 @@ def analyze_with_diagnostics(
     away.
     """
     cfg = config or load_audio_config()
-
-    if isinstance(audio, tuple):
-        y, sr = audio
-    else:
-        y, sr = audio_svc.load_audio(audio, sr=cfg.onset.sr)
-
-    if double_bass:
-        y = audio_svc.high_pass(y, sr, cfg.onset.double_bass_highpass_hz)
-
-    # Same order as `analyze()`: the score is read first so the detector knows
-    # how close together the notes it is looking for are.
-    timeline = build_timeline(score, target_bpm)
-    expected = timeline.onsets
-
-    onsets = audio_svc.detect_onsets(
-        audio_svc.pre_emphasis(y, config=cfg),
-        sr,
-        double_bass=double_bass,
-        config=cfg,
-        min_gap_s=closest_expected_gap(expected),
+    # `analyze()`'s own preamble, called rather than copied. It used to be
+    # copied, and the copy passed `closest_expected_gap(expected)` without the
+    # `optional=` the real one passes — so on any page with an ornament the
+    # dashboard sized the detector's window off the acciaccatura and showed
+    # onsets the pipeline would never have produced.
+    heard = prepare_for_alignment(
+        audio, score, target_bpm, double_bass=double_bass, config=cfg
     )
+    y, sr = heard.y, heard.sr
+    timeline = heard.timeline
+    expected = heard.expected
+    onsets = heard.onsets
 
     # The envelope is of the signal as loaded, not as pre-emphasised: the plot
     # should look like the recording, while the onset marks show what the
@@ -181,8 +170,9 @@ def analyze_with_diagnostics(
     onsets = to_timeline_base(onsets)
 
     # The same two masks `analyze()` builds, so a diagnostic run and a real one
-    # do not disagree about a page with ornaments on it.
-    optional = np.array([n.is_grace_note for n in timeline.notes], dtype=bool)
+    # do not disagree about a page with ornaments on it. `optional` now comes
+    # back from the shared step, which is also what sized the detector.
+    optional = heard.grace
     steady = np.array(
         [
             not n.under_tempo_change and not n.is_grace_note and not n.after_grace_note

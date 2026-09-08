@@ -13,6 +13,7 @@ Flow (spec §4 pseudocode):
 from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
@@ -25,6 +26,7 @@ from app.services.alignment import (
     AlignmentResult,
     apply_fuzzy_match,
     build_timeline,
+    ExpectedTimeline,
     is_alignment_broken,
     closest_expected_gap,
 )
@@ -364,6 +366,76 @@ def _why_nothing_to_compare(expected: np.ndarray) -> str:
     )
 
 
+@dataclass(frozen=True)
+class Heard:
+    """What the detector made of a recording, before anything is aligned."""
+
+    #: The waveform as loaded and filtered — what the dashboard plots.
+    y: np.ndarray
+    sr: int
+    timeline: ExpectedTimeline
+    #: Where the score says the onsets are, on the timeline's clock.
+    expected: np.ndarray
+    #: Which of `expected` are ornaments, and so not a mistake to miss.
+    grace: np.ndarray
+    #: What the detector fired on, on the recording's clock.
+    onsets: np.ndarray
+
+
+def prepare_for_alignment(
+    audio: Path | str | tuple[np.ndarray, int],
+    score: ScoreJson,
+    target_bpm: float,
+    *,
+    double_bass: bool,
+    config: AudioConfig,
+) -> Heard:
+    """Decode, filter, read the score, and detect — the steps before aligning.
+
+    **Shared with `diagnostics.analyze_with_diagnostics`, which had copied
+    them.** That module's docstring promises "everything here calls the same
+    functions `analyze()` calls … so a number on the dashboard is the number
+    the pipeline used", and it was one argument short of true: its
+    `closest_expected_gap(expected)` omitted `optional=`, so on any page with
+    an ornament on it the dashboard sized the detector's window off the
+    acciaccatura. `closest_expected_gap` records what that costs — 14 onsets
+    detected for 8 clicks, quality 0.665 on a perfect take — which is the
+    failure the dashboard exists to tune away, happening to the dashboard.
+
+    Two implementations of one order of operations cannot be kept in step by
+    reading them, so there is one.
+    """
+    if isinstance(audio, tuple):
+        y, sr = audio
+    else:
+        y, sr = audio_svc.load_audio(audio, sr=config.onset.sr)
+    if double_bass:
+        y = audio_svc.high_pass(y, sr, config.onset.double_bass_highpass_hz)
+
+    # The score is read *before* the audio, so the detector can be told how
+    # close together the notes it is looking for actually are. Nothing about
+    # this depends on the recording, and it is what stops a fixed window from
+    # making fast passages undetectable.
+    timeline = build_timeline(score, target_bpm)
+    expected = timeline.onsets
+    # Which expected onsets it is not a mistake to miss: the grace notes, whose
+    # written time is `ORNAMENT_SHARE` splitting the difference between two
+    # readings the page did not choose between. Built here because the detector
+    # is sized from it too — see `closest_expected_gap`.
+    grace = np.array([n.is_grace_note for n in timeline.notes], dtype=bool)
+
+    onsets = audio_svc.detect_onsets(
+        audio_svc.pre_emphasis(y, config=config),
+        sr,
+        double_bass=double_bass,
+        config=config,
+        min_gap_s=closest_expected_gap(expected, optional=grace),
+    )
+    return Heard(
+        y=y, sr=sr, timeline=timeline, expected=expected, grace=grace, onsets=onsets
+    )
+
+
 def analyze(
     audio: str | Path | tuple[np.ndarray, int],
     score: ScoreJson,
@@ -383,33 +455,13 @@ def analyze(
     the right user-facing state.
     """
     cfg = config or load_audio_config()
-
-    if isinstance(audio, tuple):
-        y, sr = audio
-    else:
-        y, sr = audio_svc.load_audio(audio, sr=cfg.onset.sr)
-    if double_bass:
-        y = audio_svc.high_pass(y, sr, cfg.onset.double_bass_highpass_hz)
-
-    # The score is read *before* the audio, so the detector can be told how
-    # close together the notes it is looking for actually are. Nothing about
-    # this depends on the recording, and it is what stops a fixed window from
-    # making fast passages undetectable.
-    timeline = build_timeline(score, target_bpm)
-    expected = timeline.onsets
-    # Which expected onsets it is not a mistake to miss: the grace notes, whose
-    # written time is `ORNAMENT_SHARE` splitting the difference between two
-    # readings the page did not choose between. Built here because the detector
-    # is sized from it too — see `closest_expected_gap`.
-    grace_onsets = np.array([n.is_grace_note for n in timeline.notes], dtype=bool)
-
-    onsets = audio_svc.detect_onsets(
-        audio_svc.pre_emphasis(y, config=cfg),
-        sr,
-        double_bass=double_bass,
-        config=cfg,
-        min_gap_s=closest_expected_gap(expected, optional=grace_onsets),
+    heard = prepare_for_alignment(
+        audio, score, target_bpm, double_bass=double_bass, config=cfg
     )
+    timeline = heard.timeline
+    expected = heard.expected
+    grace_onsets = heard.grace
+    onsets = heard.onsets
 
     if onsets.size == 0 or expected.size == 0:
         return AnalysisResult(

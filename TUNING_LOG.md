@@ -6,6 +6,45 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-09-08 — The tuning dashboard was detecting twice the onsets the pipeline does
+
+**No value changed.** `analyze()` is untouched; every threshold in
+`config.toml` is what it was. What changed is that the dashboard now reports
+the pipeline's numbers on a page with an ornament on it, which it did not.
+
+`diagnostics.py` had copied `analyze()`'s preamble — decode, high-pass, read
+the score, detect — and the copy called
+`closest_expected_gap(expected)` where the original calls
+`closest_expected_gap(expected, optional=grace_onsets)`. One keyword.
+
+With no grace notes on the page the two arguments are the same value, which is
+why nothing caught it: `test_diagnostics_matches_analyze` uses eight plain
+quarters and agrees either way.
+
+Measured, one acciaccatura on a bar of eight quarters played exactly on the
+grid:
+
+| | detector `min_gap_s` | onsets detected |
+|---|---|---|
+| `analyze()` | 1.00 s | **8** for 8 clicks |
+| dashboard, as it was | 0.15 s | **16** for 8 clicks |
+
+That is the failure `closest_expected_gap`'s own docstring records — the window
+shrinking everywhere to chase an acciaccatura, "14 onsets detected for 8
+clicks" — happening to the tool that exists to tune it away.
+
+**What this means for readings already taken.** Nothing in `TUNING_LOG.md`
+records a value chosen off an ornamented clip, and no threshold has been moved
+yet, so there is nothing here to revise. But any onset count, envelope or
+matched-pair reading taken from the dashboard on a clip whose score carries a
+grace note was not what the pipeline would have produced, and should be taken
+again.
+
+**Fix.** The preamble is now one function, `analysis.prepare_for_alignment`,
+which both call — two implementations of one order of operations cannot be kept
+in step by reading them. `test_diagnostics.py` gains the ornamented case; it
+fails against the old call and passes against the shared one.
+
 ## 2026-09-04 — The blast radius of changing a band, before anyone changes one
 
 **No value changed.** Read this before the first real tuning pass.
