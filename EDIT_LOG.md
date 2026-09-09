@@ -1,5 +1,74 @@
 # InTempo Edit Log
 
+## 2026-09-09 — CI has not run for days, and nothing said so
+
+Loop tick four, and the finding is not a refactor.
+
+**Every job in `.github/workflows/ci.yml` is failing two to three seconds after
+it starts.** Run 773 — this morning's push — began at 08:12:13 and was over at
+08:12:18. All six jobs the same: created, started and completed inside three
+seconds each. Downloading any job's log returns **HTTP 404**, because there is
+no log: nothing ran. That is what a run blocked before a runner picks it up
+looks like, and on a private repository the reason is the Actions allowance.
+
+Runs 769 through 773 span 2026-09-08 06:37 to 2026-09-09 08:12 — the whole of
+this session's work. **Six gates the repository believes it has, and it has
+none.** Every green I have reported in that time came from running the commands
+here by hand, which I have said each time; what I had not checked was whether
+anything *else* was checking.
+
+This is the owner's to fix — an allowance, not a config error — but two things
+follow that are mine.
+
+**One: the checks need somewhere to run that is not a hosted runner.**
+`tools/preflight.py` is the list in one place:
+
+```
+tools/preflight.py          # 7 gates, ~6 min
+tools/preflight.py --full   # and the build, the walk and the audits
+```
+
+Running the commands by hand is also how you forget one, and there are twenty
+of them across six jobs. Measured just now: **7/7 in 383s**, cheapest first so
+a broken lint answers in a second rather than after the six-minute suite.
+
+Mutation-checked, because a check that cannot fail is worse than no check — a
+lesson this session has already paid for once with a regex that matched the
+record screen. A planted unused import fails `backend lint` and prints the
+ruff output; a planted type error fails `mobile typecheck` and prints the TS
+error. Both reverted.
+
+**The `.env` rule is a code path now, not a memory.** `build:web` bakes
+`EXPO_PUBLIC_*` into the bundle, so a fixtures build needs `mobile/.env` moved
+aside — and moved back, which is the half that gets forgotten. `EDIT_LOG`
+records it as a rule and I have performed it by hand a dozen times this week.
+`--full` does it in a context manager, restores in a `finally`, and compares
+the restored file byte-for-byte with `filecmp`; a mismatch exits 2 and says
+which backup to restore from.
+
+**Two: stop spending the allowance on history.** `frontend-build` ran
+`vite build` over `frontend/`, which `CLAUDE.md` calls "history, not a spec"
+and which this very file's mobile-job comment already describes as "the
+*legacy* `frontend/` tree that nobody deploys". A sixth runner, an `npm ci` and
+a full build on every push, to prove that something nothing ships still
+compiles. Removed — six jobs to five.
+
+**The tree itself stays.** `docs/subsystems.md` documents its conventions and
+points at it; deleting it would cost that reference for a saving already taken
+by not building it.
+
+Verified: `preflight.py` 7/7; the workflow still parses as YAML and now
+declares `log-entry`, `backend-test`, `mobile-check`, `app-walk`, `migrations`.
+No application code changed, so the walk and audit results from earlier today
+stand.
+
+Known side effects: nothing that ships. CI checks one thing less, and that
+thing was a tree nobody deploys.
+
+Rollback: `git revert`.
+
+---
+
 ## 2026-09-09 — The dead-export check counted a test as a caller
 
 Loop tick three. The tick found a hole in a guard rail, and corrected two

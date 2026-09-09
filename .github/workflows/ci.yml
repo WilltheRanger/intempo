@@ -301,25 +301,16 @@ jobs:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
         run: python3 tools/check-migrations.py
 
-  frontend-build:
-    name: Frontend build (vite)
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    defaults:
-      run:
-        working-directory: frontend
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build
-        run: npm run build
+# **There is no `frontend-build` job any more.** It ran `vite build` over
+# `frontend/`, which `CLAUDE.md` calls "history, not a spec" and which the
+# comment above the mobile job already describes as "the *legacy* `frontend/`
+# tree that nobody deploys". A sixth runner, a `npm ci` and a full build on
+# every push, to prove that something nothing ships still compiles.
+#
+# The tree is **kept**: `docs/subsystems.md` documents its conventions and
+# points at it, and deleting it would cost that reference for a saving already
+# taken by not building it.
+#
+# Removed on 2026-09-09, the day every job in this file was found failing two
+# seconds in with no logs — a blocked run, not a broken one. Whatever the
+# allowance is when it comes back, it should not be spent here first.
