@@ -206,6 +206,87 @@ await waitFor('back out of the bar editor', async () => (await path()).endsWith(
 if ((await path()).endsWith('/score')) pass('deep-linked bar editor → back to the score');
 else fail(`deep-linked bar editor → back went to ${await path()}`);
 
+console.log('\n## Finding a piece in the library');
+
+// **The one control on the Library tab, and the walk never touched it.** Its
+// rule shipped with three defects and nothing end-to-end could see any of
+// them: `bach sonata` found nothing, because the query was matched whole
+// against title *or* composer; a movement was not searched at all, though the
+// row shows it; and the accent-stripping therefore never reached the field
+// with the most accents in it. Unit tests hold the rule; these hold the
+// screen — the field, the filter and the count, through a real renderer.
+//
+// **Read off the count, not off the page's text**, and that is the whole
+// reason this works. The first version of these checks scraped every leaf of
+// text for the title it expected, and **passed with the broken rule restored**:
+// React Navigation keeps the other tabs mounted, so Today's take row still
+// holds "Sonata No. 1 in G minor" in the DOM while the Library beside it shows
+// "0 pieces found". Playwright's `isVisible()` does not separate them either —
+// an inactive screen here is not `display: none`. Measured, on a rebuilt
+// bundle with the old rule: the title was in the document twice and reported
+// visible, while the Library had filtered to nothing.
+//
+// `countLabel` is rendered by this screen alone and is a direct function of
+// what the filter returned, so it cannot be satisfied by a screen that is not
+// being looked at.
+
+/** Type a query and read the Library's own count of what it found. */
+const searchCount = async (query) => {
+  const field = page.getByLabel('Search your library').first();
+  await field.click({ timeout: 10000 });
+  await field.fill(query);
+  // Filtered synchronously on each keystroke; one settled frame is enough, and
+  // there is no request to wait on.
+  await page.waitForTimeout(250);
+  const line = (await leaves()).find((text) => /^\d+ pieces? found$/.test(text));
+  return line === undefined ? null : Number.parseInt(line, 10);
+};
+
+const finds = async (what, query, atLeast = 1) => {
+  const found = await searchCount(query);
+  if (found === null) fail(`search "${query}" → no count on the screen at all`);
+  else if (found >= atLeast) pass(`search "${query}" → ${found} (${what})`);
+  else fail(`search "${query}" → ${found}, expected at least ${atLeast} (${what})`);
+};
+
+await tab('Library');
+
+// Two words, one from the title and one from the composer. This is the query
+// that returned an empty library.
+await finds('the Bach sonata', 'bach sonata');
+// And in the other order, because a person does not track which half of a name
+// a word came from.
+await finds('the same piece either way round', 'sonata bach');
+// A movement, which the row displays and the search ignored.
+await finds('a piece by its movement', 'adagio');
+// Accents nobody types, on a field the old rule never reached.
+await finds('Études without the accent', 'etudes');
+await finds('Méditation without the accent', 'meditation');
+// Narrowing has to narrow: a second word that matches nothing must not bring
+// back the results of the first.
+const bach = await searchCount('bach');
+const bachAdagio = await searchCount('bach adagio');
+if (bach !== null && bachAdagio !== null && bachAdagio < bach && bachAdagio >= 1)
+  pass(`adding a word narrows: ${bach} → ${bachAdagio}`);
+else fail(`adding a word did not narrow: ${bach} → ${bachAdagio}`);
+
+// A search that genuinely matches nothing says so, rather than showing a
+// library that looks empty for no stated reason.
+const none = await searchCount('zzzznotapiece');
+const nothingText = await leaves();
+if (none === 0 && nothingText.some((line) => /Nothing in your library matches/.test(line)))
+  pass('a search with no matches explains itself');
+else fail(`a search with no matches: count ${none}, no explanation on screen`);
+
+// And the way back is a control, not a re-typed field.
+await page.getByRole('button', { name: 'Clear search' }).first().click({ timeout: 10000 });
+await page.waitForTimeout(250);
+const cleared = await leaves();
+// Not "found": an unsearched library counts itself without the word.
+if (cleared.some((line) => /^\d+ pieces$/.test(line)))
+  pass('Clear search restores the whole library');
+else fail('Clear search left the library filtered');
+
 console.log('\n## Agreement between screens');
 
 // The window headline. Today's "Practice snapshot" and the Insights title are

@@ -1,5 +1,61 @@
 # InTempo Edit Log
 
+## 2026-09-09 — A test that passed with the bug restored
+
+Loop tick twenty-six. Two audits came back clean first — the MusicXML import
+path already bounds its input (`max_length=8_000_000`, `MAX_PAGES = 12`), and
+the app's dependency list has no incidental weight in it. Then I checked what
+`walk-app.mjs` covers, since it is the only end-to-end check this project has.
+
+**It never touches the Library search.** That is the one control on the Library
+tab, it filters the whole repertoire, and its rule shipped with three defects
+that tick sixteen found and fixed — with unit tests, and nothing end to end.
+The fixture library is well suited to it: Bach, Kreutzer's *42 Études*,
+Massenet's *Méditation*, and movements like *I. Adagio*.
+
+So I wrote seven checks. **They passed with the broken rule restored.**
+
+**What went wrong is worth more than the leg.** The checks scraped every leaf
+of text on the page for the title they expected. **React Navigation keeps the
+other tabs mounted**, and the walk's earlier leg had already opened a take for
+*Sonata No. 1 in G minor* on Today — so that string sits in the document while
+the Library beside it shows **"0 pieces found"**.
+
+Measured rather than guessed, on a rebuilt bundle carrying the old rule:
+
+| | |
+|---|---|
+| Library's own count | **0 pieces found** |
+| `"Sonata No. 1 in G minor"` in the DOM | **2 occurrences** |
+| Playwright `isVisible()` on the first | **true** |
+
+So visibility does not separate them either: an inactive screen here is not
+`display: none`. **"The text is in the DOM" is not "the text is on screen"** in
+an app that keeps its screens mounted, and every assertion in a walk over such
+an app has to answer that.
+
+**Rewritten to read the count**, which the Library screen alone renders and
+which is a direct function of what the filter returned — so it cannot be
+satisfied by a screen nobody is looking at. Then re-run against the broken
+rule: **4 of 8 checks fail**, naming the three defects. Restored, rebuilt,
+green again.
+
+The eighth check is new and came out of the rewrite: **adding a word must
+narrow.** `bach` finds 2, `bach adagio` finds 1. A rule that ORed its terms
+would pass every other check here and fail that one.
+
+**I found this only because I mutation-checked the test.** It is the second
+time this session — the first was a comparison blind to four fields because the
+seeded row left them null. A test written and never seen to fail is a test
+nobody has any reason to believe.
+
+**Tests run:** `preflight.py --full` with a DSN: **16/16 in 613s**. The walk
+itself went from 55 checks to **63**. `mobile/.env` restored, no stray files.
+
+**Side effects:** none. `walk-app.mjs` is a check; no application code changed.
+
+**Rollback:** revert the commit.
+
 ## 2026-09-09 — A ratchet on the bundle, and two things measured and left alone
 
 Loop tick twenty-five. Yesterday's icon fix halved the bundle and **nothing
