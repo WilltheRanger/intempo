@@ -144,6 +144,22 @@ def _human_stage(stage: str) -> str:
 #: only blamed when nothing more specific is known.
 _FAILURE_REASONS: tuple[tuple[str, str], ...] = (
     (
+        # An imported file, not a photograph — so the default advice about a
+        # flatter, better-lit shot is not merely unhelpful here, it describes
+        # a step that does not exist in this flow. The refusal itself is
+        # deliberate: `score_json_from_musicxml` will not expand XML entities,
+        # because a small file defining nested ones expands to gigabytes and
+        # takes the API down. Re-exporting is the real way out, and every
+        # notation program writes entity-free MusicXML.
+        # Lowercase, because `_why_it_failed` lowercases the haystack and
+        # not the needle — a capitalised needle matches nothing, ever,
+        # which is the third time this table has been given one that
+        # could not fire.
+        "defines xml entities",
+        "This file defines XML entities, which InTempo does not read. Exporting "
+        "it again from your notation software produces one it can.",
+    ),
+    (
         "cut off",
         "This page has more notes than one reading can hold. Photographing "
         "fewer bars at a time — a system or two — gets through it.",

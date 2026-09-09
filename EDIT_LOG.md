@@ -1,5 +1,75 @@
 # InTempo Edit Log
 
+## 2026-09-09 — A kilobyte of MusicXML could have taken the API down
+
+Loop tick eight. Ruff's `S` family over `app/` found one thing worth having,
+and it is not a style point.
+
+**`POST /v1/scores` handed a request body straight to `xml.etree.ElementTree`.**
+`score_json_from_musicxml` is reached from `routers/scores.py:1044` with
+`body.musicxml` — whatever somebody sent — and the parser was the standard
+library's.
+
+Measured rather than assumed, because the standard library's XML posture is
+easy to get wrong in either direction:
+
+| | Result |
+|---|---|
+| Internal entity `&a;` | **expanded** |
+| External entity `file:///etc/hostname` | refused — `undefined entity` |
+| Four levels of ten, from a 200-byte document | **100,000 characters** |
+
+So there is **no XXE** here and never was: nothing reads a file, nothing
+fetches a URL. The exposure is expansion alone, and expansion alone is enough.
+Nine levels reach a gigabyte, so a **~1 KB upload allocates until the host dies**
+— one authenticated account, repeatedly, taking the API down for everyone.
+
+**Fixed with `defusedxml`, and the choice of tool is the interesting part.**
+The obvious fix — refuse any `<!DOCTYPE>` — would have broken the format this
+parser exists for: every notation program exports
+`<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 4.0 Partwise//EN" …>`.
+`defusedxml` forbids entity *definitions* and leaves the declaration alone,
+which is exactly the line to draw. Verified both ways before adopting it: a
+real MusicXML DOCTYPE still parses; the bomb raises `EntitiesForbidden`.
+
+`EntitiesForbidden` is not an `ET.ParseError`, so it needed its own handler or
+it would have been a 500 instead of a refusal.
+
+Two regression tests in `test_hostile_musicxml.py`: the bomb is refused, and a
+real DOCTYPE is still accepted — the second exists so a future "tighten this
+up" cannot quietly reject every exported file. Mutation-checked: putting
+`ET.fromstring` back fails the first with `DID NOT RAISE`.
+
+**Three other checks fired, and each caught something I had got wrong.**
+
+1. `test_modal_images` — the transcription container pins its dependencies
+   exactly, and `defusedxml` was not among them. The worker would have failed
+   at module load. Pinned to 0.7.1, the locked version.
+2. `test_failure_sentences` — my refusal message would have reached the
+   musician beside *"a flatter, better-lit shot of the page usually fixes it"*.
+   That is advice about a photograph, for a file import that has none. A needle
+   and a sentence added.
+3. …and my first needle was `"defines XML entities"`, which **can never
+   match**: `_why_it_failed` lowercases the haystack and not the needle. That
+   file's own docstring records this happening twice before. Third time, caught
+   by the test written after the second.
+
+**What the rest of the `S` family found, and why none of it moved.** 3,006
+`S101` are `assert` in tests. Four `S105` "hardcoded password" are fake Modal
+tokens in `test_dispatch`. 58 `T201` `print` are all in `scripts/`, where
+printing is the interface — **`app/` has none**, so CLAUDE.md §1.4 is honoured
+where it means something.
+
+Tests: `2118 passed, 2 skipped, 2 xfailed` — two new. `ruff` clean,
+`pip-audit` 0.
+
+Known side effects: a MusicXML file defining entities is now refused with a
+sentence naming the way out. No such file is a legitimate export.
+
+Rollback: `git revert`, then `uv sync` in `backend/`.
+
+---
+
 ## 2026-09-09 — Twenty-one advisories on the backend, seven of them on the JWT library
 
 Loop tick seven, closing the gap the last one named: `backend/` had no

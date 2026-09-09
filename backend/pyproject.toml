@@ -5,6 +5,7 @@ description = "InTempo's API: sheet-music reading, take analysis and the account
 requires-python = ">=3.12"
 dependencies = [
     "anthropic>=0.97.0",
+    "defusedxml>=0.7.1",
     "fastapi>=0.136.1",
     "google-genai>=1.73.1",
     "httpx>=0.28.1",

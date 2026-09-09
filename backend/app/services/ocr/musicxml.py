@@ -23,6 +23,9 @@ from itertools import pairwise
 
 import re
 import xml.etree.ElementTree as ET
+
+from defusedxml.ElementTree import fromstring as defused_fromstring
+from defusedxml.common import DefusedXmlException
 from typing import Final
 
 from app.services.ocr.meter import quarter_beats
@@ -1465,7 +1468,28 @@ def score_json_from_musicxml(
     than one part and no choice made, this raises rather than guesses.
     """
     try:
-        root = ET.fromstring(xml)
+        # **`defusedxml`, not `ET.fromstring`.** This function is reached from
+        # `POST /v1/scores` with the document taken straight out of a request
+        # body, so the XML is whatever somebody sent. Python's ElementTree
+        # expands internal entities — measured: four levels of ten turned a
+        # 200-byte document into 100,000 characters — which makes a ~1 KB
+        # upload into a gigabyte of allocation and an OOM on the API host. It
+        # refuses *external* entities, so there is no file read here and never
+        # was; the exposure is expansion, and expansion alone is enough to take
+        # the API down for everyone from one account.
+        #
+        # A DOCTYPE is still allowed, and that is the whole reason for the
+        # library rather than a blanket refusal: real MusicXML declares one
+        # (`<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML …">`),
+        # so rejecting DOCTYPEs would reject the format this parser exists for.
+        # `defusedxml` forbids the entity *definitions* and leaves the
+        # declaration alone.
+        root = defused_fromstring(xml)
+    except DefusedXmlException as exc:
+        raise MusicXMLError(
+            "this file defines XML entities, which InTempo does not accept — "
+            "re-export it from your notation software"
+        ) from exc
     except ET.ParseError as exc:  # pragma: no cover - message varies by lib
         raise MusicXMLError(f"not parseable as XML: {exc}") from exc
     _strip_namespace(root)
