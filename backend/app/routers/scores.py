@@ -30,6 +30,11 @@ from app.auth import current_user_id, current_user_id_provisioned
 from app.config import settings
 from app.routers.deps import require_service_client
 from app.services import pending_uploads
+from app.services.transcription_budget import (
+    EXHAUSTED_MESSAGE,
+    has_room,
+    next_run_count,
+)
 from app.services.audio_storage import InvalidAudioReference, owned_audio_key
 from app.services.buckets import AUDIO_BUCKET, SCORE_BUCKET
 from app.services.ocr.musicxml import MusicXMLError, score_json_from_musicxml
@@ -861,6 +866,10 @@ def create_score(
         # A hand-entered piece is finished the moment it is written; there is
         # nothing to read and never will be.
         "transcription_status": "done" if manual else "queued",
+        # The first reading is a reading. Leaving it at the column's default of
+        # 0 would quietly make the ceiling one higher than it says, which is
+        # the kind of off-by-one a limit is worst at carrying.
+        "transcription_runs": 0 if manual else 1,
     }
     rows = _insert_score(insert_payload)
     if not rows:
@@ -975,6 +984,13 @@ def attach_score_pages(
         "transcription_error": None,
         "transcription_accepted_at": None,
         "page_image_discarded_at": None,
+        # **Reset, not incremented.** These are new photographs, and the
+        # ceiling counts readings of *one* photograph — the refusal at the top
+        # of it says the answer is a clearer picture, so arriving with a
+        # clearer picture has to be an answer. A musician who takes the advice
+        # and is refused anyway would have been told to do something that does
+        # not work.
+        "transcription_runs": 1,
     }
     update_query = (
         client.table("scores")
@@ -1499,6 +1515,20 @@ def retranscribe(
                 "reading, so there is nothing left to read again"
             ),
         )
+    # **The ceiling, and this is the only endpoint that needs one.** Every
+    # other refusal above is about the row's state; this one is about the bill.
+    # A reading is a vision-model call per page, and until 017 nothing counted
+    # them — the concurrency guard below stops two taps starting two workers,
+    # and does nothing at all about the same tap arriving a thousand times.
+    #
+    # 409 rather than 429: nothing here is rate-limited and waiting changes
+    # nothing. This page is finished, which is a conflict with its state, and
+    # `transcription_runs` is that state.
+    if not has_room(row):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=EXHAUSTED_MESSAGE,
+        )
 
     # Compare-and-set: the same condition the check above states, applied where
     # it actually settles the race. `transcription_status` is NOT NULL with a
@@ -1512,6 +1542,13 @@ def retranscribe(
                 "transcription_status": "queued",
                 "transcription_stage": None,
                 "transcription_error": None,
+                # Computed from the row read above rather than incremented in
+                # the database, which supabase-py cannot express — and safe for
+                # exactly the reason the status filter below exists: two racing
+                # requests both read the same count and both write the same
+                # successor, but only one gets past the compare-and-set, so the
+                # count advances once per reading that actually starts.
+                "transcription_runs": next_run_count(row),
                 "updated_at": _now_iso(),
             }
         )

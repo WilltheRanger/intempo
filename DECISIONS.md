@@ -1,5 +1,56 @@
 # InTempo Decisions
 
+## 2026-09-09 — A per-page reading cap, not an account quota
+
+**Context.** `POST /v1/scores/{id}/transcribe` sends a worker to read a page,
+which is a vision-model call per page — the only endpoint in this API that
+spends real money on every call. It was guarded against *concurrency* (006's
+compare-and-set stops two taps starting two workers on one row) and against
+nothing else. An account could wait for `done` and ask again, in a loop, for as
+long as it liked.
+
+The free tier does not reach this path: `tier_limits` counts rows in
+`analyses`, and a re-read creates none. So the most expensive endpoint had the
+weakest ceiling, which was none.
+
+**Decision.** Cap readings **per page**: `scores.transcription_runs` (migration
+017), `MAX_RUNS_PER_PAGE = 12`, enforced before the worker is dispatched.
+Attaching a new photograph resets the count to 1.
+
+**Why not an account quota, which is the obvious shape.** Because it is a
+**pricing decision and not mine to make.** "How many pieces may a free account
+scan per month" sets what the free tier is worth, and answering it in a commit
+would be answering it for the owner. A per-page cap needs no such answer: how
+many times it is reasonable to re-read *the same photograph* has an obvious
+ceiling regardless of what anything costs, because a reading still wrong on the
+twelfth attempt will not come right on the thirteenth.
+
+**Why not a rate limit.** Requests per minute is the reflex, and it is the
+wrong instrument twice over. It would need either a dependency (`slowapi`) or
+in-process state that a second Render instance does not share and a restart
+forgets — and it would not actually stop the loop, only slow it to whatever
+rate was allowed. A durable count in the row the request is already reading
+costs one column and no new failure mode.
+
+**Trade-offs accepted.**
+
+- **A determined account can still spend money**, by uploading a *new*
+  photograph each round: attach resets the count. That is deliberate — the
+  refusal tells a musician a clearer photograph will do more than another
+  attempt, and refusing them when they take that advice would be advising them
+  to do something that does not work. What it costs an attacker is a fresh
+  multi-megabyte upload per round rather than a free retry, and what bounds it
+  properly is a limit on scans per account, which is the pricing question
+  above. **Named, not closed.**
+- **Twelve is a judgement**, not a measurement. It is set to be invisible to a
+  person and fatal to a loop; if real failure rates make a musician meet it,
+  the number is wrong and should move.
+- **The column defaults to 0 rather than being backfilled**, so every existing
+  page starts with a full allowance despite having been read at least once.
+  The generous direction: the cap is about further readings, and charging
+  somebody for history they cannot see is the one way this could take something
+  away from a musician who did nothing.
+
 ## 2026-09-08 — Onboarding before sign-up, with the answers held on the device
 
 **Context.** Onboarding — name, photograph, instrument — ran *after* sign-in,

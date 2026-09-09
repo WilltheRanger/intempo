@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 
 from app import db as db_module
 from app.main import app
+from app.services.transcription_budget import EXHAUSTED_MESSAGE, MAX_RUNS_PER_PAGE
 from app.routers import scores as scores_module
 from app.services import display_urls
 
@@ -154,6 +155,50 @@ def _stub_worker(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 def test_post_unauthenticated_returns_401(client: TestClient) -> None:
     res = client.post("/v1/scores", json={"image_url": "x", "title": "t"})
     assert res.status_code == 401
+
+
+def test_the_first_reading_is_counted_against_the_ceiling(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    """1, not the column's default of 0.
+
+    Leaving the first reading uncounted would make the real ceiling one higher
+    than `MAX_RUNS_PER_PAGE` says it is — the kind of off-by-one a limit is
+    worst at carrying, because nothing ever contradicts it out loud.
+    """
+    user_id, score_id = uuid4(), uuid4()
+    _stub_worker(monkeypatch)
+    sb = _install_supabase(monkeypatch, returning_row=_row_for(score_id, user_id))
+
+    res = client.post(
+        "/v1/scores",
+        json={"image_url": _signed_url(user_id), "title": "Etude #1"},
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+    assert res.status_code == 201, res.text
+    assert sb.table.return_value.insert.call_args.args[0]["transcription_runs"] == 1
+
+
+def test_a_hand_entered_piece_spends_no_reading(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    """Nothing is read, so nothing is counted — and the day a photograph is
+    attached to it, the full allowance is there."""
+    user_id, score_id = uuid4(), uuid4()
+    _stub_worker(monkeypatch)
+    sb = _install_supabase(monkeypatch, returning_row=_row_for(score_id, user_id))
+
+    res = client.post(
+        "/v1/scores",
+        json={"title": "Etude #1", "clef": "treble", "time_signature": "4/4"},
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+    assert res.status_code == 201, res.text
+    assert sb.table.return_value.insert.call_args.args[0]["transcription_runs"] == 0
 
 
 def test_post_creates_score(
@@ -1279,6 +1324,86 @@ def test_a_discarded_photograph_cannot_be_read_again(
     assert res.status_code == 409
     assert "discarded" in res.json()["detail"]
     assert enqueued == []
+
+
+def test_a_page_read_to_its_ceiling_is_not_read_again(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """**The only refusal here that is about the bill rather than the row.**
+
+    A reading is a vision-model call per page. Every other check on this
+    endpoint is about state — already reading, photograph discarded — and none
+    of them stops the same tap arriving a thousand times. The free tier does
+    not reach this path either: it counts rows in `analyses`, and a re-read
+    creates none.
+    """
+    user_id, score_id = uuid4(), uuid4()
+    enqueued = _stub_worker(monkeypatch)
+    sb = _install_supabase(
+        monkeypatch,
+        returning_row=_row_for(
+            score_id,
+            user_id,
+            transcription_status="failed",
+            transcription_runs=MAX_RUNS_PER_PAGE,
+        ),
+    )
+    _install_storage(sb, signed=[])
+
+    res = _retranscribe(client, score_id, make_token(sub=user_id))
+
+    assert res.status_code == 409
+    assert res.json()["detail"] == EXHAUSTED_MESSAGE
+    # The refusal has to happen before the worker, or the ceiling costs a model
+    # call to enforce and is not a ceiling.
+    assert enqueued == []
+
+
+def test_the_reading_that_starts_is_counted(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """Written in the same patch as the status, so the count advances exactly
+    when a worker is dispatched — never on a request that lost the race."""
+    user_id, score_id = uuid4(), uuid4()
+    _stub_worker(monkeypatch)
+    sb = _install_supabase(
+        monkeypatch,
+        returning_row=_row_for(
+            score_id, user_id, transcription_status="failed", transcription_runs=4
+        ),
+    )
+    _install_storage(sb, signed=[])
+
+    assert _retranscribe(client, score_id, make_token(sub=user_id)).status_code == 200
+
+    patch = sb.table.return_value.update.call_args.args[0]
+    assert patch["transcription_runs"] == 5
+
+
+def test_the_last_allowed_reading_is_allowed(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """The boundary in the direction that takes something away from a musician
+    rather than the one that costs a model call."""
+    user_id, score_id = uuid4(), uuid4()
+    enqueued = _stub_worker(monkeypatch)
+    sb = _install_supabase(
+        monkeypatch,
+        returning_row=_row_for(
+            score_id,
+            user_id,
+            transcription_status="failed",
+            transcription_runs=MAX_RUNS_PER_PAGE - 1,
+        ),
+    )
+    _install_storage(sb, signed=[])
+
+    assert _retranscribe(client, score_id, make_token(sub=user_id)).status_code == 200
+    assert enqueued == [str(score_id)]
+    assert (
+        sb.table.return_value.update.call_args.args[0]["transcription_runs"]
+        == MAX_RUNS_PER_PAGE
+    )
 
 
 def _lose_the_race(sb: MagicMock) -> None:

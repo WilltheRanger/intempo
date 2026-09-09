@@ -1,5 +1,99 @@
 # InTempo Edit Log
 
+## 2026-09-09 — The one endpoint that spends money had no ceiling
+
+Loop tick eleven, and I went looking in the backend for the thing that actually
+costs the owner money, since that is what the last few days of questions have
+been about.
+
+**Reading a page is a vision-model call per page, and nothing counted them.**
+`POST /v1/scores/{id}/transcribe` is carefully guarded against *concurrency* —
+006's compare-and-set stops two taps starting two workers on one row, and the
+docstring explains at length why two runs interleaving is worse than the double
+bill. It is guarded against volume by nothing at all. An account could wait for
+`done` and ask again, in a loop.
+
+And the free tier does not reach it: `tier_limits` counts rows in `analyses`,
+and a re-read creates none. So the most expensive endpoint in the API had the
+weakest ceiling, which was none.
+
+**Fixed with a per-page cap, and the shape is the decision.** Migration 017
+adds `scores.transcription_runs`; `services/transcription_budget.py` holds the
+rule; `MAX_RUNS_PER_PAGE = 12`, checked before the worker is dispatched, so the
+ceiling does not cost a model call to enforce. Full reasoning in
+`DECISIONS.md` — the short version is that an *account* quota would have been
+the obvious shape and is a **pricing decision that is not mine to make**, while
+"how many times may one photograph be re-read" has an obvious answer whatever
+anything costs.
+
+**Three call sites write the column and one of them resets it**, which is where
+the thinking was:
+
+| Path | Writes | Why |
+|---|---|---|
+| `create_score` (photographed) | 1 | The first reading is a reading. Leaving it at the default would make the real ceiling 13. |
+| `create_score` (hand-entered) | 0 | Nothing was read. The allowance is intact the day a photograph is attached. |
+| `attach_score_pages` | 1 — **reset** | New photograph. The refusal says a clearer picture will do more; refusing someone who takes that advice would be advising them to do something that does not work. |
+| `retranscribe` | `next_run_count(row)` | Computed from the row read above — supabase-py cannot express `col = col + 1` — and safe because only one racer gets past the status compare-and-set. |
+
+**The refusal is 409, not 429**, and its wording is tested. Nothing here is
+rate-limited and waiting changes nothing; the page is finished, which is a
+conflict with its state. The sentence names the next move — a clearer
+photograph — and a test asserts it says none of "try again", "quota", "limit",
+"upgrade", "next month" or "plan", because it is not an account that ran out of
+something, it is a page that cannot be read.
+
+**`runs_so_far` guesses low, and that is the opposite of `tier_limits`.** A
+non-integer in the column means a client stand-in that does not implement it,
+not an account out of readings, so it reads as zero. `tier_limits` resolves the
+same uncertainty the other way — there, guessing low hands out free analyses;
+here, guessing high withholds a reading somebody is owed. Both directions are
+written down beside the code that chooses them. `isinstance(True, int)` is in
+the test list for the reason `tier_limits` records: `int(MagicMock())` returns
+1, which is how a brand-new account once showed an analysis already used.
+
+**The repository caught two things I had missed, and this is the part worth
+recording.** Preflight went 7/8, and the three failures were the project's own
+guardrails, not my tests:
+
+- `test_readiness.py` — migrations are applied **by hand** in the Supabase SQL
+  editor, so every one must be re-runnable. `ADD COLUMN` became
+  `ADD COLUMN IF NOT EXISTS`.
+- `test_readiness_columns.py` — a column the code writes that a deployment
+  lacks means requests failing while `/v1/ready` says ready. `017` is now in
+  `REQUIRED_COLUMNS`.
+
+I would have shipped both. That is the second time in two days a check written
+after an earlier incident has caught me rather than a hypothetical future
+session, which is the argument for writing them.
+
+**Mutation-checked, seven ways**, plus a deliberate no-op control that survived
+— because a harness that fails on everything proves nothing. Past the ceiling
+reads as room (1 fail), one reading short (2), the ceiling never enforced (1),
+re-reads never advance the count (2), the first reading uncounted (1), a new
+photograph does not reset (1), comment-only change (**survived**, as it must).
+An eighth attempt was a bad mutation — it referenced a name the module does not
+import, so it failed on `NameError` and tested nothing; redone as a valid
+expression that simply never advances. Both files `diff -q` clean afterwards.
+
+**Tests run:** `preflight.py` 8/8 in 379s after the two fixes. 2135 backend
+tests. 14 new tests in `test_transcription_budget.py`, 5 new endpoint tests
+across `test_scores_router.py` and `test_attach_score_pages.py`.
+
+**Not verified, and I am not claiming otherwise:** the migration has **not been
+run against a real database**. `tools/check-migrations.py` needs a `DATABASE_URL`
+and there is none in this environment — it printed "nothing to apply to" and
+exited clean, which is not the same as passing. The DDL is two statements in
+the shape 006 already uses, and `test_readiness.py` parses it, but the applying
+is the owner's, by hand, in the Supabase SQL editor.
+
+**Side effects:** `attach_score_pages` and `retranscribe` now write one more
+column. A deployment that has not applied 017 will fail at the first scan
+rather than degrade quietly — deliberate for a spend ceiling, and now visible
+at `/v1/ready` rather than as a broken scanner.
+
+**Rollback:** revert the commit. The column can stay; nothing else reads it.
+
 ## 2026-09-09 — The queue kept takes; nothing sent them
 
 Loop tick ten. `takeQueue.ts` is a careful piece of work: a take a musician

@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from app.main import app
+from app.services.transcription_budget import MAX_RUNS_PER_PAGE
 from app.routers.scores import AttachScorePagesRequest, MAX_PAGES
 from app.tests.test_scores_router import (
     GOOD_PAYLOAD,
@@ -29,7 +30,7 @@ def _auth(make_token, user_id):
     return {"Authorization": f"Bearer {make_token(sub=str(user_id))}"}
 
 
-def _manual_row(score_id, user_id):
+def _manual_row(score_id, user_id, **overrides):
     return _row_for(
         score_id,
         user_id,
@@ -44,6 +45,7 @@ def _manual_row(score_id, user_id):
         },
         ocr_confidence=None,
         transcription_status="done",
+        **overrides,
     )
 
 
@@ -57,6 +59,40 @@ def test_attachment_uses_the_same_page_ceiling_as_new_scans() -> None:
 
     with pytest.raises(ValidationError, match=f"at most {MAX_PAGES}"):
         AttachScorePagesRequest(image_urls=urls)
+
+
+def test_a_new_photograph_starts_the_reading_allowance_over(
+    api: TestClient, monkeypatch, make_token
+) -> None:
+    """**Reset to 1, not incremented**, and the refusal at the ceiling is why.
+
+    `transcription_budget` bounds readings of *one* photograph, and what it
+    tells a musician at the ceiling is that a clearer picture will do more than
+    another attempt at this one. A musician who takes that advice, photographs
+    the page again, and is refused anyway has been told to do something that
+    does not work — which is worse than not advising them at all.
+
+    The exhausted row here is the one that makes the point: `MAX_RUNS_PER_PAGE`
+    already spent, and the replacement still queues a read.
+    """
+    user_id, score_id = uuid4(), uuid4()
+    client = _install_supabase(
+        monkeypatch,
+        returning_row=_manual_row(
+            score_id, user_id, transcription_runs=MAX_RUNS_PER_PAGE
+        ),
+    )
+    enqueued = _stub_worker(monkeypatch)
+
+    response = api.post(
+        f"/v1/scores/{score_id}/transcription",
+        json={"image_urls": [_signed_url(user_id)]},
+        headers=_auth(make_token, user_id),
+    )
+
+    assert response.status_code == 200, response.text
+    assert client.table.return_value.update.call_args.args[0]["transcription_runs"] == 1
+    assert enqueued == [str(score_id)]
 
 
 def test_attaching_pages_reuses_the_piece_and_queues_a_read(

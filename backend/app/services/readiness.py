@@ -144,6 +144,14 @@ REQUIRED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("users", "training_consent_at", "013"),
     ("scores", "transcription_reader", "013"),
     ("scores", "page_image_retained_at", "013"),
+    # 017. The ceiling on how many times one page may be read, and the only
+    # thing standing between a loop on `POST /v1/scores/{id}/transcribe` and an
+    # unbounded model bill. A deployment missing it does **not** degrade
+    # quietly: the column is written on every reading that starts, so the first
+    # scan after a deploy without it fails at the insert — which is the right
+    # direction for a spend ceiling to fail in, and worth naming here so it is
+    # read as a half-applied schema rather than a broken scanner.
+    ("scores", "transcription_runs", "017"),
 )
 
 #: Tables added after the initial schema that production behavior depends on.
