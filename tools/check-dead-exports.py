@@ -60,7 +60,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
-#: The shipping app. `frontend/` is the legacy Vite tree and is not the
+#: The shipping app, and since 2026-09-09 the only app — the legacy `frontend/`
+#: Vite tree it used to have to be distinguished from was deleted. It is not the
 #: product — see `CLAUDE.md` — so a dead export there is not a defect worth
 #: failing a build over.
 SOURCES = (ROOT / "mobile" / "src",)

@@ -1,6 +1,0 @@
-# Cloudflare Pages SPA fallback.
-# React Router owns the routes, but Cloudflare only knows about files on disk —
-# so a refresh or a shared link to /scores would 404 without this. Serve
-# index.html with a 200 (not a 302) and let the router resolve the path.
-# Vite copies everything in public/ to the dist root, so this ships as-is.
-/*    /index.html   200

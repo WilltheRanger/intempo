@@ -1,5 +1,64 @@
 # InTempo Edit Log
 
+## 2026-09-09 — The legacy Vite tree is deleted, and so is its documentation
+
+Loop tick thirty-five, on the owner's instruction to clean up prototypes. Two
+directories and one deploy guide go; **91 files, 10,062 lines**.
+
+**`frontend/` — 89 files.** The Vite/React web app that batches 5–7 were first
+built in. Nothing built it, deployed it, tested it or linted it: the root
+`package.json` builds `mobile/`, `render.yaml` deploys `backend/`, and CI's
+`frontend-build` job was removed a fortnight ago. It survived that removal on
+the reasoning — written into `ci.yml` — that *"`docs/subsystems.md` documents its
+conventions and points at it, and deleting it would cost that reference."*
+
+**That reasoning was backwards, and the file that recorded it says why.**
+`CLAUDE.md` §5 exists because a session read those conventions as binding for
+`mobile/` — two applications whose palettes share **no colour but white**. The
+pointer was the *mechanism* of the mistake, not a defence against it. So the
+section went with the tree: 92 lines out of `docs/subsystems.md`, which was the
+longest thing in a document that is read at the start of sessions.
+
+**`bakeoff/` — 3 files.** A one-off harness that ran the OCR fixtures through
+four providers and wrote a comparison. It last ran in April, it is imported by
+nothing, and its *output* — `docs/ocr-bakeoff/` — is the durable part and is
+kept. Both reports now carry a line saying the generator is in `git log`.
+
+**`docs/deploy-cloudflare.md`** deployed the legacy tree's preview and describes
+a Pages project rooted at `frontend`, which no longer exists on `main` and can
+now only fail in zero seconds. `deploy-cloudflare-mobile.md` absorbed what a
+reader of the old one still needs — including how to repoint that project.
+
+**Every live reference updated, and history left alone.** `check-log-entry.py`
+no longer lists `frontend/` as a code tree; `check-dead-exports.py`, `ci.yml`
+(three comment sites) and `client.ts` say where the tree went rather than
+pretending it is there; `CLAUDE.md` §1, §2, §4 and §5 are rewritten — batches
+5–7 lose their now-meaningless "(web)" and say their screens live in `mobile/`,
+and the "build to the tokens" line finally has one unambiguous answer instead of
+two palettes. **`EDIT_LOG.md`, `DECISIONS.md` and `TUNING_LOG.md` are not
+touched**: they are the record of what happened at the time, and editing them to
+match today would be the only dishonest thing available here. Nor is
+`intempo-combined.md` — the spec describes what to build, and those batches were
+web batches.
+
+**`README.md` was rewritten, and it needed it more than anything above.** It
+said *"Batch 0 — Foundations. The repo, CI, and empty backend/frontend scaffolds
+are in place. No user-facing functionality yet."* and described `mobile/` as *"a
+placeholder for the React Native scaffold (lands in Batch 9)"* — for the
+directory that is the entire shipping app. Its Local dev section told a reader
+to `cd frontend && npm run dev`. It is the first file anyone opens and every
+statement of fact in it was wrong.
+
+**Verification.** `preflight.py --full` 16/16 — including `dead exports`, which
+reads the whole corpus and would have caught anything in `mobile/` that reached
+into the deleted tree, and the app walk and accessibility audits over a real
+build. Backend and mobile suites unchanged and green: nothing imported either
+directory.
+
+Rollback: `git revert`, or `git checkout <sha>^ -- frontend bakeoff` for the
+files alone. Nothing outside the repository is affected — no deploy, no
+package, no route pointed at either.
+
 ## 2026-09-09 — The library listing stops shipping every note in the library
 
 Loop tick thirty-four, and the measured half of the egress the owner reported

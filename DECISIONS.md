@@ -1,5 +1,56 @@
 # InTempo Decisions
 
+## 2026-09-09 — Delete the legacy `frontend/` tree rather than keep documenting it
+
+**Context.** `frontend/` was the Vite/React web app batches 5–7 were first built
+in. Its screens were rebuilt in `mobile/` in July; since then nothing has built,
+deployed, tested or linted it. CI's `frontend-build` job was removed on
+2026-09-09 and the tree was deliberately kept, with the reason written into
+`ci.yml`: *"`docs/subsystems.md` documents its conventions and points at it, and
+deleting it would cost that reference for a saving already taken by not building
+it."*
+
+**Decision.** Delete the tree, its 92-line section of `docs/subsystems.md`, and
+`docs/deploy-cloudflare.md` which deployed it. Also delete `bakeoff/`, a one-off
+OCR provider comparison harness, keeping its reports in `docs/ocr-bakeoff/`.
+
+**Why the earlier reasoning does not hold.** It treated the documentation as a
+benefit the tree paid for. It was the opposite: `CLAUDE.md` §5 was restructured
+precisely because a session read that section's conventions as binding for
+`mobile/` — two applications whose palettes share no colour but white — and
+`CLAUDE.md` §4 carried a standing warning about it. A description of a dead
+codebase, loaded near the top of a document sessions read before they know what
+they are touching, is a trap with a warning sign on it. Removing the trap beats
+maintaining the sign.
+
+**Alternatives considered.**
+
+- *Keep the tree, keep the section.* Rejected: the status quo, and the thing
+  that has already caused one documented defect.
+- *Keep the tree, delete the section.* Rejected. It leaves 89 unbuilt, unlinted,
+  untested files that every corpus-wide tool has to be taught to skip — which
+  `check-dead-exports.py` and `check-log-entry.py` both already were.
+- *Move it to a branch or an archive tag.* Rejected as ceremony: `git log --
+  frontend/` is that, for free, and every commit that ever contained the tree
+  still does.
+- *Delete `docs/ocr-bakeoff/` too.* Rejected. The harness was the tooling; the
+  reports are the finding — which OCR provider chain to ship, and at what cost
+  and latency. That is still the answer in `backend/.env`.
+
+**Trade-offs accepted.**
+
+- **Batches 5–7 no longer have the tree their DoD notes describe.** Their
+  screens were rebuilt in `mobile/` and their remaining gates (live auth,
+  upload→OCR→save, mic→analysis) are about Supabase keys and a device, not about
+  which tree. `CLAUDE.md` §4 now says so.
+- **A future reader loses the legacy conventions at a glance** and has to reach
+  for `git log`. That is the intended cost: at a glance was the problem.
+- **History is not rewritten.** `EDIT_LOG.md`, `DECISIONS.md` and `TUNING_LOG.md`
+  still describe the tree in the present tense where they always did, and
+  `intempo-combined.md` still calls 5–7 web batches. Those are records of what
+  was true when written; editing them to match today would be the only
+  dishonest option here.
+
 ## 2026-09-09 — The library listing sends the pieces, not the notation
 
 **Context.** The owner reported their Supabase egress maxed out. `GET /v1/scores`

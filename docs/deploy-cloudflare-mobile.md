@@ -4,15 +4,15 @@ A browser build of the **React Native app** in `mobile/`, rendered through
 react-native-web, so the screens are clickable without a simulator or a
 TestFlight build.
 
-This is separate from `docs/deploy-cloudflare.md`, which deploys the Vite web
-frontend in `frontend/`. They are two different applications and they need two
-different Pages projects.
+This used to be one of two web builds in the repository. The other — a Vite
+frontend in `frontend/`, with its own `docs/deploy-cloudflare.md` — was deleted
+on 2026-09-09, so this is now the only browser build there is.
 
-## Set up a second Pages project — don't repoint the existing one
+## Set up the Pages project
 
-The existing Pages project has **Root directory `frontend`**. Changing it to
-`mobile` would replace the web frontend preview with this one. Create a new
-project instead so both stay reachable.
+If a Pages project already exists from that era it will have **Root directory
+`frontend`**, which no longer exists on `main` and now fails in zero seconds.
+Repoint it using the table below, or create a new one.
 
 Cloudflare dashboard → **Workers & Pages** → **Create** → **Pages** →
 **Connect to Git** → pick the `intempo` repo → **Begin setup**.
@@ -102,9 +102,10 @@ exist** on the branch being built. Both extra projects red every commit, which
 makes the checks list useless for spotting a real failure.
 
 If `front` and `i` were attempts at this same app, delete them; `intempo`
-already serves it. If one is meant for the Vite frontend in `frontend/`, set
-its root directory to `frontend`. Their logs are only in the Cloudflare
-dashboard — nothing about them is reachable from the repo.
+already serves it. Any project still pointed at `frontend` is building a tree
+that was deleted on 2026-09-09 and can only fail — repoint or delete it. Their
+logs are only in the Cloudflare dashboard, and nothing about them is reachable
+from the repo.
 
 ### If the build fails on a missing package.json
 

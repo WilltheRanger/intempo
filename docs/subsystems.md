@@ -7,6 +7,14 @@ stay there. See `CLAUDE.md` §5.
 **Read the section for the subsystem you are about to touch.** Reading it all is
 not the point and never was.
 
+**The longest section here used to describe the legacy `frontend/` tree, and it
+is gone with the tree** (2026-09-09). It was kept for a while on the reasoning
+that documenting an old codebase costs nothing — and that was wrong in a way
+this file is the right place to record. A session read those conventions as
+binding for `mobile/`, which is a different application with a different
+palette; the section was the mechanism of that mistake, not a defence against
+it. `git log -- docs/subsystems.md` has the text if it is ever wanted.
+
 Every entry here exists because something was actually got wrong. They are
 written as rules, but they are post-mortems: the reason matters as much as the
 instruction, because a rule whose reason has expired is worse than no rule — this
@@ -14,7 +22,6 @@ document contains at least two of those, and says so where it knows.
 
 ## Contents
 
-- [The legacy `frontend/` tree](#frontend-ui-rebuild-2026-07-28--where-the-screens-actually-stand) — **history, not a spec for `mobile/`**
 - [The `mobile/` tree and transcription](#the-mobile-tree--where-transcription-actually-stands-2026-08-24)
 - [Dependency advisories, and the fix that would undo the app](#npm-audit-fix---force-would-take-this-app-back-to-sdk-46-2026-09-09)
 - [The API's concurrency](#the-api-serves-requests-in-parallel-and-only-just-started-to-2026-08-25)
@@ -23,103 +30,10 @@ document contains at least two of those, and says so where it knows.
 
 ---
 
-## Frontend UI rebuild (2026-07-28) — where the screens actually stand
-
-The Batch 5–7 UI was rebuilt, then **redesigned from the ground up on
-2026-07-28** after the rebuilt version still read as AI-generated (excessive
-rounded cards, oversized gold surfaces, serif everywhere, a 440px phone column
-on desktop). Every screen is verified with a Playwright screenshot of the
-running build.
-
-> ⚠️ The Figma file `k5IB3714DiusqnAwzkY7pz` **predates the redesign** and no
-> longer matches the app. Treat it as history, not as a spec.
-
-| Screen | Route | State |
-|---|---|---|
-| Today | `/` | ✅ redesigned (compact prompt, Continue-practicing row, library grid) |
-| Library | `/scores` | ✅ redesigned (sheet-crop grid, kind + favourite filters, count) |
-| Account | `/account` | ✅ built (identity, plan badge, sign out) |
-| Score capture / OCR | `/scores/new` | ⚠️ tokens updated, **layout still the old phone-column composition** |
-| Recording | `/scores/:id/record` | ⚠️ same — needs real audio to redesign properly |
-| Verdict | `/analyses/:id` | ⚠️ same — needs a real analysis to redesign properly |
-| Insights | `/insights` | ⏳ stub, held until real analyses exist to design against |
-
-Conventions the redesign established — **follow these, don't re-litigate them.**
-
-> **Which tree these describe.** The list below was written for `frontend/`, and
-> its *design* decisions carry to `mobile/` unchanged — ochre as an accent and
-> never a surface, structure from hairline borders, serif used selectively,
-> sheet music as the visual identity, no developer or demo UI. Its *pointers* do
-> not, and a session following them literally in the shipping app would undo
-> working code. Measured 2026-09-02:
->
-> | Convention says | `mobile/` actually uses |
-> |---|---|
-> | Icons are Phosphor; `lucide` was removed, do not reintroduce it | `lucide-react-native` throughout — no Phosphor package at all |
-> | `AppShell` with `layout/TopNav` at `lg`+ over a 1240px container | its own navigator; `ScreenContainer` and a tab bar |
-> | Motion is Framer Motion, imported from `motion/react` | React Native animation (`PressableScale`, `Animated`); neither `motion` nor `framer-motion` is a dependency |
-> | `/showcase` sources its swatches from `styles/tokens.ts` | there is no `/showcase` route |
-> | Screens read seed data from `lib/demo.ts` | `data/sources/fixtures.ts` |
->
-> The caveat further down — *"The screen table above describes the legacy
-> `frontend/` tree"* — is attached to the table and is about transcription. This
-> list sits between the two and reads as binding for all UI work, which is how
-> it stayed wrong.
-
-1. **Icons are Phosphor** (`@phosphor-icons/react`). `lucide-react` was removed
-   from `package.json` — do not reintroduce it.
-2. **Layout is responsive by breakpoint, not one column.** `AppShell` renders
-   `layout/TopNav` at `lg`+ over a 1240px container, and `TabBar` below it.
-   Never reintroduce a fixed narrow column on desktop. Flow screens stay
-   full-bleed with their own `X`-close chrome, outside `AppShell`; `<Layout>`
-   serves `/showcase` alone.
-3. **Bottom navigation carries destinations only** (Today · Library · Insights ·
-   Profile). Actions like "Add piece" live as labelled controls in screen
-   headers and the top bar — never as a tab.
-4. **Serif is selective**: piece titles and the practice prompt. Section
-   headings are small sans labels (`ui/SectionHeading`). Not every heading.
-5. **Ochre is an accent, never a surface.** Active states, progress and
-   favourites only. Primary actions are ink. No large gold panels.
-6. **Structure comes from hairline borders**, not elevation. Radii 8–14px;
-   `shadow-card` is nearly invisible and `shadow-lift` is for genuinely
-   floating things only.
-7. **Sheet music is the visual identity.** Use `sheet/SheetCrop` (deterministic
-   SVG engraving) — never abstract placeholder rectangles. Swap for real page
-   crops when OCR uploads land.
-7b. **`staveScoreFor` drops what it cannot draw rather than rounding it** — a
-   sixteenth drawn as an eighth is a rhythmically wrong line of music presented
-   as a right one — and the screen says how many it left out. As of 2026-09-01
-   the engraver draws **42 of the schema's 46 durations**: whole through
-   sixty-fourth and the breve, single and double dots, rests at every one of
-   those values, and the triplet/quintuplet/septuplet forms. What it refuses is
-   the 128th family, named in `DELIBERATELY_UNDRAWN` — five beams at this stave
-   size is a smudge, and a counted omission beats an illegible mark presented as
-   a reading.
-   **Measure against the schema, never against the corpus.**
-   `tools/engraver-coverage.py` reported **100% of every fixture** while four
-   values had no glyph at all, because not one page in the repository contains a
-   note shorter than a sixteenth — and it once reported 5% missing and a worst
-   page of 67% while the first real orchestral part photographed scored **0%**
-   and rendered as a title and a photograph. The corpus is pages somebody chose
-   to check something with. The tool prints both tables now;
-   `notation/durations.test.ts` holds the schema side.
-8. **No developer or demo UI in the product.** The `PreviewBadge` was removed
-   for this reason; don't add environment banners to shipped screens.
-9. **Motion is Framer Motion** (`motion` package, import from `motion/react`),
-   from `lib/motion.ts`, always gated on `useReducedMotion()`. The page
-   transition lives inside `AppShell` around the outlet — wrapping `<Routes>`
-   unmounts the shell and makes the tab bar blink.
-10. **`/showcase` sources its swatches from `styles/tokens.ts`** — never
-    re-type hexes into it.
-11. Screens read seed data from `lib/demo.ts` where the live API isn't wired.
-    Deliberate, not a bug. `title` and `composer` are separate fields; title
-    outranks composer in every listing.
-
 ## The `mobile/` tree — where transcription actually stands (2026-08-24)
 
-The screen table above describes the legacy `frontend/` tree. The shipping app
-is `mobile/` (Expo, also built to web for Cloudflare Pages), and the scan flow
-there works differently as of 2026-08-24:
+The shipping app is `mobile/` (Expo, also built to web for Cloudflare Pages),
+and the scan flow there works differently as of 2026-08-24:
 
 - **Reading a page is asynchronous.** `POST /v1/scores` writes the row and
   returns; `backend/app/workers/transcription_runner.py` fills the notes in.

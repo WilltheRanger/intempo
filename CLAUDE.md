@@ -69,8 +69,9 @@ rather than what was pushed.
    the rule it was worth installing for, since a hook below an early return is
    React error #310, which this project has shipped and which compiles,
    typechecks and passes its tests. Rules and the three scoped exceptions are in
-   `DECISIONS.md`, 2026-09-03. `frontend/` has its own config and CI lints
-   neither it nor, before now, the product.
+   `DECISIONS.md`, 2026-09-03. There used to be a second, unlinted tree
+   (`frontend/`) that CI also ignored; it was deleted on 2026-09-09 and
+   `mobile/` is now the only JavaScript in the repository.
 5. **Smoke-test the happy path manually** after each batch, not just automated tests.
 6. **Tag the end of every batch**: when the DoD is met, `git tag batch-N-done` and push the tag. These are the known-good rollback anchors.
 7. **Externalize magic numbers to config** (see `backend/config.toml`) so tuning never requires a code edit.
@@ -86,9 +87,9 @@ a licence to vibe-code freely). **Before starting any batch that builds
 or changes user-facing UI/UX, pause and ask the user before proceeding** —
 present the plan and get a go-ahead first. This applies to:
 
-- **Batch 5** — Web frontend foundation
-- **Batch 6** — Score capture flow (web)
-- **Batch 7** — Recording + analysis flow (web)
+- **Batch 5** — Frontend foundation
+- **Batch 6** — Score capture flow
+- **Batch 7** — Recording + analysis flow
 - **Batch 8** — Free tier + Stripe + Pro upgrade (has UI)
 - **Batch 9** — Native iOS (React Native)
 - **Batch 13** — App Store launch + marketing
@@ -169,24 +170,28 @@ wrong and the fix is composition, not more styling. Record the answer in
 ## 4. Batch status (keep this current)
 
 **The shipping app is `mobile/`** — Expo, also built to web for Cloudflare
-Pages. `frontend/` is the legacy Vite tree that batches 5–7 below describe; it
-is history, not a spec, and its conventions are in `docs/subsystems.md` under
-that warning. Batches 5–7 say "(web)" for that reason.
+Pages, and since 2026-09-09 the only application in the repository. Batches 5–7
+below say "(web)" because they were built in a legacy Vite tree, `frontend/`,
+which nothing deployed and which was deleted along with its section of
+`docs/subsystems.md`. **Their screens were rebuilt in `mobile/` and that is
+where they live**; the batch lines are kept because their DoD gates are still
+open. `git log -- frontend/` is where the old tree went.
 
 - Batch 0 — Foundations ✅
 - Batch 1 — Backend infra (auth, DB, storage) ✅
 - Batch 2 — Sheet music OCR pipeline ✅
 - Batch 3 — Audio analysis core ✅ (pipeline done; threshold tuning against real recordings still pending — see `TUNING_LOG.md`)
 - Batch 4 — Async analysis API + calibration ✅ (BackgroundTasks; Celery migration deferred to spec §11 triggers)
-- Batch 5 — Web frontend foundation ⏳ (shell done: design tokens locked, primitives, routing, auth/data plumbing; build + lint green. Live magic-link auth + E2E test pending Supabase keys — see `EDIT_LOG.md`. Not tagged `batch-5-done` yet.)
-- Batch 6 — Score capture flow (web) ⏳ (capture + OCR-review editor + save built, **rebuilt to the locked design system** 2026-07-28; build + lint green. Live upload→OCR→save + iPhone camera pending Supabase keys/device — see `EDIT_LOG.md`. Not tagged `batch-6-done`.)
-- Batch 7 — Recording + analysis/verdict flow (web) ⏳ (tempo/calibration/metronome, MediaRecorder panel, polling result screen with verdict/annotated-score/trend/per-note built, **rebuilt to the locked design system** 2026-07-28; build + lint green. Live mic→analysis loop pending mic/Supabase/backend + device — see `EDIT_LOG.md`. Not tagged `batch-7-done`.)
+- Batch 5 — Frontend foundation ⏳ (shell done in `mobile/`: design tokens locked, primitives, routing, auth/data plumbing; build + lint green. Live magic-link auth + E2E test pending Supabase keys — see `EDIT_LOG.md`. Not tagged `batch-5-done` yet.)
+- Batch 6 — Score capture flow ⏳ (capture + OCR-review editor + save built in `mobile/`, **rebuilt to the locked design system** 2026-07-28; build + lint green. Live upload→OCR→save + iPhone camera pending Supabase keys/device — see `EDIT_LOG.md`. Not tagged `batch-6-done`.)
+- Batch 7 — Recording + analysis/verdict flow ⏳ (tempo/calibration/metronome, MediaRecorder panel, polling result screen with verdict/annotated-score/trend/per-note built, **rebuilt to the locked design system** 2026-07-28; build + lint green. Live mic→analysis loop pending mic/Supabase/backend + device — see `EDIT_LOG.md`. Not tagged `batch-7-done`.)
 - Batch 8+ — mostly UI/UX → see the §2 gate and the §3 design laws. **Build to
-  the tokens and never re-type hexes** — `mobile/src/design/` for the shipping
-  app, `frontend/src/styles/tokens.ts` for the legacy tree. This line named
-  only the second for a long time, and the two palettes share **no colour but
+  the tokens and never re-type hexes** — `mobile/src/design/`, which is now the
+  only answer. For a long time this line named only the legacy tree's
+  `frontend/src/styles/tokens.ts`, and the two palettes shared **no colour but
   white** (measured 2026-09-02), so following it while working in `mobile/`
-  builds a screen in the wrong palette.
+  built a screen in the wrong palette. Deleting that tree is what finally made
+  the instruction unambiguous.
 
 **Honest DoD status.** `git tag` is the answer. Batches **0, 1 and 2 are tagged
 and pushed**; **3 and 4 are marked ✅ and are not tagged**, so by this file's own
@@ -199,18 +204,22 @@ are verified *visually*, not end-to-end.
 
 `docs/subsystems.md` holds what was learned the hard way about five parts of
 this codebase: the `mobile/` tree and transcription, the capture path, the
-recording path, the API's concurrency, and the legacy `frontend/` tree.
+recording path, the API's concurrency, and the dependency advisories that must
+not be auto-fixed.
 
 **Read the one section you are about to touch — not the file.** It is ~10,600
 words of post-mortem, and it used to sit here, loaded in full at the start of
 every session before any work began. That cost a large share of every context
 window to deliver, on most turns, nothing relevant; and it made the ~1,450 words
 of actual rules above harder to find, which is a failure mode this project has
-already paid for at least once — a session read the `frontend/` conventions as
-binding for the shipping app, which the archive itself warns against.
+already paid for at least once — a session read the legacy `frontend/` tree's
+conventions as binding for the shipping app, which the archive itself warned
+against.
 
-Everything in it is still true and still worth reading; none of it was deleted
-in the move. It is a reference, not a preamble.
+That section is now gone, with the tree, on 2026-09-09: keeping a description of
+a dead codebase was the *mechanism* of that mistake rather than a defence
+against it. Everything that remains is still true and still worth reading. It is
+a reference, not a preamble.
 
 **A comment citing `CLAUDE.md` for a subsystem rule means
 `docs/subsystems.md`.** Roughly fifteen comments and test docstrings across the

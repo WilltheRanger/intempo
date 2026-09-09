@@ -80,7 +80,8 @@ interface ApiFetchOptions extends Omit<RequestInit, 'body'> {
  * serialises JSON bodies, and turns non-2xx responses into `ApiError`.
  *
  * Carries over the shape of `frontend/src/lib/api.ts`, which was the only
- * frontend logic in the repo before this rebuild.
+ * client logic in the repo before this rebuild. That tree was deleted on
+ * 2026-09-09; `git log -- frontend/src/lib/api.ts` is where it went.
  */
 export async function apiFetch<T>(
   path: string,

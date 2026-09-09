@@ -32,7 +32,7 @@ import sys
 #: therefore what gets believed — this session, two conclusions came from a
 #: bench that silently skipped a production gate — so a change to one is
 #: exactly as worth recording as a change to the code it measures.
-CODE_TREES = ("backend/", "mobile/", "frontend/", "tools/", "fixtures/", ".github/")
+CODE_TREES = ("backend/", "mobile/", "tools/", "fixtures/", ".github/")
 
 #: The entry itself, and the files that are already a record rather than a
 #: change needing one.

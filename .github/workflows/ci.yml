@@ -132,11 +132,11 @@ jobs:
         working-directory: .
         run: python3 tools/check-dependencies.py
 
-  # The app that actually ships. `mobile/` is the Expo tree, built to web for
-  # Cloudflare Pages — and until this job existed nothing in CI touched it:
-  # 52 vitest tests, a `tsc --noEmit` and the web build all ran only on
-  # somebody's laptop, while the job below built the *legacy* `frontend/` tree
-  # that nobody deploys.
+  # The app that actually ships, and since 2026-09-09 the only one. `mobile/` is
+  # the Expo tree, built to web for Cloudflare Pages — and until this job existed
+  # nothing in CI touched it: 52 vitest tests, a `tsc --noEmit` and the web build
+  # all ran only on somebody's laptop, while a job below built the legacy
+  # `frontend/` tree that nobody deployed. That tree is now deleted.
   #
   # Pages builds it too, on the same push. That is not a substitute: a failed
   # Pages build leaves the last good version serving, so the site looks fine
@@ -211,8 +211,10 @@ jobs:
   # **Two checks that had found real defects and ran only when someone
   # remembered to run them.** `tools/audit-a11y.mjs` says so about itself: an
   # earlier version "was run once against the legacy `frontend/` tree on
-  # 2026-08-20 and did not survive the rebuild into `mobile/`". Leaving the
-  # replacement unwired repeats a failure this repository has already had.
+  # 2026-08-20 and did not survive the rebuild into `mobile/`" — that tree was
+  # deleted on 2026-09-09 and the sentence is kept because the lesson is about
+  # the audit, not the tree. Leaving the replacement unwired repeats a failure
+  # this repository has already had.
   #
   # A separate job from `mobile-check` on purpose: these drive a real browser,
   # so if one ever does go flaky it must not mask a genuine test or type error
@@ -334,16 +336,17 @@ jobs:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
         run: python3 tools/check-migrations.py
 
-# **There is no `frontend-build` job any more.** It ran `vite build` over
-# `frontend/`, which `CLAUDE.md` calls "history, not a spec" and which the
-# comment above the mobile job already describes as "the *legacy* `frontend/`
-# tree that nobody deploys". A sixth runner, a `npm ci` and a full build on
-# every push, to prove that something nothing ships still compiles.
+# **There is no `frontend-build` job any more, and no `frontend/` either.** The
+# job ran `vite build` over the legacy Vite tree: a sixth runner, an `npm ci` and
+# a full build on every push, to prove that something nothing ships still
+# compiles. It went on 2026-09-09, the day every job in this file was found
+# failing two seconds in with no logs — a blocked run, not a broken one.
+# Whatever the allowance is when it comes back, it should not be spent here
+# first.
 #
-# The tree is **kept**: `docs/subsystems.md` documents its conventions and
-# points at it, and deleting it would cost that reference for a saving already
-# taken by not building it.
-#
-# Removed on 2026-09-09, the day every job in this file was found failing two
-# seconds in with no logs — a blocked run, not a broken one. Whatever the
-# allowance is when it comes back, it should not be spent here first.
+# The tree itself was kept at the time, on the reasoning that
+# `docs/subsystems.md` documented its conventions and pointed at it. That
+# reasoning did not survive: the pointer was the *cost*, not the benefit — a
+# session had already read those conventions as binding for the shipping app,
+# which is the failure `CLAUDE.md` §5 was restructured to prevent. Tree and
+# section both went the same day. `git log -- frontend/` has all of it.
