@@ -1,5 +1,82 @@
 # InTempo Edit Log
 
+## 2026-09-09 — The status that means "try again" was the one thing never retried
+
+Loop tick twenty-two, and it is the other half of yesterday's fix rather than a
+new subject.
+
+Yesterday `auth.py` started answering **503** for a key server it could not
+reach, so that a Supabase blip stops signing musicians out. Today I followed
+that 503 into the client and found it lands in a policy that refuses to retry
+anything with a status:
+
+```
+if (error instanceof ApiError) {
+  return false;
+}
+```
+
+**So the one status whose entire meaning is "ask again shortly" was the one
+thing the app would never ask again about.** The blip is survivable and the
+client renders a failed screen through it.
+
+**Checked both layers before changing either**, because a retry stacked on a
+retry is worse than none:
+
+- `send` retries a repeatable request **twice** — but only when `fetch` itself
+  *throws*. A received 503 returns from `send` on the first attempt and is
+  never repeated at that layer.
+- `retryQuery` refuses every `ApiError`.
+
+So a received 503 was answered once, anywhere in the stack.
+
+**The rule it was swept into is right, and it is about something else.** The
+comment argues that "anything with a status was answered, and answered the same
+way twice is the same answer: a 404 is not going to become a 200". True of 404,
+403, 422. Not true of 502, 503 and 504 — an upstream restarting, a dependency
+briefly away, a gateway that gave up waiting.
+
+**500 is deliberately still not retried**, and that is the line worth drawing:
+a server error that does not say *temporarily unavailable* is usually a bug,
+and a bug answers the same way every time. Retrying it spends a musician's wait
+on a result that is not coming.
+
+**The cost argument that justified the old rule is what makes the exception
+affordable.** That paragraph was written about a **timeout**, where one more
+attempt costs ninety seconds — the reason it exists is "three minutes of a
+screen showing a skeleton". A 503 is a *response*: it arrives in the time a
+request takes, so two more attempts at React Query's default backoff is about
+**three seconds**. Same policy, opposite arithmetic, and the comment now says
+which case it is talking about.
+
+**Writes are untouched.** `mutations.retry` stays `false`, for the reason
+written beside it: a POST that timed out may have been received and run, and
+asking again is a second take the musician never recorded. "503 is retryable"
+is exactly the reasoning that would tempt someone to relax that, so the
+existing test asserting it is now sitting next to the change that invites the
+mistake.
+
+**A duplicate I nearly added.** I wrote a test pinning `mutations.retry` beside
+the new cases, then found `never repeats a write` already doing it forty lines
+down and deleted mine. Two ticks ago I was removing duplicated rules; adding
+one in the same file would have been poor form.
+
+**Mutation-checked, five ways**, all killed: 503 slipping back out of the list
+(3 tests), 500 retried too (2), retried without a bound (2), the bound dropped
+to one (2), and writes made retryable (1). The bound and the membership are
+also driven through a real `QueryClient` rather than asserted off the policy —
+three attempts for a 503, one for a 500 — because the count is the thing a
+musician waits through.
+
+**Tests run:** `preflight.py --full` with a DSN: **15/15 in 634s**.
+`mobile/.env` restored, no stray backups. Mobile 159 files / 1763 tests.
+
+**Side effects:** a screen meeting a 502/503/504 now takes roughly three
+seconds longer to show an error, and in exchange usually shows no error at all.
+A screen meeting anything else is unchanged.
+
+**Rollback:** revert the commit. The policy is one function in one module.
+
 ## 2026-09-09 — A Supabase blip signed every musician out
 
 Loop tick twenty-one. Yesterday's tick fixed a developer string reaching

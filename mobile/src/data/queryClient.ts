@@ -39,13 +39,46 @@ export const STALE_TIME_MS = 30_000;
  * same answer: a 404 is not going to become a 200, and a 403 over the tier
  * limit is a thing to render rather than to ask about again.
  *
+ * **Except the three that mean "not now".** 502, 503 and 504 are the statuses
+ * whose entire meaning is that the answer is expected to change — an upstream
+ * that is restarting, a dependency briefly unreachable, a gateway that gave
+ * up waiting. Sweeping them in with 404 was an over-generalisation of a rule
+ * written about something else, and it stopped being harmless the day
+ * `auth.py` started answering **503** for a key server it could not reach:
+ * a blip of a second or two now renders as a failed screen instead of being
+ * ridden out.
+ *
+ * **500 is deliberately not in the list.** A server error that is not
+ * explicitly "temporarily unavailable" is usually a bug, and a bug answers the
+ * same way every time; retrying it spends a musician's wait on a result that
+ * is not coming.
+ *
+ * **The cost is small precisely because these arrive fast.** The paragraph
+ * above is about a *timeout*, where one more attempt costs ninety seconds. A
+ * 503 is a response — it lands in the time a request takes — so two more
+ * attempts at React Query's default backoff is about three seconds, not three
+ * minutes. That difference is the whole reason this exception is affordable
+ * and the one above is not.
+ *
+ * Reads only. `mutations.retry` stays `false`, and the comment there says why:
+ * a POST that timed out may have been received and run, and asking again
+ * submits a second take.
+ *
  * A non-`ApiError` gets one retry. That is the unfamiliar failure — something
  * threw that this layer does not recognise — and one more attempt is a fair
  * price for a class of error we cannot reason about.
  */
+const TRY_AGAIN_SHORTLY = new Set([502, 503, 504]);
+
+/** How many extra goes a "not now" answer is worth. See the note on cost. */
+const RETRIES_WHILE_UNAVAILABLE = 2;
+
 export function retryQuery(failureCount: number, error: unknown): boolean {
   if (error instanceof ApiError) {
-    return false;
+    return (
+      TRY_AGAIN_SHORTLY.has(error.status) &&
+      failureCount < RETRIES_WHILE_UNAVAILABLE
+    );
   }
   return failureCount < 1;
 }
