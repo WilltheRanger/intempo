@@ -123,6 +123,44 @@ def test_every_migrated_column_the_code_uses_is_checked_at_startup() -> None:
     )
 
 
+def test_the_analyses_projection_names_only_real_columns() -> None:
+    """`GET /v1/analyses?include_result=false` selects columns by name.
+
+    `select("*")` tolerates a schema that is missing a column; an explicit
+    projection does not — PostgREST answers **400** for a column that does not
+    exist, so a name that is not a column turns the light path into a hard
+    failure on a deployment where the heavy one works.
+
+    The list is derived from `AnalysisResponse.model_fields`, which is what
+    stops it drifting from the *model*. This is the other half: that every
+    field name is also a **column** name. The two happen to coincide today and
+    nothing but this says they must.
+    """
+    from app.routers.analyses import _WITHOUT_RESULT
+
+    initial = (MIGRATIONS / "001_initial.sql").read_text()
+    body = re.search(
+        r"create\s+table\s+analyses\s*\((.*?)\n\);", initial, re.IGNORECASE | re.DOTALL
+    )
+    assert body, "001_initial.sql no longer declares `analyses` in the shape this reads"
+    declared = {
+        m.group(1)
+        for line in body.group(1).splitlines()
+        if (m := re.match(r"\s*(\w+)\s+\w", line))
+    }
+    declared |= {
+        column for (table, column) in _added_columns() if table == "analyses"
+    }
+
+    asked = {name.strip() for name in _WITHOUT_RESULT.split(",")}
+    unknown = sorted(asked - declared)
+    assert not unknown, (
+        f"the analyses projection asks for {unknown}, which no migration adds. "
+        "PostgREST answers 400 for an unknown column, so include_result=false "
+        "would fail where the default succeeds."
+    )
+
+
 def test_no_column_is_checked_that_no_migration_adds() -> None:
     """The other direction, and the one that rots quietly.
 

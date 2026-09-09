@@ -91,7 +91,12 @@ export function toPiece(
 async function lastPracticedByScore(): Promise<Map<string, string>> {
   const out = new Map<string, string>();
   try {
-    const analyses = await listAnalyses({ limit: 200 });
+    // **Two fields out of two hundred rows.** This builds the map of "when
+    // did I last play this", which reads `score_id` and `created_at` and
+    // nothing else — and it runs on every Library open and every piece open.
+    // With the analysis attached that is 10 MB off the database and down the
+    // wire for about four kilobytes of answer.
+    const analyses = await listAnalyses({ limit: 200, includeResult: false });
     for (const analysis of analyses) {
       if (!out.has(analysis.score_id)) {
         out.set(analysis.score_id, analysis.created_at);
@@ -155,7 +160,9 @@ export const apiPieceSource: PieceSource = {
     // most recently added — so the newest analysis names it. A library with no
     // analyses yet falls back to the newest score, which is the only sensible
     // thing to offer someone who has never recorded.
-    const analyses = await listAnalyses({ limit: 1 }).catch(() => []);
+    const analyses = await listAnalyses({ limit: 1, includeResult: false }).catch(
+      () => [],
+    );
     const [latest] = analyses;
 
     if (latest) {

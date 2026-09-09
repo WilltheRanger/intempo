@@ -1,5 +1,100 @@
 # InTempo Edit Log
 
+## 2026-09-09 — Ten megabytes to answer "when did I last play this"
+
+Loop tick thirteen. Having spent two ticks on tooling I went looking at the
+data path, because the owner's last few questions have been about egress and
+cost.
+
+**`GET /v1/analyses` selects `*`, and `result_json` is most of the row.**
+Measured against the real response models — the tuning corpus audio is not in
+the repository, so the values are synthesised but the shape, the field names
+and the serialiser are the real ones, which is what decides the byte count:
+
+| Notes in the take | `result_json` | of which `per_note` |
+|---|---|---|
+| 68 | 18,045 B | 14,439 B |
+| 200 | 52,434 B | 42,655 B |
+| 400 | 104,589 B | 85,459 B |
+| 800 | 209,389 B | 171,459 B |
+
+**214 bytes per note**, flat.
+
+**And `lastPracticedByScore()` fetches two hundred of them to read two
+fields.** It builds the map of "when did I last play this" out of `score_id`
+and `created_at` — about four kilobytes of answer — and it runs on **every
+Library open and every piece open**. At 200-note takes that is **10 MB**; at
+400-note takes, **20 MB**.
+
+That is billed twice: Postgres → the API is Supabase egress, and the API → the
+phone is Render's. It is very likely a larger ongoing hole than the signed-URL
+bug diagnosed last week, and unlike that one it is not historical.
+
+**Fixed with `include_result` on the list endpoint**, defaulting to true, and
+it narrows the **SQL projection** rather than the response. Dropping the field
+after Postgres has already sent it would leave the expensive half of the
+transfer exactly where it was. Two callers pass `false`; the three that
+actually read the analysis are untouched.
+
+The column list is **derived from `AnalysisResponse.model_fields`** rather than
+typed out, because a projection kept in step with a response model by hand is a
+projection that will not be: a field added above and forgotten below comes back
+null and is perfectly valid, which is the worst kind of wrong.
+
+**`select("*")` tolerates a missing column and an explicit list does not** —
+PostgREST answers 400 for a column that does not exist — so the light path
+could fail on a deployment where the heavy one works. Every name is either in
+`001_initial.sql` or already in `REQUIRED_COLUMNS`, and
+`test_readiness_columns.py` now parses the migrations and holds the projection
+against them.
+
+**`FakeSupabase` now applies the projection it is given.** `select(*_cols)`
+discarded them, so a caller asking for two columns got the whole row and no
+test could tell a narrowed read from a full one — which is exactly the thing
+this change is about. The whole backend suite passes with the fake narrowing:
+**2139 tests**, no call site was relying on being given more than it asked for.
+
+**A mutation survived, and fixing it is the part worth writing down.** Removing
+`instrument` from the derived projection changed nothing any test could see.
+The parity test compared the full response with the light one, and
+`_analysis_row` does not set `instrument`, `skip_long_rests`, `from_measure` or
+`failure_reason` — so four fields were null on both sides and the comparison
+was blind to exactly the fields most likely to be dropped. **A field with no
+distinguishing value is a field a comparison cannot check.** The test now
+builds its row from the model and *fails* if any field has no distinctive
+value, rather than quietly skipping it. Re-run across all six optional fields
+afterwards: all six killed.
+
+**Mutation-checked, ten ways.** The narrowing never reaching the query (2
+fail), the projection forgetting each of six fields (1 each), the projection
+naming a column that is not one (3), the fake ignoring the projection again
+(2), and the client no longer sending the parameter (1). All restored
+byte-identically.
+
+**The client sends the parameter only when narrowing.** Sending `true`
+explicitly would be harmless on this server and is still the wrong instinct: a
+deployment that has never heard of the name is what has to keep working, and
+the way to do that is not to mention it.
+
+**Tests run:** `preflight.py` 9/9 in 381s, including migrations against a real
+Postgres. 2139 backend tests; 5 new tests across `test_analyses_api.py`,
+`test_readiness_columns.py` and the mobile client.
+
+**Named and not fixed.** `getLatestTake()` calls
+`listAnalyses({ status: 'done' })` — 200 rows *with* their analyses — to render
+**one** take on Today, because it skips rows whose result cannot be read and so
+cannot simply ask for one. That is the same 10 MB on a different screen. The
+fix is a smaller page with a fallback, which changes behaviour in a case I
+cannot measure from here (a library whose newest takes all have unreadable
+results), so it is named rather than guessed at.
+
+**Side effects:** the response for the two narrowed callers now has
+`result_json: null` where it previously carried the analysis. Neither reads it;
+both are typed as `AnalysisResponse` and the field is already optional.
+
+**Rollback:** revert the commit. The parameter defaults to the old behaviour,
+so a server on this commit serves an older client unchanged.
+
 ## 2026-09-09 — The stand-in for CI was quietly checking less than CI
 
 Loop tick twelve, and it starts with a correction to yesterday's entry. I wrote

@@ -36,6 +36,8 @@ class _Query:
         self._filters: list[tuple[str, str, Any]] = []
         self._limit: int | None = None
         self._count: str | None = None
+        #: None means "the whole row" — `select("*")`, or no argument.
+        self._columns: set[str] | None = None
 
     def eq(self, col: str, val: Any) -> "_Query":
         self._filters.append(("eq", col, val))
@@ -110,6 +112,41 @@ class _Not:
         return self._query
 
 
+def _column_names(cols: tuple[Any, ...]) -> set[str] | None:
+    """The columns a `select(...)` asked for, or None for everything.
+
+    PostgREST takes them as one comma-separated string — `select("id, score_json")`
+    — and `select("*")` or `select()` means the whole row. Nothing here parses
+    the embedding syntax (`scores(title)`), because nothing in this codebase
+    uses it; a column containing a bracket is passed through as itself and will
+    simply not match, which fails loudly rather than quietly.
+    """
+    names = {
+        part.strip()
+        for col in cols
+        if isinstance(col, str)
+        for part in col.split(",")
+        if part.strip()
+    }
+    if not names or "*" in names:
+        return None
+    return names
+
+
+def _project(row: dict[str, Any], columns: set[str] | None) -> dict[str, Any]:
+    """One row, narrowed to what was asked for.
+
+    A requested column the row does not have is simply absent, which is what
+    PostgREST does for a null and **not** what it does for a column that does
+    not exist — that is a 400, and modelling it here would mean the fake
+    knowing the schema. The readiness checks in `app/services/readiness.py` are
+    where that gap is covered.
+    """
+    if columns is None:
+        return dict(row)
+    return {k: v for k, v in row.items() if k in columns}
+
+
 class _Table:
     def __init__(self, rows: list[dict]):
         self.rows = rows
@@ -117,9 +154,16 @@ class _Table:
     def insert(self, payload: dict | list[dict]) -> _Query:
         return _Query(self, "insert", payload)
 
-    def select(self, *_cols, count: str | None = None) -> _Query:
+    def select(self, *cols, count: str | None = None) -> _Query:
         query = _Query(self, "select")
         query._count = count
+        # **The projection is applied, not discarded.** It used to be `*_cols`,
+        # thrown away, so a caller asking for two columns got the whole row
+        # back and a test could not tell a narrowed read from a full one. That
+        # is the half of `include_result=false` that matters: the point is not
+        # to hide a field from the response, it is not to fetch it — and a fake
+        # that answers everything regardless cannot show the difference.
+        query._columns = _column_names(cols)
         return query
 
     def update(self, payload: dict) -> _Query:
@@ -158,7 +202,7 @@ class _Table:
 
         if q._op == "select":
             return _Result(
-                [dict(r) for r in matched],
+                [_project(r, q._columns) for r in matched],
                 count=total if q._count else None,
             )
         if q._op == "update":

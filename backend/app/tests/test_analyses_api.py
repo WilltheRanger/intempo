@@ -438,6 +438,107 @@ def test_list_filters_by_score_and_status(
     assert [row["status"] for row in done_only.json()] == ["done"]
 
 
+def test_the_list_carries_the_analysis_by_default(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """Insights reads `result_json` off this endpoint, so the default may not
+    change without changing that with it."""
+    user_id = uuid4()
+    fake = FakeSupabase()
+    fake.seed("analyses", [_analysis_row(user_id, uuid4(), status="done")])
+    _install(monkeypatch, fake)
+
+    res = client.get(
+        "/v1/analyses", headers={"Authorization": f"Bearer {make_token(sub=user_id)}"}
+    )
+
+    assert res.status_code == 200
+    assert res.json()[0]["result_json"] is not None
+
+
+def test_include_result_false_does_not_fetch_the_analysis(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """**Not fetched, not merely hidden**, and that distinction is the feature.
+
+    `result_json` is by far the largest thing in the row — measured against the
+    real response models at **214 bytes per note**, so a 200-note take is 52 KB
+    and a page of 200 takes is 10 MB. The app's "when did I last play this" map
+    reads two fields out of that on every Library open.
+
+    Dropping the field after Postgres has already sent it would leave the
+    expensive half of the transfer exactly where it was; the database read is
+    billed too. `FakeSupabase` applies the projection, so a row that still
+    carried the field here would mean the narrowing never reached the query.
+    """
+    user_id = uuid4()
+    fake = FakeSupabase()
+    fake.seed("analyses", [_analysis_row(user_id, uuid4(), status="done")])
+    _install(monkeypatch, fake)
+
+    res = client.get(
+        "/v1/analyses?include_result=false",
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+
+    assert res.status_code == 200
+    [row] = res.json()
+    assert row["result_json"] is None
+    # Everything the caller actually asked for survives — a projection that
+    # dropped `created_at` would make the map it feeds silently empty.
+    assert row["score_id"] and row["created_at"] and row["status"] == "done"
+
+
+def test_the_light_projection_names_every_other_field(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """A field added to `AnalysisResponse` and forgotten in the projection
+    would come back null from this path and be perfectly valid — which is why
+    the column list is derived from the model rather than typed out. This is
+    the check that the derivation is complete rather than merely plausible.
+
+    **The row is built from the model, and the first assertion is why.** An
+    earlier version of this test seeded `_analysis_row`, which does not set
+    `instrument`, `skip_long_rests`, `from_measure` or `failure_reason` — so
+    those four were null on both sides and dropping one from the projection
+    changed nothing the comparison could see. Measured: removing `instrument`
+    from the derivation left this test passing. A field with no distinguishing
+    value is a field this cannot check, so the row must carry one for every
+    field and must fail rather than skip when it does not.
+    """
+    from app.routers.analyses import AnalysisResponse
+
+    distinctive: dict[str, Any] = {
+        "instrument": "double_bass",
+        "skip_long_rests": True,
+        "from_measure": 17,
+        "failure_reason": "the take was silent",
+    }
+    user_id = uuid4()
+    row = _analysis_row(user_id, uuid4(), status="done", **distinctive)
+    unseeded = [
+        name
+        for name in AnalysisResponse.model_fields
+        if row.get(name) in (None, "", [], {})
+    ]
+    assert not unseeded, (
+        f"{unseeded} have no value in the seeded row, so this comparison cannot "
+        "tell a projection that keeps them from one that drops them. Give each "
+        "a distinctive value above."
+    )
+
+    fake = FakeSupabase()
+    fake.seed("analyses", [row])
+    _install(monkeypatch, fake)
+    headers = {"Authorization": f"Bearer {make_token(sub=user_id)}"}
+
+    full = client.get("/v1/analyses", headers=headers).json()[0]
+    light = client.get("/v1/analyses?include_result=false", headers=headers).json()[0]
+
+    differing = {k for k in full if full[k] != light.get(k)}
+    assert differing == {"result_json"}, differing
+
+
 def test_list_unauthenticated_returns_401(client: TestClient) -> None:
     assert client.get("/v1/analyses").status_code == 401
 

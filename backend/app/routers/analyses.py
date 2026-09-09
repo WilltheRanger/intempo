@@ -183,6 +183,19 @@ def _assert_measure_in_score(row: dict[str, Any], from_measure: int | None) -> N
         )
 
 
+#: Every column `AnalysisResponse` reads **except** `result_json`.
+#:
+#: **Derived from the model rather than typed out**, because a projection that
+#: has to be kept in step with a response model by hand is a projection that
+#: will not be: a field added above and forgotten here would come back null
+#: from the light path and be perfectly valid, which is the worst kind of
+#: wrong. Every field name is also the column name, and
+#: `test_analyses_projection.py` holds that against the migrations.
+_WITHOUT_RESULT = ", ".join(
+    name for name in AnalysisResponse.model_fields if name != "result_json"
+)
+
+
 def _row_to_response(row: dict[str, Any]) -> AnalysisResponse:
     return AnalysisResponse(
         id=row["id"],
@@ -352,6 +365,13 @@ def list_analyses(
     ),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
+    include_result: bool = Query(
+        default=True,
+        description=(
+            "Send the per-note analysis with each row. Say false when you only "
+            "need the rows — it is by far the largest field."
+        ),
+    ),
 ) -> list[AnalysisResponse]:
     """The caller's analyses, newest first.
 
@@ -362,11 +382,23 @@ def list_analyses(
 
     `analyses(user_id, created_at DESC)` is indexed, so the default page
     is an index scan.
+
+    **`include_result=false` exists because `result_json` dwarfs everything
+    else in the row.** Measured against the real response models at 200 takes
+    a page: **214 bytes per note**, so a 200-note take is 52 KB and a 400-note
+    take is 105 KB — and a full page of either is **10 to 20 MB**. The app's
+    "when did I last play this" map reads exactly two fields out of that,
+    `score_id` and `created_at`, about four kilobytes' worth, on every Library
+    open.
+
+    It narrows the **SQL projection**, not just the response. Dropping the
+    field after Postgres has already sent it would leave the expensive half of
+    the transfer exactly where it was — the database read is billed too.
     """
     query = (
         require_service_client()
         .table("analyses")
-        .select("*")
+        .select("*" if include_result else _WITHOUT_RESULT)
         .eq("user_id", str(user_id))
     )
     if score_id is not None:
