@@ -1,5 +1,42 @@
 # InTempo Edit Log
 
+## 2026-09-09 — Preparing the repository to be made public
+
+The owner is opening the repository and asked for three things withheld: their
+personal email, the business plan, and the Supabase project ref. All three
+needed **history** changed, not files deleted — a public repo exposes every
+commit, and the file being absent from HEAD says nothing about the other 806.
+
+**Surveyed before touching anything, because the shape of each differs.**
+
+- **The email is in commit metadata only — 0 blobs.** Checked by streaming every
+  blob in the repository through grep, not by trusting `git log -p`, whose
+  default format prints `Author:` lines and made it look like 55 file matches.
+  It appears in **55 commits**, 110 times across author *and* committer fields:
+  `Daniel <…>` (32) and `Claude <…>` (23). Nothing in any commit *message*.
+  So a mailmap fixes it entirely and no file content changes.
+- **`intempo-combined.md`** is touched by 2 commits and present in the tree of
+  nearly all of them, so path removal is the operation, not a delete.
+- **The project ref** is in 3 files — `CLAUDE.md`, `EDIT_LOG.md`,
+  `docs/deploy-backend.md` — across 1067 blob versions, and **no test**
+  references it, so a text replacement is safe.
+
+**This commit is the coherence half.** `CLAUDE.md` and `README.md` named the
+spec as the source of truth for a file that is about to stop existing here.
+Both now say it is private, and `CLAUDE.md` explains why the ~15 code comments
+and migrations that cite it by section were **not** rewritten: those citations
+are still correct about *why* something is the way it is, and §5 already records
+that touching fifteen files to fix a pointer is how a documentation change
+becomes a diff nobody reviews.
+
+The ref is left in place here deliberately — the rewrite that follows replaces
+it everywhere in one pass, so there is one mechanism rather than a hand edit at
+HEAD and a filter for the past that could disagree.
+
+Rollback for everything in this pair of steps: the full pre-rewrite state is
+bundled at `/tmp/claude-0/intempo-prerewrite.bundle`, and the remote still holds
+the old history until it is force-pushed.
+
 ## 2026-09-09 — SSRF on the calibration endpoint, found in a pre-publication audit
 
 The owner is considering making the repository public and asked for a security

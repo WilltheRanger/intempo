@@ -4,10 +4,19 @@ This file is read at the start of every Claude session. It is binding.
 `intempo-combined.md` is the source of truth for *what* to build;
 this file is *how* we work while building it.
 
+**The spec is not in this repository.** It carries the monetisation strategy,
+pricing rationale and unit economics, and was withheld when the repository was
+opened. Around fifteen code comments, migrations and test docstrings cite it by
+section — those citations are still correct about *why* something is the way it
+is, and the section they point at is simply not public. They were deliberately
+not rewritten, for the reason §5 gives about pointers: touching fifteen files to
+fix one is how a documentation change becomes a diff nobody reviews.
+
 ## 1. Follow the developer procedures — every session, no exceptions
 
 These are the "Operating principles" and "Build-time activity logging"
-rules from `intempo-combined.md` Part II. They are not optional polish.
+rules from the spec's Part II (see the note above — the spec is private).
+They are not optional polish.
 
 **The four logs — keep them current as you work:**
 
@@ -69,9 +78,10 @@ Supabase SQL editor" and nobody checked whether that was still the only route.
 **Before calling anything owner-blocked, check whether a tool in this session
 can do it.**
 
-The live project is **`intempo-dev`** (`<project-ref>`) — both `.env`
-files point at it, and it is what `apply_migration` should target. The project
-literally named `intempo` is paused and nothing points at it.
+The live project is the one named **`intempo-dev`** — both `.env` files point
+at it, and it is what `apply_migration` should target. `list_projects` gives its
+ref; it is deliberately not written down here. The project literally named
+`intempo` is paused and nothing points at it.
 
 **The rest of the operating principles:**
 
@@ -103,7 +113,7 @@ literally named `intempo` is paused and nothing points at it.
 8. **Be honest about DoD status.** If part of a Definition of Done can't be met in-session (e.g. it needs a human ear or real recordings), say so plainly in `EDIT_LOG.md` and the PR — never claim it's done.
 
 **Definition of Done for a batch** = the batch's own DoD checklist in
-`intempo-combined.md` + all four logs updated + tests green + tag pushed.
+the spec + all four logs updated + tests green + tag pushed.
 
 ## 2. STOP and ask before any UI/UX work
 

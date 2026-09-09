@@ -13,7 +13,9 @@ need live Supabase keys and a real device, and are listed honestly in
 
 ## Project layout
 
-- `intempo-combined.md` — master spec and build plan. Source of truth for every batch.
+- The master spec and build plan is **not public** — it carries pricing and
+  unit economics. Code comments that cite it by section are still accurate
+  about the reasoning; the section itself is private.
 - `CLAUDE.md` — the working agreement: procedures, the UI/UX gate, the design laws, batch status.
 - `EDIT_LOG.md` — every meaningful change to the codebase (newest first).
 - `DECISIONS.md` — architectural "X over Y because Z" choices.
