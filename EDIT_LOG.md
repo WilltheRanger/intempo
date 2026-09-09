@@ -1,5 +1,79 @@
 # InTempo Edit Log
 
+## 2026-09-09 — The library, readable without a connection
+
+Loop tick thirty-two. Tick ten built the take queue's drain, so a take recorded
+out of signal is kept and sent later. This is the half that was missing: the
+piece it was recorded **into** could not be opened. Every screen's data lived in
+a React Query cache that exists only for the life of the process, and nothing
+persisted it — `grep` for `persistQueryClient` returned nothing, and AsyncStorage
+was used by exactly three modules, none of them the library. A musician in a
+rehearsal room with no signal could record into music they could not read.
+
+**What was added.** `mobile/src/data/cache/persistCache.ts` — the rules, pure
+and tested — and `libraryCache.ts`, the glue that binds them to AsyncStorage and
+to whoever is signed in. Same split as `takeDrainer`/`drainQueue`, for the same
+reason: a rule in an options object is a rule nothing checks, and two of the
+three rules here are about *not* writing something, which is the kind of mistake
+that stays invisible until it is a support ticket.
+
+**Three rules, each of which is a defect avoided rather than a nicety.**
+
+- *An allow-list, not a deny-list.* Only the three `pieces` queries are written.
+  Insights, the profile row and the latest take are not: persisting a screen of
+  a fortnight-old practice figures, with nothing on the screen saying they are
+  a fortnight old, is worse than the skeleton it replaces. A piece of music is
+  not, and that distinction is the whole list.
+- *Signed URLs never go to disk.* `thumbnail` and `pages` are Supabase URLs good
+  for **an hour**, and the point of this cache is the next morning. A restored
+  one is a link the host now refuses, which draws as a broken box; `null` draws
+  `ScoreThumbnail`'s ruled staves, a state the app already renders deliberately.
+  Choosing the known-good absence over the plausible-looking failure.
+- *The listing is written without its notation.* `score_json` is ~111 B a note,
+  so a fifty-piece listing is megabytes on its own — against a `localStorage`
+  quota of about five for the whole origin, shared with the Supabase session and
+  the take queue. The grid has never drawn a note, and `pieceFromCaches` already
+  documents that a listed piece's `score` may be absent, so this writes a
+  placeholder the app was built to receive. Pieces you have actually opened keep
+  their notation, and a 2 MB budget trims those newest-first — which is to say,
+  to the pieces you have been working on.
+
+**The account is the buster, not the storage key.** A mismatch makes the library
+*remove* the stored client rather than hydrate it, so signing in as somebody
+else on a shared device collects the previous copy. A per-account key would have
+been correct and left it lying there.
+
+**One existing gap closed on the way.** Three screens called
+`queryClient.clear()` after signing out; the one sign-out that is not a screen —
+`apiFetch` doing it for you on a 401 — did not. In memory that was invisible,
+because the cache dies with the process. On disk it is somebody's repertoire
+left on a shared browser. The rule now lives in `libraryCache`, which every
+sign-out passes through. The three screen calls are left alone: they are
+harmless, and `DeleteAccountScreen`'s runs on a path where the sign-out differs.
+
+**Verification.** 21 new tests; **ten mutations tried, ten killed** — keeping the
+signed thumbnail, always keeping notation, persisting mutations, `break` for
+`continue` in the budget walk, reversing the recency sort, dropping the success
+check, dropping the kind ordering, matching the bare `['pieces']` root (which
+invalidation uses), and both halves of the buster. `preflight.py --full`:
+**16/16 in 592s**, against a fresh local Postgres.
+
+**Two things it cost.** `licences.ts` needed regenerating — the acknowledgements
+page names every declared package and a test enforces it, which caught the two
+new dependencies immediately. And `npm install` pruned playwright, which is
+installed `--no-save`; preflight's walk and accessibility gates failed with
+`MODULE_NOT_FOUND` until it was reinstalled the same way. Bundle: 515 → **519 KB
+gzipped**, 41 KB of headroom left under the 560 KB budget.
+
+**Not done, and deliberately.** Nothing on screen says "this is what was saved,
+you are offline". That is copy and a visual treatment, so it is a §2 gate item,
+and the screens are honest without it — a piece with no notation already renders
+as a piece with no notation. Insights and the profile stay online-only.
+
+Rollback: `git revert`, then `npm uninstall @tanstack/react-query-persist-client
+@tanstack/query-async-storage-persister` and re-run `scripts/generate-licences.mjs`.
+Devices keep a stale `intempo.library-cache` key until it ages out; nothing reads it.
+
 ## 2026-09-09 — A 404 is not a bad moment, it is a piece that is gone
 
 Loop tick thirty-one, finishing what tick thirty named and deliberately left.

@@ -1,5 +1,54 @@
 # InTempo Decisions
 
+## 2026-09-09 — Persist the pieces cache to the device, and nothing else
+
+**Context.** The app queued takes offline and could read nothing offline. Every
+screen's data lived in a React Query cache tied to the process, so relaunching
+without signal showed an empty library — the musician could record into a piece
+they could not open. Practice rooms and basements are the app's setting, so this
+is the normal case rather than an edge one.
+
+**Decision.** Persist the React Query cache to AsyncStorage via
+`persistQueryClient`, restricted to the three `pieces` queries, with signed URLs
+stripped, the listing written without its notation, a 2 MB budget, a 14-day
+maximum age, and the signed-in account id as the buster.
+
+**Alternatives considered.**
+
+- *Persist the whole cache.* Rejected. Insights and this week's practice figures
+  would restore as numbers the screen presents as current; a fortnight-old
+  figure with nothing saying so is worse than the skeleton it replaces. The
+  recording and avatar URLs it would also carry expire within the hour.
+- *A per-account storage key instead of a buster.* Rejected. Both keep one
+  musician from seeing another's repertoire, but the buster makes the library
+  *remove* a mismatched client on restore; a per-account key leaves the previous
+  account's copy on the device indefinitely.
+- *Keep notation in the persisted listing.* Rejected on size. `score_json` is
+  ~111 B a note, so a fifty-piece listing alone is megabytes against a
+  `localStorage` quota of about five for the whole origin, shared with the
+  Supabase session and the take queue. The library grid has never drawn a note
+  and `pieceFromCaches` already documents that a listed `score` may be absent.
+- *A hand-rolled AsyncStorage mirror of the library.* Rejected. It would
+  duplicate invalidation, staleness and refetch — all of which the query client
+  already gets right — to avoid two small dependencies (+4 KB gzipped).
+- *Do nothing until there is an offline-mode design.* Rejected as the reason the
+  gap survived this long. The data layer is the part that can be built and
+  tested now; the screens already render a piece without notation, and a piece
+  without a photograph, as deliberate states.
+
+**Trade-offs accepted.**
+
+- **Nothing on screen says the data is saved rather than fetched.** That is copy
+  and a visual treatment, so it is a §2 gate item for the owner. Until then a
+  restored screen is quieter than a live one but never says anything untrue.
+- **Restored pieces show ruled staves instead of their photograph** until a
+  fetch succeeds. Chosen over a broken image box from an expired signed URL.
+- **A large library is trimmed, not warned about.** Details are dropped
+  newest-first, so what survives is what the musician has been opening. Nothing
+  tells them a piece they have never opened has no notation offline.
+- **Insights, the profile and takes stay online-only**, which is a partial
+  offline story by design rather than by omission.
+
 ## 2026-09-09 — A key server we cannot reach is 503, not 401 (reversing an earlier call)
 
 **Context.** `_decode_token` answered **401** for every failure, including a

@@ -25,6 +25,7 @@ import { hydratePendingAnalysis } from './data/practice/pendingAnalysis';
 import { hydrateOnboardingDraft } from './data/onboardingDraft';
 import { colors, fontsToLoad } from './design';
 import { RootNavigator } from './navigation/RootNavigator';
+import { startLibraryCache } from './data/cache/libraryCache';
 import { startTakeDrainer } from './lib/sync/takeDrainer';
 
 const queryClient = createQueryClient();
@@ -150,6 +151,19 @@ export default function App() {
   // who walks back into coverage and opens the library should find their
   // takes going, not have to visit the room they recorded them in.
   useEffect(() => startTakeDrainer(), []);
+
+  // The other half of practising without a connection.
+  //
+  // Takes recorded out of signal have been kept and sent later since the queue
+  // above existed — and the piece they were recorded *into* could not be
+  // opened, because every screen's data lived in a cache that dies with the
+  // process. A musician in a rehearsal room could record into music they could
+  // not read. This writes the repertoire to the device so that relaunching
+  // without signal still opens a library.
+  //
+  // What is written, what is stripped from it and how much of it fits are all
+  // in `data/cache/persistCache.ts`, where they are tested.
+  useEffect(() => startLibraryCache(queryClient), []);
 
   return (
     <SafeAreaProvider>
