@@ -22,6 +22,7 @@ import { takeKeys } from './useLatestTake';
 import { toPiece } from '../sources/api';
 import type { NewPiece, PieceEdit } from '../sources/types';
 import type { Clef, Piece, ScoreJson } from '../types';
+import { forgetTakesFor } from '../../lib/sync/queuedTakes';
 
 export const pieceKeys = {
   all: ['pieces'] as const,
@@ -165,6 +166,16 @@ export function useDeletePiece() {
     onError: (_error, _id, undo) => undo?.(),
     onSettled: async (_data, _error, id) => {
       practiceTempo.clear(id);
+      // **And its unsent takes**, which nothing removed. The WAV is up to 50 MB
+      // and the only thing that ever dropped an entry unasked was noticing its
+      // bytes were gone — and they are not. It is not inert either: the drain
+      // retries it for ever against a score the server answers 404 for, and a
+      // pass stops at the first failure, so one orphan blocks every real take
+      // behind it.
+      //
+      // In `onSettled` rather than `onMutate`: a delete that fails is undone
+      // above, and a take thrown away optimistically could not be.
+      void forgetTakesFor(id);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: pieceKeys.all }),
         queryClient.invalidateQueries({ queryKey: takeKeys.all }),

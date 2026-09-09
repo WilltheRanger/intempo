@@ -1,5 +1,75 @@
 # InTempo Edit Log
 
+## 2026-09-09 — Deleting a piece left its take blocking the queue for ever
+
+Loop tick thirty. Two scans came back clean before this one and are recorded as
+results rather than skipped:
+
+- **The backend has no untested modules.** 51 imported directly by a test; the
+  three that are not — `routers/me.py`, `routers/health.py`,
+  `services/score_pages.py` — are reached by `TestClient` against a URL rather
+  than by import, and `test_me.py`, `test_health.py` and `test_multi_page_scan.py`
+  all exist. My scan's "gap" was the scan's.
+- **`/v1/ready` already covers the OCR provider chain** — unknown names,
+  missing API keys, per-provider checks, blocking only when no entry is usable.
+
+Then I went looking at the queue I extended in tick ten, and found something I
+should have found then.
+
+**Deleting a piece does not delete its unsent takes.** `deletePiece` clears the
+practice tempo and invalidates three query caches. Nothing touches the queue.
+Three consequences, and the third is the serious one:
+
+1. The take's WAV — up to `MAX_UPLOAD_BYTES`, **50 MB** — stays on the device
+   for the life of the install. The only thing that ever drops an entry unasked
+   is `restoreQueuedTake` noticing the *bytes* are gone, and they are not.
+2. **It is not inert.** `submitTake` needs a `scoreId`; the server answers 404
+   for a score that no longer exists, and `readTakeFailure` reads that as
+   retriable — correctly, since it cannot tell a deleted piece from a bad
+   moment. So the drain retries it on every foreground, for ever.
+3. **And a pass stops at the first failure**, by design, because the usual
+   reason a take is queued is the connection rather than the take. So one
+   orphan sits at the head of the queue and **blocks every real take behind
+   it** — the failure the drain was written to prevent, caused by the drain's
+   own correct rule meeting an entry nobody removed.
+
+**Deleting these is not a judgement about a musician's recording**, which is
+the line I have been careful about all session: they deleted the piece, and a
+take of a piece that does not exist can be neither analysed nor shown.
+
+`removeForScore` in `takeQueue.ts`, with the tests the rule deserves: it takes
+the audio as well as the entries (an entry removed while its file stays is the
+leak with the evidence deleted), it leaves every other piece's takes alone,
+it **does not write at all** when the piece had nothing queued — the common
+case, and a write per delete would rewrite the file for nothing — and it
+survives a store that will not delete the file, because the entry going is the
+part that matters.
+
+Called from `onSettled`, not `onMutate`: a failed delete is undone above, and
+a take thrown away optimistically could not be.
+
+**Mutation-checked, four ways**, all killed: the filter keeping the wrong side
+(3 tests), the entries going while the audio stays (2), a piece with nothing
+queued still rewriting (1), and a locked file making the whole delete throw
+(1). Restored byte-identically.
+
+**A collection failure caught immediately**, which is the habit from the last
+three ticks paying off: an unescaped apostrophe in a test title reported
+**"Tests no tests"**, and reading the file count rather than the pass count is
+what makes that visible in a second rather than a commit later.
+
+**Tests run:** `preflight.py --full` with a DSN: **16/16 in 601s**. Mobile
+159 files / 1787 tests, 4 new.
+
+**Named and not fixed:** an orphan can still arise from a delete on *another*
+device, and the drain would meet it exactly as described above. The proper fix
+is for a 404 on submission to be non-retriable — a take whose score is gone is
+gone — but `readTakeFailure` classifies by error type and a 404 there is
+currently generic. That is a wider change to the rule that decides whether a
+musician is offered another go, and it deserves its own commit.
+
+**Rollback:** revert the commit.
+
 ## 2026-09-09 — The rule that can leave the whole app dead had no test
 
 Loop tick twenty-nine. I asked which shipped modules have no test — the

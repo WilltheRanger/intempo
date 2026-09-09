@@ -222,6 +222,55 @@ export async function remove(
 }
 
 /**
+ * Drop every take waiting for one piece, bytes and all.
+ *
+ * **For a piece the musician deleted.** Nothing did this, and the entry that
+ * was left behind is worse than a leak. Its WAV — up to `MAX_UPLOAD_BYTES`,
+ * which is 50 MB — stays on the device for the life of the install, because
+ * the only thing that drops an entry unasked is `restoreQueuedTake` noticing
+ * the *bytes* are gone, and they are not.
+ *
+ * And it is not inert. `submitTake` needs a `scoreId`; the server answers 404
+ * for a score that no longer exists, which `readTakeFailure` reads as
+ * retriable — correctly, since it cannot tell a deleted piece from a bad
+ * moment. So the drain retries it on every foreground for ever. Worse, a pass
+ * **stops at the first failure** by design, because the usual reason a take is
+ * queued is the connection rather than the take — so one dead entry sits at
+ * the head of the queue and blocks every real take behind it.
+ *
+ * Deleting these is not a judgement about a musician's recording: they deleted
+ * the piece, and a take of a piece that does not exist can be neither analysed
+ * nor shown.
+ */
+export async function removeForScore(
+  store: TakeStore,
+  scoreId: string,
+): Promise<QueuedTake[]> {
+  const { takes } = await load(store);
+  const going = takes.filter((take) => take.scoreId === scoreId);
+  if (going.length === 0) {
+    // Nothing to do, and no write: the common case is a piece with no queued
+    // take at all, and rewriting the file for it would be a write per delete.
+    return takes;
+  }
+  const next = takes.filter((take) => take.scoreId !== scoreId);
+  // The entries first, then the bytes — the same order `remove` uses, and for
+  // the same reason: an entry removed first leaves a file the next sweep
+  // collects, where bytes removed first would leave an entry pointing at
+  // nothing.
+  await store.write(next);
+  for (const take of going) {
+    try {
+      await store.deleteAudio(take.audioName);
+    } catch {
+      // A file the system will clear anyway. Losing the entry is the part that
+      // matters, and it is already done.
+    }
+  }
+  return next;
+}
+
+/**
  * Record that an attempt failed, keeping whatever progress it made.
  *
  * `resume` is merged rather than replaced: an attempt that uploaded the audio

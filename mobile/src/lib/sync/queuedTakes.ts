@@ -1,7 +1,13 @@
 import type { TakeSubmissionState } from '../../data/practice/submitTake';
 import type { MetronomeMode } from '../../data/types';
 import { deviceTakeStore } from './takeQueue.store';
-import { enqueue, load, remove, type QueuedTake } from './takeQueue';
+import {
+  enqueue,
+  load,
+  remove,
+  removeForScore,
+  type QueuedTake,
+} from './takeQueue';
 
 /**
  * The three things `RecordScreen` does with the queue, bound to the device.
@@ -120,5 +126,22 @@ export async function restoreQueuedTake(
     return null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * The musician deleted this piece, so its unsent takes go with it.
+ *
+ * Called from the delete mutation rather than from a sweep, because the moment
+ * is known: nothing else in the app can tell an orphaned take from one that is
+ * simply waiting for signal.
+ */
+export async function forgetTakesFor(scoreId: string): Promise<void> {
+  try {
+    await removeForScore(deviceTakeStore, scoreId);
+  } catch {
+    // See the module docstring: never at the cost of the thing it is attached
+    // to. A delete that succeeded on the server must not report a failure
+    // because a file on this device would not go.
   }
 }

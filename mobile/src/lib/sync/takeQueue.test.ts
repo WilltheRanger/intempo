@@ -9,6 +9,7 @@ import {
   nextDue,
   recordFailure,
   remove,
+  removeForScore,
   type NewTake,
   type QueuedTake,
   type TakeStore,
@@ -297,5 +298,69 @@ describe('reading storage written by an older build', () => {
     };
 
     await expect(load(store)).resolves.toEqual({ takes: [], unreadable: 0 });
+  });
+});
+
+
+/**
+ * Deleting a piece takes its unsent takes with it.
+ *
+ * **Nothing did this**, and what was left behind is worse than a leak. The
+ * entry's WAV is up to 50 MB and stays for the life of the install, because
+ * the only thing that drops an entry unasked is `restoreQueuedTake` noticing
+ * the bytes are gone — and they are not. Meanwhile the drain retries it
+ * against a score the server answers 404 for, and a pass stops at the first
+ * failure by design, so one orphan sits at the head of the queue and blocks
+ * every real take behind it.
+ */
+describe('a piece that was deleted', () => {
+  it('takes its queued takes and their audio with it', async () => {
+    await enqueue(store, aTake({ scoreId: 'going' }), T0, 'a');
+    await enqueue(store, aTake({ scoreId: 'going' }), T0 + 1, 'b');
+
+    const left = await removeForScore(store, 'going');
+
+    expect(left).toEqual([]);
+    expect((await load(store)).takes).toEqual([]);
+    // The bytes too. An entry removed while its file stays is the leak with
+    // the evidence deleted.
+    expect(store.audio.size).toBe(0);
+  });
+
+  it('leaves the takes of every other piece alone', async () => {
+    // The failure that would be worst here: deleting one piece silently
+    // discarding a performance of another.
+    await enqueue(store, aTake({ scoreId: 'going' }), T0, 'a');
+    await enqueue(store, aTake({ scoreId: 'staying' }), T0 + 1, 'b');
+    await enqueue(store, aTake({ scoreId: 'staying' }), T0 + 2, 'c');
+
+    const left = await removeForScore(store, 'going');
+
+    expect(left.map((take) => take.id)).toEqual(['b', 'c']);
+    expect(store.audio.size).toBe(2);
+  });
+
+  it('does not write when the piece had nothing queued', async () => {
+    // The common case by far — most pieces have no unsent take — and a write
+    // per delete would be a file rewritten for nothing.
+    await enqueue(store, aTake({ scoreId: 'staying' }), T0, 'a');
+    const before = store.calls.length;
+
+    await removeForScore(store, 'never-recorded');
+
+    expect(store.calls.length).toBe(before);
+    expect((await load(store)).takes).toHaveLength(1);
+  });
+
+  it('survives a store that will not delete the audio', async () => {
+    // The entry going is the part that matters; a file the system will clear
+    // anyway must not make a delete look like it failed.
+    await enqueue(store, aTake({ scoreId: 'going' }), T0, 'a');
+    store.deleteAudio = async () => {
+      throw new Error('the file is locked');
+    };
+
+    await expect(removeForScore(store, 'going')).resolves.toEqual([]);
+    expect((await load(store)).takes).toEqual([]);
   });
 });
