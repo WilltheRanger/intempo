@@ -1,5 +1,73 @@
 # InTempo Edit Log
 
+## 2026-09-09 — The walk through the library was checked by nobody
+
+Loop tick fifteen. **No behaviour changed**: this commit is 230 lines of tests
+and nothing else. It exists because yesterday's work exposed a hole and I only
+looked at half of it.
+
+`FakeSupabase.order` and `.range` were no-ops until yesterday. Fixing them let
+me test the *analyses* list. The **scores** list — the one the Library screen
+actually walks — has exactly the same contract and had exactly the same nothing
+checking it, and I did not go back for it.
+
+**Two paging loops, three off-by-one opportunities each, no tests.**
+
+- Server: `GET /v1/scores` orders `created_at DESC` and takes
+  `range(offset, offset + limit - 1)`, which is inclusive at both ends.
+- Client: `listAllScores()` walks it with a page size, an offset and a hard
+  stop — written to fix a real bug, that `listScores()` defaults to fifty and
+  `LibraryScreen` filters the array it is given, so **piece 51 was not below
+  the fold, it was unfindable**. The loop that fixed that had no test either.
+
+Ten tests now, six on the client side and four on the server. Both directions
+of every boundary: every piece exactly once, the offset advancing by a whole
+page, a short page ending the walk, the one empty request an exactly-full last
+page costs, and a page past the end answering `[]` rather than failing.
+
+**Mutation-checked, seven ways, and one of the seven was a bad mutation** —
+worth writing down because it nearly passed as a result. Removing `.order()`
+from the query chain failed **12** tests, which looks like strong detection and
+is not: `_install_supabase` is a `MagicMock` chain, so deleting a link changes
+its *shape* and the seeded rows stop resolving. Those twelve failed because the
+mock broke, not because the ordering did. The honest mutation is
+`desc=True` → ascending, which the chain does not notice at all: **2 tests**,
+both mine.
+
+The rest killed cleanly: the page one row too long (1), the client's offset
+overlapping by one (3), the client never stopping early (2), the map fetching
+the analyses it does not read (1).
+
+**And the hard stop is not decoration.** Removed, against a server that always
+answers in full, the loop does not hang quietly — the Node worker climbs to
+**8 GB and dies of heap exhaustion after 50 seconds**, exit 1. On a phone that
+is the app, not a CI worker. Not a hypothetical shape either: a filter the
+server ignores or an offset it fails to apply both look exactly like this.
+
+**Named and deliberately not built.** `GET /v1/scores` also sends `score_json`
+— the whole notation — with every row of the listing. Measured from
+`fixtures/scores/orchestral_part.json`: **111 bytes per note**, so a 400-note
+piece is ~43 KB and a fifty-piece library is ~2 MB on every Library open, and
+`listAllScores` fetches all of it for Insights too.
+
+I did not fix it, and the reason is not that it is small. `TodayScreen` reads
+`piece.score?.measures.length` and `piece.score?.tempo_beat_unit` off *listing*
+rows, so stripping the field needs summary values in its place — and those
+cannot be derived on a light read, because deriving them means reading the
+document. The honest design is three denormalised columns kept in step at every
+site that writes `score_json`: create, attach, accept, retranscribe, the worker
+and the measure editor. **Six write sites that silently drift if one is
+missed**, plus a backfill whose nulls make "no notation" indistinguishable from
+"not loaded". That is a bad trade for a quarter of what the analyses fix was
+worth, and it is the owner's call rather than mine.
+
+**Tests run:** `preflight.py` 9/9 in 390s, migrations included. Backend 2148,
+mobile 1730.
+
+**Side effects:** none. `git diff --stat` is two test files.
+
+**Rollback:** revert the commit; nothing depends on it.
+
 ## 2026-09-09 — Two hundred rows to show one verdict
 
 Loop tick fourteen, finishing what tick thirteen named and could not close.

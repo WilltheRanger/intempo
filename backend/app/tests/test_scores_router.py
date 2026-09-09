@@ -21,6 +21,7 @@ from app.main import app
 from app.services.transcription_budget import EXHAUSTED_MESSAGE, MAX_RUNS_PER_PAGE
 from app.routers import scores as scores_module
 from app.services import display_urls
+from app.tests.fake_supabase import FakeSupabase
 
 
 GOOD_PAYLOAD = {
@@ -423,6 +424,108 @@ def test_list_returns_owner_scores(
     body = res.json()
     assert len(body) == 3
     assert [r["title"] for r in body] == ["row 0", "row 1", "row 2"]
+
+
+def _unphotographed(user_id: UUID, **over: Any) -> dict[str, Any]:
+    """A score row with no photograph, so nothing here touches storage.
+
+    The listing signs page one of every row it returns; a row with no page
+    signs nothing, which keeps these tests about ordering and paging rather
+    than about the signer.
+    """
+    row = _row_for(uuid4(), user_id, source_image_url=None, source_image_urls=None)
+    row.update(over)
+    return row
+
+
+def test_the_library_listing_is_newest_first(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """**Ordered since it was written, checked by nothing until now.**
+
+    `_install_supabase` is a `MagicMock` chain: `.order()` and `.range()`
+    return the next mock and hand back whatever `returning_rows` was seeded
+    with, in that order. So the endpoint's ordering could have been removed
+    entirely and every test in this file would still have passed —
+    `FakeSupabase` sorts, which is what makes this a test rather than a
+    restatement.
+
+    It matters because the app pages: an offset into an unordered list is not
+    a page of anything, and `listAllScores` walks the whole library by offset.
+    """
+    user_id = uuid4()
+    fake = FakeSupabase()
+    fake.seed(
+        "scores",
+        [
+            _unphotographed(user_id, title="middle", created_at="2026-05-01T00:00:00+00:00"),
+            _unphotographed(user_id, title="newest", created_at="2026-09-01T00:00:00+00:00"),
+            _unphotographed(user_id, title="oldest", created_at="2026-01-01T00:00:00+00:00"),
+        ],
+    )
+    monkeypatch.setattr(db_module, "get_service_client", lambda: fake)
+
+    res = client.get(
+        "/v1/scores", headers={"Authorization": f"Bearer {make_token(sub=user_id)}"}
+    )
+
+    assert res.status_code == 200, res.text
+    assert [row["title"] for row in res.json()] == ["newest", "middle", "oldest"]
+
+
+def test_the_library_pages_without_repeating_or_skipping_a_piece(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """`range(offset, offset + limit - 1)` is inclusive at both ends.
+
+    Off by one in either direction and the app's walk through the library
+    either shows a piece twice or never shows it — and the second reads as a
+    piece that has been lost, which is the bug `listAllScores` was written to
+    fix in the first place.
+    """
+    user_id = uuid4()
+    fake = FakeSupabase()
+    fake.seed(
+        "scores",
+        [
+            _unphotographed(
+                user_id, title=f"piece {n:02d}", created_at=f"2026-01-{n:02d}T00:00:00+00:00"
+            )
+            for n in range(1, 11)
+        ],
+    )
+    monkeypatch.setattr(db_module, "get_service_client", lambda: fake)
+    headers = {"Authorization": f"Bearer {make_token(sub=user_id)}"}
+
+    def page(offset: int, limit: int) -> list[str]:
+        res = client.get(f"/v1/scores?limit={limit}&offset={offset}", headers=headers)
+        assert res.status_code == 200, res.text
+        return [row["title"] for row in res.json()]
+
+    walked = page(0, 4) + page(4, 4) + page(8, 4)
+
+    assert len(walked) == 10
+    assert len(set(walked)) == 10, "a page repeated a piece"
+    assert walked == sorted(walked, reverse=True), "the walk lost the ordering"
+
+
+def test_a_page_past_the_end_of_the_library_is_empty_not_an_error(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """`listAllScores` asks once more when the last page came back exactly
+    full — that request must answer with nothing, not with a failure."""
+    user_id = uuid4()
+    fake = FakeSupabase()
+    fake.seed("scores", [_unphotographed(user_id) for _ in range(3)])
+    monkeypatch.setattr(db_module, "get_service_client", lambda: fake)
+
+    res = client.get(
+        "/v1/scores?limit=3&offset=3",
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+
+    assert res.status_code == 200
+    assert res.json() == []
 
 
 # ---- GET /v1/scores/:id ---------------------------------------------------

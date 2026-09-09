@@ -31,7 +31,12 @@ vi.mock('../practice/pendingAnalysis', () => ({ rememberPendingAnalysis }));
 vi.mock('../auth/session', () => ({ getAuthAvatarUrl: vi.fn() }));
 vi.mock('../api/client', () => ({ ApiError: class ApiError extends Error {} }));
 
-import { apiInsightsSource, apiTakeSubmissionSource, toPiece } from './api';
+import {
+  apiInsightsSource,
+  apiPieceSource,
+  apiTakeSubmissionSource,
+  toPiece,
+} from './api';
 import { readTendency } from '../../lib/insights/tendency';
 
 /**
@@ -531,5 +536,126 @@ describe('accepted take hand-off', () => {
       createdAt: expect.any(Number),
     });
     expect(order).toEqual(['remember', 'wait']);
+  });
+});
+
+
+/**
+ * Reading the whole library, which is a paging loop nothing tested.
+ *
+ * `listScores()` defaults to fifty and the library rendered exactly that with
+ * no indication there was more — and `LibraryScreen`'s search filters the
+ * array it is given, so piece 51 was not below the fold, it was unfindable.
+ * The loop that fixed it has a page size, an offset and a hard stop, which is
+ * three things that can be off by one, and none of them was checked.
+ */
+describe('reading the whole library', () => {
+  /** `n` scores, newest first, as the endpoint serves them. */
+  function shelf(n: number) {
+    return Array.from({ length: n }, (_, i) => ({
+      id: `score-${i}`,
+      user_id: 'u',
+      title: `Piece ${i}`,
+      composer: null,
+      movement: null,
+      image_url: null,
+      score_json: null,
+      concerns: [],
+      created_at: `2026-01-01T00:00:00Z`,
+      updated_at: `2026-01-01T00:00:00Z`,
+    }));
+  }
+
+  /** Serve `rows` a page at a time, and record what was asked for. */
+  function serve(rows: ReturnType<typeof shelf>) {
+    const asked: Array<{ limit: number; offset: number }> = [];
+    listScores.mockImplementation(
+      async ({ limit, offset }: { limit: number; offset: number }) => {
+        asked.push({ limit, offset });
+        return rows.slice(offset, offset + limit);
+      },
+    );
+    return asked;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    listAnalyses.mockResolvedValue([]);
+  });
+
+  it('returns every piece exactly once, in order', async () => {
+    // The bug this loop exists to fix, stated as a test: a library past one
+    // page must not lose the pieces past it.
+    serve(shelf(457));
+
+    const pieces = await apiPieceSource.listPieces();
+
+    expect(pieces).toHaveLength(457);
+    expect(new Set(pieces.map((p) => p.id)).size).toBe(457);
+    expect(pieces[0].id).toBe('score-0');
+    expect(pieces.at(-1)?.id).toBe('score-456');
+  });
+
+  it('advances the offset by a whole page each time', async () => {
+    // An offset off by one either repeats a piece or hides one, and both look
+    // like a rendering problem rather than a paging one.
+    const asked = serve(shelf(457));
+
+    await apiPieceSource.listPieces();
+
+    const size = asked[0].limit;
+    expect(asked.map((a) => a.offset)).toEqual(
+      asked.map((_, i) => i * size),
+    );
+  });
+
+  it('stops on a short page', async () => {
+    const asked = serve(shelf(10));
+
+    await apiPieceSource.listPieces();
+
+    expect(asked).toHaveLength(1);
+  });
+
+  it('pays one empty request when the last page is exactly full', async () => {
+    // The documented price of not guessing: a full page could be the last one
+    // or could not, and the only way to know is to ask.
+    const asked = serve(shelf(200));
+
+    const pieces = await apiPieceSource.listPieces();
+
+    expect(pieces).toHaveLength(200);
+    expect(asked).toHaveLength(2);
+    expect(asked[1].offset).toBe(200);
+  });
+
+  it('stops instead of spinning on a server that always answers in full', async () => {
+    // Not a hypothetical shape: a filter the server ignores, or an offset it
+    // does not apply, both look exactly like this — and without the stop the
+    // app hangs on the Library tab with no error to show.
+    const asked: Array<{ limit: number }> = [];
+    listScores.mockImplementation(async ({ limit }: { limit: number }) => {
+      asked.push({ limit });
+      return shelf(limit);
+    });
+
+    const pieces = await apiPieceSource.listPieces();
+
+    expect(asked.length).toBeLessThanOrEqual(200);
+    expect(pieces.length).toBe(asked.length * asked[0].limit);
+  });
+
+  it('does not ask for the per-note analysis it is not going to read', async () => {
+    // `lastPracticedByScore` reads `score_id` and `created_at`. With the
+    // analysis attached that is measured at 214 bytes a note — 10 MB for a
+    // page of 200-note takes, on every Library open, for four kilobytes of
+    // answer.
+    serve(shelf(3));
+
+    await apiPieceSource.listPieces();
+
+    expect(listAnalyses).toHaveBeenCalledWith(
+      expect.objectContaining({ includeResult: false }),
+    );
   });
 });
