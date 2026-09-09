@@ -187,7 +187,11 @@ there works differently as of 2026-08-24:
   at all; without it `expo prebuild` warns and drops it, so the wrong colour was
   not being applied either. Measured after: `RCTRootViewBackgroundColor` =
   `0xFFF7F2E9`.
-- **CI builds the iOS bundle, not just the web one** (2026-09-03). Every other
+- **CI builds the iOS bundle, not just the web one** (2026-09-03; **the job
+  exists and has not run since 2026-09-09** — every job in `ci.yml` fails two
+  to three seconds in with no logs, a blocked run rather than a broken one, and
+  only the owner can clear it. `tools/preflight.py --full` builds the bundle in
+  the meantime; see `CLAUDE.md` §1). Every other
   check in this repository — the walk, the a11y audit, every screenshot in
   `EDIT_LOG.md` — runs through the **web** bundle, and the two module graphs are
   not the same: `.web.ts` resolves to a native sibling, `Platform.OS` folds the
@@ -227,8 +231,10 @@ there works differently as of 2026-08-24:
   one check for each direction.** `test_client_reachability.py` holds the
   server; `tools/check-dead-exports.py` holds the app, failing on a named export
   that appears **nowhere else in the corpus at all** — not a screen, not a test,
-  not a tool. 511 exports, zero dead, and it runs in CI beside the EDIT_LOG and
-  brand-asset checks. It has **no allowlist**, deliberately: an exclusion list is
+  not a tool. 511 exports at the time of writing — 591 as of 2026-09-09 — zero
+  dead, and it runs in CI beside the EDIT_LOG and brand-asset checks, which
+  since 2026-09-09 means it runs in `tools/preflight.py` and nowhere else:
+  the workflow is blocked, not broken. See `CLAUDE.md` §1. It has **no allowlist**, deliberately: an exclusion list is
   the thing that rots (see `excluded_on_purpose` further down), and the remedy
   for an export nothing uses is to stop exporting it. A name common enough to
   appear in unrelated prose is matched by that prose and passes, so its failures

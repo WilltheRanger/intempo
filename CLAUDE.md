@@ -25,12 +25,28 @@ while the `git commit` beside it succeeded — and nothing noticed. It cannot
 check that an entry is *good*; it checks that the change did not go out in
 silence.
 
-Three more Python checks run on every push beside it, and a change that trips
+Four more Python checks run on every push beside it, and a change that trips
 one is not merged: `check-brand-assets.py` (a new asset shipping as the Expo
 starter's, or a listed one drawn and its line now a false claim),
-`check-dead-exports.py` (a named export nothing else in the corpus references)
-and `check-migrations.py` (all migrations applied in order to an empty
-database). `.github/workflows/ci.yml` is the list that cannot go stale.
+`check-dead-exports.py` (a named export nothing else in the corpus references),
+`check-dependencies.py` (npm and `pip-audit` advisories, added to CI
+2026-09-09) and `check-migrations.py` (all migrations applied in order to an
+empty database). `.github/workflows/ci.yml` is the list that cannot go stale.
+
+**Run `tools/preflight.py` before you commit — CI is not running.** Since
+2026-09-09 every job in `ci.yml` has failed two to three seconds in with no
+logs: a run blocked before a runner picks it up, not a broken one. Verified
+again on 2026-09-09 — runs 780 to 787, all failures, each finishing in four to
+seven seconds. **Only the owner can fix that**, and until they do, the
+repository has the checks written down and none of them running.
+
+    tools/preflight.py            # the gates that need no build
+    tools/preflight.py --full     # and the builds, the walk and the audits
+
+It runs what `ci.yml` runs, prints what it cannot run and why, and needs a
+`DATABASE_URL` for the migrations gate — any empty Postgres will do. It is not
+a substitute for CI: one machine, one Node, one Python, and the working tree
+rather than what was pushed.
 
 **The rest of the operating principles:**
 

@@ -13,6 +13,14 @@ npm start          # then press i for the iOS simulator
 npm run typecheck  # tsc --noEmit
 ```
 
+Before committing, run the checks from the repository root — `ci.yml` has been
+blocked since 2026-09-09 and this is what stands in for it:
+
+```bash
+python3 tools/preflight.py          # the gates that need no build
+python3 tools/preflight.py --full   # and the builds, the walk and the audits
+```
+
 Optional environment variables (all have working defaults):
 
 | Variable | Default | Purpose |
@@ -138,8 +146,12 @@ cryptography is the platform's TLS, which is exempt — the declaration saves an
 export-compliance question on every upload), and `RCTRootViewBackgroundColor`
 at the app's own paper colour.
 
-**The iOS bundle builds, and CI builds it on every commit.** `expo export
---platform ios` resolves the *native* module graph — a different graph from the
+**The iOS bundle builds.** `ci.yml` has a step for it and **that step is not
+running**: since 2026-09-09 every job in the workflow fails two to three
+seconds in with no logs, which is a run blocked before a runner picks it up.
+What builds the bundle today is `tools/preflight.py --full`, on whatever
+machine a session is on. `expo export --platform ios` resolves the *native*
+module graph — a different graph from the
 web one this repository's screenshots and walk all run through — and Hermes
 compiles it. Measured on the resulting bytecode: `intempo-listen-`, the WAV
 filename the **native** score player writes, is present; `AudioContext` and

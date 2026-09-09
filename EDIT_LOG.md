@@ -1,5 +1,71 @@
 # InTempo Edit Log
 
+## 2026-09-09 — Four documents saying CI runs the checks, and it does not
+
+Loop tick eighteen. **No code changed**: this is a documentation-accuracy pass
+and a pull-request rewrite. It exists because this repository has a standing
+rule about false claims in prose — `check-brand-assets.py` exists to catch one
+shape of it, and tick twelve found `check-dependencies.py` opening with a
+paragraph saying the Python side "is not checked by anything", directly above
+the function that checks it.
+
+**So I checked whether my own six commits had left claims behind, and they
+had.**
+
+**Verified rather than recalled**, through the GitHub API: runs **780 to 787**,
+every one a `failure`, each finishing in **four to seven seconds**. That is the
+blocked-run signature — no runner ever picked them up — and it means every
+sentence in this repository that says a check "runs in CI" is currently false.
+Only the owner can clear it.
+
+Four places were making that claim:
+
+| File | Was | Now |
+|---|---|---|
+| `CLAUDE.md` §1 | "**Three** more Python checks run on every push" | Four — `check-dependencies.py` joined them on 2026-09-09 |
+| `CLAUDE.md` §1 | no mention of `preflight.py` at all | the commands, what it covers, and that CI is blocked |
+| `mobile/README.md` | "**CI builds it on every commit**" | the job exists and has not run; `preflight --full` builds it |
+| `docs/subsystems.md` ×2 | "CI builds the iOS bundle"; "runs in CI beside the EDIT_LOG and brand-asset checks" | dated notes beside each, pointing at `CLAUDE.md` §1 |
+
+**`CLAUDE.md` is the file every session reads first, and it did not mention the
+only way to check anything.** That is the omission that mattered: CI has been
+dead for days, `preflight.py` has existed since tick five of the earlier loop,
+and a session starting fresh would have found neither fact.
+
+The `subsystems.md` entries are **annotated, not rewritten**. They are dated
+post-mortems; "CI builds the iOS bundle (2026-09-03)" was true when it was
+written, and editing the past tense out of an archive is how an archive stops
+being one.
+
+**A number I nearly got wrong by carrying it.** `subsystems.md` says "511
+exports, zero dead". I went to annotate it with the current figure and wrote
+**588** from memory of a run earlier today — then ran the tool, which said
+**591**. Three commits had added exports since I read it. The historical 511 is
+left alone; the current number is measured.
+
+**The pull request described its first two commits and now carries 34.** Its
+title was the oldest commit's subject line — *"Fix a check that was crying
+wolf…"* — and its body opened "Two commits:". Rewritten to describe what is
+actually in it, grouped by what a reader needs: bugs a musician would have met,
+the three measured cost holes, the security fixes, the checks that were not
+running, and four things that remain the owner's — Actions billing, applying
+migration 017, the five test-only exports, and the library listing that still
+ships the whole notation.
+
+The old body's "six exports referenced only by their own tests" table is also
+corrected there: `nextDue` and `recordFailure` came off that list when the
+queue drain wired them, and they were the queue's own machinery rather than a
+feature awaiting a screen.
+
+**Tests run:** `preflight.py` 9/9 in 384s, migrations included. Nothing else
+could be affected — `git diff --stat` is three markdown files.
+
+**Side effects:** none.
+
+**Rollback:** revert the commit. The pull request text is not in the tree; it
+would need editing back by hand, and it is a description rather than a
+behaviour.
+
 ## 2026-09-09 — The playhead rule existed twice, in two screens, tested nowhere
 
 Loop tick seventeen. Tick sixteen found a real bug by asking which screen rules
