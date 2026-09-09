@@ -1,5 +1,79 @@
 # InTempo Edit Log
 
+## 2026-09-09 — The six tuning clips, held to what they were made to say
+
+Loop tick twenty-eight. Three checks came back clean before this one and are
+recorded as results:
+
+- **Batches 3 and 4 really are blocked**, exactly as `CLAUDE.md` says. The
+  spec's own advice for both requires real audio — Batch 4's is explicit:
+  *"Validate the calibration against actual phone-recorded clips before
+  declaring DoD. Synthetic test audio passes too easily."* Nothing about that
+  is closeable here.
+- **The tuning corpus is well kept**: a thorough `README.md`, a deterministic
+  `make_synthetic.py`, and tests that already prefer a real recording and fall
+  back to the stand-in.
+- **The MusicXML import path bounds its input** (`max_length=8_000_000`,
+  `MAX_PAGES = 12`).
+
+Then I ran the tuning dashboard over the whole synthetic corpus, which is
+something no check does, and it is healthy:
+
+| Clip | Verdict | Quality |
+|---|---|---|
+| `01_detache_clean` | Steady tempo | 0.988 |
+| `02_detache_rushing` | rushed across measures 2–8 by ~9 BPM | 0.988 |
+| `03_detache_dragging` | dragged across measures 3–8 by ~9 BPM | 0.988 |
+| `04_slurred` | steady | 0.990 |
+| `05_open_e_long` | steady | 1.000 |
+| `06_pizzicato` | steady | 0.990 |
+
+**And nothing holds it to that.** `test_cli.py` runs *one* clip to prove the
+command works; `test_audio.py` reaches for a clip to check one behaviour.
+Neither asks the question the corpus exists for. **A change that made the
+rushing clip report "steady" would pass every other check in this
+repository** — in Batch 3, the subsystem the spec calls the project's
+concentrated technical risk.
+
+`test_corpus_regression.py` closes that: all six clips, run through `analyze`,
+each asserted to still read the way it was made to read.
+
+**Direction only, never thresholds**, and the corpus README argues why: a click
+track "cannot tell you whether a threshold is right, because the thing a
+threshold has to survive — bow noise, room reflection, a bass's slow attack,
+string ring — is exactly what a synthesized click doesn't have". Tuning needs
+the real six and an ear. What a click track *can* prove is that the arithmetic
+still runs and still points the right way.
+
+**Three of the six assert no direction at all**, which is the honest reading of
+what they are for: `04_slurred` exists to *show* onset detection breaking under
+slurs rather than to be judged by it, `05_open_e_long` asks only whether
+low-register detection fires, and `06_pizzicato` is the always-should-work
+case. For those, that a usable reading came back is the whole claim.
+
+**Generated on demand rather than skipped.** The `.synthetic.wav` files are
+build output and are not in git, so a test that skipped when they were missing
+would skip everywhere except a machine that had already run the generator — a
+test that passes by not running is the exact failure this file exists to close.
+Verified by moving all six aside and re-running: **7 passed, six regenerated.**
+
+**It prefers a real recording where one exists**, so the day somebody records
+`01_detache_clean.wav` this starts reading it without anyone remembering to
+point it here.
+
+**Mutation-checked, three ways**, all killed: every take reading as on-tempo
+(2 tests), a seventh clip added to the manifest and left unjudged (2), and the
+stand-in neither found nor generated (6). Restored byte-identically.
+
+**Tests run:** `preflight.py` 9/9 in 407s, migrations included. Backend 2160
+tests, 7 new, 3.3s for the corpus.
+
+**Side effects:** the backend suite writes six WAV files into `fixtures/audio/`
+the first time it runs on a fresh clone. They are the documented output of a
+generator that already lives there.
+
+**Rollback:** revert the commit. One new test file.
+
 ## 2026-09-09 — Two accessibility alarms, both mine, both disproved
 
 Loop tick twenty-seven, and it is mostly a **negative result**. Yesterday's
