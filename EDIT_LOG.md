@@ -1,5 +1,104 @@
 # InTempo Edit Log
 
+## 2026-09-09 — The queue kept takes; nothing sent them
+
+Loop tick ten. `takeQueue.ts` is a careful piece of work: a take a musician
+could not send survives an app kill, with exponential backoff (`backoffMs`,
+`dueAt`, `isDue`), failure accounting that preserves a half-finished upload
+(`recordFailure`), and an oldest-first pick so a rehearsal drains in the order
+it was played (`nextDue`).
+
+**Three of those were called by nothing.** `check-dead-exports.py` had been
+listing `nextDue` and `recordFailure` as test-only for a while, and I had been
+reporting them as "blocked on the owner" alongside six others. That framing was
+wrong. The other five are UI wiring and do need the §2 gate; these two are the
+queue's own machinery, and what their absence meant was a behavioural claim the
+app could not keep.
+
+The only thing that ever sent a queued take was `RecordScreen` restoring it —
+which needs the musician to remember which piece it was, navigate to *that*
+piece's recording screen, and tap. So the honest description of the shipped
+behaviour was: **a take recorded out of signal is kept, not sent.** Three
+pieces in one rehearsal meant three deliberate journeys, and nothing anywhere
+said so.
+
+**`drainQueue.ts` — the rules, tested against a fake store and a fake clock.**
+Eleven tests. The four decisions worth naming:
+
+- **One failure ends the pass**, not one failure per take. The reason a take is
+  queued is almost always the connection, and the connection is not a property
+  of the take; trying the other five is five more uploads into the same dead
+  link, on a device someone is carrying.
+- **The quota stops it for the month**, reported as `blocked` rather than
+  `failed`. It is the one failure another attempt cannot clear, and backing off
+  into it every five minutes would spend a battery re-earning the same refusal.
+  The judgement is **injected** (`read`), not re-derived: `readTakeFailure` is
+  the single place that decides `retriable`, and a second copy here is exactly
+  how the two come to disagree.
+- **An entry whose bytes are gone is dropped, not attempted.** It is a row
+  about a performance that no longer exists. `restoreQueuedTake` already draws
+  this line.
+- **The progress a failed attempt made is kept**, read structurally off the
+  error rather than off one error class — so an attempt that uploaded the WAV
+  and then failed to create the analysis does not send the WAV again over the
+  connection that just failed.
+
+**A guard I would not have written without asking what the store does on
+failure.** Every branch either removes an entry or returns, so the queue
+shrinks and the loop ends — *provided the writes land*. The store adapter
+swallows its failures by design (`queuedTakes.ts` says so), so a full disk
+looks like a write that worked and changed nothing, and `load` then returns the
+same take for ever. Handling each id once turns that into a stopped pass.
+
+Measured, and **the way it fails is the point**: remove the guard and the test
+does not fail, it *hangs* — and vitest's own five-second timeout never fires
+either, because every await in the loop resolves as a microtask and the event
+loop never gets a turn for a timer to run on. Killed from outside at ninety
+seconds. A runaway that starves the clock that would have caught it is not
+something to leave to review.
+
+**Mutation-checked, six ways.** Carry on after a failure (2 tests fail), treat
+the quota as retriable (1), send a take whose bytes are gone (1), throw the
+resume progress away (1), newest-first instead of oldest — mutated in
+`takeQueue.nextDue`, where the rule actually lives, not where I first reached
+for it (1), and the guard above (hangs). All restored byte-identically; both
+files `diff -q` clean afterwards.
+
+**`takeDrainer.ts` is the glue and decides nothing** — the same split as
+`queuedTakes.ts`. It knows the three things only a running app knows: whether
+anyone is signed in (signed out is a *skip*, not an attempt — every take would
+answer 401, and 401 is retriable, so attempting burns the backoff on a queue
+that cannot move), when the app came back to the foreground, and what the clock
+says. It never runs two passes at once, and it schedules one timer at
+`nextDueAt` rather than polling — which is why `dueAt` was exported.
+
+Foreground is the trigger that matters. What changes for a musician who
+recorded in a basement is not a timer firing; it is them walking back into
+coverage and opening something.
+
+**No UI.** `App.tsx` starts it and nothing is drawn — no banner, no count, no
+copy. Whether a musician should be *told* a take is waiting is a design
+question and goes through the §2 gate; this is the part that makes "your take
+is safe" true, which is owed regardless of how it is presented.
+
+**Tests run:** `preflight.py --full` **11/11 in 560s** — the eight standard
+gates plus web build, app walk (55 checks through the built bundle) and the
+accessibility sweep. Mobile suite 156 files / 1712 tests. The walk matters
+here: `AppState` is a React Native API and this app also ships to web, and the
+walk boots the real bundle. `mobile/.env` moved aside for the fixtures build
+and restored — verified.
+
+**Side effects:** a signed-in app now makes network calls on foreground when
+the queue is non-empty. That is the intent, and it is bounded by the backoff
+already in `takeQueue.ts`. `check-dead-exports.py` no longer lists `nextDue`
+or `recordFailure`; the genuinely-blocked list is five, not seven.
+
+**Not done, and not claimed:** nothing tells the musician a take is waiting or
+that one went. That is the §2 gate, and it is the obvious next thing.
+
+**Rollback:** revert the commit. The two new modules are additive and the only
+edit to an existing file is one `useEffect` in `App.tsx`.
+
 ## 2026-09-09 — The linter could not see a promise, in an app that is mostly promises
 
 Loop tick nine. Having spent eight ticks in `backend/`, I went to check whether

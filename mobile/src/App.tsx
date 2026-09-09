@@ -25,6 +25,7 @@ import { hydratePendingAnalysis } from './data/practice/pendingAnalysis';
 import { hydrateOnboardingDraft } from './data/onboardingDraft';
 import { colors, fontsToLoad } from './design';
 import { RootNavigator } from './navigation/RootNavigator';
+import { startTakeDrainer } from './lib/sync/takeDrainer';
 
 const queryClient = createQueryClient();
 
@@ -137,6 +138,18 @@ export default function App() {
     // eslint-disable-next-line no-console
     console.info(reason ?? 'InTempo: connected to the API — showing your data.');
   }, []);
+
+  // Takes that could not be sent go into a queue on the device. Until now
+  // nothing emptied it: the only thing that ever sent one was the recording
+  // screen restoring it, which needed the musician to remember which piece it
+  // was and go back there. So a take recorded out of signal was *kept*, not
+  // *sent* — and after a rehearsal across three pieces, that was three
+  // journeys nobody was told to make.
+  //
+  // Started here because the queue is the app's, not a screen's: a musician
+  // who walks back into coverage and opens the library should find their
+  // takes going, not have to visit the room they recorded them in.
+  useEffect(() => startTakeDrainer(), []);
 
   return (
     <SafeAreaProvider>
