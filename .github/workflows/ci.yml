@@ -181,6 +181,18 @@ jobs:
       - name: Web build
         run: npm run build:web
 
+      # **A ratchet on what a musician downloads.** `lucide-react-native` ships
+      # 1,768 icons and this app draws 25; importing from the package barrel
+      # put the other 1,743 in front of every visitor and roughly doubled the
+      # bundle. Deep imports took it from 697 KB gzipped to 515 KB.
+      #
+      # Nothing else here would notice that coming back. One barrel import —
+      # the obvious spelling, the one every example uses — type-checks, lints,
+      # passes every test and leaves the app identical. Measured: planting it
+      # in a single screen puts the bundle back to 698 KB, and this step fails.
+      - name: Bundle size
+        run: node ../tools/check-bundle-size.mjs
+
       # **The App Store target, which nothing here used to build.** Every check
       # above and every screenshot in `EDIT_LOG.md` runs through the *web*
       # bundle, and the two module graphs are not the same one: `.web.ts` files

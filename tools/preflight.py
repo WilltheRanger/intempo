@@ -283,6 +283,18 @@ def main() -> int:
         with env_moved_aside():
             results.append(run("web build", ["npm", "run", "build:web"], MOBILE))
             web_built = results[-1][1]
+            if web_built:
+                # Straight after the build, on the artefact it just produced.
+                # The number this guards is invisible to every other gate here:
+                # a barrel import type-checks, lints, tests green and leaves the
+                # app identical, 180 KB heavier.
+                results.append(
+                    run(
+                        "bundle size",
+                        ["node", str(ROOT / "tools" / "check-bundle-size.mjs")],
+                        ROOT,
+                    )
+                )
             # Inside the same block: the iOS export bakes `EXPO_PUBLIC_*` too,
             # and this one is a check, not a release.
             results.append(build_the_ios_bundle())

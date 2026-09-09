@@ -1,5 +1,78 @@
 # InTempo Edit Log
 
+## 2026-09-09 — A ratchet on the bundle, and two things measured and left alone
+
+Loop tick twenty-five. Yesterday's icon fix halved the bundle and **nothing
+stopped it coming back**. One `import { Play } from 'lucide-react-native'` — the
+obvious spelling, the one every example uses — type-checks, lints, passes 1,763
+tests and leaves the app pixel-identical, 180 KB heavier for every musician.
+
+So I profiled properly first, then built the guard.
+
+**The profile.** Built once with `--source-maps` and attributed every source
+byte:
+
+| | |
+|---|---|
+| `react-native-web` | 696 KB |
+| **`src/lib`** | **579 KB** |
+| `react-dom` | 533 KB |
+| `src/screens` | 478 KB |
+| `@supabase/auth-js` | 414 KB |
+
+and the biggest single modules: `react-dom-client` 524 KB,
+`GoTrueClient` 258 KB, **`src/lib/notation/engrave.ts` 127 KB**.
+
+**Two findings measured and deliberately left alone**, which is most of the
+value of having measured:
+
+1. **The app uses only auth from `@supabase/supabase-js`** — no `.from`,
+   `.rpc`, `.channel`, `.storage` or `.functions` call anywhere — and the
+   bundle carries `PostgrestClient`, `StorageClient`, `FunctionsClient`,
+   `RealtimeClient` and the phoenix channel protocol regardless. Measured:
+   **~365 KB of source, ~33 KB gzipped**, about 6% of what is served. The fix
+   is importing `@supabase/auth-js` directly, which means swapping the client
+   library underneath **the most safety-critical path in the app** for 6%.
+   `session.ts` has a great deal of carefully-reasoned behaviour built on
+   `createClient`. Bad trade; recorded rather than taken.
+
+2. **`engrave.ts` is 127 KB and only score screens draw notation.** Today,
+   Library, Insights, Profile and Auth all carry it. This codebase already
+   lazy-loads five modules with `await import(...)`, so the pattern is
+   established and works — but engraving is called synchronously during render,
+   so deferring it means a loading state on the score screen. That is a
+   trade of first-load against a flash of skeleton, which is a **design
+   decision and goes through the §2 gate**. Named for the owner.
+
+**What I did build is the thing that keeps yesterday's win.**
+`tools/check-bundle-size.mjs` gzips the main bundle — gzipped because that is
+what Cloudflare serves and what anybody is billed for — and fails over a
+budget of **560 KB** against a measured **515 KB**. About 9% of headroom: wide
+enough that an ordinary feature does not trip it, narrow enough that a barrel
+import does.
+
+**Proved on the exact regression**, end to end rather than by reasoning: I
+repointed **one** screen's icon import back at the package barrel, rebuilt, and
+the bundle went **515 → 698 KB gzipped** with the check failing by 138 KB and
+naming the cause in its own message. Source and `.env` restored, rebuilt clean.
+
+It is a **ratchet, not a target**: the failure message says to look for a
+barrel import before raising the number, and that raising it without a written
+reason makes the number worthless. It also prints on success — a check that
+speaks only when it fails leaves nobody watching a slow climb — and
+`--report` prints the attribution above from a source map when one is present.
+
+Wired into `preflight.py --full` immediately after the web build, and into
+`ci.yml`'s `mobile-check` between the build and the iOS bundle.
+
+**Tests run:** `preflight.py --full` with a DSN: **16/16 in 594s** — fifteen
+gates became sixteen. `mobile/.env` restored, no stray files.
+
+**Side effects:** `--full` gains a gate. No application code changed; the diff
+is one new tool, one preflight line and one CI step.
+
+**Rollback:** revert the commit.
+
 ## 2026-09-09 — Every musician was downloading 1,743 icons the app never draws
 
 Loop tick twenty-four. Two audits came back clean before this one, and both are
