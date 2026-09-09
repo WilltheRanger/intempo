@@ -111,6 +111,27 @@ jobs:
       - name: Run pytest
         run: uv run pytest -q
 
+      # **A gate that existed only on somebody's laptop.** `preflight.py` has
+      # run this since the day it was written and this file never did, so the
+      # npm advisories and the backend's `pip-audit` were checked exactly when
+      # a session remembered to check them.
+      #
+      # Here rather than in a job of its own because `npm audit` reads
+      # `package-lock.json` and does not need `node_modules` — so it costs a
+      # `setup-node` and nothing else, and this repository is on a metered
+      # Actions allowance that has already lost a job for less.
+      #
+      # Last, because it queries a registry: a network flake here must not
+      # stand between a push and the answer from the suite above it.
+      - name: Set up Node (for `npm audit`)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Dependency advisories
+        working-directory: .
+        run: python3 tools/check-dependencies.py
+
   # The app that actually ships. `mobile/` is the Expo tree, built to web for
   # Cloudflare Pages — and until this job existed nothing in CI touched it:
   # 52 vitest tests, a `tsc --noEmit` and the web build all ran only on

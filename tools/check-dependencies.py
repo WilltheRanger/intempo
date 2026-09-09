@@ -33,9 +33,21 @@ and one appearing deserves a stop. Everything else is reported with its
 severity and the packages involved, so the number can be watched rather than
 either ignored or panicked at.
 
-**Not covered: the Python side.** `uv` has no audit, and `backend/` is not
-checked by anything. That is a real gap and it is named here rather than left
-to be discovered.
+**The Python side is covered, and its threshold is stricter.** This paragraph
+used to say `backend/` "is not checked by anything", which stopped being true
+the day `audit_python` was written below and stayed on the page afterwards — a
+docstring making a false claim about the file it is at the top of.
+
+`pip-audit` runs over the backend environment and **any** advisory fails,
+where npm's only fails on `critical`. The asymmetry is the point: the backend
+list is small, its packages serve requests rather than build bundles, and the
+last sweep took it from 21 advisories to 0 — seven of them on `pyjwt`, on the
+authentication path. There is no equivalent of "this one is only the bundler"
+for a library that reads a token.
+
+`npm audit` needs only `package.json` and the lockfile; it does not need
+`node_modules`, which is why CI can run this beside the backend suite instead
+of paying for a runner of its own.
 """
 
 from __future__ import annotations

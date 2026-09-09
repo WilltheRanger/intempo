@@ -343,6 +343,41 @@ def test_every_post_initial_table_migration_has_a_readiness_check() -> None:
 FIRST_IDEMPOTENT_MIGRATION = 13
 
 
+def test_the_runtime_check_agrees_about_which_migrations_are_under_the_rule() -> None:
+    """One number, two enforcers, and they must not drift apart.
+
+    This file checks the **spelling** — that a migration from
+    `FIRST_IDEMPOTENT_MIGRATION` on is written so that running it twice is a
+    no-op. `tools/check-migrations.py` checks the **behaviour**, by actually
+    applying each of those a second time to a real database.
+
+    They used to disagree by a wide margin: the rule here has covered
+    everything from 013 since it was generalised, while the tool re-applied a
+    hand-written set containing exactly one filename. Four migrations were
+    making a promise that nothing ran. Deriving the tool's set from a number
+    fixes that only for as long as the two numbers match, so this is the thing
+    that keeps them matching — read out of the source rather than imported,
+    because `tools/` is not a package this suite can import from.
+    """
+    import re
+    from pathlib import Path
+
+    tool = (
+        Path(__file__).resolve().parents[3] / "tools" / "check-migrations.py"
+    ).read_text()
+    found = re.search(r"^FIRST_IDEMPOTENT_MIGRATION\s*=\s*(\d+)", tool, re.M)
+    assert found, (
+        "tools/check-migrations.py no longer defines FIRST_IDEMPOTENT_MIGRATION; "
+        "if the rule moved, move this check with it rather than deleting it"
+    )
+    assert int(found.group(1)) == FIRST_IDEMPOTENT_MIGRATION, (
+        f"this file enforces the guarded spelling from {FIRST_IDEMPOTENT_MIGRATION} "
+        f"on, and tools/check-migrations.py re-applies from {found.group(1)} on. "
+        "The gap between them is migrations that claim to be re-runnable and "
+        "are never run twice."
+    )
+
+
 def test_migrations_written_under_the_rule_are_safe_to_run_again() -> None:
     """The SQL editor is manual; uncertainty must not make retry dangerous.
 

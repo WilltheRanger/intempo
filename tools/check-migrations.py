@@ -47,15 +47,35 @@ STUBS = REPO / "tools" / "supabase_stubs.sql"
 #: is not a migration and is not applied — the check is on the set that ships.
 _NUMBERED = re.compile(r"^(\d{3})_.+\.sql$")
 
-#: Migrations that must survive being applied a second time.
+#: The first migration written under the rule that a migration must survive
+#: being run twice.
 #:
-#: Not every migration is idempotent and none has to be — they are applied once,
-#: in order. But one that *says* it is additive and idempotent is making a
-#: promise, and 016 makes it in its own header: *"Additive and idempotent. It
-#: changes nothing on a database that already looks like the table above."*
-#: That promise is the reason it was safe to write against live buckets, so it
-#: is worth holding to.
-CLAIMS_IDEMPOTENT = {"016_storage_buckets.sql"}
+#: **Must equal `FIRST_IDEMPOTENT_MIGRATION` in `test_readiness.py`**, which
+#: enforces the *spelling* — `ADD COLUMN IF NOT EXISTS`, `CREATE TABLE IF NOT
+#: EXISTS`, a `DROP CONSTRAINT IF EXISTS` before every `ADD CONSTRAINT`. That
+#: test reads the SQL; this file runs it. A test there holds the two numbers
+#: together, because a static rule and a runtime check disagreeing about which
+#: files are under the rule is worse than either alone.
+FIRST_IDEMPOTENT_MIGRATION = 13
+
+
+def _claims_idempotent() -> list[Path]:
+    """Every migration that promises it can be applied a second time.
+
+    **This was the single name `016_storage_buckets.sql`, hand-written**, and
+    by the time it was looked at, four other files were making the same promise
+    and none of them was being held to it. 013, 014, 015 and 017 are all
+    written in the guarded spelling `test_readiness.py` requires — which is a
+    claim about what happens when an operator, unsure whether a migration
+    already ran, runs it again in the Supabase SQL editor. The claim was
+    checked by reading and never by running.
+
+    Derived rather than listed for the reason the readiness test gives about
+    its own generalisation: a hand-maintained set is enforced for the files
+    that happened to exist when somebody wrote it, which is the shape of a
+    convention rather than a check.
+    """
+    return [path for number, path in _migrations() if number >= FIRST_IDEMPOTENT_MIGRATION]
 
 
 def _migrations() -> list[tuple[int, Path]]:
@@ -115,21 +135,18 @@ def main() -> int:
             return 1
         print(f"  ok    {path.name}")
 
-    for name in sorted(CLAIMS_IDEMPOTENT):
-        path = MIGRATIONS / name
-        if not path.exists():
-            print(f"\nFAIL  {name} is listed as idempotent and no longer exists",
-                  file=sys.stderr)
-            return 1
-        ok, message = _apply(args.dsn, path, f"{name} (second time)")
+    for path in _claims_idempotent():
+        ok, message = _apply(args.dsn, path, f"{path.name} (second time)")
         if not ok:
             print(
-                f"\nFAIL  {message}\n\n{name} says it is idempotent and is not. "
-                "That claim is why it was safe to write against live buckets.",
+                f"\n\nFAIL  {message}\n\n{path.name} is written in the guarded "
+                "spelling, which is a promise that an operator who cannot "
+                "remember whether it already ran may run it again. It is not "
+                "one.",
                 file=sys.stderr,
             )
             return 1
-        print(f"  ok    {name} applied twice, as it says it can be")
+        print(f"  ok    {path.name} applied twice, as it says it can be")
 
     if duplicates:
         print(f"\nFAIL  two migrations share a number: {duplicates}", file=sys.stderr)

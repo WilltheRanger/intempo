@@ -1,5 +1,101 @@
 # InTempo Edit Log
 
+## 2026-09-09 — The stand-in for CI was quietly checking less than CI
+
+Loop tick twelve, and it starts with a correction to yesterday's entry. I wrote
+that `check-migrations.py` "printed *nothing to apply to* and **exited clean**".
+It exits **2**. The substance was right — the migration had not been run
+against a database — but "exited clean" was wrong, and it is the wrong half to
+get wrong, because it makes an unrun check sound like a passed one.
+
+**Then it turned out the check could have run all along.** This container has
+PostgreSQL 16 installed with a cluster that starts on request. `preflight.py`'s
+own docstring says "`check-migrations` needs a Postgres this does not start",
+which was written as a limitation and became a habit. One `pg_ctlcluster 16
+main start` later:
+
+- **Migration 017 applies cleanly to an empty database, in order, as 001–017.**
+  Verified, not assumed — which is the claim yesterday's entry could not make.
+- **Re-applying it is a no-op.** One column, one `CHECK`, a `NOTICE` saying it
+  skipped. Checked by reading `pg_constraint` before and after, because
+  `ADD COLUMN IF NOT EXISTS ... CHECK (...)` could plausibly have added a
+  second unnamed constraint each time, and "plausibly" is not a finding.
+
+**Four migrations were making a promise nothing ran.**
+`tools/check-migrations.py` re-applies everything in `CLAIMS_IDEMPOTENT`, and
+that set was the hand-written string `{"016_storage_buckets.sql"}`. Meanwhile
+`test_readiness.py` requires the guarded spelling — `ADD COLUMN IF NOT EXISTS`,
+`CREATE TABLE IF NOT EXISTS`, a `DROP CONSTRAINT IF EXISTS` before every `ADD
+CONSTRAINT` — for **everything from 013 on**. So 013, 014, 015 and now 017 all
+say in their SQL that an operator unsure whether they already ran may run them
+again, and only 016's saying so was ever tested.
+
+The set is now derived from the same number, and all five re-apply cleanly, so
+the four unverified promises turn out to be true. They were true by luck until
+this afternoon.
+
+`test_readiness.py` gained the check that holds the two numbers together — a
+static rule and a runtime check disagreeing about which files are under the
+rule is worse than either alone. Mutation-checked both ways: drift the tool's
+constant to 16, it fails; rename the constant, it fails and says to move the
+check rather than delete it.
+
+**The bigger finding: preflight said 8/8 while CI has nine gates.** A stand-in
+for CI that quietly covers less than CI is worse than no stand-in, because it
+reads as a green light. Measured against `ci.yml`, four things ran nowhere at
+all — CI is blocked, and preflight did not have them:
+
+| Gate | Was | Now |
+|---|---|---|
+| Migrations apply in order | CI only | runs on `DATABASE_URL`, **and says "skipped" out loud** without one |
+| iOS bundle (`expo export --platform ios`) | CI only | `--full`. **The App Store target**, and every other check here builds the *web* graph |
+| Accessibility, empty account | CI only | `--full`. The state every musician meets first |
+| Dependency advisories | **preflight only** | added to CI, beside the backend suite |
+
+That last row is the drift running the other way, and the fix costs no runner:
+`npm audit` reads `package-lock.json` and does not need `node_modules` —
+checked in a scratch directory holding only the two files before writing the
+step.
+
+**And what preflight still cannot do is now printed on every run** rather than
+omitted, with the reason. One line today: the `EDIT_LOG` check needs a
+`base..HEAD` range, so it belongs at commit time. The list existing is the
+point — a gate that lives only in a blocked workflow is a gate that is not
+running, and that fact stays known by being said, not remembered.
+
+**A false claim removed from a docstring.** `check-dependencies.py` still
+opened with "**Not covered: the Python side.** `uv` has no audit, and
+`backend/` is not checked by anything" — untrue since `audit_python` was added
+to the same file, and sitting above the function that makes it untrue. Replaced
+with what is actually true, including why the two thresholds differ: npm fails
+on `critical` only, `pip-audit` fails on **anything**, because there is no
+equivalent of "this one is only the bundler" for a library that reads a token.
+
+**Verified:**
+
+- `preflight.py --full` with a DSN: **15/15 in 627s** — 8 gates became 15.
+  `mobile/.env` moved aside for three builds and restored; no stray backups.
+- `preflight.py` with a DSN: 9/9 in 377s.
+- **The new gate can fail**, which is the part worth checking: pointed at a
+  database that already had the schema, `migrations` fails on `001_initial.sql`
+  and preflight exits 1. A gate nobody has seen fail is a gate nobody knows
+  works.
+- `ci.yml` parses; `backend-test` now has 8 steps.
+
+**Side effects:** `--full` is ~630s rather than ~560s, for the iOS bundle and
+the empty-account sweep. `preflight.py` with no `DATABASE_URL` prints a skip
+line rather than saying nothing.
+
+**Not done:** nothing checks that `NOT_COVERED` is honest — a job could be
+added to `ci.yml` tomorrow and preflight would neither run it nor mention it.
+The parity is maintained by hand today, which is the shape of a convention
+rather than a check, and that is exactly the criticism `test_readiness.py`
+makes of its own earlier version.
+
+**Rollback:** revert the commit. `tools/preflight.py` and
+`tools/check-migrations.py` are self-contained; the `ci.yml` step and the
+`test_readiness.py` check are additive.
+
 ## 2026-09-09 — The one endpoint that spends money had no ceiling
 
 Loop tick eleven, and I went looking in the backend for the thing that actually

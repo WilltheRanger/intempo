@@ -27,15 +27,25 @@ paying its way again, this stays useful as the thing you run *before* pushing.
 made with `mobile/.env` moved aside — and moved *back*, which is the half that
 gets forgotten. `EDIT_LOG` records it as a rule; this makes it a code path,
 with the file restored in a `finally` and compared byte-for-byte afterwards.
+
+**What it does not run is printed, not omitted.** A stand-in for CI that
+quietly covers less than CI is worse than no stand-in, because it reads as a
+green light. Every job in `.github/workflows/ci.yml` is either a gate below or
+a line in `NOT_COVERED` with a reason. That mattered immediately: on 2026-09-09
+a migration was written, tested, committed and pushed without ever being
+applied to a database, because the migrations job lives only in CI and CI was
+blocked — and nothing said so out loud.
 """
 
 from __future__ import annotations
 
 import argparse
 import filecmp
+import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -56,6 +66,42 @@ FAST: list[tuple[str, list[str], Path]] = [
     ("mobile tests", ["npm", "test"], MOBILE),
     ("backend tests", ["uv", "run", "pytest", "-q"], BACKEND),
 ]
+
+
+#: CI jobs and steps this cannot run, and why. Printed at the end of every run.
+#:
+#: The point is that the list is *visible*. A gate that exists only in a
+#: blocked workflow is a gate that is not running, and the way that fact stays
+#: known is by being said on every preflight rather than remembered.
+NOT_COVERED: list[tuple[str, str]] = [
+    (
+        "EDIT_LOG entry (CI: log-entry)",
+        "needs a base..HEAD range, so it belongs at commit time — "
+        "run `python3 tools/check-log-entry.py` with the range yourself",
+    ),
+]
+
+
+def migrations_gate() -> tuple[str, bool, float] | None:
+    """Apply every migration in order, when there is a database to apply to.
+
+    **Reported as skipped rather than left out.** `check-migrations.py` needs a
+    Postgres, exits 2 without one, and was simply absent from this list — so a
+    preflight that said 8/8 had checked nothing about the schema, and said
+    nothing about not having. On 2026-09-09 that let a migration go out
+    unguarded and unregistered; the two static checks in `test_readiness.py`
+    caught those, and neither of them can catch SQL that does not run.
+    """
+    dsn = os.getenv("DATABASE_URL", "")
+    if not dsn:
+        print(
+            "  ....  migrations  (skipped: no DATABASE_URL)\n"
+            "        Any empty Postgres will do, and the check leaves it dirty on "
+            "purpose:\n"
+            "        DATABASE_URL=postgresql://…/scratch tools/preflight.py"
+        )
+        return None
+    return run("migrations", ["python3", "tools/check-migrations.py"], ROOT)
 
 
 @contextmanager
@@ -108,6 +154,20 @@ def run(label: str, command: list[str], cwd: Path) -> tuple[str, bool, float]:
 PORT = 4327
 
 
+def _came_up(port: int, seconds: float = 30) -> bool:
+    """Poll rather than sleep — the point is to start when it is ready."""
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        probe = subprocess.run(
+            ["curl", "-sf", "-o", "/dev/null", f"http://localhost:{port}/"],
+            capture_output=True,
+        )
+        if probe.returncode == 0:
+            return True
+        time.sleep(0.5)
+    return False
+
+
 def walk_the_built_app() -> list[tuple[str, bool, float]]:
     """Serve `mobile/dist` and run the two checks that need a running app."""
     server = subprocess.Popen(
@@ -117,22 +177,86 @@ def walk_the_built_app() -> list[tuple[str, bool, float]]:
         stderr=subprocess.DEVNULL,
     )
     try:
-        deadline = time.monotonic() + 30
-        while time.monotonic() < deadline:
-            probe = subprocess.run(
-                ["curl", "-sf", "-o", "/dev/null", f"http://localhost:{PORT}/"],
-                capture_output=True,
-            )
-            if probe.returncode == 0:
-                break
-            time.sleep(0.5)
-        else:
+        if not _came_up(PORT):
             print(f"  FAIL  serve  (the built app never came up on :{PORT})")
             return [("serve", False, 30.0)]
 
         return [
             run("app walk", ["node", str(ROOT / "tools" / "walk-app.mjs"), str(PORT)], MOBILE),
             run("accessibility", ["node", str(ROOT / "tools" / "audit-a11y.mjs"), str(PORT)], MOBILE),
+        ]
+    finally:
+        server.terminate()
+        server.wait(timeout=10)
+
+
+def build_the_ios_bundle() -> tuple[str, bool, float]:
+    """Metro's *native* module graph, compiled by Hermes.
+
+    **The App Store target, and everything else here is the web one.** The two
+    graphs are not the same: `.web.ts` files resolve to native siblings,
+    `Platform.OS` branches fold the other way, and a web-only import in shared
+    code is invisible until a phone runs it. This proves the bundle builds; it
+    proves nothing about how it behaves, and the native recorder and player
+    have still never made a sound.
+
+    Into a temporary directory that is then removed — the output is 6 MB of
+    Hermes bytecode nobody reads, and building it inside `env_moved_aside`
+    keeps live Supabase keys out of a file this script leaves behind.
+    """
+    out = tempfile.mkdtemp(prefix="preflight-ios-")
+    try:
+        return run(
+            "ios bundle",
+            ["npx", "expo", "export", "--platform", "ios", "--output-dir", out],
+            MOBILE,
+        )
+    finally:
+        shutil.rmtree(out, ignore_errors=True)
+
+
+def audit_the_empty_account() -> list[tuple[str, bool, float]]:
+    """The state every musician meets first, which no other build here has.
+
+    Today, Library and Insights are otherwise always seen with a library, a
+    take and thirty days of trend behind them. That gap cost a real bug on
+    2026-09-02 — Today saying "Nothing to practice yet" above a fully built
+    daily warmup it was hiding — found by hand, because reaching the state took
+    five source edits and a revert.
+
+    Named routes, because the rest of the list points at `fixture-…` ids an
+    empty account does not have; sweeping them would measure a page of
+    not-found states.
+    """
+    built = run("web build, empty account", ["npm", "run", "build:web:empty"], MOBILE)
+    if not built[1]:
+        return [built]
+    port = PORT + 1
+    server = subprocess.Popen(
+        ["node", str(ROOT / "tools" / "serve-with-headers.mjs"), "dist-empty", str(port)],
+        cwd=MOBILE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        if not _came_up(port):
+            print(f"  FAIL  serve (empty)  (never came up on :{port})")
+            return [built, ("serve (empty)", False, 30.0)]
+        return [
+            built,
+            run(
+                "accessibility, empty account",
+                [
+                    "node",
+                    str(ROOT / "tools" / "audit-a11y.mjs"),
+                    str(port),
+                    "Today",
+                    "Library",
+                    "Insights",
+                    "Profile",
+                ],
+                MOBILE,
+            ),
         ]
     finally:
         server.terminate()
@@ -150,17 +274,33 @@ def main() -> int:
 
     print("preflight: the checks CI would run, if CI were running\n")
     results = [run(*check) for check in FAST]
+    migrations = migrations_gate()
+    if migrations is not None:
+        results.append(migrations)
 
     if args.full:
-        print("\n  building the fixtures bundle (mobile/.env moved aside)")
+        print("\n  building the fixtures bundles (mobile/.env moved aside)")
         with env_moved_aside():
             results.append(run("web build", ["npm", "run", "build:web"], MOBILE))
+            web_built = results[-1][1]
+            # Inside the same block: the iOS export bakes `EXPO_PUBLIC_*` too,
+            # and this one is a check, not a release.
+            results.append(build_the_ios_bundle())
+            if web_built:
+                results.extend(audit_the_empty_account())
+            else:
+                print("  ....  empty account  (skipped: the build did not produce one)")
         # Serving and walking needs the build to have worked; skip rather than
         # report a walk failure that is really a build failure wearing a mask.
-        if results[-1][1]:
+        if web_built:
             results.extend(walk_the_built_app())
         else:
             print("  ....  walk + a11y  (skipped: the build did not produce one)")
+
+    if NOT_COVERED:
+        print("\n  not covered here:")
+        for label, why in NOT_COVERED:
+            print(f"    {label} — {why}")
 
     failed = [label for label, ok, _ in results if not ok]
     total = sum(took for _, _, took in results)
