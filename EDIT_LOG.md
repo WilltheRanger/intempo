@@ -1,5 +1,79 @@
 # InTempo Edit Log
 
+## 2026-09-09 — A Supabase blip signed every musician out
+
+Loop tick twenty-one. Yesterday's tick fixed a developer string reaching
+musicians on the *client's* error path, so I looked at the same question on the
+server: does any endpoint answer with something it should not? Four sites use
+`detail=str(exc)`; three are deliberate and documented — a domain error written
+for the boundary, and a MusicXML converter message that names the parts a
+multi-part file holds so the client can offer them. The fourth was in `auth.py`,
+and reading it turned up something worse than a leaked string.
+
+**A network blip between this service and Supabase signed every active musician
+out of the app.** Three measured facts, none of them guessed:
+
+1. `PyJWKClientConnectionError` — what `PyJWKClient` raises when it cannot
+   fetch the key set — **is a subclass of `PyJWTError`**. Checked in the
+   installed version, along with `fetch_data`'s own docstring.
+2. So a timeout, a DNS hiccup or a 5xx from the key endpoint landed in the same
+   `except` as a forged signature and was answered **401**.
+3. `apiFetch` calls `signOut()` on **every** 401, deliberately, with its own
+   written argument — a rejected token is unusable, and leaving it in place
+   makes every screen fail against a credential that will never work.
+
+Chain complete: seconds of unreachability at the key server, and every musician
+using the app is returned to the sign-in screen. It would read as "the app
+randomly logs me out", which is the kind of report that takes weeks to trace.
+
+**This reverses a decision that was written down**, so it is in `DECISIONS.md`
+rather than only here. `test_auth.py` asserted 401 with a reason: *"the caller
+is not authenticated, whatever the cause."* Sound about authentication, and it
+does not account for what a 401 makes the client *do*.
+
+**The property that test protected is kept**, and kept as its own test: a key
+server that is down must never return a payload, or a forged token would be
+accepted. **503 refuses exactly as hard as 401** — nothing is admitted. The two
+assertions are separate now, because "it refused" and "it refused *this way*"
+are different claims and only the second changed.
+
+**The codebase had already drawn this line and half-applied it.** The sibling
+test says *"no project configured is a server fault, not a rejected caller"* and
+expects 500. An unreachable project is the same category and was getting the
+opposite answer.
+
+**The broad `except Exception` moved too**, from 401 to 503. Nothing that
+decides a token is *invalid* raises outside `PyJWTError`; reaching that branch
+means the check could not be made — an unreadable JWKS body, a TLS failure, a
+missing configuration. It also logs now, which it did not, so the condition
+leaves a trace rather than only a status.
+
+**It composes with yesterday.** A 503 reaches `describeLoadError`, which maps
+anything ≥500 to the sentence added yesterday — *"The server had a problem.
+This is not something you did — try again in a minute."* So the musician is now
+told to wait, on a screen they are still signed in to, instead of being logged
+out.
+
+**Mutation-checked, four ways**, including the catastrophic one. The connection
+error falling through to 401 (1 test), the reversal undone (1), a forged
+signature answered 503 as well (7), and — the one that matters —
+**an unreadable key server admitting the request** by returning a payload (1).
+Restored byte-identically.
+
+**Tests run:** `preflight.py` 9/9 in 388s, migrations included. Backend 2150
+tests, 3 new.
+
+**Not verified, and it cannot be here:** no real JWKS endpoint was made to fail.
+The exception is planted, which is the same shape of stand-in the rest of this
+file's auth tests use, and it rests on pyjwt continuing to raise
+`PyJWKClientConnectionError` for a fetch failure. The day it stops, this falls
+back to 401 silently — recorded in `DECISIONS.md` as the weak point it is.
+
+**Side effects:** a client that only understands 401 sees a less specific
+failure on this path. Nothing in this app is such a client.
+
+**Rollback:** revert the commit.
+
 ## 2026-09-09 — "Request failed (502): /v1/scores", shown to a musician
 
 Loop tick twenty. I ran yesterday's duplicate-name scan over the **backend**

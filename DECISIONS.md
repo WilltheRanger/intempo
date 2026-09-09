@@ -1,5 +1,70 @@
 # InTempo Decisions
 
+## 2026-09-09 — A key server we cannot reach is 503, not 401 (reversing an earlier call)
+
+**Context.** `_decode_token` answered **401** for every failure, including a
+failure to *fetch* the signing keys. `test_auth.py` asserted that, with a
+reason written down: *"401 rather than 500 is also deliberate: the caller is
+not authenticated, whatever the cause."*
+
+That reasoning is sound about authentication and incomplete about consequences.
+Two facts, both measured rather than argued:
+
+1. **`PyJWKClientConnectionError` is a subclass of `PyJWTError`.** So a network
+   blip between this service and Supabase — a timeout, a DNS hiccup, a 5xx from
+   the key endpoint — landed in the *same* branch as a forged signature and was
+   answered 401.
+2. **The app calls `signOut()` on every 401**, deliberately, with its own
+   written argument: a rejected token is unusable, and leaving it in place
+   makes every screen fail against a credential that will never work.
+
+Together: **a Supabase hiccup lasting seconds ended every active session in
+the app** and returned every musician to the sign-in screen, with no way to
+tell that from an expiry.
+
+**Decision.** Split the refusal. `PyJWKClientConnectionError`, and anything
+that is not a `PyJWTError` at all, answer **503** with *"could not check your
+sign-in just now — try again in a moment"*. Everything pyjwt decides about the
+token itself still answers 401.
+
+**The property the old test protected is kept, and kept as its own test.** A
+key server that is down must never return a payload — otherwise a forged token
+would be accepted — and 503 refuses exactly as hard as 401 does. That
+assertion is now separate from the assertion about *which* refusal, because
+they are two different claims and only one of them changed.
+
+**Why not 500.** The condition is transient and the right response is to try
+again; 503 says that and 500 does not. The client already treats anything ≥500
+as *"The server had a problem. This is not something you did — try again in a
+minute"*, and does not sign out.
+
+**The codebase already drew this line and only half-applied it.**
+`test_jwks_client_without_supabase_url_raises_500` says *"no project configured
+is a server fault, not a rejected caller"*. An unreachable project is the same
+category; it was getting the opposite answer.
+
+**Alternatives considered.**
+
+- **Retry the fetch inside `_decode_token`.** Worth having eventually, and it
+  does not resolve this: a retry that also fails still has to be answered, and
+  answering it 401 has the same effect. Orthogonal.
+- **Keep 401 and stop the client signing out on it.** Rejected — the client's
+  behaviour is right for a rejected token, which is the common case, and
+  weakening it to accommodate one server-side condition trades a correct rule
+  for a workaround.
+
+**Trade-offs accepted.**
+
+- **A genuinely broken deployment now answers 503 rather than 401** on this
+  path, so a client that only handles 401 sees a less specific failure. Nothing
+  in this app does; `/v1/ready` is where a broken deployment is meant to show.
+- **The distinction rests on pyjwt's exception hierarchy.** If a future version
+  stops raising `PyJWKClientConnectionError` for fetch failures, the case falls
+  through to 401 again — silently. The test plants that exact exception, so the
+  day it stops being raised is the day the test stops meaning anything, which
+  is a weaker guarantee than I would like and is recorded here for whoever
+  meets it.
+
 ## 2026-09-09 — A per-page reading cap, not an account quota
 
 **Context.** `POST /v1/scores/{id}/transcribe` sends a worker to read a page,

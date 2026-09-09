@@ -14,11 +14,13 @@ token. Spec §11 / Batch 1 calls this out explicitly.
 
 from __future__ import annotations
 
+import logging
 from functools import lru_cache
 from typing import Any
 from uuid import UUID
 
 import jwt
+from jwt.exceptions import PyJWKClientConnectionError
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt import PyJWKClient
@@ -26,6 +28,8 @@ from jwt import PyJWKClient
 from app.config import settings
 from app.db import get_service_client
 from app.services.provisioning import ensure_user_row
+
+log = logging.getLogger("intempo")
 
 bearer = HTTPBearer(auto_error=False)
 
@@ -97,12 +101,35 @@ def _decode_token(token: str) -> dict[str, Any]:
             algorithms=_ALLOWED_ALGORITHMS,
             audience="authenticated",
         )
+    except PyJWKClientConnectionError as exc:
+        # **Could not check is not the same as not valid**, and answering 401
+        # for it signs musicians out. Measured chain: `PyJWKClientConnectionError`
+        # is a `PyJWTError`, so a network blip between this service and the key
+        # server used to land in the branch below as a 401 — and the app's
+        # `apiFetch` calls `signOut()` on every 401, deliberately and with a
+        # written argument, because a rejected token is unusable. So a Supabase
+        # hiccup lasting seconds ended every active session in the app.
+        #
+        # **Nothing is admitted.** The request is still refused, which is the
+        # property the branch below exists to guarantee: a key server that is
+        # down must never return a payload, or a forged token would be accepted.
+        # 503 refuses exactly as hard as 401 and asks for a retry instead of a
+        # sign-in. See `DECISIONS.md`, 2026-09-09.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="could not check your sign-in just now — try again in a moment",
+        ) from exc
     except jwt.PyJWTError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
-    except Exception as exc:  # noqa: BLE001 — JWKS fetch failures, etc.
+    except Exception as exc:  # noqa: BLE001 — a key server that answered with something unreadable
+        # Also **not** a statement about the token. Nothing that decides a token
+        # is invalid raises outside `PyJWTError`; reaching here means the check
+        # itself could not be made — an unreadable JWKS body, a TLS failure, a
+        # missing configuration. Same refusal, same reason as above.
+        log.warning("could not validate a token: %s", exc, exc_info=True)
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Token validation failed: {exc}",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="could not check your sign-in just now — try again in a moment",
         ) from exc
 
 

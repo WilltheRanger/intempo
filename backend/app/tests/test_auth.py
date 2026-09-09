@@ -12,8 +12,10 @@ from datetime import datetime, timedelta, timezone
 from typing import Callable
 from uuid import UUID, uuid4
 
+import jwt
 import pytest
 from fastapi import Depends, FastAPI, HTTPException
+from jwt.exceptions import PyJWKClientConnectionError
 from fastapi.testclient import TestClient
 
 from app import auth as auth_module
@@ -145,15 +147,15 @@ def test_non_bearer_scheme_returns_401(
     assert res.status_code == 401
 
 
-def test_jwks_fetch_failure_returns_401_not_500(
+def test_a_key_server_that_is_down_never_admits_the_request(
     client: TestClient, make_token: Callable[..., str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A key server that is down must refuse the request, never admit it.
+    """The property that would be catastrophic to lose.
 
-    This is the branch that would be catastrophic to get wrong: if a JWKS
-    failure ever returned a payload instead of raising, every token — including
-    a forged one — would be accepted. 401 rather than 500 is also deliberate:
-    the caller is not authenticated, whatever the cause.
+    If a JWKS failure ever returned a payload instead of raising, every token —
+    including a forged one — would be accepted. This asserts the refusal
+    itself, separately from *which* refusal, because the two are different
+    claims and only one of them changed.
     """
 
     class _Broken:
@@ -161,9 +163,63 @@ def test_jwks_fetch_failure_returns_401_not_500(
             raise RuntimeError("jwks unreachable")
 
     monkeypatch.setattr(auth_module, "_jwks", _Broken())
-    res = client.get(
-        "/whoami", headers={"Authorization": f"Bearer {make_token()}"}
-    )
+    res = client.get("/whoami", headers={"Authorization": f"Bearer {make_token()}"})
+
+    assert res.status_code >= 400
+    assert "user_id" not in res.text
+
+
+def test_an_unreachable_key_server_is_503_and_not_401(
+    client: TestClient, make_token: Callable[..., str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """**Reversed on 2026-09-09**, and the reversal is the whole point.
+
+    This used to assert 401, under the reasoning that "the caller is not
+    authenticated, whatever the cause". True as a statement about
+    authentication, and it ignored what the *client* does with a 401:
+    `apiFetch` calls `signOut()` on every one, deliberately, because a rejected
+    token is unusable. So a network blip between this service and Supabase
+    ended every active session in the app and returned every musician to the
+    sign-in screen.
+
+    Measured rather than reasoned about: `PyJWKClientConnectionError` is a
+    subclass of `PyJWTError`, so a failed fetch landed in the same branch as a
+    forged signature.
+
+    The sibling test below already draws this line for a *missing* project —
+    "no project configured is a server fault, not a rejected caller" — and an
+    unreachable one is the same category with the opposite answer.
+    """
+
+    class _Unreachable:
+        def get_signing_key_from_jwt(self, _token: str):
+            raise PyJWKClientConnectionError('Fail to fetch data from the url, err: "timed out"')
+
+    monkeypatch.setattr(auth_module, "_jwks", _Unreachable())
+    res = client.get("/whoami", headers={"Authorization": f"Bearer {make_token()}"})
+
+    assert res.status_code == 503
+    # Still refused, and told to come back rather than to sign in again.
+    assert "user_id" not in res.text
+    assert "sign-in" in res.json()["detail"]
+
+
+def test_a_forged_signature_is_still_401(
+    client: TestClient, make_token: Callable[..., str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The 503 above must not swallow the case it sits in front of.
+
+    A bad token is still a rejected caller, and the app still has to sign that
+    musician out — which is what the 401 is for.
+    """
+
+    class _Rejecting:
+        def get_signing_key_from_jwt(self, _token: str):
+            raise jwt.InvalidSignatureError("Signature verification failed")
+
+    monkeypatch.setattr(auth_module, "_jwks", _Rejecting())
+    res = client.get("/whoami", headers={"Authorization": f"Bearer {make_token()}"})
+
     assert res.status_code == 401
 
 
