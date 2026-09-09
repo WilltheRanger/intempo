@@ -41,7 +41,7 @@ import { practiceTempo, usePracticeTempos } from '../../data/practiceTempo';
 import { BORDER_WIDTH, colors, spacing } from '../../design';
 import { formatLastPracticed } from '../../lib/format';
 import { formatTempo } from '../../lib/tempo';
-import { scheduleScore, type Schedule } from '../../lib/score';
+import { scheduleScore, soundingMeasureAt } from '../../lib/score';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
 import { ListenButton } from '../../components/score/ListenButton';
 
@@ -53,27 +53,6 @@ import { ListenButton } from '../../components/score/ListenButton';
  * — see the band itself.
  */
 const BANNER_HEIGHT = 116;
-
-/**
- * Which measure is sounding at `elapsedS`.
- *
- * The last note to have started, not the nearest — a playhead names what you
- * are hearing, and between two notes you are still hearing the first. Null
- * before the first note, which is where a lead-in sits.
- */
-function measureAt(schedule: Schedule | null, elapsedS: number): number | null {
-  if (!schedule) {
-    return null;
-  }
-  let current: number | null = null;
-  for (const note of schedule.notes) {
-    if (note.startS > elapsedS) {
-      break;
-    }
-    current = note.measureNumber;
-  }
-  return current;
-}
 
 /**
  * A saved piece.
@@ -377,7 +356,7 @@ export function PieceDetailScreen() {
             score={piece.score}
             bpm={bpm}
             onProgress={(elapsed, total) =>
-              setMeasure(total > 0 ? measureAt(schedule, elapsed) : null)
+              setMeasure(total > 0 ? soundingMeasureAt(schedule, elapsed) : null)
             }
           />
         </View>

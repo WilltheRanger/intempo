@@ -17,3 +17,4 @@ export {
 } from './voice';
 export type { PlayOptions, PlaybackHandle } from './player.types';
 export { measuresInPlayOrder } from './playOrder';
+export { soundingMeasureAt } from './playhead';

@@ -1,5 +1,81 @@
 # InTempo Edit Log
 
+## 2026-09-09 — The playhead rule existed twice, in two screens, tested nowhere
+
+Loop tick seventeen. Tick sixteen found a real bug by asking which screen rules
+live in `.tsx` files, so I ran the question over the whole tree rather than
+stopping at the one that bit.
+
+**Seventeen lowercase top-level functions in `.tsx` files.** Most are
+pluralisation — `measureLabel`, `noteLabel`, `sessionLabel` — which is not what
+§3 is about. Four were worth reading properly, and two of those turned out
+fine:
+
+- `looksLikeAMetre` in `ManualPieceForm` is a one-line delegate to
+  `beatsPerMeasure`, with a comment saying why it must not be a second rule.
+  Correct already.
+- `formatOffset` in `MeasureRow` rounds a percentage. Checked for the obvious
+  trap — `Math.round(-0.4)` is `-0` in JavaScript — and it does not bite:
+  template interpolation renders `-0` as `"0"`, so a barely-early bar reads
+  `0%` rather than `-0%`. Measured across eight values, nothing to fix.
+
+**And one thing that was genuinely wrong.** `PieceDetailScreen.measureAt` and
+`PieceScoreScreen.soundingMeasure` are the *same rule* — the last note to have
+started, which names the bar you are hearing — written out twice,
+**byte-identical in the loop**, each with its own comment explaining the same
+reasoning. Neither was tested, because both were inside a `.tsx`.
+
+They had not drifted. The point is that nothing would have noticed if they had,
+and the symptom would be two screens lighting different bars for the same piece
+at the same moment — the sort of thing you stare at for an hour before
+suspecting there are two copies.
+
+Now `lib/score/playhead.ts`, seven tests, both screens calling it: silent
+before the first note (a lead-in sits there), the bar named on the instant a
+note starts, **held between notes** rather than blinking off in the gap
+`articulation` leaves, and held after the last onset so the readout does not
+blank through the final note.
+
+**Still a linear scan.** A binary search is the obvious move on a sorted array
+read once per animation frame, and `CLAUDE.md` §1.3 says not to: speed is the
+thing to leave alone until something is measurably slow, and nothing here has
+been measured. Moving a rule and changing it in the same commit is also how a
+refactor becomes a bug hunt.
+
+**A mutation survived, and it is an *equivalent mutant* — which is a different
+thing from a gap.** Swapping the loop's `break` for `continue` changes nothing:
+a note that has not started is skipped either way. No test can kill it without
+asserting an implementation detail, and writing one would be the wrong lesson.
+
+What it did do is show my comment was wrong. It said `break` "is only correct
+because the schedule is in time order". `continue` is equally correct; what the
+time order buys is the *early exit*, and the comment now says that. The
+sortedness is pinned by its own test regardless, because this is the caller
+that would start reading the whole array every frame if `scheduleScore` ever
+stopped sorting.
+
+The other four mutations were killed: the note starting now counted as not
+started (1 test), the nearest note rather than the last started (2), a null
+clock read as time zero (1), bar one lit through the lead-in (1).
+
+**Named and not fixed:** `pageCountLabel` exists in `ScannerScreen` and
+`CapturedPagesScreen` with the same name, the same signature and **different
+behaviour** — one answers "No pages yet" at zero, the other "0 pages". Latent
+rather than live, since neither screen is reachable with no pages, so it is
+recorded here rather than folded into this commit.
+
+**On the §2 gate:** no layout, copy, component, token or visual property
+changed. Both screen diffs are a deleted function, an import and one call site.
+
+**Tests run:** `preflight.py --full` with a DSN: **15/15 in 629s** — including
+the app walk through the built bundle, which drives both screens this touched.
+`mobile/.env` restored, no stray backups. Mobile 158 files / 1748 tests.
+
+**Side effects:** none intended; the extracted rule is byte-for-byte the
+behaviour both copies had.
+
+**Rollback:** revert the commit.
+
 ## 2026-09-09 — "bach suite" found nothing
 
 Loop tick sixteen. `LibraryScreen.tsx` carried its search rule thirty lines

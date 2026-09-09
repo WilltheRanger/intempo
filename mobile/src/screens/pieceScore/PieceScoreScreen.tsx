@@ -49,7 +49,12 @@ import {
 } from '../../lib/notation/fromScore';
 import { shortenLongRests, skippableBars } from '../../lib/notation/longRests';
 import { CLEF_LABELS, clefSummary, meterSummary } from '../../lib/notation/scoreSummary';
-import { scheduleScore, startAtMeasure, startableMeasures } from '../../lib/score';
+import {
+  scheduleScore,
+  soundingMeasureAt,
+  startAtMeasure,
+  startableMeasures,
+} from '../../lib/score';
 import { practiceTempo, usePracticeTempos } from '../../data/practiceTempo';
 import { bpmForMarking } from '../../lib/tempoMarking';
 import { formatTempo } from '../../lib/tempo';
@@ -251,22 +256,10 @@ export function PieceScoreScreen() {
     () => (whole ? startAtMeasure(whole, listenFrom) : null),
     [whole, listenFrom],
   );
-  const soundingMeasure = useMemo(() => {
-    if (elapsedS === null || !playback) {
-      return null;
-    }
-    // The last note that has started. A note still sounding is where the ear
-    // is, so the bar stays lit through the note rather than blinking off in
-    // the gap `articulation` leaves before the next one.
-    let current: number | null = null;
-    for (const note of playback.notes) {
-      if (note.startS > elapsedS) {
-        break;
-      }
-      current = note.measureNumber;
-    }
-    return current;
-  }, [elapsedS, playback]);
+  const soundingMeasure = useMemo(
+    () => soundingMeasureAt(playback, elapsedS),
+    [elapsedS, playback],
+  );
 
   const reading = useMemo(
     () => (piece?.score ? readingNotesFor(piece.score, piece.concerns) : null),
