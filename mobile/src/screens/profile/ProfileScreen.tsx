@@ -36,6 +36,7 @@ import type { RootNavigation } from '../../navigation/types';
 import { AccountRow } from './AccountRow';
 import { LinkRow } from './LinkRow';
 import { ToggleRow } from './ToggleRow';
+import { loadStateFor } from '../../lib/loadState';
 
 /**
  * The account, and the settings that belong to this device.
@@ -49,7 +50,8 @@ import { ToggleRow } from './ToggleRow';
  * like a control and isn't one.
  */
 export function ProfileScreen() {
-  const { data: musician, isPending, isError, error, isFetching, refetch } = useMe();
+  const { data: musician, isError, error, isFetching, refetch } = useMe();
+  const load = loadStateFor({ isError, hasData: musician !== undefined });
   const settings = usePreferences();
   const navigation = useNavigation<RootNavigation>();
   const queryClient = useQueryClient();
@@ -159,7 +161,7 @@ export function ProfileScreen() {
     }
   }
 
-  if (isPending) {
+  if (load === 'loading') {
     return (
       <ScreenContainer>
         <PageHeader title="Profile" />
@@ -170,7 +172,7 @@ export function ProfileScreen() {
 
   const usage = describeUsage(musician?.usage ?? null);
 
-  if (isError || !musician) {
+  if (load === 'unavailable' || !musician) {
     return (
       <ScreenContainer>
         <PageHeader title="Profile" />

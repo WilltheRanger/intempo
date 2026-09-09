@@ -44,6 +44,7 @@ import { formatTempo } from '../../lib/tempo';
 import { scheduleScore, soundingMeasureAt } from '../../lib/score';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
 import { ListenButton } from '../../components/score/ListenButton';
+import { loadStateFor } from '../../lib/loadState';
 
 /**
  * How tall the score band across the top of the screen is.
@@ -73,7 +74,8 @@ export function PieceDetailScreen() {
   const navigation = useNavigation<RootNavigation>();
   const goBack = useGoBack({ tab: 'Library' });
   const { params } = useRoute<RouteProp<RootStackParamList, 'PieceDetail'>>();
-  const { data: piece, isPending, isError } = usePiece(params.pieceId);
+  const { data: piece, isError } = usePiece(params.pieceId);
+  const load = loadStateFor({ isError, hasData: piece !== undefined });
 
   // Null when nothing is sounding, so the readout can say how long the piece
   // is rather than claiming a playhead sits on measure 1.
@@ -148,7 +150,7 @@ export function PieceDetailScreen() {
     [piece?.score, bpm],
   );
 
-  if (isPending) {
+  if (load === 'loading') {
     return (
       <ScreenContainer>
         <LoadingState />
@@ -156,7 +158,7 @@ export function PieceDetailScreen() {
     );
   }
 
-  if (isError || !piece) {
+  if (load === 'unavailable' || !piece) {
     return (
       <ScreenContainer>
         <EmptyState

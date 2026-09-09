@@ -35,6 +35,7 @@ import { CorrectionPrompt, type CorrectionState } from './CorrectionPrompt';
 import { MEASURE_COLUMNS, MeasureRow } from './MeasureRow';
 import { TrendLine } from './TrendLine';
 import { TakePlayback } from './TakePlayback';
+import { loadStateFor } from '../../lib/loadState';
 
 /**
  * What one take came back as.
@@ -123,14 +124,11 @@ export function VerdictScreen() {
     );
   }
 
-  const {
-    data: take,
-    isPending,
-    isError,
-  } = useQuery<TakeResult | null>({
+  const { data: take, isError } = useQuery<TakeResult | null>({
     queryKey: ['take', params.analysisId],
     queryFn: () => takeSource.getTake(params.analysisId),
   });
+  const load = loadStateFor({ isError, hasData: take !== undefined });
 
   /**
    * The piece is only known once the take has loaded, and these branches run
@@ -142,7 +140,7 @@ export function VerdictScreen() {
     take ? { route: 'PieceDetail', params: { pieceId: take.pieceId } } : { tab: 'Library' },
   );
 
-  if (isPending) {
+  if (load === 'loading') {
     return (
       <ScreenContainer>
         <VerdictSkeleton />
@@ -150,7 +148,7 @@ export function VerdictScreen() {
     );
   }
 
-  if (isError || !take) {
+  if (load === 'unavailable' || !take) {
     return (
       <ScreenContainer>
         <EmptyState

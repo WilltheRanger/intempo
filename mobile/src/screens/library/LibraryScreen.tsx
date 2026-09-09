@@ -24,6 +24,7 @@ import type {
 import { AddPieceSheet } from '../../components/pieces/AddPieceSheet';
 import { PieceRow } from './PieceRow';
 import { useAddPieceOption } from '../../navigation/useAddPieceOption';
+import { loadStateFor, type LoadState } from '../../lib/loadState';
 
 export function LibraryScreen() {
   const navigation = useNavigation<TabScreenNavigation<'Library'>>();
@@ -75,8 +76,10 @@ export function LibraryScreen() {
       ) : null}
 
       <LibraryContent
-        isPending={library.isPending}
-        isError={library.isError}
+        load={loadStateFor({
+          isError: library.isError,
+          hasData: library.data !== undefined,
+        })}
         error={library.error}
         pieces={pieces}
         results={results}
@@ -99,8 +102,7 @@ export function LibraryScreen() {
 }
 
 interface LibraryContentProps {
-  isPending: boolean;
-  isError: boolean;
+  load: LoadState;
   /** Why, so the empty state can say something true rather than guess. */
   error: unknown;
   pieces: Piece[];
@@ -114,8 +116,7 @@ interface LibraryContentProps {
 }
 
 function LibraryContent({
-  isPending,
-  isError,
+  load,
   error,
   pieces,
   results,
@@ -125,7 +126,7 @@ function LibraryContent({
   onRetry,
   retrying,
 }: LibraryContentProps) {
-  if (isPending) {
+  if (load === 'loading') {
     return (
       <View style={styles.section}>
         <PieceListSkeleton count={5} />
@@ -133,7 +134,7 @@ function LibraryContent({
     );
   }
 
-  if (isError) {
+  if (load === 'unavailable') {
     return (
       // **A load failure is the one empty state that is not empty of options.**
       // It said "check your connection" and gave nothing to press: pull to

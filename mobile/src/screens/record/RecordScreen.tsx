@@ -78,6 +78,7 @@ import {
   type RecordPhase,
 } from '../../lib/record/leaving';
 import { useGoBack } from '../../navigation/useGoBack';
+import { loadStateFor } from '../../lib/loadState';
 
 const METRONOME_LABELS = {
   off: 'Metronome off',
@@ -119,7 +120,7 @@ export function RecordScreen() {
   const queryClient = useQueryClient();
   const { params } = useRoute<RouteProp<RootStackParamList, 'Record'>>();
   const goBack = useGoBack({ route: 'PieceDetail', params: { pieceId: params.pieceId } });
-  const { data: piece, isPending } = usePiece(params.pieceId);
+  const { data: piece, isError } = usePiece(params.pieceId);
   // This is the same cached account read held by the signed-in gate, not a
   // second request. It lets the screen refuse an impossible take before the
   // musician plays it rather than after the WAV has already been uploaded.
@@ -706,7 +707,7 @@ export function RecordScreen() {
     ? restCueAt(restCues, elapsedMs, targetBpm)
     : null;
 
-  if (isPending) {
+  if (loadStateFor({ isError, hasData: piece !== undefined }) === 'loading') {
     return (
       <ScreenContainer>
         <LoadingState />

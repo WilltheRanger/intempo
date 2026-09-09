@@ -69,6 +69,7 @@ import {
   keySignatureFor,
   timeSignatureDigits,
 } from '../../lib/notation/keySignature';
+import { loadStateFor } from '../../lib/loadState';
 
 /** Read from a stand, not glanced at — the same size the warmup page uses. */
 const STAVE_SCALE = 1.25;
@@ -167,7 +168,8 @@ export function PieceScoreScreen() {
     route: 'PieceDetail',
     params: { pieceId: params.pieceId },
   });
-  const { data: piece, isPending, isError } = usePiece(params.pieceId);
+  const { data: piece, isError } = usePiece(params.pieceId);
+  const load = loadStateFor({ isError, hasData: piece !== undefined });
 
   const accept = useAcceptTranscription(params.pieceId);
   const reread = useRetranscribe(params.pieceId);
@@ -270,7 +272,7 @@ export function PieceScoreScreen() {
     setWidth(event.nativeEvent.layout.width);
   }
 
-  if (isPending) {
+  if (load === 'loading') {
     return (
       <ScreenContainer>
         <LoadingState />
@@ -278,7 +280,7 @@ export function PieceScoreScreen() {
     );
   }
 
-  if (isError || !piece) {
+  if (load === 'unavailable' || !piece) {
     return (
       <ScreenContainer>
         <EmptyState

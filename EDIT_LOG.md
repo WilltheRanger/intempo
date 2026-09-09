@@ -1,5 +1,62 @@
 # InTempo Edit Log
 
+## 2026-09-09 — A screen that has the data must draw the data
+
+Loop tick thirty-three, and the other half of the tick before it. Persisting the
+library was pointless while the screens still refused to draw it.
+
+**The fact, measured rather than assumed.** A `@tanstack/query-core` query that
+holds data and whose *next* fetch rejects reports `status: 'error'`,
+`isError: true` — **and still holds the data**. Probed directly against a real
+`QueryObserver` before a line was changed, because two unverified probes have
+already cost this session a false alarm apiece. That combination is now pinned
+by a test, so a future query-core that changes it fails loudly.
+
+**Eight screens read that `isError` and covered the data with a full-page
+"Couldn't load…".** Library, Today, Insights, Profile, Verdict, PieceDetail,
+PieceScore and Record — in four different spellings: `isError`,
+`isError || !take`, `isError || !musician`, `isError || !piece`. Four
+near-copies of one rule, each editable without the others, none of them tested,
+which is precisely what `CLAUDE.md` means by *"a rule inside a `.tsx` is a rule
+nothing checks"*.
+
+**It was always reachable** — walk into a lift with the library open, tap a
+piece — and yesterday's change made it the normal case: the refetch behind a
+*restored* screen fails for every musician with no signal. Persisting the
+repertoire and then throwing it away on the way to the screen is a feature that
+cancels itself out.
+
+**`mobile/src/lib/loadState.ts`** now holds the rule: data wins over the error,
+and the failure state is only for having nothing to draw.
+
+**A bug I introduced and caught before it shipped, written down because the
+catch is the point.** The first draft took `hasData: piece != null`. A
+*successful* `null` — a piece deleted on another device — is neither pending nor
+an error, so it would have resolved to `loading` and left the screen on its
+skeleton for ever. `hasData` now means one thing everywhere, `data !== undefined`,
+and each screen keeps its own `|| !piece` branch, because only the screen knows
+what its own `null` means: on a detail screen it is *this piece is gone*, on
+Today it is *you have not started anything yet*, and those are different screens.
+There is a test for it.
+
+**What is given up.** The error state carried the "Try again" button, so showing
+the content means that button is not on screen. `createQueryClient` leaves
+`refetchOnReconnect` at its default, so the query re-runs by itself the moment
+the connection returns — the retry that mattered was never the tap.
+
+**Verification.** 6 new tests; 4 mutations tried, 4 killed (error winning over
+data, never `unavailable`, always `unavailable`, always `ready`). Full mobile
+suite 1819 green. `preflight.py --full` 16/16.
+
+**This changes which of two already-designed states appears on eight screens.**
+It draws nothing new — no component, no copy, no styling — so it is filed as a
+correctness fix rather than a §2 item. The §2 part is the one thing deliberately
+not built: nothing says *"this is what was last fetched"*. That is copy and a
+visual treatment and it is the owner's call. Until then the screens say less,
+never something untrue.
+
+Rollback: `git revert`. `loadState.ts` has no other callers.
+
 ## 2026-09-09 — The library, readable without a connection
 
 Loop tick thirty-two. Tick ten built the take queue's drain, so a take recorded

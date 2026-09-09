@@ -54,6 +54,7 @@ import { WarmupPanel } from './WarmupPanel';
 import { PracticeCard } from './PracticeCard';
 import { TodayRow } from './TodayRow';
 import { useAddPieceOption } from '../../navigation/useAddPieceOption';
+import { loadStateFor } from '../../lib/loadState';
 
 const AVATAR_SIZE = 52;
 const WIDE_HOME_BREAKPOINT = 900;
@@ -223,7 +224,12 @@ export function TodayScreen() {
   */
   const header = <PageHeader title={getGreeting()} action={avatar} />;
 
-  if (currentPiece.isPending) {
+  const load = loadStateFor({
+    isError: currentPiece.isError,
+    hasData: currentPiece.data !== undefined,
+  });
+
+  if (load === 'loading') {
     return (
       <ScreenContainer contentStyle={styles.page}>
         {header}
@@ -232,7 +238,7 @@ export function TodayScreen() {
     );
   }
 
-  if (currentPiece.isError) {
+  if (load === 'unavailable') {
     return (
       <ScreenContainer onRefresh={refresh} contentStyle={styles.page}>
         {header}

@@ -32,6 +32,7 @@ import { DeviationBar } from './DeviationBar';
 import { PieceInsightRow } from './PieceInsightRow';
 import { firstStep, focusReason, windowLabel } from './copy';
 import { useAddPieceOption } from '../../navigation/useAddPieceOption';
+import { loadStateFor } from '../../lib/loadState';
 
 /**
  * Practice history that explains the pattern and makes it useful.
@@ -67,12 +68,8 @@ export function InsightsScreen() {
   // anything to record yet.
   const library = useLibrary();
   const [addSheetVisible, setAddSheetVisible] = useState(false);
-  const {
-    data: insights,
-    isPending,
-    isError,
-    error,
-  } = insightsQuery;
+  const { data: insights, isError, error } = insightsQuery;
+  const load = loadStateFor({ isError, hasData: insights !== undefined });
 
   async function refresh() {
     await Promise.all([insightsQuery.refetch(), recentTakes.refetch()]);
@@ -82,7 +79,7 @@ export function InsightsScreen() {
     setAddSheetVisible(false),
   );
 
-  if (isPending) {
+  if (load === 'loading') {
     return (
       <ScreenContainer>
         <PageHeader title="Insights" />
@@ -91,7 +88,7 @@ export function InsightsScreen() {
     );
   }
 
-  if (isError) {
+  if (load === 'unavailable') {
     return (
       <ScreenContainer onRefresh={refresh}>
         <PageHeader title="Insights" />
