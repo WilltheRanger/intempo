@@ -1,5 +1,86 @@
 # InTempo Edit Log
 
+## 2026-09-09 — "Request failed (502): /v1/scores", shown to a musician
+
+Loop tick twenty. I ran yesterday's duplicate-name scan over the **backend**
+first, and it came back essentially clean — worth reporting rather than
+forcing. **315 module-level function names, 5 in more than one module**, and
+four of those five are legitimately different: `_object_keys_in` and
+`_row_to_response` serve two different buckets and two different response
+models, `_update` is two different workers, and `object_key_from` differs
+because the audio one also accepts a bare durable reference while the image one
+takes a bucket. The fifth is `_now_iso`, two lines, identical in three modules —
+marginal, and I have left it. The backend is tidier than the app was.
+
+**So I went looking at the error path instead, and found a string a musician
+should never have seen.**
+
+`readError` in `api/client.ts` minted `` `Request failed (${status}): ${path}` ``
+as its fallback — used whenever the response body is **not JSON** (a proxy
+page, a cold-start HTML error, a gateway timeout) or whenever `detail` is a
+structured object rather than a sentence.
+
+That string reaches screens. This project has a deliberate, argued convention,
+written out in `VerdictScreen`: a **write** shows *"the error's own words"*,
+explicitly **not** `describeLoadError`, because substituting a load-failure
+guess replaced a hook's accurate sentence with "check your connection", and
+that is the exact substitution `describeError.ts` was written to stop. Roughly
+ten screens follow it.
+
+**The convention is right and the fallback broke it.** "The error's own words"
+is a good rule for the sentences this app writes. It is not a rule for a
+placeholder assembled out of an HTTP status and a URL path — that is a
+diagnostic that escaped, and a musician saving a piece against a sleeping host
+saw it.
+
+Fixed **in `client.ts`, not in the screens**: one string, every caller. Two
+exported sentences now, split at the one boundary this code can name with
+confidence —
+
+- **5xx → `SERVER_FAULT`**, the sentence `describeLoadError` already used for
+  the same situation. "Not something you did" is the difference between a
+  musician retrying and a musician assuming they broke their own library.
+- **anything else → `REQUEST_FAILED`**, which does not blame the server for a
+  request the server refused.
+
+`describeLoadError`'s 5xx branch now **imports** that sentence rather than
+holding its own copy — the arrow already went that way, so no cycle, and two
+copies of one sentence is how the second one drifts. Same discipline as
+`readTakeFailure`: one read, and the answers agree by construction.
+
+**The compiler found the loose end.** With the path out of the message,
+`readError`'s `path` parameter was unused and `noUnusedParameters` said so.
+Removed. The status and the path are still fields on every `ApiError` — they
+were only ever taken out of the *sentence*, which is where a developer should
+not have been reading them from anyway.
+
+**Mutation-checked, five ways**, all killed: a 500 not named as a server fault
+(1 test), a 422 blamed on the server (1), the status put back into the sentence
+(3), the server's own sentence discarded (1), and `describeLoadError` keeping
+its own 5xx wording instead of the shared one (1).
+
+**On the §2 gate — this does change copy a musician can see**, so here is
+exactly what changes and where. Nothing on any screen was edited, no layout, no
+component, no token. What changes is the *text of an error* on paths where the
+server answered without a readable body:
+
+| Before | After |
+|---|---|
+| `Request failed (502): /v1/scores` | The server had a problem. This is not something you did — try again in a minute. |
+| `Request failed (422): /v1/analyses` | Something went wrong at our end. Try again — if it keeps happening, it is not you. |
+
+The 5xx wording is not new copy — it is the sentence already shipping in
+`describeLoadError`, now reaching the writes as well as the reads. The other is
+new, and it is replacing a placeholder rather than a design.
+
+**Tests run:** `preflight.py --full` with a DSN: **15/15 in 627s**.
+`mobile/.env` restored, no stray backups. Mobile 159 files / 1761 tests.
+
+**Named and not fixed:** `_now_iso`, identical in three backend modules. Two
+lines, and unifying it would be a change for its own sake.
+
+**Rollback:** revert the commit. Both sentences are constants in one module.
+
 ## 2026-09-09 — Fifteen names defined twice, and one of the duplicates was mine
 
 Loop tick nineteen. Ticks sixteen and seventeen both found real problems by

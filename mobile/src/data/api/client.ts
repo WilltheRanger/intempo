@@ -10,6 +10,36 @@ import { getAccessToken, signOut } from '../auth/session';
 const SESSION_ENDED = 'Your session has ended. Sign in again.';
 
 /**
+ * What a musician is told when the server broke.
+ *
+ * **Exported so `describeLoadError` reads the same sentence rather than its
+ * own copy.** Two sentences for one situation is how a read and a write come
+ * to disagree about what a 500 means, and this file is where the sentence has
+ * to live: `describeError.ts` already imports from here, so the arrow only
+ * goes one way.
+ */
+export const SERVER_FAULT =
+  'The server had a problem. This is not something you did — try again in a minute.';
+
+/**
+ * The last resort, when the server said nothing a person could read.
+ *
+ * **This used to be `Request failed (502): /v1/scores`, and it reached
+ * musicians.** `readError` mints it whenever the body is not JSON — a proxy
+ * page, a cold-start HTML error, a gateway timeout — or when `detail` is a
+ * structured object rather than a sentence. The screens that follow this
+ * project's write convention show *"the error's own words"*, deliberately and
+ * with a written argument behind it (`VerdictScreen`), and that argument holds
+ * for the sentences this app writes. It does not hold for a placeholder built
+ * out of an HTTP status and a URL path.
+ *
+ * The status and the path are not lost: both are fields on `ApiError`, which
+ * is where a developer should be reading them from anyway.
+ */
+export const REQUEST_FAILED =
+  'Something went wrong at our end. Try again — if it keeps happening, it is not you.';
+
+/**
  * Base URL for the FastAPI backend. Override per environment with
  * `EXPO_PUBLIC_API_BASE_URL`; the default matches `uv run uvicorn` locally.
  */
@@ -115,7 +145,7 @@ export async function apiFetch<T>(
         });
         throw new ApiError(401, path, SESSION_ENDED);
       }
-      const { message, detail } = await readError(response, path);
+      const { message, detail } = await readError(response);
       // readError tolerates non-JSON server errors, but that fallback must not
       // hide a deadline that interrupted the response body.
       if (signal.aborted) {
@@ -439,11 +469,17 @@ async function send(path: string, init: RequestInit): Promise<Sent> {
  * parsing it twice to get the two halves separately would throw on the second
  * read.
  */
+// `path` used to be a parameter, for a fallback that spelled it out. It is
+// still on every `ApiError` this file throws, which is where a developer
+// should be reading it from — a URL in a sentence a musician reads is a
+// diagnostic that escaped.
 async function readError(
   response: Response,
-  path: string,
 ): Promise<{ message: string; detail: unknown }> {
-  const fallback = `Request failed (${response.status}): ${path}`;
+  // 5xx is the one case this can name with confidence, and naming it is worth
+  // doing: "not something you did" is the difference between a musician
+  // retrying and a musician assuming they broke their library.
+  const fallback = response.status >= 500 ? SERVER_FAULT : REQUEST_FAILED;
   try {
     const payload = (await response.json()) as { detail?: unknown };
     const { detail } = payload;

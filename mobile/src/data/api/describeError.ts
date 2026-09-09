@@ -1,4 +1,4 @@
-import { ApiError } from './client';
+import { ApiError, SERVER_FAULT } from './client';
 
 /**
  * What to tell someone when a screen could not load.
@@ -50,7 +50,12 @@ export function describeLoadError(error: unknown): string {
     if (error.status >= 500) {
       // Explicitly not the musician's problem to solve, and explicitly not
       // worth them retrying in the next second.
-      return 'The server had a problem. This is not something you did — try again in a minute.';
+      //
+      // Imported rather than written here, so a read and a write cannot come
+      // to disagree about what a 500 means: `client.ts` mints the same
+      // sentence when a server error arrives with no readable body, and two
+      // copies of one sentence is how the second one drifts.
+      return SERVER_FAULT;
     }
   }
   return 'Check your connection and try again.';
