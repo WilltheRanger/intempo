@@ -190,7 +190,8 @@ def _assert_measure_in_score(row: dict[str, Any], from_measure: int | None) -> N
 #: will not be: a field added above and forgotten here would come back null
 #: from the light path and be perfectly valid, which is the worst kind of
 #: wrong. Every field name is also the column name, and
-#: `test_analyses_projection.py` holds that against the migrations.
+#: `test_analyses_api.py` and `test_readiness_columns.py` hold that against the
+#: migrations.
 _WITHOUT_RESULT = ", ".join(
     name for name in AnalysisResponse.model_fields if name != "result_json"
 )

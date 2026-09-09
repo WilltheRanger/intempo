@@ -1,5 +1,78 @@
 # InTempo Edit Log
 
+## 2026-09-09 — The library listing stops shipping every note in the library
+
+Loop tick thirty-four, and the measured half of the egress the owner reported
+maxed out. **1961 KB → 28.9 KB for a fifty-piece library: a 98.5% cut**, on the
+single most-opened screen in the app.
+
+**What was happening.** `GET /v1/scores` was `select("*")`, so every row carried
+its full `score_json`. Measured against the reader's own stored output,
+notation costs **111 to 130 bytes a note** — an ordinary fifty-bar study is
+**39 KB**. And the app does not fetch one page of these: `listAllScores` walks
+the *whole* library by offset, because `LibraryScreen` filters the array it is
+handed and piece fifty-one would otherwise be unfindable by search. So opening
+the Library tab past `STALE_TIME_MS` transferred every note of every piece the
+musician owns, to draw a grid of titles and photographs that has never drawn a
+note.
+
+**The fix is the one `/v1/analyses` already uses.** `include_score=false`
+narrows the **SQL projection**, not just the response — dropping the field after
+Postgres has already sent it leaves the expensive half where it was, and the
+database read is billed too. Default `true`, so every installed build is
+unchanged; the app opts in at the two call sites that never draw a note (the
+library walk, and the score titles behind Today's recent takes) and keeps it at
+the one row `getCurrentPiece` falls back to.
+
+**Two fields go quiet with it, both correctly.** `score_json` is null, and
+`concerns` is empty — the concerns are *computed from* the notation, so there is
+nothing to compute. Running the measure validator over every row of a library
+listing was never work that screen asked for either. `GET /v1/scores/{id}` is
+the authority on both, and the only screen that reads `concerns` already guards
+on `piece.score` being present.
+
+**Nothing on screen loses anything, and the reason is the navigation.**
+`PieceScore` is reachable only from `PieceDetail`, which fetches
+`pieceKeys.detail(id)` first — so the score screen opens on a warm cache with
+full notation, exactly as before. `pieceFromCaches` already documents that a
+listed piece's `score` may be absent, and yesterday's `persistCache` made the
+same call for the same reason on the device side.
+
+**The test is a comparison, not a list of column names**, and that is the whole
+of its value. A projection that forgot `composer` would answer 200 with every
+piece's composer null — `composer` is nullable, `movement` is nullable,
+`transcription_status` defaults to `"done"`. So it seeds rows where every column
+carries a distinctive value, fetches the listing both ways, and requires the two
+responses to differ in `score_json` and `concerns` **and nowhere else**.
+
+**It took two rows, and finding that out is why the mutation run matters.** With
+one row the `source_image_urls` mutation **survived**: my row had no photograph,
+so `page_count`, `image_url` and `image_urls` were absent on both sides and a
+missing column that would have **emptied every thumbnail in the library** went
+unnoticed. A photographed row is the only one that populates those three; a row
+whose pages were discarded is the only one that populates
+`page_image_discarded_at`, because `_with_image_urls` skips signing exactly
+those — so no single row can exercise both. With both rows: **10 mutations
+tried, 10 killed** (seven dropped columns, plus ignoring the flag in each
+direction and inverting it).
+
+**Verification.** Backend **2162 passed**; mobile **1822 passed** (3 new);
+`preflight.py --full` 16/16.
+
+**One stale pointer fixed in passing.** `analyses.py` cited
+`test_analyses_projection.py` for its own projection rule; no such file exists —
+the tests are in `test_analyses_api.py` and `test_readiness_columns.py`. One
+line, in the comment my own docstring was written against.
+
+**Still not fixed, and named again.** The listing's *rows* are now small, but
+`listAllScores` still fetches every piece on every Library open — 29 KB now
+rather than 2 MB, so it is no longer the problem, but a cursor or a
+`lastPracticedAt` sort on the server would remove the walk entirely. That needs
+a paging design for search, which is a product decision.
+
+Rollback: `git revert`. The parameter defaults to true, so a reverted client
+against the new server, or the reverse, both behave exactly as they did.
+
 ## 2026-09-09 — A screen that has the data must draw the data
 
 Loop tick thirty-three, and the other half of the tick before it. Persisting the

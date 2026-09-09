@@ -136,6 +136,13 @@ async function listAllScores(): Promise<ScoreResponse[]> {
     const batch = await listScores({
       limit: SCORES_PAGE,
       offset: page * SCORES_PAGE,
+      // **The one place this mattered most.** This walks the whole library, so
+      // the notation it was carrying was every piece's, every time the tab was
+      // opened past `STALE_TIME_MS` — measured at 111 to 130 bytes a note, and
+      // nothing downstream draws a note from it. `usePiece` refetches the piece
+      // being opened, and `pieceFromCaches` already documents that a listed
+      // piece's `score` may be absent.
+      includeScore: false,
     });
     all.push(...batch);
     // A short page is the last page. An exactly-full final page costs one more
@@ -653,7 +660,9 @@ export const apiTakeSource: TakeSource = {
 
     // One score listing instead of one request per row. A missing score only
     // costs its title; the take and its verdict remain valid practice history.
-    const scores = await listScores().catch(() => []);
+    // Titles and composers for the takes on Today. No notation is drawn here
+    // at all — `toTake` reads the piece's name and nothing else from these.
+    const scores = await listScores({ includeScore: false }).catch(() => []);
     const scoresById = new Map(scores.map((score) => [score.id, score]));
     return recent.map(({ row, result }) =>
       toTake(row, result, scoresById.get(row.score_id) ?? null),

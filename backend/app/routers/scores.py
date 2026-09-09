@@ -339,7 +339,12 @@ class ScoreResponse(BaseModel):
     #: thumbnail draws, and a client that never learns about this field keeps
     #: working unchanged.
     image_urls: list[str] = Field(default_factory=list)
-    score_json: dict[str, Any]
+    #: The notation. **Null when the caller asked for the rows without it** —
+    #: `GET /v1/scores?include_score=false` — and for a row whose column is
+    #: genuinely empty. A client cannot tell those apart and does not need to:
+    #: `transcription_status` is what says whether notation is coming, and
+    #: `GET /v1/scores/{id}` is the authority on what it is.
+    score_json: dict[str, Any] | None = None
     shared_with_studio: UUID | None = None
     ocr_confidence: float | None = None
     #: `queued` → `reading` → `done` | `failed`. Always `done` for a piece
@@ -735,6 +740,43 @@ def _insert_score(payload: dict[str, Any]) -> list[dict[str, Any]]:
         return client.table("scores").insert(narrower).execute().data or []
 
 
+#: The columns a score row needs to become a `ScoreResponse`, minus the notation.
+#:
+#: **Written out rather than derived from `ScoreResponse.model_fields`**, which
+#: is how `/v1/analyses` does it — that shortcut works there because every field
+#: of an `AnalysisResponse` is also a column. Half of a `ScoreResponse` is not:
+#: `image_url`, `image_urls`, `image_url_expires_at`, `page_count` and
+#: `concerns` are all computed here, and `source_image_urls` is a column that is
+#: not a field at all. A derived list would ask Postgres for five columns that
+#: do not exist and miss the one `pages_of` reads.
+#:
+#: So the list is the *reads* below, and `test_scores_router.py` holds it
+#: there behaviourally: it fetches fully-populated rows both ways and asserts
+#: the two responses differ in `score_json` and `concerns` and nowhere else. A
+#: column dropped from here shows up as a field that lost its value, which is
+#: the failure this projection could otherwise cause silently.
+_WITHOUT_SCORE = ", ".join(
+    (
+        "id",
+        "user_id",
+        "title",
+        "composer",
+        "movement",
+        "source_image_url",
+        "source_image_urls",
+        "shared_with_studio",
+        "ocr_confidence",
+        "transcription_status",
+        "transcription_stage",
+        "transcription_error",
+        "transcription_accepted_at",
+        "page_image_discarded_at",
+        "created_at",
+        "updated_at",
+    )
+)
+
+
 def _row_to_response(
     row: dict[str, Any],
     *,
@@ -753,7 +795,7 @@ def _row_to_response(
         image_urls=image_urls or ([image_url] if image_url else []),
         image_url_expires_at=expires_at,
         page_count=len(pages_of(row)),
-        score_json=row["score_json"],
+        score_json=row.get("score_json"),
         shared_with_studio=row.get("shared_with_studio"),
         ocr_confidence=row.get("ocr_confidence"),
         concerns=_concerns_for(row.get("score_json")),
@@ -1107,11 +1149,41 @@ def list_scores(
     user_id: UUID = Depends(current_user_id),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
+    include_score: bool = Query(
+        default=True,
+        description=(
+            "Send the notation with each row. Say false when you only need the "
+            "pieces — it is by far the largest field."
+        ),
+    ),
 ) -> list[ScoreResponse]:
+    """The caller's scores, newest first.
+
+    **`include_score=false` exists because `score_json` dwarfs the rest of the
+    row.** Measured against the reader's own stored output: **111 to 130 bytes a
+    note**, so an ordinary study of three or four hundred notes is 35 to 50 KB —
+    and the app does not fetch one page of these, it pages through the *whole*
+    library on every Library open, because search filters the array it is given
+    and piece fifty-one would otherwise be unfindable. A hundred pieces is
+    several megabytes, repeated every time the tab is opened past
+    `STALE_TIME_MS`. The library grid draws a title, a composer and a
+    photograph, and has never drawn a note.
+
+    It narrows the **SQL projection**, not just the response, for the same
+    reason as `/v1/analyses`: dropping the field after Postgres has already sent
+    it leaves the expensive half of the transfer where it was, and the database
+    read is billed too.
+
+    Two fields go quiet with it, both correctly. `score_json` is null, and
+    `concerns` is empty — the concerns are *computed from* the notation, so
+    without it there is nothing to compute, and running the measure validator
+    over every row of a library listing was never work that screen asked for.
+    `GET /v1/scores/{id}` is where both are answered.
+    """
     response = (
         require_service_client()
         .table("scores")
-        .select("*")
+        .select("*" if include_score else _WITHOUT_SCORE)
         .eq("user_id", str(user_id))
         .order("created_at", desc=True)
         .range(offset, offset + limit - 1)

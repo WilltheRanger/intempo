@@ -1,5 +1,60 @@
 # InTempo Decisions
 
+## 2026-09-09 — The library listing sends the pieces, not the notation
+
+**Context.** The owner reported their Supabase egress maxed out. `GET /v1/scores`
+was `select("*")`, so every row carried its full `score_json` — measured at 111
+to 130 bytes a note, **39 KB for an ordinary fifty-bar study**. The app does not
+fetch one page of these: `listAllScores` walks the whole library by offset,
+because `LibraryScreen` filters the array it is handed and piece fifty-one would
+otherwise be unfindable by search. Opening the Library tab past `STALE_TIME_MS`
+therefore transferred every note of every piece the musician owns, to draw a
+grid of titles and photographs that has never drawn a note. Measured
+end-to-end: **1961 KB for fifty pieces, against 28.9 KB without the notation —
+a 98.5% cut.**
+
+**Decision.** `GET /v1/scores?include_score=false` narrows the SQL projection to
+the columns the response actually reads. Default `true`. The app opts in at the
+two call sites that never draw a note — the library walk, and the score titles
+behind Today's recent takes — and leaves it off for the single row
+`getCurrentPiece` falls back to.
+
+**Alternatives considered.**
+
+- *Three denormalised columns on `scores`* (note count, first bar, tempo hint)
+  so the listing never touches `score_json`. Rejected for now: it is the right
+  end state for a listing that needs *derived* facts, but it costs a migration
+  and six write sites kept in step, and it does not answer this problem any
+  better than not selecting a column does.
+- *Drop `score_json` in the response mapper.* Rejected — it leaves the expensive
+  half exactly where it was. Postgres has already read and sent the bytes, and
+  that read is billed. Same reasoning as `/v1/analyses`' `include_result`.
+- *Make `include_score=false` the default.* Rejected. Every installed build
+  would lose the notation from its listing at once, including versions that
+  cannot be updated on a musician's phone. The parameter defaults to the old
+  behaviour and the client asks.
+- *A server-side cursor so the app stops walking the whole library.* Deferred,
+  and named in `EDIT_LOG.md`. It needs a paging design for search — a product
+  decision — and with rows this small the walk is 29 KB rather than 2 MB, so it
+  is no longer the problem.
+
+**Trade-offs accepted.**
+
+- **`score_json` becomes nullable on `ScoreResponse`**, and a client cannot tell
+  "not sent" from "no notation". It does not need to: `transcription_status`
+  says whether notation is coming, and `GET /v1/scores/{id}` is the authority on
+  what it is. The mobile mapper already read the field with `?? null`.
+- **`concerns` is empty on the light listing**, because it is computed from the
+  notation. The only screen that reads it already guards on `piece.score`.
+- **A listed piece has no notation**, so `pieceFromCaches` supplies a thinner
+  placeholder. No screen loses anything today: `PieceScore` is reachable only
+  from `PieceDetail`, which has already fetched the piece in full. A future
+  screen reached straight from the grid would need to know this.
+- **The projection is a hand-written column list.** `/v1/analyses` derives its
+  equivalent from `model_fields`, which works there because every field is a
+  column; half of a `ScoreResponse` is computed. The list is held to the row
+  mapper behaviourally by `test_scores_router.py` rather than by name.
+
 ## 2026-09-09 — Persist the pieces cache to the device, and nothing else
 
 **Context.** The app queued takes offline and could read nothing offline. Every

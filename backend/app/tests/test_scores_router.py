@@ -2406,3 +2406,148 @@ def test_a_request_mixing_a_memo_hit_and_a_miss_keeps_the_cached_url(
     by_id = {row["id"]: row["image_url"] for row in body}
     assert by_id[first_score["id"]] == cached_url
     assert by_id[second_score["id"]].startswith("https://cdn.example/second.jpg")
+
+
+def test_the_light_listing_loses_the_notation_and_nothing_else(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """`include_score=false` narrows the SQL projection, and a column left out
+    of `_WITHOUT_SCORE` would come back as a field that quietly lost its value.
+
+    That is the failure mode worth a test rather than the saving: a listing that
+    is smaller *and* has forgotten every piece's composer is worse than the one
+    it replaced, and nothing about the response shape would say so — `composer`
+    is nullable, `movement` is nullable, `transcription_status` defaults to
+    "done". Every one of them would 200.
+
+    So this is a comparison rather than a list of column names. Every column
+    carries a value it does not share with another, both listings are fetched,
+    and the two responses must differ in exactly `score_json` and `concerns` —
+    the notation, and the concerns computed from it.
+
+    **Two rows, because one cannot exercise every column.** A row with a
+    photograph is the only one that populates `page_count`, `image_url` and
+    `image_urls`, all three built from `source_image_urls`; a row whose pages
+    were discarded is the only one that populates
+    `page_image_discarded_at` — and `_with_image_urls` skips signing exactly
+    those, so no single row is both. With only the second, dropping
+    `source_image_urls` from the projection emptied every thumbnail in the
+    library and this test passed. It did, on its first run.
+    """
+    from datetime import datetime, timezone
+
+    user_id = uuid4()
+
+    # A bar that runs short of its metre, so `concerns` is non-empty and the
+    # comparison below is between two populated lists rather than two empty
+    # ones. `GOOD_PAYLOAD` is a clean reading and raises nothing.
+    short_bar = {
+        "time_signature": "4/4",
+        "key_signature": "D major",
+        "clef": "treble",
+        "tempo_marking": None,
+        "bpm_hint": None,
+        "ocr_confidence": 0.9,
+        "measures": [
+            {
+                "measure_number": number,
+                "notes": [
+                    {"pitch": "D3", "duration": "quarter"}
+                    for _ in range(3 if number == 2 else 4)
+                ],
+                "slurs": [],
+                "ties": [],
+            }
+            for number in (1, 2, 3)
+        ],
+    }
+
+    photographed = _row_for(
+        uuid4(),
+        user_id,
+        score_json=short_bar,
+        composer="Wohlfahrt",
+        movement="II. Adagio",
+        source_image_url=_signed_url(user_id),
+        source_image_urls=[_signed_url(user_id, ext=f"p{n}.jpg") for n in (1, 2, 3)],
+        ocr_confidence=0.77,
+        transcription_status="reading",
+        transcription_stage="Reading the page",
+        created_at="2026-05-02T00:00:00+00:00",
+        updated_at="2026-05-03T00:00:00+00:00",
+    )
+    discarded = _row_for(
+        uuid4(),
+        user_id,
+        score_json=short_bar,
+        composer="Kreutzer",
+        movement="No. 2",
+        source_image_url=_signed_url(user_id),
+        source_image_urls=[_signed_url(user_id, ext="only.jpg")],
+        ocr_confidence=0.55,
+        transcription_status="failed",
+        transcription_error="the reader gave up",
+        transcription_accepted_at="2026-05-05T00:00:00+00:00",
+        page_image_discarded_at="2026-05-06T00:00:00+00:00",
+        created_at="2026-05-01T00:00:00+00:00",
+        updated_at="2026-05-04T00:00:00+00:00",
+    )
+
+    fake = FakeSupabase()
+    fake.seed("scores", [photographed, discarded])
+    monkeypatch.setattr(db_module, "get_service_client", lambda: fake)
+    # Signing stands in for storage: the same key always signs to the same URL,
+    # so the two listings are comparable and any difference is the projection's.
+    monkeypatch.setattr(
+        display_urls,
+        "signed_display_urls",
+        lambda keys: {
+            key: (f"https://signed.test/{key}", datetime(2026, 6, 1, tzinfo=timezone.utc))
+            for key in keys
+        },
+    )
+    headers = {"Authorization": f"Bearer {make_token(sub=user_id)}"}
+
+    full = client.get("/v1/scores", headers=headers)
+    light = client.get("/v1/scores?include_score=false", headers=headers)
+    assert full.status_code == 200, full.text
+    assert light.status_code == 200, light.text
+    assert len(full.json()) == len(light.json()) == 2
+
+    # The rows have to actually exercise the fields, or this compares two sets
+    # of defaults and passes on a projection of one column.
+    heavy_pages, heavy_gone = full.json()
+    assert heavy_pages["score_json"], "the seeded row has no notation to drop"
+    assert heavy_pages["concerns"], "the seeded row raises no concerns to drop"
+    assert heavy_pages["page_count"] == 3, "the photographed row has no pages to lose"
+    assert heavy_pages["image_url"], "the photographed row has no thumbnail to lose"
+    assert len(heavy_pages["image_urls"]) == 1, "the listing signs page one"
+    assert heavy_gone["page_image_discarded_at"], "no discarded row to check"
+
+    for heavy, thin in zip(full.json(), light.json(), strict=True):
+        assert thin["score_json"] is None
+        assert thin["concerns"] == []
+        differing = {key for key in heavy if heavy[key] != thin[key]}
+        assert differing == {"score_json", "concerns"}, (
+            f"the light listing changed {differing - {'score_json', 'concerns'}}, "
+            "which it has no business changing — a column is missing from "
+            "_WITHOUT_SCORE"
+        )
+
+
+def test_the_library_listing_still_carries_the_notation_by_default(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """The default is unchanged, so a client that never heard of the parameter
+    keeps the response it has always had. Every installed build is one."""
+    user_id = uuid4()
+    fake = FakeSupabase()
+    fake.seed("scores", [_unphotographed(user_id)])
+    monkeypatch.setattr(db_module, "get_service_client", lambda: fake)
+
+    res = client.get(
+        "/v1/scores", headers={"Authorization": f"Bearer {make_token(sub=user_id)}"}
+    )
+
+    assert res.status_code == 200, res.text
+    assert res.json()[0]["score_json"] == GOOD_PAYLOAD

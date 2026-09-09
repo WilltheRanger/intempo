@@ -4,17 +4,35 @@ import { apiFetch } from './client';
 export interface ListScoresParams {
   limit?: number;
   offset?: number;
+  /**
+   * Whether each row carries its notation. Default true, which is what the
+   * endpoint does and what every older build asks for.
+   *
+   * **Say false unless the notation is going to be drawn.** `score_json` is
+   * 111 to 130 bytes a note, so an ordinary study is 35 to 50 KB and the
+   * library walk below fetches *every* piece — the largest single thing this
+   * app transfers, on a screen that draws titles and photographs. The rows come
+   * back with `score_json` null and `concerns` empty; `getScore` is the
+   * authority on both.
+   */
+  includeScore?: boolean;
 }
 
 /** GET /v1/scores — newest first. */
 export function listScores({
   limit = 50,
   offset = 0,
+  includeScore = true,
 }: ListScoresParams = {}): Promise<ScoreResponse[]> {
   const query = new URLSearchParams({
     limit: String(limit),
     offset: String(offset),
   });
+  if (!includeScore) {
+    // Only when it is false, so the request is byte-for-byte what it was
+    // wherever the notation is still wanted.
+    query.set('include_score', 'false');
+  }
   return apiFetch<ScoreResponse[]>(`/v1/scores?${query}`);
 }
 

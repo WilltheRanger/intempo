@@ -419,7 +419,13 @@ export interface ScoreResponse {
    */
   image_urls?: string[];
   image_url_expires_at: string | null;
-  score_json: ScoreJson;
+  /**
+   * The notation. **Null when the listing was asked for without it** —
+   * `listScores({ includeScore: false })` — and for a piece whose reading has
+   * not produced anything. `transcription_status` is what says whether notation
+   * is coming; `getScore` is the authority on what it is.
+   */
+  score_json: ScoreJson | null;
   /** Measures the server could not vouch for. Absent on an older backend. */
   concerns?: MeasureConcern[];
   shared_with_studio: string | null;
