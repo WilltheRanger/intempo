@@ -1,5 +1,61 @@
 # InTempo Edit Log
 
+## 2026-09-09 — Migration 017 applied, and the belief that stopped me applying it
+
+The owner asked why I could not add the SQL myself. **I could.** The Supabase
+MCP server has been connected the whole time; `apply_migration` is one call.
+Migration 017 sat unapplied across several sessions, each of them closing its
+report with "blocked on the owner", because `docs/deploy-backend.md` said
+migrations are *"run by hand in the Supabase SQL editor"* and no session checked
+whether that was still the only route.
+
+**Applied to `intempo-dev` (`<project-ref>`)**, which is what both `.env`
+files point at and the only healthy InTempo project — the one literally named
+`intempo` is paused and nothing points at it.
+
+**The state I found.** `list_migrations` showed 015 as the last numbered one;
+016 was already there under the name `storage_buckets`, applied 2026-09-03. So
+017 was the only gap, exactly as the logs claimed.
+
+**Verified after, not assumed.** `transcription_runs` is `integer NOT NULL
+DEFAULT 0` with `scores_transcription_runs_check CHECK (transcription_runs >=
+0)`. Then the whole expectation set rather than the one column: every
+`(table, column)` in `readiness.py`'s `REQUIRED_COLUMNS` and every entry in
+`REQUIRED_TABLES`, joined against `information_schema` in one query asking only
+for the **missing** ones. It returned empty. **The live schema is fully in step
+with the code.**
+
+**Four documents were making a false claim and are corrected.**
+`docs/deploy-backend.md`, `services/readiness.py`, `tools/check-migrations.py`
+and 017's own header all said, in different words, that the Supabase SQL editor
+is how these get applied. The part that is still true — *no deploy applies
+them* — is kept, because that is the reason `readiness.py` exists and it has
+already cost this project one incident (`analyses.instrument` shipped before its
+column). The part that was false is replaced with both routes.
+
+**`CLAUDE.md` gets the rule, not just the correction**, because this is a
+failure about what a session believes before it knows which subsystem it is
+touching — which is that file's own test for what belongs in it. §1 now names
+the capability, names the live project, and says plainly: *before calling
+anything owner-blocked, check whether a tool in this session can do it.*
+
+**§4's "Honest DoD status" was a blanket claim that had gone stale.** It said
+every remaining gate is *"blocked on Supabase keys and a real device"*. Measured
+instead of repeated: the **anon key is set** in both `.env` files, so live
+magic-link auth is waiting on a person clicking a link in an inbox, not on a
+key; **`SUPABASE_SERVICE_ROLE_KEY`, `ANTHROPIC_API_KEY` and `GEMINI_API_KEY` are
+empty**, which is what actually blocks upload→OCR→save and is genuinely the
+owner's to provide; mic→analysis wants a device; and the schema is not blocked
+at all. Each gate now says which of those it is.
+
+No code changed and no test needed to: this is a schema application and four
+documentation corrections. `preflight.py --full` run to confirm the doc edits
+break nothing.
+
+Rollback: `ALTER TABLE scores DROP COLUMN transcription_runs;` — though the
+running code writes it on every reading that starts, so dropping it breaks
+scanning until the code is reverted too.
+
 ## 2026-09-09 — A cost guard on the one thing that spends money per call
 
 Loop tick thirty-six. `POST /v1/scores` with a photograph starts a vision-model

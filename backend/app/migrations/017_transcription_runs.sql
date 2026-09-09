@@ -26,9 +26,12 @@
 -- allowance is the direction that cannot take something away from a musician
 -- who did nothing wrong.
 
--- `IF NOT EXISTS` because migrations here are applied by hand in the Supabase
--- SQL editor, where an operator who cannot remember whether this one already
--- ran must be free to run it again. `test_readiness.py` enforces it.
+-- `IF NOT EXISTS` because nothing here is applied by a deploy: someone runs it,
+-- and whoever that is must be free to run it again without remembering whether
+-- they already did. `test_readiness.py` enforces it.
+--
+-- Applied to `intempo-dev` on 2026-09-09 via the Supabase MCP, having sat
+-- unapplied for several sessions that each reported it as blocked on the owner.
 ALTER TABLE scores ADD COLUMN IF NOT EXISTS transcription_runs integer NOT NULL DEFAULT 0
   CHECK (transcription_runs >= 0);
 

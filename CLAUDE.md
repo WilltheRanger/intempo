@@ -48,6 +48,19 @@ It runs what `ci.yml` runs, prints what it cannot run and why, and needs a
 a substitute for CI: one machine, one Node, one Python, and the working tree
 rather than what was pushed.
 
+**The schema is not owner-blocked, and several sessions wrongly said it was.**
+No deploy applies `backend/app/migrations/*.sql`, but a session with the
+Supabase MCP server connected can: `list_migrations` shows what a project has,
+`apply_migration` adds one. Migration 017 sat unapplied for weeks with each
+session reporting it as waiting on the owner, because the docs said "the
+Supabase SQL editor" and nobody checked whether that was still the only route.
+**Before calling anything owner-blocked, check whether a tool in this session
+can do it.**
+
+The live project is **`intempo-dev`** (`<project-ref>`) — both `.env`
+files point at it, and it is what `apply_migration` should target. The project
+literally named `intempo` is paused and nothing points at it.
+
 **The rest of the operating principles:**
 
 1. **Branch per batch** (`feat/batch-N-...` or the session's assigned branch). Squash to main on DoD.
@@ -195,10 +208,22 @@ open. `git log -- frontend/` is where the old tree went.
 
 **Honest DoD status.** `git tag` is the answer. Batches **0, 1 and 2 are tagged
 and pushed**; **3 and 4 are marked ✅ and are not tagged**, so by this file's own
-Definition of Done they are not done; 5 onward are ⏳. Every remaining gate
-(live magic-link auth, upload→OCR→save, mic→analysis) is blocked on Supabase
-keys and a real device — none of it can be closed in-session, and the screens
-are verified *visually*, not end-to-end.
+Definition of Done they are not done; 5 onward are ⏳. The screens are verified
+*visually*, not end-to-end.
+
+What each remaining gate is actually waiting on, measured 2026-09-09 rather than
+repeated — because "blocked on Supabase keys" had become a blanket claim that
+was no longer true of all of it:
+
+- **The schema** — *not blocked.* See §1. `intempo-dev` is fully in step with
+  the code as of 2026-09-09; every column and table `readiness.py` requires is
+  present.
+- **upload→OCR→save** — blocked. `SUPABASE_SERVICE_ROLE_KEY`, `ANTHROPIC_API_KEY`
+  and `GEMINI_API_KEY` are all empty in `backend/.env`, so nothing can sign a
+  service-role write or call a reader. Owner's to provide.
+- **Live magic-link auth** — the anon key *is* set in both `.env` files. What is
+  missing is a person clicking a link in an inbox, which no session can do.
+- **mic→analysis** — blocked on a real device with a microphone.
 
 ## 5. Before you work on a subsystem, read its section
 

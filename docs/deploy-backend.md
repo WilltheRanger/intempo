@@ -83,12 +83,21 @@ of that example.
 
 ### Applying the schema
 
-**Nothing auto-applies `backend/app/migrations/*.sql`.** They are run by hand in
-the Supabase SQL editor, so shipping code and applying its migration are two
-separate acts, and the gap between them is invisible: the service starts fine
-and every write that touches the missing column returns a 500 that reads like a
-server bug. It has happened once already — `analyses.instrument` went live in
-code before the column existed.
+**Nothing auto-applies `backend/app/migrations/*.sql`.** No deploy runs them,
+so shipping code and applying its migration are two separate acts, and the gap
+between them is invisible: the service starts fine and every write that touches
+the missing column returns a 500 that reads like a server bug. It has happened
+once already — `analyses.instrument` went live in code before the column
+existed.
+
+Two ways to apply one, and **the second was overlooked for weeks**:
+
+1. Paste it into the Supabase SQL editor.
+2. A Claude session with the Supabase MCP server connected can apply it
+   directly — `list_migrations` to see what a project has, `apply_migration` to
+   add one. Migration 017 sat unapplied for several sessions, each of them
+   reporting it as blocked on the owner, because this file said the SQL editor
+   and nobody checked whether that was still the only route.
 
 Run any migration you have not run, in numeric order. The check below names the
 ones that are missing.

@@ -67,10 +67,10 @@ class Check:
 
 #: Columns this build writes to that a migration had to add.
 #:
-#: Kept because the schema is applied **by hand** through the Supabase SQL
-#: editor — nothing auto-applies `app/migrations/*.sql` — so shipping code and
-#: applying its migration are two separate acts and the gap between them is
-#: invisible. It has already happened once: `analyses.instrument` went live in
+#: Kept because **no deploy applies `app/migrations/*.sql`** — someone runs each
+#: one, through the Supabase SQL editor or through a session holding the
+#: Supabase MCP — so shipping code and applying its migration are two separate
+#: acts and the gap between them is invisible. It has already happened once: `analyses.instrument` went live in
 #: code before the column existed, and every take submission would have failed
 #: with a column-not-found error that reads like a server bug.
 #:

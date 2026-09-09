@@ -67,7 +67,7 @@ def _claims_idempotent() -> list[Path]:
     and none of them was being held to it. 013, 014, 015 and 017 are all
     written in the guarded spelling `test_readiness.py` requires — which is a
     claim about what happens when an operator, unsure whether a migration
-    already ran, runs it again in the Supabase SQL editor. The claim was
+    already ran, runs it again. The claim was
     checked by reading and never by running.
 
     Derived rather than listed for the reason the readiness test gives about
