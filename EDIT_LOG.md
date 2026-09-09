@@ -1,5 +1,68 @@
 # InTempo Edit Log
 
+## 2026-09-09 — Two accessibility alarms, both mine, both disproved
+
+Loop tick twenty-seven, and it is mostly a **negative result**. Yesterday's
+finding — that a walk assertion can be satisfied by a screen nobody is looking
+at — is systemic: `leaves()` reads the whole document and 31 assertions go
+through it. So I went to see how far the exposure ran.
+
+**Confirmed and measured.** Every tab you visit stays mounted, and the document
+grows with it: **54 text leaves on a fresh Today, 87 after opening Library, 115
+after Insights.** All four screens' text is present at once.
+
+**No property of the DOM separates the active screen from the others.** Three
+measurements, all negative: no `role="tabpanel"`, no `aria-hidden`, no
+`display: none`, no `inert`. And `pointer-events: none` — which looked like the
+answer — is on an ancestor of the **active** screen's content too: filtering by
+it left **4 leaves of 115**, the tab bar and nothing else. That is why there is
+no `activeLeaves()` in this commit. I tried to write one and the measurement
+said it would break all 55 existing checks rather than sharpen them.
+
+**Then I raised an accessibility alarm, twice, and it was wrong both times.**
+
+Tabbing from the Library screen reached **two stops** — "Insights", "Profile" —
+and then focus left the document. Read at face value that is severe: a keyboard
+user reaching no search field, no piece, no button. I nearly wrote it up.
+
+It is a probe artefact. A click leaves focus **on the thing clicked**, so
+tabbing resumes from the tab bar — which is rendered last — and walks off the
+end. The second attempt "fixed" it with `blur()`, which does not reset the
+browser's sequential-focus position either, and reported **one** stop.
+
+Settled by putting a sentinel button at the top of `<body>` and focusing that.
+On Insights, after visiting Today and Library, the real order is **eleven
+stops: the seven Insights rows, then the four tabs** — and nothing from the
+other screens. And on a direct load, `/library` gives 19 stops, content first,
+tab bar last.
+
+**So the focus order is correct and scoped, while the text is not.** That is
+the precise shape of the trap, and it is worth more than either alarm: a walk
+that reads text sees four screens, a musician using a keyboard sees one.
+`role="button"` elements all carry `tabindex="0"`; 19 focusable elements on
+Library; nothing is unreachable.
+
+**What is committed is the knowledge, on `leaves()` itself**, where the next
+person writing a check will meet it: what it actually returns, the numbers, why
+there is no scoped alternative, how to assert instead (something only the
+screen under test renders), and both disproved alarms with the probe mistake
+that produced them — so nobody spends an afternoon re-finding them.
+
+**No code changed.** I set out to fix a helper and the measurements said not
+to, which is the outcome worth having rather than the one I wanted.
+
+**Tests run:** `preflight.py --full` with a DSN: **16/16 in 613s**.
+
+**Named for the owner, unresolved:** the four mounted screens are in the
+accessibility *tree* even though they are out of the focus order, so a screen
+reader reading the document linearly may cross screen boundaries with nothing
+announcing them. I did not test that — it needs a real screen reader, not
+Playwright, and guessing from the DOM is what produced two false alarms today.
+React Navigation's `freezeOnBlur` / `detachInactiveScreens` would settle it and
+costs tab state, which is a UX trade rather than a bug fix.
+
+**Rollback:** revert the commit; it is one comment.
+
 ## 2026-09-09 — A test that passed with the bug restored
 
 Loop tick twenty-six. Two audits came back clean first — the MusicXML import

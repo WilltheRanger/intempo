@@ -79,7 +79,40 @@ const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
 
 const path = () => page.evaluate(() => location.pathname);
-/** Every leaf of visible text, on `where` — the main page unless one is given. */
+/**
+ * Every leaf of text in the document, on `where` — the main page unless one is
+ * given.
+ *
+ * **Not "on screen". In the document.** React Navigation keeps every tab you
+ * have visited mounted, so this grows as the walk moves around — measured on
+ * the fixtures build: **54 leaves on a fresh Today, 87 after opening Library,
+ * 115 after Insights**. All four screens' text is in there at once.
+ *
+ * That is how a check can pass while the thing it describes is broken. These
+ * checks were written for the Library search and **passed with the broken rule
+ * restored**: they looked for "Sonata No. 1 in G minor" anywhere in the text,
+ * and Today's take row still held it while the Library beside it showed
+ * "0 pieces found".
+ *
+ * **So assert on something only the screen under test renders** — a count, a
+ * status line, a heading — rather than on a title that other screens also
+ * show. That is what the search checks below do.
+ *
+ * **Nothing in the DOM separates the active screen from the others**, which is
+ * why there is no `activeLeaves()` here to use instead. Measured, three ways
+ * and all negative: no `role="tabpanel"`, no `aria-hidden`, no `display: none`,
+ * no `inert`; and `pointer-events: none` is on an ancestor of the **active**
+ * screen's content too, so filtering by it leaves nothing but the tab bar.
+ *
+ * **Focus is a different story, and it is correct.** Tabbing from the top of
+ * the document on Insights, after visiting Today and Library, reaches exactly
+ * the seven Insights rows and the four tabs — eleven stops, no content from
+ * the other screens. So the keyboard experience is scoped even though the text
+ * is not. Worth writing down because it was measured twice as *broken* first,
+ * both times by a probe that resumed tabbing from wherever the last click left
+ * focus rather than from the start of the document. A sentinel button at the
+ * top of `<body>` settles it; nothing less does.
+ */
 const leaves = (where = page) =>
   where.evaluate(() =>
     [...document.querySelectorAll('*')]
