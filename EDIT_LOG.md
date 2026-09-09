@@ -1,5 +1,65 @@
 # InTempo Edit Log
 
+## 2026-09-09 — `npm audit fix --force` would have taken the app back to SDK 46
+
+Loop tick six. Two sweeps for prototype residue: one came back empty, and the
+other found a live footgun.
+
+**Zero `TODO`, `FIXME`, `HACK` or `XXX` in `mobile/src`, `backend/app` or
+`tools`.** Every "placeholder" in the tree is UI vocabulary — skeletons, input
+placeholders, the avatar's fallback mark. That is a real result about this
+codebase rather than a disappointing tick, and it is the first sweep this week
+that found nothing to do.
+
+**The other one: `npm audit --omit=dev` reports 24 advisories, 7 high, and
+closes by telling you to run `npm audit fix --force`.**
+
+The only fix npm can find resolves `expo` to **46.0.21**, from `~57.0.13` —
+**eleven major versions back**, SDK 57 to SDK 46. Its resolver satisfies "no
+known advisory" by walking backwards to a release from before the vulnerable
+transitive dependency existed, and it does not present that as a downgrade. It
+presents it as vulnerabilities fixed. Anyone tidying up on a Friday afternoon
+by following the tool's own advice would destroy the app and be told it had
+gone well.
+
+**And the number is alarming about the wrong thing.** Every high-severity
+advisory is build tooling: `metro`, `metro-config`, `metro-transform-worker`
+and `@expo/metro` are the bundler; `js-yaml` and `image-size` are Expo's config
+and asset pipeline; `@xmldom/xmldom` arrives through `@expo/prebuild-config`,
+which rewrites native manifests. All of it runs on a developer's machine or a
+CI runner at build time. **None of it is in the bundle a browser downloads or
+the binary a phone runs.**
+
+That is a distinction, not a dismissal — a hostile `.icns` or XML in a build
+input could hang or exploit the machine doing the build. It is a smaller and
+differently-shaped risk than "the app is vulnerable", and a bare count says the
+wrong one.
+
+**`tools/check-dependencies.py`** is that reading, so it does not have to be
+done again from memory: `critical` fails, since nothing here is critical today
+and one appearing deserves a stop; everything else is reported with the
+packages named; and the warning about `--force` prints every time, so the
+advice is next to the number rather than three tools away. Wired into
+`preflight.py`, which is 8/8 in 373s.
+
+Mutation-checked the way the last few have been: lowering the fatal severity
+from `critical` to `high` makes it exit 1 and name all seven, so the failure
+path is not decorative.
+
+**Recorded in `docs/subsystems.md`** with the table of what each advisory
+reaches, because CLAUDE.md says a thing learned the hard way goes there and
+this is the shape of thing somebody rediscovers by doing it.
+
+**Named and not fixed: `backend/` has no dependency check at all.** `uv` has no
+audit command and nothing else covers it. That is a real gap; it is in the new
+tool's docstring and in the subsystem note rather than left to be found.
+
+Verified: `preflight.py` **8/8**. No application code changed.
+
+Rollback: `git revert`.
+
+---
+
 ## 2026-09-09 — Eighteen `zip()`s, and one of them could have dropped the end of a score
 
 Loop tick five. `zip()` stops at the shorter argument and says nothing, which

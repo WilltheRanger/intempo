@@ -16,6 +16,7 @@ document contains at least two of those, and says so where it knows.
 
 - [The legacy `frontend/` tree](#frontend-ui-rebuild-2026-07-28--where-the-screens-actually-stand) — **history, not a spec for `mobile/`**
 - [The `mobile/` tree and transcription](#the-mobile-tree--where-transcription-actually-stands-2026-08-24)
+- [Dependency advisories, and the fix that would undo the app](#npm-audit-fix---force-would-take-this-app-back-to-sdk-46-2026-09-09)
 - [The API's concurrency](#the-api-serves-requests-in-parallel-and-only-just-started-to-2026-08-25)
 - [The recording path](#the-recording-path-2026-09-02--level-is-not-the-signal-you-think-it-is)
 - [The capture path](#the-capture-path-2026-08-24--what-an-audit-of-it-found)
@@ -679,6 +680,38 @@ there works differently as of 2026-08-24:
   two can diverge silently. Not a quiet refactor; ask first.
   Both rules the screen can get wrong live in `lib/onboarding.ts` where they are
   tested, not in the `.tsx`.
+
+## `npm audit fix --force` would take this app back to SDK 46 (2026-09-09)
+
+`npm audit --omit=dev` reports **24 advisories, 7 of them high**, and closes
+with the advice to run `npm audit fix --force`.
+
+**Do not.** The only fix npm can find resolves `expo` to **46.0.21** — from
+`~57.0.13`, eleven major versions back — because its resolver satisfies "no
+known advisory" by walking backwards to a release from before the vulnerable
+transitive dependency existed. It does not present that as a downgrade. It
+presents it as vulnerabilities fixed.
+
+**What the advisories actually are.** Every high-severity one is build tooling:
+
+| Package | Reached through | Runs |
+|---|---|---|
+| `metro`, `metro-config`, `metro-transform-worker`, `@expo/metro` | the bundler | build time |
+| `js-yaml`, `image-size` | Expo's config and asset pipeline | build time |
+| `@xmldom/xmldom` | `@expo/prebuild-config`, which rewrites native manifests | build time |
+
+None of it is in the bundle a browser downloads or the binary a phone runs.
+That is a real distinction, not a dismissal — a hostile `.icns` or XML in a
+build input could hang or exploit the machine doing the build — but it is a
+different and smaller risk than "the app is vulnerable", and the number on its
+own says the wrong one.
+
+`tools/check-dependencies.py` is the reading of this: it fails on `critical`,
+reports the rest with the packages named, and prints the warning above every
+time so the advice is next to the number.
+
+**The Python side is not checked by anything.** `uv` has no audit command and
+nothing else covers `backend/`. Named here rather than left to be found.
 
 ## The API serves requests in parallel, and only just started to (2026-08-25)
 
