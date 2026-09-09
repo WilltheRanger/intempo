@@ -17,37 +17,13 @@ import { describeLoadError } from '../../data/api/describeError';
 import { useLibrary } from '../../data/hooks/usePieces';
 import type { Piece } from '../../data/types';
 import { spacing } from '../../design';
-import { groupByRecency } from '../../lib/library';
+import { groupByRecency, searchLibrary } from '../../lib/library';
 import type {
   TabScreenNavigation,
 } from '../../navigation/types';
 import { AddPieceSheet } from '../../components/pieces/AddPieceSheet';
 import { PieceRow } from './PieceRow';
 import { useAddPieceOption } from '../../navigation/useAddPieceOption';
-
-/** Case- and accent-insensitive match across title and composer. */
-function matches(piece: Piece, query: string): boolean {
-  const needle = normalise(query);
-  if (!needle) {
-    return true;
-  }
-  return (
-    normalise(piece.title).includes(needle) ||
-    normalise(piece.composer ?? '').includes(needle)
-  );
-}
-
-/**
- * Strips diacritics so "Etudes" finds "Études" and "Saint-Saens" finds
- * "Saint-Saëns" — classical repertoire is full of accents that nobody types.
- */
-function normalise(value: string): string {
-  return value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .trim();
-}
 
 export function LibraryScreen() {
   const navigation = useNavigation<TabScreenNavigation<'Library'>>();
@@ -60,7 +36,7 @@ export function LibraryScreen() {
 
   const pieces = useMemo(() => library.data ?? [], [library.data]);
   const results = useMemo(
-    () => pieces.filter((piece) => matches(piece, query)),
+    () => searchLibrary(pieces, query),
     [pieces, query],
   );
 

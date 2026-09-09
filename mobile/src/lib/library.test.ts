@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Piece } from '../data/types';
-import { groupByRecency } from './library';
+import { groupByRecency, searchLibrary } from './library';
 
 /**
  * The library's grouping, which had no tests — and whose headings are the
@@ -104,5 +104,110 @@ describe('groupByRecency', () => {
     expect(shape([piece('a', 'Broken', 'not a date')])).toEqual([
       ['Not practiced yet', 'Broken'],
     ]);
+  });
+});
+
+
+/**
+ * Searching the repertoire.
+ *
+ * These are the three defects the rule shipped with, measured against it
+ * before it moved out of `LibraryScreen.tsx`: `bach suite` found nothing,
+ * `allemande` found nothing, and the careful accent-stripping was not reaching
+ * the field with the most accents in it.
+ */
+describe('searching the library', () => {
+  function named(title: string, composer: string | null, movement: string | null): Piece {
+    return {
+      id: title + (movement ?? ''),
+      title,
+      composer,
+      movement,
+      lastPracticedAt: null,
+      thumbnail: null,
+      markedBpm: null,
+      score: null,
+    } as unknown as Piece;
+  }
+
+  const REPERTOIRE = [
+    named('Suite No. 1 in G major', 'J. S. Bach', 'I. Prélude'),
+    named('Suite No. 1 in G major', 'J. S. Bach', 'II. Allemande'),
+    named('Études, Op. 10', 'Frédéric Chopin', null),
+    named('Concerto in E minor', 'Saint-Saëns', null),
+  ];
+
+  const titles = (query: string) =>
+    searchLibrary(REPERTOIRE, query).map((p) => `${p.title}${p.movement ? ` — ${p.movement}` : ''}`);
+
+  it('finds a piece by two words from different fields', () => {
+    // **The defect that mattered most.** Matched whole against title *or*
+    // composer, `bach suite` returned nothing — for a library that plainly
+    // contains Bach's suites. It looked like an empty library.
+    expect(titles('bach suite')).toHaveLength(2);
+  });
+
+  it('does not care what order the words come in', () => {
+    expect(titles('suite bach')).toEqual(titles('bach suite'));
+  });
+
+  it('finds a movement, which the row shows and the search ignored', () => {
+    // Six cello suites are six rows named Prélude, Allemande, Courante. A
+    // musician working on one of them types its name.
+    expect(titles('allemande')).toEqual(['Suite No. 1 in G major — II. Allemande']);
+  });
+
+  it('strips accents in the movement too, not only the title', () => {
+    // The accent-stripping was the one part of the old rule that was done with
+    // care, and it was not reaching the field with the most accents in it.
+    expect(titles('prelude')).toEqual(['Suite No. 1 in G major — I. Prélude']);
+  });
+
+  it('still strips accents in title and composer', () => {
+    expect(titles('etudes')).toEqual(['Études, Op. 10']);
+    expect(titles('saint-saens')).toEqual(['Concerto in E minor']);
+  });
+
+  it('is case-insensitive', () => {
+    expect(titles('BACH')).toHaveLength(2);
+  });
+
+  it('narrows rather than widens as words are added', () => {
+    // Terms are ANDed. A second word that matches nothing must not bring back
+    // the results of the first.
+    expect(titles('bach')).toHaveLength(2);
+    expect(titles('bach allemande')).toHaveLength(1);
+    expect(titles('bach gigue')).toEqual([]);
+  });
+
+  it('ignores the spaces around and between the words', () => {
+    expect(titles('   bach    suite   ')).toHaveLength(2);
+  });
+
+  it('hands back the very same array for an empty search', () => {
+    // **`toBe`, not `toEqual`, and the difference is the whole test.** With
+    // `toEqual` this passed with the early return deleted — `[].every(...)` is
+    // `true`, so an empty query already keeps every piece and `filter` returns
+    // a copy that compares equal. The copy is the problem: the field is empty
+    // for most of the life of the screen, and a fresh array on every render is
+    // a fresh `groupByRecency` and a re-rendered list behind it.
+    expect(searchLibrary(REPERTOIRE, '')).toBe(REPERTOIRE);
+    expect(searchLibrary(REPERTOIRE, '   ')).toBe(REPERTOIRE);
+  });
+
+  it('keeps the order it was given, so the grouping still decides it', () => {
+    // `groupByRecency` runs on the result. A search that reordered would
+    // reorder the groups underneath it.
+    expect(searchLibrary(REPERTOIRE, 'a').map((p) => p.id)).toEqual(
+      REPERTOIRE.filter((p) => searchLibrary([p], 'a').length > 0).map((p) => p.id),
+    );
+  });
+
+  it('survives a piece with no composer and no movement', () => {
+    // Both are nullable — music in one movement has no movement, and a
+    // hand-entered piece may have no composer.
+    const anonymous = [named('Warm-up', null, null)];
+    expect(searchLibrary(anonymous, 'warm')).toHaveLength(1);
+    expect(searchLibrary(anonymous, 'bach')).toEqual([]);
   });
 });

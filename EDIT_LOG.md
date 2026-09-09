@@ -1,5 +1,82 @@
 # InTempo Edit Log
 
+## 2026-09-09 — "bach suite" found nothing
+
+Loop tick sixteen. `LibraryScreen.tsx` carried its search rule thirty lines
+above the component, while `groupByRecency` — the same screen, the same kind of
+rule — lived in `lib/library.ts` with tests. `CLAUDE.md` §3 says which of those
+is right and why: there is no React Native testing library here, so a rule
+inside a `.tsx` is a rule nothing checks.
+
+Nothing checked this one. **Measured against the shipped rule before touching
+it**, on a library holding Bach's *Suite No. 1*, Chopin's *Études* and a
+Saint-Saëns concerto:
+
+| Typed | Found |
+|---|---|
+| `bach` | 2 |
+| `etudes` | 1 |
+| **`bach suite`** | **0** |
+| **`suite bach`** | **0** |
+| **`allemande`** | **0** |
+| **`prelude`** | **0** |
+
+**Three defects, and the first is the one that matters.** The query was matched
+*whole*, with `includes`, against title **or** composer separately. So `bach
+suite` returned nothing for a library that plainly contains Bach's suites,
+because neither field holds that phrase. Two words is the most natural thing a
+person types into a search box, and what came back looked like an empty
+library.
+
+**Movement was not searched at all**, though the row shows it. Somebody working
+through the cello suites has six rows named *Prélude*, *Allemande*, *Courante*;
+typing any of them found nothing. And the accent-stripping — the one part of
+the old rule that was done with care, with its own comment about Saint-Saëns —
+was therefore not reaching the field with the most accents in it.
+
+**Now: terms ANDed, fields ORed.** Every word must appear somewhere; which
+field each lands in does not matter. That is what makes `bach suite` and `suite
+bach` the same search, which is what a person expects and what neither of them
+did. Title, composer and movement, accent-folded, in `lib/library.ts` beside
+the grouping rule, with 12 tests.
+
+**A mutation survived, and it corrected me about my own code.** Deleting the
+`if (terms.length === 0) return pieces` early return changed nothing: `[].every(...)`
+is `true`, so a query with no terms already keeps every piece. My comment said
+the line was there so an empty search would not hide the library — which is
+simply false, and would have sat there being false.
+
+What the line is actually for is **identity**. The field is empty for most of
+the life of the screen, and `filter` allocates a new array every run — a new
+`results`, a new `groupByRecency`, and the list re-rendered behind it. The test
+now asserts `toBe`, not `toEqual`, which is the difference between checking the
+contents and checking that the common case costs nothing. With `toBe` the
+mutation dies.
+
+**Mutation-checked, six ways**, all killed: any word rather than every word
+(1 test), title only as it used to be (7), movement dropped (3), accents no
+longer stripped (2), the whole query matched as one phrase (3), and the
+identity return above (1). Restored byte-identically.
+
+**On the §2 gate.** This changes what a search returns, so it is worth being
+exact about what it does not change: **no layout, no copy, no component, no
+token, no visual property.** The diff to `LibraryScreen.tsx` is a deleted
+function, a changed import and one call. The three-foot reading of the screen
+is unchanged because the screen is unchanged — recording that rather than
+inventing a fresh one for a composition nobody touched.
+
+**Tests run:** `preflight.py --full` with a DSN: **15/15 in 633s** — including
+the app walk through the built bundle, which exercises the Library screen this
+changed. `mobile/.env` restored, no stray backups. Mobile 157 files / 1741
+tests.
+
+**Side effects:** a query of two or more words now returns more than it did,
+which was zero. A one-word query returns the same results plus any piece whose
+*movement* matches.
+
+**Rollback:** revert the commit. `searchLibrary` is additive and the screen's
+call site is one line.
+
 ## 2026-09-09 — The walk through the library was checked by nobody
 
 Loop tick fifteen. **No behaviour changed**: this commit is 230 lines of tests

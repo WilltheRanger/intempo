@@ -95,3 +95,76 @@ export function groupByRecency(pieces: Piece[], now: Date = new Date()): PieceGr
     return [{ key, label: GROUP_LABELS[key], pieces: sorted }];
   });
 }
+
+/**
+ * Searching the repertoire.
+ *
+ * **This lived in `LibraryScreen.tsx`**, thirty lines above the component,
+ * while `groupByRecency` above it lived here with tests — the same screen, the
+ * same kind of rule, two different homes. `CLAUDE.md` §3 is explicit about
+ * which is right: there is no React Native testing library in this project, so
+ * a rule inside a `.tsx` is a rule nothing checks. Nothing checked this one,
+ * and it had three defects.
+ *
+ * **1. Two words found nothing.** The query was matched whole, with
+ * `includes`, against title *or* composer separately — so `bach suite`
+ * returned **zero** results for a library containing *Suite No. 1 in G major*
+ * by *J. S. Bach*, because neither field contains that phrase. Measured
+ * against the shipped rule before changing it. That is the most natural thing
+ * a musician types into a search box, and it looked like an empty library.
+ *
+ * **2. Movement was not searched**, though the row shows it. Someone working
+ * through the cello suites has six pieces whose movements are *Prélude*,
+ * *Allemande*, *Courante* and so on; typing `allemande` found nothing.
+ *
+ * **3.** The accent-stripping — the one part that was carefully done — was
+ * therefore not reaching the field with the most accents in it.
+ *
+ * Terms are ANDed and fields are ORed: every word must appear somewhere, and
+ * it does not matter which field each lands in. That is what makes `bach
+ * suite` and `suite bach` the same search, which is what a person expects and
+ * what neither of them did.
+ */
+const SEARCHABLE = (piece: Piece): string[] => [
+  piece.title,
+  piece.composer ?? '',
+  piece.movement ?? '',
+];
+
+/**
+ * Strips diacritics so "Etudes" finds "Études" and "Saint-Saens" finds
+ * "Saint-Saëns" — classical repertoire is full of accents that nobody types.
+ */
+function normalise(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+/**
+ * The pieces a query is looking for, in the order they were given.
+ *
+ * **The early return is not about correctness**, and a mutation proved it:
+ * delete it and every test still passes, because `[].every(...)` is `true`, so
+ * a query with no terms already keeps every piece. What it is about is
+ * *identity*. The search field starts empty and stays empty for most of the
+ * life of the screen, and `filter` allocates a new array every time it runs —
+ * which is a new `results`, a new `groupByRecency`, and a re-render of the
+ * whole list on every keystroke elsewhere on the screen. Returning the same
+ * array is the common case costing nothing.
+ */
+export function searchLibrary(pieces: Piece[], query: string): Piece[] {
+  const terms = normalise(query).split(/\s+/).filter(Boolean);
+  if (terms.length === 0) {
+    return pieces;
+  }
+  return pieces.filter((piece) => {
+    const haystack = SEARCHABLE(piece).map(normalise);
+    // Every term somewhere, not every term in the same field: a piece is named
+    // by its title, its composer and its movement together, and which half of
+    // the name a word comes from is not something anybody tracks while typing.
+    return terms.every((term) => haystack.some((field) => field.includes(term)));
+  });
+}
