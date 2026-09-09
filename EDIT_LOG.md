@@ -1,5 +1,37 @@
 # InTempo Edit Log
 
+## 2026-09-09 — What is actually wrong with CI, diagnosed instead of inferred
+
+The owner asked me to explain the GitHub Actions billing. I had been asserting
+"blocked on billing" for weeks off one weak signal — runs failing in a few
+seconds — without ever checking. Checked now.
+
+**The evidence, all of it from the API.** All five jobs of every run are
+`conclusion: failure`. They are *created*, then die about three seconds later.
+`get_workflow_run_usage` reports **0 billable milliseconds** for all five.
+Downloading a job log 404s, because no log exists. The check run's `output` is
+empty — no title, no summary, no text.
+
+**What that combination rules out.** A broken workflow file fails differently
+and usually creates no jobs; a failing *step* produces both logs and billable
+time. Jobs created, zero billed, no logs, no message is an account being refused
+compute at dispatch.
+
+**The fact that decides it.** `intempo` is **private**, owned by a **personal
+account** — so Actions minutes are metered. Public repositories get them free
+and unlimited, which is why this never came up before. The two candidates are
+included minutes exhausted with no spending limit, or a payment failure. The API
+carries no billing scope, and GitHub puts the reason in a web-UI banner on the
+run page, which is why every API probe comes back blank.
+
+**And the date in this file was wrong.** `CLAUDE.md` said "since 2026-09-09",
+which was simply the day somebody first looked. Run 748 on **2026-09-06** fails
+identically, so it is at least three days older than claimed and I did not
+binary-search past that. The corrected §1 says so and tells the next session not
+to re-date it without checking a run from before the date being claimed.
+
+Documentation only — no code changed.
+
 ## 2026-09-09 — Migration 017 applied, and the belief that stopped me applying it
 
 The owner asked why I could not add the SQL myself. **I could.** The Supabase

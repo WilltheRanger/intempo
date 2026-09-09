@@ -33,12 +33,24 @@ starter's, or a listed one drawn and its line now a false claim),
 2026-09-09) and `check-migrations.py` (all migrations applied in order to an
 empty database). `.github/workflows/ci.yml` is the list that cannot go stale.
 
-**Run `tools/preflight.py` before you commit — CI is not running.** Since
-2026-09-09 every job in `ci.yml` has failed two to three seconds in with no
-logs: a run blocked before a runner picks it up, not a broken one. Verified
-again on 2026-09-09 — runs 780 to 787, all failures, each finishing in four to
-seven seconds. **Only the owner can fix that**, and until they do, the
-repository has the checks written down and none of them running.
+**Run `tools/preflight.py` before you commit — CI is not running.** Every job in
+`ci.yml` fails a few seconds in: the jobs are *created* and then refused before
+a runner picks one up. Diagnosed properly on 2026-09-09 rather than inferred —
+**0 billable milliseconds** on all five jobs, log download 404s because no log
+exists, and the check run's output is empty. That is an account being refused
+compute, not a broken workflow: bad YAML fails differently, and a failing step
+produces both logs and billable time.
+
+`intempo` is a **private repo on a personal account**, so Actions minutes are
+billed (public repos are unlimited and free). The two candidates are exhausted
+included minutes with no spending limit, or a payment failure; the API cannot
+see billing, and the reason is shown as a banner on the run page in the web UI.
+
+**Broken since at least 2026-09-06** — run 748 that day failed the same way.
+This file previously said 2026-09-09, which was simply the day somebody looked.
+Do not re-date it without checking a run from before the date you are claiming.
+**Only the owner can fix it**, and until they do, the repository has the checks
+written down and none of them running.
 
     tools/preflight.py            # the gates that need no build
     tools/preflight.py --full     # and the builds, the walk and the audits
