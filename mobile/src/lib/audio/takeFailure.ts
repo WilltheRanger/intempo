@@ -42,10 +42,11 @@ export interface TakeFailure {
   /**
    * Whether the take is kept and "Send again" offered.
    *
-   * False only for the quota: the count does not move until next month, so a
-   * retry is the same refusal a second time. Everything else — a dropped
-   * connection, a server that was restarting — is worth one tap, and the WAV
-   * is still in hand.
+   * False for the two answers another attempt cannot change: the **quota**,
+   * whose count does not move until next month, and a **404**, which means the
+   * piece this take belongs to is not there to attach it to. Everything else —
+   * a dropped connection, a server that was restarting — is worth one tap, and
+   * the WAV is still in hand.
    */
   retriable: boolean;
 }
@@ -54,9 +55,42 @@ export interface TakeFailure {
 export const GENERIC_TAKE_FAILURE =
   'That take couldn’t be sent. It is still here — check your connection and send it again.';
 
+/**
+ * The piece is gone, so there is nothing to attach the take to.
+ *
+ * **Added because retrying this was worse than losing it.** `createAnalysis`
+ * answers 404 when the score does not exist or is not yours, and that was read
+ * as an ordinary failure — so the take was kept, queued, and retried on every
+ * foreground for the life of the install. Worse, a drain pass stops at the
+ * first failure by design (the usual cause is the connection, not the take),
+ * so one such entry sat at the head of the queue and blocked every real take
+ * behind it.
+ *
+ * The old sentence made two claims that were both false here: *"It is still
+ * here"* and *"send it again"*.
+ *
+ * **The risk this accepts, stated plainly.** A 404 from something that is not
+ * the API — a proxy answering during a deploy — would now discard a take that
+ * a retry might have sent. That is a worse *single* outcome than a wasted
+ * retry, and it is speculative, where the queue-blocking failure above is
+ * measured. If it ever shows up, the fix is to key on the API's own body
+ * rather than on the status.
+ */
+export const PIECE_GONE_FAILURE =
+  'That piece isn’t in your library any more, so this take has nowhere to go.';
+
 /** A take that captured nothing at all — every sample zero. */
 export const SILENT_TAKE_FAILURE =
   'That take came back silent. Check the microphone isn’t muted or covered, then try again.';
+
+/** The HTTP status an `ApiError` carries, or null for anything else. */
+function statusOf(error: unknown): number | null {
+  if (error && typeof error === 'object' && 'status' in error) {
+    const { status } = error as { status?: unknown };
+    return typeof status === 'number' ? status : null;
+  }
+  return null;
+}
 
 /**
  * @param os `Platform.OS`, passed in so this stays a pure function. The
@@ -83,6 +117,21 @@ export function readTakeFailure(error: unknown, os: string): TakeFailure {
     // **Before the generic message**, which is neither a connection problem
     // nor something trying again will fix.
     return { message: quota, retriable: false };
+  }
+  // The other answer a second attempt cannot change. After the quota, because
+  // the quota is a 403 and this is a 404 — they cannot both match — but before
+  // the generic case, for the same reason the quota is.
+  //
+  // **Read off the shape, not with `instanceof ApiError`**, and that is about
+  // keeping this module testable rather than about being clever. `ApiError`
+  // lives in `data/api/client`, which reaches `data/auth/session`, which
+  // imports `react-native` — whose Flow syntax vitest cannot parse. Importing
+  // it here made `takeFailure.test.ts` stop collecting entirely, reporting
+  // "no tests" rather than a failure. `ApiError` is the only thing in this app
+  // that carries a numeric `status`, and the same structural reading is what
+  // `drainQueue` does with `resume`.
+  if (statusOf(error) === 404) {
+    return { message: PIECE_GONE_FAILURE, retriable: false };
   }
   return { message: GENERIC_TAKE_FAILURE, retriable: true };
 }

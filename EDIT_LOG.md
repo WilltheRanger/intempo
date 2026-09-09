@@ -1,5 +1,64 @@
 # InTempo Edit Log
 
+## 2026-09-09 — A 404 is not a bad moment, it is a piece that is gone
+
+Loop tick thirty-one, finishing what tick thirty named and deliberately left.
+
+Yesterday's fix stops a *local* delete orphaning a take. It does nothing about
+a delete on **another device**, and the orphan behaves exactly as before:
+`createAnalysis` answers 404, `readTakeFailure` reads that as retriable, the
+drain keeps it and tries again on every foreground for ever — and because a
+pass stops at the first failure by design, that one entry blocks every real
+take behind it.
+
+**So the rule now names it.** A 404 joins the quota as an answer another
+attempt cannot change: the take is not kept, not queued, and not retried.
+
+**The old sentence was actively false here.** *"That take couldn't be sent. It
+is still here — check your connection and send it again."* It was not still
+here, the connection was fine, and sending it again was guaranteed to fail.
+`PIECE_GONE_FAILURE` says what happened instead, and a test asserts it contains
+neither *"still here"* nor *"send it again"*.
+
+**The status is read off the shape, not with `instanceof ApiError`**, and that
+was forced rather than chosen. Importing `ApiError` reaches
+`data/auth/session` → `react-native`, whose Flow syntax vitest cannot parse —
+so the import made `takeFailure.test.ts` stop collecting entirely and report
+**"Tests: no tests"**. That is the fourth appearance of that failure shape in
+five ticks, and it took a second to spot because the file count is the thing I
+now read first. `ApiError` is the only thing in this app carrying a numeric
+`status`, and the structural read keeps the module as pure as its docstring
+claims.
+
+**A mutation survived, and pinning it was cheap.** Replacing the type guard
+with `Number(status)` passed everything — so a string `'404'` would have
+discarded a take. `ApiError.status` is typed `number`, so this is a guard
+rather than a live case, and discarding a musician's recording on a
+*coincidence of shape* is worth four lines to rule out. With the test, the
+mutation dies.
+
+**The risk this change accepts, written next to it.** A 404 from something that
+is not the API — a proxy answering during a deploy — now discards a take a
+retry might have sent. That is a worse single outcome than a wasted retry, and
+it is speculative, where the queue-blocking failure is measured. If it ever
+shows up, the fix is to key on the API's own body rather than on the status.
+
+**Narrowness is the point**, and it is tested: 400, 401, 403, 409, 429, 500,
+502 and 503 all stay retriable with the take in hand. A server restart must not
+cost somebody a performance.
+
+**Mutation-checked, four ways**, all killed: the branch removed entirely
+(2 tests), every answered failure dropping the take (1), the take kept and
+queued anyway (1), and the coercion above (1). Restored byte-identically.
+
+**On the §2 gate:** one new sentence a musician can see, replacing one that was
+false in this case. No layout, component, token or visual property changed.
+
+**Tests run:** `preflight.py --full` with a DSN: **16/16 in 600s**. Mobile
+159 files / 1792 tests, 5 new.
+
+**Rollback:** revert the commit. The branch is four lines and one constant.
+
 ## 2026-09-09 — Deleting a piece left its take blocking the queue for ever
 
 Loop tick thirty. Two scans came back clean before this one and are recorded as

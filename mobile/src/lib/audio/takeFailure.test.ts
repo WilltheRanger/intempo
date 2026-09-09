@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { microphonePermissionRecovery } from './permission';
 import {
   GENERIC_TAKE_FAILURE,
+  PIECE_GONE_FAILURE,
   SILENT_TAKE_FAILURE,
   readTakeFailure,
 } from './takeFailure';
@@ -145,5 +146,64 @@ describe('whether another go is offered', () => {
     expect(quota.retriable).toBe(false);
     expect(quota.message).not.toBe(generic.message);
     expect(generic.retriable).toBe(true);
+  });
+});
+
+
+/**
+ * The piece is gone.
+ *
+ * `createAnalysis` answers 404 when the score does not exist or is not yours.
+ * That used to read as an ordinary failure, so the take was kept, queued, and
+ * retried on every foreground for the life of the install — and because a
+ * drain pass stops at the first failure by design, one such entry sat at the
+ * head of the queue and blocked every real take behind it.
+ */
+describe('a take whose piece is not there', () => {
+  /** What `apiFetch` throws: anything carrying a numeric `status`. */
+  const answered = (status: number) =>
+    Object.assign(new Error(`Request failed (${status})`), { status });
+
+  it('is not offered another go, because there is nothing to send it to', () => {
+    expect(readTakeFailure(answered(404), 'web').retriable).toBe(false);
+  });
+
+  it('says what happened instead of promising the take is still here', () => {
+    // The old sentence made two claims that were both false: "It is still
+    // here" and "send it again".
+    const failure = readTakeFailure(answered(404), 'web');
+    expect(failure.message).toBe(PIECE_GONE_FAILURE);
+    expect(failure.message).not.toMatch(/still here|send it again/i);
+  });
+
+  it('leaves every other status alone', () => {
+    // The narrowness is the point. A 500 or a 503 is a bad moment, the take is
+    // real and in hand, and dropping it would be discarding a performance over
+    // a server restart.
+    for (const status of [400, 401, 403, 409, 429, 500, 502, 503]) {
+      const failure = readTakeFailure(answered(status), 'web');
+      expect(failure.retriable).toBe(true);
+      expect(failure.message).toBe(GENERIC_TAKE_FAILURE);
+    }
+  });
+
+  it('is not fooled by a plain error that has no status', () => {
+    expect(readTakeFailure(new TypeError('Failed to fetch'), 'web')).toEqual({
+      message: GENERIC_TAKE_FAILURE,
+      retriable: true,
+    });
+  });
+
+  it('will not read a status that is not a number', () => {
+    // `ApiError.status` is typed `number` and is the only thing in this app
+    // that carries one, so this is the guard rather than a live case — and it
+    // is here because coercing instead (`Number(status)`) passed every other
+    // test in this file. Discarding a musician's take on a *coincidence* of
+    // shape is the outcome worth spending four lines to rule out.
+    for (const status of ['404', true, {}, []]) {
+      const failure = readTakeFailure(Object.assign(new Error('odd'), { status }), 'web');
+      expect(failure.retriable).toBe(true);
+      expect(failure.message).toBe(GENERIC_TAKE_FAILURE);
+    }
   });
 });
