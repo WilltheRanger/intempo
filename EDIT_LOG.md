@@ -1,5 +1,87 @@
 # InTempo Edit Log
 
+## 2026-09-09 — Two hundred rows to show one verdict
+
+Loop tick fourteen, finishing what tick thirteen named and could not close.
+
+`getLatestTake()` asked for every finished analysis — the default page is 200,
+each carrying its per-note analysis at 214 bytes a note — sorted them here, and
+returned the first whose result could be read. To render **one** verdict on
+Today. A library of 200-note takes moved **10 MB** for that screen. Yesterday I
+wrote that the fix "changes behaviour in a case I cannot measure from here".
+That was true of the fix I had in mind and not of the problem.
+
+**The reason it could not simply ask for one was real.** A finished analysis
+whose `result_json` cannot be read is not a take anyone can be shown, so how
+many rows are needed is not known until they have been read. Paging answers
+that: newest first, a handful at a time, stopping the moment there are enough.
+The ceiling is the same 200 the old call examined, so a library that produced
+an answer still produces **that** answer — which is what makes this
+behaviour-preserving rather than a judgement about a case I cannot see.
+
+**But paging needs the server's ordering to be real, and it was a docstring.**
+`GET /v1/analyses` has said "newest first" since it was written, with no test —
+and the app sorted the list again on arrival, with a comment saying the
+ordering "is settled here rather than assumed of the server". That was the
+reasonable thing to do about a promise nothing held.
+
+**`FakeSupabase.order` and `.range` were `(*_a, **_k) -> self`.** Accepted and
+discarded. So the fake handed back the seeded order, whole, whatever was asked
+for — every list endpoint's ordering was unchecked, and `limit`/`offset` did
+**nothing at all**, which means paging was not modelled anywhere in this
+codebase's tests. A client paging against that server could not be tested
+against this one.
+
+Both are modelled now. `range` is inclusive of `end`, as PostgREST means it and
+as every call site here spells it (`range(offset, offset + limit - 1)`); nulls
+sort last ascending and first descending, which is Postgres's own default and
+falls out of reversing the pair rather than being arranged for. The whole
+backend suite passes with the fake ordering and paging — **2143 tests** — so no
+call site was relying on being handed the seeded order.
+
+Two contracts now have tests: the list is newest first, and a walk through
+pages neither repeats a row nor skips one.
+
+**`newestReadable` is the rule, with its own tests**, not a loop inside the
+data source — there is no React Native testing library here, so a loop in a
+`.ts` data source with an HTTP dependency is a loop nothing checks. Ten tests.
+The four decisions:
+
+- **The page is bigger than the ask.** A request for exactly enough rows only
+  works if every one is readable, which is the assumption the module exists
+  because it cannot make.
+- **`maxRows` is a promise about cost, not a safety net.** Without it a library
+  whose every take is unreadable would page to the end on *every* screen open.
+- **It never asks for a row it is not allowed to look at.** The last page is
+  trimmed to the ceiling. Paying for rows and discarding them is the cost this
+  module exists to avoid; doing it on the last page would be doing it on
+  purpose.
+- **A short page is the end of the list**, so it stops rather than asking again
+  for a page already known to be empty.
+
+**`getRecentTakes`'s `×3` was a guess, and it was short when it was wrong.** It
+asked for three times as many rows as it wanted and kept whichever happened to
+be readable, so a run of unreadable takes silently returned fewer takes than
+the homepage asked for, with nothing to say why. Both readers now go through
+one function, so they cannot disagree about what "the newest takes" means.
+
+**Mutation-checked, five ways**, all killed: keeps asking past the end of the
+list (1 test), asks for rows past the ceiling (1), no ceiling at all (1), does
+not stop when it has enough (3), asks for exactly as many as it wants (1).
+Restored byte-identically.
+
+**Tests run:** `preflight.py --full` with a DSN: **15/15 in 617s** — including
+migrations against a real Postgres, the iOS bundle, the app walk and both
+accessibility sweeps. `mobile/.env` restored, no stray backups. Mobile 157
+files / 1724 tests; backend 2143.
+
+**Side effects:** Today now makes 1–2 small requests where it made one large
+one. In a library where the newest take is readable — every ordinary one —
+that is a single request for five rows instead of two hundred.
+
+**Rollback:** revert the commit. `newestReadable.ts` is additive and the two
+call sites are self-contained; the `FakeSupabase` change is test-only.
+
 ## 2026-09-09 — Ten megabytes to answer "when did I last play this"
 
 Loop tick thirteen. Having spent two ticks on tooling I went looking at the

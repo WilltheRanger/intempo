@@ -539,6 +539,78 @@ def test_the_light_projection_names_every_other_field(
     assert differing == {"result_json"}, differing
 
 
+def test_the_list_is_newest_first(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """**A documented contract with no test, which the app does not believe.**
+
+    The docstring has said "newest first" since this endpoint was written, and
+    `FakeSupabase.order` accepted the call and discarded it — so nothing here
+    ever checked it. The app sorts the list again on arrival, with a comment
+    saying the ordering "is settled here rather than assumed of the server",
+    which is the reasonable thing to do about a promise nothing holds.
+
+    It is worth testing because paging depends on it: an offset into an
+    unordered list is not a page of anything.
+    """
+    user_id, score_id = uuid4(), uuid4()
+    fake = FakeSupabase()
+    fake.seed(
+        "analyses",
+        [
+            _analysis_row(user_id, score_id, created_at="2026-03-02T09:00:00+00:00"),
+            _analysis_row(user_id, score_id, created_at="2026-09-01T09:00:00+00:00"),
+            _analysis_row(user_id, score_id, created_at="2026-06-14T09:00:00+00:00"),
+        ],
+    )
+    _install(monkeypatch, fake)
+
+    res = client.get(
+        "/v1/analyses", headers={"Authorization": f"Bearer {make_token(sub=user_id)}"}
+    )
+
+    assert [row["created_at"] for row in res.json()] == [
+        "2026-09-01T09:00:00+00:00",
+        "2026-06-14T09:00:00+00:00",
+        "2026-03-02T09:00:00+00:00",
+    ]
+
+
+def test_paging_walks_the_list_without_repeating_or_skipping(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """`range(offset, offset + limit - 1)` is inclusive at both ends.
+
+    Off by one in either direction and a caller paging through either sees a
+    row twice or never sees it at all — and until `FakeSupabase.range` did
+    anything, both were invisible here.
+    """
+    user_id, score_id = uuid4(), uuid4()
+    fake = FakeSupabase()
+    fake.seed(
+        "analyses",
+        [
+            _analysis_row(user_id, score_id, created_at=f"2026-01-{day:02d}T09:00:00+00:00")
+            for day in range(1, 8)
+        ],
+    )
+    _install(monkeypatch, fake)
+    headers = {"Authorization": f"Bearer {make_token(sub=user_id)}"}
+
+    def page(offset: int, limit: int) -> list[str]:
+        res = client.get(f"/v1/analyses?limit={limit}&offset={offset}", headers=headers)
+        assert res.status_code == 200
+        return [row["created_at"] for row in res.json()]
+
+    first, second, third = page(0, 3), page(3, 3), page(6, 3)
+
+    assert len(first) == 3 and len(second) == 3 and len(third) == 1
+    walked = first + second + third
+    assert len(set(walked)) == 7, "a page repeated a row"
+    # Newest first, all the way through, and every row exactly once.
+    assert walked == sorted(walked, reverse=True)
+
+
 def test_list_unauthenticated_returns_401(client: TestClient) -> None:
     assert client.get("/v1/analyses").status_code == 401
 

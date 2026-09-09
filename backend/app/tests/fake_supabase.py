@@ -38,6 +38,10 @@ class _Query:
         self._count: str | None = None
         #: None means "the whole row" — `select("*")`, or no argument.
         self._columns: set[str] | None = None
+        #: `(column, desc)`, or None for the order the rows were seeded in.
+        self._order: tuple[str, bool] | None = None
+        #: `(start, end)`, inclusive at both ends, as PostgREST means it.
+        self._range: tuple[int, int] | None = None
 
     def eq(self, col: str, val: Any) -> "_Query":
         self._filters.append(("eq", col, val))
@@ -70,10 +74,32 @@ class _Query:
         self._limit = n
         return self
 
-    def order(self, *_a, **_k) -> "_Query":
+    def order(self, column: str, *, desc: bool = False, **_k) -> "_Query":
+        """Sort, rather than pretend to.
+
+        **This was `(*_a, **_k) -> self`** — accepted and discarded — and
+        `range` beside it was the same. So every list endpoint's *"newest
+        first"* was a docstring nothing checked, and every paging call was a
+        `limit` and an `offset` that did nothing at all: the fake handed back
+        the seeded order, whole, whatever was asked for. A client paging
+        through that server cannot be tested against this one.
+
+        One column, because that is what this codebase sorts by. `None` sorts
+        last ascending, which is PostgREST's default (`NULLS LAST`) and is the
+        opposite of Python's error on comparing None to a string.
+        """
+        self._order = (column, desc)
         return self
 
-    def range(self, *_a, **_k) -> "_Query":
+    def range(self, start: int, end: int) -> "_Query":
+        """PostgREST's paging, which is **inclusive of `end`**.
+
+        `range(0, 49)` is fifty rows, not forty-nine — the call sites here all
+        spell it `range(offset, offset + limit - 1)` for that reason, and a
+        fake that treated it as a Python slice would make an off-by-one in
+        either direction invisible.
+        """
+        self._range = (start, end)
         return self
 
     def _matches(self, row: dict) -> bool:
@@ -197,6 +223,20 @@ class _Table:
         # PostgREST returns, and a count that shrank to fit a page would make
         # a quota check silently wrong.
         total = len(matched)
+        if q._order is not None:
+            column, desc = q._order
+            # Ordered before it is paged, which is the only order that makes a
+            # page mean anything. Nulls sort last ascending and first
+            # descending, which is Postgres's own default and falls out of
+            # reversing the pair rather than being arranged for.
+            matched = sorted(
+                matched,
+                key=lambda r: (r.get(column) is None, r.get(column) or ""),
+                reverse=desc,
+            )
+        if q._range is not None:
+            start, end = q._range
+            matched = matched[start : end + 1]
         if q._limit is not None:
             matched = matched[: q._limit]
 

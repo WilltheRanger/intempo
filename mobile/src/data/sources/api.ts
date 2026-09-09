@@ -1,6 +1,7 @@
 import { getAnalysis, getAnalysisRecording, listAnalyses } from '../api/analyses';
 import { submitTake, TakeSubmissionError, waitForAnalysis } from '../practice/submitTake';
 import { rememberPendingAnalysis } from '../practice/pendingAnalysis';
+import { newestReadable, type Readable } from '../practice/newestReadable';
 import { getMe } from '../api/me';
 import { createScore, deleteScore, getScore, listScores, updateScore } from '../api/scores';
 import { getAuthAvatarUrl } from '../auth/session';
@@ -568,6 +569,29 @@ function toFailedTake(
 
 const RUN_FAILED = new Set<AnalysisStatus>(['failed', 'failed_recoverable']);
 
+/**
+ * The newest finished takes whose result can actually be read.
+ *
+ * Both take readers wanted the same thing and each built it differently — one
+ * fetched the whole default page and took the first readable row, the other
+ * fetched `×3` and hoped. One function so they cannot disagree about what
+ * "the newest takes" means, in the same spirit as `readTakeFailure`.
+ *
+ * The server orders newest first and `test_analyses_api.py` holds it to that,
+ * which is what lets this page by offset rather than sorting the world.
+ */
+function donePage(
+  want: number,
+): Promise<Readable<AnalysisResponse, AnalysisResultJson>[]> {
+  return newestReadable(
+    (offset, limit) =>
+      listAnalyses({ status: 'done', limit, offset }),
+    asResult,
+    want,
+  );
+}
+
+
 export const apiTakeSource: TakeSource = {
   async getTake(analysisId) {
     const analysis = await getAnalysis(analysisId);
@@ -592,49 +616,36 @@ export const apiTakeSource: TakeSource = {
   },
 
   async getLatestTake() {
-    // The same call Insights makes, sorted rather than aggregated. No new
-    // endpoint: `GET /v1/analyses` returns the caller's own analyses and the
-    // ordering is settled here rather than assumed of the server.
-    const analyses = await listAnalyses({ status: 'done' });
-
-    const newest = analyses
-      .slice()
-      .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
-      // A finished analysis whose `result_json` can't be read is not a take
-      // anyone can be shown, so it is skipped rather than rendered blank.
-      .map((analysis) => ({ analysis, result: asResult(analysis) }))
-      .find((entry) => entry.result !== null);
-
-    if (!newest?.result) {
+    // **One request for a handful of rows, not two hundred.** This used to ask
+    // for every finished analysis — the default page — sort them here, and
+    // return the first whose result could be read, to render one verdict. Each
+    // row carries its per-note analysis at 214 bytes a note, so a library of
+    // 200-note takes moved 10 MB for one screen.
+    //
+    // It could not simply ask for one, and the reason was real: a finished
+    // analysis whose `result_json` cannot be read is not a take anyone can be
+    // shown, so how many rows are needed is not known until they are read.
+    // `newestReadable` pages instead, and its ceiling is the same 200 this
+    // examined, so a library that produced an answer still produces that one.
+    const [newest] = await donePage(1);
+    if (!newest) {
       return null;
     }
 
-    const score = await getScore(newest.analysis.score_id).catch(() => null);
-    return toTake(newest.analysis, newest.result, score);
+    // A deleted score would 404 the whole screen over a title, so a missing
+    // one degrades to "Unknown piece" instead.
+    const score = await getScore(newest.row.score_id).catch(() => null);
+    return toTake(newest.row, newest.result, score);
   },
 
   async getRecentTakes(limit = 3) {
     const safeLimit = Math.max(1, Math.round(limit));
-    // Ask for a few extra rows because a finished row with an old or unreadable
-    // result shape is deliberately skipped. The homepage still gets up to the
-    // requested number of real, renderable takes.
-    const analyses = await listAnalyses({
-      status: 'done',
-      limit: safeLimit * 3,
-    });
-    const recent = analyses
-      .slice()
-      .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
-      .map((analysis) => ({ analysis, result: asResult(analysis) }))
-      .filter(
-        (
-          entry,
-        ): entry is {
-          analysis: AnalysisResponse;
-          result: AnalysisResultJson;
-        } => entry.result !== null,
-      )
-      .slice(0, safeLimit);
+    // **`×3` was a guess, and it was short when it was wrong.** The old call
+    // asked for three times as many rows as it wanted and kept whichever of
+    // those happened to be readable — so a run of unreadable takes silently
+    // returned fewer than the homepage asked for, with nothing to say why.
+    // Paging asks again instead.
+    const recent = await donePage(safeLimit);
 
     if (recent.length === 0) {
       return [];
@@ -644,8 +655,8 @@ export const apiTakeSource: TakeSource = {
     // costs its title; the take and its verdict remain valid practice history.
     const scores = await listScores().catch(() => []);
     const scoresById = new Map(scores.map((score) => [score.id, score]));
-    return recent.map(({ analysis, result }) =>
-      toTake(analysis, result, scoresById.get(analysis.score_id) ?? null),
+    return recent.map(({ row, result }) =>
+      toTake(row, result, scoresById.get(row.score_id) ?? null),
     );
   },
 
