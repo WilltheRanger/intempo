@@ -1,5 +1,74 @@
 # InTempo Edit Log
 
+## 2026-09-09 — A cost guard on the one thing that spends money per call
+
+Loop tick thirty-six. `POST /v1/scores` with a photograph starts a vision-model
+read, and **nothing bounded how often any account could ask for one.**
+
+**The spec names this as the variable cost of the whole service**: *"Variable
+cost is the Claude API call per new score uploaded — roughly $0.05–$0.15."*
+Three endpoints reach `start_transcription` — creating a photographed piece,
+attaching pages to a scoreless one, and asking for a re-read — and none of them
+was limited. `scores.py` said so out loud in a comment: *"nothing here is
+rate-limited"*. A client stuck in a retry loop could spend without a ceiling,
+and the retry button sits on an error state, which is the screen people tap.
+
+**A cost guard, not a product limit**, and that distinction sets every number.
+What a free account is *entitled* to is `tier_limits` and spec §8, and it is the
+owner's to price. What this stops is a runaway loop or a script. So the
+allowances sit where no human can reach them and a machine hits them at once:
+**ten a minute** (a capture flow is tens of seconds of a person's attention; six
+seconds a piece sustained is not a musician) and **sixty an hour** (~$9/hour
+worst case for one account, against no ceiling at all before). Two windows,
+because a burst limit alone lets a patient script sit under it forever and an
+hourly limit alone lets a runaway spend the hour in ten seconds.
+
+**What is never counted.** A hand-entered piece and a MusicXML import read
+nothing and cost nothing — the comment above the import tests already said so —
+so neither touches the guard. Both have a test.
+
+**In memory, per process, and the log says so rather than pretending
+otherwise.** A second instance doubles the ceiling; a restart forgets. That is
+fine for capping *money* — halving or doubling a bound nobody legitimate
+approaches changes nothing anyone experiences — and would not be fine for
+anything security-shaped. If this ever runs multi-instance and the bound must be
+exact, the state goes to Redis and the interface does not change.
+
+**Not a `Depends`**, because `create_score` serves a photographed piece and a
+hand-entered one through one route and only knows which after parsing the body.
+The check is a call the handler makes at the moment it knows, before any write,
+so a refusal leaves no half-made piece.
+
+**The app was about to tell them to check their wifi.** A 429 fell through
+`describeLoadError` to *"Check your connection and try again"* — the exact
+substitution that module was written to stop. The connection is demonstrably
+fine; it carried the refusal. 429 now passes the server's own sentence through,
+the way status 0 already did, and the response carries `Retry-After`.
+
+**Two mistakes of my own, both caught, both worth writing down.**
+
+1. **The test fixture I added did nothing.** `conftest.py` reset
+   `reading_rate.readings` via the module attribute, but `scores.py` had
+   `from ... import readings` — a direct binding, so the reset never reached it.
+   Proved with a two-line probe before trusting it. The router now resolves
+   through the module, which is the same lesson `deps.py` learned about
+   `get_service_client`.
+2. **A killed mutation run left the file mutated.** I `pkill`ed a stalled probe,
+   so its `finally` never restored `LIMITS`, and the burst allowance sat at
+   10,000 — and `git diff` showed nothing, because the file was still
+   *untracked*. Found by grepping the constant rather than trusting git. The
+   stall was my own bad mutation: raising the limit to 10,000 made a test try
+   10,005 requests.
+
+**Verification.** 13 new unit tests driving an injected clock, 9 new end-to-end
+tests, **14 mutations tried, 14 killed** — including one that showed the conftest
+fixture was insurance nothing exercised, which is now covered by a deliberate
+pair of tests sharing one account id. Backend **2183 passed**; mobile green;
+`preflight.py --full` 16/16.
+
+Rollback: `git revert`. Nothing persists, so a revert takes effect on restart
+with no state to clean up.
+
 ## 2026-09-09 — The legacy Vite tree is deleted, and so is its documentation
 
 Loop tick thirty-five, on the owner's instruction to clean up prototypes. Two

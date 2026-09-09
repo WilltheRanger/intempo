@@ -104,3 +104,18 @@ describe('what a failed screen says', () => {
     expect(describeLoadError(undefined)).toBe('Check your connection and try again.');
   });
 });
+
+describe('a server that says "not yet"', () => {
+  it('passes the wait through instead of blaming the connection', () => {
+    // 429 is the reading-rate guard refusing another vision-model read. The
+    // connection carried the refusal, so "check your connection" is both wrong
+    // and the only advice the fallthrough had.
+    const busy = new ApiError(
+      429,
+      '/v1/scores',
+      "That's a lot of pages at once. Give it a minute and add the next one.",
+    );
+    expect(describeLoadError(busy)).toContain('a minute');
+    expect(describeLoadError(busy)).not.toContain('connection');
+  });
+});

@@ -30,6 +30,7 @@ from app.auth import current_user_id, current_user_id_provisioned
 from app.config import settings
 from app.routers.deps import require_service_client
 from app.services import pending_uploads
+from app.services import reading_rate
 from app.services.transcription_budget import (
     EXHAUSTED_MESSAGE,
     has_room,
@@ -740,6 +741,41 @@ def _insert_score(payload: dict[str, Any]) -> list[dict[str, Any]]:
         return client.table("scores").insert(narrower).execute().data or []
 
 
+def _assert_reading_rate(user_id: UUID) -> None:
+    """Refuse to start a reading this account is asking for too fast.
+
+    **A cost guard, not a product limit** — see `services/reading_rate` for why
+    the numbers are where they are, and `services/tier_limits` for what a free
+    account is actually entitled to. The three endpoints that reach
+    `start_transcription` are the only ones that spend money per call, and this
+    is the only thing standing between a client stuck in a retry loop and the
+    vision API bill.
+
+    **429 with `Retry-After`**, which is the answer that says *not yet* rather
+    than *no*. 403 would be wrong — nothing here is about permission — and a
+    409 would say the piece is busy, which it is not.
+
+    Called by the handler rather than wired as a `Depends`, because
+    `create_score` serves a photographed piece and a hand-entered one through
+    one route and only knows which after it has read the body. A hand-entered
+    piece and a MusicXML import cost nothing and are never counted.
+    """
+    # Resolved through the module, not bound at import. `from ... import
+    # readings` binds the object into this namespace, so replacing the
+    # process-wide limiter — which is exactly what the test fixture does to keep
+    # one test's readings out of the next one's — would silently have no effect
+    # here. The same rule `deps.py` learned about `get_service_client`.
+    decision = reading_rate.readings.check(str(user_id))
+    if decision.allowed:
+        return
+    log.info("refused a reading for %s; %ss to wait", user_id, decision.retry_after)
+    raise HTTPException(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        detail=reading_rate.BUSY_MESSAGE,
+        headers={"Retry-After": str(decision.retry_after)},
+    )
+
+
 #: The columns a score row needs to become a `ScoreResponse`, minus the notation.
 #:
 #: **Written out rather than derived from `ScoreResponse.model_fields`**, which
@@ -878,6 +914,9 @@ def create_score(
     """
     references = body.pages()
     manual = not references
+    if not manual:
+        # Before anything is written, so a refusal leaves no half-made piece.
+        _assert_reading_rate(user_id)
     # Canonicalise every page before anything is written. The returned values
     # are durable private-storage URLs with no upload token; old signed URLs
     # and new object keys converge on the same stored form.
@@ -963,6 +1002,7 @@ def attach_score_pages(
     measures is not replaceable here: those usable notes may already have
     practice history behind them and must not be erased by a photograph retry.
     """
+    _assert_reading_rate(user_id)
     pages = [
         _durable_image_url(reference, user_id)
         for reference in body.pages()
@@ -1560,6 +1600,7 @@ def retranscribe(
     looking at a transcription they can see is wrong should not have to fail
     first to ask for another go.
     """
+    _assert_reading_rate(user_id)
     client = require_service_client()
     rows = (
         client.table("scores")
@@ -1593,7 +1634,8 @@ def retranscribe(
     # them — the concurrency guard below stops two taps starting two workers,
     # and does nothing at all about the same tap arriving a thousand times.
     #
-    # 409 rather than 429: nothing here is rate-limited and waiting changes
+    # 409 rather than 429: this ceiling is per page and permanent, so waiting
+    # changes
     # nothing. This page is finished, which is a conflict with its state, and
     # `transcription_runs` is that state.
     if not has_room(row):

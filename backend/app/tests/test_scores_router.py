@@ -2551,3 +2551,213 @@ def test_the_library_listing_still_carries_the_notation_by_default(
 
     assert res.status_code == 200, res.text
     assert res.json()[0]["score_json"] == GOOD_PAYLOAD
+
+
+# ---- The cost guard on starting a reading ---------------------------------
+#
+# `services/reading_rate` holds the rule and its own tests drive the clock.
+# These are about the wiring: that the three endpoints which spend money call
+# it, that the ones which don't are never charged, and that the refusal is an
+# answer a client can act on.
+
+
+def _burst_limit() -> int:
+    from app.services.reading_rate import LIMITS
+
+    return LIMITS[0].allowance
+
+
+def test_a_client_stuck_in_a_loop_stops_costing_money(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """The failure this exists for. Every one of these would otherwise be a
+    vision-model call at the spec's own $0.05–$0.15."""
+    user_id = uuid4()
+    started = _stub_worker(monkeypatch)
+    _install_supabase(monkeypatch, returning_row=_row_for(uuid4(), user_id))
+    headers = {"Authorization": f"Bearer {make_token(sub=user_id)}"}
+    body = {"image_url": _signed_url(user_id), "title": "Etude #1"}
+
+    codes = [
+        client.post("/v1/scores", json=body, headers=headers).status_code
+        for _ in range(_burst_limit() + 5)
+    ]
+
+    assert codes[: _burst_limit()] == [201] * _burst_limit()
+    assert set(codes[_burst_limit() :]) == {429}
+    assert len(started) == _burst_limit(), "a refused request must not reach the worker"
+
+
+def test_the_refusal_says_how_long_to_wait(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """429 without `Retry-After` is a client guessing, and a client that guesses
+    short is the loop this was written to stop."""
+    user_id = uuid4()
+    _stub_worker(monkeypatch)
+    _install_supabase(monkeypatch, returning_row=_row_for(uuid4(), user_id))
+    headers = {"Authorization": f"Bearer {make_token(sub=user_id)}"}
+    body = {"image_url": _signed_url(user_id), "title": "Etude #1"}
+
+    for _ in range(_burst_limit()):
+        client.post("/v1/scores", json=body, headers=headers)
+    refused = client.post("/v1/scores", json=body, headers=headers)
+
+    assert refused.status_code == 429
+    assert int(refused.headers["Retry-After"]) >= 1
+    # And a sentence written for a musician, not a status name.
+    assert "minute" in refused.json()["detail"]
+
+
+def test_one_busy_account_does_not_refuse_another(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    busy, other = uuid4(), uuid4()
+    _stub_worker(monkeypatch)
+    _install_supabase(monkeypatch, returning_row=_row_for(uuid4(), busy))
+    body = {"image_url": _signed_url(busy), "title": "Etude #1"}
+
+    for _ in range(_burst_limit() + 2):
+        client.post(
+            "/v1/scores",
+            json=body,
+            headers={"Authorization": f"Bearer {make_token(sub=busy)}"},
+        )
+
+    res = client.post(
+        "/v1/scores",
+        json={"image_url": _signed_url(other), "title": "Etude #1"},
+        headers={"Authorization": f"Bearer {make_token(sub=other)}"},
+    )
+    assert res.status_code == 201, res.text
+
+
+def test_a_hand_entered_piece_is_never_charged_against_the_rate(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """Typing a piece in reads nothing and costs nothing. Counting it would
+    make a musician who added a dozen études by hand unable to photograph one.
+    """
+    user_id = uuid4()
+    _stub_worker(monkeypatch)
+    _install_supabase(
+        monkeypatch, returning_row=_row_for(uuid4(), user_id, source_image_url=None)
+    )
+    headers = {"Authorization": f"Bearer {make_token(sub=user_id)}"}
+
+    for _ in range(_burst_limit() + 5):
+        res = client.post(
+            "/v1/scores",
+            json={"title": "By hand", "clef": "treble", "time_signature": "4/4"},
+            headers=headers,
+        )
+        assert res.status_code == 201, res.text
+
+    # And the full allowance is still there for a photograph.
+    photographed = client.post(
+        "/v1/scores",
+        json={"image_url": _signed_url(user_id), "title": "Etude #1"},
+        headers=headers,
+    )
+    assert photographed.status_code == 201, photographed.text
+
+
+def test_a_musicxml_import_is_never_charged_against_the_rate(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """A MusicXML file states its durations — no OCR, no model, no cost. The
+    comment above `_MXL` says so, and this is that comment as a test."""
+    user_id = uuid4()
+    sb = _install_supabase(
+        monkeypatch, returning_row=_row_for(uuid4(), user_id, source_image_url=None)
+    )
+    _install_storage(sb, signed=[])
+    headers = {"Authorization": f"Bearer {make_token(sub=user_id)}"}
+
+    for _ in range(_burst_limit() + 5):
+        res = client.post(
+            "/v1/scores/import",
+            json={"title": "Suite No. 1", "musicxml": _MXL},
+            headers=headers,
+        )
+        assert res.status_code == 201, res.text
+
+
+def test_asking_for_a_re_read_is_charged_against_the_rate(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """`retranscribe` reaches the same vision model as creating a piece, and its
+    button sits on an error state that invites tapping."""
+    user_id, score_id = uuid4(), uuid4()
+    _stub_worker(monkeypatch)
+    fake = FakeSupabase()
+    fake.seed(
+        "scores",
+        [
+            _row_for(
+                score_id,
+                user_id,
+                transcription_status="failed",
+                source_image_urls=None,
+                score_json={"measures": []},
+            )
+        ],
+    )
+    monkeypatch.setattr(db_module, "get_service_client", lambda: fake)
+    headers = {"Authorization": f"Bearer {make_token(sub=user_id)}"}
+
+    # Spend the burst allowance elsewhere, then ask for a re-read.
+    from app.services import reading_rate
+
+    for _ in range(_burst_limit()):
+        reading_rate.readings.check(str(user_id))
+
+    res = client.post(f"/v1/scores/{score_id}/transcribe", headers=headers)
+    assert res.status_code == 429, res.text
+
+
+#: One account id, shared by the pair of tests below.
+#:
+#: Every other test in this file invents a fresh `uuid4()`, which is the only
+#: reason the suite survived the rate guard being added — no key ever got near
+#: the allowance. That is luck, not isolation, and the `_fresh_reading_rate`
+#: fixture in `conftest.py` is what turns it into isolation. These two tests are
+#: what proves the fixture works: without it the second one to run finds the
+#: first one's readings already spent and is refused.
+_SHARED_ACCOUNT = UUID("11111111-2222-3333-4444-555555555555")
+
+
+def _spend_the_burst_allowance(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, token: str
+) -> list[int]:
+    _stub_worker(monkeypatch)
+    _install_supabase(monkeypatch, returning_row=_row_for(uuid4(), _SHARED_ACCOUNT))
+    return [
+        client.post(
+            "/v1/scores",
+            json={"image_url": _signed_url(_SHARED_ACCOUNT), "title": "Etude #1"},
+            headers={"Authorization": f"Bearer {token}"},
+        ).status_code
+        for _ in range(_burst_limit())
+    ]
+
+
+def test_one_test_s_readings_do_not_reach_the_next_a(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    codes = _spend_the_burst_allowance(
+        monkeypatch, client, make_token(sub=_SHARED_ACCOUNT)
+    )
+    assert codes == [201] * _burst_limit(), codes
+
+
+def test_one_test_s_readings_do_not_reach_the_next_b(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """Deliberately identical to the test above, and named so the pair reads as
+    what it is: the same account spending the same allowance twice, which only
+    both pass if something reset it in between."""
+    codes = _spend_the_burst_allowance(
+        monkeypatch, client, make_token(sub=_SHARED_ACCOUNT)
+    )
+    assert codes == [201] * _burst_limit(), codes

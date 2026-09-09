@@ -1,5 +1,55 @@
 # InTempo Decisions
 
+## 2026-09-09 — Rate-limit starting a reading, in memory, as a cost guard
+
+**Context.** Three endpoints reach `start_transcription`, each spending a vision
+API call the spec prices at $0.05–$0.15. Nothing bounded them; `scores.py`
+carried a comment saying so. A client in a retry loop — and the retry button
+lives on an error state, which is the screen people tap — had no ceiling.
+
+**Decision.** A per-account sliding-window limiter in
+`services/reading_rate.py`, checked by the handler immediately before it starts
+a reading. Two windows: 10/minute and 60/hour. In-process memory. 429 with
+`Retry-After` and a sentence written for a musician.
+
+**Alternatives considered.**
+
+- *A free-tier limit on saved pieces.* Rejected as not mine to make. Spec §8
+  defines the free tier ("3 analyses/month, no save/history") and pricing is the
+  owner's decision, gated by `CLAUDE.md` §2. A cost guard and a product limit
+  look similar and are not the same thing; conflating them would have shipped a
+  pricing change disguised as infrastructure.
+- *Redis, so the bound is exact across instances.* Rejected for now. It adds a
+  dependency and an ops surface to make a bound precise that nobody legitimate
+  approaches. `docker-compose.yml` says "no Redis until the Celery migration",
+  and this is not a reason to bring it forward. Named in the module docstring
+  as the thing to do if this ever runs multi-instance.
+- *A `Depends` on the three routes.* Rejected. `create_score` serves a
+  photographed piece and a hand-entered one through one route and cannot know
+  which until it has parsed the body, so a dependency would have to charge both
+  — and typing in a dozen études would then stop you photographing one.
+- *One window instead of two.* Rejected: a burst limit alone lets a patient
+  script sit just under it indefinitely, and an hourly limit alone lets a
+  runaway spend the whole hour's worth in ten seconds, which is the actual shape
+  of the failure.
+- *Counting refused attempts too.* Rejected. It makes a retrying client lock
+  itself out for longer each time it tries, turning a wait into a spiral. There
+  is a test for it.
+
+**Trade-offs accepted.**
+
+- **The bound is per process.** A second instance doubles it; a restart forgets
+  it. Acceptable because what is capped is money, not access — and explicitly
+  not acceptable for anything security-shaped, which this must not be reused
+  for.
+- **A 429 is a wall a legitimate musician could theoretically meet**, on a bulk
+  capture session past ten pieces a minute. They get a sentence naming the wait
+  and a sliding window that gives room back continuously, rather than a refusal
+  until the top of the hour.
+- **Process-wide mutable state under test.** It is reset per test by an autouse
+  fixture, and a deliberate pair of identically-bodied tests sharing one account
+  id is what proves the fixture works — without it the second is refused.
+
 ## 2026-09-09 — Delete the legacy `frontend/` tree rather than keep documenting it
 
 **Context.** `frontend/` was the Vite/React web app batches 5–7 were first built

@@ -47,6 +47,21 @@ export function describeLoadError(error: unknown): string {
     if (error.status === 404) {
       return "It isn't there any more — it may have been removed.";
     }
+    if (error.status === 429) {
+      /*
+       * The server's own sentence, like status 0 above — and for the same
+       * reason. A 429 here is the reading-rate guard in `services/reading_rate`
+       * refusing to start another vision-model read, and it answers with a line
+       * already written for a musician *and* a `Retry-After` naming the wait.
+       *
+       * The fallthrough at the bottom of this function would have said "Check
+       * your connection and try again", which is the exact substitution this
+       * module exists to stop: the connection is demonstrably fine — it carried
+       * the refusal — and the one thing a musician could do about it is the one
+       * thing that sentence doesn't mention, which is wait a moment.
+       */
+      return error.message;
+    }
     if (error.status >= 500) {
       // Explicitly not the musician's problem to solve, and explicitly not
       // worth them retrying in the next second.
