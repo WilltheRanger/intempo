@@ -1,5 +1,82 @@
 # InTempo Edit Log
 
+## 2026-09-09 — Twenty-one advisories on the backend, seven of them on the JWT library
+
+Loop tick seven, closing the gap the last one named: `backend/` had no
+dependency check at all. It does now, and the first run was not the quiet
+result the npm side was.
+
+**21 advisories on production runtime dependencies**, found by `pip-audit` in
+the dev group. Unlike yesterday's npm findings — all bundler, all build time —
+these are on the request path of a live API:
+
+| Package | Advisories | What it does here |
+|---|---|---|
+| `pyjwt` 2.12.1 | **7** | `app/auth.py` verifies every Supabase token with it |
+| `starlette` 1.0.0 | 6 | FastAPI's foundation; handles every request |
+| `cryptography` 47.0.0 | 4 | the TLS and signature stack |
+| `urllib3`, `h2`, `idna`, `pyasn1` | 4 | HTTP transport |
+
+The PyJWT ones are the sharp end. `PYSEC-2026-175` is `PyJWKClient` passing its
+`uri` straight to `urllib.request.urlopen()` — and `PyJWKClient` is exactly what
+this app uses to fetch Supabase's JWKS. `PYSEC-2026-179` is verifier behaviour
+when both asymmetric and symmetric algorithms are accepted, which is the
+algorithm-confusion shape. On an authentication library those are the two you
+do not sit on.
+
+**Every fix was already allowed by the constraints in `pyproject.toml`.** The
+lock was stale, nothing more. `uv lock --upgrade-package` on the eight
+packages: **21 advisories to 0**, with `fastapi` unmoved at 0.136.1.
+
+**The wide sweep was tried first and rejected, which is the part worth
+recording.** `uv lock --upgrade` also cleared all 21 — and dragged `anthropic`
+0.97→**1.4**, `google-genai` 1.73→**2.22**, `librosa` 0.11→**1.0** and `numpy`
+2.4→2.5 along with it. Four major bumps in the OCR and audio cores, none of
+them carrying an advisory, in a change whose purpose is a security fix. The
+suite passed, which proves less than it looks: the provider SDKs are exercised
+against fixtures, and a 0.x→1.x client rewrite is the kind of thing only a live
+call finds. Reverted to the surgical eight.
+
+**Six tests failed on the wide sweep and one of them earned its keep.**
+FastAPI 0.141 changed `include_router`: it no longer flattens a sub-router's
+endpoints into `app.routes` as `APIRoute`s but inserts a private
+`_IncludedRouter` per router. Three test files read `app.routes` directly, so
+`[r for r in app.routes if isinstance(r, APIRoute)]` went from 27 routes to
+**one**, silently. `test_no_blocking_handlers.test_there_are_routes_to_check`
+exists for precisely that — "a guard against this whole file passing because it
+found nothing" — and it fired.
+
+That migration is kept even though the surgical upgrade does not need it,
+because the tests were reading an internal shape and now read a public one.
+`app/tests/served_routes.py`:
+
+- `served_paths()` from `app.openapi()` — public, and the **only** place the
+  prefixed path appears at all under 0.141, since a sub-route's own `.path` is
+  `/analyses` and the `/v1` is applied by the wrapper at match time.
+- `served_routes()` for callers needing the endpoint *function*, which the
+  schema cannot give. That one does read `_IncludedRouter.original_router`,
+  which is private with no public equivalent — said plainly in one place
+  instead of spread across three files.
+
+**`tools/check-dependencies.py` now covers both trees**, so this cannot rot
+again: the backend section fails on any advisory, since these run in
+production. Mutation-checked by pinning `pyjwt` back to 2.12.1 — exit **1**,
+five findings named — then restoring the lock byte-identically.
+
+I read that exit code through a pipe the first time and got `tail`'s status,
+which is the mistake `EDIT_LOG` already records against me. Re-checked without
+the pipe.
+
+Tests: `2116 passed, 2 skipped, 2 xfailed`; `ruff` clean; `pip-audit` **0**;
+`check-dependencies` exit 0.
+
+Known side effects: `starlette` moves 1.0.0 → 1.6.0 under an unchanged
+`fastapi`. Every route test passes, including the reachability contract.
+
+Rollback: `git revert`, then `uv sync` in `backend/`.
+
+---
+
 ## 2026-09-09 — `npm audit fix --force` would have taken the app back to SDK 46
 
 Loop tick six. Two sweeps for prototype residue: one came back empty, and the

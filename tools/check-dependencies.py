@@ -47,13 +47,38 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 MOBILE = ROOT / "mobile"
+BACKEND = ROOT / "backend"
 
 #: Never run. Kept as a string rather than a comment so that a search for it
 #: lands on the explanation above rather than on somebody's shell history.
 DESTRUCTIVE = "npm audit fix --force"
 
 
+def audit_python() -> tuple[int, list[str]]:
+    """`pip-audit` over the backend environment. Returns (count, lines)."""
+    done = subprocess.run(
+        ["uv", "run", "pip-audit", "--progress-spinner", "off", "--format", "json"],
+        cwd=BACKEND,
+        capture_output=True,
+        text=True,
+    )
+    if not done.stdout.strip():
+        return -1, [f"pip-audit produced nothing: {done.stderr[:200]}"]
+    report = json.loads(done.stdout)
+    found: dict[tuple[str, str], str] = {}
+    for dep in report.get("dependencies", []):
+        for vuln in dep.get("vulns", []):
+            found[(dep["name"], vuln["id"])] = dep["version"]
+    lines = [
+        f"    {name} {version}  [{vid}]"
+        for (name, vid), version in sorted(found.items())
+    ]
+    return len(found), lines
+
+
 def main() -> int:
+    python_count, python_lines = audit_python()
+
     done = subprocess.run(
         ["npm", "audit", "--omit=dev", "--json"],
         cwd=MOBILE,
@@ -84,6 +109,22 @@ def main() -> int:
         "  46.0.21 — eleven major versions back — and reports success. See this\n"
         "  file's docstring for what the advisories actually reach."
     )
+
+    if python_count == 0:
+        print("\ncheck-dependencies: backend — no advisories")
+    elif python_count > 0:
+        print(f"\ncheck-dependencies: backend — {python_count} advisory(ies):")
+        for line in python_lines:
+            print(line)
+        print(
+            "\n  These run in production, unlike the npm ones above. Try\n"
+            "  `uv lock --upgrade-package <name>` first: the constraints in\n"
+            "  pyproject.toml usually already allow the fix and the lock is\n"
+            "  merely stale."
+        )
+
+    if python_count > 0:
+        return 1
 
     if critical:
         print(

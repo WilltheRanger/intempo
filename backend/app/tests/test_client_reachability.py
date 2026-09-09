@@ -37,7 +37,7 @@ from pathlib import Path
 
 import pytest
 
-from app.main import app
+from app.tests.served_routes import served_paths
 
 REPO = Path(__file__).resolve().parents[3]
 APP_SRC = REPO / "mobile" / "src"
@@ -65,12 +65,15 @@ NOT_WIRED: dict[str, str] = {
 
 
 def _routes() -> list[tuple[str, str]]:
-    """Every `/v1` route the running app serves, as (method, path template)."""
+    """Every `/v1` route the running app serves, as (method, path template).
+
+    From `served_paths()`, which reads the OpenAPI schema. This walked
+    `app.routes` directly until FastAPI 0.141 stopped putting prefixed paths
+    there — see `served_routes.py`.
+    """
     out: list[tuple[str, str]] = []
-    for route in app.routes:
-        path = getattr(route, "path", None)
-        methods = getattr(route, "methods", None)
-        if not path or not methods or not path.startswith("/v1"):
+    for path, methods in served_paths().items():
+        if not path.startswith("/v1"):
             continue
         for method in sorted(methods - {"HEAD", "OPTIONS"}):
             out.append((method, path))
