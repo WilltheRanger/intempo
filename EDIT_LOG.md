@@ -1,5 +1,73 @@
 # InTempo Edit Log
 
+## 2026-09-09 — The importer fabricated 1.5 beats of silence, and the bar added up
+
+Loop tick two, and the defect the linter pointed at yesterday. Reproduced
+first, then fixed.
+
+**`ocr/musicxml.py` aliased where it meant to copy.**
+
+```python
+if not notes and not_filtered:
+    notes = not_filtered   # the same list, not a copy
+flush_unnamed()            # appends each rest to *both* names
+```
+
+The fallback exists so the voice filter can never empty a bar. `flush_unnamed`
+writes the rests that stand in for a tuplet the schema cannot name. Once the
+first had made the two names one list, the second put every rest in twice.
+
+**Why it is worse than a short bar, which is what makes it worth this tick.**
+Measured on the reproducer: a bar holding one quarter of real music and a
+1.5-beat unnameable group came back as a quarter and **two** dotted-quarter
+rests. That is 1.0 + 1.5 + 1.5 = **4.0 beats in 4/4**. The bar adds up
+*perfectly*, so `validate.py` reports nothing, the musician is told nothing,
+and 1.5 beats of silence nobody played push every note after it on the page
+late — which is precisely the failure `_unnameable_tuplet_beats` was written to
+prevent, reintroduced by the mechanism that prevents it.
+
+Correct is the short bar: quarter plus one rest, 2.5 beats, which the beat
+check *can* see. The code's own comment already said so — "leaves the bar
+visibly short, which the beat check can see" — and the alias was quietly
+falsifying it.
+
+**Three things have to line up, which is why it survived.** The voice filter
+must empty the bar; the unnameable group must run to the barline; and nothing
+may follow it, because the mid-loop `flush_unnamed()` fires *before* each
+appended note and would fill `notes` early. My first two reproducers failed on
+exactly that — the third put the filtered voice first and the group last.
+
+Two things I got wrong on the way, both caught by running it:
+
+- `5:4` was the wrong ratio. `quintuplet_sixteenth` **has** a name in this
+  schema and is not dropped, so nothing accumulated. The existing "could not be
+  represented" test uses `5:6`, which lands on nothing.
+- `B023`, the finding that led here, is a **false positive**: the closure is
+  called inside its own iteration. It was worth following anyway — reading the
+  closure is what surfaced the line above it.
+
+**Fix: `notes = list(not_filtered)`.** A copy removes the hazard at its source
+rather than defending against it at the far end, and it is safe because
+`not_filtered` is never read after the flush. Mutation-checked — putting the
+alias back fails the new test.
+
+**Found and deliberately left.** The fallback adopts notes that never had a
+`ratios` entry, so `ratios` is short whenever it fires. The tuplet loop below
+already clamps for this (`run_start < len(notes)`, `min(position, len(notes))`),
+so it degrades to "no brackets on a fallback bar" rather than wrong ones. That
+is a guarded design choice, unlike the doubled rest, which was a fabrication.
+Noted rather than changed.
+
+Tests: `2116 passed, 2 skipped, 2 xfailed` — one new. `ruff check` clean.
+
+Known side effects: bars reaching the fallback with an unnameable group at the
+barline now read shorter, which is correct and which the beat check will now
+report. That report is the point.
+
+Rollback: `git revert`.
+
+---
+
 ## 2026-09-09 — The backend gets a linter, and it finds eleven things on the first run
 
 Loop tick one of "make it professional, clean up prototypes". Two prototype

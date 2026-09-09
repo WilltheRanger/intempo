@@ -1006,6 +1006,68 @@ def test_the_voice_that_holds_the_music_is_the_one_kept() -> None:
     assert kept == [("D3", "quarter"), ("D3", "quarter")], kept
 
 
+def test_a_bar_the_voice_filter_emptied_is_not_padded_with_doubled_rests() -> None:
+    """**The fallback aliased the list the flush appends to, so every rest went
+    in twice — and the doubling made the bar look right.**
+
+    Three things have to line up, which is why it survived: the voice filter
+    empties the bar, so `notes = not_filtered` takes the fallback; the group
+    that runs to the barline has no name, so `flush_unnamed` has something to
+    write; and nothing follows it to flush it earlier in the loop.
+
+    Then `flush_unnamed` appended each rest to `not_filtered` **and** to
+    `notes`, which the line above had just made the same list.
+
+    The reason this is worse than a short bar: 1 quarter of real music plus a
+    1.5-beat group came back as a quarter and **two** dotted-quarter rests,
+    which is 4.0 beats in 4/4. The beat check sees a bar that adds up
+    perfectly, `validate.py` reports nothing, and 1.5 beats of silence nobody
+    played push every note after it on the page late — which is exactly the
+    failure `_unnameable_tuplet_beats` exists to prevent, reintroduced by the
+    thing that prevents it.
+
+    Correct is the short bar: the quarter and one rest, 2.5 beats, which the
+    beat check *can* see.
+    """
+    divisions = (
+        "<attributes><divisions>60</divisions>"
+        "<time><beats>4</beats><beat-type>4</beat-type></time></attributes>"
+    )
+    # 5:6 rather than 5:4 — a quintuplet sixteenth has a name in this schema
+    # and would not be dropped. This one lands on nothing, which is the case
+    # `_unnameable_tuplet_beats` keeps the length of.
+    five_six = (
+        "<time-modification><actual-notes>5</actual-notes>"
+        "<normal-notes>6</normal-notes></time-modification>"
+    )
+
+    def voiced(kind: str, ticks: int, voice: int, extra: str = "") -> str:
+        return (
+            "<note><pitch><step>D</step><octave>3</octave></pitch>"
+            f"<duration>{ticks}</duration><type>{kind}</type>"
+            f"<voice>{voice}</voice>{extra}</note>"
+        )
+
+    # Voice 2 first and voice 1 last, deliberately. Voice 1 wins the pitched
+    # count so voice 2 is the one filtered out, and putting the unnameable
+    # group at the barline leaves no note after it to flush the group early —
+    # written the other way round, the mid-loop flush fills `notes` and the
+    # fallback never runs.
+    bar = (
+        f'<measure number="1">{divisions}'
+        + voiced("quarter", 60, 2)
+        + "<backup><duration>60</duration></backup>"
+        + voiced("16th", 12, 1, five_six) * 5
+        + "</measure>"
+    )
+    score = score_json_from_musicxml(_part(bar))
+
+    assert [(n.pitch, n.duration) for n in score.measures[0].notes] == [
+        ("D3", "quarter"),
+        ("rest", "dotted_quarter"),
+    ]
+
+
 def test_two_real_voices_still_keep_the_one_written_first() -> None:
     """The tiebreak, and the old behaviour where it was right. Nothing here can
     tell a divisi apart, and the upper part is written first by convention."""

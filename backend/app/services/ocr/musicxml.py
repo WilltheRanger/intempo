@@ -2023,7 +2023,20 @@ def score_json_from_musicxml(
         # that something which was not a measure was counted as one. If picking
         # a voice removed everything, the guess about voices was wrong.
         if not notes and not_filtered:
-            notes = not_filtered
+            # **A copy, and the copy is the fix.** This was `notes =
+            # not_filtered`, which aliases: `flush_unnamed` below appends each
+            # rest to `not_filtered` *and* to `notes`, so once they were one
+            # list every flushed rest went in twice.
+            #
+            # It needed a bar the voice filter emptied and an unnameable tuplet
+            # running to the barline with no note after it to flush it early —
+            # narrow, and silent when it hit. Measured on such a bar: 1 quarter
+            # of real music and a 1.5-beat group came back as a quarter and
+            # **two** dotted-quarter rests, which sums to exactly 4.0 in 4/4.
+            # So the bar looked *correct* to the beat check while carrying 1.5
+            # beats of silence nobody played, and every note after it on the
+            # page was expected late.
+            notes = list(not_filtered)
 
         # A group that ran to the barline has no following note to flush it.
         flush_unnamed()
