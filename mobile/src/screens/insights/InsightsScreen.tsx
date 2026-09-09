@@ -1,5 +1,5 @@
 import { useNavigation } from '@react-navigation/native';
-import { ChartLine } from 'lucide-react-native';
+import { ChartLine } from '../../components/icons';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 

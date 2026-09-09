@@ -1,5 +1,5 @@
 import * as ImagePicker from 'expo-image-picker';
-import { Camera } from 'lucide-react-native';
+import { Camera } from '../../components/icons';
 import { useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 

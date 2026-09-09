@@ -20,7 +20,11 @@ vi.mock('react-native', () => ({
   View: 'view',
   StyleSheet: { create: (styles: unknown) => styles },
 }));
-vi.mock('lucide-react-native', () => ({ Pause: 'pause', Play: 'play' }));
+// The app's own icon module, not the package: `ListenButton` imports from
+// `../icons`, and mocking the package it no longer names would leave the
+// real `lucide-react-native/icons/*` modules to load — which vitest cannot
+// parse, and which fails as a collection error rather than a test failure.
+vi.mock('../icons', () => ({ Pause: 'pause', Play: 'play' }));
 vi.mock('../primitives/Text', () => ({ Text: 'text' }));
 vi.mock('../../design', () => ({
   BORDER_WIDTH: 1,

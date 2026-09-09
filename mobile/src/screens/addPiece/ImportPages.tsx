@@ -1,6 +1,6 @@
 import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
-import { Images } from 'lucide-react-native';
+import { Images } from '../../components/icons';
 import { useGoBack } from '../../navigation/useGoBack';
 import { useState } from 'react';
 import { Platform, StyleSheet } from 'react-native';

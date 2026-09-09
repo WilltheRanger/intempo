@@ -7,7 +7,7 @@ import {
   MoreVertical,
   PencilLine,
   Trash2,
-} from 'lucide-react-native';
+} from '../../components/icons';
 import { useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useGoBack } from '../../navigation/useGoBack';

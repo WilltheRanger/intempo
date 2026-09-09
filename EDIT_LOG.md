@@ -1,5 +1,91 @@
 # InTempo Edit Log
 
+## 2026-09-09 — Every musician was downloading 1,743 icons the app never draws
+
+Loop tick twenty-four. Two audits came back clean before this one, and both are
+worth recording as results rather than skipped:
+
+- **The fixtures build degrades everywhere it should.** `IS_LIVE_BACKEND` is
+  handled in all five piece hooks, scan, corrections, profile, export and auth,
+  plus the seam itself. No screen reaches a backend that is not there.
+- **The backend's duplicate-name scan** (tick twenty) had already come back
+  essentially clean.
+
+So I measured the built bundle instead, which nothing in this repository had
+looked at.
+
+**The main bundle was 3,686 KB raw / 697 KB gzipped, and roughly half of it was
+icons.** `lucide-react-native` ships **1,768** icons; this app imports **25**.
+Metro does not tree-shake by default, so importing from the package barrel
+pulls the lot.
+
+**Proved rather than inferred.** Module paths are rewritten to numeric ids in a
+Metro bundle, so grepping for filenames says nothing. Instead I took the SVG
+path data unique to icons the app has no use for and looked for it in the
+shipped `index-*.js`: **`banana`, `tractor`, `axe`, `wine` and `brain-cog` were
+all in there.**
+
+**Fixed with the package's own published subpath.** `lucide-react-native/icons/*`
+is in its `exports` map — the ESM file for `react-native` and `import`, the CJS
+one for `require` — so this is a supported entry point rather than a reach into
+`dist/`. One module, `components/icons.ts`, does the deep imports; 32 files now
+import from it.
+
+**One module rather than 32 files each guessing**, because the name-to-file
+mapping is not always obvious: kebab-case, digits split (`Trash2` → `trash-2`),
+and **`MoreVertical` is a deprecated alias whose file is `ellipsis-vertical`**.
+All 25 mappings were then checked against the package's own barrel — parsed out
+of `lucide-react-native.mjs` and compared — because a mapping that is wrong but
+*valid* compiles fine and draws the wrong picture. All 25 agree.
+
+**Measured after, on a real rebuild:**
+
+| | Before | After | Saved |
+|---|---|---|---|
+| Raw | 3,686.2 KB | **1,892.6 KB** | 1,793.6 KB (**−49%**) |
+| Gzipped — what is actually served | 697.0 KB | **514.6 KB** | 182.4 KB (**−26%**) |
+
+All five probe icons are gone from the rebuilt bundle.
+
+**Two test files failed, and the way they failed is the thing to note.** Both
+mock `'lucide-react-native'` — a specifier the components no longer name — so
+the real `.mjs` subpath modules loaded and vitest could not parse them. The run
+reported **"2 failed | 157 passed"** with **1,759 tests passed**: no assertion
+failed anywhere, because neither file's tests ran at all. That is the same
+shape as yesterday's mistake — a collection failure is not a test failure and
+does not look like one. Caught this time because the *file* count was read
+alongside the test count. Both mocks now name the module the component imports.
+
+**A thing I found and deliberately left.** `sources/index.ts` imports both
+`./api` and `./fixtures` at the top level and chooses at runtime, so
+**`fixtures.ts` — 47 KB of sample scores — and its four sample sheet-music
+JPEGs ship in the live build too**. Measured: a build with live Supabase
+variables produced a main bundle within **200 bytes** of the fixtures build and
+carried all four JPEGs.
+
+I did not fix it. The bytes are small next to what was just removed, and the
+fix is bundler machinery — a `resolveRequest` alias conditional on build-time
+environment — which would give the fixtures build and the live build **different
+module graphs**. `docs/subsystems.md` already records what that costs with the
+`.web.ts` siblings. Named here rather than attempted for 30 KB.
+
+**It got faster to build, too**, which was not the goal and is worth recording
+because it is the same cause. Against the previous full run: **web build 25.8s
+→ 19.3s**, and the **iOS bundle 40.7s → 22.6s** — Metro was resolving,
+transforming and minifying 1,743 modules nothing imported.
+
+**Tests run:** `preflight.py --full` with a DSN: **15/15 in 590s** (down from
+~630s, for the reason above). The app walk and both accessibility sweeps drive
+the real screens, which is what actually exercises the icons. `mobile/.env`
+restored, no stray files. Mobile 159 files / 1763 tests.
+
+**On the §2 gate:** no layout, copy, component, token or visual property
+changed. 32 files changed an import specifier and nothing else; the icons drawn
+are the same files the package would have handed over.
+
+**Rollback:** revert the commit. `components/icons.ts` is additive and every
+other change is one import line.
+
 ## 2026-09-09 — The one body a client must parse was outside the parity family
 
 Loop tick twenty-three. **No behaviour changed**: 137 lines of tests.

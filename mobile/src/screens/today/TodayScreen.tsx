@@ -1,5 +1,5 @@
 import { useNavigation } from '@react-navigation/native';
-import { ChevronRight, Plus } from 'lucide-react-native';
+import { ChevronRight, Plus } from '../../components/icons';
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 

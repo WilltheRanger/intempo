@@ -1,5 +1,5 @@
 import { useGoBack } from '../../navigation/useGoBack';
-import { ChevronLeft } from 'lucide-react-native';
+import { ChevronLeft } from '../../components/icons';
 import { useState } from 'react';
 import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 

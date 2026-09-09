@@ -1,4 +1,4 @@
-import type { LucideIcon } from 'lucide-react-native';
+import type { LucideIcon } from '../icons';
 import {
   StyleSheet,
   View,

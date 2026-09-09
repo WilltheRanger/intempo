@@ -17,7 +17,7 @@ import {
   entrySheetTitle,
   type EntryScope,
 } from '../../lib/score/entryCopy';
-import { ChevronRight } from 'lucide-react-native';
+import { ChevronRight } from '../icons';
 import type { ScoreJson } from '../../data/types';
 import { ICON_SIZE, ICON_STROKE_WIDTH, colors } from '../../design';
 import { BottomSheet } from '../overlays/BottomSheet';

@@ -1,5 +1,5 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
-import { Camera, Images } from 'lucide-react-native';
+import { Camera, Images } from '../../components/icons';
 import { useGoBack } from '../../navigation/useGoBack';
 import { useMemo, useState } from 'react';
 import {

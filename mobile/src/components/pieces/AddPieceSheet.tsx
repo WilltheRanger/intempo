@@ -1,4 +1,4 @@
-import { Camera, FileMusic, Images, PencilLine } from 'lucide-react-native';
+import { Camera, FileMusic, Images, PencilLine } from '../icons';
 
 import { BottomSheet } from '../overlays/BottomSheet';
 import { SheetOptionRow } from '../overlays/SheetOptionRow';

@@ -1,5 +1,5 @@
 import { useNavigation } from '@react-navigation/native';
-import { Camera, Images, Layers, Plus } from 'lucide-react-native';
+import { Camera, Images, Layers, Plus } from '../../components/icons';
 import { useGoBack } from '../../navigation/useGoBack';
 import { useState } from 'react';
 import { StyleSheet } from 'react-native';

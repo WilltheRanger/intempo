@@ -1,4 +1,4 @@
-import { Minus, Plus } from 'lucide-react-native';
+import { Minus, Plus } from '../icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Platform,

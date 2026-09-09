@@ -5,7 +5,7 @@ import {
   Library,
   User,
   type LucideIcon,
-} from 'lucide-react-native';
+} from '../components/icons';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { Animated, Platform, Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

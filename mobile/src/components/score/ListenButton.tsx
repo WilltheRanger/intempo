@@ -1,4 +1,4 @@
-import { Pause, Play } from 'lucide-react-native';
+import { Pause, Play } from '../icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';

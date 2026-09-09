@@ -1,4 +1,4 @@
-import { FileMusic, Play } from 'lucide-react-native';
+import { FileMusic, Play } from '../../components/icons';
 import { StyleSheet, View } from 'react-native';
 
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';

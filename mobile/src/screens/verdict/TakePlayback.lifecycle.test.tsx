@@ -17,7 +17,9 @@ vi.mock('expo-audio', () => ({
   useAudioPlayerStatus: () => ({ isLoaded: true, duration: 10, currentTime: 0 }),
 }));
 vi.mock('react-native', () => ({ View: 'view', StyleSheet: { create: (x: unknown) => x } }));
-vi.mock('lucide-react-native', () => ({ Pause: 'pause', Play: 'play' }));
+// See `ListenButton.test.tsx`: the specifier has to be the one the
+// component actually imports.
+vi.mock('../../components/icons', () => ({ Pause: 'pause', Play: 'play' }));
 vi.mock('../../components/primitives', () => ({
   LoadingState: 'loading', SecondaryButton: 'button', SectionHeader: 'header', Text: 'text',
 }));

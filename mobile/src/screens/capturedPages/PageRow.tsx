@@ -1,4 +1,4 @@
-import { GripVertical, RotateCcw, Trash2, type LucideIcon } from 'lucide-react-native';
+import { GripVertical, RotateCcw, Trash2, type LucideIcon } from '../../components/icons';
 import { Pressable, StyleSheet, View, type PanResponderInstance } from 'react-native';
 
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';

@@ -1,5 +1,5 @@
 import { useNavigation } from '@react-navigation/native';
-import { Library, Plus, Search } from 'lucide-react-native';
+import { Library, Plus, Search } from '../../components/icons';
 import { useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 

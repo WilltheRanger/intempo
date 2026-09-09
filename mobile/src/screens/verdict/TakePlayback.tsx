@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Pause, Play } from 'lucide-react-native';
+import { Pause, Play } from '../../components/icons';
 import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { useCallback, useRef, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';

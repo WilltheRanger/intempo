@@ -1,6 +1,6 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useQueryClient } from '@tanstack/react-query';
-import { Mic, Square } from 'lucide-react-native';
+import { Mic, Square } from '../../components/icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Linking, Platform, Pressable, StyleSheet, View } from 'react-native';
 

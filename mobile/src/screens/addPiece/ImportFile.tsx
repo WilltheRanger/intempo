@@ -1,7 +1,7 @@
 import { useNavigation } from '@react-navigation/native';
 import * as DocumentPicker from 'expo-document-picker';
 import { File as FSFile } from 'expo-file-system';
-import { FileMusic } from 'lucide-react-native';
+import { FileMusic } from '../../components/icons';
 import { useGoBack } from '../../navigation/useGoBack';
 import { ComposerField } from '../../components/pieces/ComposerField';
 import { useState } from 'react';

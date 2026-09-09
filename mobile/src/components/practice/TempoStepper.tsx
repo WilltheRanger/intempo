@@ -1,4 +1,4 @@
-import { Minus, Plus } from 'lucide-react-native';
+import { Minus, Plus } from '../icons';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { MAX_BPM, MIN_BPM } from '../../data/practiceTempo';

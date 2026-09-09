@@ -10,7 +10,7 @@ import {
   type LayoutChangeEvent,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { X } from 'lucide-react-native';
+import { X } from '../icons';
 
 import { BORDER_WIDTH, colors, EASE_OUT, motion, radii, spacing, SPRING } from '../../design';
 import {

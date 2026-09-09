@@ -1,5 +1,5 @@
 import { useNavigation } from '@react-navigation/native';
-import { ChevronLeft, ChevronRight } from 'lucide-react-native';
+import { ChevronLeft, ChevronRight } from '../../components/icons';
 import { useGoBack } from '../../navigation/useGoBack';
 import { ComposerField } from '../../components/pieces/ComposerField';
 import { useRef, useState } from 'react';
