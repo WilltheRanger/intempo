@@ -19,6 +19,8 @@ count that a damaged file may not carry. `<type>` says "half".
 
 from __future__ import annotations
 
+from itertools import pairwise
+
 import re
 import xml.etree.ElementTree as ET
 from typing import Final
@@ -1098,7 +1100,12 @@ def _whole_rests_that_mean_a_bar(
     beats — reinterpreting there would break a reading that is right.
     """
     out = []
-    for measure, beats in zip(measures, lengths):
+    # `strict`: `lengths` is `_bar_lengths(measures, …)` from the line above
+    # its caller, so it is one per measure by construction. Without this a
+    # short `lengths` would end the loop early and **drop the remaining bars
+    # from the score** — `out` is only appended to inside it — which is a
+    # page losing its ending with nothing raised and nothing logged.
+    for measure, beats in zip(measures, lengths, strict=True):
         rest = _BAR_REST_FOR.get(beats) if beats is not None and beats < 4.0 else None
         if rest is None or not _is_lone_whole_rest(measure):
             out.append(measure)
@@ -2182,7 +2189,7 @@ def score_json_from_musicxml(
     # Renumbering that away is exactly the signal `_expand_multiple_rests`
     # shifts rather than renumbers to protect.
     numbers = [m.measure_number for m in measures]
-    renumbered = any(b <= a for a, b in zip(numbers, numbers[1:]))
+    renumbered = any(b <= a for a, b in pairwise(numbers))
     if renumbered:
         measures = [
             measure.model_copy(update={"measure_number": position})

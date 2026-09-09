@@ -650,7 +650,12 @@ def validate_measures(score: ScoreJson) -> list[MeasureFinding]:
     # against a limit of 3, so nothing it was for has been given up.
     densities = [
         len(measure.notes) / meter
-        for measure, meter in zip(score.measures, expected_per_measure)
+        # `strict`: `expected_per_measure` is built from `meters_in_force`,
+        # whose contract is one entry per measure. Truncating here would
+        # quietly drop the last bars out of the density evidence rather
+        # than fail, and a check with fewer bars in it than it thinks is
+        # worse than one that stops.
+        for measure, meter in zip(score.measures, expected_per_measure, strict=True)
         if measure.notes and meter
         and not all(note.pitch == "rest" for note in measure.notes)
     ]
@@ -672,7 +677,10 @@ def validate_measures(score: ScoreJson) -> list[MeasureFinding]:
     # `MIN_MEASURES_TO_INFER` shared with the metre vote deliberately: both ask
     # the same question, which is whether there are enough bars for the page to
     # be evidence about itself.
-    lengths = [total for total, m in zip(sums, score.measures) if m.notes]
+    # `strict`: `sums` is one per measure, built from `score.measures`.
+    lengths = [
+        total for total, m in zip(sums, score.measures, strict=True) if m.notes
+    ]
     median_length = (
         median(lengths) if len(lengths) >= MIN_MEASURES_TO_INFER else 0.0
     )

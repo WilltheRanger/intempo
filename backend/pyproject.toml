@@ -61,4 +61,22 @@ dev = [
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E4", "E7", "E9", "F"]
+select = [
+    "E4",
+    "E7",
+    "E9",
+    "F",
+    # **`zip()` must say what it does when the sequences differ.** Added
+    # 2026-09-09 after all twelve sites in the tree were read. Six were pairing
+    # two lists one of which is built from the other, where a truncation would
+    # be silent data loss — `_whole_rests_that_mean_a_bar` would have **dropped
+    # the remaining bars from the score**, because its output list is only
+    # appended to inside the loop. Those now say `strict=True`, and a planted
+    # off-by-one raises `ValueError` at the line instead.
+    #
+    # The other three were `zip(xs, xs[1:])`, where the lengths differ by one
+    # *on purpose* — `strict=` has no right answer for the pairwise idiom, so
+    # those became `itertools.pairwise`, which says the intent outright and
+    # stops building two slices to do it.
+    "B905",
+]

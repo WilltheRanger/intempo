@@ -17,6 +17,8 @@ would be more moving parts than the wart costs. The worker catches it and reads
 
 from __future__ import annotations
 
+from itertools import pairwise
+
 import io
 import logging
 from typing import NamedTuple
@@ -1161,7 +1163,7 @@ def _crop_boxes(image_bytes: bytes) -> list[tuple[int, int]]:
     edges = [0, *cuts, height]
     return [
         (max(0, top - (pad if top else 0)), min(height, bottom + (pad if bottom < height else 0)))
-        for top, bottom in zip(edges, edges[1:])
+        for top, bottom in pairwise(edges)
     ]
 
 

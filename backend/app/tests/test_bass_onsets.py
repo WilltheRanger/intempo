@@ -147,7 +147,7 @@ def test_the_detection_lag_does_not_move_when_the_writing_gets_faster() -> None:
     durations = [spb * 0.7 if k == "quarter" else spb * 0.175 for k in kinds]
     y = np.zeros(int((times[-1] + 1.5) * SR), dtype=np.float32)
     pitches = bass_scale(len(times))
-    for at, dur, pitch in zip(times, durations, pitches):
+    for at, dur, pitch in zip(times, durations, pitches, strict=True):
         note = synth_bowed_take([0.0], freqs_hz=[pitch], note_dur_s=dur, noise=0.0)
         start = int(at * SR)
         end = min(start + note.size, y.size)
@@ -161,9 +161,13 @@ def test_the_detection_lag_does_not_move_when_the_writing_gets_faster() -> None:
     ).astype(np.float32)
 
     lags = _lags(_detect(y, min_gap_s=spb / 4), times, window_s=0.12)
-    quarters = [lag for lag, k in zip(lags, kinds) if k == "quarter" and lag is not None]
+    quarters = [
+        lag for lag, k in zip(lags, kinds, strict=True)
+        if k == "quarter" and lag is not None
+    ]
     sixteenths = [
-        lag for lag, k in zip(lags, kinds) if k == "sixteenth" and lag is not None
+        lag for lag, k in zip(lags, kinds, strict=True)
+        if k == "sixteenth" and lag is not None
     ]
     assert len(quarters) >= 10 and len(sixteenths) >= 14, "too few notes to compare"
 

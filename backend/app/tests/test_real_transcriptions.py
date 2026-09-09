@@ -64,7 +64,7 @@ def _play_exactly(timeline) -> np.ndarray:
     total = onsets[-1] + held[-1] + 1.0
     y = np.zeros(int(total * SR), dtype=np.float32)
     pitches = bass_scale(len(onsets))
-    for index, (at, duration) in enumerate(zip(onsets, held)):
+    for index, (at, duration) in enumerate(zip(onsets, held, strict=True)):
         note = synth_bowed_note(pitches[index], max(0.08, duration * 0.7), rise_s=0.035)
         start = int(at * SR)
         end = min(start + note.size, y.size)

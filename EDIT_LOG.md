@@ -1,5 +1,59 @@
 # InTempo Edit Log
 
+## 2026-09-09 — Eighteen `zip()`s, and one of them could have dropped the end of a score
+
+Loop tick five. `zip()` stops at the shorter argument and says nothing, which
+is the same silent-failure shape this session has spent a week on. `B905` found
+every site; reading them found that they are two different things wearing one
+spelling.
+
+**Twelve pair sequences that must line up, and now say so.** The one worth the
+tick is `musicxml._whole_rests_that_mean_a_bar`:
+
+```python
+for measure, beats in zip(measures, lengths):
+    ...
+    out.append(measure)
+```
+
+`out` is only appended to *inside* the loop. A `lengths` one entry short would
+have ended the loop one bar early and **returned a score missing its last
+bar** — no exception, no log, a page that simply stops. `lengths` is
+`_bar_lengths(measures, …)` built on the line above the call, so it is one per
+measure by construction; `strict=True` costs nothing and turns a future breach
+of that contract into an error. Mutation-checked: a planted `[:-1]` raises
+`ValueError: zip() argument 2 is shorter than argument 1` at the line, instead
+of quietly truncating every score in the suite.
+
+The other two production pairings are `validate.py`'s density and length
+evidence against `meters_in_force`, whose docstring already promises "each
+measure". A truncation there drops the last bars out of the evidence rather
+than failing — a check with fewer bars in it than it thinks.
+
+**Six were the pairwise idiom and `strict=` is the wrong question for them.**
+`zip(xs, xs[1:])` has arguments that differ in length by one *on purpose*;
+`strict=True` there raises immediately, which I would have shipped if I had
+applied the rule mechanically. They are `itertools.pairwise` now, which says
+"consecutive pairs" outright and stops building two slices to do it.
+
+**A correction on my own method.** My first pass reported twelve sites. There
+are eighteen — I had piped the ruff output through `head -12`. The rule is now
+enabled in `pyproject.toml`, so the count does not depend on how I read the
+output next time.
+
+Tests: `2116 passed, 2 skipped, 2 xfailed` — unchanged, which is the evidence
+that all thirteen `strict=True` invariants actually hold, including across the
+hostile-MusicXML fixtures and the real-transcription ones. `ruff check` clean
+with `B905` on.
+
+Known side effects: a page whose bar count and metre list disagree now raises
+where it used to return a short score. That is the intent, and no fixture in
+2,116 tests reaches it.
+
+Rollback: `git revert`.
+
+---
+
 ## 2026-09-09 — CI has not run for days, and nothing said so
 
 Loop tick four, and the finding is not a refactor.

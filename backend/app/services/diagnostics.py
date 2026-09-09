@@ -16,6 +16,8 @@ how it is meant to be used.
 
 from __future__ import annotations
 
+from itertools import pairwise
+
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -54,7 +56,13 @@ def envelope_of(y: np.ndarray, sr: int, *, buckets: int = 900) -> Envelope:
 
     edges = np.linspace(0, y.size, num=min(buckets, y.size) + 1, dtype=int)
     magnitude = np.abs(y)
-    peaks = [float(magnitude[a:b].max()) if b > a else 0.0 for a, b in zip(edges[:-1], edges[1:])]
+    # `pairwise`, not `zip(edges[:-1], edges[1:])`. The two slices differ in
+    # length by one *on purpose*, so `strict=` has no right answer here —
+    # and the intent is consecutive pairs, which is what this says.
+    peaks = [
+        float(magnitude[a:b].max()) if b > a else 0.0
+        for a, b in pairwise(edges)
+    ]
     ceiling = max(peaks) or 1.0
     return Envelope(
         peaks=[p / ceiling for p in peaks],

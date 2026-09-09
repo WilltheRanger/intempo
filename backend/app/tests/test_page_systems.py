@@ -24,6 +24,8 @@ horizontal runs of ink on any page, longer than a beam, a slur or a word.
 
 from __future__ import annotations
 
+from itertools import pairwise
+
 import io
 from pathlib import Path
 
@@ -85,7 +87,7 @@ def test_the_systems_come_back_in_reading_order() -> None:
     found = find_systems(_page(_strips()))
 
     assert found == sorted(found)
-    for (_, bottom), (top, _) in zip(found, found[1:]):
+    for (_, bottom), (top, _) in pairwise(found):
         assert top >= bottom, "systems overlap, so a bar could be read twice"
 
 
@@ -207,7 +209,7 @@ def test_a_crop_keeps_the_markings_around_the_staff() -> None:
     page = _stacked(strips)
     systems = find_systems(page)
 
-    for crop, (top, bottom) in zip(crop_systems(page), systems):
+    for crop, (top, bottom) in zip(crop_systems(page), systems, strict=True):
         with Image.open(io.BytesIO(crop)) as image:
             assert image.height > bottom - top, "cropped tight to the staff lines"
 
@@ -527,7 +529,7 @@ def test_the_crops_tile_the_page() -> None:
         f"rows {boxes[-1][1]}..{height} belong to no crop"
     )
     for index, ((_top, bottom), (next_top, _next_bottom)) in enumerate(
-        zip(boxes, boxes[1:])
+        pairwise(boxes)
     ):
         assert next_top < bottom, (
             f"crops {index} and {index + 1} leave rows {bottom}..{next_top} "
@@ -563,7 +565,10 @@ def test_the_overlap_is_the_same_everywhere() -> None:
         "from the median and this test cannot fail"
     )
 
-    overlaps = [bottom - next_top for (_t, bottom), (next_top, _b) in zip(boxes, boxes[1:])]
+    overlaps = [
+        bottom - next_top
+        for (_t, bottom), (next_top, _b) in pairwise(boxes)
+    ]
     assert len(set(overlaps)) == 1, (
         f"the overlap between crops varies: {overlaps} for bands {heights}"
     )
@@ -703,7 +708,9 @@ def test_a_crop_carries_more_detail_than_the_page_it_came_from() -> None:
     full = sizes(source=page)
 
     assert len(reduced) == len(full)
-    assert all(f[0] > r[0] and f[1] > r[1] for r, f in zip(reduced, full)), (
+    assert all(
+        f[0] > r[0] and f[1] > r[1] for r, f in zip(reduced, full, strict=True)
+    ), (
         f"cutting the photograph gained nothing: {reduced} vs {full}"
     )
     assert full[0][0] == MODEL_MAX_EDGE, (

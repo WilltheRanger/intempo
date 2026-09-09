@@ -26,7 +26,7 @@ def test_detect_onsets_times_are_close() -> None:
     onsets = audio_svc.detect_onsets(audio_svc.pre_emphasis(y), SR)
     assert len(onsets) == 8
     # Each detected onset within 40ms of the true attack.
-    for detected, expected in zip(onsets, times):
+    for detected, expected in zip(onsets, times, strict=True):
         assert abs(detected - expected) < 0.04
 
 
