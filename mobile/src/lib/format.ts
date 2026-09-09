@@ -138,3 +138,37 @@ export function formatRole(role: UserRole): string {
 export function joinMetadata(parts: (string | null | undefined)[]): string {
   return parts.filter((part): part is string => Boolean(part)).join('  ·  ');
 }
+
+/**
+ * How many pages of a scan there are, in words.
+ *
+ * **This existed twice, in two screens, and the two had already drifted** —
+ * `ScannerScreen` answered "No pages yet" at zero and `CapturedPagesScreen`
+ * would have answered "0 pages". Same name, same signature, different copy.
+ *
+ * Nothing had ever seen the difference: `CapturedPagesScreen` returns its
+ * empty state before this line is reached (`pages.length === 0`, line 130), so
+ * its zero case is unreachable and the two functions are identical over the
+ * domain either of them is asked about. Unifying on the version that handles
+ * zero is therefore a no-op for a musician and one fewer place to drift — the
+ * next screen to show a page count gets the answer both were reaching for
+ * rather than whichever it copies.
+ */
+export function pageCountLabel(count: number): string {
+  if (count === 0) {
+    return 'No pages yet';
+  }
+  return count === 1 ? '1 page' : `${count} pages`;
+}
+
+/**
+ * How many practice sessions a window holds, in words.
+ *
+ * Also byte-identical in two places — `lib/insights/tendency.ts`, where
+ * `readTendency` uses it and tests cover it, and `PieceInsightRow.tsx`, where
+ * it was retyped. The screen's copy was the untested one, which is the wrong
+ * way round for the copy a musician actually reads off the row.
+ */
+export function sessionLabel(sessions: number): string {
+  return sessions === 1 ? '1 session' : `${sessions} sessions`;
+}

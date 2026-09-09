@@ -1,5 +1,92 @@
 # InTempo Edit Log
 
+## 2026-09-09 — Fifteen names defined twice, and one of the duplicates was mine
+
+Loop tick nineteen. Ticks sixteen and seventeen both found real problems by
+asking *where does this rule live*, so I asked the mechanical version of the
+question: which top-level function names are defined in more than one file?
+
+**547 names, 15 in more than one file.** Most are legitimate and it is worth
+saying which, because a check that reported all fifteen would be noise:
+`commit`, `subscribe`, `getSnapshot` and `snapshot` are the external-store
+idiom, once per store; `playSchedule` and `startClicks` are `.web.ts` platform
+siblings; `valid`, `isSilent` and `normalise` are local helpers doing different
+jobs under a common word.
+
+Four were real, and they split into two kinds.
+
+**Byte-identical, so nothing has drifted yet.**
+
+- `sessionLabel` — in `lib/insights/tendency.ts`, where `readTendency` uses it
+  and tests cover it, and retyped in `PieceInsightRow.tsx`. The screen's copy
+  was the untested one, which is the wrong way round for the words a musician
+  reads off the row.
+- `isInstrument`, with its own copy of the four instrument names, in
+  `preferences.ts` and `onboardingDraft.ts`.
+
+**Already different, and neither could see it.**
+
+- `pageCountLabel` — `ScannerScreen` answers *"No pages yet"* at zero;
+  `CapturedPagesScreen` would have answered *"0 pages"*. Same name, same
+  signature, different copy.
+
+**The instrument duplicate is mine**, from `1457fca` earlier today. I copied
+the guard and the list into `onboardingDraft.ts` rather than importing them,
+which is the cheap move at the time and the expensive one later. The failure it
+sets up is quiet and asymmetric: add a fifth instrument to one list and not the
+other, and the app accepts it in the onboarding draft and rejects it when
+preferences reads the same value back — falling through to the default,
+silently, on the device of the musician who chose it. Nothing throws, no test
+fails, because each store is right about its own list.
+
+**And the repository had already spotted exactly this and fixed it in the wrong
+place.** `preferences.test.ts` builds `Record<Instrument, true>` under a
+comment saying a `Record` is used "so the list below cannot silently fall
+behind `types.ts` **the way `INSTRUMENTS` can**". The hazard was named, in
+writing, and closed only in the test's own copy. `data/instruments.ts` is built
+that way now — exhaustive by construction, so leaving an instrument out is a
+`tsc` error rather than a runtime surprise — and that comment is corrected.
+
+Proved rather than assumed: adding `'harp'` to the union made `tsc` name the
+missing key in three files, `types.ts` restored byte-identically after. The
+`Record<Instrument, …>` idiom is the house pattern already — `lib/instrument.ts`
+maps instruments to clefs the same way — so this matches rather than invents.
+
+**Unifying `pageCountLabel` changes nothing a musician can see**, and that was
+checked rather than hoped: `CapturedPagesScreen` returns its empty state at
+`pages.length === 0`, above the line that calls it, so its zero case is
+unreachable and the two functions are identical over the domain either is asked
+about. On the version that handles zero, therefore, with no copy decision to
+make.
+
+**A mutation survived, and it was the point of the change.** Deleting the zero
+branch — the only reason to prefer one copy over the other — left all **1,751**
+tests passing. Nothing tested `pageCountLabel(0)`. Both labels have tests now,
+and the mutation dies.
+
+The other three were killed: an instrument dropped from the list (4 tests), the
+guard rewritten to `value in ALL` so `toString` passes (1), the singular
+session losing its plural rule (1).
+
+**On the §2 gate:** four screens lost a local function and gained an import.
+No layout, copy, component, token or visual property changed — and the one
+place copy *could* have changed is the unreachable branch above.
+
+**Tests run:** `preflight.py --full` with a DSN: **15/15 in 628s** — including
+the app walk, which drives four of the five screens this touched. `mobile/.env`
+restored, no stray backups. Mobile 159 files / 1756 tests.
+
+**Named and not fixed:** `InstrumentChoice.tsx` holds a **third** list of
+instruments, as `{ value, label }` pairs for the picker. It is guarded by
+`instrumentLabels.test.ts` rather than by the type, which is weaker than what
+`instruments.ts` now has, but it is a different shape and a UI concern; folding
+it in is a screen change.
+
+**Side effects:** none intended. Four call sites resolve to one implementation
+each, and the only behavioural difference available was unreachable.
+
+**Rollback:** revert the commit.
+
 ## 2026-09-09 — Four documents saying CI runs the checks, and it does not
 
 Loop tick eighteen. **No code changed**: this is a documentation-accuracy pass

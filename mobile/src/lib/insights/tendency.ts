@@ -1,4 +1,5 @@
 import type { Band, Direction, Tolerance, Verdict } from '../../data/types';
+import { sessionLabel } from '../format';
 import {
   bandFor,
   directionFor,
@@ -136,10 +137,6 @@ export function tempoWanders(summary: {
     bandFor(summary.meanDeviationPct, summary.tolerance) === 'on' &&
     spreadIsBeyondTolerance(summary.spreadPct, summary.tolerance)
   );
-}
-
-function sessionLabel(sessions: number): string {
-  return sessions === 1 ? '1 session' : `${sessions} sessions`;
 }
 
 export function readTendency(summary: WindowSummary): TendencyReading {

@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSyncExternalStore } from 'react';
 
 import type { Instrument, MetronomeMode } from './types';
+import { isInstrument } from './instruments';
 
 export interface Preferences {
   /**
@@ -132,12 +133,6 @@ export async function hydratePreferences(): Promise<void> {
   } catch {
     // Unreadable or malformed: the defaults are already in place.
   }
-}
-
-const INSTRUMENTS: Instrument[] = ['violin', 'viola', 'cello', 'double_bass'];
-
-function isInstrument(value: unknown): value is Instrument {
-  return INSTRUMENTS.includes(value as Instrument);
 }
 
 const METRONOME_MODES: MetronomeMode[] = [

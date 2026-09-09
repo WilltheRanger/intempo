@@ -7,6 +7,7 @@ import type { PieceInsight } from '../../data/types';
 import { BORDER_WIDTH, colors, spacing } from '../../design';
 import { readPieceWord, tempoWanders } from '../../lib/insights/tendency';
 import { DeviationBar } from './DeviationBar';
+import { sessionLabel } from '../../lib/format';
 
 export interface PieceInsightRowProps {
   insight: PieceInsight;
@@ -70,10 +71,6 @@ export function PieceInsightRow({ insight, onPress, last = false }: PieceInsight
       </View>
     </PressableScale>
   );
-}
-
-function sessionLabel(sessions: number): string {
-  return sessions === 1 ? '1 session' : `${sessions} sessions`;
 }
 
 const styles = StyleSheet.create({

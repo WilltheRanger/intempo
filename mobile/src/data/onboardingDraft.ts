@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSyncExternalStore } from 'react';
 
 import type { Instrument } from './types';
+import { isInstrument } from './instruments';
 
 /**
  * The onboarding answers, given before there is an account to put them on.
@@ -97,12 +98,6 @@ function commit(next: OnboardingDraft): void {
   bestEffort(() =>
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(persisted(next))),
   );
-}
-
-const INSTRUMENTS: Instrument[] = ['violin', 'viola', 'cello', 'double_bass'];
-
-function isInstrument(value: unknown): value is Instrument {
-  return INSTRUMENTS.includes(value as Instrument);
 }
 
 /**

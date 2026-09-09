@@ -23,6 +23,7 @@ import {
 import { spacing } from '../../design';
 import type { RootNavigation } from '../../navigation/types';
 import { DraggablePageList } from './DraggablePageList';
+import { pageCountLabel } from '../../lib/format';
 
 /**
  * Review of the pages just captured, before transcription.
@@ -271,10 +272,6 @@ export function CapturedPagesScreen() {
       </BottomSheet>
     </ScreenContainer>
   );
-}
-
-function pageCountLabel(count: number): string {
-  return count === 1 ? '1 page' : `${count} pages`;
 }
 
 const styles = StyleSheet.create({

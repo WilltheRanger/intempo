@@ -44,7 +44,12 @@ const KEY = 'intempo.preferences.v1';
  *
  * A `Record` rather than an array on purpose — TypeScript rejects this object
  * if the union gains a member or loses one, so the list below cannot silently
- * fall behind `types.ts` the way `INSTRUMENTS` can.
+ * fall behind `types.ts`.
+ *
+ * This used to end "the way `INSTRUMENTS` can", naming a hazard in the real
+ * list and fixing it only here, in the test's own copy. `data/instruments.ts`
+ * is built the same way now, so the hazard is closed where it was rather than
+ * worked around where it was noticed.
  */
 const EVERY_INSTRUMENT: Record<Instrument, true> = {
   violin: true,

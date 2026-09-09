@@ -31,6 +31,7 @@ import {
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
 import { ViewfinderPage } from './ViewfinderPage';
 import { cropToViewfinder, PAGE_ASPECT, visibleRegion } from '../../lib/scan/framing';
+import { pageCountLabel } from '../../lib/format';
 
 const CAPTURE_BUTTON_SIZE = 68;
 
@@ -609,13 +610,6 @@ function FallbackAction({
       {action.label}
     </Text>
   );
-}
-
-function pageCountLabel(count: number): string {
-  if (count === 0) {
-    return 'No pages yet';
-  }
-  return count === 1 ? '1 page' : `${count} pages`;
 }
 
 const styles = StyleSheet.create({
