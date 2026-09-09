@@ -119,7 +119,9 @@ def test_route_returns_bpm(
     monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
 ) -> None:
     user_id = uuid4()
-    monkeypatch.setattr(calibration_module, "download_audio", lambda _url: _wav_bytes())
+    monkeypatch.setattr(
+        calibration_module, "download_audio", lambda _url, **_kw: _wav_bytes()
+    )
     res = client.post(
         "/v1/calibration",
         headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
@@ -129,3 +131,71 @@ def test_route_returns_bpm(
     body = res.json()
     assert body["ok"] is True
     assert body["bpm"] is not None
+
+
+# ---- SSRF: the host check that was missing ---------------------------------
+#
+# `_assert_audio_url_owned_by` checked the URL's *path* and not its host, so a
+# path anybody can serve was read as proof of ownership. Every URL below was
+# accepted and then fetched by the server before this was fixed, and
+# `download_audio` returned the upstream status in its error — which also made
+# it an oracle for what is listening on the private network.
+
+
+@pytest.mark.parametrize(
+    ("label", "host"),
+    [
+        ("an attacker's own server", "https://evil.example.com"),
+        ("the cloud metadata service", "http://169.254.169.254"),
+        ("loopback", "http://127.0.0.1:8000"),
+        ("our host on another port", "http://test.supabase.invalid:8080"),
+        ("a lookalike hostname", "https://test.supabase.invalid.evil.com"),
+    ],
+)
+def test_the_route_refuses_a_storage_path_on_a_host_that_is_not_ours(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+    label: str,
+    host: str,
+) -> None:
+    user_id = uuid4()
+
+    def _must_not_fetch(*_a, **_k):  # pragma: no cover - the point is it is unused
+        raise AssertionError(f"the server fetched {label}")
+
+    monkeypatch.setattr(calibration_module, "download_audio", _must_not_fetch)
+
+    res = client.post(
+        "/v1/calibration",
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+        json={
+            "audio_url": f"{host}/storage/v1/object/sign/audio-uploads/{user_id}/x.wav"
+        },
+    )
+    assert res.status_code == 403, res.text
+
+
+def test_the_route_passes_the_expected_origin_to_the_fetch(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """Validating the URL is half of it: a 302 off the storage host would still
+    leave the endpoint the caller was authorised for. The fetch can only refuse
+    that if it is told where it started."""
+    user_id = uuid4()
+    seen: dict[str, object] = {}
+
+    def _capture(url, *, expected_origin=None):
+        seen["url"] = url
+        seen["expected_origin"] = expected_origin
+        return _wav_bytes()
+
+    monkeypatch.setattr(calibration_module, "download_audio", _capture)
+
+    res = client.post(
+        "/v1/calibration",
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+        json={"audio_url": _audio_url(user_id)},
+    )
+    assert res.status_code == 200, res.text
+    assert seen["expected_origin"] == "test.supabase.invalid:443"

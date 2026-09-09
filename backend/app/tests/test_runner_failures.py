@@ -26,10 +26,44 @@ from app.workers.analysis_runner import (
 )
 
 
+class _Url:
+    """Enough of `httpx.URL` for the final-origin check to read."""
+
+    def __init__(self, host: str = "storage.example", port: int = 443) -> None:
+        self.host = host
+        self.port = port
+
+
 class _Response:
-    def __init__(self, status_code: int, content: bytes = b"") -> None:
+    """Stands in for a streamed `httpx.Response`.
+
+    `download_audio` reads the body in chunks rather than as `.content` — the
+    size limit has to bite while reading, not after allocating whatever was
+    sent — so this yields it in one chunk. `.content` is kept because the
+    assertions here are about what comes back, not how it arrived.
+    """
+
+    def __init__(
+        self,
+        status_code: int,
+        content: bytes = b"",
+        *,
+        headers: dict[str, str] | None = None,
+        url: _Url | None = None,
+    ) -> None:
         self.status_code = status_code
         self.content = content
+        self.headers = headers or {}
+        self.url = url or _Url()
+
+    def iter_bytes(self):
+        yield self.content
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc) -> None:
+        return None
 
 
 class _Client:
@@ -46,7 +80,7 @@ class _Client:
     def __exit__(self, *_exc) -> None:
         return None
 
-    def get(self, _url):
+    def stream(self, _method, _url):
         return self.response
 
 
@@ -57,7 +91,7 @@ def _client_returning(response, monkeypatch) -> None:
 
 def _client_raising(exc, monkeypatch) -> None:
     class _Raises(_Client):
-        def get(self, _url):
+        def stream(self, _method, _url):
             raise exc
 
     monkeypatch.setattr(analysis_runner.httpx, "Client", _Raises)

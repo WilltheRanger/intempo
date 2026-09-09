@@ -1,5 +1,75 @@
 # InTempo Edit Log
 
+## 2026-09-09 — SSRF on the calibration endpoint, found in a pre-publication audit
+
+The owner is considering making the repository public and asked for a security
+review first. This is the finding.
+
+**`POST /v1/calibration` took a URL from the request body and fetched it.**
+`_assert_audio_url_owned_by` checked the URL's **path** — that it began with
+`/storage/v1/object/sign/audio-uploads/<caller's id>/` — and never its **host**.
+A path is not an identity; anybody can serve that path. Measured before the fix,
+with the caller's own id in the path, every one of these was accepted:
+
+    https://evil.example.com/storage/v1/object/sign/audio-uploads/<id>/x.wav
+    http://169.254.169.254/storage/v1/object/sign/audio-uploads/<id>/x.wav
+    http://127.0.0.1:8000/storage/v1/object/sign/audio-uploads/<id>/x.wav
+
+So **any signed-in account** could make the API issue a GET to any host and port
+reachable from the server — cloud metadata, an internal admin port, anything on
+the private network. And `download_audio` put the upstream status code in the
+error it raised, which the route returned as a 502 body: an oracle for what is
+listening where. The ownership check the endpoint's own docstring advertises was
+the one thing it was not doing.
+
+**Two more gaps behind it.** `download_image` grew a final-origin check and a
+streaming size limit after an earlier review; `download_audio` — its twin — got
+neither. It followed redirects without checking where they landed, so a 302 off
+the storage host was followed; and it read `response.content` whole *then*
+measured it, so an object storage would accept at 50 MB was fully buffered
+before being refused.
+
+**The fix.** `services/storage_origin.py` holds the rule — scheme, origin
+(`host:port`, because another port is another service) and path prefix, all
+three — shared by both call sites so they cannot drift apart again. An
+unconfigured `SUPABASE_URL` returns **False**: a build that cannot say where its
+storage is has no business fetching a URL a stranger chose. `download_audio` now
+streams, caps the read while reading, and refuses a redirect that leaves the
+origin it started on.
+
+**15 + 11 + 7 new tests. 14 mutations tried; 13 killed and the survivor is
+recorded as equivalent rather than papered over.** Removing the explicit
+`max_redirects=3` survives everything, because httpx already defaults to 20 —
+measured. The comment now says that instead of implying the cap is what bounds
+the chain.
+
+**Three corrections to my own work in this entry.**
+
+1. The scheme check looked redundant until a mutation survived: `file://` on our
+   own host with an explicit `:443` produces the *same origin string* as the
+   real thing, so origin alone lets it through. There is a test for it now.
+2. `download_audio` was **not** untested, and the first draft of
+   `test_audio_download.py` said it was. `test_runner_failures.py` covers it —
+   against a stub, so it tests how the client is *constructed* and could not see
+   either gap. That is why both mutations survived the full suite.
+3. Changing `.get()` to `.stream()` broke five of those stub tests. The stub was
+   taught to stream rather than the tests deleted: they assert construction,
+   which a real-socket test cannot.
+
+**Also audited, and clean.** Every route carries an auth dependency except
+`/v1/ready`, which is deliberate and emits names rather than values. JWTs are
+verified with an explicit algorithm list and `audience="authenticated"`; nothing
+disables signature verification. RLS is enabled on all nine tables. `pip-audit`
+reports nothing. The 7 high-severity npm advisories are all Metro/Expo **build**
+tooling, never in the shipped bundle. Two unscoped writes turned out to be a
+helper whose caller has already established ownership, and a documented
+`assignments` cleanup that nothing can reach until the teacher tier ships —
+noted there for when it does.
+
+Verification: **2216 passed**, ruff clean.
+
+Rollback: `git revert`. The new module has no other callers.
+
 ## 2026-09-09 — What is actually wrong with CI, diagnosed instead of inferred
 
 The owner asked me to explain the GitHub Actions billing. I had been asserting

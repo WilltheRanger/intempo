@@ -87,19 +87,72 @@ def _now_iso() -> str:
     return datetime.now(tz=timezone.utc).isoformat()
 
 
-def download_audio(url: str) -> bytes:
-    """Fetch a recording from its (already ownership-validated) storage URL."""
+#: Redirects to follow. Supabase serves signed object URLs from the project
+#: host and is not expected to redirect off it at all.
+#:
+#: **A tightening, not the bound.** httpx already defaults to 20, measured —
+#: so removing this line does not make a chain unbounded, and a mutation that
+#: removes it survives every test here for exactly that reason. It is written
+#: down rather than left implicit because 3 states the expectation (one hop, or
+#: none) where 20 states nothing, and because the origin check below is what
+#: actually stops a redirect going somewhere it should not.
+MAX_AUDIO_REDIRECTS = 3
+
+
+def download_audio(url: str, *, expected_origin: str | None = None) -> bytes:
+    """Fetch a recording, refusing anything too large, too far, or not there.
+
+    **Three protections the image path grew after a review and this never
+    did.** `download_image` caps redirects, checks where it actually ended up,
+    and enforces the size limit while reading. This followed redirects without
+    limit, never looked at the final host, and read the whole body into memory
+    before measuring it — so an object storage would accept at 50 MB was fully
+    buffered before being rejected, and a 302 from the storage host to a
+    link-local address was followed without comment.
+
+    `expected_origin` is `host:port`, and a redirect that leaves it is refused.
+    Port as well as host, because another port on the same host is another
+    service. None disables the check, which is what the analysis worker passes
+    while its own URL is signed from a stored object key rather than supplied by
+    anyone — but the caller that takes a URL from a request body must pass one.
+    """
     try:
-        with httpx.Client(timeout=AUDIO_DOWNLOAD_TIMEOUT, follow_redirects=True) as client:
-            response = client.get(url)
+        with httpx.Client(
+            timeout=AUDIO_DOWNLOAD_TIMEOUT,
+            follow_redirects=True,
+            max_redirects=MAX_AUDIO_REDIRECTS,
+        ) as client:
+            with client.stream("GET", url) as response:
+                if response.status_code != 200:
+                    raise AudioFetchError(
+                        f"download returned status {response.status_code}"
+                    )
+                final = response.url
+                final_origin = f"{final.host}:{final.port}"
+                if expected_origin and final_origin != expected_origin:
+                    raise AudioFetchError(
+                        "audio download redirected off the storage host "
+                        f"({expected_origin} -> {final_origin})"
+                    )
+                declared = response.headers.get("content-length")
+                if declared and declared.isdigit() and int(declared) > MAX_AUDIO_BYTES:
+                    raise AudioFetchError(
+                        f"audio larger than {MAX_AUDIO_BYTES} bytes"
+                    )
+                chunks: list[bytes] = []
+                total = 0
+                for chunk in response.iter_bytes():
+                    total += len(chunk)
+                    if total > MAX_AUDIO_BYTES:
+                        # Stop at the first chunk over the line rather than
+                        # after allocating whatever was sent.
+                        raise AudioFetchError(
+                            f"audio larger than {MAX_AUDIO_BYTES} bytes"
+                        )
+                    chunks.append(chunk)
     except httpx.RequestError as exc:
         raise AudioFetchError(f"download failed: {exc}") from exc
-    if response.status_code != 200:
-        raise AudioFetchError(f"download returned status {response.status_code}")
-    body = response.content
-    if len(body) > MAX_AUDIO_BYTES:
-        raise AudioFetchError(f"audio larger than {MAX_AUDIO_BYTES} bytes")
-    return body
+    return b"".join(chunks)
 
 
 def run_analysis(analysis_id: str) -> None:
