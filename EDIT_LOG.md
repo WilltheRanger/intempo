@@ -1,5 +1,70 @@
 # InTempo Edit Log
 
+## 2026-09-09 — The rule that can leave the whole app dead had no test
+
+Loop tick twenty-nine. I asked which shipped modules have no test — the
+project's own doctrine being that a rule lives in a module with tests — and
+the first scan said **55**, which was wrong. It matched only `<name>.test.ts`,
+so `startFrom.parity.test.ts` did not count as covering `startFrom.ts`.
+Corrected to match suffixed test names *and* modules any test imports by path:
+**47**, and the list is honest.
+
+**Most of the 47 are legitimately untestable here** and it is worth saying
+which, because a list that reported them would be noise: hooks (there is no
+React Native testing library — `DECISIONS.md`, 2026-08-24), barrels, design
+tokens, type-only modules, device adapters, and the glue modules that
+deliberately decide nothing. `fixtures.ts` is data.
+
+Three were rules. One of them matters a great deal.
+
+**`useInertAppRoot` counts how many overlays cover the app**, and sets HTML
+`inert` on `#root` — which takes every button and field out of the keyboard
+order, out of pointer input, and out of the accessibility tree. The count lived
+as two module-level variables inside the hook, so **the one rule in this app
+that can leave the entire interface dead to a mouse and a keyboard was the one
+thing nothing could check.**
+
+Both ways of getting it wrong are bad and neither is visible in a screenshot:
+one decrement too many and the app is live *underneath* an open dialog; one too
+few and it is permanently dead with nothing on screen to explain why.
+
+`rootInert.ts` holds the counting now, with 8 tests: stacking (a confirmation
+over a sheet must not hand the app back when only the confirmation closes),
+closing in any order, a root that was already inert being left that way, an
+unmatched close not driving the count negative, and React mounting an effect
+twice as StrictMode does. What is left in the hook is the part that genuinely
+needs a browser — which element, and when.
+
+**The subtlest of them is why `restoreTo` is read only at depth zero.** Read it
+on every open and it captures `true` — the value `cover` itself just wrote — so
+the last close leaves the app inert for good, on a screen with no dialog on it.
+Mutated: 3 tests fail.
+
+**The other two rules were small and are now pinned.** `getGreeting` has three
+branches, two boundaries and no test: noon belongs to the afternoon and six to
+the evening, both now asserted at the minute either side, plus that all
+twenty-four hours produce exactly three greetings and no fourth. `clefFor` is
+the policy behind a hand-entered piece — the module's own docstring says a
+piece filed under the wrong clef "renders on the wrong staff, and nothing else
+about the app misbehaves". Viola reads **alto**, which is neither obvious
+answer and is exactly what `engrave.ts` warns about: *"a viola part arrives and
+every note sits a third off"*.
+
+**Mutation-checked, eight ways, all killed**: the saved inert state re-read on
+every open (3 tests), the count unclamped (1), every close handing the app back
+(2), restore writing `false` instead of what it saved (1), noon counted as
+morning (1), evening starting an hour early (1), a viola part filed in treble
+(1), a cello part in tenor (1). All files restored byte-identically.
+
+**Tests run:** `preflight.py --full` with a DSN: **16/16 in 605s**. Mobile
+159 files / 1783 tests, 20 new.
+
+**On the §2 gate:** no layout, copy, component, token or visual property
+changed. `modalAccessibility.ts` lost its two variables and gained an import;
+everything else is new test files.
+
+**Rollback:** revert the commit.
+
 ## 2026-09-09 — The six tuning clips, held to what they were made to say
 
 Loop tick twenty-eight. Three checks came back clean before this one and are

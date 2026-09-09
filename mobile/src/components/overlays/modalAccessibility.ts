@@ -1,19 +1,18 @@
 import { useEffect } from 'react';
 import { Platform } from 'react-native';
 
+import { cover, noOverlays, uncover } from './rootInert';
+
 /**
- * Number of web overlays currently covering the app root.
+ * How many web overlays are covering the app root, and what to put back.
  *
- * React Native Web renders Modal into a portal next to #root. The platform
- * adds aria-modal to the portal, but that does not remove the root's buttons
- * and fields from the browser's keyboard order. HTML inert does, and it also
- * blocks pointer input and removes the subtree from assistive technology.
- *
- * Counted rather than toggled so a confirmation dialog opened over another
- * overlay cannot re-enable the app when only the top dialog closes.
+ * **The counting is in `rootInert.ts` and tested there.** It used to be two
+ * module-level variables in this file, inside the hook — so the rule that
+ * decides whether the whole app is reachable by a mouse or a keyboard was the
+ * one thing here nothing could check. What is left in this file is the part
+ * that genuinely needs a browser: which element, and when.
  */
-let activeWebOverlays = 0;
-let rootWasInert = false;
+const overlays = noOverlays();
 
 /** Keep the app behind a visible web overlay completely non-interactive. */
 export function useInertAppRoot(active: boolean): void {
@@ -27,17 +26,7 @@ export function useInertAppRoot(active: boolean): void {
       return;
     }
 
-    if (activeWebOverlays === 0) {
-      rootWasInert = root.inert;
-    }
-    activeWebOverlays += 1;
-    root.inert = true;
-
-    return () => {
-      activeWebOverlays = Math.max(0, activeWebOverlays - 1);
-      if (activeWebOverlays === 0) {
-        root.inert = rootWasInert;
-      }
-    };
+    cover(overlays, root);
+    return () => uncover(overlays, root);
   }, [active]);
 }
