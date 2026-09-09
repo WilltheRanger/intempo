@@ -1,5 +1,68 @@
 # InTempo Edit Log
 
+## 2026-09-09 — The linter could not see a promise, in an app that is mostly promises
+
+Loop tick nine. Having spent eight ticks in `backend/`, I went to check whether
+the mobile tree's static analysis matches what the backend now has. It does
+not, and the gap is a specific one.
+
+**`eslint.config.mjs` extended `tseslint.configs.recommended`, not
+`recommendedTypeChecked`.** The difference is not a longer rule list — it is
+that without a type-aware parser, no rule can know an expression is a promise.
+So `no-floating-promises` was not running, in an app whose main jobs are
+uploading a photo, recording a take and flushing a queue.
+
+A floating promise there fails **silently**: the upload does not happen, no
+error surfaces, and the screen looks like it worked. `tsc` does not see it
+(the value is discarded, which is legal), the tests do not see it (the call
+returns), and a review sees it only if the reviewer happens to know the callee
+is `async`. That is the same failure shape as the React error #310 that
+justified installing the linter in the first place.
+
+**Measured before adopting, not after.** A scratch config enabled the three
+type-aware rules over all of `src/` — 250-odd files, tests included — and
+reported **nothing**. The tree already marks its deliberate fire-and-forget
+calls with `void`, so the discipline was there without the enforcement.
+
+**Then I checked the rules were actually live rather than silently skipping**,
+which a zero-finding run cannot distinguish from a misconfigured one. Planted
+`work();` on an `async function` in a scratch file: one error, exit 1. Probe
+deleted. Repeated against the *real* config after the edit, once per rule:
+
+| Planted | Reported |
+|---|---|
+| `work();` on an async fn | `no-floating-promises` |
+| `xs.forEach(async () => …)` | `no-misused-promises` |
+| `return await 3` | `await-thenable` |
+
+All three exit 1; all three probes removed; `git status` clean but for the
+config.
+
+**Scoped to `src/`, and `projectService` only in that block.** The config
+files and `scripts/*.mjs` are outside `tsconfig.json`, and pointing a
+type-aware parser at a file the program does not contain is an error per file
+rather than a finding.
+
+**The cost is real and worth naming: `npm run lint` goes from 5.3s to 15.6s**,
+because the parser now builds a program instead of a syntax tree. Ten seconds
+on a lint that runs in CI and before a commit is a price I would pay for a
+class of silent upload failure; it is not free and should not be described as
+free.
+
+This is the `noUnusedLocals` argument from `tsconfig.json` again: the moment a
+tree measures clean is the only moment a rule like this costs nothing to
+adopt. Wait, and adopting it becomes a diff nobody wants to review.
+
+**Tests run:** `preflight.py` 8/8 in 385s — brand assets, dead exports,
+dependencies, backend lint, mobile typecheck, mobile lint, mobile tests
+(155 files, 1701 tests), backend tests. Plus the three mutation probes above.
+
+**Side effects:** lint is ~10s slower, everywhere it runs. No source file
+changed — this commit is one config block.
+
+**Rollback:** revert the commit; the block is self-contained and nothing
+depends on it.
+
 ## 2026-09-09 — A kilobyte of MusicXML could have taken the API down
 
 Loop tick eight. Ruff's `S` family over `app/` found one thing worth having,

@@ -148,4 +148,47 @@ export default defineConfig([
       '@typescript-eslint/no-this-alias': 'off',
     },
   },
+  {
+    /**
+     * **Type-aware rules, scoped to `src/`.** The three below are the only
+     * ones in the type-checked set that this tree cannot express any other
+     * way: they need to know that an expression is a promise, which no
+     * syntactic rule can.
+     *
+     * `no-floating-promises` is the reason. This app uploads photos, records
+     * takes and flushes a queue; a promise nobody awaits and nobody `.catch`es
+     * fails *silently* — the upload does not happen, no error surfaces, and
+     * the screen looks like it worked. `tsc` does not see it, the tests do not
+     * see it, and a review sees it only if the reviewer knows the callee is
+     * async.
+     *
+     * Adopted at zero cost, and measured rather than assumed: the three rules
+     * were run over all of `src/` before being turned on and reported
+     * **nothing**, because the tree already marks its deliberate fire-and-
+     * forget calls with `void`. Then a floating call was planted in a scratch
+     * file to prove the rules were live and not silently skipping — it failed,
+     * as it should. Same argument as `noUnusedLocals` in `tsconfig.json`: the
+     * moment a tree is clean is the only moment a rule like this is free.
+     *
+     * `src/` only, and `projectService` only here: the config files and
+     * `scripts/*.mjs` are outside `tsconfig.json`, and pointing a type-aware
+     * parser at a file the program does not contain is an error per file
+     * rather than a finding.
+     */
+    files: ['src/**/*.{ts,tsx}'],
+    extends: [tseslint.configs.base],
+    languageOptions: {
+      parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
+    },
+    rules: {
+      '@typescript-eslint/no-floating-promises': 'error',
+      // A promise handed to something expecting `void` — an `onPress`, a
+      // `useEffect` body, a `.forEach` — is the same silent failure wearing a
+      // React callback.
+      '@typescript-eslint/no-misused-promises': 'error',
+      // `await` on a non-promise is not harmless: it reads as sequencing that
+      // is not happening, and it usually means a missing call.
+      '@typescript-eslint/await-thenable': 'error',
+    },
+  },
 ]);
