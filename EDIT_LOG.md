@@ -1,5 +1,82 @@
 # InTempo Edit Log
 
+## 2026-09-09 — The one body a client must parse was outside the parity family
+
+Loop tick twenty-three. **No behaviour changed**: 137 lines of tests.
+
+Two ticks of following a status from the server into the app have been
+productive, so I looked at the one place the two trees agree on a **shape**
+rather than a status: the tier-limit 403.
+
+This repository has a careful family of cross-tree contract tests —
+`test_client_reachability.py` holds the paths, `test_client_enums.py` the
+vocabularies, `test_client_body_fields.py` the field names, with a docstring
+that names the exact failure it exists for: *"renaming
+`ScoreResponse.transcription_status` to `transcription_state` passes 1992
+backend tests and 1478 mobile tests."*
+
+**Every one of them pairs a Pydantic model with a TypeScript interface. The
+quota refusal is neither.** `_assert_within_quota` raises `HTTPException` with
+a **dict literal**, and `tierLimit.ts` reads it as `detail.code`,
+`detail.used`, `detail.limit`, `detail.resets_at` — no declared type on either
+side. So the machinery slid straight past the one response body in this API
+that a client is *required* to parse, which is the backend's own argument for
+it being structured: *"the client has to act on it"*.
+
+**`test_tier_limits.py` pins what the server sends, and that is the loud
+direction.** Rename a key and it goes red. The silent failure is renaming the
+key **and fixing that test** — the natural thing to do when it fails — while
+the app goes on reading the old name. Then:
+
+- `resets_at` renamed → `resetsAt` is null and a musician is told they are out
+  of analyses with no idea when that changes.
+- `code` renamed → the entire quota message disappears and the generic *"that
+  take couldn't be sent"* takes its place, on the one failure a retry cannot
+  fix.
+
+Neither raises. Neither shows up in a screenshot or a walk.
+
+**The body is provoked, not re-typed.** `_tier_limit_detail()` drives
+`_assert_within_quota` with an exhausted stand-in and reads the dict off the
+raised exception, because a list of key names sitting beside the code it
+describes is precisely the thing that goes stale — and this is a test about
+that failure.
+
+**Mutation-checked in the shape the bug actually takes**, which took two goes
+to get right. The naive mutation is "rename the server key"; that fails
+`test_tier_limits.py` and proves nothing new. The real one is **rename the key
+*and* fix the test that guards it**:
+
+| Mutation | Result |
+|---|---|
+| server renames `resets_at`, and fixes its own test | 2 fail |
+| server renames `code`, and fixes its own test | 2 fail |
+| app starts reading a camelCase `resetsAt` | 2 fail |
+| an exemption claims a key the app does read | 1 fail |
+| an exemption names a key nobody sends | 1 fail |
+
+The last two are the `NOT_WIRED` doctrine this family already uses: an
+exclusion list that cannot go stale, because a stale claim is worse than none.
+`tier` is the one live entry — sent, and deliberately not read, since the
+sentence is about the count and the date.
+
+**A mistake of mine, since it nearly went unnoticed.** My mutation helper
+wrote `\n` into the file as two literal characters rather than a newline,
+which left `test_client_body_fields.py` syntactically broken. The probe
+reported neither pass nor fail — pytest could not collect the file, so my
+`grep` for "N failed" found nothing and printed an empty result. **An empty
+result read as a clean one**, and the corruption survived into the working
+tree until `git diff --stat` showed 137 insertions where I expected 137. Fixed,
+re-run, and the harness now greps for `error` as well as `failed` so a
+collection failure cannot pass for silence again.
+
+**Tests run:** `preflight.py` 9/9 in 391s, migrations included. Backend 2153
+tests, 3 new. `git diff --stat` is one test file.
+
+**Side effects:** none. No application code changed.
+
+**Rollback:** revert the commit.
+
 ## 2026-09-09 — The status that means "try again" was the one thing never retried
 
 Loop tick twenty-two, and it is the other half of yesterday's fix rather than a

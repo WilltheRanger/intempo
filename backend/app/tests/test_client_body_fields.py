@@ -35,6 +35,9 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from types import SimpleNamespace
+from uuid import uuid4
+from fastapi import HTTPException
 
 import pytest
 
@@ -361,4 +364,138 @@ def test_the_app_reads_no_nested_field_that_is_never_written(
         f"{interface} reads {ghosts}; {model.__name__} has no such field. "
         "Going out that is `undefined`; coming back on a corrected score it is "
         "dropped, and the correction never persists."
+    )
+
+
+# ---- the one structured body that is not a model ---------------------------
+#
+# Everything above pairs a Pydantic model with a TypeScript interface. The
+# tier-limit 403 is neither: `_assert_within_quota` raises `HTTPException` with
+# a **dict literal**, and the app reads it with `detail.used` and friends
+# rather than through a declared type. So the family's whole machinery slides
+# straight past the one response body in this API that a client is *required*
+# to parse — the backend's own comment says so: "structured rather than prose
+# because the client has to act on it".
+#
+# `test_tier_limits.py` already pins what the server sends. That is one
+# direction, and it is the direction that fails loudly: rename a key and it
+# goes red. The silent failure is renaming the key **and** fixing that test,
+# which is the natural thing to do, while the app goes on reading the old name
+# — `resetsAt` comes back null and a musician is told they are out of analyses
+# with no idea when that changes. Renaming `code` is worse: the whole quota
+# message disappears and the generic "that take couldn't be sent" takes its
+# place, on the one failure retrying cannot fix.
+
+
+def _tier_limit_detail() -> dict[str, object]:
+    """The body the server actually raises, not a re-typed copy of it.
+
+    Provoked rather than read out of the source: a list of key names beside
+    the code they describe is the thing that goes stale, and this is a test
+    about exactly that failure.
+    """
+    from app.routers.analyses import _assert_within_quota
+
+    class _Exhausted:
+        """A client whose account has used its whole allowance."""
+
+        def table(self, _name: str):
+            return self
+
+        def select(self, *_a, **_k):
+            return self
+
+        def eq(self, *_a, **_k):
+            return self
+
+        def gte(self, *_a, **_k):
+            return self
+
+        def lt(self, *_a, **_k):
+            return self
+
+        def limit(self, *_a, **_k):
+            return self
+
+        def execute(self):
+            from app.services.tier_limits import FREE_MONTHLY_ANALYSES
+
+            return SimpleNamespace(
+                data=[{"tier": "free"}], count=FREE_MONTHLY_ANALYSES
+            )
+
+    with pytest.raises(HTTPException) as raised:
+        _assert_within_quota(_Exhausted(), uuid4())
+    assert raised.value.status_code == 403
+    detail = raised.value.detail
+    assert isinstance(detail, dict), "the tier-limit body stopped being structured"
+    return detail
+
+
+#: Keys the server sends that the app deliberately does not read, and why.
+#:
+#: An entry here that the app *has* started reading fails, the same way
+#: `NOT_WIRED` does, so this cannot rot into a blanket exemption.
+UNREAD_BY_THE_APP: dict[str, str] = {
+    "tier": (
+        "The app never branches on the tier name in this message — the "
+        "sentence is about the count and the reset date. `/v1/me` carries the "
+        "tier for everything that does care."
+    ),
+}
+
+#: `detail.used`, `detail?.code`, `detail["resets_at"]` — every read of the body.
+_DETAIL_READ = re.compile(r"detail\s*(?:\?\.|\.)\s*(\w+)|detail\s*\[\s*['\"](\w+)['\"]\s*\]")
+
+
+def _keys_the_app_reads() -> set[str]:
+    source = (MOBILE_SRC / "lib" / "tierLimit.ts").read_text()
+    return {a or b for a, b in _DETAIL_READ.findall(source)}
+
+
+def test_the_app_reads_every_key_the_quota_refusal_sends() -> None:
+    """A key sent and never read is dead weight; one read and never sent is a bug."""
+    sent = set(_tier_limit_detail())
+    read = _keys_the_app_reads()
+
+    unread = sorted(sent - read - set(UNREAD_BY_THE_APP))
+    assert not unread, (
+        f"the quota refusal sends {unread}, which `mobile/src/lib/tierLimit.ts` "
+        "never looks at. Either the app should be using them or the server "
+        "should stop sending them — and if the answer is neither, say so in "
+        "UNREAD_BY_THE_APP."
+    )
+
+
+def test_the_quota_refusal_sends_every_key_the_app_reads() -> None:
+    """**The silent direction.**
+
+    A name the app reads and the server no longer sends comes back `undefined`
+    and every read here has a fallback — `resets_at` becomes null and the
+    sentence loses the date, `code` stops matching and the whole quota message
+    is replaced by the generic one. Nothing raises in either tree.
+    """
+    sent = set(_tier_limit_detail())
+    missing = sorted(_keys_the_app_reads() - sent)
+    assert not missing, (
+        f"`tierLimit.ts` reads {missing} off the 403 body and the server does "
+        "not send them. This does not fail at runtime — it degrades, quietly."
+    )
+
+
+def test_an_exemption_that_stopped_being_true_fails() -> None:
+    """`UNREAD_BY_THE_APP` is a list of claims, and a stale claim is worse than
+    none — the doctrine `NOT_WIRED` was given after an exclusion list rotted."""
+    read = _keys_the_app_reads()
+    now_read = sorted(name for name in UNREAD_BY_THE_APP if name in read)
+    assert not now_read, (
+        f"{now_read} are listed as unread by the app and the app reads them. "
+        "Remove the entries."
+    )
+
+    sent = set(_tier_limit_detail())
+    gone = sorted(name for name in UNREAD_BY_THE_APP if name not in sent)
+    assert not gone, (
+        f"{gone} are listed as sent-but-unread and the server no longer sends "
+        "them. Remove the entries."
     )
