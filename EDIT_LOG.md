@@ -1,5 +1,70 @@
 # InTempo Edit Log
 
+## 2026-09-09 — The backend gets a linter, and it finds eleven things on the first run
+
+Loop tick one of "make it professional, clean up prototypes". Two prototype
+leftovers, one of them load-bearing.
+
+**`pyproject.toml` still said `description = "Add your description here"`** —
+the `uv init` placeholder, shipped. Replaced.
+
+**And the backend had no linter**, five days after `mobile/` got one. A tick on
+2026-09-08 established this with a hand-rolled scanner and concluded the tree
+was nearly clean: "one dead import, twice". **That was wrong, and the way it
+was wrong is the argument for using a real tool.** `ruff` on the same tree
+found **eleven** pyflakes findings the scanner could not see, because the
+scanner looked at module-level *names* and never at *imports*:
+
+- `routers/scores.py` imported `timedelta` and no longer used it — left behind
+  by **this week's own refactor**, when the display-URL memo moved out.
+- `tests/test_client_enums.py` imported six enums at the top and re-imported
+  every one of them inside the individual tests. The top block was dead, and
+  four of those names were then reported as redefinitions.
+
+Eight edits, `2115 passed, 2 skipped, 2 xfailed` — unchanged.
+
+**The rule set is ruff's default, written out rather than inherited**, so
+widening it is a deliberate edit. `E4`/`E7`/`E9`/`F` is "things that are
+wrong", not "things that are unfashionable". The tempting extras are named in
+`pyproject.toml` with the reason each is off, so the next person does not
+rediscover them: `B008` fires 29 times on `Depends(...)`, which is how FastAPI
+is meant to be written; `I` would reorder 38 files in one mechanical diff and
+deserves its own pass; `RUF100` reports 69 unused `noqa`s, most of which are
+honest because they suppress rules this config does not enable.
+
+**In CI as a step inside `backend-test`, not a job of its own.** A separate
+runner would spend a checkout, a Python install and a dependency sync to run
+something that takes under a second, and this repository is on a metered
+Actions allowance. It runs *before* pytest: a lint failure is a two-second
+answer and the suite is six minutes.
+
+**Found and deliberately not fixed in this commit.** Ruff's `B023` pointed at a
+closure in `ocr/musicxml.py`; the closure itself is a false positive — it is
+called inside its own iteration — but reading it turned up something else at
+line 2025:
+
+```python
+if not notes and not_filtered:
+    notes = not_filtered   # an alias, not a copy
+flush_unnamed()            # appends to *both*
+```
+
+`flush_unnamed` appends each flushed rest to `not_filtered` **and** to `notes`.
+When the line above has aliased them, every rest is appended twice to one list,
+and the bar is padded with double the silence it should have. It needs both a
+bar the voice filter emptied and an unwritable tuplet running to the barline,
+which is narrow — and it is a real defect, not a style finding. Next tick, with
+a test that reproduces it first. A lint sweep and an importer bug do not belong
+in one commit.
+
+Tests: `2115 passed, 2 skipped, 2 xfailed`; `ruff check` clean.
+
+Known side effects: none — eight dead imports removed and one string changed.
+
+Rollback: `git revert`.
+
+---
+
 ## 2026-09-08 — "Profile picture", and the first checks that recording and Listen work
 
 Two owner requests.

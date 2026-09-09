@@ -9,7 +9,7 @@ read so the same access rules apply at the API layer.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any, Literal
 from urllib.parse import urlparse
 from uuid import UUID

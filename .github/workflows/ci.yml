@@ -100,6 +100,14 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras --dev
 
+      # Before the tests, because a lint failure is a two-second answer and the
+      # suite is six minutes. A step inside this job rather than a job of its
+      # own: a separate runner would spend a fresh checkout, a Python install
+      # and a dependency sync to run something that takes under a second, and
+      # this repository is on a metered Actions allowance.
+      - name: Lint (ruff)
+        run: uv run ruff check app/ scripts/ modal_app.py
+
       - name: Run pytest
         run: uv run pytest -q
 

@@ -52,10 +52,7 @@ from app.routers.corrections import UserVerdict
 from app.routers.scores import MAX_PAGES
 from app.services.classification import Band, Direction
 from app.services.score_schema import (
-    Articulation,
-    Clef,
     Duration,
-    Dynamics,
     RepeatType,
     TempoChangeKind,
 )
@@ -230,7 +227,6 @@ def test_the_app_knows_exactly_the_durations_this_api_sends() -> None:
     declines to count the bar at all. Both are documented; neither is a thing
     to discover from a musician.
     """
-    from app.services.score_schema import Duration
 
     import typing
 
@@ -304,7 +300,7 @@ def test_the_beats_table_covers_the_duration_union() -> None:
     """TypeScript forces this on the app's side — `Record<Duration, number>`
     will not compile with a member missing. Nothing forces it on the server's,
     and `DURATION_BEATS` is what `alignment.build_timeline` reads."""
-    from app.services.score_schema import Duration, DURATION_BEATS
+    from app.services.score_schema import DURATION_BEATS
 
     import typing
 
@@ -319,7 +315,6 @@ def test_the_app_declares_exactly_the_repeat_types_this_api_sends() -> None:
     Now that a `%`, a da capo and a repeat barline all produce them, a type the
     app has not heard of is a repeat it cannot draw or reason about.
     """
-    from app.services.score_schema import RepeatType
 
     import typing
 
@@ -489,7 +484,6 @@ def test_the_app_declares_exactly_the_tempo_changes_this_api_sends() -> None:
     is why it was missed when the named unions were swept."""
     import typing
 
-    from app.services.score_schema import TempoChangeKind
 
     server = set(typing.get_args(TempoChangeKind))
     app = _interface_field("ScoreTempoChange", "kind")
