@@ -1,5 +1,81 @@
 # InTempo Edit Log
 
+## 2026-09-09 — The dead-export check counted a test as a caller
+
+Loop tick three. The tick found a hole in a guard rail, and corrected two
+claims I had been repeating.
+
+**`check-dead-exports.py` said "574 exports, all of them referenced" while two
+whole modules were reachable from nothing but their own tests.** Its docstring
+says it exists for "a feature that was never wired up"; its implementation
+counted a mention *anywhere in the corpus*, and the corpus includes the tests.
+So a feature that compiles, is tested, reads as finished and **ships nothing**
+walked straight past the check written to find it.
+
+`src/lib/facts.ts` (68 lines, "a short fact a day, on Today") and
+`src/lib/practiceLesson.ts` (141 lines) are imported by nothing outside their
+own test files. 209 lines of designed, written, documented screen that no
+screen can reach.
+
+The fix splits the corpus: hits in shipping code decide, hits in tests are
+counted separately. Nine exports are in that second category — **two more than
+the seven I have been reporting by hand since 2026-09-06.**
+
+**Two corrections to things I have said in this session.**
+
+1. **I called `takeQueue` an unwired feature. It is not.** I grepped for
+   `takeQueue` and the screen imports from `queuedTakes`, so I read "no
+   callers" off the wrong module name. All three glue calls —
+   `keepTakeForLater`, `takeWasAccepted`, `restoreQueuedTake` — are wired in
+   `RecordScreen`. What is actually unused is narrower: `nextDue` and
+   `recordFailure`, which are the *automatic* retry scheduler. The queue
+   persists; nothing drains it on its own, and manual "Send it again" is the
+   only retry.
+2. **I nearly deleted `floatToPcm16` as dead code.** It has no production
+   caller, its module-mate `encodeWav` takes `Int16Array` already, and the
+   worklet does the identical conversion inline — so it read as an orphaned
+   duplicate, and I had already moved its comment into the worklet before
+   checking the last thing. `audioRecorder.worklet.test.ts` **parses the
+   worklet source and asserts it "clamps and scales exactly as the tested
+   helper does"**. It is the reference implementation the recording copy is
+   held to, because a worklet runs in `AudioWorkletGlobalScope` and cannot
+   import from the bundle. Deleting it would have removed the thing the test
+   compares against. Worklet reverted, byte-identical.
+
+That near-miss is why the new report is **not a failure and says so in its own
+output**: a test seam and a reference implementation are both legitimate
+answers to "referenced only by tests", and a check that fails on them trains
+people to delete things like `floatToPcm16`. It prints on every run, names
+`floatToPcm16` as the worked example of a justified entry, and asks for
+deliberate ones to be justified where they are defined. It becomes a hard
+failure once the list is empty — noted in the code.
+
+Mutation-checked both ways: a planted dead export still exits 1 and is named;
+the nine test-only ones still exit 0.
+
+**For the owner — the seven that are the other kind**, and each is a product
+decision rather than a cleanup I should make alone:
+
+| Export | What it is |
+|---|---|
+| `factFor` | A fact a day on Today. Authored copy — deleting it destroys writing. |
+| `practiceLessonFor`, `notationSetupLesson` | Practice lessons keyed off a verdict. |
+| `tempoLadderFor` | Three tempos around the working tempo, for the record screen. |
+| `nextDue`, `recordFailure` | Automatic retry for the offline take queue. |
+| `pathsByScreen` | Route table reader; used only by the linking tests. |
+
+Wiring any of the first four is UI and goes through §2. Deleting them throws
+away finished work. Neither is mine to choose.
+
+Tests: mobile `1701 passed` unchanged; `check-dead-exports` 586 exports, 9
+reported, exit 0.
+
+Known side effects: none — one tool changed, no app code.
+
+Rollback: `git revert`.
+
+---
+
 ## 2026-09-09 — The importer fabricated 1.5 beats of silence, and the bar added up
 
 Loop tick two, and the defect the linter pointed at yesterday. Reproduced

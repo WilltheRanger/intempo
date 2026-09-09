@@ -121,8 +121,19 @@ def main() -> int:
 
     aliased = _bundler_entry_points()
 
+    # Split the corpus, because "referenced" was quietly counting the wrong
+    # thing. A test is not a caller: an export whose only mention is its own
+    # test compiles, passes, reads as finished work and **ships nothing** —
+    # which is the exact failure this file's docstring says it exists to catch,
+    # walking straight past it. Two modules and 209 lines were sitting behind
+    # that hole when it was found, both of them designed screens nobody can
+    # reach.
+    shipped = {p: b for p, b in text.items() if ".test." not in p.name}
+    tested = {p: b for p, b in text.items() if ".test." in p.name}
+
     scanned = 0
     dead: list[tuple[str, Path]] = []
+    test_only: list[tuple[str, Path]] = []
     for path in defining:
         # A test file defines nothing the app ships.
         if ".test." in path.name:
@@ -137,10 +148,15 @@ def main() -> int:
             scanned += 1
             name = match.group(1)
             word = re.compile(r"\b" + re.escape(name) + r"\b")
-            # Every occurrence in the corpus, less the one inside the `export`
-            # statement that defines it.
-            hits = sum(len(word.findall(body)) for body in text.values()) - 1
-            if hits == 0:
+            # Every occurrence in shipping code, less the one inside the
+            # `export` statement that defines it — which is itself in a
+            # non-test file, so it comes off this side of the split.
+            hits = sum(len(word.findall(body)) for body in shipped.values()) - 1
+            if hits > 0:
+                continue
+            if any(word.search(body) for body in tested.values()):
+                test_only.append((name, path))
+            else:
                 dead.append((name, path))
 
     if scanned < _MIN_EXPORTS:
@@ -166,6 +182,31 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
+
+    if test_only:
+        # **Reported, and deliberately not a failure yet.** Every one of these
+        # is a feature somebody designed, wrote and tested, and the choice
+        # between wiring it and deleting it belongs to the owner — failing the
+        # build would make that choice by deadline instead. The number is
+        # printed on every run so it can only be argued down.
+        #
+        # Promote this to `return 1` once the list is empty. A category that
+        # cannot fail is a category that grows.
+        print(
+            f"check-dead-exports: {len(test_only)} export(s) referenced only by "
+            "their own tests —\n  shipped nowhere, so the app cannot reach them:"
+        )
+        for name, path in test_only:
+            print(f"    {name}  ({path.relative_to(ROOT)})")
+        print(
+            "\n  Not automatically a fault. A test seam is a real answer, and so\n"
+            "  is a reference implementation the tests hold another copy to —\n"
+            "  `floatToPcm16` is exactly that, and `audioRecorder.worklet.test.ts`\n"
+            "  explains why the copy with the tests is not the copy with the\n"
+            "  microphone. What this list is for is the *other* kind: a feature\n"
+            "  designed, written and tested, that no screen can reach. If an entry\n"
+            "  is deliberate, say so where it is defined."
+        )
 
     print(f"check-dead-exports: {scanned} exports, all of them referenced.")
     for path in sorted(aliased):
