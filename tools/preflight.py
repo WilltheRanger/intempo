@@ -74,13 +74,10 @@ FAST: list[tuple[str, list[str], Path]] = [
 #: The point is that the list is *visible*. A gate that exists only in a
 #: blocked workflow is a gate that is not running, and the way that fact stays
 #: known is by being said on every preflight rather than remembered.
-NOT_COVERED: list[tuple[str, str]] = [
-    (
-        "EDIT_LOG entry (CI: log-entry)",
-        "needs a base..HEAD range, so it belongs at commit time — "
-        "run `python3 tools/check-log-entry.py` with the range yourself",
-    ),
-]
+#: Empty since 2026-09-10, and worth keeping rather than deleting: the one
+#: entry it held was the `EDIT_LOG` gate, and that log is gone. A future gate
+#: that CI can run and this cannot goes here, so the gap stays visible.
+NOT_COVERED: list[tuple[str, str]] = []
 
 
 def migrations_gate() -> tuple[str, bool, float] | None:

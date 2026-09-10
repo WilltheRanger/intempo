@@ -18,24 +18,34 @@ These are the "Operating principles" and "Build-time activity logging"
 rules from the spec's Part II (see the note above — the spec is private).
 They are not optional polish.
 
-**The four logs — keep them current as you work:**
+**The three logs — keep them current as you work:**
 
 | File | When to write | What goes in |
 |---|---|---|
-| `EDIT_LOG.md` | After every meaningful change (~5–30 min granularity) | Newest entry at the TOP. What changed, why, tests run, known side effects, rollback. Use the format already in the file. |
+| **The commit message** | Every commit | What changed, why, tests run, known side effects, rollback. This is the entry. Atomic, frequent, descriptive. |
 | `DECISIONS.md` | Only on a real "X over Y because Z" architectural call | Context, decision, alternatives considered, trade-offs accepted. |
 | `TUNING_LOG.md` | Every Batch 3 audio-threshold change | Old value → new value, clip-by-clip regression across all six fixtures, rationale. |
-| Git history | Every commit | Atomic, frequent, descriptive commits. |
 
-`tools/check-log-entry.py` enforces the `EDIT_LOG.md` row, and CI runs it on
-every push and pull request. It exists because a commit landed without its
-entry on 2026-08-26 — the script writing the entry failed on a relative path
-while the `git commit` beside it succeeded — and nothing noticed. It cannot
-check that an entry is *good*; it checks that the change did not go out in
-silence.
+**There was a fourth, `EDIT_LOG.md`, and it was removed on 2026-09-10.**
+Measured before removing it rather than argued: every commit carried a detailed
+message *and* a log entry roughly **1.8× its length** saying the same thing, and
+668 entries had reached **43,577 lines** — a quarter of every diff, and the
+most-modified file in the repository. Its stated reason for existing was that a
+commit had once landed without an entry and nothing noticed, which is a guard on
+the log rather than an argument for it.
 
-Five more Python checks run on every push beside it, and a change that trips
-one is not merged: `check-brand-assets.py` (a new asset shipping as the Expo
+What it did uniquely — a chronological narrative, rollback notes, corrections of
+earlier entries — git already provides through `git log -p`, attached to the
+diff it describes instead of a thousand lines away from it. **`git log` is the
+running account**, and roughly a dozen code comments still say "see
+`EDIT_LOG.md`": they mean that history, which is in `git log -- EDIT_LOG.md`.
+They were not rewritten, for the reason §5 gives about pointers.
+
+The trade this accepts: nothing now enforces that a change is described. The
+commit message is the only record, so write it as one.
+
+Four Python checks run on every push, and a change that trips one is not
+merged: `check-brand-assets.py` (a new asset shipping as the Expo
 starter's, or a listed one drawn and its line now a false claim),
 `check-dead-exports.py` (a named export nothing else in the corpus references),
 `check-dependencies.py` (npm and `pip-audit` advisories, added to CI
