@@ -1,12 +1,17 @@
 /**
  * Colour tokens. The only place a hex value may appear in this codebase.
  *
+ * **Two palettes, and neither is exported as `colors`.** Which one the app is
+ * running is decided in `resolved.ts`, which reads the system setting — this
+ * module stays free of `react-native` so it can be imported by a test, which
+ * `material.test.ts` and `contrast.test.ts` both do.
+ *
  * The eight base tokens were approved as part of the design brief. The three
  * `*Pressed` / `borderStrong` entries are state variants, not new colours:
  * React Native has no `:hover`, `:focus`, or `:active`, so every interactive
  * state has to be an explicit value rather than a derived one.
  */
-export const colors = {
+export const lightColors = {
   /**
    * Warm ivory page background.
    *
@@ -179,4 +184,133 @@ export const colors = {
   verdictBad: '#C53B3B',
 } as const;
 
-export type ColorToken = keyof typeof colors;
+export type ColorToken = keyof typeof lightColors;
+
+/**
+ * A complete palette.
+ *
+ * `Record<ColorToken, string>` rather than `typeof colors`: the literal types
+ * `as const` produces would demand the dark palette use the light palette's
+ * exact hexes, which is the opposite of the point. What this does keep is the
+ * **key set** — a token added to one palette and forgotten in the other is a
+ * type error, which is the drift worth catching.
+ */
+export type Palette = Record<ColorToken, string>;
+
+/**
+ * The same tokens, on a warm dark ground.
+ *
+ * **Warm, not neutral.** The app already contained a dark pair — `actionBg`
+ * `#1A1714` and `actionText` `#FBFAF7`, which the camera scanner has used as
+ * its ground since it was built — so this is that pair grown into a palette
+ * rather than a grey theme bolted beside an ivory one. A neutral dark would
+ * have made the gold read green.
+ *
+ * **Every ratio below is measured, not estimated**, the same way the light
+ * palette's are, and `contrast.test.ts` holds all of them.
+ *
+ * Three things had to move in the opposite direction from the light palette,
+ * and each of them is a place where "invert the colours" would have been
+ * wrong:
+ *
+ *  - **The verdict hues are lighter here, not darker.** They were darkened to
+ *    clear AA on ivory; on ink the same values fall through the floor.
+ *  - **`accent` and `accentText` swap jobs.** In light mode `accentText` is the
+ *    *darker* gold, because the brand gold misses 4.5:1 on ivory. Here the
+ *    brand gold clears AA-for-marks on the page (4.77) and misses text on a
+ *    card (4.20), so the text-safe gold is the *lighter* one. The light
+ *    palette's own comment predicted this: it records `accent` measuring
+ *    4.52:1 on the scanner's ink ground where `accentText` falls to 3.26.
+ *  - **The primary action inverts.** An ink button on ivory becomes an ivory
+ *    button on ink; `actionBg` and `actionText` trade values.
+ *
+ * `surface` sits **1.14:1** above `bg`. That is deliberately close, and it is
+ * the light palette's relationship carried over rather than a new one — white
+ * cards sit 1.12:1 above the ivory page there. A card is meant to be a slight
+ * lift, not a box.
+ */
+export const darkColors: Palette = {
+  /** Warm near-black page. The light palette's `textPrimary`, used as ground. */
+  bg: '#14110E',
+  /** Cards and raised surfaces. 1.14:1 above the page — a lift, not a box. */
+  surface: '#221E19',
+
+  /** Warm ivory. 18.02:1 on the page, 15.87:1 on a card. */
+  textPrimary: '#FBFAF7',
+  /** Composer names, supporting copy. 8.30:1 / 7.31:1. */
+  textSecondary: '#B5AB9C',
+  /** Metadata, placeholders, disabled text. 5.55:1 / 4.88:1 — clears AA on both. */
+  textTertiary: '#948A7D',
+
+  border: '#332C25',
+  borderStrong: '#3D362E',
+
+  /**
+   * The brand gold, unchanged. **4.77:1** on the page and 4.20:1 on a card:
+   * clears the 3:1 floor for icons, borders and fills everywhere, and misses
+   * text on a card — exactly the role it plays in light mode, for the opposite
+   * arithmetic reason.
+   */
+  accent: '#9A7B4F',
+  /**
+   * The gold as text. **Lighter** here where the light palette goes darker.
+   * 7.34:1 on the page, 6.46:1 on a card.
+   */
+  accentText: '#C09C66',
+
+  /** Inverted: ivory button, ink label. 18.02:1. */
+  actionBg: '#FBFAF7',
+  actionText: '#14110E',
+  /**
+   * Unchanged, and that is not an oversight. This is chrome on a *dark
+   * surface*, and the scanner is still dark — it simply stops being the only
+   * screen that is.
+   */
+  onDarkMuted: 'rgba(251, 250, 247, 0.55)',
+
+  actionBgPressed: '#E8E3D9',
+  surfacePressed: '#2A241E',
+
+  /**
+   * Dark glass. Same 0.80 opacity as the light material and for the same
+   * reason — the content behind should survive as shape and colour, not as
+   * text. Composited worst case is over white: rgb(72, 69, 67), where
+   * `textPrimary` measures **9.11:1**; over black it is 17.87:1.
+   */
+  glassTint: 'rgba(26, 23, 20, 0.80)',
+  /** `glassTint` over `bg`, opaque. What Reduce Transparency settles to. */
+  glassOpaque: '#191613',
+  /**
+   * Far weaker than the light material's catch. A bright specular on a dark
+   * pane reads as a smear rather than as light falling across glass.
+   */
+  glassSpecular: 'rgba(255, 255, 255, 0.10)',
+  /** The lit rim. Half a pixel, never a stroke. */
+  glassEdge: 'rgba(255, 255, 255, 0.18)',
+  /**
+   * Kept dark, and paired with `glassEdge` exactly as in light mode: the rim
+   * carries the shape over dark content, and this carries it over light content
+   * — a page of notation scrolling underneath.
+   */
+  glassSeparator: 'rgba(0, 0, 0, 0.36)',
+
+  /** Stronger than the light scrim: a sheet here is lighter than its ground. */
+  scrim: 'rgba(8, 6, 5, 0.58)',
+
+  /**
+   * Lightened, not darkened. The light values were pushed *down* to clear AA on
+   * ivory; on ink they fail. Hues held so a verdict reads the same in either
+   * mode, and they remain separable under deuteranopia and protanopia.
+   */
+  verdictOn: '#4FBF7F',
+  verdictMid: '#D6A93F',
+  verdictBad: '#F0736F',
+} as const;
+
+export type ColorScheme = 'light' | 'dark';
+
+/** The palette for a scheme. The only place either object is chosen. */
+export function paletteFor(scheme: ColorScheme): Palette {
+  return scheme === 'dark' ? darkColors : lightColors;
+}
+

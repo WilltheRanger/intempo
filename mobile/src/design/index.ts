@@ -1,4 +1,14 @@
-export { colors, type ColorToken } from './colors';
+export {
+  lightColors,
+  darkColors,
+  paletteFor,
+  type ColorToken,
+  type ColorScheme,
+  type Palette,
+} from './colors';
+// `colors` is the palette *this launch resolved* — see `resolved.ts` for why
+// that decision has to happen at import rather than in an effect.
+export { colors, scheme } from './resolved';
 export { spacing, type SpacingToken } from './spacing';
 export { radii, type RadiusToken } from './radii';
 export {

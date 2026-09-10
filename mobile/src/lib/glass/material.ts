@@ -1,4 +1,4 @@
-import { colors } from '../../design/colors';
+import type { Palette } from '../../design/colors';
 
 /**
  * Which of the glass layers a surface draws, and on what ground.
@@ -50,14 +50,16 @@ export interface GlassMaterial {
 /**
  * The translucent material — five layers over whatever scrolls beneath.
  */
-const REGULAR: GlassMaterial = {
-  diffusion: true,
-  refraction: true,
-  specular: true,
-  separator: true,
-  edge: true,
-  fill: colors.glassTint,
-};
+function regular(palette: Palette): GlassMaterial {
+  return {
+    diffusion: true,
+    refraction: true,
+    specular: true,
+    separator: true,
+    edge: true,
+    fill: palette.glassTint,
+  };
+}
 
 /**
  * The fallback: a legitimate solid control, not a broken glass one.
@@ -68,15 +70,27 @@ const REGULAR: GlassMaterial = {
  * and on any browser that declines the blur; this makes the same fallback
  * reachable on purpose rather than only by accident.
  */
-const OPAQUE: GlassMaterial = {
-  diffusion: false,
-  refraction: false,
-  specular: false,
-  separator: true,
-  edge: false,
-  fill: colors.glassOpaque,
-};
+function opaque(palette: Palette): GlassMaterial {
+  return {
+    diffusion: false,
+    refraction: false,
+    specular: false,
+    separator: true,
+    edge: false,
+    fill: palette.glassOpaque,
+  };
+}
 
-export function glassMaterial(reduceTransparency: boolean): GlassMaterial {
-  return reduceTransparency ? OPAQUE : REGULAR;
+/**
+ * @param palette the palette this launch resolved. Passed in rather than
+ * imported, for two reasons: this module stays free of `react-native` so its
+ * test can load it, and the fill has to be the *running* theme's glass — dark
+ * glass is a dark tint, not an inverted light one, so a hardcoded import would
+ * have shipped a pale bar floating over a dark app.
+ */
+export function glassMaterial(
+  reduceTransparency: boolean,
+  palette: Palette,
+): GlassMaterial {
+  return reduceTransparency ? opaque(palette) : regular(palette);
 }

@@ -1,23 +1,37 @@
 import { describe, expect, it } from 'vitest';
 
-import { colors } from '../../design/colors';
+import { lightColors, darkColors, type Palette } from '../../design/colors';
+
+/**
+ * Both palettes, every assertion.
+ *
+ * The glass tokens are the one group `audit-a11y.mjs` cannot check, because a
+ * translucent surface has no fixed ground — so this file is where the material
+ * is held honest, and running it against one palette would have left the dark
+ * material entirely unchecked. `describe.each` rather than a copied block: two
+ * copies is how the second one stops being updated.
+ */
+const palettes: [string, Palette][] = [
+  ['light', lightColors],
+  ['dark', darkColors],
+];
 import { glassMaterial } from './material';
 
 /**
  * The Reduce Transparency fallback, as a rule rather than as a ternary in a
  * component nothing can render under test.
  */
-describe('glassMaterial', () => {
+describe.each(palettes)('glassMaterial (%s palette)', (_name, palette) => {
   it('draws the full stack when transparency is allowed', () => {
-    const material = glassMaterial(false);
+    const material = glassMaterial(false, palette);
     expect(material.diffusion).toBe(true);
     expect(material.refraction).toBe(true);
     expect(material.specular).toBe(true);
-    expect(material.fill).toBe(colors.glassTint);
+    expect(material.fill).toBe(palette.glassTint);
   });
 
   it('drops every translucency effect when transparency is reduced', () => {
-    const material = glassMaterial(true);
+    const material = glassMaterial(true, palette);
     expect(material.diffusion).toBe(false);
     expect(material.refraction).toBe(false);
     expect(material.specular).toBe(false);
@@ -27,7 +41,7 @@ describe('glassMaterial', () => {
     // The lens bends what the blur is sampling. Refraction without diffusion is
     // a filter over nothing, and on the web the two share one declaration.
     for (const reduced of [false, true]) {
-      const material = glassMaterial(reduced);
+      const material = glassMaterial(reduced, palette);
       if (material.refraction) {
         expect(material.diffusion).toBe(true);
       }
@@ -37,21 +51,21 @@ describe('glassMaterial', () => {
   it('keeps the separation ring in both materials', () => {
     // The one layer that is shape rather than effect. A control whose edge
     // cannot be found is a worse outcome than a control that is not glass.
-    expect(glassMaterial(false).separator).toBe(true);
-    expect(glassMaterial(true).separator).toBe(true);
+    expect(glassMaterial(false, palette).separator).toBe(true);
+    expect(glassMaterial(true, palette).separator).toBe(true);
   });
 
   it('pairs the bright edge with translucency only', () => {
     // Bright and dark hairlines are never used apart *while the ground is
     // unknown*. Opaque, the ground is known and the bright line is a stray
     // mark, so the pairing rule retires with the translucency that motivated it.
-    expect(glassMaterial(false).edge).toBe(true);
-    expect(glassMaterial(true).edge).toBe(false);
+    expect(glassMaterial(false, palette).edge).toBe(true);
+    expect(glassMaterial(true, palette).edge).toBe(false);
   });
 
   it('falls back to an opaque ground, not a translucent one', () => {
-    const fill = glassMaterial(true).fill;
-    expect(fill).toBe(colors.glassOpaque);
+    const fill = glassMaterial(true, palette).fill;
+    expect(fill).toBe(palette.glassOpaque);
     expect(fill).not.toMatch(/rgba/);
   });
 
@@ -59,9 +73,9 @@ describe('glassMaterial', () => {
     // `glassOpaque` is `glassTint` composited over `bg`. Computed here rather
     // than trusted, so the two tokens cannot drift apart unnoticed — the point
     // of the fallback is that a bar stops moving without changing hue.
-    const tint = colors.glassTint.match(/[\d.]+/g)!.map(Number);
+    const tint = palette.glassTint.match(/[\d.]+/g)!.map(Number);
     const [tr, tg, tb, alpha] = tint;
-    const bg = colors.bg
+    const bg = palette.bg
       .slice(1)
       .match(/../g)!
       .map((pair) => parseInt(pair, 16));
@@ -71,6 +85,6 @@ describe('glassMaterial', () => {
     const expected = `#${composited
       .map((channel) => channel.toString(16).toUpperCase().padStart(2, '0'))
       .join('')}`;
-    expect(colors.glassOpaque).toBe(expected);
+    expect(palette.glassOpaque).toBe(expected);
   });
 });

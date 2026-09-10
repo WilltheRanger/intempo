@@ -87,7 +87,7 @@ export function GlassSurface({ children, radius, style }: GlassSurfaceProps) {
   // Gradient ids are document-global, so two surfaces on one screen would
   // otherwise share — and fight over — the same definition.
   const gradientId = `glass-spec-${useId()}`;
-  const material = glassMaterial(useReducedTransparency());
+  const material = glassMaterial(useReducedTransparency(), colors);
 
   return (
     <View style={[styles.container, { borderRadius: radius }, style]}>

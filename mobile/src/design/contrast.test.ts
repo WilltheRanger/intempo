@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { colors } from './colors';
+import { lightColors as colors, darkColors } from './colors';
 
 /**
  * Contrast, as arithmetic rather than as a claim in a comment.
@@ -91,3 +91,81 @@ describe('chrome on the dark ground', () => {
     expect(contrast('#8E8C89', colors.actionBg)).toBeGreaterThanOrEqual(BODY);
   });
 });
+
+
+/**
+ * The dark palette, held to exactly the same arithmetic.
+ *
+ * Written as a loop over both palettes rather than as a second copy of the
+ * light block, because two copies is how the *second* one stops being updated
+ * — which is the same failure that put an SSRF in one of two twin fetch
+ * functions on 2026-09-09.
+ *
+ * The `accent` case is the interesting one and it is asserted in both
+ * directions: on ivory the brand gold misses body text and the *darker*
+ * `accentText` carries it; on ink it misses body text on a card and the
+ * *lighter* one carries it. Same role, opposite arithmetic, and a test that
+ * only checked one ground would have let the wrong token ship.
+ */
+describe('every palette clears AA on its own grounds', () => {
+  const palettes = [
+    ['light', colors],
+    ['dark', darkColors],
+  ] as const;
+
+  const bodyTokens = [
+    'textPrimary',
+    'textSecondary',
+    'textTertiary',
+    'accentText',
+    'verdictOn',
+    'verdictMid',
+    'verdictBad',
+  ] as const;
+
+  for (const [mode, palette] of palettes) {
+    for (const ground of ['bg', 'surface'] as const) {
+      for (const token of bodyTokens) {
+        it(`${mode}: ${token} reads as body text on ${ground}`, () => {
+          expect(contrast(palette[token], palette[ground])).toBeGreaterThanOrEqual(BODY);
+        });
+      }
+
+      it(`${mode}: accent clears the non-text floor on ${ground}`, () => {
+        expect(contrast(palette.accent, palette[ground])).toBeGreaterThanOrEqual(LARGE);
+      });
+
+      it(`${mode}: a primary action's label reads on it`, () => {
+        expect(contrast(palette.actionText, palette.actionBg)).toBeGreaterThanOrEqual(BODY);
+      });
+    }
+
+    it(`${mode}: a card is a lift off the page, not a box`, () => {
+      // Both palettes hold the same relationship: light 1.12:1, dark 1.14:1.
+      const lift = contrast(palette.surface, palette.bg);
+      expect(lift).toBeGreaterThan(1.05);
+      expect(lift).toBeLessThan(1.3);
+    });
+
+    it(`${mode}: ink still reads on glass over the worst content behind it`, () => {
+      // A translucent surface has no fixed ground, so the check is the
+      // composite over the extremes: a page of black notation, and white paper.
+      for (const behind of ['#000000', '#FFFFFF']) {
+        expect(contrast(palette.textPrimary, over(palette.glassTint, behind))).toBeGreaterThanOrEqual(BODY);
+      }
+    });
+  }
+});
+
+/** Composite an `rgba(...)` tint over an opaque hex ground. */
+function over(tint: string, behind: string): string {
+  const [r, g, b, a] = tint.match(/[\d.]+/g)!.map(Number);
+  const channel = (at: number) => parseInt(behind.replace('#', '').slice(at, at + 2), 16);
+  const mix = (fg: number, bgc: number) => Math.round(fg * a + bgc * (1 - a));
+  return (
+    '#' +
+    [mix(r, channel(0)), mix(g, channel(2)), mix(b, channel(4))]
+      .map((v) => v.toString(16).padStart(2, '0'))
+      .join('')
+  );
+}

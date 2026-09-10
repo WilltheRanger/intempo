@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import appJson from '../../app.json';
-import { colors } from './colors';
+import { lightColors as colors } from './colors';
 
 /**
  * The colours in `app.json`, against the tokens they are copies of.
@@ -25,15 +25,30 @@ import { colors } from './colors';
 
 const config = appJson.expo as {
   backgroundColor: string;
+  userInterfaceStyle: string;
   android: { adaptiveIcon: { backgroundColor: string } };
 };
 
 describe('app.json colours', () => {
+  it('lets the operating system tell the app it is dark', () => {
+    // This was `"light"`, which pinned the app to one appearance: iOS reports
+    // `light` from `Appearance.getColorScheme()` regardless of the device
+    // setting, so `resolved.ts` would choose the ivory palette on a dark phone
+    // and dark mode would simply never appear. Nothing else would look wrong,
+    // which is why it is asserted rather than remembered.
+    expect(config.userInterfaceStyle).toBe('automatic');
+  });
+
   it('paints the same paper the app does', () => {
     // `expo.backgroundColor` needs `expo-system-ui` installed to reach iOS at
     // all — without it `expo prebuild` warns and drops it, which is how a
     // wrong colour went unnoticed twice over: not applied, and not the right
     // one either.
+    //
+    // It is the **light** value, and that is not an oversight: this key takes
+    // one colour and cannot vary by appearance. `App.tsx` corrects it at boot
+    // with `SystemUI.setBackgroundColorAsync` for a dark launch, so this
+    // static value is the light default and the floor under a failed call.
     expect(config.backgroundColor.toUpperCase()).toBe(colors.bg.toUpperCase());
   });
 

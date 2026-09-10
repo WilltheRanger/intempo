@@ -1,4 +1,5 @@
 import {
+  DarkTheme,
   DefaultTheme,
   NavigationContainer,
   type Theme,
@@ -23,7 +24,9 @@ import { hydratePracticeTempos } from './data/practiceTempo';
 import { hydratePreferences } from './data/preferences';
 import { hydratePendingAnalysis } from './data/practice/pendingAnalysis';
 import { hydrateOnboardingDraft } from './data/onboardingDraft';
-import { colors, fontsToLoad } from './design';
+import * as SystemUI from 'expo-system-ui';
+
+import { colors, fontsToLoad, scheme } from './design';
 import { RootNavigator } from './navigation/RootNavigator';
 import { startLibraryCache } from './data/cache/libraryCache';
 import { startTakeDrainer } from './lib/sync/takeDrainer';
@@ -32,10 +35,16 @@ const queryClient = createQueryClient();
 
 /**
  * React Navigation paints its own background between screens; without this it
- * would flash white against the warm ivory page.
+ * would flash white against the warm ivory page — or, in dark mode, against a
+ * page that is not white at all.
+ *
+ * The base is `DarkTheme` when the app is dark. Every colour below is
+ * overridden from the palette, so the base contributes only its `dark: true`
+ * flag — which the library's own built-ins read, and which is the difference
+ * between a modal's default backdrop being right and being a pale rectangle.
  */
 const navigationTheme: Theme = {
-  ...DefaultTheme,
+  ...(scheme === 'dark' ? DarkTheme : DefaultTheme),
   colors: {
     ...DefaultTheme.colors,
     background: colors.bg,
@@ -92,6 +101,12 @@ export default function App() {
   // have to be in memory before anything can consult them. Fonts gate the
   // first frame anyway, which is more than enough time for one storage read.
   useEffect(() => {
+    // The colour the OS paints behind the app — on launch, and behind an
+    // over-scroll bounce. `app.json` can only carry one value and it carries
+    // the light one, so a dark launch has to correct it here or every bounce
+    // flashes ivory. Never rejects in a way worth handling: the fallback is
+    // the static value, which is merely the wrong shade.
+    void SystemUI.setBackgroundColorAsync(colors.bg).catch(() => {});
     void hydratePreferences();
     void hydratePracticeTempos();
     // Restore a take the server accepted before the browser or app was closed.
@@ -170,11 +185,14 @@ export default function App() {
       <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         {/*
-          Visible, with dark content for the ivory page beneath it. `app.json`
-          pins `userInterfaceStyle: light`, so this stays correct even when the
-          device is in dark mode.
+          Dark glyphs on the ivory page, light glyphs on the ink one.
+
+          This used to be a hardcoded `"dark"` with a comment explaining that
+          `app.json` pinned `userInterfaceStyle: light` so it stayed correct on
+          a dark device. That pin is now `automatic`, so the comment's premise
+          is gone and the value has to follow the palette this launch resolved.
         */}
-        <StatusBar style="dark" />
+        <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
         {typographyReady ? (
           <NavigationContainer
             theme={navigationTheme}
