@@ -77,23 +77,34 @@ export const lightColors = {
    * Darkened only as far as AA needed, exactly as the verdict hues below were:
    * **4.90:1** on the page and 5.47:1 on a card.
    *
-   * **Two tokens rather than one darker accent**, because the scanner is the
-   * app's one dark screen and `accent` already measures 4.52:1 against its ink
-   * ground — where this darker one would fall to **3.26** and fail. Neither
-   * value is right on both grounds; which ground the text sits on decides.
+   * **Two tokens rather than one darker accent**, because `accent` already
+   * measures 4.52:1 against `darkBg`, the scanner's ink ground — where this
+   * darker one would fall to **3.26** and fail. Neither value is right on both
+   * grounds; which ground the text sits on decides.
    */
   accentText: '#7F6541',
 
-  /**
-   * Primary action surface and its label.
-   *
-   * These two double as the palette for full-bleed dark surfaces — the camera
-   * scanner uses `actionBg` as its ground and `actionText` for chrome, rather
-   * than introducing a parallel set of near-blacks.
-   */
+  /** Primary action surface and its label. */
   actionBg: '#1A1714',
   actionText: '#FBFAF7',
-  /** Secondary text and inactive chrome on a dark surface. */
+
+  /**
+   * A surface that is dark in **both** appearances, and what sits on it.
+   *
+   * The camera scanner: a live viewfinder and the photographs coming off it
+   * are the content, and the chrome around them is dark so the eye stays on
+   * the page being framed. That is a property of the screen, not of the
+   * appearance, so it does not invert.
+   *
+   * **These were `actionBg`/`actionText` doing two jobs**, which cost nothing
+   * while the app had one appearance and exactly matched. The moment the
+   * primary action inverted — ink button on ivory becomes ivory button on ink
+   * — the scanner's ground inverted with it and its ivory chrome came out
+   * ivory-on-ivory. Two jobs, two names.
+   */
+  darkBg: '#1A1714',
+  onDark: '#FBFAF7',
+  /** Secondary text and inactive chrome on that surface. */
   onDarkMuted: 'rgba(251, 250, 247, 0.55)',
 
   /** Pressed states. */
@@ -200,11 +211,11 @@ export type Palette = Record<ColorToken, string>;
 /**
  * The same tokens, on a warm dark ground.
  *
- * **Warm, not neutral.** The app already contained a dark pair — `actionBg`
- * `#1A1714` and `actionText` `#FBFAF7`, which the camera scanner has used as
- * its ground since it was built — so this is that pair grown into a palette
- * rather than a grey theme bolted beside an ivory one. A neutral dark would
- * have made the gold read green.
+ * **Warm, not neutral.** The app already contained a dark pair — `darkBg`
+ * `#1A1714` and `onDark` `#FBFAF7`, which the camera scanner has used as its
+ * ground since it was built — so this is that pair grown into a palette rather
+ * than a grey theme bolted beside an ivory one. A neutral dark would have made
+ * the gold read green.
  *
  * **Every ratio below is measured, not estimated**, the same way the light
  * palette's are, and `contrast.test.ts` holds all of them.
@@ -220,7 +231,8 @@ export type Palette = Record<ColorToken, string>;
  *    brand gold clears AA-for-marks on the page (4.77) and misses text on a
  *    card (4.20), so the text-safe gold is the *lighter* one. The light
  *    palette's own comment predicted this: it records `accent` measuring
- *    4.52:1 on the scanner's ink ground where `accentText` falls to 3.26.
+ *    4.52:1 on `darkBg`, the scanner's ink ground, where `accentText` falls
+ *    to 3.26.
  *  - **The primary action inverts.** An ink button on ivory becomes an ivory
  *    button on ink; `actionBg` and `actionText` trade values.
  *
@@ -261,11 +273,13 @@ export const darkColors: Palette = {
   /** Inverted: ivory button, ink label. 18.02:1. */
   actionBg: '#FBFAF7',
   actionText: '#14110E',
+
   /**
-   * Unchanged, and that is not an oversight. This is chrome on a *dark
-   * surface*, and the scanner is still dark — it simply stops being the only
-   * screen that is.
+   * Identical to the light palette's, and that is the whole point of the pair
+   * existing: the scanner is dark in both appearances because a viewfinder is.
    */
+  darkBg: '#1A1714',
+  onDark: '#FBFAF7',
   onDarkMuted: 'rgba(251, 250, 247, 0.55)',
 
   actionBgPressed: '#E8E3D9',

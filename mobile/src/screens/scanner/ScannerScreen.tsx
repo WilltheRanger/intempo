@@ -383,13 +383,13 @@ export function ScannerScreen() {
           <X
             size={ICON_SIZE.lg}
             strokeWidth={ICON_STROKE_WIDTH}
-            color={colors.actionText}
+            color={colors.onDark}
           />
         </Pressable>
 
         <Text
           variant="metadataSmall"
-          color={pages.length > 0 ? 'actionText' : 'onDarkMuted'}
+          color={pages.length > 0 ? 'onDark' : 'onDarkMuted'}
         >
           {pageCountLabel(pages.length)}
         </Text>
@@ -413,7 +413,7 @@ export function ScannerScreen() {
             <FlashIcon
               size={ICON_SIZE.lg}
               strokeWidth={ICON_STROKE_WIDTH}
-              color={flashOn ? colors.actionText : colors.onDarkMuted}
+              color={flashOn ? colors.onDark : colors.onDarkMuted}
             />
           </Pressable>
         ) : (
@@ -477,7 +477,7 @@ export function ScannerScreen() {
             */}
             <Text
               variant="metadataSmall"
-              color="actionText"
+              color="onDark"
               onPress={
                 doubt.advice.route === 'cameraApp'
                   ? () => void retakeWithSystemCamera()
@@ -529,7 +529,7 @@ export function ScannerScreen() {
               <Images
                 size={ICON_SIZE.lg}
                 strokeWidth={ICON_STROKE_WIDTH}
-                color={colors.actionText}
+                color={colors.onDark}
               />
             </Pressable>
           )}
@@ -567,7 +567,7 @@ export function ScannerScreen() {
           >
             <Text
               variant="button"
-              color={pages.length === 0 ? 'onDarkMuted' : 'actionText'}
+              color={pages.length === 0 ? 'onDarkMuted' : 'onDark'}
             >
               Done
             </Text>
@@ -602,7 +602,7 @@ function FallbackAction({
   return (
     <Text
       variant="metadataSmall"
-      color="actionText"
+      color="onDark"
       onPress={() => onPress(action.route)}
       accessibilityRole="button"
       style={styles.unavailableAction}
@@ -658,7 +658,7 @@ const styles = StyleSheet.create({
   },
   screen: {
     flex: 1,
-    backgroundColor: colors.actionBg,
+    backgroundColor: colors.darkBg,
   },
   topBar: {
     flexDirection: 'row',
@@ -709,7 +709,7 @@ const styles = StyleSheet.create({
     height: CAPTURE_BUTTON_SIZE,
     borderRadius: CAPTURE_BUTTON_SIZE / 2,
     borderWidth: 3,
-    borderColor: colors.actionText,
+    borderColor: colors.onDark,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -720,7 +720,7 @@ const styles = StyleSheet.create({
     width: CAPTURE_BUTTON_SIZE - 14,
     height: CAPTURE_BUTTON_SIZE - 14,
     borderRadius: (CAPTURE_BUTTON_SIZE - 14) / 2,
-    backgroundColor: colors.actionText,
+    backgroundColor: colors.onDark,
   },
   doneButton: {
     // Both axes. "Done" is four characters, which measured 40pt wide — a target

@@ -1,5 +1,49 @@
 # InTempo Decisions
 
+## 2026-09-10 — A surface that is dark in both appearances gets its own token pair
+
+**Context.** `actionBg` `#1A1714` and `actionText` `#FBFAF7` did two jobs. They
+were the primary action — ink button, ivory label — and they were also the
+camera scanner's ground and chrome, which the light palette's own comment
+recorded as deliberate: "these two double as the palette for full-bleed dark
+surfaces … rather than introducing a parallel set of near-blacks." While the app
+had one appearance that was free. The two roles wanted the same two colours and
+there was nothing to tell apart.
+
+Dark mode ended that on the day it shipped. The primary action inverts — an ivory
+button on ink — so `actionBg` became ivory, and the scanner's ground inverted
+with it while `onDarkMuted` (ivory at 55%) stayed put. The first dark
+accessibility sweep found the viewfinder's chrome at **1.00:1**: ivory on ivory,
+a screen with nothing on it.
+
+**Decision.** Split the roles into two pairs. `actionBg`/`actionText` invert with
+the appearance and belong to the primary action. `darkBg`/`onDark`/`onDarkMuted`
+are **identical in both palettes** and belong to a surface that is dark because
+of what it shows, not because of a setting — today, the camera scanner and the
+photographs coming off it. `contrast.test.ts` asserts the identity directly, so
+anything that ties those three back to an appearance-varying token fails there
+rather than on a screenshot nobody takes of the scanner in dark mode.
+
+**Alternatives considered.**
+
+- *Keep one pair and special-case the scanner in its own file.* Rejected: it
+  puts a hex back in a screen, which §4 of `CLAUDE.md` forbids for the reason
+  this project already paid for once, and it leaves the next full-bleed dark
+  surface to rediscover the same trap.
+- *Let the scanner invert.* Rejected on the merits, not on effort. A viewfinder
+  is dark so the eye stays on the page being framed; an ivory scanner in dark
+  mode is not the dark version of the screen, it is the wrong screen.
+- *Drop `Stave`'s `tone="dark"` into the new pair.* It went the other way — the
+  prop had no caller anywhere in the app, so it was removed rather than
+  repointed. Its docstring described a warmup panel that is not dark.
+
+**Trade-off accepted.** Five colour tokens where there were three, and two of
+them hold the same values as two others in the light palette. That duplication
+is the point: the names now say which of the two things a caller meant, and only
+a name can carry that.
+
+---
+
 ## 2026-09-09 — Rate-limit starting a reading, in memory, as a cost guard
 
 **Context.** Three endpoints reach `start_transcription`, each spending a vision

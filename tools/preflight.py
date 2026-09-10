@@ -179,9 +179,17 @@ def walk_the_built_app() -> list[tuple[str, bool, float]]:
             print(f"  FAIL  serve  (the built app never came up on :{PORT})")
             return [("serve", False, 30.0)]
 
+        audit = ["node", str(ROOT / "tools" / "audit-a11y.mjs"), str(PORT)]
         return [
             run("app walk", ["node", str(ROOT / "tools" / "walk-app.mjs"), str(PORT)], MOBILE),
-            run("accessibility", ["node", str(ROOT / "tools" / "audit-a11y.mjs"), str(PORT)], MOBILE),
+            run("accessibility", audit, MOBILE),
+            # **Both appearances, against the same build.** The audit's findings
+            # — touch targets, focus order, accessible names, labels that spill
+            # at 2x text — are palette-independent in principle and not in
+            # practice: a control whose label is drawn in the wrong token is
+            # invisible in exactly one of the two modes. `contrast.test.ts`
+            # holds the dark palette's arithmetic and cannot see any of that.
+            run("accessibility, dark", [*audit, "--dark"], MOBILE),
         ]
     finally:
         server.terminate()
@@ -240,21 +248,24 @@ def audit_the_empty_account() -> list[tuple[str, bool, float]]:
         if not _came_up(port):
             print(f"  FAIL  serve (empty)  (never came up on :{port})")
             return [built, ("serve (empty)", False, 30.0)]
+        empty = [
+            "node",
+            str(ROOT / "tools" / "audit-a11y.mjs"),
+            str(port),
+            "Today",
+            "Library",
+            "Insights",
+            "Profile",
+        ]
         return [
             built,
-            run(
-                "accessibility, empty account",
-                [
-                    "node",
-                    str(ROOT / "tools" / "audit-a11y.mjs"),
-                    str(port),
-                    "Today",
-                    "Library",
-                    "Insights",
-                    "Profile",
-                ],
-                MOBILE,
-            ),
+            run("accessibility, empty account", empty, MOBILE),
+            # Four routes, so the second appearance costs seconds rather than
+            # the ninety the full sweep does. Worth those seconds: an empty
+            # state is mostly type on a bare ground, which is precisely the
+            # composition where reaching for the wrong token leaves nothing
+            # visible at all rather than something that looks slightly off.
+            run("accessibility, empty account, dark", [*empty, "--dark"], MOBILE),
         ]
     finally:
         server.terminate()

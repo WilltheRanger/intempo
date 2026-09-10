@@ -313,13 +313,43 @@ const audit = () => {
     }
   }
 
+  /**
+   * The paint a run of text is actually drawn with.
+   *
+   * **SVG text is painted by `fill`, not by `color`.** This loop read `color`
+   * off every leaf that had text in it, and inside an `<svg>` that value is
+   * whatever `currentColor` would resolve to — black by default, whether or
+   * not a single element refers to it. So every engraved note name and every
+   * music glyph was measured as `#000000` on whatever was behind it.
+   *
+   * On ivory that composites to about 18:1 and passes, which is why the check
+   * looked correct for as long as the app had one appearance. Pointing it at
+   * the dark palette turned the entire notation layer red: **64 findings on
+   * the warmup and the score, none of them real** — `Stave` sets `fill` on all
+   * 21 of its text elements, and the pixels were the right colour the whole
+   * time. A check that cannot see how something is painted does not report
+   * "unknown"; it reports a number, and the number sends you looking for a bug
+   * in the wrong file.
+   *
+   * `fill: none` is text that is deliberately not painted, so it has no
+   * contrast to measure rather than a failing one. A paint server (`url(#…)`)
+   * has no single colour either; falling back to `color` at least measures
+   * something, and nothing in this app uses one.
+   */
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const paint = (el, s) => {
+    if (el.namespaceURI !== SVG_NS) return parse(s.color);
+    if (s.fill === 'none') return null;
+    return parse(s.fill) ?? parse(s.color);
+  };
+
   for (const el of document.querySelectorAll('*')) {
     if (el.children.length > 0) continue;
     const text = (el.textContent || '').trim();
     if (!text) continue;
     if (!visible(el)) continue;
     const s = getComputedStyle(el);
-    const fg = parse(s.color);
+    const fg = paint(el, s);
     const bg = backdrop(el);
     if (!fg || !bg) continue;
     const size = parseFloat(s.fontSize);
@@ -328,8 +358,15 @@ const audit = () => {
     const need = large ? 3 : 4.5;
     const got = ratio(over(fg, bg), bg);
     if (got < need - 0.01) {
+      // The two colours, not just the ratio. A finding that says only "1.27:1"
+      // sends you hunting through the palette; one that names the pair points
+      // at the token. Added while chasing a dark-mode regression where the
+      // ratio alone made three different root causes look identical.
+      const hex = ({ r, g, b }) =>
+        '#' + [r, g, b].map((v) => Math.round(v).toString(16).padStart(2, '0')).join('');
       lowContrast.push(
-        `${text.slice(0, 40).replace(/\s+/g, ' ')} — ${got.toFixed(2)}:1 (needs ${need}) ${Math.round(size)}px`,
+        `${text.slice(0, 40).replace(/\s+/g, ' ')} — ${got.toFixed(2)}:1 (needs ${need}) ` +
+          `${Math.round(size)}px  ${hex(over(fg, bg))} on ${hex(bg)}`,
       );
     }
   }
@@ -704,7 +741,25 @@ let failures = 0;
  * list — a filtered run must not be able to report that every screen has an
  * audit when it looked at four.
  */
-const ONLY = process.argv.slice(3);
+const ONLY = process.argv.slice(3).filter((a) => !a.startsWith('--'));
+
+/**
+ * Which appearance to audit.
+ *
+ * **Added 2026-09-10, with dark mode.** Everything below was written against
+ * one palette and swept one build, so the day the app grew a second appearance
+ * half of what it draws stopped being checked by a browser. `contrast.test.ts`
+ * holds the dark palette's *arithmetic* — every token against its own grounds —
+ * and arithmetic cannot see a touch target, a focus order, an accessible name,
+ * or a label that spills at 2x text. Those are the findings this file exists
+ * for, and they are palette-independent in principle and not in practice: a
+ * control whose label is drawn in the wrong token is invisible in exactly one
+ * of the two modes.
+ *
+ * A flag rather than a positional argument, because argument three onward is
+ * already the route filter.
+ */
+const SCHEME = process.argv.includes('--dark') ? 'dark' : 'light';
 const selected = ONLY.length
   ? ROUTES.filter(([name]) => ONLY.some((want) => name.includes(want)))
   : ROUTES;
@@ -747,7 +802,10 @@ for (const [name, path, options = {}] of selected) {
    * is the owner's under §2. Holding the app to a width no supported phone has
    * would buy nothing and fail forever.
    */
-  const page = await browser.newPage({ viewport: { width: 375, height: 812 } });
+  const page = await browser.newPage({
+    viewport: { width: 375, height: 812 },
+    colorScheme: SCHEME,
+  });
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   if (options.seed) await seedPreferences(page, options.seed);
@@ -806,5 +864,8 @@ for (const [name, path, options = {}] of selected) {
 }
 
 await browser.close();
-console.log(`\n${failures === 0 ? 'PASS' : `FAIL — ${failures} finding(s)`}`);
+console.log(
+  `\n${SCHEME} appearance: ` +
+    `${failures === 0 ? 'PASS' : `FAIL — ${failures} finding(s)`}`,
+);
 process.exit(failures === 0 ? 0 : 1);

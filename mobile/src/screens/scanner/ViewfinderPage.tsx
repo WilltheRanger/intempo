@@ -55,13 +55,13 @@ const styles = StyleSheet.create({
     // The preview is a child that doesn't know about the radius, so the frame
     // does the clipping.
     overflow: 'hidden',
-    backgroundColor: colors.actionBg,
+    backgroundColor: colors.darkBg,
   },
   corner: {
     position: 'absolute',
     width: CORNER,
     height: CORNER,
-    borderColor: colors.actionText,
+    borderColor: colors.onDark,
   },
   topLeft: {
     top: 0,

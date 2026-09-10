@@ -183,14 +183,6 @@ export interface StaveProps {
   notes: StaveItem[];
   clef: Clef;
   /**
-   * Which ground it is drawn on.
-   *
-   * `dark` inverts the ink so the same engraving can sit on the warmup panel.
-   * Not a theme — it is the one place in the app with a full-bleed dark
-   * surface, and the `action*`/`onDark*` pair already exists for exactly that.
-   */
-  tone?: 'light' | 'dark';
-  /**
    * Wrap onto further systems past this width.
    *
    * Give it the space available and the music fills it downwards. Without it
@@ -365,7 +357,6 @@ const MULTI_REST_NUMBER_SIZE = 1.5;
 export function Stave({
   notes,
   clef,
-  tone = 'light',
   maxWidth,
   fitWidth,
   maxNotes,
@@ -382,10 +373,9 @@ export function Stave({
   page,
   layout: precomputed,
 }: StaveProps) {
-  const dark = tone === 'dark';
-  const ink = dark ? colors.actionText : colors.textPrimary;
-  const rule = dark ? colors.onDarkMuted : colors.textSecondary;
-  const label = dark ? colors.onDarkMuted : colors.textTertiary;
+  const ink = colors.textPrimary;
+  const rule = colors.textSecondary;
+  const label = colors.textTertiary;
 
   // The fitting lives in `staveLayout` so that a caller who needs to know
   // where the systems land — the bar picker, breaking the drawing into pages —
@@ -453,8 +443,8 @@ export function Stave({
                     // is — and must never become a surface. Low opacity is how
                     // it can be both: a wash the eye reads as "here", not a
                     // gold panel competing with the notes.
-                    fill={dark ? colors.actionText : colors.accent}
-                    opacity={dark ? 0.16 : 0.14}
+                    fill={colors.accent}
+                    opacity={0.14}
                   />
                 ))
             : null}

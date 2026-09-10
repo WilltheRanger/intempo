@@ -70,17 +70,37 @@ describe('the accent', () => {
     expect(contrast(colors.accent, colors.bg)).toBeLessThan(BODY);
   });
 
-  it('reads as text on the scanner, which is the one dark screen', () => {
+  it('reads as text on the scanner, which is dark in both appearances', () => {
     // And `accentText` does not, which is why there are two tokens rather than
     // one darker accent. Both halves asserted: the reason is the pair.
-    expect(contrast(colors.accent, colors.actionBg)).toBeGreaterThanOrEqual(BODY);
-    expect(contrast(colors.accentText, colors.actionBg)).toBeLessThan(BODY);
+    expect(contrast(colors.accent, colors.darkBg)).toBeGreaterThanOrEqual(BODY);
+    expect(contrast(colors.accentText, colors.darkBg)).toBeLessThan(BODY);
   });
 });
 
-describe('chrome on the dark ground', () => {
+/**
+ * The always-dark surface, and the pair that stopped it inverting by accident.
+ *
+ * `darkBg`/`onDark` were `actionBg`/`actionText` until the dark palette
+ * arrived. The two roles held the same values, so nothing distinguished them
+ * and nothing had to: an ink ground with ivory chrome was both the primary
+ * button and the camera scanner. Inverting the button inverted the scanner
+ * with it, and the sweep found the viewfinder's chrome at **1.00:1** — ivory
+ * on ivory, invisible.
+ *
+ * The identity below is the whole guarantee. Anything that ties these back to
+ * an appearance-varying token fails here rather than on a screenshot nobody
+ * takes of the scanner in dark mode.
+ */
+describe('the always-dark surface', () => {
+  it('is the same colour in both appearances', () => {
+    expect(darkColors.darkBg).toBe(colors.darkBg);
+    expect(darkColors.onDark).toBe(colors.onDark);
+    expect(darkColors.onDarkMuted).toBe(colors.onDarkMuted);
+  });
+
   it('carries its own text', () => {
-    expect(contrast(colors.actionText, colors.actionBg)).toBeGreaterThanOrEqual(BODY);
+    expect(contrast(colors.onDark, colors.darkBg)).toBeGreaterThanOrEqual(BODY);
   });
 
   it('keeps its muted text readable', () => {
@@ -88,7 +108,7 @@ describe('chrome on the dark ground', () => {
     // #8E8C89. Asserted against the composite rather than the token, because
     // the token is an rgba string and contrast is a property of what lands on
     // the screen.
-    expect(contrast('#8E8C89', colors.actionBg)).toBeGreaterThanOrEqual(BODY);
+    expect(contrast('#8E8C89', colors.darkBg)).toBeGreaterThanOrEqual(BODY);
   });
 });
 
