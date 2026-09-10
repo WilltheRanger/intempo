@@ -82,7 +82,13 @@ export function resumeAudio(context: AudioContext): void {
   }
 }
 
-/** Test seam: forget the context so the next call builds a new one. */
+/**
+ * Forget the context so the next call builds a new one.
+ *
+ * @test-seam the module holds one lazily-built `AudioContext` for the life of
+ * the process, and a suite cannot test the building of it twice without a way
+ * to put that back.
+ */
 export function resetAudioContextForTests(): void {
   shared = null;
 }

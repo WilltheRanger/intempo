@@ -102,9 +102,10 @@ export const screenConfig: LinkingOptions<RootStackParamList>['config'] = {
 /**
  * Every screen's path, flattened — `PieceScore` → `pieces/:pieceId/score`.
  *
- * Exported for `linking.test.ts`, which holds this file to the route list. A
- * screen with no path is not a small omission: it is a screen the browser's
- * Back button walks out of the app from, and nothing else would notice.
+ * @test-seam exported for `linking.test.ts`, which holds this file to the
+ * route list — a screen with no path is one the browser's Back button walks
+ * out of the app from, and nothing else would notice. The app itself needs no
+ * flattened view of the config; React Navigation reads the nested one.
  */
 export function pathsByScreen(): Record<string, string> {
   const found: Record<string, string> = {};
