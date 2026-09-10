@@ -18,6 +18,20 @@ export interface IconButtonProps {
   label: string;
   onPress: () => void;
   disabled?: boolean;
+  /**
+   * Which ground this sits on.
+   *
+   * `auto` follows the appearance, which is right everywhere the control is on
+   * the page. `onDark` is for a surface that is dark in *both* appearances — a
+   * full-bleed photograph or the camera viewfinder — where `textPrimary` is
+   * ink in light mode and the glyph disappears. Same distinction, and the same
+   * tokens, as `colors.darkBg`/`onDark`.
+   *
+   * A prop rather than a second component, because the glass material, the
+   * target size and the press behaviour are identical and two copies of those
+   * is how the second one stops being updated.
+   */
+  tone?: 'auto' | 'onDark';
   style?: StyleProp<ViewStyle>;
 }
 
@@ -36,8 +50,17 @@ export function IconButton({
   label,
   onPress,
   disabled = false,
+  tone = 'auto',
   style,
 }: IconButtonProps) {
+  const glyph =
+    tone === 'onDark'
+      ? disabled
+        ? colors.onDarkMuted
+        : colors.onDark
+      : disabled
+        ? colors.textTertiary
+        : colors.textPrimary;
   return (
     <PressableScale
       onPress={onPress}
@@ -61,7 +84,7 @@ export function IconButton({
         <Icon
           size={ICON_SIZE.md}
           strokeWidth={ICON_STROKE_WIDTH}
-          color={disabled ? colors.textTertiary : colors.textPrimary}
+          color={glyph}
         />
       </View>
     </PressableScale>

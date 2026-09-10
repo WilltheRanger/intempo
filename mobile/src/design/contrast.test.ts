@@ -97,6 +97,17 @@ describe('the always-dark surface', () => {
     expect(darkColors.darkBg).toBe(colors.darkBg);
     expect(darkColors.onDark).toBe(colors.onDark);
     expect(darkColors.onDarkMuted).toBe(colors.onDarkMuted);
+    expect(darkColors.onDarkFill).toBe(colors.onDarkFill);
+  });
+
+  it("carries the primary action's light tone, which is why it must not invert", () => {
+    // `PrimaryButton tone="light"` is the ivory pill on the Today hero and the
+    // scanner. It was built out of `actionBg`/`actionText` and therefore drew
+    // an **ink** button on an ink hero in dark mode — the primary action,
+    // invisible, on the one screen it is the point of. It comes from this pair
+    // now, and this is what says so.
+    expect(contrast(darkColors.onDark, darkColors.darkBg)).toBeGreaterThanOrEqual(BODY);
+    expect(contrast(colors.onDark, colors.darkBg)).toBeGreaterThanOrEqual(BODY);
   });
 
   it('carries its own text', () => {

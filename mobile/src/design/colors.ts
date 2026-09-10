@@ -106,6 +106,16 @@ export const lightColors = {
   onDark: '#FBFAF7',
   /** Secondary text and inactive chrome on that surface. */
   onDarkMuted: 'rgba(251, 250, 247, 0.55)',
+  /**
+   * A barely-there fill on that surface — a label pill, a chip.
+   *
+   * **Not `glassSpecular`, which is what the first attempt reached for.** That
+   * one is white at 0.46 for a *highlight* on the glass material; as a fill on
+   * the Today hero it composited to about `#8A8880` and put `onDark` on it at
+   * 3.4:1. This is low enough to read as a separation rather than a surface,
+   * and leaves the label at about 8:1.
+   */
+  onDarkFill: 'rgba(251, 250, 247, 0.16)',
 
   /** Pressed states. */
   actionBgPressed: '#332E28',
@@ -281,6 +291,7 @@ export const darkColors: Palette = {
   darkBg: '#1A1714',
   onDark: '#FBFAF7',
   onDarkMuted: 'rgba(251, 250, 247, 0.55)',
+  onDarkFill: 'rgba(251, 250, 247, 0.16)',
 
   actionBgPressed: '#E8E3D9',
   surfacePressed: '#2A241E',

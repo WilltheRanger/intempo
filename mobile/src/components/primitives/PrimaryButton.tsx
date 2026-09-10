@@ -37,10 +37,17 @@ export interface PrimaryButtonProps {
    */
   size?: 'default' | 'compact';
   /**
-   * `light` inverts the fill for use on a dark ground — cream button, ink
-   * label. Not a second style so much as the same button seen against the
-   * opposite surface; both tones come from the `action*` pair, which the
-   * palette already describes as doubling for full-bleed dark surfaces.
+   * `light` is the ivory button with an ink label, for a ground that is dark
+   * in **both** appearances — the Today hero, the camera viewfinder.
+   *
+   * **It comes from `onDark`/`darkBg`, not from the `action*` pair**, and that
+   * distinction is the whole point of the prop. This used to read "both tones
+   * come from the `action*` pair, which the palette already describes as
+   * doubling for full-bleed dark surfaces" — true when it was written and
+   * false since those two jobs were split. `actionBg`/`actionText` invert with
+   * the appearance, so in dark mode `tone="light"` drew an **ink** button on
+   * an ink hero: the primary action, invisible, on the one screen it is the
+   * point of.
    */
   tone?: 'ink' | 'light';
   style?: StyleProp<ViewStyle>;
@@ -67,7 +74,8 @@ export function PrimaryButton({
 }: PrimaryButtonProps) {
   const inactive = disabled || loading;
   const light = tone === 'light';
-  const labelColor = light ? 'actionBg' : 'actionText';
+  const labelColor = light ? 'darkBg' : 'actionText';
+  const glyphColor = light ? colors.darkBg : colors.actionText;
 
   function handlePress() {
     if (haptic) {
@@ -95,7 +103,7 @@ export function PrimaryButton({
     >
       {loading ? (
         <View style={styles.above}>
-          <ActivityIndicator color={light ? colors.actionBg : colors.actionText} />
+          <ActivityIndicator color={glyphColor} />
         </View>
       ) : (
         <View style={[styles.content, size === 'compact' && styles.contentCompact]}>
@@ -103,7 +111,7 @@ export function PrimaryButton({
             <Icon
               size={size === 'compact' ? ICON_SIZE.sm : ICON_SIZE.md}
               strokeWidth={ICON_STROKE_WIDTH}
-              color={light ? colors.actionBg : colors.actionText}
+              color={glyphColor}
             />
           ) : null}
           <Text variant="button" color={labelColor}>
@@ -133,7 +141,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
   },
   buttonLight: {
-    backgroundColor: colors.actionText,
+    backgroundColor: colors.onDark,
   },
   compact: {
     // Exactly the minimum comfortable target — no smaller.
@@ -148,7 +156,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.actionBgPressed,
   },
   pressedLight: {
-    backgroundColor: colors.surfacePressed,
+    // The ivory dimmed, not the page's pressed surface — which is a *light*
+    // grey in light mode and a dark one in dark mode, so it inverted along
+    // with everything else this tone had to stop inheriting.
+    backgroundColor: colors.onDarkMuted,
   },
   disabled: {
     opacity: disabledOpacity,

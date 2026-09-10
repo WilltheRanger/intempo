@@ -1,10 +1,8 @@
 import { useNavigation } from '@react-navigation/native';
-import { ChevronRight, Plus } from '../../components/icons';
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 
 import { FadeIn } from '../../components/motion';
-import { PressableScale } from '../../components/motion/PressableScale';
 import { AddPieceSheet } from '../../components/pieces/AddPieceSheet';
 import {
   Avatar,
@@ -16,7 +14,7 @@ import {
   SectionHeader,
   Text,
 } from '../../components/primitives';
-import { ContinueSkeleton } from '../../components/skeletons';
+import { SCREEN_GUTTER } from '../../components/primitives/ScreenContainer';
 import { useInsights } from '../../data/hooks/useInsights';
 import { useRecentTakes } from '../../data/hooks/useLatestTake';
 import { useMe } from '../../data/hooks/useMe';
@@ -31,15 +29,7 @@ import {
   forgetPendingAnalysis,
   usePendingAnalysis,
 } from '../../data/practice/pendingAnalysis';
-import {
-  colors,
-  CONTROL_HEIGHT,
-  CONTROL_PRESSED_SCALE,
-  ICON_SIZE,
-  ICON_STROKE_WIDTH,
-  radii,
-  spacing,
-} from '../../design';
+import { spacing } from '../../design';
 import {
   formatLastPracticedShort,
   joinMetadata,
@@ -50,7 +40,8 @@ import { readTendency } from '../../lib/insights/tendency';
 import { suggestionsFor } from '../../lib/today';
 import type { TabScreenNavigation } from '../../navigation/types';
 import { WarmupPanel } from './WarmupPanel';
-import { PracticeCard } from './PracticeCard';
+import { PracticeHero } from './PracticeHero';
+import { heroContentFor } from './heroContent';
 import { TodayRow } from './TodayRow';
 import { useAddPieceOption } from '../../navigation/useAddPieceOption';
 import { loadStateFor } from '../../lib/loadState';
@@ -223,6 +214,45 @@ export function TodayScreen() {
   */
   const header = <PageHeader title={getGreeting()} action={avatar} />;
 
+  /**
+   * The hero, for whichever state this screen is in.
+   *
+   * **One composition, not two.** The empty account used to get a different
+   * screen — an `EmptyState` with its own title, description and button —
+   * while the populated one got a card. They are the same shape: a label, the
+   * thing to do next, a sentence about it, one button. `heroContentFor` is
+   * where the two differ, which is one tested function rather than two screens
+   * that drift.
+   *
+   * A closure rather than a value, because `workingBpm` is not known until
+   * past the early returns above and a hoisted element would have to invent
+   * one for a piece that does not exist.
+   */
+  const renderHero = (
+    forPiece: Piece | null,
+    bpm: number,
+    headline: string | null,
+    { loading = false }: { loading?: boolean } = {},
+  ) => (
+    <PracticeHero
+      content={
+        loading
+          ? null
+          : heroContentFor({
+              piece: forPiece,
+              workingBpm: bpm,
+              lastTakeHeadline: headline,
+            })
+      }
+      greeting={getGreeting()}
+      name={me.data?.displayName ?? null}
+      onAction={() =>
+        forPiece ? openPractice(forPiece) : setAddSheetVisible(true)
+      }
+      onAdd={() => setAddSheetVisible(true)}
+    />
+  );
+
   const load = loadStateFor({
     isError: currentPiece.isError,
     hasData: currentPiece.data !== undefined,
@@ -230,9 +260,8 @@ export function TodayScreen() {
 
   if (load === 'loading') {
     return (
-      <ScreenContainer contentStyle={styles.page}>
-        {header}
-        <ContinueSkeleton />
+      <ScreenContainer contentStyle={styles.bleed}>
+        {renderHero(null, 0, null, { loading: true })}
       </ScreenContainer>
     );
   }
@@ -264,45 +293,16 @@ export function TodayScreen() {
   // duplicated, so all three routes in are offered from the first screen.
   if (!piece) {
     return (
-      <ScreenContainer onRefresh={refresh} contentStyle={styles.page}>
-        {header}
+      <ScreenContainer onRefresh={refresh} contentStyle={styles.bleed}>
         {/*
-          **Adding a piece leads, and it is still the only *primary* action on
-          the screen** — it is what the app is for, and the warmup below cannot
-          show a verdict. `actionTone="primary"` is the solid ink button the
-          populated Today reserves for "Continue practice"; its outlined
-          sibling is what that screen gives secondary controls.
-
-          **No `fill` any more, and that is the trade this composition makes.**
-          `fill` centres the block in the whole screen, which was right while
-          this was the only thing on it and put the button near the thumb
-          (§3 law 7). It cannot survive a second block below, so the button
-          moves up and the warmup's own control takes the thumb zone instead.
-
-          The title used to read "Nothing to practice yet", which the screen
-          then contradicted one block later: the warmup below **is** something
-          to practice, generated from the instrument onboarding required them
-          to choose. It says library now, which is the thing that is actually
-          empty.
+          **The same hero the populated screen gets.** This used to be a
+          different screen — an `EmptyState` with its own title, description
+          and button, plus a comment explaining why it could not be centred
+          any more. It is the same four things in the same order, so it is now
+          the same component and `heroContentFor` decides what they say.
         */}
-        {/*
-          **The pair is centred in what the header leaves**, which is the job
-          `fill` used to do for the empty state alone. Stacked from the top,
-          the two blocks ended by the middle of the phone and left the whole
-          thumb zone empty above the tab bar — the screen read as truncated
-          rather than composed, and both its actions sat out of reach (§3 law
-          7). Centring splits that space instead of dumping it at the bottom,
-          and puts Start where a thumb is.
-        */}
-        <View style={styles.emptyBody}>
-        <EmptyState
-          actionTone="primary"
-          title="Nothing in your library yet"
-          description="Add a piece of sheet music and your practice will show up here."
-          actionLabel="Add a piece"
-          onActionPress={() => setAddSheetVisible(true)}
-        />
-
+        {renderHero(null, 0, null)}
+        <View style={styles.belowHero}>
         {/*
           **The same warmup block the populated screen renders**, deliberately
           not a variant of it: it depends on nothing but the instrument, so a
@@ -351,9 +351,17 @@ export function TodayScreen() {
     : '';
 
   return (
-    <ScreenContainer onRefresh={refresh} contentStyle={styles.page}>
-      {header}
+    <ScreenContainer onRefresh={refresh} contentStyle={styles.bleed}>
+      {renderHero(
+        piece,
+        workingBpm,
+        // Only when it is genuinely this piece's take. Against the API it
+        // always is; a fixture or a deleted score could disagree, and a
+        // verdict about a different piece under this title would be a lie.
+        hasCurrentTake && take ? take.headline : null,
+      )}
 
+      <View style={styles.belowHero}>
       {pendingAnalysis && pendingCheck ? (
         <View style={styles.pendingTake}>
           <Card>
@@ -396,19 +404,18 @@ export function TodayScreen() {
 
       <View style={[styles.dashboard, isWide && styles.dashboardWide]}>
         <View style={styles.primaryColumn}>
-          <SectionHeader label="Continue practicing" />
-          <PracticeCard
-            piece={piece}
-            workingBpm={workingBpm}
-            // Only when it is genuinely this piece's take. Against the API it
-            // always is; a fixture or a deleted score could disagree, and a
-            // verdict about a different piece on this card would be a lie.
-            lastTakeHeadline={hasCurrentTake && take ? take.headline : null}
-            onContinue={() => openPractice(piece)}
-          />
+          {/*
+            **The card and the add-a-piece row are gone: the hero is both.**
+            The card said the piece, its tempo and how the last take went, and
+            offered one button — which is exactly what is now written across
+            the photograph above, at a size that can be read from a stand.
+            Repeating it here would be the same content twice on one screen,
+            the second time smaller.
 
-          <AddPieceAction onPress={() => setAddSheetVisible(true)} />
-
+            Adding a piece is the "+" in the hero's corner. A labelled row was
+            the right answer while the header held an avatar it would have
+            crowded; the avatar is a tab now.
+          */}
           <FadeIn index={1}>
             <View style={styles.section}>
               <SectionHeader label="Warmup" />
@@ -550,6 +557,7 @@ export function TodayScreen() {
           ) : null}
         </View>
       </View>
+      </View>
 
       <AddPieceSheet
         visible={addSheetVisible}
@@ -560,98 +568,22 @@ export function TodayScreen() {
   );
 }
 
-/**
- * Add a piece: a mark, a title, a line naming the three ways in, a chevron.
- *
- * That composition is deliberate — it was briefly an unlabelled "+" in the
- * screen header, which said nothing and sat badly next to the avatar.
- *
- * **It is a `Card`, not glass.** It carried the control layer's material for a
- * while, and the material is a tint plus a specular gradient — which is right
- * for something floating over content and wrong here, because this row sits
- * directly under the practice card and the two read as different kinds of
- * thing when they are the same kind of thing: a full-width row you tap to go
- * somewhere. Dark mode made it obvious; the gradient that was a faint sheen on
- * ivory is a visible band on ink.
- *
- * The `Card` component rather than three copied properties, so the two rows
- * cannot drift apart the next time the surface changes. It still compresses
- * under the finger, and takes the same pressed colour as a library row.
- */
-function AddPieceAction({ onPress }: { onPress: () => void }) {
-  return (
-    <PressableScale
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel="Add a new piece"
-      accessibilityHint="Scan sheet music, import a score, or enter a piece manually"
-      activeScale={CONTROL_PRESSED_SCALE}
-      style={styles.addPieceAction}
-    >
-      {({ pressed }) => (
-        <Card
-          emphasis
-          padded={false}
-          style={[styles.addPieceRow, pressed && styles.addPiecePressed]}
-        >
-          <View style={styles.addPieceIcon}>
-            <Plus
-              size={ICON_SIZE.md}
-              strokeWidth={ICON_STROKE_WIDTH}
-              color={colors.actionText}
-            />
-          </View>
-          <View style={styles.addPieceCopy}>
-            <Text variant="button">Add a new piece</Text>
-            <Text
-              variant="metadataSmall"
-              color="textSecondary"
-              style={styles.addPieceDetail}
-            >
-              Scan sheet music, import a score, or enter it manually.
-            </Text>
-          </View>
-          <ChevronRight
-            size={ICON_SIZE.md}
-            strokeWidth={ICON_STROKE_WIDTH}
-            color={colors.textTertiary}
-          />
-        </Card>
-      )}
-    </PressableScale>
-  );
-}
-
 const styles = StyleSheet.create({
-  addPieceAction: {
-    marginTop: spacing.md,
+  /**
+   * The hero is full-bleed, so the screen's own gutter has to come off.
+   *
+   * `contentStyle` is merged after `ScreenContainer`'s own `content`, which is
+   * where `SCREEN_GUTTER` lives — so this cancels it for the scroll container
+   * and `belowHero` puts it back for everything under the photograph.
+   */
+  bleed: {
+    paddingHorizontal: 0,
+    width: '100%',
+    maxWidth: 1180,
+    alignSelf: 'center',
   },
-  addPieceRow: {
-    minHeight: CONTROL_HEIGHT + spacing['2xl'],
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-  },
-  // The same colour a library row takes, because it is the same gesture.
-  addPiecePressed: { backgroundColor: colors.surfacePressed },
-  addPieceIcon: {
-    width: spacing['4xl'],
-    height: spacing['4xl'],
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.actionBg,
-    // A circle, so the mark reads as a mark rather than a second small card.
-    borderRadius: radii.pill,
-  },
-  addPieceCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
-  addPieceDetail: {
-    marginTop: spacing.xs,
-  },
+  /** The gutter, restored for the ordinary page below the hero. */
+  belowHero: { paddingHorizontal: SCREEN_GUTTER },
   page: {
     width: '100%',
     maxWidth: 1180,

@@ -87,7 +87,11 @@ skipped for want of it.** Every session read "no `DATABASE_URL`" as "there is
 no database here", so the one check that can catch SQL which does not run had
 never run at all. `preflight.py` now says when a server is answering; the shell
 user may still have no role on it, which `su postgres -c 'createdb preflight'`
-fixes. Same shape as the mistake below about the schema, and worth reading
+fixes. **It also stops on its own** — twice in one session, once across a
+container restart and once mid-`preflight --full`, which reports the gate as
+`FAIL … connection refused` rather than as a skip. `pg_ctlcluster 16 main start`
+brings it back with the role and databases intact; a stale pid file is normal
+and it clears that itself. Same shape as the mistake below about the schema, and worth reading
 together: **before calling something unavailable, check whether this session
 already has it.**
 

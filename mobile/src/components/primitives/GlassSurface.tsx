@@ -121,8 +121,18 @@ export function GlassSurface({ children, radius, style }: GlassSurfaceProps) {
         pointerEvents="none"
       />
 
+      {/*
+        **`width` and `height`, because an `<Svg>` without them is 300x150.**
+        That is the SVG default, and `position: absolute` with four zero offsets
+        says where it starts, not how big it is. Every glass control in this app
+        is smaller than 300x150 and so was covered by accident — except the tab
+        bar capsule, which is wider than 300 on any phone, and whose specular
+        catch has therefore been clipped at 300px since the material shipped.
+        Found while giving the Today hero a gradient of its own and watching it
+        stop a third of the way down the screen.
+      */}
       {material.specular && (
-        <Svg style={FILL} pointerEvents="none">
+        <Svg style={FILL} width="100%" height="100%" pointerEvents="none">
           <Defs>
             {/* Diagonal, so the catch falls across the surface rather than
                 banding evenly down it. */}

@@ -59,6 +59,29 @@ export const fontsToLoad = {
  * negative value so they set tightly; body sizes are left alone.
  */
 export const typography = {
+  /**
+   * The one line on a screen that is the screen.
+   *
+   * **Only for type over a full-bleed image**, which today is the Today hero
+   * and nothing else. It is nearly a third larger than `screenTitle`, and that
+   * is deliberate: a photograph is a busy ground, and the size is what makes a
+   * title read across it rather than sit on it. On the ivory page the same
+   * size would simply shout.
+   *
+   * Serif regular at this size for the reason `screenTitle` gives — medium
+   * reads heavy — and more so the larger it gets.
+   *
+   * Two lines of it fill a phone's width at a long classical title, which is
+   * the common case rather than the edge: "Sonata No. 1 in G minor, BWV 1001"
+   * wraps to two at 390pt and three at 320. The hero clamps it, because a
+   * title that pushes its own button off the screen has stopped being a title.
+   */
+  displayTitle: {
+    fontFamily: fontFamily.serifRegular,
+    fontSize: 46,
+    lineHeight: 50,
+    letterSpacing: -1,
+  },
   /** Screen titles. Serif regular — medium reads heavy at this size. */
   screenTitle: {
     fontFamily: fontFamily.serifRegular,
