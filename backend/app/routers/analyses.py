@@ -450,13 +450,22 @@ def get_analysis_recording(
     client = require_service_client()
     rows = (
         client.table("analyses")
-        .select("audio_url")
+        .select("audio_url, playback_key")
         .eq("id", str(analysis_id))
         .eq("user_id", str(user_id))
         .limit(1)
         .execute()
     ).data or []
-    reference = rows[0].get("audio_url") if rows else None
+    # **The compressed copy first, the original as the fallback.** Once a take
+    # has been judged its WAV is replaced by an Opus a fraction of the size
+    # (`services/take_archive`), and `playback_key` is where that went.
+    #
+    # Null is three states and they all want this same answer: a row written
+    # before migration 018, a take still being analysed, and one whose
+    # transcode failed. In each of them the WAV is still there, so falling back
+    # is not a degraded path — it is the only path those rows ever had.
+    row = rows[0] if rows else {}
+    reference = row.get("playback_key") or row.get("audio_url")
     if not reference:
         # One answer for an unknown take, somebody else's take, and an old row
         # whose audio is absent. Do not reveal which IDs belong to whom.

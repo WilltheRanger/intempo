@@ -1,0 +1,54 @@
+-- =============================================================
+-- 018_analysis_playback — where the take is kept after it is judged
+-- =============================================================
+--
+-- A recording is uploaded as 48 kHz mono 16-bit WAV, which is **96 KB every
+-- second** — about 11.5 MB for a two-minute take — and nothing ever deleted
+-- one. Only deleting the piece or the whole account removed a take's audio.
+--
+-- Measured on the live project rather than estimated: an active musician with
+-- twenty takes carries roughly **230 MB**, so the free tier's 1 GB of storage
+-- is about **four people**. Audio is around ninety per cent of it.
+--
+-- Uncompressed is right for exactly one job. `analyze()` measures onset
+-- envelopes, and a lossy codec reshapes attacks — the same reason the recorder
+-- turns off voice processing and auto gain. So the WAV is what gets analysed,
+-- and what is kept afterwards is a different question: the verdict screen
+-- offers playback so a musician can hear the bar they rushed, and ~48 kbps
+-- Opus is more than enough for that at **1/16th** the bytes.
+--
+-- ## Why a second column rather than rewriting `audio_url`
+--
+-- `audio_url` is doing two jobs, and only one of them is playback.
+--
+-- It is also the **retry key**. `POST /v1/analyses` looks for an existing row
+-- with the same `(user_id, score_id, audio_url)` so that a lost 202 response
+-- returns the row already written instead of charging quota twice and
+-- analysing the same audio again — the recording screen retries with the same
+-- object key. Repointing that column at the Opus would silently break it: the
+-- retry would match nothing, and the musician would get a second analysis of a
+-- take they submitted once.
+--
+-- So the original reference stays where it is and keeps meaning "the upload
+-- this row was created from", even once the object behind it is gone. The new
+-- column means "where the audio actually is now".
+--
+-- ## Null is a real state, and it is three of them
+--
+-- Null means no Opus: a row written before this migration, a take still being
+-- analysed, or one whose transcode failed. All three want the same behaviour —
+-- fall back to `audio_url` — and `GET /v1/analyses/{id}/recording` does that.
+-- A take whose WAV is also gone answers 404, which is what it already did for
+-- an old row with no audio at all.
+--
+-- Nothing here backfills. Existing takes keep their WAVs and stay playable;
+-- the saving is on takes recorded from now on, which is the only direction
+-- that cannot take something away from somebody who did nothing wrong.
+
+-- `IF NOT EXISTS` because nothing here is applied by a deploy: someone runs it,
+-- and whoever that is must be free to run it again without remembering whether
+-- they already did. `test_readiness.py` enforces it.
+ALTER TABLE analyses ADD COLUMN IF NOT EXISTS playback_key text;
+
+COMMENT ON COLUMN analyses.playback_key IS
+  'Durable storage key for the compressed copy kept for playback, written once the take has been analysed and the original WAV deleted. Null means there is none — an old row, one still running, or a failed transcode — and playback falls back to audio_url. Never a URL: signed fresh on every read.';

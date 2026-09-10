@@ -152,6 +152,7 @@ REQUIRED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     # direction for a spend ceiling to fail in, and worth naming here so it is
     # read as a half-applied schema rather than a broken scanner.
     ("scores", "transcription_runs", "017"),
+    ("analyses", "playback_key", "018"),
 )
 
 #: Tables added after the initial schema that production behavior depends on.

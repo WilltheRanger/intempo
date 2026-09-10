@@ -28,6 +28,7 @@ from app.db import get_service_client
 from app.models.analysis import Instrument
 from app.services import audio as audio_svc
 from app.services.audio_storage import AudioStorageError, readable_audio_url
+from app.services.take_archive import keep_playback_copy
 from app.services.analysis import analyze
 from app.services.take_comparison import comparison_key
 from app.services.long_rests import shorten_long_rests
@@ -251,6 +252,17 @@ def run_analysis(analysis_id: str) -> None:
             "updated_at": _now_iso(),
         },
     )
+
+    # **After the verdict is written, never before it.** The WAV existed for
+    # `analyze()` and that is now finished; what is kept from here is a
+    # playback copy at a fraction of the size — the difference between four
+    # musicians fitting in the free storage tier and seventy.
+    #
+    # Outside the `try` above on purpose. A failure in here must not reach
+    # `_finish_failed` and turn a judged take into a failed one; the whole
+    # module is best effort and returns None rather than raising, and the row
+    # is already `done` either way.
+    keep_playback_copy(client, analysis_id, str(row["audio_url"]), audio_bytes)
 
 
 def _fetch_analysis(client, analysis_id: str) -> dict | None:

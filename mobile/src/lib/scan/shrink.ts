@@ -69,8 +69,14 @@ export const MIN_LONG_EDGE = 2400;
  * `SaveFormat.JPEG`, as its value.
  *
  * A PNG re-encoded as PNG saves almost nothing, and a 14 MB screenshot of a
- * page is the other way to arrive here. `shrink.test.ts` pins this against the
- * package's own enum so a rename cannot pass silently.
+ * page is the other way to arrive here.
+ *
+ * This used to claim `shrink.test.ts` pinned it "against the package's own
+ * enum", and that was not true: the test mocks `SaveFormat: { JPEG: 'jpeg' }`
+ * and compares against the mock, which agrees with itself whatever the package
+ * says. The check that actually asks the package is in
+ * `data/profile/avatarImage.test.ts`, which reads the declaration out of its
+ * `.d.ts` — and it covers this literal too, since they are the same string.
  */
 const JPEG = 'jpeg' as Parameters<typeof manipulateAsync>[2] extends
   | { format?: infer F }

@@ -528,7 +528,7 @@ def _account_storage(client: Any, user_id: UUID) -> dict[str, list[str]]:
 
     analysis_rows = (
         client.table("analyses")
-        .select("audio_url")
+        .select("audio_url, playback_key")
         .eq("user_id", str(user_id))
         .execute()
     ).data or []
@@ -550,11 +550,17 @@ def _account_storage(client: Any, user_id: UUID) -> dict[str, list[str]]:
             if key:
                 pages.append(key)
 
+    # **Both references, because a judged take has two.** The WAV is replaced
+    # by an Opus once the analysis finishes and `playback_key` names it; only
+    # one of the two normally still exists, and asking storage to remove a key
+    # that is already gone is not an error. Collecting one of them would delete
+    # the account and leave its recordings behind.
     audio = []
     for row in analysis_rows:
-        key = _storage_key(row.get("audio_url"), AUDIO_BUCKET)
-        if key:
-            audio.append(key)
+        for field in ("audio_url", "playback_key"):
+            key = _storage_key(row.get(field), AUDIO_BUCKET)
+            if key:
+                audio.append(key)
 
     # The three claimed sources, in a stable order so logs and tests are
     # deterministic.

@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { meKeys } from './useMe';
 import { updateMe, type UpdateMeInput } from '../api/me';
 import { requestAvatarUpload, uploadToSignedUrl } from '../api/upload';
+import { prepareAvatar } from '../profile/avatarImage';
 import { IS_LIVE_BACKEND } from '../environment';
 import { preferences } from '../preferences';
 
@@ -62,15 +63,24 @@ export function useUploadAvatar() {
           'Uploading a profile picture needs the backend. This build is running on sample data.',
         );
       }
-      const response = await fetch(uri);
+      // **Down to avatar size before a byte goes anywhere.** Measured at
+      // 3.1 MB an avatar on the live project, for a circle drawn at 76 points
+      // — the picker re-encodes an iPhone's HEIC to JPEG and nothing ever
+      // touched the resolution. `prepareAvatar` never throws: a picture it
+      // cannot shrink is sent as it was, because this is a saving and losing
+      // somebody's profile picture to make one is not a trade.
+      const prepared = await prepareAvatar(uri, mimeType);
+      const response = await fetch(prepared.uri);
       const blob = await response.blob();
       // The extension follows the *type*, never the filename — the lesson the
       // score upload learned, where separate fallbacks let an unrecognised
       // name declare `image/jpeg` and file the object as `page.heif`.
       const { upload_url, object_key } = await requestAvatarUpload(
-        `avatar.${extensionFor(mimeType)}`,
+        `avatar.${extensionFor(prepared.mimeType)}`,
       );
-      await uploadToSignedUrl(upload_url, blob, mimeType, { subject: 'photo' });
+      await uploadToSignedUrl(upload_url, blob, prepared.mimeType, {
+        subject: 'photo',
+      });
       return object_key;
     },
   });

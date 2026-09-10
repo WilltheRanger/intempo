@@ -1729,7 +1729,7 @@ def delete_score(
     try:
         analysis_rows = (
             client.table("analyses")
-            .select("audio_url")
+            .select("audio_url, playback_key")
             .eq("score_id", str(score_id))
             .eq("user_id", str(user_id))
             .execute()
@@ -1743,18 +1743,29 @@ def delete_score(
 
     audio_keys: list[str] = []
     for row in analysis_rows:
-        reference = row.get("audio_url")
-        if not isinstance(reference, str) or not reference:
-            continue
-        try:
-            audio_keys.append(owned_audio_key(reference, user_id))
-        except InvalidAudioReference:
-            # A legacy or malformed row must not become authority to delete an
-            # arbitrary storage object. The database history can still go.
-            log.warning(
-                "analysis for score %s has an unreadable audio reference",
-                score_id,
-            )
+        # **Both references, because a judged take has two.** The WAV is
+        # replaced by an Opus once the analysis finishes and `playback_key`
+        # names it (`services/take_archive`); collecting only `audio_url`
+        # would delete the piece and leave every compressed recording behind,
+        # which is the leak this whole change exists to close.
+        #
+        # Usually only one of the two still exists — the transcode removes the
+        # original — and asking storage to remove a key that is already gone is
+        # not an error there.
+        for field in ("audio_url", "playback_key"):
+            reference = row.get(field)
+            if not isinstance(reference, str) or not reference:
+                continue
+            try:
+                audio_keys.append(owned_audio_key(reference, user_id))
+            except InvalidAudioReference:
+                # A legacy or malformed row must not become authority to delete
+                # an arbitrary storage object. The database history can still go.
+                log.warning(
+                    "analysis for score %s has an unreadable %s",
+                    score_id,
+                    field,
+                )
     audio_keys = list(dict.fromkeys(audio_keys))
 
     try:
