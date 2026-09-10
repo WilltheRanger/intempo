@@ -44,7 +44,7 @@ They were not rewritten, for the reason §5 gives about pointers.
 The trade this accepts: nothing now enforces that a change is described. The
 commit message is the only record, so write it as one.
 
-Four Python checks run on every push, and a change that trips one is not
+Five Python checks run on every push, and a change that trips one is not
 merged: `check-brand-assets.py` (a new asset shipping as the Expo
 starter's, or a listed one drawn and its line now a false claim),
 `check-dead-exports.py` (a named export nothing else in the corpus references),
@@ -81,6 +81,15 @@ It runs what `ci.yml` runs, prints what it cannot run and why, and needs a
 `DATABASE_URL` for the migrations gate — any empty Postgres will do. It is not
 a substitute for CI: one machine, one Node, one Python, and the working tree
 rather than what was pushed.
+
+**The session container runs a Postgres, and the migrations gate had been
+skipped for want of it.** Every session read "no `DATABASE_URL`" as "there is
+no database here", so the one check that can catch SQL which does not run had
+never run at all. `preflight.py` now says when a server is answering; the shell
+user may still have no role on it, which `su postgres -c 'createdb preflight'`
+fixes. Same shape as the mistake below about the schema, and worth reading
+together: **before calling something unavailable, check whether this session
+already has it.**
 
 **The schema is not owner-blocked, and several sessions wrongly said it was.**
 No deploy applies `backend/app/migrations/*.sql`, but a session with the

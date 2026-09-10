@@ -92,14 +92,49 @@ def migrations_gate() -> tuple[str, bool, float] | None:
     """
     dsn = os.getenv("DATABASE_URL", "")
     if not dsn:
-        print(
-            "  ....  migrations  (skipped: no DATABASE_URL)\n"
+        lines = [
+            "  ....  migrations  (skipped: no DATABASE_URL)",
             "        Any empty Postgres will do, and the check leaves it dirty on "
-            "purpose:\n"
-            "        DATABASE_URL=postgresql://…/scratch tools/preflight.py"
-        )
+            "purpose:",
+            "        DATABASE_URL=postgresql://…/scratch tools/preflight.py",
+        ]
+        if _postgres_is_answering():
+            # **This gate had been skipped for want of a server that was
+            # already running.** The advice above is true and abstract, and
+            # every session read it as "there is no Postgres here" — so the one
+            # check that can catch SQL that does not run had never run at all.
+            # A session that knows a server is answering can get from here to a
+            # passing gate in one command.
+            lines += [
+                "        A server on this machine is answering. If this shell's "
+                "user has no role",
+                "        on it:  su postgres -c 'createdb preflight' && "
+                "DATABASE_URL=… (as above)",
+            ]
+        print("\n".join(lines))
         return None
     return run("migrations", ["python3", "tools/check-migrations.py"], ROOT)
+
+
+def _postgres_is_answering() -> bool:
+    """Whether *some* Postgres on this machine accepts connections.
+
+    Asked with `pg_isready`, which reports the server and says nothing about
+    whether this user can log in — which is the point. Being unable to
+    authenticate is a fixable step; there being no server at all is not, and
+    the two were indistinguishable from the message above.
+    """
+    if shutil.which("pg_isready") is None:
+        return False
+    try:
+        return (
+            subprocess.run(
+                ["pg_isready", "-q"], timeout=5, check=False
+            ).returncode
+            == 0
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
 
 
 @contextmanager
