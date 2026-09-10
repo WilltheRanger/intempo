@@ -60,6 +60,7 @@ FAST: list[tuple[str, list[str], Path]] = [
     ("brand assets", ["python3", "tools/check-brand-assets.py"], ROOT),
     ("dead exports", ["python3", "tools/check-dead-exports.py"], ROOT),
     ("dependencies", ["python3", "tools/check-dependencies.py"], ROOT),
+    ("outbound fetch", ["python3", "tools/check-outbound-fetch.py"], ROOT),
     ("backend lint", ["uv", "run", "ruff", "check", "app/", "scripts/", "modal_app.py"], BACKEND),
     ("mobile typecheck", ["npm", "run", "typecheck"], MOBILE),
     ("mobile lint", ["npm", "run", "lint"], MOBILE),

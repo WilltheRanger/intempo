@@ -132,6 +132,16 @@ jobs:
         working-directory: .
         run: python3 tools/check-dependencies.py
 
+      # Added 2026-09-09, after `download_image` and `download_audio` — two
+      # functions doing the same job — drifted apart and the one without a
+      # final-origin check shipped an SSRF. An inventory rather than an
+      # analysis: it fails when the set of places this service reaches the
+      # network changes, so a third one is a decision somebody makes rather
+      # than a copy of the wrong twin. Needs no install, so it sits here.
+      - name: Outbound fetch inventory
+        working-directory: .
+        run: python3 tools/check-outbound-fetch.py
+
   # The app that actually ships, and since 2026-09-09 the only one. `mobile/` is
   # the Expo tree, built to web for Cloudflare Pages — and until this job existed
   # nothing in CI touched it: 52 vitest tests, a `tsc --noEmit` and the web build

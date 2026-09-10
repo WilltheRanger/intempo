@@ -34,13 +34,16 @@ while the `git commit` beside it succeeded — and nothing noticed. It cannot
 check that an entry is *good*; it checks that the change did not go out in
 silence.
 
-Four more Python checks run on every push beside it, and a change that trips
+Five more Python checks run on every push beside it, and a change that trips
 one is not merged: `check-brand-assets.py` (a new asset shipping as the Expo
 starter's, or a listed one drawn and its line now a false claim),
 `check-dead-exports.py` (a named export nothing else in the corpus references),
 `check-dependencies.py` (npm and `pip-audit` advisories, added to CI
-2026-09-09) and `check-migrations.py` (all migrations applied in order to an
-empty database). `.github/workflows/ci.yml` is the list that cannot go stale.
+2026-09-09), `check-migrations.py` (all migrations applied in order to an empty
+database) and `check-outbound-fetch.py` (an inventory of every place the backend
+fetches a URL — added 2026-09-09 after two twin functions drifted apart and one
+of them shipped an SSRF). `.github/workflows/ci.yml` is the list that cannot go
+stale.
 
 **Run `tools/preflight.py` before you commit — CI is not running.** Every job in
 `ci.yml` fails a few seconds in: the jobs are *created* and then refused before

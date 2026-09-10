@@ -1,5 +1,53 @@
 # InTempo Edit Log
 
+## 2026-09-10 — A guard on the class of bug, not just the instance
+
+Working while the owner clears the four remote tags. Yesterday's SSRF was fixed;
+this is the thing that would have caught it, and would catch the next one.
+
+**The finding was drift, not ignorance.** `download_image` and `download_audio`
+do the same job for two kinds of file. The image path grew a final-origin check
+and a streaming size limit after a review, and its docstring is explicit about
+why redirects must be bounded. The audio path — written from the same template,
+maintained beside it — got neither. Nobody reasoned wrongly; one twin learned a
+lesson and the other never heard about it.
+
+Worse, **no test could see the difference.** The audio path's tests stub the HTTP
+client, so they assert how it is *constructed* rather than where it can end up.
+That is exactly why removing the origin check and removing the streaming limit
+both survived the entire 2216-test suite when I mutated them.
+
+**`tools/check-outbound-fetch.py` is an inventory, not an analysis.** A static
+check cannot prove a fetch is safe. What it can do is fail when the *set of
+places this service reaches the network* changes, so that adding a third one is
+a decision somebody makes on purpose rather than a copy of the wrong twin. Same
+shape as `check-brand-assets.py`: a list that cannot go stale silently.
+
+There are exactly **two** sites, and it walks the AST rather than grepping —
+`httpx.Client`, `AsyncClient`, `get`, `post`, `stream`, plus `requests` and
+`urlopen` — attributing each call to its enclosing function. Each entry answers
+one question: **can a caller influence the URL?** Both currently can, and both
+must therefore mention `expected_origin`.
+
+**Verified to fail, four ways, because a check that cannot fail is decoration:**
+a new unlisted fetch site appears; `download_audio` stops taking
+`expected_origin`; `download_image` stops taking it; a listed site is renamed
+without the inventory being updated. All four caught, and the files restored
+byte-identically afterwards — checked, having already been bitten this session
+by a killed probe that left a constant mutated in an untracked file.
+
+Wired into `preflight.py` (**10/10**) and into `ci.yml` beside the dependency
+audit, since it needs no install. `CLAUDE.md`'s count of checks went from four to
+five.
+
+**Proportionality, stated plainly.** Two call sites is a small thing to build an
+inventory around, and §1.3 warns against gold-plating. It earns its place
+because the failure it prevents is the one that just happened, the cost is ~60
+lines and 0.2s, and the alternative — remembering — is what did not work.
+
+Rollback: `git revert`, and drop the `outbound fetch` line from `preflight.py`
+and the step from `ci.yml`. Nothing else imports it.
+
 ## 2026-09-09 — Preparing the repository to be made public
 
 The owner is opening the repository and asked for three things withheld: their
