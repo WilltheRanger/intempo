@@ -14,7 +14,7 @@ from app.main import app
 from app.routers import analyses as analyses_module
 from app.tests.audio_helpers import evenly_spaced, synth_click_track
 from app.tests.fake_supabase import FakeSupabase
-from app.workers import analysis_runner
+from app.workers import analysis_runner, dispatch
 from app.workers.analysis_runner import sweep_stuck_analyses
 
 PROJECT_HOST = "https://test.supabase.invalid"
@@ -137,7 +137,7 @@ def test_post_enqueues_and_returns_202(
     # Spy on the background worker instead of running it here.
     called: list[str] = []
     monkeypatch.setattr(
-        analyses_module, "start_analysis", lambda aid, _tasks: called.append(aid)
+        analyses_module, "start_analysis", lambda aid: called.append(aid)
     )
 
     res = client.post(
@@ -170,7 +170,7 @@ def test_audio_key_is_stored_durably_and_retry_is_idempotent(
     _install(monkeypatch, fake)
     called: list[str] = []
     monkeypatch.setattr(
-        analyses_module, "start_analysis", lambda aid, _tasks: called.append(aid)
+        analyses_module, "start_analysis", lambda aid: called.append(aid)
     )
     headers = {"Authorization": f"Bearer {make_token(sub=user_id)}"}
     body = {
@@ -221,8 +221,9 @@ def test_full_flow_queued_to_done(
     fake = FakeSupabase()
     fake.seed("scores", [{"id": str(score_id), "user_id": str(user_id), "score_json": GOOD_SCORE_JSON}])
     _install(monkeypatch, fake)
-    # Real worker runs (TestClient executes BackgroundTasks after response);
-    # only stub the storage fetch so the real pipeline analyzes real audio.
+    # Real worker runs, on `dispatch`'s pool; only stub the storage fetch so
+    # the real pipeline analyzes real audio. `_analysed()` below is what waits
+    # for it — see that helper for why the wait is now explicit.
     monkeypatch.setattr(analysis_runner, "download_audio", lambda _url: _wav_bytes())
 
     token = make_token(sub=user_id)
@@ -238,6 +239,7 @@ def test_full_flow_queued_to_done(
     )
     assert post.status_code == 202
     analysis_id = post.json()["analysis_id"]
+    _analysed()
 
     got = client.get(f"/v1/analyses/{analysis_id}", headers={"Authorization": f"Bearer {token}"})
     assert got.status_code == 200
@@ -639,6 +641,22 @@ def test_sweeper_recovers_stuck_rows(monkeypatch: pytest.MonkeyPatch) -> None:
     assert by_id["4"]["status"] == "done"
 
 
+def _analysed() -> None:
+    """Wait for the in-process pool to drain.
+
+    **The 202 is now genuinely a 202.** These tests used to rely on
+    `TestClient` running FastAPI's background tasks inline before returning
+    from `post()`, so the analysis was finished by the time the next line ran.
+    The work goes to `dispatch`'s bounded pool instead — a queue and its own
+    threads — because `BackgroundTasks` gave forty of them a shared, uncounted
+    forty-thread pool at ~460 MB a take.
+
+    So the test waits where the app polls. A drain of an empty queue is a
+    no-op, which is what the tests that stub `start_analysis` get.
+    """
+    dispatch._analysing._pending.join()
+
+
 def _submit(
     client: TestClient,
     token: str,
@@ -658,6 +676,7 @@ def _submit(
         },
     )
     assert res.status_code == 202, res.text
+    _analysed()
     return res.json()["analysis_id"]
 
 
@@ -729,7 +748,7 @@ def test_the_instrument_is_stored_and_read_back(
         [{"id": str(score_id), "user_id": str(user_id), "score_json": GOOD_SCORE_JSON}],
     )
     _install(monkeypatch, fake)
-    monkeypatch.setattr(analyses_module, "start_analysis", lambda _id, _tasks: None)
+    monkeypatch.setattr(analyses_module, "start_analysis", lambda _id: None)
 
     token = make_token(sub=user_id)
     analysis_id = _submit(client, token, user_id, score_id, instrument="double_bass")

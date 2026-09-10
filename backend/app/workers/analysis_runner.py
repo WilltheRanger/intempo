@@ -1,11 +1,15 @@
-"""The analysis worker — Phase 1: called via FastAPI `BackgroundTasks`.
+"""The analysis worker — Phase 1: called off a bounded pool in `dispatch`.
 
 `run_analysis` is a plain SYNC function on purpose:
 
-- FastAPI runs a sync background task in a worker thread (Starlette's
-  threadpool), so the CPU-bound `analyze()` never blocks the event loop
-  — which is the #1 Batch 4 pitfall. No `run_in_executor` gymnastics
-  needed.
+- It runs on a worker thread, so the CPU-bound `analyze()` never blocks the
+  event loop — which is the #1 Batch 4 pitfall. No `run_in_executor`
+  gymnastics needed.
+- **The thread is `dispatch`'s, not Starlette's.** This was a
+  `BackgroundTasks` task until 2026-09-10, which meant the forty-thread pool
+  the request handlers share, with nothing counting how many analyses were in
+  flight — at ~460 MB each against a 512 MB instance. See
+  `ANALYSIS_MAX_CONCURRENT`.
 - The Supabase client is sync anyway.
 - The body is structured so the Celery migration is mechanical: add a
   `@celery_app.task` decorator and swap `add_task` → `.delay` at the
@@ -282,10 +286,14 @@ def _finish_failed(client, analysis_id: str, reason: str) -> None:
     )
 
 
-# In-process BackgroundTasks don't survive a crash/restart: a job that was
-# 'processing' when the server died would spin forever in the UI. Any
+# In-process work does not survive a crash/restart: a job that was
+# 'processing' when the server died would spin forever in the UI, and so would
+# one still sitting in `dispatch`'s queue, which is memory like any other. Any
 # 'queued'/'processing' row older than this window is marked
 # 'failed_recoverable' so the client can offer a retry (spec Batch 4 §4).
+# Matching 'queued' as well as 'processing' is what makes a bounded pool safe
+# to queue into: work that never reached a thread ends the same way as work
+# that did.
 STUCK_AFTER = timedelta(minutes=10)
 
 #: How often to look, once the server is up.

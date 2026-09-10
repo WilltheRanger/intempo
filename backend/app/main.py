@@ -15,6 +15,7 @@ from app.workers.analysis_runner import (
 )
 from app.services.ocr.pipeline import _default_chain, unknown_provider_names
 from app.services import pending_uploads
+from app.services import reading_rate
 from app.workers.transcription_runner import sweep_stuck_transcriptions
 
 log = logging.getLogger("intempo")
@@ -46,6 +47,22 @@ async def _sweep_periodically() -> None:
         # an abandoned photograph is ever removed. See
         # `services/pending_uploads` for the invariant it maintains.
         await asyncio.to_thread(pending_uploads.sweep_unclaimed)
+        # And the rate-limiter's memory of accounts that have stopped scanning.
+        #
+        # **This is the only caller, and for eleven days there was none.**
+        # `ReadingRate.forget_expired` was written with a docstring explaining
+        # that without it the dictionary only grows, and then nothing called
+        # it — the exact defect this repository keeps finding, in the one shape
+        # `check-dead-exports` cannot see, because a method is not a module
+        # export. Measured at **849 bytes an account**: 100,000 accounts is
+        # 85 MB held forever, on an instance with 512 MB.
+        #
+        # Purely in-memory, and `to_thread` all the same: it walks every
+        # tracked account under a lock, and the doctrine in this loop is that
+        # synchronous work does not run on the event loop.
+        forgotten = await asyncio.to_thread(reading_rate.readings.forget_expired)
+        if forgotten:
+            log.info("reading-rate: forgot %d idle account(s)", forgotten)
 
 
 def _report_reader_configuration() -> None:

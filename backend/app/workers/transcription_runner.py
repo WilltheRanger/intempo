@@ -50,9 +50,12 @@ log = logging.getLogger("intempo.transcription")
 
 #: How many pages may be read at once, process-wide.
 #:
-#: **A memory ceiling, not a throughput knob.** `BackgroundTasks` runs sync
-#: work in Starlette's threadpool, which holds 40 threads — so without this,
-#: forty people scanning at once means forty simultaneous transcriptions.
+#: **A memory ceiling, not a throughput knob.** This work reached here through
+#: `BackgroundTasks` when the limit was written — Starlette's threadpool, 40
+#: threads, no count kept — so without it, forty people scanning at once meant
+#: forty simultaneous transcriptions. `dispatch._reading` is the pool now and
+#: sizes itself from this same number; the ceiling is enforced twice, at the
+#: door and around the work.
 #: Measured at ~81 MB per in-flight scan on the vision path alone, mostly
 #: Pillow decode buffers: a 12 MP photograph is ~36 MB as RGB before anything
 #: copies it. Forty of those is 3.2 GB, on an instance that has 512 MB.
@@ -673,8 +676,8 @@ STUCK_AFTER = timedelta(minutes=10)
 #:
 #: **Because "nothing has happened yet" is not the same fact on both sides.**
 #: In-process, a row with no progress for ten minutes means the process that was
-#: reading it is gone — `BackgroundTasks` runs here, so there is nothing else it
-#: could be waiting for. On Modal the row sits `queued` for the whole of a cold
+#: reading it is gone — the reader threads are in this process, so there is
+#: nothing else it could be waiting for. On Modal the row sits `queued` for the whole of a cold
 #: start, and a cold start is not a hang: Modal builds an image lazily, on first
 #: invocation, and this one installs homr and 151 MB of ONNX weights. That is
 #: minutes.
@@ -779,8 +782,9 @@ def sweep_stuck_transcriptions(client=None, *, now: datetime | None = None) -> i
     progress bar part-filled — permanently. Nothing was reading it. Nothing was
     ever going to.
 
-    `run_transcription` runs in `BackgroundTasks`, which is to say *in the web
-    process*, so anything that ends the process ends the read: a deploy, the
+    `run_transcription` runs on one of `dispatch`'s reader threads, which is to
+    say *in the web process*, so anything that ends the process ends the read —
+    and so does anything that ends it while the id is still queued. A deploy, the
     OOM reaper, or — the one that actually happened — a free-tier instance
     spinning down after fifteen minutes idle, which is exactly what leaving the
     screen brings about, because the polling that was keeping it awake stops

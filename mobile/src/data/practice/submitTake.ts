@@ -132,10 +132,45 @@ export async function submitTake({
   }
 }
 
-/** How often to ask whether the analysis has finished. */
+/** How often to ask, while the answer is still likely to be seconds away. */
 const POLL_INTERVAL_MS = 1500;
-/** Roughly a minute. The pipeline takes seconds; this is the give-up point. */
-const MAX_POLLS = 40;
+
+/**
+ * And after that.
+ *
+ * **A take can now wait behind another one.** The backend runs
+ * `ANALYSIS_MAX_CONCURRENT` analyses at a time — one, because `analyze()`
+ * peaks near 460 MB on a 512 MB instance — so a second musician finishing a
+ * take while the first is being judged is queued rather than run, which is the
+ * whole point of the bound. The old flat 1.5s for forty attempts gave up after
+ * **sixty seconds**, and a queue two deep can exceed that while the server is
+ * working perfectly.
+ *
+ * Easing off rather than simply raising the count, because the two costs pull
+ * opposite ways: a musician wants the verdict the moment it exists, and every
+ * waiting client is asking this API 40 times a minute. Quick while the answer
+ * is plausibly imminent, patient afterwards.
+ */
+const SLOW_POLL_INTERVAL_MS = 4000;
+
+/** How many quick ones before easing off. Fifteen seconds of them. */
+const FAST_POLLS = 10;
+
+/**
+ * The give-up point: **just under three minutes** (10x1.5s + 41x4s = 179s),
+ * against sixty seconds before, for eleven more requests rather than the
+ * hundred and nineteen a flat 1.5s would have cost to wait as long.
+ *
+ * Giving up is not losing the take. The row and the audio are durable, the id
+ * is remembered by `rememberPendingAnalysis`, and "Send it again" resumes this
+ * poll instead of uploading the recording twice — see `apiPracticeSource`.
+ */
+const MAX_POLLS = 51;
+
+/** Quick while the answer is plausibly imminent, patient afterwards. */
+function pollDelayMs(attempt: number): number {
+  return attempt < FAST_POLLS ? POLL_INTERVAL_MS : SLOW_POLL_INTERVAL_MS;
+}
 
 const FINISHED = new Set(['done', 'failed', 'failed_recoverable']);
 
@@ -157,7 +192,7 @@ export async function waitForAnalysis(
     if (FINISHED.has(analysis.status)) {
       return analysis;
     }
-    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+    await new Promise((resolve) => setTimeout(resolve, pollDelayMs(attempt)));
   }
   throw new Error('The analysis is taking longer than expected.');
 }

@@ -38,6 +38,7 @@ call the handler makes at the moment it knows.
 from __future__ import annotations
 
 import math
+import threading
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -91,6 +92,18 @@ class ReadingRate:
         self._limits = limits
         self._longest = max(limit.window_seconds for limit in limits)
         self._seen: dict[str, deque[float]] = {}
+        #: Request handlers run on Starlette's threadpool, so `check` was
+        #: always being called from several threads at once. That was survivable
+        #: while nothing else touched the dictionary — CPython's GIL makes the
+        #: individual `deque` and `dict` operations here atomic enough that the
+        #: worst case was a miscount of one.
+        #:
+        #: `forget_expired` is not survivable that way: it walks `_seen.items()`
+        #: while a request thread may be inserting a new account, which is
+        #: `RuntimeError: dictionary changed size during iteration` — a 500 on
+        #: a musician's scan, caused by housekeeping. So the lock arrives with
+        #: the caller that needs it.
+        self._lock = threading.Lock()
 
     def check(self, key: str, now: float | None = None) -> Decision:
         """Whether `key` may start a reading, **recording it if so**.
@@ -100,6 +113,10 @@ class ReadingRate:
         that forgets fails open — which is the direction that costs money.
         """
         now = time.monotonic() if now is None else now
+        with self._lock:
+            return self._decide(key, now)
+
+    def _decide(self, key: str, now: float) -> Decision:
         events = self._seen.setdefault(key, deque())
         while events and events[0] <= now - self._longest:
             events.popleft()
@@ -135,15 +152,30 @@ class ReadingRate:
         """Drop accounts with nothing left in the longest window.
 
         **Without this the dictionary only grows.** One entry per account that
-        has ever photographed a page, for the life of the process — small, and
-        a leak all the same, which is the kind that is only ever found in
-        production. Returns how many keys went, so a caller can log it.
+        has ever photographed a page, for the life of the process. Returns how
+        many keys went, so a caller can log it.
+
+        That paragraph used to end "small, and a leak all the same, which is
+        the kind that is only ever found in production" — and then **nothing
+        called this method** for the eleven days it existed, so the leak it
+        describes was the live behaviour and the only caller was its own test.
+        It is not small either, measured rather than assumed: **849 bytes an
+        account**, so 100,000 accounts is **85 MB** held forever on an instance
+        with 512 MB in total, where one analysis needs 460 of them.
+
+        `main._sweep_periodically` calls it now, on the same five-minute timer
+        as the stuck-row sweeps.
         """
         now = time.monotonic() if now is None else now
         cutoff = now - self._longest
-        stale = [key for key, events in self._seen.items() if not events or events[-1] <= cutoff]
-        for key in stale:
-            del self._seen[key]
+        with self._lock:
+            stale = [
+                key
+                for key, events in self._seen.items()
+                if not events or events[-1] <= cutoff
+            ]
+            for key in stale:
+                del self._seen[key]
         return len(stale)
 
     @property

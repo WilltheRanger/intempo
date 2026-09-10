@@ -21,11 +21,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+import time
 from contextlib import asynccontextmanager, suppress
 
 import pytest
 
 from app import main
+from app.services import reading_rate
 
 
 def _sweeper_tasks() -> list[asyncio.Task]:
@@ -454,3 +456,85 @@ def test_the_level_is_read_when_called_not_bound_at_import(monkeypatch) -> None:
         monkeypatch.delenv("LOG_LEVEL", raising=False)
         importlib.reload(config)
         logging.getLogger("intempo").setLevel(logging.INFO)
+
+
+# ---- the rate limiter's memory ---------------------------------------------
+
+
+def test_the_sweep_forgets_accounts_that_stopped_scanning(monkeypatch) -> None:
+    """The leak `forget_expired` was written to stop, and did not.
+
+    The method existed for eleven days with a docstring saying "without this
+    the dictionary only grows" and **no caller but its own test** — the shape
+    of defect this repository keeps finding, in the one place
+    `check-dead-exports` cannot look, because a method is not a module export.
+
+    Measured rather than assumed: 849 bytes an account, so 100,000 accounts is
+    85 MB held for the life of the process, on an instance with 512 MB total
+    and one analysis needing 460.
+
+    Asserted through the real loop and the real limiter, not a spy on the
+    method: a spy would pass against a call that forgot nothing.
+    """
+    calls: list[int] = []
+    monkeypatch.setattr(main, "SWEEP_INTERVAL_SECONDS", 0.001)
+    monkeypatch.setattr(main, "sweep_once", lambda: calls.append(1))
+    monkeypatch.setattr(main, "sweep_stuck_transcriptions", lambda: None)
+    monkeypatch.setattr(main.pending_uploads, "sweep_unclaimed", lambda: None)
+
+    limiter = reading_rate.ReadingRate()
+    # Long enough ago that nothing it holds can affect a decision, which is
+    # what makes forgetting it safe.
+    for index in range(50):
+        limiter.check(f"account-{index}", now=time.monotonic() - reading_rate.LONGEST_WINDOW - 1)
+    monkeypatch.setattr(reading_rate, "readings", limiter)
+    assert limiter.tracked == 50
+
+    asyncio.run(_sweep_until(2, calls))
+
+    assert limiter.tracked == 0
+
+
+def test_forgetting_does_not_race_a_scan_starting(monkeypatch) -> None:
+    """Housekeeping must not 500 somebody's scan.
+
+    `forget_expired` walks `_seen.items()`; `check` inserts into the same
+    dictionary from Starlette's threadpool. Without a lock that pair is
+    `RuntimeError: dictionary changed size during iteration` — rare, load
+    dependent, and a real error on a real request, which is the worst
+    combination to ship.
+
+    Wired the sweep up first and reached for the lock second, so this test is
+    the one that says the second half happened.
+    """
+    limiter = reading_rate.ReadingRate()
+    stop = threading.Event()
+    failures: list[BaseException] = []
+
+    def scanning() -> None:
+        index = 0
+        while not stop.is_set():
+            try:
+                limiter.check(f"account-{index}")
+            except BaseException as exc:  # noqa: BLE001 — the point of the test
+                failures.append(exc)
+                return
+            index += 1
+
+    def housekeeping() -> None:
+        while not stop.is_set():
+            try:
+                limiter.forget_expired()
+            except BaseException as exc:  # noqa: BLE001 — the point of the test
+                failures.append(exc)
+                return
+
+    threads = [threading.Thread(target=scanning), threading.Thread(target=housekeeping)]
+    for thread in threads:
+        thread.start()
+    time.sleep(0.5)
+    stop.set()
+    for thread in threads:
+        thread.join(5)
+
+    assert not failures, failures

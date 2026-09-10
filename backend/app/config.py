@@ -123,6 +123,27 @@ class Settings:
         os.getenv("TRANSCRIPTION_MAX_CONCURRENT", "2")
     )
 
+    #: How many takes may be analysed at once, in-process.
+    #:
+    #: **The same ceiling as above, and the arithmetic is worse.** Reading a
+    #: page peaks near 81 MB; `analyze()` peaks near **460** on an instance
+    #: with 512 MB total — `workers/dispatch` says so at the top of the file
+    #: and names the consequence: "two musicians finishing takes within a few
+    #: seconds of each other is an out-of-memory kill". An OOM takes the whole
+    #: process down, so it is not that one take fails, it is that everybody's
+    #: sign-in does.
+    #:
+    #: That was written down and only the scanning half was bounded. Analysis
+    #: went to `BackgroundTasks` unbounded, on the same 40-thread pool every
+    #: request handler runs on — so the reachable state was not two takes at
+    #: once, it was forty.
+    #:
+    #: **One, because 460 x 2 does not fit.** This is not a throughput knob and
+    #: there is no value above 1 that is safe on a 512 MB box. Raise it on a
+    #: bigger one, by the same arithmetic; the real answer to volume is
+    #: `ANALYSIS_RUNTIME=modal`, where each take gets its own container.
+    ANALYSIS_MAX_CONCURRENT: int = int(os.getenv("ANALYSIS_MAX_CONCURRENT", "1"))
+
 
     STRIPE_SECRET_KEY: str = os.getenv("STRIPE_SECRET_KEY", "")
     STRIPE_WEBHOOK_SECRET: str = os.getenv("STRIPE_WEBHOOK_SECRET", "")

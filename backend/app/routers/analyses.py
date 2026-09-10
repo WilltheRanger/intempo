@@ -13,7 +13,7 @@ from typing import Any
 from urllib.parse import urlparse
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.services import pending_uploads
@@ -251,7 +251,6 @@ def _assert_within_quota(client: Any, user_id: UUID) -> None:
 @router.post("", response_model=CreateAnalysisResponse, status_code=status.HTTP_202_ACCEPTED)
 def create_analysis(
     body: CreateAnalysisRequest,
-    background_tasks: BackgroundTasks,
     user_id: UUID = Depends(current_user_id_provisioned),
 ) -> CreateAnalysisResponse:
     client = require_service_client()
@@ -349,7 +348,7 @@ def create_analysis(
     # every new client, and the take's audio would be swept an hour later.
     pending_uploads.claim(AUDIO_BUCKET, _object_keys_in([audio_reference]))
     # Where this runs is `dispatch`'s business, not this endpoint's.
-    start_analysis(str(analysis_id), background_tasks)
+    start_analysis(str(analysis_id))
     return CreateAnalysisResponse(analysis_id=analysis_id, status="queued")
 
 

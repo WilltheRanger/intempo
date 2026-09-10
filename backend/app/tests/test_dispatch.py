@@ -14,14 +14,25 @@ import pytest
 from app.workers import dispatch
 
 
-class _Tasks:
-    """Stands in for FastAPI's `BackgroundTasks`."""
+def _analysed_here(monkeypatch) -> list[str]:
+    """Record the takes that reach the in-process analysis pool.
 
-    def __init__(self) -> None:
-        self.added: list[tuple] = []
+    **Through the real queue and the real threads**, not a stand-in for them.
+    This used to hand `start_analysis` a fake `BackgroundTasks` and assert it
+    was handed a callable — which could not tell a bounded pool from an
+    unbounded one, and that distinction is the whole reason the seam changed:
+    Starlette runs a background task on the forty-thread pool the request
+    handlers use, with nothing counting how many are in flight, at ~460 MB a
+    take against 512 MB of instance.
+    """
+    ran: list[str] = []
+    monkeypatch.setattr(dispatch, "_run_analysis_here", ran.append)
+    return ran
 
-    def add_task(self, fn, *args) -> None:
-        self.added.append((fn, args))
+
+def _wait_for_analyses() -> None:
+    """Until the pool has drained. The work is on another thread now."""
+    dispatch._analysing._pending.join()
 
 
 def test_in_process_is_the_default(monkeypatch) -> None:
@@ -38,13 +49,13 @@ def test_in_process_is_the_default(monkeypatch) -> None:
     monkeypatch.setattr(
         dispatch, "_spawn_on_modal", lambda aid: tried.append(aid) or True
     )
-    tasks = _Tasks()
+    ran = _analysed_here(monkeypatch)
 
-    dispatch.start_analysis("abc", tasks)
+    dispatch.start_analysis("abc")
+    _wait_for_analyses()
 
     assert tried == [], "in-process must not reach out at all"
-    assert len(tasks.added) == 1
-    assert tasks.added[0][1] == ("abc",)
+    assert ran == ["abc"]
 
 
 def test_the_setting_has_to_say_modal_exactly(monkeypatch) -> None:
@@ -66,12 +77,13 @@ def test_modal_is_used_when_it_is_asked_for(monkeypatch) -> None:
     monkeypatch.setattr(
         dispatch, "_spawn_on_modal", lambda aid: spawned.append(aid) or True
     )
-    tasks = _Tasks()
+    ran = _analysed_here(monkeypatch)
 
-    dispatch.start_analysis("abc", tasks)
+    dispatch.start_analysis("abc")
+    _wait_for_analyses()
 
     assert spawned == ["abc"]
-    assert tasks.added == [], "it must not also run here"
+    assert ran == [], "it must not also run here"
 
 
 def test_a_refused_spawn_falls_back_rather_than_losing_the_take(monkeypatch) -> None:
@@ -83,11 +95,12 @@ def test_a_refused_spawn_falls_back_rather_than_losing_the_take(monkeypatch) -> 
     """
     monkeypatch.setattr(dispatch, "ANALYSIS_RUNTIME", "modal")
     monkeypatch.setattr(dispatch, "_spawn_on_modal", lambda _aid: False)
-    tasks = _Tasks()
+    ran = _analysed_here(monkeypatch)
 
-    dispatch.start_analysis("abc", tasks)
+    dispatch.start_analysis("abc")
+    _wait_for_analyses()
 
-    assert len(tasks.added) == 1
+    assert ran == ["abc"]
 
 
 def test_a_missing_modal_package_is_reported_not_raised(monkeypatch) -> None:
@@ -359,7 +372,7 @@ def test_a_read_that_throws_is_logged_rather_than_lost(monkeypatch, caplog) -> N
 
     with caplog.at_level("ERROR"):
         dispatch.start_transcription("score-4")
-        dispatch._pending.join()
+        dispatch._reading._pending.join()
         # The reader survived it: the page behind the bad one still gets read.
         dispatch.start_transcription("score-5")
         assert seen.wait(5), "one failed page stopped every page after it"
@@ -382,12 +395,21 @@ def test_reading_a_page_does_not_hold_the_process_open() -> None:
     """
     import threading
 
-    dispatch._ensure_readers()
-    readers = [t for t in threading.enumerate() if t.name.startswith("transcribe-")]
+    dispatch._reading._ensure_started()
+    dispatch._analysing._ensure_started()
+    workers = [
+        t
+        for t in threading.enumerate()
+        if t.name.startswith(("transcribe-", "analyse-"))
+    ]
 
-    assert readers, "no reader threads were started"
-    assert all(t.daemon for t in readers), (
-        "a non-daemon reader blocks process exit until its page is read"
+    assert workers, "no worker threads were started"
+    # **Both pools, not just the readers.** They are one class now, and a
+    # regression that made only one of them non-daemon is exactly the kind this
+    # file exists to catch.
+    assert {t.name.split("-")[0] for t in workers} == {"transcribe", "analyse"}
+    assert all(t.daemon for t in workers), (
+        "a non-daemon worker blocks process exit until its job is done"
     )
 
 

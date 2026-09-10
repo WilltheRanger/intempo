@@ -155,6 +155,22 @@ describe('submitTake', () => {
   });
 });
 
+/**
+ * The rejection, as a value.
+ *
+ * `expect(promise).rejects` is left hanging while fake timers are advanced,
+ * and vitest warns that a future major will fail on it. Attaching the handler
+ * at creation keeps the promise handled from the first tick.
+ */
+function _rejection(promise: Promise<unknown>): Promise<unknown> {
+  return promise.then(
+    () => {
+      throw new Error('it resolved; it was supposed to give up');
+    },
+    (cause: unknown) => cause,
+  );
+}
+
 describe('waitForAnalysis', () => {
   it('returns as soon as the run has finished', async () => {
     getAnalysis.mockResolvedValue({ id: 'a', status: 'done' });
@@ -190,10 +206,55 @@ describe('waitForAnalysis', () => {
 
     const promise = waitForAnalysis('a');
     const settled = expect(promise).rejects.toThrow(/longer than expected/i);
-    await vi.advanceTimersByTimeAsync(1500 * 45);
+    // Past the whole budget: 10 quick polls, then 41 slow ones.
+    await vi.advanceTimersByTimeAsync(200_000);
 
     await settled;
-    expect(getAnalysis).toHaveBeenCalledTimes(40);
+    expect(getAnalysis).toHaveBeenCalledTimes(51);
+  });
+
+  it('waits nearly three minutes, because a take can be queued behind another', async () => {
+    // **The bound on the server is what this number answers to.** Analyses run
+    // one at a time in-process (`ANALYSIS_MAX_CONCURRENT`), so a second
+    // musician finishing a take while the first is being judged waits for it.
+    // At the old flat sixty seconds a queue two deep timed out while the
+    // server was working perfectly — and giving up looks the same to a
+    // musician whether or not the row eventually completes.
+    vi.useFakeTimers();
+    getAnalysis.mockResolvedValue({ id: 'a', status: 'queued' });
+
+    const settled = _rejection(waitForAnalysis('a'));
+
+    // Well past the old sixty-second ceiling, and still asking.
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(getAnalysis).toHaveBeenCalledTimes(37);
+
+    await vi.advanceTimersByTimeAsync(80_000);
+    expect(String(await settled)).toMatch(/longer than expected/i);
+    expect(getAnalysis).toHaveBeenCalledTimes(51);
+  });
+
+  it('eases off rather than asking every 1.5s for three minutes', async () => {
+    // Every waiting client is load on one API. Flat-1.5s patience of this
+    // length would be 119 requests a take; this is 51.
+    vi.useFakeTimers();
+    getAnalysis.mockResolvedValue({ id: 'a', status: 'processing' });
+
+    const settled = _rejection(waitForAnalysis('a'));
+
+    // Ten quick gaps after the first ask, so eleven asks inside fifteen
+    // seconds — the window where a musician is still looking at the screen.
+    await vi.advanceTimersByTimeAsync(1500 * 10);
+    expect(getAnalysis).toHaveBeenCalledTimes(11);
+
+    // The twelfth is 4s away, not 1.5s.
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(getAnalysis).toHaveBeenCalledTimes(11);
+    await vi.advanceTimersByTimeAsync(2500);
+    expect(getAnalysis).toHaveBeenCalledTimes(12);
+
+    await vi.advanceTimersByTimeAsync(200_000);
+    expect(String(await settled)).toMatch(/longer than expected/i);
   });
 
   it('stops when the caller has walked away', async () => {

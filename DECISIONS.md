@@ -1,5 +1,71 @@
 # InTempo Decisions
 
+## 2026-09-10 — Analyses queue on a bounded pool, one at a time, rather than going to `BackgroundTasks`
+
+**Context.** `workers/dispatch.py` has opened with this since it was written:
+the instance has 512 MB for the whole application, one analysis peaks near 460,
+"so two musicians finishing takes within a few seconds of each other is an
+out-of-memory kill", and the work runs in the web process, "so it takes sign-in
+down with it rather than just the analysis".
+
+Nothing enforced it. `start_analysis` handed the take to FastAPI's
+`BackgroundTasks`, which runs sync work on Starlette's threadpool — forty
+threads, shared with every request handler, with no count kept. So the
+reachable state was never two at once; it was forty, and the first arithmetic
+in the file says two does not fit.
+
+Reading a page hit exactly this in 2026-08 and was given a bounded queue with
+its own daemon threads. Analysing a take — five times heavier, on the same pool
+— was not. The rule was written down once and applied to one of two paths.
+
+**Decision.** One `_WorkerPool` class, two instances: `_reading` sized by
+`TRANSCRIPTION_MAX_CONCURRENT`, `_analysing` by a new
+`ANALYSIS_MAX_CONCURRENT` defaulting to **1**. `start_analysis` submits to the
+queue and returns; it no longer takes a `BackgroundTasks`, and
+`POST /v1/analyses` no longer asks for one.
+
+One, not two, because there is no value above 1 that fits: 2 x 460 MB against
+512. This is not a throughput knob, and the answer to volume is
+`ANALYSIS_RUNTIME=modal`, where each take gets its own container.
+
+**Alternatives considered.**
+
+- *A semaphore around `run_analysis`, like `_scan_slots`.* Rejected for the
+  reason `dispatch.py` already gives for reading: waiting on a semaphore holds
+  the thread it is waiting on, and those threads are Starlette's. That trades
+  the event loop the handlers were taken off for a pool they can be starved out
+  of — the same outage with more steps. A queue holds no thread.
+- *A `ThreadPoolExecutor`.* Rejected, again for the reason already written
+  down: it registers an `atexit` hook that joins its workers, so a restart
+  during an analysis blocks for the length of the analysis. Measured at the
+  time on the reading path: an eight-second task delayed `sys.exit(0)` by eight
+  seconds.
+- *Copy the reader pool's shape into a second set of module globals.* Rejected.
+  Two copies of a rule is how the second stops being updated, which is the
+  defect being fixed here and the one that put an SSRF in one of two twin fetch
+  functions on 2026-09-09.
+- *Reject a take when the pool is busy, rather than queueing.* Rejected: a
+  musician who has just finished playing would lose it, and the row is already
+  durable and already says `queued`. Waiting is a slower answer; refusing is no
+  answer.
+
+**Trade-offs accepted.**
+
+- **Takes now wait behind each other**, which is the point, and the client had
+  to learn patience for it: `waitForAnalysis` gave up after sixty seconds and
+  now eases off to just under three minutes. That is a real change to what a
+  second musician experiences on a busy instance — a wait instead of a verdict
+  — and it is strictly better than the OOM that was the alternative.
+- **Queued work is lost on restart.** Already true of `BackgroundTasks`, and
+  already recovered: `sweep_stuck_analyses` matches `queued` as well as
+  `processing`, so a take that never reached a thread ends the same way as one
+  that did.
+- **The bound is per process.** Correct today — the Dockerfile runs one uvicorn
+  worker — and it would need to be a shared queue if that ever changes. So
+  would the rate limiter, which says so in its own docstring.
+
+---
+
 ## 2026-09-10 — A surface that is dark in both appearances gets its own token pair
 
 **Context.** `actionBg` `#1A1714` and `actionText` `#FBFAF7` did two jobs. They
