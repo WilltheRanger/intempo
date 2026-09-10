@@ -69,6 +69,28 @@ describe.each(palettes)('glassMaterial (%s palette)', (_name, palette) => {
     expect(fill).not.toMatch(/rgba/);
   });
 
+  it('lets less through when it floats over a screen\'s own content', () => {
+    // The one parameter of the material that depends on what is behind it.
+    // Over the app's page the missing fraction is a flat colour; over the
+    // Today hero it is a fifth of a photograph, and that is what put the
+    // inactive tab labels at 4.13:1 where 13px text needs 4.5.
+    expect(glassMaterial(false, palette, true).fill).toBe(
+      palette.glassTintOverContent,
+    );
+    expect(glassMaterial(false, palette).fill).toBe(palette.glassTint);
+  });
+
+  it('still shows the backdrop it is tinting', () => {
+    // A tint that reached 1 would be an opaque bar wearing five glass layers
+    // for nothing — and the whole reason the capsule floats is that content
+    // passes under it.
+    const alpha = Number(
+      /rgba\([^)]*,\s*([0-9.]+)\s*\)/.exec(palette.glassTintOverContent)?.[1],
+    );
+    expect(alpha).toBeGreaterThan(0);
+    expect(alpha).toBeLessThan(1);
+  });
+
   it('lands the fallback on the colour the material settles to over the page', () => {
     // `glassOpaque` is `glassTint` composited over `bg`. Computed here rather
     // than trusted, so the two tokens cannot drift apart unnoticed — the point

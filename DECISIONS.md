@@ -1,5 +1,107 @@
 # InTempo Decisions
 
+## 2026-09-10 — The floating control layer's material follows the screen under it, not the appearance
+
+**Context.** Design law 9 was amended on 2026-09-06 to make the bottom bar a
+translucent capsule with content scrolling beneath it, and law 6 names the
+control layer as the one place the glass material is allowed. Both assume the
+thing behind the glass is the appearance's page colour, which was true of every
+screen in the app.
+
+Today is now a photograph — an opaque ink ground with a manuscript on it, in
+*both* appearances, because the ground is a property of that screen rather than
+of the appearance (the same argument `colors.darkBg` is named for). The chrome
+over it did not know that. Measured on the built bundle rather than eyeballed:
+
+  light appearance, over the hero    capsule composited to #CECAC4 on #2E2620
+  dark appearance, over the hero     capsule composited to #241F1B on #2E2620
+
+The light one is a pale slab laid across a photograph, and the header's "+" —
+an ivory glyph on ivory glass — came out at **1.36:1**. The dark appearance had
+been right by accident, which is why this shipped: the screenshot that was
+looked at was a dark one.
+
+**Decision.** `GlassSurface` takes a `tone`, and `tone="onDark"` draws the
+whole material from `darkColors` — tint, specular, rim, separator — rather than
+from the active appearance. `IconButton` and `Text` take the same prop with the
+same two values, so a glyph and its material can no longer disagree.
+`BottomTabBar` asks `tabBarToneFor(routeName)` once, resolves a palette from the
+answer, and every colour in the bar comes out of that one palette. Today is the
+one name in the dark-ground set.
+
+Two things fell out of measuring it, and both are the point:
+
+**The labels take the dark palette's own `textPrimary`/`textSecondary`, not
+`onDarkMuted`.** That token is the scanner's chrome — white at 0.55 — and
+borrowing it for a 13px tab label gave **4.13:1** against a 4.5 floor. The dark
+*appearance*'s tab bar already had the right answer, which is what a palette is
+for: the tone picks the palette, the component keeps its tokens.
+
+**The tint is heavier over content: `glassTintOverContent`, 0.86 against
+`glassTint`'s 0.80.** Over the app's page the missing fifth is a flat colour, so
+the composited ground is known. Over the hero it is a fifth of a *photograph* —
+`audit-a11y` resolves the ground behind the capsule to `#46433F`, because it can
+read no background through an `<img>` and falls back to the page, and a bright
+block of the manuscript fixture really does measure `#CCB198`. On that ground
+the gold on the focused icon was **2.49:1** against a 3:1 non-text floor, which
+nothing had reported because the sweep only visits elements with text. Six
+points of opacity put the same worst case at `#393632`, and a seventh of the
+manuscript still comes through.
+
+Measured on the built bundle, identical in both appearances (was, in light:
+capsule `#CECAC4`, "+" 1.36:1, inactive label 4.00:1):
+
+  capsule ground   #1C1915        header "+"        17.62:1
+  active icon       4.39:1        active label      16.74:1
+  inactive icon     5.10:1        inactive label     5.07:1
+
+**Alternatives considered.**
+
+- *Give Today an opaque tab bar.* Rejected — it re-litigates law 9 for one
+  screen, and the capsule floating over the manuscript is the effect the screen
+  is for.
+- *Set the glyph colours and leave the material alone.* This is what the first
+  attempt did, and it is the bug: an ivory glyph on ivory glass. Colour and
+  material are one decision, which is why the tone prop is on all three.
+- *Make the capsule opaque over the hero.* Rejected — it answers the contrast
+  arithmetic by deleting the thing the screen is for. The tint moved by six
+  points, not to 1.
+- *Leave the tint and brighten the labels instead.* Rejected. It fixes text and
+  leaves the focused icon at 2.49:1, because a mark cannot be brightened without
+  ceasing to be the brand gold. The ground was the thing that was wrong.
+- *Read the appearance and force dark mode on Today.* Rejected. It would drag
+  every other token on the screen with it, and the screen is not "dark mode" —
+  it is a photograph, which is a different thing that happens to be dark.
+- *A `dark` prop passed down from the screen.* Rejected in favour of a lookup
+  keyed by route name. The tab bar is app furniture that outlives any one
+  screen's render, and the navigator already knows which route is focused; a
+  prop would need threading through `BottomTabBarProps`, which is React
+  Navigation's type, not ours.
+
+**Trade-offs accepted.**
+
+- **A second place that knows Today is dark.** `PracticeHero` paints the ground
+  and `tabBarTone.ts` names it, and a screen that stopped being dark would have
+  to change both. The alternative — chrome measuring what is actually behind it
+  — is not something a translucent surface can do; `colors.ts` already records
+  that glass is the one group of tokens the a11y sweep cannot check.
+- **The inactive tab labels are still 4.04:1 in the light appearance, on every
+  other screen.** Not this change — `TabSelectionMotion` dims an unfocused tab
+  to `opacity: 0.78`, and the tokens were chosen at full strength, so every
+  inactive label in the app has been paying a multiplier nobody measured. The
+  sweep cannot see it (it models a token's own alpha, not an ancestor's), and
+  the pixels say Library light reads 4.04 exactly as Today did. Raising 0.78 to
+  0.86 clears it. Left alone here because it changes how selection feels on
+  every screen, which is the owner's call under `CLAUDE.md` §2, and because the
+  dark tone now clears the floor at 5.07 either way.
+- **The rule is tested by reading the component's source.** There is no React
+  Native testing library here (`DECISIONS.md`, 2026-08-24), so
+  `tabBarTone.test.ts` asserts against `BottomTabBar.tsx?raw` that the tone is
+  asked for and passed on. It is a weak check on a strong rule, and it exists
+  because the strong rule with no caller is this repository's most-repeated
+  defect — the same reason `avatarImage.reach.test.ts` exists, and found the
+  same way: by deleting the call and watching every test pass.
+
 ## 2026-09-10 — Analyses queue on a bounded pool, one at a time, rather than going to `BackgroundTasks`
 
 **Context.** `workers/dispatch.py` has opened with this since it was written:

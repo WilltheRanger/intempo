@@ -14,6 +14,7 @@ import { GlassSurface } from '../components/primitives/GlassSurface';
 import { Text } from '../components/primitives/Text';
 import {
   colors,
+  darkColors,
   ICON_SIZE,
   ICON_STROKE_WIDTH,
   motion,
@@ -28,6 +29,7 @@ import {
   TAB_BAR_ROW_HEIGHT,
   tabBarFloatBottom,
 } from './tabBarMetrics';
+import { tabBarToneFor } from './tabBarTone';
 import { impact, ImpactFeedbackStyle } from '../lib/haptics';
 import { useReducedMotion } from '../lib/useReducedMotion';
 import type { TabParamList } from './types';
@@ -151,10 +153,15 @@ export function BottomTabBar({
   const reduceMotion = useReducedMotion();
 
   const bottomGap = tabBarFloatBottom(insets);
+  // Which screen is under the capsule decides what the capsule is made of —
+  // `tabBarTone.ts` has the rule and the measurements behind it.
+  const tone = tabBarToneFor(state.routes[state.index]?.name);
+  const palette = tone === 'onDark' ? darkColors : colors;
 
   return (
     <GlassSurface
       radius={TAB_BAR_CAPSULE_HEIGHT / 2}
+      tone={tone}
       style={[
         styles.bar,
         {
@@ -203,16 +210,25 @@ export function BottomTabBar({
               <Icon
                 size={ICON_SIZE.lg}
                 strokeWidth={ICON_STROKE_WIDTH}
-                // The icon keeps the gold. Non-text has a 3:1 contrast floor
-                // and the accent clears it; text has 4.5:1 and it does not.
-                color={focused ? colors.accent : colors.textSecondary}
+                // Every colour here comes out of one palette, picked once.
+                // The gold is the same value in both and clears the 3:1
+                // non-text floor on either ground; the grey is not, which is
+                // the whole reason a palette is chosen rather than a colour.
+                color={focused ? palette.accent : palette.textSecondary}
               />
               <Text
                 variant="sectionLabel"
-                // Ink rather than gold: at 13px the accent is 3.54:1, under the
-                // 4.5:1 floor. The active tab is still marked twice — the gold
-                // icon above, and ink against grey here.
+                // Ink rather than gold: at 13px the accent is 3.54:1, under
+                // the 4.5:1 floor. The active tab is still marked twice — the
+                // gold icon above, and full-strength ink against grey here.
+                //
+                // **The dark tone takes the dark palette's own text tokens**,
+                // not `onDarkMuted`. That one is the scanner's chrome — white
+                // at 0.55 — and borrowing it put these labels at 4.13:1 on the
+                // ground `audit-a11y` resolves behind the capsule. The
+                // appearance's own tab bar already had the right answer.
                 color={focused ? 'textPrimary' : 'textSecondary'}
+                tone={tone}
                 style={styles.label}
               >
                 {label}

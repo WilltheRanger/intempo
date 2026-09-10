@@ -79,7 +79,14 @@ export function IconButton({
       {/* Circular neutral glass. An icon alone on the page background gave a
           44pt target no visible edge — it read as a glyph rather than as a
           control, which is what "where is the actual add piece" was about. */}
-      <GlassSurface radius={MIN_TOUCH_TARGET / 2} style={styles.fill} />
+      {/*
+        **The material takes the tone too, not just the glyph.** Setting only
+        the glyph was half a fix and it shipped: an `onDark` button in light
+        mode drew an ivory "+" on ivory glass at **1.36:1** on the Today hero.
+        The sweep cannot see it — it composites glass correctly but only visits
+        elements with text in them, and an icon is a stroke.
+      */}
+      <GlassSurface radius={MIN_TOUCH_TARGET / 2} tone={tone} style={styles.fill} />
       <View style={styles.glyph}>
         <Icon
           size={ICON_SIZE.md}

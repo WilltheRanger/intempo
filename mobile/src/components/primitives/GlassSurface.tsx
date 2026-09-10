@@ -3,7 +3,7 @@ import { useId, type ReactNode } from 'react';
 import { Platform, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
-import { colors } from '../../design';
+import { colors, darkColors } from '../../design';
 import { cssLens } from '../../lib/glass/lensFilter';
 import { glassMaterial } from '../../lib/glass/material';
 import { useReducedTransparency } from '../../lib/glass/reducedTransparency';
@@ -31,6 +31,26 @@ export interface GlassSurfaceProps {
    * `borderRadius: 'inherit'` does not exist in React Native.
    */
   radius: number;
+  /**
+   * Which palette the material is mixed from.
+   *
+   * `auto` follows the appearance and is right everywhere the chrome floats
+   * over the app's own page. `onDark` pins it to the dark palette, for chrome
+   * over a surface that is dark in **both** appearances.
+   *
+   * **A translucent surface has no fixed ground, and this is the half of that
+   * which composition cannot solve.** The material picks up whatever scrolls
+   * beneath it, but its *tint* is chosen ahead of time — 80% opaque, because
+   * the label's legibility depends on it. In light mode that tint is ivory, so
+   * over the Today hero the tab bar rendered `#CECAC4` on a `#2E2620` ground:
+   * a pale slab on a photograph rather than glass on it. The `+` in the same
+   * screen's corner was worse — `IconButton`'s `onDark` tone had made its
+   * glyph ivory while this stayed light, which is ivory on ivory at 1.36:1.
+   *
+   * The accessibility sweep cannot catch either: it composites glass correctly
+   * but only visits elements with text in them, and an icon is a stroke.
+   */
+  tone?: 'auto' | 'onDark';
   style?: StyleProp<ViewStyle>;
 }
 
@@ -83,11 +103,24 @@ export interface GlassSurfaceProps {
  * tests, because there is no React Native testing library here and a rule
  * inside a `.tsx` is a rule nothing checks.
  */
-export function GlassSurface({ children, radius, style }: GlassSurfaceProps) {
+export function GlassSurface({
+  children,
+  radius,
+  tone = 'auto',
+  style,
+}: GlassSurfaceProps) {
   // Gradient ids are document-global, so two surfaces on one screen would
   // otherwise share — and fight over — the same definition.
   const gradientId = `glass-spec-${useId()}`;
-  const material = glassMaterial(useReducedTransparency(), colors);
+  const palette = tone === 'onDark' ? darkColors : colors;
+  // The tone says two things, and the second is easy to miss: which palette the
+  // layers are mixed from, and that the ground behind them is a screen's own
+  // content rather than the app's flat page — so the tint carries more of it.
+  const material = glassMaterial(
+    useReducedTransparency(),
+    palette,
+    tone === 'onDark',
+  );
 
   return (
     <View style={[styles.container, { borderRadius: radius }, style]}>
@@ -137,8 +170,8 @@ export function GlassSurface({ children, radius, style }: GlassSurfaceProps) {
             {/* Diagonal, so the catch falls across the surface rather than
                 banding evenly down it. */}
             <LinearGradient id={gradientId} x1="0" y1="0" x2="0.5" y2="1">
-              <Stop offset="0" stopColor={colors.glassSpecular} stopOpacity="1" />
-              <Stop offset="0.38" stopColor={colors.glassSpecular} stopOpacity="0" />
+              <Stop offset="0" stopColor={palette.glassSpecular} stopOpacity="1" />
+              <Stop offset="0.38" stopColor={palette.glassSpecular} stopOpacity="0" />
             </LinearGradient>
           </Defs>
           <Rect x="0" y="0" width="100%" height="100%" rx={radius} fill={`url(#${gradientId})`} />
@@ -147,7 +180,11 @@ export function GlassSurface({ children, radius, style }: GlassSurfaceProps) {
 
       {material.separator && (
         <View
-          style={[FILL, styles.separator, { borderRadius: radius }]}
+          style={[
+            FILL,
+            styles.separator,
+            { borderRadius: radius, borderColor: palette.glassSeparator },
+          ]}
           pointerEvents="none"
         />
       )}
@@ -158,7 +195,18 @@ export function GlassSurface({ children, radius, style }: GlassSurfaceProps) {
             styles.edge,
             {
               borderRadius: radius,
-              borderTopColor: colors.glassEdge,
+              borderTopColor: palette.glassEdge,
+              // The sides too, and only on web where `styles.edge` draws them.
+              // They are baked into a `StyleSheet` from the launch palette, and
+              // the two values are far apart — white at 0.72 against white at
+              // 0.18 — so a dark-toned surface left with the light rim gets a
+              // bright outline instead of light catching one side of a curve.
+              ...(Platform.OS === 'web'
+                ? {
+                    borderLeftColor: palette.glassEdge,
+                    borderRightColor: palette.glassEdge,
+                  }
+                : null),
             },
           ]}
           pointerEvents="none"

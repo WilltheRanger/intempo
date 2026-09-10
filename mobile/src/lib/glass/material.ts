@@ -49,15 +49,21 @@ export interface GlassMaterial {
 
 /**
  * The translucent material — five layers over whatever scrolls beneath.
+ *
+ * `overContent` swaps the tint for the heavier one. Not a second material:
+ * every layer is the same and the surface is still glass. It is the one
+ * parameter of the material that depends on what is behind it, because it is
+ * the one that decides how much of that gets through — see
+ * `glassTintOverContent` for the arithmetic that set the two values apart.
  */
-function regular(palette: Palette): GlassMaterial {
+function regular(palette: Palette, overContent: boolean): GlassMaterial {
   return {
     diffusion: true,
     refraction: true,
     specular: true,
     separator: true,
     edge: true,
-    fill: palette.glassTint,
+    fill: overContent ? palette.glassTintOverContent : palette.glassTint,
   };
 }
 
@@ -82,6 +88,10 @@ function opaque(palette: Palette): GlassMaterial {
 }
 
 /**
+ * @param overContent true when the surface floats over a screen's own content
+ * — a photograph, a viewfinder — rather than over the app's page. Ignored once
+ * transparency is reduced, since an opaque fill lets nothing through either
+ * way.
  * @param palette the palette this launch resolved. Passed in rather than
  * imported, for two reasons: this module stays free of `react-native` so its
  * test can load it, and the fill has to be the *running* theme's glass — dark
@@ -91,6 +101,7 @@ function opaque(palette: Palette): GlassMaterial {
 export function glassMaterial(
   reduceTransparency: boolean,
   palette: Palette,
+  overContent = false,
 ): GlassMaterial {
-  return reduceTransparency ? opaque(palette) : regular(palette);
+  return reduceTransparency ? opaque(palette) : regular(palette, overContent);
 }
