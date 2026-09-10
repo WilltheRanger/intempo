@@ -9,7 +9,6 @@ import { AddPieceSheet } from '../../components/pieces/AddPieceSheet';
 import {
   Avatar,
   Card,
-  GlassSurface,
   EmptyState,
   PageHeader,
   ScreenContainer,
@@ -562,17 +561,22 @@ export function TodayScreen() {
 }
 
 /**
- * Add a piece: the labelled row, restored, in the control layer's material.
+ * Add a piece: a mark, a title, a line naming the three ways in, a chevron.
  *
- * This is the composition it had before the glass work — a mark, a title, a
- * line naming the three ways in, and a chevron — because that is what tells
- * somebody what the button *does*. It was briefly replaced by an unlabelled
- * "+" in the screen header, which said nothing and sat badly next to the
- * avatar.
+ * That composition is deliberate — it was briefly an unlabelled "+" in the
+ * screen header, which said nothing and sat badly next to the avatar.
  *
- * What changed is the material, not the shape: neutral glass instead of a
- * bordered white card, a capsule mark instead of a rounded square, and it
- * compresses under the finger like every other control here.
+ * **It is a `Card`, not glass.** It carried the control layer's material for a
+ * while, and the material is a tint plus a specular gradient — which is right
+ * for something floating over content and wrong here, because this row sits
+ * directly under the practice card and the two read as different kinds of
+ * thing when they are the same kind of thing: a full-width row you tap to go
+ * somewhere. Dark mode made it obvious; the gradient that was a faint sheen on
+ * ivory is a visible band on ink.
+ *
+ * The `Card` component rather than three copied properties, so the two rows
+ * cannot drift apart the next time the surface changes. It still compresses
+ * under the finger, and takes the same pressed colour as a library row.
  */
 function AddPieceAction({ onPress }: { onPress: () => void }) {
   return (
@@ -582,71 +586,69 @@ function AddPieceAction({ onPress }: { onPress: () => void }) {
       accessibilityLabel="Add a new piece"
       accessibilityHint="Scan sheet music, import a score, or enter a piece manually"
       activeScale={CONTROL_PRESSED_SCALE}
-      style={({ pressed }) => [
-        styles.addPieceAction,
-        pressed && styles.addPieceActionPressed,
-      ]}
+      style={styles.addPieceAction}
     >
-      <GlassSurface radius={radii.lg + spacing.sm} style={styles.addPieceFill} />
-      {/* Above the material — see GlassSurface: it fills absolutely, so a
-          non-positioned sibling paints underneath it. */}
-      <View style={styles.addPieceIcon}>
-        <Plus
-          size={ICON_SIZE.md}
-          strokeWidth={ICON_STROKE_WIDTH}
-          color={colors.actionText}
-        />
-      </View>
-      <View style={styles.addPieceCopy}>
-        <Text variant="button">Add a new piece</Text>
-        <Text
-          variant="metadataSmall"
-          color="textSecondary"
-          style={styles.addPieceDetail}
+      {({ pressed }) => (
+        <Card
+          emphasis
+          padded={false}
+          style={[styles.addPieceRow, pressed && styles.addPiecePressed]}
         >
-          Scan sheet music, import a score, or enter it manually.
-        </Text>
-      </View>
-      <ChevronRight
-        size={ICON_SIZE.md}
-        strokeWidth={ICON_STROKE_WIDTH}
-        color={colors.textTertiary}
-        style={styles.addPieceChevron}
-      />
+          <View style={styles.addPieceIcon}>
+            <Plus
+              size={ICON_SIZE.md}
+              strokeWidth={ICON_STROKE_WIDTH}
+              color={colors.actionText}
+            />
+          </View>
+          <View style={styles.addPieceCopy}>
+            <Text variant="button">Add a new piece</Text>
+            <Text
+              variant="metadataSmall"
+              color="textSecondary"
+              style={styles.addPieceDetail}
+            >
+              Scan sheet music, import a score, or enter it manually.
+            </Text>
+          </View>
+          <ChevronRight
+            size={ICON_SIZE.md}
+            strokeWidth={ICON_STROKE_WIDTH}
+            color={colors.textTertiary}
+          />
+        </Card>
+      )}
     </PressableScale>
   );
 }
 
 const styles = StyleSheet.create({
   addPieceAction: {
-    minHeight: CONTROL_HEIGHT + spacing['2xl'],
     marginTop: spacing.md,
+  },
+  addPieceRow: {
+    minHeight: CONTROL_HEIGHT + spacing['2xl'],
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    borderRadius: radii.lg + spacing.sm,
-    overflow: 'hidden',
   },
-  addPieceFill: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
-  addPieceActionPressed: { opacity: 0.9 },
+  // The same colour a library row takes, because it is the same gesture.
+  addPiecePressed: { backgroundColor: colors.surfacePressed },
   addPieceIcon: {
-    zIndex: 1,
     width: spacing['4xl'],
     height: spacing['4xl'],
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.actionBg,
-    // A circle, like every other mark in this material.
+    // A circle, so the mark reads as a mark rather than a second small card.
     borderRadius: radii.pill,
   },
   addPieceCopy: {
-    zIndex: 1,
     flex: 1,
     minWidth: 0,
   },
-  addPieceChevron: { zIndex: 1 },
   addPieceDetail: {
     marginTop: spacing.xs,
   },
