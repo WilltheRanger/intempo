@@ -33,6 +33,24 @@ const WEB_SCROLL_STYLE = Platform.select({
   default: undefined,
 });
 
+/**
+ * The scrollbar gutter, given back.
+ *
+ * `WEB_SCROLL_STYLE` reserves it permanently with `scrollbarGutter: 'stable'`
+ * so a page does not jump sideways the moment its content grows past a screen.
+ * On every screen with a margin that reservation *is* part of the margin and
+ * nobody can see it. On a full-bleed one it is a 10pt stripe of page
+ * background running down the right of a photograph — measured at exactly 20
+ * device pixels on the Today hero, ivory in light mode and black in dark.
+ *
+ * A phone has no scrollbar at all, so this only ever affects the web build,
+ * which §3 law 1 calls the adaptation rather than the product.
+ */
+const WEB_NO_GUTTER = Platform.select({
+  web: { scrollbarWidth: 'none', scrollbarGutter: 'auto' } as unknown as ViewStyle,
+  default: undefined,
+});
+
 export interface ScreenContainerProps {
   children: ReactNode;
   /** Wrap content in a ScrollView. Screens that own their own list say false. */
@@ -52,6 +70,22 @@ export interface ScreenContainerProps {
    * resolves instantly teaches people the gesture does nothing.
    */
   onRefresh?: () => Promise<unknown>;
+  /**
+   * Let content run to the edge of the screen.
+   *
+   * Drops the horizontal gutter, and on the web build drops the **scrollbar
+   * gutter with it**. Those two go together or neither works: `scrollbarGutter:
+   * 'stable'` below reserves about 10pt permanently so a page does not jump
+   * when its content grows past a screen, and that reservation is invisible on
+   * every screen with a margin — it is simply part of the margin. On a
+   * full-bleed screen it is a 10pt stripe of page background down the right of
+   * a photograph, which is what it looked like on the Today hero.
+   *
+   * Only for a screen whose *content* owns the full width. Everything inside
+   * still has to put the gutter back for its own text; `TodayScreen` does that
+   * below the hero.
+   */
+  bleed?: boolean;
   /**
    * The footer's ground.
    *
@@ -76,6 +110,7 @@ export function ScreenContainer({
   contentStyle,
   footer,
   onRefresh,
+  bleed = false,
   footerTone = 'page',
 }: ScreenContainerProps) {
   const [refreshing, setRefreshing] = useState(false);
@@ -131,12 +166,17 @@ export function ScreenContainer({
 
   const scrollArea = scrollable ? (
     <ScrollView
-      style={[styles.flex, WEB_SCROLL_STYLE]}
+      style={[styles.flex, WEB_SCROLL_STYLE, bleed ? WEB_NO_GUTTER : null]}
       directionalLockEnabled
       decelerationRate="normal"
       keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
       automaticallyAdjustKeyboardInsets
-      contentContainerStyle={[styles.content, bottomInset, contentStyle]}
+      contentContainerStyle={[
+        styles.content,
+        bleed ? styles.contentBleed : null,
+        bottomInset,
+        contentStyle,
+      ]}
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
       refreshControl={
@@ -214,6 +254,8 @@ const styles = StyleSheet.create({
   flex: {
     flex: 1,
   },
+  /** No gutter: a `bleed` screen's own content puts it back where it wants it. */
+  contentBleed: { paddingHorizontal: 0 },
   content: {
     paddingHorizontal: SCREEN_GUTTER,
     // **A reading measure, on every screen.**

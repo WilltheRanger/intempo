@@ -260,7 +260,7 @@ export function TodayScreen() {
 
   if (load === 'loading') {
     return (
-      <ScreenContainer contentStyle={styles.bleed}>
+      <ScreenContainer bleed contentStyle={styles.page}>
         {renderHero(null, 0, null, { loading: true })}
       </ScreenContainer>
     );
@@ -293,7 +293,7 @@ export function TodayScreen() {
   // duplicated, so all three routes in are offered from the first screen.
   if (!piece) {
     return (
-      <ScreenContainer onRefresh={refresh} contentStyle={styles.bleed}>
+      <ScreenContainer onRefresh={refresh} bleed contentStyle={styles.page}>
         {/*
           **The same hero the populated screen gets.** This used to be a
           different screen — an `EmptyState` with its own title, description
@@ -351,7 +351,7 @@ export function TodayScreen() {
     : '';
 
   return (
-    <ScreenContainer onRefresh={refresh} contentStyle={styles.bleed}>
+    <ScreenContainer onRefresh={refresh} bleed contentStyle={styles.page}>
       {renderHero(
         piece,
         workingBpm,
@@ -570,19 +570,13 @@ export function TodayScreen() {
 
 const styles = StyleSheet.create({
   /**
-   * The hero is full-bleed, so the screen's own gutter has to come off.
+   * The gutter, restored for the ordinary page below the hero.
    *
-   * `contentStyle` is merged after `ScreenContainer`'s own `content`, which is
-   * where `SCREEN_GUTTER` lives — so this cancels it for the scroll container
-   * and `belowHero` puts it back for everything under the photograph.
+   * The hero is full-bleed, which `ScreenContainer`'s `bleed` prop arranges —
+   * it drops the horizontal gutter *and* the web build's reserved scrollbar
+   * gutter, which is the 10pt stripe of page background that was running down
+   * the right of the photograph.
    */
-  bleed: {
-    paddingHorizontal: 0,
-    width: '100%',
-    maxWidth: 1180,
-    alignSelf: 'center',
-  },
-  /** The gutter, restored for the ordinary page below the hero. */
   belowHero: { paddingHorizontal: SCREEN_GUTTER },
   page: {
     width: '100%',

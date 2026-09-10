@@ -60,9 +60,18 @@ import type { HeroContent } from './heroContent';
  *     bottom  the same, then GRADIENT ink over it
  *             → #3D352E.  onDark 11.45:1.  onDarkMuted 4.68:1.
  *
+ * Confirmed against the rendered screen rather than left as arithmetic, on a
+ * column of the photograph with no type on it — sampling through the copy
+ * reads the ivory button as though it were the ground and reports 1.00:1:
+ *
+ *     greeting band (0-30%)   #655748   onDark  6.7:1
+ *     title (38-47%)          #473D32   onDark 10.2:1
+ *     metadata and verdict    #3C342C   onDark 11.7:1, onDarkMuted 5.9:1
+ *     inside the label pill   #71665C   onDark  5.4:1
+ *
  * **`onDarkMuted` does not clear AA in the top band, at any brightness the
  * manuscript is worth showing at.** So the top band carries `onDark` only —
- * the greeting and the name — and every muted line lives below 72%, where the
+ * the greeting and the name — and every muted line lives below 45%, where the
  * gradient has settled. That is a rule about where type may go, which is why
  * it is written here rather than discovered later.
  *
@@ -96,16 +105,6 @@ const WASH = 'rgba(20, 17, 14, 0.45)';
  */
 const GRADIENT = 0.55;
 
-/**
- * How much taller than the screen the hero is *not*.
- *
- * The hero stops short of the fold so the section under it peeks. A screen
- * that fills exactly to the edge says it is the whole screen, and this one is
- * not — everything the old Today had is still below it. A peek is the cheapest
- * honest way to say so, and it is a real affordance: what it suggests is
- * scrolling, and scrolling is what it does.
- */
-const PEEK = 72;
 
 export interface PracticeHeroProps {
   /**
@@ -195,7 +194,18 @@ export function PracticeHero({
   // thing that is supposed to be out of the way.
   const tabBar = useTabBarHeight();
 
-  const heroHeight = Math.max(520, height - PEEK);
+  /**
+   * The whole screen, exactly.
+   *
+   * It used to stop 72pt short so the next section peeked through — a scroll
+   * affordance, and a good idea that did not survive contact: what showed was
+   * not the next section but 72pt of bare page background, because that
+   * section starts with padding. A white band under the photograph in light
+   * mode and a black one in dark, measured at 144 device pixels. The tab bar
+   * floats over the bottom of this anyway, so the hero fills the viewport and
+   * the scroll is discovered the way it is on every other screen.
+   */
+  const heroHeight = height;
 
   return (
     <View style={[styles.hero, { height: heroHeight }]}>
@@ -217,14 +227,17 @@ export function PracticeHero({
           {/*
             Four stops, not two, because the copy has to sit on a *settled*
             ground rather than on whatever the ramp happens to be at that
-            height. Nothing until 45% down, full by 72%, and held from there —
-            so every line of muted type is on `GRADIENT` and the arithmetic in
-            the file docstring is one number rather than a function of y.
+            height — so the arithmetic in the file docstring is one number
+            rather than a function of y.
+
+            It settles by 45%, not 72%, and that followed the copy: centring
+            the block moved every muted line up into what had been the ramp.
+            The greeting is above 28% and stays on the bright manuscript.
           */}
           <LinearGradient id="hero-fade" x1="0" y1="0" x2="0" y2="1">
             <Stop offset="0" stopColor={colors.darkBg} stopOpacity="0" />
-            <Stop offset="0.45" stopColor={colors.darkBg} stopOpacity="0" />
-            <Stop offset="0.72" stopColor={colors.darkBg} stopOpacity={GRADIENT} />
+            <Stop offset="0.28" stopColor={colors.darkBg} stopOpacity="0" />
+            <Stop offset="0.45" stopColor={colors.darkBg} stopOpacity={GRADIENT} />
             <Stop offset="1" stopColor={colors.darkBg} stopOpacity={GRADIENT} />
           </LinearGradient>
         </Defs>
@@ -259,6 +272,7 @@ export function PracticeHero({
           <IconButton icon={Plus} label="Add a piece" tone="onDark" onPress={onAdd} />
         </View>
 
+        <View style={styles.middle}>
         {content === null ? null : (
         <View style={styles.copy}>
           <View style={styles.pill}>
@@ -302,6 +316,7 @@ export function PracticeHero({
           />
         </View>
         )}
+        </View>
       </View>
     </View>
   );
@@ -322,10 +337,20 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: SCREEN_GUTTER,
     paddingTop: spacing['4xl'],
-    // The greeting at the top, the copy at the bottom, the photograph in the
-    // space between them. `space-between` rather than a spacer, so the middle
-    // is genuinely empty and grows with the screen.
-    justifyContent: 'space-between',
+  },
+  /**
+   * The copy, centred in what the greeting leaves.
+   *
+   * It was pinned to the bottom by `space-between`, which put the title and
+   * its button in the last third and left a large empty middle — the screen
+   * read as bottom-heavy rather than composed. Centring in the *remaining*
+   * space rather than in the whole screen is what keeps the button in the
+   * thumb zone (§3 law 7) while the block itself sits where the eye expects
+   * it.
+   */
+  middle: {
+    flex: 1,
+    justifyContent: 'center',
   },
   topRow: {
     flexDirection: 'row',
