@@ -1,18 +1,24 @@
 import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
-import { useContext, useRef, useState, type ReactNode } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import { useCallback, useContext, useRef, useState, type ReactNode } from 'react';
 import {
   Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
   View,
+  useWindowDimensions,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BORDER_WIDTH, colors, spacing } from '../../design';
-import { useTabBarHeight } from '../../navigation/tabBarMetrics';
+import { useChromeToneReporter } from '../../navigation/ChromeToneContext';
+import { chromeToneFor } from '../../navigation/chromeTone';
+import { useTabBarHeight, useTabBarMidline } from '../../navigation/tabBarMetrics';
 
 const WEB_SCROLL_STYLE = Platform.select({
   web: {
@@ -95,6 +101,19 @@ export interface ScreenContainerProps {
    * in rather than a single action you finish with.
    */
   footerTone?: 'page' | 'surface';
+  /**
+   * How much of the top of this screen's content is a dark ground, in points.
+   *
+   * For a screen whose own content — a photograph, a viewfinder — is dark in
+   * both appearances, so the floating chrome over it has to be dark too. The
+   * height rather than a flag, because the chrome is only over it until the
+   * screen scrolls; `chromeTone.ts` holds that rule and the measurements that
+   * made it necessary.
+   *
+   * Omit it and the chrome takes the appearance's own glass, which is right
+   * for every screen whose ground is the app's page.
+   */
+  darkGround?: number;
 }
 
 /**
@@ -112,6 +131,7 @@ export function ScreenContainer({
   onRefresh,
   bleed = false,
   footerTone = 'page',
+  darkGround,
 }: ScreenContainerProps) {
   const [refreshing, setRefreshing] = useState(false);
 
@@ -139,6 +159,39 @@ export function ScreenContainer({
   const [overflows, setOverflows] = useState(false);
   const viewportHeight = useRef(0);
   const contentHeight = useRef(0);
+
+  // **What is behind the tab bar, reported as it changes.** Only a screen with
+  // a dark ground has anything to say here; for every other one `darkGround`
+  // is undefined, `reportTone` is never called from the scroll handler, and
+  // the context keeps its `auto` default.
+  const reportTone = useChromeToneReporter();
+  const chromeMidline = useTabBarMidline(useWindowDimensions().height);
+  const toneFor = useCallback(
+    (scrollY: number) =>
+      chromeToneFor({ scrollY, darkGroundHeight: darkGround ?? 0, chromeMidline }),
+    [darkGround, chromeMidline],
+  );
+
+  // **Cleared on blur, and that is not belt-and-braces.** React Navigation
+  // keeps a tab's screen mounted when you leave it, so a screen that reported
+  // `onDark` and then went quiet would hand its material to Library, Insights
+  // and Profile — a dark capsule on an ivory page, which is the exact defect
+  // this whole mechanism exists to fix. Re-reported on focus from the top,
+  // because a tab that is returned to has its old offset.
+  const scrollY = useRef(0);
+  useFocusEffect(
+    useCallback(() => {
+      reportTone(toneFor(scrollY.current));
+      return () => reportTone('auto');
+    }, [reportTone, toneFor]),
+  );
+
+  function handleScroll(event: NativeSyntheticEvent<NativeScrollEvent>) {
+    scrollY.current = event.nativeEvent.contentOffset.y;
+    if (darkGround !== undefined) {
+      reportTone(toneFor(scrollY.current));
+    }
+  }
 
   function measureOverflow() {
     if (!footer) {
@@ -195,6 +248,11 @@ export function ScreenContainer({
         viewportHeight.current = event.nativeEvent.layout.height;
         measureOverflow();
       }}
+      onScroll={handleScroll}
+      // 16ms so the flip lands within a frame of the capsule crossing the
+      // ground's edge. It sets state only when the tone actually changes, so
+      // the cost of a tighter interval is the handler, not a re-render.
+      scrollEventThrottle={16}
       onContentSizeChange={(_width, height) => {
         contentHeight.current = height;
         measureOverflow();

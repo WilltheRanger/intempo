@@ -40,7 +40,7 @@ import { readTendency } from '../../lib/insights/tendency';
 import { suggestionsFor } from '../../lib/today';
 import type { TabScreenNavigation } from '../../navigation/types';
 import { WarmupPanel } from './WarmupPanel';
-import { PracticeHero } from './PracticeHero';
+import { PracticeHero, useHeroHeight } from './PracticeHero';
 import { heroContentFor } from './heroContent';
 import { TodayRow } from './TodayRow';
 import { useAddPieceOption } from '../../navigation/useAddPieceOption';
@@ -74,6 +74,11 @@ const AVATAR_INSET = (AVATAR_TARGET - AVATAR_SIZE) / 2;
 export function TodayScreen() {
   const navigation = useNavigation<TabScreenNavigation<'Today'>>();
   const { width: viewportWidth } = useWindowDimensions();
+  // The hero is the dark ground the floating chrome sits on, and it is exactly
+  // one viewport tall — so the chrome is over it until the screen scrolls that
+  // far, and `ScreenContainer` reports the crossing. Every branch below that
+  // draws the hero has to say so; the one that does not draw it must not.
+  const heroHeight = useHeroHeight();
   const isWide = viewportWidth >= WIDE_HOME_BREAKPOINT;
   const currentPiece = useCurrentPiece();
   const library = useLibrary();
@@ -260,7 +265,7 @@ export function TodayScreen() {
 
   if (load === 'loading') {
     return (
-      <ScreenContainer bleed contentStyle={styles.page}>
+      <ScreenContainer bleed darkGround={heroHeight} contentStyle={styles.page}>
         {renderHero(null, 0, null, { loading: true })}
       </ScreenContainer>
     );
@@ -293,7 +298,7 @@ export function TodayScreen() {
   // duplicated, so all three routes in are offered from the first screen.
   if (!piece) {
     return (
-      <ScreenContainer onRefresh={refresh} bleed contentStyle={styles.page}>
+      <ScreenContainer onRefresh={refresh} bleed darkGround={heroHeight} contentStyle={styles.page}>
         {/*
           **The same hero the populated screen gets.** This used to be a
           different screen — an `EmptyState` with its own title, description
@@ -351,7 +356,7 @@ export function TodayScreen() {
     : '';
 
   return (
-    <ScreenContainer onRefresh={refresh} bleed contentStyle={styles.page}>
+    <ScreenContainer onRefresh={refresh} bleed darkGround={heroHeight} contentStyle={styles.page}>
       {renderHero(
         piece,
         workingBpm,

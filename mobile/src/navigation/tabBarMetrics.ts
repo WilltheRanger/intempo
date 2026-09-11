@@ -65,3 +65,16 @@ export function useTabBarHeight(): number {
   const insets = useSafeAreaInsets();
   return TAB_BAR_CAPSULE_HEIGHT + tabBarFloatBottom(insets) + spacing.md;
 }
+
+/**
+ * Where the capsule's midline sits, in points down from the top of the screen.
+ *
+ * What `chromeToneFor` needs to know to decide whether the bar is still over a
+ * screen's dark ground — see the note there on why the midline and not an
+ * edge. Derived from the same three values that position the bar, so the
+ * answer cannot drift from where it is actually drawn.
+ */
+export function useTabBarMidline(viewportHeight: number): number {
+  const insets = useSafeAreaInsets();
+  return viewportHeight - tabBarFloatBottom(insets) - TAB_BAR_CAPSULE_HEIGHT / 2;
+}

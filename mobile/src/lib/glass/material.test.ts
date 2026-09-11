@@ -69,15 +69,18 @@ describe.each(palettes)('glassMaterial (%s palette)', (_name, palette) => {
     expect(fill).not.toMatch(/rgba/);
   });
 
-  it('lets less through when it floats over a screen\'s own content', () => {
+  it('takes its own tint when it floats over a screen\'s own content', () => {
     // The one parameter of the material that depends on what is behind it.
-    // Over the app's page the missing fraction is a flat colour; over the
-    // Today hero it is a fifth of a photograph, and that is what put the
-    // inactive tab labels at 4.13:1 where 13px text needs 4.5.
+    // Over the app's page the missing fraction is a flat colour and 0.80 was
+    // chosen for a ground that could be anything; over a known dark one it can
+    // afford to be lighter, and `glassTintOverContent` is. Which way round is
+    // `colors.ts`'s to say — this only holds that the two are not the same
+    // decision.
     expect(glassMaterial(false, palette, true).fill).toBe(
       palette.glassTintOverContent,
     );
     expect(glassMaterial(false, palette).fill).toBe(palette.glassTint);
+    expect(palette.glassTintOverContent).not.toBe(palette.glassTint);
   });
 
   it('still shows the backdrop it is tinting', () => {

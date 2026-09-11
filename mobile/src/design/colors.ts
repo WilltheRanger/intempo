@@ -184,23 +184,34 @@ export const lightColors = {
    * because of what it shows, not because of the appearance, so the chrome
    * over it does not invert either.
    *
-   * **0.86, against `glassTint`'s 0.80, and the six points are the whole
-   * token.** Over the app's own page the missing 20% is a flat ivory or a flat
-   * ink, so the composited ground is known and every label on it was measured
-   * against that one value. Over the Today hero it is 20% of a *photograph*:
-   * `audit-a11y.mjs` resolves the ground behind the capsule to `#46433F` —
-   * light, because it can read no background through an `<img>` and falls back
-   * to the page — and against that the inactive tab labels came out **4.13:1**
-   * where 13px text needs 4.5, and the gold on the focused icon **2.49:1**
-   * where a non-text mark needs 3. Both are real: a bright block of the
-   * manuscript fixture measures `#CCB198`, so a fifth of that genuinely does
-   * lift the capsule.
+   * **0.50, against `glassTint`'s 0.80 — lighter than the default, not
+   * heavier.** Over the app's own page the missing 20% is a flat ivory or a
+   * flat ink, so the ground is one known value and every label on it was
+   * measured against that. Over a screen's own content it is a photograph, and
+   * the honest question is how much of that photograph the type can survive.
    *
-   * At 0.86 the same worst case lands on `#393632` — `textSecondary` 5.30:1,
-   * the gold 3.04:1 — and the surface is still visibly glass, with a seventh
-   * of the manuscript coming through it.
+   * **Measured on the rendered page, which is the correction.** The first
+   * version of this token read `#CCB198` — a bright block of the manuscript
+   * *fixture* — as the worst case, concluded that a fifth of it lifted the
+   * capsule to where the gold fell to 2.49:1, and went to 0.86 to hold the
+   * floors. That measured the input to the screen instead of the screen: the
+   * hero composites the manuscript under a 0.45 wash and a bottom gradient
+   * before anything floats over it. Photographing the backdrop with the
+   * capsule hidden gives the real range:
+   *
+   *     darkest #1E1814   brightest #3F372F   mean #332B24
+   *
+   * Against the *brightest* of those, pre-blur, 0.50 leaves the active label
+   * at 14.16:1, the inactive one at 4.58 with the tab's own 0.78 dim on it,
+   * and the gold at 3.75 — every floor clear with room, and half the
+   * manuscript coming through instead of a seventh. The 0.86 was a solid slab
+   * bought with arithmetic about a file nobody was looking at.
+   *
+   * It cannot simply be `glassTint`: 0.80 clears the floors here too, but a
+   * tint chosen for an unknown ground is the wrong instrument for a known one,
+   * and the whole reason this surface floats over a photograph is to show it.
    */
-  glassTintOverContent: 'rgba(26, 23, 20, 0.86)',
+  glassTintOverContent: 'rgba(26, 23, 20, 0.50)',
 
   /**
    * Dimming behind a sheet or modal. Derived from `textPrimary` rather than
@@ -344,7 +355,7 @@ export const darkColors: Palette = {
    */
   glassSeparator: 'rgba(0, 0, 0, 0.36)',
   /** Identical to the light palette's — see the note there. */
-  glassTintOverContent: 'rgba(26, 23, 20, 0.86)',
+  glassTintOverContent: 'rgba(26, 23, 20, 0.50)',
 
   /** Stronger than the light scrim: a sheet here is lighter than its ground. */
   scrim: 'rgba(8, 6, 5, 0.58)',

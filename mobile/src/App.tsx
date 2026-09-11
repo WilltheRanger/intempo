@@ -27,6 +27,7 @@ import { hydrateOnboardingDraft } from './data/onboardingDraft';
 import * as SystemUI from 'expo-system-ui';
 
 import { colors, fontsToLoad, scheme } from './design';
+import { ChromeToneProvider } from './navigation/ChromeToneContext';
 import { RootNavigator } from './navigation/RootNavigator';
 import { startLibraryCache } from './data/cache/libraryCache';
 import { startTakeDrainer } from './lib/sync/takeDrainer';
@@ -202,7 +203,13 @@ export default function App() {
             // See `navigation/linking.ts`.
             linking={linking}
           >
-            <RootNavigator />
+            {/* Inside the container, because the tab bar it feeds is drawn by
+                the navigator; above `RootNavigator`, because the screen that
+                reports the tone and the bar that reads it are siblings under
+                it. */}
+            <ChromeToneProvider>
+              <RootNavigator />
+            </ChromeToneProvider>
           </NavigationContainer>
         ) : (
           // Holds the page colour so the first frame doesn't flash white.

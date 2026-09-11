@@ -179,6 +179,19 @@ function ManuscriptField({ height, width }: { height: number; width: number }) {
   );
 }
 
+/**
+ * How tall the hero is: one viewport, exactly.
+ *
+ * Exported because `TodayScreen` has to hand the same number to
+ * `ScreenContainer` as `darkGround` — the floating chrome is drawn in the dark
+ * material only while it is still over this, and it stops being over it after
+ * one viewport of scrolling. Two places needing one measurement is how they
+ * drift; this is the measurement.
+ */
+export function useHeroHeight(): number {
+  return useWindowDimensions().height;
+}
+
 export function PracticeHero({
   content,
   greeting,
@@ -186,7 +199,7 @@ export function PracticeHero({
   onAction,
   onAdd,
 }: PracticeHeroProps) {
-  const { height, width } = useWindowDimensions();
+  const { width } = useWindowDimensions();
   // **The tab bar floats over this, so the hero has to end above it.** Without
   // this the "Continue practice" button sat under the capsule: still tappable
   // where it stuck out, and half-covered — a primary action partly behind
@@ -205,7 +218,7 @@ export function PracticeHero({
    * floats over the bottom of this anyway, so the hero fills the viewport and
    * the scroll is discovered the way it is on every other screen.
    */
-  const heroHeight = height;
+  const heroHeight = useHeroHeight();
 
   return (
     <View style={[styles.hero, { height: heroHeight }]}>

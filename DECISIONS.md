@@ -1,5 +1,83 @@
 # InTempo Decisions
 
+## 2026-09-11 — The chrome's tone follows the scroll offset, not the route name; and the over-content tint is 0.50, not 0.86
+
+Supersedes the mechanism and the value chosen in yesterday's entry below. The
+decision it records — that the floating control layer's material follows the
+screen under it rather than the appearance — stands. Both of the things built
+to carry it out were wrong, and in the same way: each substituted something
+easy to read for the thing actually being asked about.
+
+**The tint. 0.86 was arithmetic about a file nobody was looking at.** It came
+from taking `#CCB198` — a bright block of the manuscript *fixture* — as the
+worst case behind the capsule, and concluding that a fifth of that lifted the
+gold on the focused icon to 2.49:1. But the hero composites that fixture under
+a 0.45 wash and a bottom gradient before anything floats over it. Photographing
+the real backdrop, with the capsule hidden, gives `darkest #1E1814, brightest
+#3F372F, mean #332B24`. Against the brightest of those, 0.50 leaves the active
+label at 14.16:1, the inactive one at 4.58 with the tab's own dim on it, and
+the gold at 3.75. On the rendered page, where the blur has averaged the
+backdrop, those come out 15.44 / 4.82 / 3.95.
+
+The visible difference is the whole point: 0.86 was a solid slab with a faint
+gradient on it and no manuscript showing through. It was reported as "not a
+gradient — transparent", which is exactly right, and is the kind of thing a
+contrast number cannot tell you.
+
+**The mechanism. A route is a name; the tone is about a rectangle.** Keying on
+`state.routes[state.index].name === 'Today'` reads as obviously correct and is
+wrong the moment anything moves: Today's hero is one viewport tall and ordinary
+page content follows it, so scrolling slides the capsule off the photograph and
+onto ivory with the route unchanged. Measured on the built bundle, scrolled to
+the bottom: the dark capsule composited to `#88857D` on the page, its inactive
+labels at **1.46:1**. Navigation furniture, gone. That was introduced by
+yesterday's change, not found in it.
+
+**Decision.** A screen declares how tall its dark ground is — `ScreenContainer`
+takes `darkGround`, and Today passes `useHeroHeight()`, the same hook the hero
+sizes itself from. `chromeToneFor({scrollY, darkGroundHeight, chromeMidline})`
+answers whether the chrome is still over it, and `ScreenContainer` reports the
+answer through `ChromeToneContext` for `BottomTabBar` to read.
+
+The threshold is the capsule's **midline**. Its bottom edge crosses the
+ground's end at one offset and its top edge 76 points later, and in between it
+is genuinely half on a photograph and half on a page; no single threshold is
+right throughout, and the midline is wrong for the least of that span.
+
+**Alternatives considered.**
+
+- *Publish the scroll offset through the context.* Rejected: `onScroll` fires
+  at the frame rate, so the tab bar would re-render sixty times a second to
+  redraw something that changes twice in a session. The rule runs on the
+  screen's side and only the answer crosses, so state is set on a flip.
+- *Cross-fade the material across the transition.* What a real material would
+  do, and rejected for now: the fill, the specular, the two rims and both glyph
+  colours would all have to interpolate, and `Text` and the icons take plain
+  colour strings. It is a lot of machinery for a screen whose composition below
+  the hero is still the old Today and openly a prototype.
+- *Sample the actual backdrop and adapt.* What iOS does, and not available:
+  `BlurView` has no read-back, and the `backdrop-filter` trick that would fake
+  it (a fixed `brightness()`) is web-only — design law 1 makes the phone the
+  product and the browser the adaptation.
+- *Make the whole Today screen dark, so there is no transition.* A real
+  option and possibly the right one, but it is a design decision about a screen
+  the owner is still iterating on, which `CLAUDE.md` §2 reserves to them.
+
+**Trade-offs accepted.**
+
+- **The tone changes in one step, not a fade.** Visible if you scroll slowly
+  and watch for it.
+- **A screen with a dark ground must say so on every branch that draws it.**
+  Today has three — loading, empty library, populated — and a fourth that
+  correctly does not. `chromeTone.test.ts` counts them against the number of
+  `bleed` containers, which is the closest a text assertion gets to catching
+  the branch someone adds later.
+- **`useFocusEffect` is now load-bearing in `ScreenContainer`.** React
+  Navigation keeps a tab mounted when you leave it, so a screen that reported
+  `onDark` and went quiet would hand its material to Library. Clearing on blur
+  is what stops that, and it is tested by reading the source rather than by
+  rendering, which is weaker than it deserves.
+
 ## 2026-09-10 — The floating control layer's material follows the screen under it, not the appearance
 
 **Context.** Design law 9 was amended on 2026-09-06 to make the bottom bar a

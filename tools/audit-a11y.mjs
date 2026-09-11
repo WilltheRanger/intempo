@@ -251,6 +251,65 @@ const audit = () => {
     }
     return base;
   };
+
+  /**
+   * The ground, measured off the rendered page rather than modelled from CSS.
+   *
+   * **`backdrop` walks ancestors, and a floating control has none that matter.**
+   * The tab bar is drawn by the navigator as a sibling of the screen, so the
+   * chain from its label runs up through a transparent capsule to the body and
+   * stops — the answer is "glass over the page colour" whatever is actually
+   * underneath. On Today what is actually underneath is a photograph. At the
+   * heavy tint that read dark enough to pass and the blind spot cost nothing;
+   * lighten the tint so the manuscript shows through, as the whole surface is
+   * for, and the same blind spot reports **four failures on a screen measuring
+   * 4.82:1 on its own pixels**.
+   *
+   * The fix is the one this file already argues for twice — once for glass
+   * fills and once for SVG paint: when a check cannot see a layer it does not
+   * report "unknown", it reports a number, and the number sends you looking
+   * for a bug in the wrong file. So stop inferring the layer and photograph it.
+   *
+   * `groundShot` is one screenshot of the route with every glyph made
+   * transparent, so each element's own box holds exactly what is painted
+   * behind its text — backgrounds, blur, tint, rims, and whatever is scrolling
+   * under all of it. Sampling is a median of nine points across the box, which
+   * is what makes it usable over a *photograph*: a single centre pixel could
+   * land on a notehead, and the median of nine lands on the surface.
+   *
+   * **Only where the model is blind**, which is where `fillsUnder` found
+   * translucent layers. Everywhere else the CSS walk is exact, cheaper, and
+   * already trusted by every number this tool has ever printed — and a
+   * screenshot cannot distinguish a colour from the same colour with a shadow
+   * on it. This changes glass, and nothing else.
+   */
+  const groundShot = window.__a11yGround ?? null;
+  const sample = (box) => {
+    if (!groundShot) return null;
+    const { x, y, width, height } = box;
+    if (width < 2 || height < 2) return null;
+    const px = [];
+    for (const fx of [0.2, 0.5, 0.8]) {
+      for (const fy of [0.25, 0.5, 0.75]) {
+        const sx = Math.round((x + width * fx) * groundShot.scale);
+        const sy = Math.round((y + height * fy) * groundShot.scale);
+        if (sx < 0 || sy < 0 || sx >= groundShot.width || sy >= groundShot.height) continue;
+        const i = (sy * groundShot.width + sx) * 4;
+        px.push([groundShot.data[i], groundShot.data[i + 1], groundShot.data[i + 2]]);
+      }
+    }
+    if (px.length < 5) return null;
+    const median = (k) => px.map((p) => p[k]).sort((m, n) => m - n)[Math.floor(px.length / 2)];
+    return { r: median(0), g: median(1), b: median(2), a: 1 };
+  };
+
+  /** The measured ground where glass is involved, the modelled one elsewhere. */
+  const ground = (el) => {
+    if (fillsUnder(el).length === 0) return backdrop(el);
+    const r = el.getBoundingClientRect();
+    if (r.bottom < 0 || r.top > window.innerHeight) return backdrop(el);
+    return sample(r) ?? backdrop(el);
+  };
   /**
    * Hidden from assistive technology, or from touch, by any ancestor.
    *
@@ -350,7 +409,7 @@ const audit = () => {
     if (!visible(el)) continue;
     const s = getComputedStyle(el);
     const fg = paint(el, s);
-    const bg = backdrop(el);
+    const bg = ground(el);
     if (!fg || !bg) continue;
     const size = parseFloat(s.fontSize);
     const bold = Number(s.fontWeight) >= 700;
@@ -648,6 +707,69 @@ function declaredPaths() {
 }
 
 /**
+ * The route photographed with every glyph made transparent.
+ *
+ * What each element's own box holds in this picture is exactly what is painted
+ * *behind* its text — its background, and everything under that: a blur, a
+ * tint, two rims, and whatever is scrolling beneath the lot. `ground` samples
+ * it where the CSS walk is blind; see the note there for why that is the tab
+ * bar and not much else.
+ *
+ * **`color: transparent`, not `visibility: hidden`.** Hiding the text would
+ * take its element's own background with it, and that background is part of
+ * what is behind the glyphs. This removes the ink and leaves every surface
+ * standing. `-webkit-text-fill-color` is set alongside it because it wins over
+ * `color` where both apply, and `fill` for SVG text, which `color` does not
+ * paint at all — the same distinction this file already had to learn once.
+ *
+ * The stylesheet is removed before anything else runs, so nothing measured
+ * afterwards is measuring a page with its text turned off.
+ */
+async function groundPhoto(page) {
+  const STYLE_ID = 'a11y-ground-photo';
+  try {
+    await page.evaluate((id) => {
+      const style = document.createElement('style');
+      style.id = id;
+      style.textContent =
+        '*, *::before, *::after { color: transparent !important; ' +
+        '-webkit-text-fill-color: transparent !important; }' +
+        'svg text, svg tspan { fill: transparent !important; }';
+      document.head.appendChild(style);
+    }, STYLE_ID);
+    const png = await page.screenshot({ type: 'png' });
+    // **Decoded in the page and left there.** A viewport of pixels is about
+    // 4.9 million numbers; handing that back across the bridge and then in
+    // again, twice per route, costs more than every other check in this file
+    // put together. `audit` reads it off `window` instead.
+    return await page.evaluate(async (b64) => {
+      const img = new Image();
+      img.src = 'data:image/png;base64,' + b64;
+      await img.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      window.__a11yGround = {
+        width: img.width,
+        height: img.height,
+        scale: img.width / window.innerWidth,
+        data: ctx.getImageData(0, 0, img.width, img.height).data,
+      };
+      return true;
+    }, png.toString('base64'));
+  } catch {
+    // A screenshot is a convenience here, never a gate: `ground` falls back to
+    // the modelled backdrop when this returns false, which is what every
+    // number this tool printed before today was built on.
+    return false;
+  } finally {
+    await page.evaluate((id) => document.getElementById(id)?.remove(), STYLE_ID);
+  }
+}
+
+/**
  * The declared paths no route in `ROUTES` visits.
  *
  * Compared as patterns, because a declared path carries `:pieceId` while the
@@ -829,6 +951,7 @@ for (const [name, path, options = {}] of selected) {
     await page.close();
     continue;
   }
+  await groundPhoto(page);
   const found = await page.evaluate(audit);
   // Last, and on the same page: it rewrites every font size in the document,
   // so nothing measured after it would be measuring the shipped app.

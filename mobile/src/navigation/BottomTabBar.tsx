@@ -29,7 +29,7 @@ import {
   TAB_BAR_ROW_HEIGHT,
   tabBarFloatBottom,
 } from './tabBarMetrics';
-import { tabBarToneFor } from './tabBarTone';
+import { useChromeTone } from './ChromeToneContext';
 import { impact, ImpactFeedbackStyle } from '../lib/haptics';
 import { useReducedMotion } from '../lib/useReducedMotion';
 import type { TabParamList } from './types';
@@ -153,9 +153,11 @@ export function BottomTabBar({
   const reduceMotion = useReducedMotion();
 
   const bottomGap = tabBarFloatBottom(insets);
-  // Which screen is under the capsule decides what the capsule is made of —
-  // `tabBarTone.ts` has the rule and the measurements behind it.
-  const tone = tabBarToneFor(state.routes[state.index]?.name);
+  // **What is behind the capsule right now**, which the screen under it works
+  // out and reports — not which screen it is. A route is a name; the tone is
+  // about a rectangle, and Today is a photograph for exactly one viewport.
+  // `chromeTone.ts` holds the rule and what it cost to learn it.
+  const tone = useChromeTone();
   const palette = tone === 'onDark' ? darkColors : colors;
 
   return (
