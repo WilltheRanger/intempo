@@ -1,5 +1,73 @@
 # InTempo Decisions
 
+## 2026-09-11 — Delete the four features no screen could reach, rather than find them homes
+
+**Context.** `check-dead-exports.py` has reported the same four for weeks:
+`factFor`, `practiceLessonFor`, `notationSetupLesson` and `tempoLadderFor`.
+Each is complete, documented and tested, and no screen imports any of them.
+The check calls this its *other* kind of finding — not a test seam, not a
+reference implementation, but "a feature designed, written and tested, that no
+screen can reach". Every session has left them alone because wiring one changes
+a screen (`CLAUDE.md` §2) and deleting finished work is a product call.
+
+The owner made the call: delete all four.
+
+**Decision.** Gone, with their tests:
+
+  src/lib/facts.ts                24 facts and a daily rotation
+  src/lib/practiceLesson.ts       practiceLessonFor, notationSetupLesson
+  src/data/practiceTempo.ts       the TempoRung / tempoLadderFor block only
+
+`practiceTempo.ts` keeps everything else — `clampBpm`, `tempoFor`,
+`hydratePracticeTempos`, `usePracticeTempos` and the `practiceTempo` object are
+imported by ten modules and are untouched. `lib/warmup.ts` also stays: both
+deleted modules imported `dayIndex` from it, and `WarmupPanel`, `WarmupScreen`
+and `ListenButton` still use it.
+
+**Why deleting was the right answer for these four**, recorded because the
+argument differs per feature and "it was unreachable" is not on its own a
+reason to delete rather than to wire:
+
+- **`factFor`** — a violin fact a day, on Today. It was written for the carded
+  Today that no longer exists; the screen is now one photograph with one focal
+  point (§3 law 4), and a paragraph of trivia on it is the thing law 10 asks
+  you to remove. Its own docstring already called it "a footnote here rather
+  than a feature".
+- **`notationSetupLesson`** — tells you to check the transcription before
+  recording. `PracticeSetup`'s "Before your first take" card says it, and the
+  hero says "Reading the notation from your photograph…" while it happens. A
+  third copy is a third thing to keep in step.
+- **`tempoLadderFor`** — a Warm up / Build / Marked ladder beside the tempo
+  stepper. A genuinely better affordance than pressing + eight times, and the
+  one deletion worth regretting.
+- **`practiceLessonFor`** — turns "you rushed measures 5-8" into a drill for
+  it, rotating daily so the advice does not go stale. This is the strongest of
+  the four and arguably the product's whole proposition past the diagnosis.
+
+**Alternatives considered.**
+
+- *Wire `practiceLessonFor` onto the verdict screen.* Recommended and
+  declined. It is the moment the diagnosis lands and the natural home for a
+  drill; the owner's call was to clear the debt rather than open new UI before
+  a demo, which is a schedule decision the code cannot make.
+- *Leave them and mark them as seams.* Rejected, and the check is explicit
+  about why: `@test-seam` is for a module a suite genuinely needs, and
+  declaring one of these would be using the marker to silence a report rather
+  than to explain it. Three real seams carry it; these were never that.
+- *Keep the ladder, delete the rest.* Consistent with the reasoning above and
+  not what was asked. It is four lines of `git revert` away.
+
+**Trade-offs accepted.**
+
+- **458 lines of working, tested code deleted**, and the two with real product
+  value — the drill and the ladder — are the ones that will have to be written
+  again if they come back. They are in `git log`, which is the argument
+  `EDIT_LOG.md`'s removal already rests on: history is the record, not a file
+  full of code nothing calls.
+- **`check-dead-exports` now reports only its three declared seams**, which
+  means the next unreachable export will be the only thing in that list. That
+  is the point of clearing it.
+
 ## 2026-09-11 — The chrome's tone follows the scroll offset, not the route name; and the over-content tint is 0.50, not 0.86
 
 Supersedes the mechanism and the value chosen in yesterday's entry below. The
