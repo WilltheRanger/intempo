@@ -4,7 +4,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { StatusBar } from 'expo-status-bar';
 import { Images, X, Zap, ZapOff } from '../../components/icons';
 import { useEffect, useRef, useState } from 'react';
-import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Linking, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
@@ -12,7 +12,11 @@ import { Text } from '../../components/primitives/Text';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import { adviceFor, legibilityOf, type Advice } from '../../lib/scan/legibility';
 import { photographWithSystemCamera } from '../../lib/scan/systemCamera';
-import { cameraFallback, type FallbackRoute } from '../../lib/scan/cameraFallback';
+import {
+  cameraFallback,
+  type CameraAction,
+  type FallbackRoute,
+} from '../../lib/scan/cameraFallback';
 import { pageSamples } from '../../lib/scan/pageSamples';
 import {
   captureSession,
@@ -333,6 +337,21 @@ export function ScannerScreen() {
       navigation.navigate('AddPiece', { option: 'import' });
       return;
     }
+    if (route === 'settings') {
+      // Offered only where the OS owns the permission, which
+      // `cameraFallback` decides — a browser's site controls live behind the
+      // address bar and no page can open them. Same recovery the recording
+      // screen offers for the microphone, and the same failure text if the
+      // platform declines to open anything.
+      try {
+        await Linking.openSettings();
+      } catch {
+        setError(
+          'Open your device Settings, choose InTempo, and allow Camera. Then return to this screen.',
+        );
+      }
+      return;
+    }
     if (busy) {
       return;
     }
@@ -438,12 +457,13 @@ export function ScannerScreen() {
               <Text variant="metadataSmall" color="onDarkMuted" style={styles.unavailableText}>
                 {fallback?.message}
               </Text>
-              {fallback?.action ? (
+              {fallback?.actions.map((action) => (
                 <FallbackAction
-                  action={fallback.action}
+                  key={action.route}
+                  action={action}
                   onPress={(route) => void takeFallbackRoute(route)}
                 />
-              ) : null}
+              ))}
             </View>
           )}
         </ViewfinderPage>
@@ -585,18 +605,12 @@ export function ScannerScreen() {
  * someone tapping a dead shutter with no idea whether to change a setting, plug
  * in a webcam, or give up and type the piece in.
  */
-/**
- * The single control under the no-viewfinder message.
- *
- * Its own component only so the narrowing survives: `fallback.action` is
- * checked at the call site and TypeScript cannot carry that through a closure
- * on an object field.
- */
+/** One control under the no-viewfinder message. */
 function FallbackAction({
   action,
   onPress,
 }: {
-  action: { label: string; route: FallbackRoute };
+  action: CameraAction;
   onPress: (route: FallbackRoute) => void;
 }) {
   return (

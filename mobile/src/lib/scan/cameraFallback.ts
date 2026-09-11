@@ -35,12 +35,29 @@ export interface CameraState {
   os: string;
 }
 
-export type FallbackRoute = 'systemCamera' | 'import';
+export type FallbackRoute = 'systemCamera' | 'import' | 'settings';
+
+export interface CameraAction {
+  label: string;
+  route: FallbackRoute;
+}
 
 export interface CameraFallback {
   message: string;
-  /** The one control to offer beneath it, or null when there is nothing to do. */
-  action: { label: string; route: FallbackRoute } | null;
+  /**
+   * The controls to offer beneath it. Empty when there is nothing to do.
+   *
+   * **A list, because a refused camera has two different answers and the old
+   * single slot could only hold one.** On a phone the message said "you can
+   * turn it on in Settings" and offered "Choose images instead" — naming a
+   * route and then handing over a different one, which is the dead end this
+   * module's own docstring was written about. Both are real: Settings fixes
+   * the cause, importing works right now without leaving the app.
+   *
+   * Ordered cause-first. Somebody who came here to photograph a page wants the
+   * camera back; the import is the consolation, not the suggestion.
+   */
+  actions: CameraAction[];
 }
 
 /**
@@ -58,14 +75,14 @@ export function cameraFallback({
     return null;
   }
   if (granted === null) {
-    return { message: 'Starting the camera…', action: null };
+    return { message: 'Starting the camera…', actions: [] };
   }
   if (canAskAgain) {
     // The system prompt is still coming. Anything offered here would be a
     // second decision on top of the one already on screen.
     return {
       message: 'InTempo needs your camera to photograph sheet music.',
-      action: null,
+      actions: [],
     };
   }
 
@@ -75,13 +92,21 @@ export function cameraFallback({
       // what it is and because it tells them where to change it if they want to.
       message:
         'Your browser is not letting InTempo use the camera. Your phone’s camera app can still photograph the page.',
-      action: { label: 'Open the camera app', route: 'systemCamera' },
+      // **No Settings control on the web, and that is not an omission.** Site
+      // permissions live behind the address bar, in browser chrome no page can
+      // open — the same distinction `microphonePermissionRecovery` draws. The
+      // message says where to go; offering a button that cannot go there would
+      // be the drawn affordance that does nothing.
+      actions: [{ label: 'Open the camera app', route: 'systemCamera' }],
     };
   }
 
   return {
     message:
       'InTempo does not have camera access. You can turn it on in Settings, or use photographs you have already taken.',
-    action: { label: 'Choose images instead', route: 'import' },
+    actions: [
+      { label: 'Open Settings', route: 'settings' },
+      { label: 'Choose images instead', route: 'import' },
+    ],
   };
 }
