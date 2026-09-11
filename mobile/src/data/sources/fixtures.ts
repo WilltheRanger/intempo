@@ -1193,7 +1193,32 @@ export const fixtureTakeSource: TakeSource = {
       return [];
     }
     const take = buildFixtureTake();
-    return limit > 0 && take ? [take] : [];
+    if (!take || limit <= 0) {
+      return [];
+    }
+
+    // **A practice history, not one take repeated.** Insights draws a line
+    // through these now, and one point is not a trend -- against the fixtures
+    // build the chart simply never appeared, so nothing about it could be
+    // screenshotted, walked or swept. The real `getRecentTakes` pages
+    // `analyses` and returns as many as it is asked for.
+    //
+    // The shape is a musician getting better and having one bad night: drift
+    // shrinking session by session, with an outlier a week back. Derived from
+    // the real take by scaling its own trend, so every point on the chart is
+    // the same measurement the verdict screen draws, rather than a second set
+    // of numbers invented here.
+    const DRIFT = [1, 0.82, 1.45, 0.71, 0.6, 0.44, 0.38];
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const recordedAt = Date.parse(take.recordedAt);
+
+    return DRIFT.slice(0, limit).map((scale, index) => ({
+      ...take,
+      // index 0 is the real take; the rest are older, one every three days.
+      id: index === 0 ? take.id : `${take.id}-session-${index}`,
+      recordedAt: new Date(recordedAt - index * 3 * DAY_MS).toISOString(),
+      trend: take.trend.map((value) => value * scale),
+    }));
   },
 
   // The sample result was never recorded or uploaded. Hiding playback is more

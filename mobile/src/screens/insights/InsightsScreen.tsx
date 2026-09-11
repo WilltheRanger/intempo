@@ -24,11 +24,12 @@ import {
   joinMetadata,
 } from '../../lib/format';
 import { readTendency } from '../../lib/insights/tendency';
+import { sessionTrendFrom } from '../../lib/insights/sessionTrend';
 import { compareLatest } from '../../lib/insights/comparison';
 import { formatVerdict } from '../../lib/tempo';
 import type { TabScreenNavigation } from '../../navigation/types';
 import { TodayRow } from '../today/TodayRow';
-import { DeviationBar } from './DeviationBar';
+import { SessionTrendChart } from '../../components/charts/SessionTrendChart';
 import { PieceInsightRow } from './PieceInsightRow';
 import { firstStep, focusReason, windowLabel } from './copy';
 import { useAddPieceOption } from '../../navigation/useAddPieceOption';
@@ -142,6 +143,9 @@ export function InsightsScreen() {
   // that a direction cannot describe. The rule and the words are in
   // `lib/insights/tendency.ts`, where they can be tested.
   const tendency = readTendency(insights);
+  // Recent sessions as a series. Null when there are fewer than two to join,
+  // which the chart is deliberately not asked to render as an empty axis.
+  const sessionTrend = sessionTrendFrom(history, insights.tolerance);
 
   return (
     <ScreenContainer onRefresh={refresh}>
@@ -154,22 +158,21 @@ export function InsightsScreen() {
         {tendency.detail}
       </Text>
 
-      <DeviationBar
-        deviationPct={insights.meanDeviationPct}
-        spreadPct={tendency.showsSpread ? insights.spreadPct : undefined}
-        tolerance={insights.tolerance}
-        accessibilityLabel={tendency.spoken}
-        style={styles.bar}
-      />
-
-      <View style={styles.legend}>
-        <Text variant="metadataSmall" color="textTertiary">
-          Behind the beat
-        </Text>
-        <Text variant="metadataSmall" color="textTertiary">
-          Ahead of the beat
-        </Text>
-      </View>
+      {/*
+        **The window as a line, not as its mean.** A single bar could show the
+        thirty-day average and nothing else — not four sessions steadily
+        improving, not one outlier dragging the average — because a mean has no
+        shape. `sessionTrend.ts` decides what is plotted; it returns null
+        rather than an axis with one point on it, and the sentence above still
+        carries the summary on its own.
+      */}
+      {sessionTrend ? (
+        <SessionTrendChart
+          trend={sessionTrend}
+          accessibilityLabel={tendency.spoken}
+          style={styles.bar}
+        />
+      ) : null}
 
       {focus ? (
         <FadeIn index={0}>
