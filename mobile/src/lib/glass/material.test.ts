@@ -30,6 +30,28 @@ describe.each(palettes)('glassMaterial (%s palette)', (_name, palette) => {
     expect(material.fill).toBe(palette.glassTint);
   });
 
+  it('drops the catch over a screen\'s own content', () => {
+    // The specular implies a light source above a curved transparent surface.
+    // Over the flat page there is nothing to contradict it; over a photograph
+    // there is — the picture is already lit, from somewhere else — and the
+    // gradient reads as something laid on top rather than as light. Reported
+    // as "I don't really want a gradient on the bottom bar", which is exactly
+    // what it had become.
+    expect(glassMaterial(false, palette, true).specular).toBe(false);
+    expect(glassMaterial(false, palette, false).specular).toBe(true);
+  });
+
+  it('keeps every other layer over that content', () => {
+    // Only the catch goes. It is still glass: still blurring, still bending,
+    // and still carrying both hairlines, which are the shape rather than an
+    // effect.
+    const over = glassMaterial(false, palette, true);
+    expect(over.diffusion).toBe(true);
+    expect(over.refraction).toBe(true);
+    expect(over.separator).toBe(true);
+    expect(over.edge).toBe(true);
+  });
+
   it('drops every translucency effect when transparency is reduced', () => {
     const material = glassMaterial(true, palette);
     expect(material.diffusion).toBe(false);

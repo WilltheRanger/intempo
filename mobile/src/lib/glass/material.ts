@@ -25,8 +25,17 @@ export interface GlassMaterial {
    */
   refraction: boolean;
   /**
-   * The specular catch. Light-play across a curved *transparent* surface; over
-   * an opaque fill the same gradient reads as a smudge, not as light.
+   * The specular catch. Light-play across a curved *transparent* surface.
+   *
+   * Off in two cases, and they are the same case twice. Over an opaque fill
+   * the gradient reads as a smudge rather than as light, because there is no
+   * transparent surface for light to be crossing. Over a screen's own
+   * photograph it reads as a gradient laid on the picture, because the
+   * photograph already has lighting of its own and this one disagrees with it
+   * — a light source implied from above, over a scene lit from somewhere else.
+   *
+   * It is only convincing over the app's flat page, which has no light of its
+   * own to contradict.
    */
   specular: boolean;
   /**
@@ -50,17 +59,21 @@ export interface GlassMaterial {
 /**
  * The translucent material — five layers over whatever scrolls beneath.
  *
- * `overContent` swaps the tint for the heavier one. Not a second material:
- * every layer is the same and the surface is still glass. It is the one
- * parameter of the material that depends on what is behind it, because it is
- * the one that decides how much of that gets through — see
- * `glassTintOverContent` for the arithmetic that set the two values apart.
+ * `overContent` changes two of them, and the surface is still glass: it still
+ * blurs, still bends, and still carries both hairlines, which are the shape
+ * rather than an effect.
+ *
+ *  - The **tint** becomes `glassTintOverContent` — lighter, not heavier; see
+ *    that token for the arithmetic that set the two values apart.
+ *  - The **catch goes.** See `specular` above: it implies a light source over
+ *    a curved transparent surface, and a photograph is already lit from
+ *    somewhere that is not there.
  */
 function regular(palette: Palette, overContent: boolean): GlassMaterial {
   return {
     diffusion: true,
     refraction: true,
-    specular: true,
+    specular: !overContent,
     separator: true,
     edge: true,
     fill: overContent ? palette.glassTintOverContent : palette.glassTint,
