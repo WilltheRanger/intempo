@@ -217,6 +217,10 @@ def walk_the_built_app() -> list[tuple[str, bool, float]]:
         audit = ["node", str(ROOT / "tools" / "audit-a11y.mjs"), str(PORT)]
         return [
             run("app walk", ["node", str(ROOT / "tools" / "walk-app.mjs"), str(PORT)], MOBILE),
+            # The microphone and the camera, on devices Chromium invents.
+            # The only gate that reaches the hardware edge; everything else
+            # here stops where the app asks the OS for a device.
+            run("devices", ["node", str(ROOT / "tools" / "device-check.mjs"), str(PORT)], MOBILE),
             run("accessibility", audit, MOBILE),
             # **Both appearances, against the same build.** The audit's findings
             # — touch targets, focus order, accessible names, labels that spill

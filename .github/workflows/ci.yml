@@ -253,6 +253,13 @@ jobs:
       - name: Walk the app
         run: node ../tools/walk-app.mjs 4320
 
+      # **The hardware edge, on devices Chromium invents.** Every other job
+      # here stops where the app asks the operating system for a microphone
+      # or a camera — which is the first thing a musician touches and the
+      # last thing anything checked. See `tools/device-check.mjs`.
+      - name: Devices
+        run: node ../tools/device-check.mjs 4320
+
       - name: Accessibility audit
         run: node ../tools/audit-a11y.mjs 4320
 
