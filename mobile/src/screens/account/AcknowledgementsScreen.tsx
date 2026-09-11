@@ -45,6 +45,25 @@ export function AcknowledgementsScreen() {
         public-domain editions; their provenance is recorded in the repository.
       </Text>
 
+      {/*
+        **Photography, above the package list rather than buried under it.**
+        One photograph carries a whole screen of this app, and a person took
+        it. The Unsplash Licence does not require attribution, which makes
+        this a choice — and a list of three hundred npm packages that omits
+        the one human being is the wrong choice.
+      */}
+      <Text variant="sectionLabel" color="textSecondary" style={styles.heading}>
+        Photography
+      </Text>
+      <Text variant="body" style={styles.credit}>
+        The Today screen&rsquo;s photograph is by GVZ 42, on Unsplash, under
+        the Unsplash Licence.
+      </Text>
+
+      <Text variant="sectionLabel" color="textSecondary" style={styles.heading}>
+        Packages
+      </Text>
+
       <Card padded={false}>
         <View style={styles.rows}>
           {LICENCES.map((entry, index) => (
@@ -68,6 +87,12 @@ export function AcknowledgementsScreen() {
 
 const styles = StyleSheet.create({
   lede: {
+    marginBottom: spacing.xl,
+  },
+  heading: {
+    marginBottom: spacing.sm,
+  },
+  credit: {
     marginBottom: spacing.xl,
   },
   rows: {
