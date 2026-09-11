@@ -22,6 +22,8 @@ export interface PageRowProps {
   dragging: boolean;
   /** Spread onto the drag handle. */
   panHandlers: PanResponderInstance['panHandlers'];
+  /** Open the page at full size, which is the only way to actually review it. */
+  onOpen: () => void;
   onRetake: () => void;
   onDelete: () => void;
   /** Keyboard and screen-reader route to reordering, since drag isn't one. */
@@ -39,6 +41,7 @@ export function PageRow({
   total,
   dragging,
   panHandlers,
+  onOpen,
   onRetake,
   onDelete,
   onMoveUp,
@@ -63,7 +66,20 @@ export function PageRow({
           }
         }}
       >
-        <ScoreThumbnail source={page.source} style={styles.thumbnail} />
+        {/*
+          **The one thing this row did not offer was looking at the page.**
+          Retake, delete and reorder were all here; the thumbnail beside them
+          was inert, at 52x68, under a heading that calls this a review. See
+          `PagePreview`.
+        */}
+        <Pressable
+          onPress={onOpen}
+          accessibilityRole="button"
+          accessibilityLabel={`View page ${position} full size`}
+          style={({ pressed }) => [styles.thumbnailPress, pressed && styles.thumbnailPressed]}
+        >
+          <ScoreThumbnail source={page.source} style={styles.thumbnail} />
+        </Pressable>
 
         <Text variant="button" style={styles.position}>
           Page {position}
@@ -131,6 +147,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: spacing.sm,
     gap: spacing.sm,
+  },
+  thumbnailPress: {
+    borderRadius: radii.sm,
+    overflow: 'hidden',
+  },
+  // A tap gets an immediate response, before the sheet it opens arrives —
+  // `CLAUDE.md` §3. Opacity rather than scale: the target is small.
+  thumbnailPressed: {
+    opacity: 0.7,
   },
   thumbnail: {
     width: THUMBNAIL_WIDTH,

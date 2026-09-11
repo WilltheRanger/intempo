@@ -23,6 +23,7 @@ import {
 import { spacing } from '../../design';
 import type { RootNavigation } from '../../navigation/types';
 import { DraggablePageList } from './DraggablePageList';
+import { PagePreview } from './PagePreview';
 import { pageCountLabel } from '../../lib/format';
 
 /**
@@ -49,6 +50,9 @@ export function CapturedPagesScreen() {
   // the last thing anyone read, every time they confirmed or cancelled a
   // deletion, was "Delete page 0?" on its way out.
   const [pendingPosition, setPendingPosition] = useState(1);
+  // Which page is open at full size, by index — not by object, so a reorder or
+  // a retake underneath does not leave the preview holding a stale copy.
+  const [openPage, setOpenPage] = useState<number | null>(null);
 
   function askToDelete(id: string) {
     setPendingPosition(pages.findIndex((page) => page.id === id) + 1);
@@ -215,6 +219,7 @@ export function CapturedPagesScreen() {
       <DraggablePageList
         pages={pages}
         onReorder={(id, toIndex) => captureSession.moveTo(id, toIndex)}
+        onOpen={(_page, index) => setOpenPage(index)}
         onRetake={(page) => handleRetake(page.id)}
         onDelete={askToDelete}
         onNudge={(id, direction) => captureSession.move(id, direction)}
@@ -270,6 +275,18 @@ export function CapturedPagesScreen() {
           onPress={addFromLibrary}
         />
       </BottomSheet>
+
+      {/*
+        Held by index and read back out of `pages`, so deleting or reordering
+        underneath cannot strand the preview on a page that has moved. An index
+        past the end reads as null, which closes it.
+      */}
+      <PagePreview
+        page={openPage === null ? null : (pages[openPage] ?? null)}
+        position={(openPage ?? 0) + 1}
+        total={pages.length}
+        onClose={() => setOpenPage(null)}
+      />
     </ScreenContainer>
   );
 }
