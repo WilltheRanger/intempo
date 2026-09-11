@@ -21,7 +21,10 @@ import { formatWorkingTempo } from '../../lib/tempo';
 export type HeroAction = 'continue' | 'add';
 
 export interface HeroContent {
-  /** The small pill above the title. Names the section, not the piece. */
+  /**
+   * The small pill above the title. Names why this piece is the one shown,
+   * not the piece.
+   */
   label: string;
   /** The dominant element on the screen. */
   title: string;
@@ -86,7 +89,15 @@ export function heroContentFor({
     piece.transcriptionStatus === 'queued' || piece.transcriptionStatus === 'reading';
 
   return {
-    label: 'Continue practicing',
+    // **"Recommended" is a slightly bigger claim than the selection earns**,
+    // and it is the owner's word, so it is here with the caveat attached
+    // rather than silently. `getCurrentPiece` returns the most recently
+    // *played* piece — the newest analysis — falling back to the newest score
+    // for someone who has never recorded. That is a good default and it is not
+    // a recommendation: nothing weighs how a take went, how long ago it was,
+    // or what else is due. If the word is to keep earning its place, the
+    // ranking is what has to change, not this string.
+    label: 'Recommended',
     title: piece.title,
     meta: joinMetadata([
       piece.composer,

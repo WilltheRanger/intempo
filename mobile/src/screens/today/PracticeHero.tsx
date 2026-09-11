@@ -34,8 +34,8 @@ import type { HeroContent } from './heroContent';
  *  - The **add button is chrome** — the control layer, which law 6 exempts by
  *    name and which is the same glass capsule the rest of the app floats.
  *  - The **label pill** is the one thing here that is decoration, and it earns
- *    its place by separating "Continue practicing" from the title: without it
- *    the section name reads as part of the piece.
+ *    its place by separating "Recommended" from the title: without it the
+ *    label reads as part of the piece's name.
  *
  * Law 4 wanted one dominant focal point, and the three-foot test on this is
  * the title, then the button, then the greeting — which is the order a

@@ -43,7 +43,7 @@ describe('with a piece to continue', () => {
       lastTakeHeadline: 'You rushed across measures 5 to 8.',
     });
 
-    expect(hero.label).toBe('Continue practicing');
+    expect(hero.label).toBe('Recommended');
     expect(hero.title).toBe('Sonata No. 1 in G minor, BWV 1001');
     expect(hero.meta).toContain('J. S. Bach');
     expect(hero.meta).toContain('I. Adagio');

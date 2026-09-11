@@ -37,9 +37,9 @@ const THUMBNAIL = { width: 52, height: 38 };
  * Stands in for a piece that has not arrived yet, in a list.
  *
  * The label is drawn as a placeholder rather than as the real words: it is
- * "Continue practicing", which is only true once there is something to
- * continue, and asserting it over an empty library would be the screen
- * promising something it has not yet checked.
+ * "Recommended", which is only true once there is something to recommend, and
+ * asserting it over an empty library would be the screen promising something
+ * it has not yet checked.
  */
 export function ContinueSkeleton() {
   return (
