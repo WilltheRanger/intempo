@@ -15,13 +15,16 @@ export function windowLabel(days: number): string {
 /**
  * Why this piece is the one to practise next.
  *
- * One sentence, because it is a row's detail line rather than a paragraph in a
- * box. The old copy ran to three sentences inside a card and said the same
- * thing: this piece has the most to learn from, so play it again.
+ * One clause, because it is a row's detail line rather than a paragraph in a
+ * box. It ran to three sentences in a card once, then to two on the row; the
+ * second of those was "Record another take and compare", which is what the row
+ * does when you press it. The chevron is already that sentence, and a row that
+ * says out loud what its own affordance means is the interface reading itself
+ * aloud.
  */
 export function focusReason(sessions: number): string {
   const count = sessions === 1 ? '1 session' : `${sessions} sessions`;
-  return `Your clearest timing pattern, across ${count}. Record another take and compare.`;
+  return `Your clearest timing pattern, across ${count}.`;
 }
 
 /**

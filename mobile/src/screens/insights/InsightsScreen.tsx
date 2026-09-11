@@ -229,11 +229,15 @@ export function InsightsScreen() {
         <FadeIn index={1}>
           <View style={styles.section}>
             <SectionHeader label="Recent sessions" />
-            <Text variant="metadataSmall" color="textSecondary">
-              Open a session to revisit its recording and bar-by-bar feedback.
-              Compare the same passage at the same tempo; different takes aren't
-              automatically a measure of improvement.
-            </Text>
+            {/*
+              **Four lines of instruction used to sit here** — what opening a
+              session gets you, and a caveat that two takes are not
+              automatically comparable. The first half described the rows'
+              own affordance; the second is a real caveat, and it already
+              appears above, on the comparison that actually puts two takes
+              side by side. Saying it over a list nobody is comparing yet is
+              the screen explaining itself before anything has happened.
+            */}
             {takes.map((take, index) => (
               <TodayRow
                 key={take.id}

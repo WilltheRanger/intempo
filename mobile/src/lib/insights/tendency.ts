@@ -148,12 +148,16 @@ export function readTendency(summary: WindowSummary): TendencyReading {
     // leaves magnitudes to the bar, which works while the quantity has a side;
     // a musician told only that they "landed on both sides" has been told the
     // shape of the problem and not its size.
+    //
+    // **Shortened once the chart went in**, which is the honest reason: this
+    // used to spell out "you landed on both sides of the beat rather than
+    // settling on one", and a line crossing the target rule four times says
+    // that better than a clause can. What a picture cannot say is how far, so
+    // that is what is left.
     const out = `${Math.round(summary.spreadPct)}%`;
     return {
       title: 'Your tempo wanders',
-      detail:
-        `Across ${count} you landed on both sides of the beat rather than ` +
-        `settling on one — ${out} out on average, either way.`,
+      detail: `${out} off the beat either way, across ${count}.`,
       showsSpread: true,
       spoken: `Your tempo wanders, about ${out} off the beat on either side, across ${count}`,
     };

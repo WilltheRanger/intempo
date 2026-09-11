@@ -27,9 +27,9 @@ describe('focusReason', () => {
     const reason = focusReason(12);
 
     expect(reason).toContain('12 sessions');
-    // Two sentences at most: `TodayRow` gives it three lines at 13pt, and the
-    // three-sentence version this replaced needed a card to hold it.
-    expect(reason.split('.').filter(Boolean)).toHaveLength(2);
+    // One sentence. It was three in a card, then two on the row; the second
+    // told you to record another take, which is what pressing the row does.
+    expect(reason.split('.').filter(Boolean)).toHaveLength(1);
   });
 
   it('says session, singular, for one', () => {

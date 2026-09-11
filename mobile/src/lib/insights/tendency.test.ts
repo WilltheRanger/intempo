@@ -107,10 +107,12 @@ describe('readTendency', () => {
     });
 
     expect(reading.title).toBe('Your tempo wanders');
-    expect(reading.detail).toContain('both sides of the beat');
+    // The chart says "both sides" better than a clause can; the words carry
+    // the one thing a picture cannot, which is how far.
+    expect(reading.detail).toContain('either way');
     expect(reading.detail).toContain('18%');
     // Singular. This copy is assembled, and assembled copy ships "1 sessions".
-    expect(reading.detail).toContain('1 session ');
+    expect(reading.detail).toContain('1 session.');
     expect(reading.detail).not.toContain('1 sessions');
   });
 
