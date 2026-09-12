@@ -69,6 +69,57 @@ export function audioContext(): AudioContext | null {
   return shared;
 }
 
+/**
+ * The shared context, but only if one already exists.
+ *
+ * Separate from `audioContext()` because that one *builds* a context when
+ * there is none, and the caller below wants the opposite: to know whether
+ * something is already holding the audio session. Asking with `audioContext()`
+ * would create the very thing it is checking for.
+ */
+export function existingAudioContext(): AudioContext | null {
+  return shared && shared.state !== 'closed' ? shared : null;
+}
+
+/**
+ * Give the operating system's audio session back, before asking for capture.
+ *
+ * **This is the half of the iPhone recording bug that two fixes missed.**
+ * WebKit rejects `getUserMedia` with `InvalidStateError` when a *playback*
+ * audio session is running, because capture needs the session category and
+ * will not take it by force. The first fix stopped this app claiming one
+ * immediately before asking (`audioRecorder.web.ts` now takes the microphone
+ * first); the second stopped it building a second context at all. Neither
+ * touched the context **Listen** leaves running, which predates the whole
+ * call — and the comment written for the second fix says exactly that:
+ *
+ *   > taking the microphone first only helps when the running context is
+ *   > *ours*. Listen leaves the shared one running, and nothing here could
+ *   > see it.
+ *
+ * Suspending releases the session without closing the context, which is the
+ * distinction that matters: `close()` on iOS does not reliably give the slot
+ * back — that is this module's founding argument — and `suspend()` keeps the
+ * mixer, the sample rate and the registered worklet intact. The recorder
+ * resumes it once the microphone is granted, which is a state WebKit is happy
+ * to put a playback graph back into.
+ *
+ * Never throws and never waits forever: a browser that refuses to suspend is
+ * no worse off than before this existed.
+ */
+export async function releaseAudioSession(): Promise<void> {
+  const context = existingAudioContext();
+  if (!context || context.state !== 'running') {
+    return;
+  }
+  try {
+    await context.suspend();
+  } catch {
+    // Some engines reject a suspend on a context that is already going away.
+    // The capture request is the next thing to happen either way.
+  }
+}
+
 /** Ask a suspended or interrupted context to run again. Never throws. */
 export function resumeAudio(context: AudioContext): void {
   if (context.state === 'running') {

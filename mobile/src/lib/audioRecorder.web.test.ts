@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { EmptyRecordingError } from './audio/types';
-import { resetAudioContextForTests } from './audio/context.web';
+import { audioContext, resetAudioContextForTests } from './audio/context.web';
 import { startRecording } from './audioRecorder.web';
 
 /**
@@ -58,6 +58,9 @@ class StubContext {
   }
   async resume() {
     this.state = 'running';
+  }
+  async suspend() {
+    this.state = 'suspended';
   }
   async close() {}
 }
@@ -221,6 +224,73 @@ describe('startRecording (web)', () => {
    * **Both halves of sharing the app's one context**, and each was a way the
    * second take of a session could break while the first worked.
    */
+  /*
+   * **Listen, then Record — the sequence that kept failing on a real iPhone
+   * after two fixes that each claimed to have solved it.**
+   *
+   * Listen leaves the shared context running. WebKit will not take the audio
+   * session category away from a running playback context, so the capture
+   * request is rejected with `InvalidStateError`. Taking the microphone before
+   * building the graph does not help: the offending context predates the whole
+   * call. The session has to be handed back first.
+   */
+  it('hands the audio session back before asking for the microphone', async () => {
+    const order: string[] = [];
+    class WatchedContext extends StubContext {
+      async suspend() {
+        order.push('suspend');
+        this.state = 'suspended';
+      }
+      async resume() {
+        order.push('resume');
+        this.state = 'running';
+      }
+    }
+    vi.stubGlobal('window', { AudioContext: WatchedContext });
+    vi.stubGlobal('navigator', {
+      mediaDevices: {
+        getUserMedia: async () => {
+          order.push('permission');
+          return { getTracks: () => [{ stop() {} }] };
+        },
+      },
+    });
+
+    // Listen: the shared context exists and is running before Record is
+    // pressed. Without this the context is built *after* the microphone and
+    // there is nothing to suspend — which is why the earlier fix passed its
+    // tests and failed on the phone.
+    const shared = audioContext();
+    expect(shared?.state).toBe('running');
+
+    const recorder = await startRecording();
+
+    expect(order[0]).toBe('suspend');
+    expect(order.indexOf('suspend')).toBeLessThan(order.indexOf('permission'));
+    // And it comes back, or the take records into a suspended graph.
+    expect(order).toContain('resume');
+    await recorder.stop().catch(() => {});
+  });
+
+  it('has nothing to suspend when Listen was never pressed', async () => {
+    const order: string[] = [];
+    class WatchedContext extends StubContext {
+      async suspend() {
+        order.push('suspend');
+        this.state = 'suspended';
+      }
+    }
+    vi.stubGlobal('window', { AudioContext: WatchedContext });
+
+    const recorder = await startRecording();
+
+    // Nothing held the session, so nothing is handed back — and in particular
+    // no context is *built* just to suspend it, which `audioContext()` would
+    // have done.
+    expect(order).toEqual([]);
+    recorder.cancel();
+  });
+
   it('records twice without re-registering the worklet', async () => {
     let modules = 0;
     class CountingContext extends StubContext {
