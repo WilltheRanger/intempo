@@ -7,6 +7,8 @@ import {
   formatRole,
   formatTier,
   joinMetadata,
+  pageCountLabel,
+  sessionLabel,
 } from './format';
 
 /**
@@ -170,5 +172,50 @@ describe('joinMetadata', () => {
   it('adds no separator to a single fragment', () => {
     expect(joinMetadata([null, 'Bach'])).toBe('Bach');
     expect(joinMetadata([null, undefined])).toBe('');
+  });
+});
+
+
+/**
+ * Two counts that used to be four functions.
+ *
+ * `pageCountLabel` lived in `ScannerScreen` and `CapturedPagesScreen` with
+ * **different** behaviour at zero; `sessionLabel` lived in
+ * `lib/insights/tendency.ts` and `PieceInsightRow.tsx`, byte-identical, with
+ * only the module's copy tested. Neither divergence was visible: the captured-
+ * pages screen returns its empty state before its label is reached, so its
+ * zero case was unreachable.
+ *
+ * The zero case is here because it is the one that differed, and because a
+ * mutation found nothing testing it — dropping the branch entirely left all
+ * 1,751 tests passing.
+ */
+describe('counting pages', () => {
+  it('says what an empty scan is, rather than counting to zero', () => {
+    // "0 pages" is arithmetic; "No pages yet" is the sentence a person would
+    // say, and it is the reason this branch is the one both screens now use.
+    expect(pageCountLabel(0)).toBe('No pages yet');
+  });
+
+  it('does not pluralise a single page', () => {
+    expect(pageCountLabel(1)).toBe('1 page');
+  });
+
+  it('counts the rest', () => {
+    expect(pageCountLabel(2)).toBe('2 pages');
+    expect(pageCountLabel(30)).toBe('30 pages');
+  });
+});
+
+describe('counting sessions', () => {
+  it('does not pluralise a single session', () => {
+    expect(sessionLabel(1)).toBe('1 session');
+  });
+
+  it('counts the rest, including none', () => {
+    // Zero is a real reading here and not an empty state: a window with no
+    // sessions is what a musician who has not practised this month sees.
+    expect(sessionLabel(0)).toBe('0 sessions');
+    expect(sessionLabel(12)).toBe('12 sessions');
   });
 });

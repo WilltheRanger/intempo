@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   PanResponder,
+  Platform,
   StyleSheet,
   View,
   type LayoutChangeEvent,
@@ -20,6 +21,7 @@ const ESTIMATED_ROW_HEIGHT = 86;
 export interface DraggablePageListProps {
   pages: CapturedPage[];
   onReorder: (id: string, toIndex: number) => void;
+  onOpen: (page: CapturedPage, index: number) => void;
   onRetake: (page: CapturedPage, index: number) => void;
   onDelete: (id: string) => void;
   onNudge: (id: string, direction: -1 | 1) => void;
@@ -39,6 +41,7 @@ export interface DraggablePageListProps {
 export function DraggablePageList({
   pages,
   onReorder,
+  onOpen,
   onRetake,
   onDelete,
   onNudge,
@@ -79,6 +82,7 @@ export function DraggablePageList({
             setActiveIndex(null);
             setSlotOffset(0);
           }}
+          onOpen={() => onOpen(page, index)}
           onRetake={() => onRetake(page, index)}
           onDelete={() => onDelete(page.id)}
           onMoveUp={() => onNudge(page.id, -1)}
@@ -100,6 +104,7 @@ interface DraggableRowProps {
   onDragStart: () => void;
   onDragMove: (dy: number) => void;
   onDragEnd: (outcome: DragOutcome) => void;
+  onOpen: () => void;
   onRetake: () => void;
   onDelete: () => void;
   onMoveUp: () => void;
@@ -117,6 +122,7 @@ function DraggableRow({
   onDragStart,
   onDragMove,
   onDragEnd,
+  onOpen,
   onRetake,
   onDelete,
   onMoveUp,
@@ -194,7 +200,7 @@ function DraggableRow({
     const animation = Animated.timing(shiftY, {
       toValue,
       duration: motion.fast,
-      useNativeDriver: true,
+      useNativeDriver: Platform.OS !== 'web',
     });
     animation.start();
     return () => animation.stop();
@@ -214,6 +220,7 @@ function DraggableRow({
         total={total}
         dragging={isActive}
         panHandlers={responder.panHandlers}
+        onOpen={onOpen}
         onRetake={onRetake}
         onDelete={onDelete}
         onMoveUp={onMoveUp}

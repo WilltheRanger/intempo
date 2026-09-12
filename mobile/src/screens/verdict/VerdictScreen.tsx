@@ -1,28 +1,41 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import { useGoBack } from '../../navigation/useGoBack';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import {
-  Card,
   EmptyState,
   MetadataRow,
   PageHeader,
   PrimaryButton,
   ScreenContainer,
-  SecondaryButton,
   SectionHeader,
   Text,
 } from '../../components/primitives';
 import { FadeIn } from '../../components/motion';
 import { VerdictSkeleton } from '../../components/skeletons';
 import { takeSource } from '../../data/sources';
-import type { TakeResult } from '../../data/types';
-import { spacing } from '../../design';
-import { formatTakeVerdict } from '../../lib/tempo';
+import type { MeasureVerdict, TakeResult, UserVerdict } from '../../data/types';
+import { BORDER_WIDTH, colors, spacing } from '../../design';
+import { formatTakeVerdict, formatTempo } from '../../lib/tempo';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
+import {
+  describeTrendRange,
+  readMeasure,
+  timedMeasureRange,
+} from '../../lib/verdict/measureReading';
+import {
+  appVerdictFor,
+  canCorrect,
+  correctionAcknowledgement,
+} from '../../lib/verdict/correction';
+import { useSubmitCorrection } from '../../data/hooks/useCorrections';
+import { CorrectionPrompt, type CorrectionState } from './CorrectionPrompt';
 import { MEASURE_COLUMNS, MeasureRow } from './MeasureRow';
 import { TrendLine } from './TrendLine';
+import { TakePlayback } from './TakePlayback';
+import { loadStateFor } from '../../lib/loadState';
 
 /**
  * What one take came back as.
@@ -43,16 +56,91 @@ export function VerdictScreen() {
   const { params } = useRoute<RouteProp<RootStackParamList, 'Verdict'>>();
   const [revealed, setRevealed] = useState<number | null>(null);
 
-  const {
-    data: take,
-    isPending,
-    isError,
-  } = useQuery<TakeResult | null>({
+  /*
+    Where each measure's correction has got to, keyed by measure number.
+
+    **Kept here rather than in the row** so it survives collapsing and
+    reopening a row — someone who taps away and comes back should see that
+    they already answered, not be asked again. Not persisted beyond the
+    screen: the server appends rather than replaces, so a second answer is a
+    second opinion and both are data, but re-asking within one sitting reads
+    as the app having forgotten.
+  */
+  const [corrections, setCorrections] = useState<Record<number, CorrectionState>>(
+    {},
+  );
+  const submitCorrection = useSubmitCorrection();
+
+  function correct(measure: MeasureVerdict, choice: UserVerdict) {
+    setCorrections((current) => ({
+      ...current,
+      [measure.measure]: { kind: 'sending', choice },
+    }));
+    submitCorrection.mutate(
+      {
+        analysisId: params.analysisId,
+        corrections: [
+          {
+            measure_number: measure.measure,
+            // Sent as the app's own word for it, so the pair is stored
+            // together — the dataset exists to compare the two, and storing
+            // only the correction loses what it was correcting.
+            app_verdict: appVerdictFor(measure),
+            user_verdict: choice,
+          },
+        ],
+      },
+      {
+        onSuccess: () =>
+          setCorrections((current) => ({
+            ...current,
+            [measure.measure]: {
+              kind: 'sent',
+              message: correctionAcknowledgement(choice),
+            },
+          })),
+        onError: (error: unknown) =>
+          setCorrections((current) => ({
+            ...current,
+            [measure.measure]: {
+              kind: 'failed',
+              /*
+                The error's own words, matching `ProfileScreen`'s convention
+                for the same shape of write. **Not `describeLoadError`**: that
+                exists for a screen that could not *load*, and its fallback is
+                "Check your connection and try again" — which replaced the
+                hook's own "Sending feedback needs the backend. This build is
+                running on sample data." with a guess that is both wrong and
+                unactionable. That is the exact substitution `describeError.ts`
+                was written to stop, and it reappeared one caller over.
+              */
+              message:
+                error instanceof Error
+                  ? error.message
+                  : 'That feedback could not be sent. Try again.',
+            },
+          })),
+      },
+    );
+  }
+
+  const { data: take, isError } = useQuery<TakeResult | null>({
     queryKey: ['take', params.analysisId],
     queryFn: () => takeSource.getTake(params.analysisId),
   });
+  const load = loadStateFor({ isError, hasData: take !== undefined });
 
-  if (isPending) {
+  /**
+   * The piece is only known once the take has loaded, and these branches run
+   * when it has not or when it failed. `Library` is the honest fallback there:
+   * the success path below navigates to the piece by name, which is what a
+   * verdict's back control should do when there is a piece to name.
+   */
+  const goBack = useGoBack(
+    take ? { route: 'PieceDetail', params: { pieceId: take.pieceId } } : { tab: 'Library' },
+  );
+
+  if (load === 'loading') {
     return (
       <ScreenContainer>
         <VerdictSkeleton />
@@ -60,14 +148,15 @@ export function VerdictScreen() {
     );
   }
 
-  if (isError || !take) {
+  if (load === 'unavailable' || !take) {
     return (
       <ScreenContainer>
         <EmptyState
+          fill
           title="Couldn't load this take"
           description="It may have been removed, or the analysis never finished."
           actionLabel="Back"
-          onActionPress={() => navigation.goBack()}
+          onActionPress={goBack}
         />
       </ScreenContainer>
     );
@@ -96,17 +185,35 @@ export function VerdictScreen() {
           />
         }
       >
+        {/*
+          **Centred, like the empty states on Today and Insights** (owner's
+          call, 2026-09-02, on seeing this screen rendered for the first time).
+          To a musician this is an empty state: nothing to show, one thing to
+          do. Left at the top it put a short sentence in the first quarter of
+          the screen with two thirds of the page blank beneath it.
+
+          The header keeps only the back control and the piece, because the
+          finding has moved into the centred block — a screen has one dominant
+          focal point (§3 law 4), and it should be the outcome rather than the
+          title of the piece.
+        */}
         <PageHeader
           eyebrow={take.pieceTitle}
-          title="This take didn't get analysed"
-          onBack={() => navigation.goBack()}
+          onBack={goBack}
           backLabel="Back to the piece"
         />
-        <Text variant="body" color="textSecondary">
-          {take.failure.recoverable
-            ? 'Something went wrong on our side, not with your playing. Recording it again usually works.'
-            : "We couldn't process this recording. Your playing wasn't the problem — record it again when you have a moment."}
-        </Text>
+        <EmptyState
+          fill
+          title="This take didn't get analysed"
+          description={
+            take.failure.recoverable
+              ? 'Something went wrong on our side, not with your playing. Recording it again usually works.'
+              : "We couldn't process this recording. Your playing wasn't the problem — record it again when you have a moment."
+          }
+        />
+        {take.recordingAvailable ? (
+          <TakePlayback analysisId={take.id} />
+        ) : null}
       </ScreenContainer>
     );
   }
@@ -125,49 +232,57 @@ export function VerdictScreen() {
           />
         }
       >
+        {/* Centred for the same reason as the branch above. */}
         <PageHeader
           eyebrow={take.pieceTitle}
-          title="Nothing to measure"
-          onBack={() => navigation.goBack()}
+          onBack={goBack}
           backLabel="Back to the piece"
         />
-        <Text variant="body" color="textSecondary">
-          {take.headline}
-        </Text>
+        {/* The pipeline's own sentence, shown verbatim. */}
+        <EmptyState fill title="Nothing to measure" description={take.headline} />
+        {take.recordingAvailable ? (
+          <TakePlayback analysisId={take.id} />
+        ) : null}
       </ScreenContainer>
     );
   }
 
   // The chart's x axis, so the ends of the line name measures that can be
-  // found in the list below it.
-  const firstMeasure = take.measures[0]?.measure ?? 1;
+  // found in the list below it — and specifically the measures the line
+  // *reaches*. `trend` drops untimed and slur-interior notes, so labelling
+  // this from the whole take captioned the ends with bars the line stops
+  // short of. See `timedMeasureRange`.
+  const covered = timedMeasureRange(take.measures);
+  const firstMeasure = covered?.first ?? take.measures[0]?.measure ?? 1;
   const lastMeasure =
-    take.measures[take.measures.length - 1]?.measure ?? take.measures.length;
+    covered?.last ??
+    take.measures[take.measures.length - 1]?.measure ??
+    take.measures.length;
 
   return (
+    /*
+      **One action, not two.** "Back to the piece" was a full-width secondary
+      button under the primary *and* the label on the chevron at the top — the
+      same words twice, one of them saying what the other already offered. It
+      cost about 65pt of a screen whose measure list was showing three rows of
+      twelve, which is the part of this screen a musician actually works from.
+
+      The two also went to different places under the same words: the chevron
+      called `goBack()`, which after a take returns to the Record screen, while
+      the button `replace`d with the piece. The chevron now does what it says.
+    */
     <ScreenContainer
       footer={
-        <View style={styles.actions}>
-          <PrimaryButton
-            label="Record again"
-            onPress={() =>
-              navigation.replace('Record', { pieceId: take.pieceId })
-            }
-          />
-          <SecondaryButton
-            label="Back to the piece"
-            onPress={() =>
-              navigation.replace('PieceDetail', { pieceId: take.pieceId })
-            }
-            style={styles.secondary}
-          />
-        </View>
+        <PrimaryButton
+          label="Record again"
+          onPress={() => navigation.replace('Record', { pieceId: take.pieceId })}
+        />
       }
     >
       <PageHeader
         eyebrow={take.pieceTitle}
         title={formatTakeVerdict(take.measures)}
-        onBack={() => navigation.goBack()}
+        onBack={() => navigation.navigate('PieceDetail', { pieceId: take.pieceId })}
         backLabel="Back to the piece"
       />
 
@@ -179,12 +294,16 @@ export function VerdictScreen() {
       <MetadataRow
         variant="metadataSmall"
         items={[
-          `Target ${take.targetBpm} BPM`,
+          `Target ${formatTempo(take.targetBpm, take.tempoBeatUnit)}`,
           measureLabel(take.measures.length),
           take.missedNotes > 0 ? noteLabel(take.missedNotes) : null,
         ]}
         style={styles.meta}
       />
+
+      {take.recordingAvailable ? (
+        <TakePlayback analysisId={take.id} />
+      ) : null}
 
       {take.lowConfidence ? (
         <Text
@@ -203,15 +322,17 @@ export function VerdictScreen() {
         the rule, ahead and behind either side of it, measure numbers at each
         end — so prose explaining it would only repeat what it already says.
       */}
-      <Card>
+      <View style={styles.chart}>
         <TrendLine
           trend={take.trend}
           tolerance={take.tolerance}
           firstMeasure={firstMeasure}
           lastMeasure={lastMeasure}
-          accessibilityLabel={`Tempo drift across ${take.measures.length} measures`}
+          // The same two numbers the axis prints — see `describeTrendRange`,
+          // which lives beside `timedMeasureRange` because they had drifted.
+          accessibilityLabel={describeTrendRange(firstMeasure, lastMeasure)}
         />
-      </Card>
+      </View>
 
       <SectionHeader label="Measure by measure" style={styles.section} />
       {/*
@@ -223,29 +344,58 @@ export function VerdictScreen() {
           Behind ← Target → Ahead
         </Text>
       </View>
-      {/* No wrapper padding: each row owns its gutter so the selected one can
-          tint edge to edge. */}
-      <Card padded={false}>
+      {/*
+        **Ruled rows on the page, not a card.** Twelve rows that already divide
+        themselves with a hairline apiece do not need a box drawn round them
+        (§3 law 3) — the same call as the library's own list and the piece
+        screen's destinations. Each row owns its gutter, so a selected one still
+        tints edge to edge.
+      */}
+      <View style={styles.measures}>
         {take.measures.map((measure, index) => (
           <FadeIn key={measure.measure} index={index}>
-          <MeasureRow
-            measure={measure}
-            tolerance={take.tolerance}
-            revealed={revealed === measure.measure}
-            onToggle={() =>
-              setRevealed((current) =>
-                current === measure.measure ? null : measure.measure,
-              )
-            }
-            divided={index > 0}
-          />
+            <MeasureRow
+              measure={measure}
+              tolerance={take.tolerance}
+              revealed={revealed === measure.measure}
+              onToggle={() =>
+                setRevealed((current) =>
+                  current === measure.measure ? null : measure.measure,
+                )
+              }
+              divided={index > 0}
+              revealedExtra={
+                /*
+                  Only where the app made a claim about the playing. A bar
+                  under a `rit.`, a held fermata or an ornament was never
+                  judged, so there is nothing to agree or disagree with —
+                  `canCorrect` is the row's own `revealsFigure`, deliberately,
+                  rather than a second predicate free to drift from it.
+                */
+                canCorrect(measure) ? (
+                  <CorrectionPrompt
+                    appVerdict={appVerdictFor(measure)}
+                    state={corrections[measure.measure] ?? { kind: 'idle' }}
+                    onChoose={(choice) => correct(measure, choice)}
+                  />
+                ) : null
+              }
+            />
           </FadeIn>
         ))}
-      </Card>
+      </View>
 
-      <Text variant="metadataSmall" color="textTertiary" style={styles.tip}>
-        Tap a measure for its timing.
-      </Text>
+      {/*
+        Only when some measure has a figure behind it. A take that is entirely
+        a `rit.`, or one bar of held chord, has no row that answers a tap — and
+        an instruction for an interaction the screen does not offer is the same
+        dead end as an empty state naming an action it has no route to.
+      */}
+      {take.measures.some((m) => readMeasure(m).revealsFigure) ? (
+        <Text variant="metadataSmall" color="textTertiary" style={styles.tip}>
+          Tap a measure for its timing.
+        </Text>
+      ) : null}
     </ScreenContainer>
   );
 }
@@ -287,10 +437,24 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
     textAlign: 'center',
   },
-  actions: {
-    gap: spacing.md,
+  /**
+   * The chart, ruled rather than boxed.
+   *
+   * It was the last card on the screen and therefore the only white surface on
+   * an ivory page, which gave the summary more weight than the twelve rows of
+   * detail below it — the same data, and the part a musician works from. A rule
+   * above and below marks it off as a figure without making it a panel (§3
+   * laws 3 and 6).
+   */
+  chart: {
+    marginTop: spacing.md,
+    paddingVertical: spacing.md,
+    borderTopWidth: BORDER_WIDTH,
+    borderBottomWidth: BORDER_WIDTH,
+    borderColor: colors.border,
   },
-  secondary: {
-    marginTop: 0,
+  measures: {
+    borderTopWidth: BORDER_WIDTH,
+    borderTopColor: colors.border,
   },
 });

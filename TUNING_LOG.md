@@ -6,6 +6,327 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-09-08 — The tuning dashboard was detecting twice the onsets the pipeline does
+
+**No value changed.** `analyze()` is untouched; every threshold in
+`config.toml` is what it was. What changed is that the dashboard now reports
+the pipeline's numbers on a page with an ornament on it, which it did not.
+
+`diagnostics.py` had copied `analyze()`'s preamble — decode, high-pass, read
+the score, detect — and the copy called
+`closest_expected_gap(expected)` where the original calls
+`closest_expected_gap(expected, optional=grace_onsets)`. One keyword.
+
+With no grace notes on the page the two arguments are the same value, which is
+why nothing caught it: `test_diagnostics_matches_analyze` uses eight plain
+quarters and agrees either way.
+
+Measured, one acciaccatura on a bar of eight quarters played exactly on the
+grid:
+
+| | detector `min_gap_s` | onsets detected |
+|---|---|---|
+| `analyze()` | 1.00 s | **8** for 8 clicks |
+| dashboard, as it was | 0.15 s | **16** for 8 clicks |
+
+That is the failure `closest_expected_gap`'s own docstring records — the window
+shrinking everywhere to chase an acciaccatura, "14 onsets detected for 8
+clicks" — happening to the tool that exists to tune it away.
+
+**What this means for readings already taken.** Nothing in `TUNING_LOG.md`
+records a value chosen off an ornamented clip, and no threshold has been moved
+yet, so there is nothing here to revise. But any onset count, envelope or
+matched-pair reading taken from the dashboard on a clip whose score carries a
+grace note was not what the pipeline would have produced, and should be taken
+again.
+
+**Fix.** The preamble is now one function, `analysis.prepare_for_alignment`,
+which both call — two implementations of one order of operations cannot be kept
+in step by reading them. `test_diagnostics.py` gains the ornamented case; it
+fails against the old call and passes against the shared one.
+
+## 2026-09-04 — The blast radius of changing a band, before anyone changes one
+
+**No value changed.** Read this before the first real tuning pass.
+
+### `config.toml` is not the whole surface
+
+`audio_config.py` claimed every threshold the pipeline uses lives in the file.
+It does not. Eleven decision constants live in Python: `ORNAMENT_SHARE`,
+`MIN_TEMPO_RATIO` / `MAX_TEMPO_RATIO`, `MIN_ONSETS_TO_ESTIMATE_TEMPO`,
+`MAX_EDGE_TRIM`, `MIN_TRIM_GAIN`, `POSITION_WEIGHT`, `POSITION_CAP_GAPS`,
+`_GAP_CORE_LOW` / `_GAP_CORE_HIGH`, `TAKE_TOO_LONG_RATIO`.
+
+Most are structure rather than knobs and their own comments say so with
+measurements — `POSITION_WEIGHT` behaves identically anywhere from 0.25 to 2.0;
+`MIN_TRIM_GAIN` repairs failures running 0.029 → 0.988. Leave them.
+
+**`ORNAMENT_SHARE` is the one for this session.** Its comment: *"Chosen against
+two synthetic takes and no real recording, which is the honest limit on it."*
+It decides where a grace note and the note it decorates are placed, and those
+notes are reported to a musician as "not timed" precisely because the number
+was invented. It is not in `config.toml`, so nothing in the file will remind
+anyone it exists.
+
+### Changing a band changes the app, in a way that is easy to get backwards
+
+`FALLBACK_INNER_PCT = 5` and `FALLBACK_OUTER_PCT = 20` in
+`mobile/src/lib/tempo.ts` are the bands the app assumes for a take that carries
+no tolerance of its own — rows finished before the pipeline started storing the
+numbers it judged by.
+
+They currently equal the shipped config, and their docstrings said they
+*matched* it. **They must not follow it.** A take analysed on today's bands was
+judged by 5 and 20; re-banding it by whatever the bands become re-judges a
+performance nobody re-recorded, and a musician's history changes under them for
+no reason they can see. Leave the constants alone unless the old bands were
+*wrong* rather than merely untuned.
+
+`backend/app/tests/test_fallback_bands.py` fires the moment the two diverge and
+states both answers. Two neighbours in it are worth knowing before you widen
+one side:
+
+  * the fallback is **one** number standing in for a rushing/dragging pair, so
+    it is honest only while the two sides are equal — and the tuning appendix
+    says to widen dragging;
+  * `bandFor` infers the mid band as **half the outer**, which is where the
+    spec's starting values put it and is not a law.
+
+Both are app-side consequences of a one-line config edit, and neither is
+visible from `config.toml`.
+
+Measured: widening the dragging bands to 7/26 fires three of those cases,
+passes all 1504 mobile tests, and fails exactly one existing backend test —
+`test_classify_band_dragging_side`, about the pipeline. Update that one and the
+app is still wrong.
+
+---
+
+## 2026-09-04 — Two of the twenty-two knobs turn nothing, and the file gave no sign
+
+**No value changed.** This is about the instrument the tuning session will use.
+
+The whole argument for `config.toml` is CLAUDE.md §1 rule 7 and
+`audio_config.py`'s own first line: *"change a number, re-run the fixtures, log
+it here; no code edit."* Batch 3's thresholds are still the spec's starting
+values because tuning needs real ears on real recordings, so that session has
+yet to happen — and when it does, it happens by editing this file.
+
+**A knob that turns nothing is the worst way that loop can fail.** The tuner
+changes a number, the corpus reads identically, and the honest conclusion from
+that evidence is *"this parameter does not matter."* It would be logged here as
+a measurement, and it would be a measurement of nothing.
+
+Measured: of the 22 fields `AudioConfig` declares, **20 are read by the
+pipeline and 2 are not**.
+
+| knob | why it is inert |
+|---|---|
+| `onset.post_max` | The peak-pick window is no longer *chosen*. `peak_window_frames` derives it per take from the smallest note gap the score and `target_bpm` imply, and passes the one number to librosa as **both** `pre_max` and `post_max`. `pre_max` survives as the cap on that; `post_max` is read by nothing. |
+| `alignment.slur_tolerance_pct` | The threshold for the whole-slur duration check in spec §4, which was never built. `alignment.py` says so itself on `is_slur_boundary`. What exists is `is_slur_interior`, which *excludes* those notes from the trend and the verdict rather than measuring a phrase against a tolerance. |
+
+`post_max` is the one that would have cost time. It sits directly beneath
+`pre_max`, reads as its pair, and `peak_window_frames`'s docstring is a long
+argument about exactly this window — the measured table of *"window 3:
+sixteenths 32/32 found; window 20: 4/32"* is the most consequential detector
+finding in this repository. Anyone re-opening it would reach for both numbers.
+
+**Neither is deleted and neither is wired up.** Removing a key is a decision
+about the remote-config row a deployment may already be sending; wiring
+`post_max` means deciding whether an asymmetric window is right, which is a
+question for this session with the corpus and an ear, not for a commit that
+cannot hear anything. What was wrong was that the file gave no sign: both sat
+beside live values with a spec citation each. They now say so where the tuner
+is looking, and `backend/app/tests/test_tuning_knobs.py` holds it — a *new*
+dead knob fails, and so does a stale entry for one that has since been wired.
+
+---
+
+## 2026-09-04 — Baseline: what the pipeline says about all six corpus clips today
+
+**Nothing in `config.toml` changed.** This is the corpus read out, so the
+tuning session that is still waiting on real recordings has a stated starting
+point rather than a memory of one.
+
+Each clip analysed through `analyze()` with its own `manifest.json` entry — the
+score it was played from, its `target_bpm`, its `double_bass` flag — on the
+shipped config:
+
+    clip                  direction  quality  verdict
+    01_detache_clean      on         0.988    Steady tempo — you held it within
+                                              tolerance across the piece.
+    02_detache_rushing    rush       0.988    You rushed across measures 2–8 by
+                                              an average of 9 BPM.
+    03_detache_dragging   drag       0.988    You dragged across measures 3–8 by
+                                              an average of 9 BPM.
+    04_slurred            on         0.990    Steady …
+    05_open_e_long        on         1.000    Steady …
+    06_pizzicato          on         0.990    Steady …
+
+**Every one matches what the manifest's `expect` field says in words**, which
+had never been checked either way. `04_slurred` at 0.990 is the one worth
+noting: `build_timeline`'s comment records it scoring **0.196** and reporting
+`alignment_failed` while an onset was expected under every bow stroke, so
+slurred playing could not be analysed at all.
+
+### A test over this, written and reverted
+
+I wrote `test_tuning_corpus.py` to hold the table above, on the argument that
+the corpus is the artefact the whole tuning story rests on and nothing ran it —
+`test_cli.py` prints one line from one clip, `test_audio.py` borrows another as
+a block of audio to filter, and `test_analysis.py` synthesises its own clicks
+in-test.
+
+Then I mutated the pipeline to find out what it was holding. Five mutations,
+each run against the new file alone and against the suite without it:
+
+| mutation | existing suite | corpus file |
+|---|---|---|
+| inner bands 5% → 40% (nothing is ever rushing) | 10 failures | 2 |
+| an onset expected under a bow stroke again — the slur bug | **7 failures** | 2 |
+| `wait_ms` 60 → 5 | 0 | 0 |
+| `delta` 0.07 → 0.005 | 1 | **0 — passes** |
+| `pre_emphasis_coef` 0.97 → 0.0 | 1 | **0 — passes** |
+
+Not one unique catch, and the last three are the reverse of what I predicted: I
+expected real timbre — a decaying bow stroke, pizzicato ring, a two-second open
+E — to be *more* sensitive to detector settings than a synthesised click track,
+and it is less.
+
+Its docstring also claimed the slur fix was held by nothing. Seven tests hold
+it, including `test_alignment.py::test_a_slurred_passage_played_as_written_
+aligns_perfectly`. That claim was written from CLAUDE.md's account of the bug
+rather than from measurement, and measurement contradicted it.
+
+So the file was reverted, and the `direction` field it added to
+`manifest.json` with it — an unread field is the same debt one level over.
+Same call as two other tests dropped today, for the same reason: a test that
+adds no discrimination makes the next person believe the corpus is guarded when
+the guarding lives somewhere else.
+
+**What would change that.** When real recordings replace the synthetic clips,
+nothing else in the suite will touch those files, and a test saying "the corpus
+still reads as its manifest describes" earns its place then. Writing it now, to
+be useful later, is how unread code gets made.
+
+---
+
+## 2026-09-04 — Measured: how far the steady band can be narrowed before a perfect take is accused
+
+**Nothing in `config.toml` changed.** This records a measurement that the
+pending Batch 3 tuning needs, and corrects a piece of reasoning I had wrong.
+
+### The clip
+
+`fixtures/audio/app_encoder_click_track_48k.wav` — 8 bursts 0.5 s apart, which
+is 8 quarter notes at exactly 120 BPM, written by the app's own
+`encodeWavBytes`. Judged against a two-bar 4/4 score at a target of 120. The
+take is **perfectly in time by construction**, so anything but "steady" is the
+pipeline accusing a musician who did nothing wrong.
+
+### `tolerance.rushing_inner_pct` and `dragging_inner_pct`, walked down together
+
+    5.0 (shipped)  Steady tempo — you held it within tolerance across the piece.
+    4.0            Steady
+    3.0            Steady
+    2.0            Steady
+    1.5            Steady
+    1.0            Steady
+    0.5            "You rushed across measures 1-2 by an average of 2 BPM."
+
+**Roughly five times the headroom under the shipped value.** `quality` is
+0.975 at every one of them — the inner band moves the sentence, not the score.
+
+### The reasoning I had wrong
+
+I expected the floor near **6%**. The detector reports these attacks +10 to
++31 ms late (`test_app_encoder_wav.py` tabulates all eight), and 31 ms is 6.2%
+of a beat at 120 BPM, so it looked as though narrowing past that would accuse
+everyone.
+
+It does not, because a *constant* lateness never reaches the bands:
+`to_timeline_base` re-zeros the detected onsets on the first of them, and
+`pulse_anchors` re-anchors after a disturbed run. Only the **spread** survives
+— about 10 ms here — and that is what sets the floor between 0.5% and 1.0%.
+
+Worth writing down because it points the other way from the obvious reading of
+the detection times: the detector's absolute bias is not a constraint on
+tuning, and its jitter is much smaller than that bias.
+
+### Two things this does not say
+
+It is one synthetic clip of eight identical bursts — the cleanest possible
+input, and no substitute for the real recordings the tuning is actually
+waiting on. And the outer bands were not walked; only the inner one, which is
+the boundary between "steady" and being told something.
+
+---
+
+## 2026-09-02 — Measured: the onset detector is amplitude-invariant. One new threshold, and it is zero.
+
+**Nothing in `config.toml` changed.** No clip moved, because nothing the
+pipeline does was altered — this entry records a *measurement* that decided a
+new threshold in the app, and corrected a sentence the pipeline was telling
+musicians.
+
+### The measurement
+
+Every fixture, scaled to a series of peak levels and **requantised to 16 bit at
+each one** — a float scaled to -90 dBFS is not the same object as one that
+survived a WAV file, and the app uploads WAV. Onset counts from
+`detect_onsets` under the shipped config:
+
+    fixture                              0dB  -20  -40  -50  -55  -60  -65  -70  -80  -90
+    01_detache_clean.synthetic            32   32   32   32   32   32   32   32   32   32
+    02_detache_rushing.synthetic          32   32   32   32   32   32   32   32   32   32
+    03_detache_dragging.synthetic         32   32   32   32   32   32   32   32   32   32
+    04_slurred.synthetic                   8    8    8    8    8    8    8    8    8    8
+    05_open_e_long.synthetic               1    1    1    2    1    1    1    1    1    1
+    06_pizzicato.synthetic                16   16   16   16   16   16   16   16   16   16
+
+At -90 dBFS the samples are barely more than one LSB and the reading is
+unchanged. The single cell that moves — `05_open_e_long` reading 2 at -50 dBFS
+— is a one-note clip whose reading was never stable enough to build on.
+
+Then the shapes that are not music, ten seconds each:
+
+    digital silence          0 onsets
+    silence + 1 LSB dither  11 onsets
+    white noise -60 dBFS    10 onsets
+    white noise -20 dBFS    10 onsets
+    DC offset only           0 onsets
+
+**Level is not what separates a take with notes in it from one without.**
+`onset_strength` differences a dB-scaled mel spectrogram, so scaling a waveform
+shifts every frame by the same constant and the differencing removes it. The
+detector is amplitude-invariant by construction, and the measurement is the
+construction showing through.
+
+### What it changed
+
+1. **The `no_onsets` message said "try re-recording a bit louder."** That is
+   advice that cannot work: the only recording that reaches `no_onsets` is a
+   digitally silent one, and playing louder into a muted microphone produces
+   the identical file. It now names the input. The same branch also fires when
+   the *score* has no notes, where it was blaming a musician for a page the app
+   failed to read — that case is now named first and separately.
+2. **A new threshold in the app, `capturedNothing`, and it is exactly zero.**
+   `mobile/src/lib/audio/level.ts` refuses a take whose every sample is zero,
+   before the upload and before it costs one of three free monthly analyses.
+   The measurement is what sets the value: since a take at the bottom of 16-bit
+   resolution analyses exactly as well as a loud one, **any** non-zero floor
+   would take a verdict away from a musician who could have had one. This is
+   the rare threshold that is not a judgement call.
+
+### What this does not claim
+
+The fixtures are synthetic and normalised to 0.9 peak by `make_synthetic.py`,
+so they say nothing about the level a real phone records a real violin at. They
+do not need to: the finding is that level does not matter, which is a property
+of the detector rather than of the corpus.
+
+---
+
 ## 2026-09-02 — Two new thresholds in `[tolerance.pulse]`. Nothing existing moved.
 
 **No existing value in `config.toml` changed, and all six clips are

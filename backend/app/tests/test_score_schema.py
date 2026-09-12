@@ -32,6 +32,7 @@ def test_minimal_payload_parses() -> None:
     assert score.ocr_confidence == 0.95
     assert score.notes_to_human == ""
     assert score.tempo_marking is None
+    assert score.tempo_beat_unit is None
     assert score.bpm_hint is None
 
 
@@ -40,6 +41,7 @@ def test_full_payload_round_trip() -> None:
         "time_signature": "3/4",
         "key_signature": "G major",
         "tempo_marking": "Allegro",
+        "tempo_beat_unit": "dotted_quarter",
         "bpm_hint": 120,
         "clef": "bass",
         "measures": [
@@ -234,14 +236,20 @@ def test_an_articulation_this_schema_does_not_hold_is_dropped_not_fatal() -> Non
     ).articulation == "staccato"
 
 
-@pytest.mark.parametrize("duration", ["long", "maxima", "quintuplet_eighth", ""])
+@pytest.mark.parametrize(
+    "duration", ["long", "maxima", "triple_dotted_quarter", ""]
+)
 def test_a_duration_this_schema_cannot_express_is_still_fatal(duration: str) -> None:
     """The line this tolerance stops at, and it is not arbitrary.
 
     `long` and `maxima` rather than a value that might later ship: `musicxml.py`
     names those two as the values deliberately outside what this product reads.
     This used to say `sixty_fourth` and `breve`, both of which then shipped —
-    the test was right and its examples expired.
+    the test was right and its examples expired. It then said
+    `quintuplet_eighth`, which shipped as well. Three for three, so the example
+    to pick is one whose absence is *reasoned* rather than merely current: a
+    triple dot has no name because `_DOT_FACTOR` stops at two, and `musicxml.py`
+    says so where it stops.
 
 
     A dynamic nothing reads can be dropped for free. A *duration* cannot: it is
@@ -305,6 +313,17 @@ def test_repeat_invalid_type_rejected() -> None:
         Repeat.model_validate({"start_measure": 1, "end_measure": 2, "type": "fine"})
 
 
+def test_tempo_beat_unit_uses_score_duration_names() -> None:
+    score = ScoreJson.model_validate(
+        {**MINIMAL_PAYLOAD, "tempo_beat_unit": "dotted_quarter", "bpm_hint": 90}
+    )
+    assert score.tempo_beat_unit == "dotted_quarter"
+    with pytest.raises(ValidationError):
+        ScoreJson.model_validate(
+            {**MINIMAL_PAYLOAD, "tempo_beat_unit": "crotchet", "bpm_hint": 90}
+        )
+
+
 def test_bpm_hint_range() -> None:
     with pytest.raises(ValidationError):
         ScoreJson.model_validate({**MINIMAL_PAYLOAD, "bpm_hint": 5})
@@ -317,3 +336,15 @@ def test_measure_defaults() -> None:
     measure = Measure.model_validate({"measure_number": 1})
     assert measure.notes == []
     assert measure.slurs == []
+
+
+def test_a_measure_can_state_a_key_change_and_not_a_blank_one() -> None:
+    """`Measure.key_signature` is the third field of the `time_signature` /
+    `clef` shape: a fact printed on one bar that holds until the next."""
+    from pydantic import ValidationError
+
+    measure = Measure(measure_number=7, notes=[], key_signature="G major")
+    assert measure.key_signature == "G major"
+    assert Measure(measure_number=1, notes=[]).key_signature is None
+    with pytest.raises(ValidationError):
+        Measure(measure_number=1, notes=[], key_signature="   ")

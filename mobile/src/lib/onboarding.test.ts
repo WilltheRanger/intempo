@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  describeMissing,
   MISSING_LABELS,
+  describeMissing,
+  draftIsWorthSending,
+  draftUpdateFor,
   missingFromOnboarding,
   profileUpdateFor,
+  reusableAvatarKey,
   shouldOnboard,
 } from './onboarding';
 import type { Musician } from '../data/types';
@@ -28,6 +31,7 @@ function musician(overrides: Partial<Musician>): Musician {
     displayName: null,
     instrument: null,
     onboarded: true,
+    trainingConsent: false,
     ...overrides,
   };
 }
@@ -63,13 +67,26 @@ describe('what onboarding still needs', () => {
     ]);
   });
 
-  it('does not accept a chosen photo that never uploaded', () => {
-    // The screen shows a preview from the local file the moment it is picked.
-    // The preview is not the requirement — the object key is, because that is
-    // the only thing the account can be pointed at.
-    expect(missingFromOnboarding({ ...EVERYTHING, avatarKey: null })).toEqual([
-      'photo',
-    ]);
+  it('accepts a local photo that is ready to upload on Continue', () => {
+    // Choosing is intentionally local. Continue performs the upload and does
+    // not save the profile until it has the resulting object key.
+    expect(
+      missingFromOnboarding({
+        ...EVERYTHING,
+        avatarKey: null,
+        photoSelected: true,
+      }),
+    ).toEqual([]);
+  });
+
+  it('still requires a photo when neither a selection nor an object key exists', () => {
+    expect(
+      missingFromOnboarding({
+        ...EVERYTHING,
+        avatarKey: null,
+        photoSelected: false,
+      }),
+    ).toEqual(['photo']);
   });
 
   it('has a human label for every requirement it can report', () => {
@@ -146,18 +163,149 @@ describe('saying what is still needed', () => {
   });
 
   it('names one', () => {
-    expect(describeMissing(['photo'])).toBe('Still needed: a photo.');
+    expect(describeMissing(['photo'])).toBe('Still needed: a profile picture.');
   });
 
   it('joins two with "and", not a comma', () => {
     expect(describeMissing(['name', 'photo'])).toBe(
-      'Still needed: your name and a photo.',
+      'Still needed: your name and a profile picture.',
     );
   });
 
   it('joins three the way English does', () => {
     expect(describeMissing(['name', 'photo', 'instrument'])).toBe(
-      'Still needed: your name, a photo and your instrument.',
+      'Still needed: your name, a profile picture and your instrument.',
     );
+  });
+});
+
+describe('coming back to a half-answered onboarding', () => {
+  /**
+   * `PATCH /v1/me` stores what it is given and stamps `onboarded_at` only once
+   * the resulting row carries all three answers. So a musician who typed their
+   * name, chose a photograph, and was interrupted arrives here again with both
+   * on their account — and the screen used to start from nothing and ask for
+   * all three, including the one answer that cannot be given by thinking.
+   */
+  it('does not ask again for a photograph the account already has', () => {
+    expect(
+      missingFromOnboarding({ name: 'Alex', instrument: 'violin', avatarKey: null, storedPhoto: true }),
+    ).toEqual([]);
+  });
+
+  it('still asks when there is no photograph anywhere', () => {
+    expect(
+      missingFromOnboarding({ name: 'Alex', instrument: 'violin', avatarKey: null }),
+    ).toEqual(['photo']);
+    expect(
+      missingFromOnboarding({ name: 'Alex', instrument: 'violin', avatarKey: null, storedPhoto: false }),
+    ).toEqual(['photo']);
+  });
+
+  it('treats a stored photograph exactly as a chosen or uploaded one', () => {
+    // Three ways to satisfy the same requirement, and the screen must not care
+    // which: `avatarKey` after an upload, `photoSelected` before one, and this.
+    const answers = { name: 'Alex', instrument: 'violin', avatarKey: null } as const;
+    expect(missingFromOnboarding({ ...answers, avatarKey: 'k' })).toEqual([]);
+    expect(missingFromOnboarding({ ...answers, photoSelected: true })).toEqual([]);
+    expect(missingFromOnboarding({ ...answers, storedPhoto: true })).toEqual([]);
+  });
+
+  it('does not let a stored photograph excuse the other two', () => {
+    expect(missingFromOnboarding({ name: '', instrument: null, avatarKey: null, storedPhoto: true })).toEqual([
+      'name',
+      'instrument',
+    ]);
+  });
+});
+
+// --- answers given before the account existed -----------------------------
+
+/** A complete set, so each case below changes exactly one thing. */
+const COMPLETE = {
+  name: 'Arya',
+  instrument: 'cello' as const,
+  avatarKey: 'u/1.jpg',
+};
+
+describe('draftUpdateFor', () => {
+  it('claims onboarded when all three answers are there', () => {
+    expect(draftUpdateFor(COMPLETE)).toEqual({
+      onboarded: true,
+      display_name: 'Arya',
+      instrument: 'cello',
+      avatar_key: 'u/1.jpg',
+    });
+  });
+
+  it.each([
+    ['the photograph', { ...COMPLETE, avatarKey: null }],
+    ['the name', { ...COMPLETE, name: '   ' }],
+    ['the instrument', { ...COMPLETE, instrument: null }],
+  ])('does not claim onboarded without %s', (_what, answers) => {
+    /**
+     * `PATCH /v1/me` answers 400 to `onboarded: true` against a row still
+     * missing one. Claiming it anyway would fail the whole request and land
+     * *nothing* — including the answers that were given, which are what stop
+     * the gate asking for everything a second time.
+     */
+    expect(draftUpdateFor(answers)).not.toHaveProperty('onboarded');
+  });
+
+  it('sends the answers it does have', () => {
+    expect(draftUpdateFor({ ...COMPLETE, avatarKey: null })).toEqual({
+      display_name: 'Arya',
+      instrument: 'cello',
+    });
+  });
+
+  it('never sends a null that would erase an answer already on the account', () => {
+    // `UpdateMeInput` reads an explicit null as "clear it". A draft with no
+    // name must leave a name the account already carries alone.
+    expect(draftUpdateFor({ name: '  ', instrument: null, avatarKey: null })).toEqual(
+      {},
+    );
+  });
+});
+
+describe('draftIsWorthSending', () => {
+  it.each([
+    ['a name', { name: 'Arya', instrument: null, avatarKey: null }],
+    ['an instrument', { name: '', instrument: 'viola' as const, avatarKey: null }],
+    ['an uploaded photo', { name: '', instrument: null, avatarKey: 'u/1.jpg' }],
+    [
+      'a photo not yet uploaded',
+      { name: '', instrument: null, avatarKey: null, photoSelected: true },
+    ],
+  ])('is true for %s', (_what, answers) => {
+    expect(draftIsWorthSending(answers)).toBe(true);
+  });
+
+  it('is false when nothing was answered', () => {
+    expect(
+      draftIsWorthSending({ name: '   ', instrument: null, avatarKey: null }),
+    ).toBe(false);
+  });
+});
+
+describe('reusableAvatarKey', () => {
+  const uploaded = { uri: 'file:///a.jpg', key: 'u/1.jpg' };
+
+  it('reuses the key for the file it came from', () => {
+    expect(reusableAvatarKey({ uri: 'file:///a.jpg' }, uploaded)).toBe('u/1.jpg');
+  });
+
+  it('refuses it for a different file', () => {
+    // The case a boolean flag gets wrong, and gets wrong silently: the account
+    // would end up pointing at the picture they backed out of.
+    expect(reusableAvatarKey({ uri: 'file:///b.jpg' }, uploaded)).toBeNull();
+  });
+
+  it.each([
+    ['nothing chosen', null, uploaded],
+    ['nothing uploaded', { uri: 'file:///a.jpg' }, null],
+    ['neither', null, null],
+  ])('is null with %s', (_what, photo, previous) => {
+    expect(reusableAvatarKey(photo, previous)).toBeNull();
   });
 });

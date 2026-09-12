@@ -171,6 +171,10 @@ transcription_image = (
         "httpx==0.28.1",
         "numpy==2.4.6",
         "pillow==12.3.0",
+        # The MusicXML parser refuses entity definitions, and it is
+        # `score_json_from_musicxml` that homr's output goes through in
+        # this container. Without it the import fails at module load.
+        "defusedxml==0.7.1",
         "pillow-heif==1.5.0",
         "pydantic[email]==2.13.3",
         # `app/config.py` reads a .env at import. There is none in the

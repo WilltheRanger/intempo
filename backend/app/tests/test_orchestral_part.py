@@ -360,12 +360,12 @@ def _density_limits(score) -> tuple[float, float]:
 
     everything = [
         len(m.notes) / meter
-        for m, meter in zip(score.measures, meters)
+        for m, meter in zip(score.measures, meters, strict=True)
         if m.notes and meter
     ]
     played = [
         len(m.notes) / meter
-        for m, meter in zip(score.measures, meters)
+        for m, meter in zip(score.measures, meters, strict=True)
         if m.notes and meter and not all(n.pitch == "rest" for n in m.notes)
     ]
     return (

@@ -129,6 +129,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from app.main import app  # noqa: E402
 from app.tests.test_scores_router import (  # noqa: E402
+    PROJECT_HOST,
     _install_supabase,
     _row_for,
     _signed_url,
@@ -167,10 +168,18 @@ def test_posting_three_pages_writes_all_three_to_the_row(
 
     assert response.status_code == 201, response.text
     written = client.table.return_value.insert.call_args[0][0]
-    assert written["source_image_urls"] == pages
+    expected = [
+        (
+            f"{PROJECT_HOST}/storage/v1/object/authenticated/score-images/"
+            f"{user_id}/p{position}.jpg"
+        )
+        for position in range(3)
+    ]
+    assert written["source_image_urls"] == expected
+    assert all("token=" not in page for page in expected)
     # Page one into the old column as well, so a worker or reader from before
     # migration 011 still finds a photograph rather than a piece with no scan.
-    assert written["source_image_url"] == pages[0]
+    assert written["source_image_url"] == expected[0]
 
 
 def test_a_page_that_is_not_yours_is_refused_even_at_position_three(
@@ -278,3 +287,92 @@ def test_deleting_a_three_page_scan_removes_all_three(
 
     assert response.status_code == 204, response.text
     assert len(removed) == 3, f"only {len(removed)} of 3 pages were removed"
+
+
+# ---------------------------------------------------------------------------
+# Reading a multi-page scan back
+# ---------------------------------------------------------------------------
+
+from datetime import datetime, timezone  # noqa: E402
+
+_EXPIRY = datetime(2026, 9, 2, 12, 0, tzinfo=timezone.utc)
+
+
+def _signed_rows(rows, *, all_pages):
+    """`_with_image_urls` over a stub signer, so the assertions are about which
+    keys were asked for rather than about Supabase."""
+    from app.routers import scores as scores_module
+    from app.services import display_urls as display_urls_module
+
+    asked: list[list[str]] = []
+
+    def _sign(keys):
+        asked.append(list(keys))
+        return {
+            key: (f"https://signed.example/{key}?token=t", _EXPIRY) for key in keys
+        }
+
+    original = display_urls_module.signed_display_urls
+    display_urls_module.signed_display_urls = _sign
+    try:
+        return scores_module._with_image_urls(rows, all_pages=all_pages), asked
+    finally:
+        display_urls_module.signed_display_urls = original
+
+
+def _three_page_row(user_id, score_id) -> dict:
+    row = _row_for(score_id, user_id)
+    pages = _pages_for(user_id, 3)
+    row["source_image_url"] = pages[0]
+    row["source_image_urls"] = pages
+    return row
+
+
+def test_reading_one_piece_signs_every_page_in_order() -> None:
+    """**The row says "The pages this piece was read from" and showed one.**
+
+    A musician who photographed a four-page part could not look at the bar
+    flagged on page three: `page_count` said it existed and no URL reached it.
+    """
+    from uuid import uuid4
+
+    user_id, score_id = uuid4(), uuid4()
+    [out], asked = _signed_rows([_three_page_row(user_id, score_id)], all_pages=True)
+
+    assert out.page_count == 3
+    assert len(out.image_urls) == 3
+    assert [url.split("/p")[1][0] for url in out.image_urls] == ["0", "1", "2"]
+    # `image_url` is still page one, so every listing and thumbnail is unchanged.
+    assert out.image_url == out.image_urls[0]
+    # And still **one** signing call, which is what makes this affordable.
+    assert len(asked) == 1
+
+
+def test_the_library_listing_still_signs_only_page_one() -> None:
+    """Forty rows of four pages is forty extra URLs in a payload whose screen
+    draws thumbnails. The call costs the same; the bytes do not."""
+    from uuid import uuid4
+
+    user_id, score_id = uuid4(), uuid4()
+    [out], _ = _signed_rows([_three_page_row(user_id, score_id)], all_pages=False)
+
+    assert out.page_count == 3, "the count still tells a client there is more"
+    assert len(out.image_urls) == 1
+    assert out.image_url == out.image_urls[0]
+
+
+def test_a_discarded_photograph_signs_nothing_at_all() -> None:
+    """Accepting a reading spends the pages. Signing does not check that an
+    object exists, so without this the response hands back well-formed URLs
+    that 404."""
+    from uuid import uuid4
+
+    user_id, score_id = uuid4(), uuid4()
+    row = _three_page_row(user_id, score_id)
+    row["page_image_discarded_at"] = "2026-09-02T00:00:00Z"
+
+    [out], _ = _signed_rows([row], all_pages=True)
+
+    assert out.image_urls == []
+    assert out.image_url is None
+    assert out.image_url_expires_at is None

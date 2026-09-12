@@ -1,5 +1,5 @@
 import { useNavigation } from '@react-navigation/native';
-import { Library, Plus, Search } from 'lucide-react-native';
+import { Library, Plus, Search } from '../../components/icons';
 import { useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
@@ -13,40 +13,18 @@ import {
   SearchField,
   SectionHeader,
 } from '../../components/primitives';
+import { describeLoadError } from '../../data/api/describeError';
 import { useLibrary } from '../../data/hooks/usePieces';
 import type { Piece } from '../../data/types';
-import { motion, spacing } from '../../design';
-import { groupByRecency } from '../../lib/library';
+import { spacing } from '../../design';
+import { groupByRecency, searchLibrary } from '../../lib/library';
 import type {
-  AddPieceOption,
   TabScreenNavigation,
 } from '../../navigation/types';
 import { AddPieceSheet } from '../../components/pieces/AddPieceSheet';
 import { PieceRow } from './PieceRow';
-
-/** Case- and accent-insensitive match across title and composer. */
-function matches(piece: Piece, query: string): boolean {
-  const needle = normalise(query);
-  if (!needle) {
-    return true;
-  }
-  return (
-    normalise(piece.title).includes(needle) ||
-    normalise(piece.composer ?? '').includes(needle)
-  );
-}
-
-/**
- * Strips diacritics so "Etudes" finds "Études" and "Saint-Saens" finds
- * "Saint-Saëns" — classical repertoire is full of accents that nobody types.
- */
-function normalise(value: string): string {
-  return value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .trim();
-}
+import { useAddPieceOption } from '../../navigation/useAddPieceOption';
+import { loadStateFor, type LoadState } from '../../lib/loadState';
 
 export function LibraryScreen() {
   const navigation = useNavigation<TabScreenNavigation<'Library'>>();
@@ -59,24 +37,15 @@ export function LibraryScreen() {
 
   const pieces = useMemo(() => library.data ?? [], [library.data]);
   const results = useMemo(
-    () => pieces.filter((piece) => matches(piece, query)),
+    () => searchLibrary(pieces, query),
     [pieces, query],
   );
 
   const [addSheetVisible, setAddSheetVisible] = useState(false);
 
-  function handleSelectOption(option: AddPieceOption) {
-    setAddSheetVisible(false);
-    // Let the sheet finish dismissing before the push, so the two animations
-    // don't overlap.
-    setTimeout(() => {
-      if (option === 'scan') {
-        navigation.navigate('Scanner');
-        return;
-      }
-      navigation.navigate('AddPiece', { option });
-    }, motion.fast);
-  }
+  const handleSelectOption = useAddPieceOption(() =>
+    setAddSheetVisible(false),
+  );
 
   return (
     <ScreenContainer onRefresh={refresh}>
@@ -107,13 +76,17 @@ export function LibraryScreen() {
       ) : null}
 
       <LibraryContent
-        isPending={library.isPending}
-        isError={library.isError}
+        load={loadStateFor({
+          isError: library.isError,
+          hasData: library.data !== undefined,
+        })}
         error={library.error}
         pieces={pieces}
         results={results}
         query={query}
         onClearSearch={() => setQuery('')}
+        onRetry={() => void refresh()}
+        retrying={library.isFetching}
         onOpenPiece={(piece) =>
           navigation.navigate('PieceDetail', { pieceId: piece.id })
         }
@@ -129,8 +102,7 @@ export function LibraryScreen() {
 }
 
 interface LibraryContentProps {
-  isPending: boolean;
-  isError: boolean;
+  load: LoadState;
   /** Why, so the empty state can say something true rather than guess. */
   error: unknown;
   pieces: Piece[];
@@ -138,19 +110,23 @@ interface LibraryContentProps {
   query: string;
   onClearSearch: () => void;
   onOpenPiece: (piece: Piece) => void;
+  /** Fetch again after a failure — see the comment on the error state below. */
+  onRetry: () => void;
+  retrying: boolean;
 }
 
 function LibraryContent({
-  isPending,
-  isError,
+  load,
   error,
   pieces,
   results,
   query,
   onClearSearch,
   onOpenPiece,
+  onRetry,
+  retrying,
 }: LibraryContentProps) {
-  if (isPending) {
+  if (load === 'loading') {
     return (
       <View style={styles.section}>
         <PieceListSkeleton count={5} />
@@ -158,11 +134,19 @@ function LibraryContent({
     );
   }
 
-  if (isError) {
+  if (load === 'unavailable') {
     return (
+      // **A load failure is the one empty state that is not empty of options.**
+      // It said "check your connection" and gave nothing to press: pull to
+      // refresh is invisible, and on the web build with a mouse it does not
+      // exist at all. `AccountStartupScreen` has had this button since it was
+      // written; the four tabs did not.
       <EmptyState
         title="Couldn't load your library"
         description={describeLoadError(error)}
+        actionLabel={retrying ? 'Trying…' : 'Try again'}
+        onActionPress={onRetry}
+        actionDisabled={retrying}
       />
     );
   }
@@ -249,5 +233,4 @@ const styles = StyleSheet.create({
     // below it rather than float between two blocks.
     marginBottom: spacing['2xl'],
   },
-});import { describeLoadError } from '../../data/api/describeError';
-
+});

@@ -104,7 +104,19 @@ function writeAscii(view: DataView, offset: number, text: string): void {
   }
 }
 
-/** Float samples in [-1, 1] to 16-bit, clipped rather than wrapped. */
+/**
+ * Float samples in [-1, 1] to 16-bit, clipped rather than wrapped.
+ *
+ * @test-seam the executable copy of a rule that also lives in
+ * `pcm-recorder.worklet.js`, which is the copy the microphone runs.
+ *
+ * A worklet runs in `AudioWorkletGlobalScope` and cannot import from the app
+ * bundle, so the rule genuinely cannot be shared — which leaves the worst
+ * arrangement available, the copy with the tests not being the copy that runs.
+ * `audioRecorder.worklet.test.ts` reads the worklet's source and holds the two
+ * to the same asymmetric scaling (`0x8000` down, `0x7fff` up), so this one is
+ * the specification and that test is what stops them drifting.
+ */
 export function floatToPcm16(input: Float32Array): Int16Array {
   const out = new Int16Array(input.length);
   for (let i = 0; i < input.length; i += 1) {

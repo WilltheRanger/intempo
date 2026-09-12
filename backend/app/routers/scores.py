@@ -9,15 +9,13 @@ read so the same access rules apply at the API layer.
 from __future__ import annotations
 
 import logging
-import threading
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any, Literal
 from urllib.parse import urlparse
 from uuid import UUID
 
 from fastapi import (
     APIRouter,
-    BackgroundTasks,
     Depends,
     HTTPException,
     Query,
@@ -26,11 +24,20 @@ from fastapi import (
 )
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.services.ocr.validate import validate_measures
+from app.services.ocr.validate import MeasureFinding, validate_measures
 
 from app.auth import current_user_id, current_user_id_provisioned
-from app.db import get_service_client
-from app.routers.upload import SCORE_BUCKET
+from app.config import settings
+from app.routers.deps import require_service_client
+from app.services import pending_uploads
+from app.services import reading_rate
+from app.services.transcription_budget import (
+    EXHAUSTED_MESSAGE,
+    has_room,
+    next_run_count,
+)
+from app.services.audio_storage import InvalidAudioReference, owned_audio_key
+from app.services.buckets import AUDIO_BUCKET, SCORE_BUCKET
 from app.services.ocr.musicxml import MusicXMLError, score_json_from_musicxml
 from app.workers.dispatch import start_transcription
 from app.services.score_pages import pages_of, select_with_pages
@@ -39,16 +46,23 @@ from app.services.score_schema import (
     ScoreJson,
     clear_unwritable_where_rewritten,
 )
+from app.services.training import (
+    corrections_between,
+    may_keep_corrections,
+    rows_for,
+)
 
 # Fetching the page lives in `services/page_image.py` so the transcription
-# worker can reach it without importing this module, which imports the worker.
-# What is left here is what a *request* still needs: recognising a storage URL,
-# and signing readable ones for display.
-from app.services.page_image import (
-    SIGNED_DOWNLOAD_TTL_SECONDS,
-    STORAGE_PREFIXES as _STORAGE_PREFIXES,
-    object_key_from as _object_key_from,
-)
+# worker can reach it without importing this module, which imports the worker;
+# signing a page for display lives in `services/display_urls.py` because it is
+# a memo with a lock and a bound, not request handling. What is left here is
+# recognising a storage URL and deciding which keys a response needs.
+#
+# Imported as a module, not a name: `pending_uploads` beside it is the same,
+# and a test or the concurrency probe swapping the signer out has one place to
+# do it rather than one per importer.
+from app.services import display_urls
+from app.services.page_image import object_key_from as _object_key_from
 
 router = APIRouter(prefix="/scores", tags=["scores"])
 
@@ -76,7 +90,7 @@ class CreateScoreRequest(BaseModel):
     #: `image_urls` is the one to send; this is what a build from before
     #: multi-page scanning has.
     image_url: str | None = Field(default=None, min_length=1, max_length=2048)
-    #: Every page of the part, in page order.
+    #: Every page reference (durable object key or legacy URL), in page order.
     #:
     #: Order is the caller's, settled before it uploads anything
     #: (`lib/scan/drag.ts`), so there is no ordering decision here to get wrong.
@@ -117,7 +131,7 @@ class CreateScoreRequest(BaseModel):
                 )
             for url in self.image_urls:
                 if not url or len(url) > 2048:
-                    raise ValueError("every entry in image_urls must be a URL")
+                    raise ValueError("every entry in image_urls must be a page reference")
         if self.pages() == []:
             if self.clef is None:
                 raise ValueError(
@@ -132,7 +146,40 @@ class CreateScoreRequest(BaseModel):
         return self
 
     def pages(self) -> list[str]:
-        """The pages this request is for, in page order. Empty means by hand."""
+        """Page references in order. Empty means the piece was entered by hand."""
+        if self.image_urls is not None:
+            return list(self.image_urls)
+        return [self.image_url] if self.image_url else []
+
+
+class AttachScorePagesRequest(BaseModel):
+    """Photographs to read into an existing scoreless library entry."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    image_url: str | None = Field(default=None, min_length=1, max_length=2048)
+    image_urls: list[str] | None = Field(default=None)
+
+    @model_validator(mode="after")
+    def _one_page_form(self) -> "AttachScorePagesRequest":
+        if self.image_url is not None and self.image_urls is not None:
+            raise ValueError(
+                "send image_urls for a scan; image_url is the single-page form "
+                "and the two cannot both be given"
+            )
+        pages = self.pages()
+        if not pages:
+            raise ValueError("attach at least one page")
+        if len(pages) > MAX_PAGES:
+            raise ValueError(
+                f"a scan may hold at most {MAX_PAGES} pages; "
+                f"this one has {len(pages)}"
+            )
+        if any(not url or len(url) > 2048 for url in pages):
+            raise ValueError("every attached page must be a page reference")
+        return self
+
+    def pages(self) -> list[str]:
         if self.image_urls is not None:
             return list(self.image_urls)
         return [self.image_url] if self.image_url else []
@@ -241,7 +288,12 @@ class MeasureConcern(BaseModel):
 
     measure_number: int
     #: Which test failed, for a client that wants to group or filter.
-    kind: Literal["beats", "tie", "tuplet", "density", "unwritable"]
+    #:
+    #: One name per branch of `MeasureFinding.describe()`, because that is what
+    #: the app relies on: it prints `detail` verbatim for every kind except
+    #: `"beats"`, which is the one wording allowed to promise arithmetic. A
+    #: fault mapped to the wrong name is a true sentence under a false heading.
+    kind: Literal["beats", "tie", "tuplet", "density", "unwritable", "adrift"]
     #: A sentence fit to show a musician, not an exception string.
     detail: str
 
@@ -252,9 +304,9 @@ class ScoreResponse(BaseModel):
     title: str
     composer: str | None = None
     movement: str | None = None
-    #: What was uploaded. Historical: the signed upload URL, long expired.
-    #: Never usable for display — see `image_url`. Null for a piece entered
-    #: by hand, which was never photographed at all.
+    #: Durable private-storage reference for new rows; historical rows may
+    #: still carry an expired signed upload URL. Never render this directly —
+    #: see `image_url`. Null for a piece entered by hand.
     source_image_url: str | None = None
     #: A freshly signed download URL for the sheet music, or null when the
     #: object key can't be recovered or storage isn't configured. This is the
@@ -270,7 +322,30 @@ class ScoreResponse(BaseModel):
     #: today. When a screen needs to show page three, this becomes a list —
     #: the count is what tells it there is a page three at all.
     page_count: int = 0
-    score_json: dict[str, Any]
+    #: Every page of the scan, signed and in page order.
+    #:
+    #: **`page_count` used to be the whole answer, and nothing read it.** It was
+    #: added so a client could know a page three existed; the note beside it
+    #: said the list would follow "when a screen needs to show page three". The
+    #: piece screen's own row says *"The pages this piece was read from"* and
+    #: showed exactly one, silently — so a musician who photographed a four-page
+    #: part could not look at the bar flagged on page three.
+    #:
+    #: The cost objection that kept it a count no longer describes this code:
+    #: `display_urls` batches, so signing every page is the same
+    #: single storage call as signing its first. Populated only when reading one
+    #: piece, not on the library listing — see `_with_image_urls`.
+    #:
+    #: `image_url` stays, and stays first here: it is what every listing and
+    #: thumbnail draws, and a client that never learns about this field keeps
+    #: working unchanged.
+    image_urls: list[str] = Field(default_factory=list)
+    #: The notation. **Null when the caller asked for the rows without it** —
+    #: `GET /v1/scores?include_score=false` — and for a row whose column is
+    #: genuinely empty. A client cannot tell those apart and does not need to:
+    #: `transcription_status` is what says whether notation is coming, and
+    #: `GET /v1/scores/{id}` is the authority on what it is.
+    score_json: dict[str, Any] | None = None
     shared_with_studio: UUID | None = None
     ocr_confidence: float | None = None
     #: `queued` → `reading` → `done` | `failed`. Always `done` for a piece
@@ -294,153 +369,148 @@ class ScoreResponse(BaseModel):
     #: there — including for an accepted score whose delete failed, which is a
     #: real state and not the same as a finished one.
     page_image_discarded_at: datetime | None = None
+    #: When the photograph was *kept* at accept time because the owner agreed it
+    #: could be used to improve the reader. Null everywhere else, including for
+    #: an accepted score whose delete merely failed — see migration 013 for why
+    #: those two must not look the same.
+    page_image_retained_at: datetime | None = None
     created_at: str
     updated_at: str
 
 
-#: The shapes a Supabase storage URL takes for one object, as path prefixes
-#: before `<bucket>/<path>`. Both the ownership check and the object-key
-#: extraction below read them, so a new shape is added in exactly one place.
-def _assert_image_url_owned_by(image_url: str, user_id: UUID) -> None:
-    """The signed URL must point at the score-images bucket under the user's prefix.
+def _owned_image_key(reference: str, user_id: UUID) -> str:
+    """Return the durable object key named by an owned page reference.
 
-    Supabase signed URLs look like:
-      https://<project>.supabase.co/storage/v1/object/sign/<bucket>/<path>?token=...
-    For this user's image:
-      <bucket> = "score-images"
-      <path>   = "<user_id>/<uuid>.<ext>"
-    Anything else gets 403 — we never download arbitrary internet URLs.
+    New clients send the key returned by the upload endpoint. It does not
+    expire, so a slow multi-page upload and the time spent naming a piece cannot
+    invalidate page one before the score is created. Older installed clients
+    still send a signed upload URL; its path contains the same key and remains
+    accepted.
+
+    The service-role client can read every object, so ownership is checked here
+    before the reference is stored. A valid key has exactly one owner segment
+    and one generated filename — nested paths and URL-like strings are refused
+    instead of being normalised into a different object.
     """
-    parsed = urlparse(image_url)
-    if parsed.scheme not in {"https", "http"}:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="image_url must be http(s)",
-        )
-    if not any(
-        parsed.path.startswith(f"{prefix}{SCORE_BUCKET}/{user_id}/")
-        for prefix in _STORAGE_PREFIXES
+    parsed = urlparse(reference)
+    if parsed.scheme:
+        if parsed.scheme not in {"https", "http"}:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="page reference must be an object key or an http(s) storage URL",
+            )
+        key = _object_key_from(reference)
+    else:
+        if (
+            parsed.netloc
+            or reference.startswith(("/", "\\"))
+            or any(mark in reference for mark in ("?", "#"))
+        ):
+            key = None
+        else:
+            key = reference.removeprefix(f"{SCORE_BUCKET}/")
+
+    owner, separator, filename = (key or "").partition("/")
+    if (
+        owner != str(user_id)
+        or not separator
+        or not filename
+        or "/" in filename
+        or "\\" in filename
+        or filename in {".", ".."}
     ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="image_url must be a Supabase score-images URL under your user prefix",
+            detail="page reference must name a score image owned by your account",
         )
+    return key
 
 
-#: Display URLs already signed, by object key, with their real expiry.
-#: See the comment inside `_sign_downloads` for why reuse is the whole point.
-_display_urls: dict[str, tuple[str, datetime]] = {}
-_display_url_lock = threading.Lock()
-#: A URL is only reused while at least this much of its life remains — a
-#: screen that fetched a list and then sat is still holding URLs that work.
-_REUSE_FLOOR_SECONDS = 10 * 60
-_DISPLAY_URL_CACHE_MAX = 4096
+def _durable_image_url(reference: str, user_id: UUID) -> str:
+    """Canonical private-storage URL stored on the score row.
 
-
-def reset_display_url_cache() -> None:
-    """For tests. The memo is process state, and tests must not share it."""
-    with _display_url_lock:
-        _display_urls.clear()
-
-
-def _sign_downloads(keys: list[str]) -> dict[str, tuple[str, datetime]]:
-    """Object key → signed download URL, for as many as storage will give us.
-
-    Batched: a library of forty scores is one storage call, not forty. Missing
-    keys are simply absent from the result, and a signing failure degrades the
-    whole batch to no images rather than failing the request — a list of scores
-    with no thumbnails is a usable screen; a 500 is not.
+    It carries no token. Every reader extracts the key and signs a fresh
+    download URL, so this value remains useful after the five-minute upload
+    permission has expired.
     """
-    if not keys:
-        return {}
-
-    # **Signed once, reused for most of the hour — because a fresh signature is
-    # a fresh URL, and a fresh URL is a cache miss.** Every response used to
-    # mint a new token per image, so the URL string differed on every fetch and
-    # every image cache — expo-image's, keyed on the URL, and the browser's
-    # HTTP cache alike — missed on every one. The screen showing the photograph
-    # *while a scan is read* polls every three seconds, so watching one
-    # sixty-second read re-downloaded the photograph twenty times: measured
-    # against this library's pages, 50–100 MB of egress per scan watched, on a
-    # bucket holding 53 MB in total.
-    #
-    # Reused only while comfortably inside its life (`_REUSE_FLOOR_SECONDS`),
-    # so nothing on screen holds a URL that dies mid-scroll, and the reported
-    # `image_url_expires_at` is the *reused* URL's real expiry rather than a
-    # promise the token does not keep.
-    now = datetime.now(tz=timezone.utc)
-    with _display_url_lock:
-        floor = now + timedelta(seconds=_REUSE_FLOOR_SECONDS)
-        cached = {
-            key: _display_urls[key]
-            for key in keys
-            if key in _display_urls and _display_urls[key][1] > floor
-        }
-    missing = [key for key in keys if key not in cached]
-    if not missing:
-        return cached
-
-    client = get_service_client()
-    if client is None:
-        return cached
-
-    bucket = client.storage.from_(SCORE_BUCKET)
-    try:
-        signed = bucket.create_signed_urls(missing, SIGNED_DOWNLOAD_TTL_SECONDS)
-    except Exception:
-        return cached
-
-    expires_at = now + timedelta(seconds=SIGNED_DOWNLOAD_TTL_SECONDS)
-    fresh: dict[str, tuple[str, datetime]] = {}
-    for entry in signed or []:
-        if not isinstance(entry, dict) or entry.get("error"):
-            continue
-        url = entry.get("signedUrl") or entry.get("signedURL") or entry.get("signed_url")
-        path = entry.get("path")
-        if url and path:
-            # Supabase echoes the key back; it may or may not carry the bucket.
-            fresh[str(path).removeprefix(f"{SCORE_BUCKET}/")] = (str(url), expires_at)
-
-    with _display_url_lock:
-        # Bounded, because an unbounded memo is a slow leak on a host that
-        # stays up for weeks. Past the cap the stale entries are dropped; if
-        # every entry is live the memo is simply cleared — the cost is one
-        # extra signing call per key, which is where this started.
-        if len(_display_urls) + len(fresh) > _DISPLAY_URL_CACHE_MAX:
-            for key in [k for k, (_, exp) in _display_urls.items() if exp <= floor]:
-                del _display_urls[key]
-        if len(_display_urls) + len(fresh) > _DISPLAY_URL_CACHE_MAX:
-            _display_urls.clear()
-        _display_urls.update(fresh)
-
-    return {**cached, **fresh}
+    key = _owned_image_key(reference, user_id)
+    return (
+        f"{settings.SUPABASE_URL.rstrip('/')}/storage/v1/object/authenticated/"
+        f"{SCORE_BUCKET}/{key}"
+    )
 
 
-def _with_image_urls(rows: list[dict[str, Any]]) -> list[ScoreResponse]:
-    """Rows to responses, signing every recoverable image in one call."""
-    keys = {}
+def _object_keys_in(urls: list[str]) -> list[str]:
+    """The storage keys inside a list of upload references, skipping any that
+    are not one — a hand-entered piece has none, and a malformed reference is
+    already refused by validation."""
+    keys = [_object_key_from(url or "") for url in urls]
+    return [key for key in keys if key]
+
+
+def _with_image_urls(
+    rows: list[dict[str, Any]], *, all_pages: bool = False
+) -> list[ScoreResponse]:
+    """Rows to responses, signing every recoverable image in one call.
+
+    `all_pages` is off for the library listing and on for reading one piece.
+    The *call* costs the same either way — the signer batches — but forty rows
+    of four pages is forty extra URLs in a payload nothing on that screen
+    draws, and the listing draws page one. Reading a single piece is where a
+    musician looks at the photographs, and where they need all of them.
+
+    **A discarded photograph is not signed.** Signing does not check that the
+    object exists, so a row whose page was deleted by `POST /:id/accept` went on
+    being handed a perfectly well-formed URL that 404s — and the app has no way
+    to tell that from a slow download. What a musician saw on a piece they had
+    accepted was a large empty box where the photograph used to be, an "Original"
+    tab that showed nothing, and no explanation. The row already records that the
+    page is gone; this is that record being believed.
+
+    `source_image_url` is deliberately left alone on the row. It still holds the
+    key, which is what `_object_key_from` needs if the deletion has to be
+    audited — the response is the only place the absence has to show.
+    """
+    keys: dict[Any, list[str]] = {}
     for row in rows:
-        key = _object_key_from(row.get("source_image_url") or "")
-        if key:
-            keys[row["id"]] = key
+        if row.get("page_image_discarded_at"):
+            continue
+        # **Every page, or just the first.** `pages_of` is the one function that
+        # knows the three shapes a scan comes in; page one is simply its first
+        # element, so both callers read the same list.
+        page_urls = pages_of(row) if all_pages else pages_of(row)[:1]
+        found = _object_keys_in(page_urls)
+        if found:
+            keys[row["id"]] = found
 
-    signed = _sign_downloads(sorted(set(keys.values())))
+    # Still one storage call for the whole request, however many pages it
+    # covers: `signed_display_urls` takes a list and `create_signed_urls` is
+    # batched. That is what makes signing every page of a single piece cost the
+    # same as signing its first — and it is why `page_count`'s note about "one
+    # storage call per page" no longer describes this code.
+    signed = display_urls.signed_display_urls(
+        sorted({key for found in keys.values() for key in found})
+    )
 
     out = []
     for row in rows:
-        url, expires_at = signed.get(keys.get(row["id"], ""), (None, None))
-        out.append(_row_to_response(row, image_url=url, expires_at=expires_at if url else None))
+        found = keys.get(row["id"], [])
+        urls = [signed[key][0] for key in found if key in signed]
+        # One expiry for all of them: the same batch, the same TTL. Reported as
+        # the earliest, because a reused URL may carry less life than a fresh
+        # one and the response must not promise more than the shortest keeps.
+        expiries = [signed[key][1] for key in found if key in signed]
+        out.append(
+            _row_to_response(
+                row,
+                image_url=urls[0] if urls else None,
+                expires_at=min(expiries) if expiries else None,
+                image_urls=urls,
+            )
+        )
     return out
 
 
-def _service_client():
-    client = get_service_client()
-    if client is None:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Supabase service-role client is not configured",
-        )
-    return client
 
 
 def _concerns_for(score_json: Any) -> list[MeasureConcern]:
@@ -463,24 +533,51 @@ def _concerns_for(score_json: Any) -> list[MeasureConcern]:
         # reading: the page was read and this schema had no name for what was
         # on it. A bar can carry it *and* run short, and the missing notes are
         # usually why — `describe()` says both.
-        if finding.unwritable_notes:
-            kind = "unwritable"
-        elif finding.broken_ties:
-            kind = "tie"
-        elif finding.tuplet_faults:
-            kind = "tuplet"
-        elif finding.too_dense:
-            kind = "density"
-        else:
-            kind = "beats"
         out.append(
             MeasureConcern(
                 measure_number=finding.measure_number,
-                kind=kind,
+                kind=_concern_kind(finding),
                 detail=finding.describe(),
             )
         )
     return out
+
+
+def _concern_kind(finding: MeasureFinding) -> str:
+    """Which of `describe()`'s branches wrote this finding's sentence.
+
+    **`kind` names the branch, and that is the whole invariant.** The app
+    prints `detail` verbatim for every kind except `"beats"`, which is the one
+    wording allowed to promise arithmetic — it becomes "doesn't add up to the
+    time signature". So a fault mapped to `"beats"` is a true sentence under a
+    false heading.
+
+    `out_of_line` used to fall past this ladder into the `else`. It is set
+    **only where no metre could be read**, so a bar flagged for being out of
+    step with the rest of the page was reported to the musician as
+    disagreeing with a time signature the server had just said it could not
+    read. Its own sentence — the right one — was in `detail` all along.
+
+    Extracted from `_concerns_for` so the mapping can be exercised one fault at
+    a time: `test_every_fault_a_measure_can_carry_has_its_own_concern_kind`
+    reads `MeasureFinding`'s fields, so a *new* flag added without a branch
+    here fails instead of quietly becoming `"beats"`.
+
+    The order is `describe()`'s order. `unwritable` leads for the reason stated
+    there: it is often the cause of whatever else is wrong with the bar, and
+    `describe()` prefixes it rather than choosing between the two sentences.
+    """
+    if finding.unwritable_notes:
+        return "unwritable"
+    if finding.broken_ties:
+        return "tie"
+    if finding.tuplet_faults:
+        return "tuplet"
+    if finding.too_dense:
+        return "density"
+    if finding.out_of_line:
+        return "adrift"
+    return "beats"
 
 
 def _page_keys(row: dict[str, Any]) -> list[str]:
@@ -499,6 +596,122 @@ def _page_keys(row: dict[str, Any]) -> list[str]:
     return keys
 
 
+def _consents_to_training(user_id: UUID) -> bool:
+    """Whether this account has agreed their corrections may be kept.
+
+    **Never raises, and a failure is a no.** Every caller is in the middle of
+    doing the thing the musician actually asked for — saving a bar, accepting a
+    reading — and none of them may fail because a consent lookup did. The rule
+    itself is in `services/training.py`; what is here is the fetch, and the
+    decision that a fetch which did not work means no.
+    """
+    try:
+        rows = (
+            require_service_client()
+            .table("users")
+            .select("training_consent_at")
+            .eq("id", str(user_id))
+            .limit(1)
+            .execute()
+        ).data or []
+    except Exception:  # noqa: BLE001 — pre-013 database, or storage of any kind down
+        log.warning("could not read training consent for %s", user_id, exc_info=True)
+        return False
+    return may_keep_corrections(rows[0] if rows else None)
+
+
+def _record_corrections(
+    *,
+    user_id: UUID,
+    score_id: UUID,
+    stored: dict[str, Any],
+    before: ScoreJson | None,
+    after: ScoreJson,
+) -> None:
+    """Keep what the musician just fixed, if they have agreed we may.
+
+    **Never raises.** A correction is a by-product of the save, not the point of
+    it: the musician asked for their bar to be stored and it has been. Losing
+    one training row is a cost worth paying without them ever knowing; failing
+    their save to record one is not.
+
+    `before` is None when the previous reading could not be read back — a row
+    that has since gone, or JSON that no longer validates. There is then no
+    prediction to pair the correction with, and a correction with nothing on the
+    other side of it is not a training example.
+    """
+    if before is None:
+        return
+    try:
+        changes = corrections_between(before, after)
+        if not changes:
+            return
+        keys = _page_keys(stored)
+        rows = rows_for(
+            changes,
+            user_id=str(user_id),
+            score_id=str(score_id),
+            reader=stored.get("transcription_reader"),
+            # The page the bar was read from is not knowable per bar — nothing
+            # carries a measure's position on the page — so page one is the
+            # honest pointer for a single-page scan and the best available for
+            # a multi-page one. See the column comment in migration 013.
+            page_image_key=keys[0] if keys else None,
+        )
+        require_service_client().table("training_corrections").insert(rows).execute()
+        log.info(
+            "kept %d correction(s) for score %s", len(rows), score_id
+        )
+    except Exception:  # noqa: BLE001 — pre-013 database, or anything at all
+        log.warning(
+            "could not record corrections for score %s", score_id, exc_info=True
+        )
+
+
+def _score_before_edit(score_id: UUID, user_id: UUID) -> tuple[dict[str, Any], ScoreJson | None]:
+    """The stored row and its reading, for comparison against what is incoming.
+
+    Returns the raw row as well, because the correction needs two things from it
+    that the parsed score does not carry: which chain read it, and which object
+    the page lives in.
+    """
+    def run(columns: str):
+        return (
+            require_service_client()
+            .table("scores")
+            .select(columns)
+            .eq("id", str(score_id))
+            .eq("user_id", str(user_id))
+            .limit(1)
+            .execute()
+        )
+
+    # **Two narrowings, not one.** `select_with_pages` already handles a
+    # database without 011's page array; `transcription_reader` is 013 and has
+    # the same window in front of it, because Render deploys `main`
+    # automatically while migrations here are applied by hand. Asking PostgREST
+    # for a column that does not exist fails the *whole* request, so a save
+    # would start 500ing the moment this shipped and before the migration ran.
+    rows: list[dict[str, Any]] = []
+    for base in ("score_json, transcription_reader", "score_json"):
+        try:
+            result = select_with_pages(run, base)
+        except Exception:  # noqa: BLE001 — try the narrower shape, then give up
+            continue
+        rows = result.data or []
+        break
+    else:
+        log.warning("could not read score %s before an edit", score_id)
+        return {}, None
+    if not rows:
+        return {}, None
+    row = rows[0]
+    try:
+        return row, ScoreJson.model_validate(row.get("score_json") or {})
+    except Exception:  # noqa: BLE001 — a row written before a schema change
+        return row, None
+
+
 def _insert_score(payload: dict[str, Any]) -> list[dict[str, Any]]:
     """Insert the row, dropping the page array if the database has no column.
 
@@ -514,7 +727,7 @@ def _insert_score(payload: dict[str, Any]) -> list[dict[str, Any]]:
     week, and it is recoverable — `POST /:id/transcribe` re-reads the row once
     the column arrives.
     """
-    client = _service_client()
+    client = require_service_client()
     try:
         return client.table("scores").insert(payload).execute().data or []
     except Exception:  # noqa: BLE001 — retry once without the newest column
@@ -528,11 +741,84 @@ def _insert_score(payload: dict[str, Any]) -> list[dict[str, Any]]:
         return client.table("scores").insert(narrower).execute().data or []
 
 
+def _assert_reading_rate(user_id: UUID) -> None:
+    """Refuse to start a reading this account is asking for too fast.
+
+    **A cost guard, not a product limit** — see `services/reading_rate` for why
+    the numbers are where they are, and `services/tier_limits` for what a free
+    account is actually entitled to. The three endpoints that reach
+    `start_transcription` are the only ones that spend money per call, and this
+    is the only thing standing between a client stuck in a retry loop and the
+    vision API bill.
+
+    **429 with `Retry-After`**, which is the answer that says *not yet* rather
+    than *no*. 403 would be wrong — nothing here is about permission — and a
+    409 would say the piece is busy, which it is not.
+
+    Called by the handler rather than wired as a `Depends`, because
+    `create_score` serves a photographed piece and a hand-entered one through
+    one route and only knows which after it has read the body. A hand-entered
+    piece and a MusicXML import cost nothing and are never counted.
+    """
+    # Resolved through the module, not bound at import. `from ... import
+    # readings` binds the object into this namespace, so replacing the
+    # process-wide limiter — which is exactly what the test fixture does to keep
+    # one test's readings out of the next one's — would silently have no effect
+    # here. The same rule `deps.py` learned about `get_service_client`.
+    decision = reading_rate.readings.check(str(user_id))
+    if decision.allowed:
+        return
+    log.info("refused a reading for %s; %ss to wait", user_id, decision.retry_after)
+    raise HTTPException(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        detail=reading_rate.BUSY_MESSAGE,
+        headers={"Retry-After": str(decision.retry_after)},
+    )
+
+
+#: The columns a score row needs to become a `ScoreResponse`, minus the notation.
+#:
+#: **Written out rather than derived from `ScoreResponse.model_fields`**, which
+#: is how `/v1/analyses` does it — that shortcut works there because every field
+#: of an `AnalysisResponse` is also a column. Half of a `ScoreResponse` is not:
+#: `image_url`, `image_urls`, `image_url_expires_at`, `page_count` and
+#: `concerns` are all computed here, and `source_image_urls` is a column that is
+#: not a field at all. A derived list would ask Postgres for five columns that
+#: do not exist and miss the one `pages_of` reads.
+#:
+#: So the list is the *reads* below, and `test_scores_router.py` holds it
+#: there behaviourally: it fetches fully-populated rows both ways and asserts
+#: the two responses differ in `score_json` and `concerns` and nowhere else. A
+#: column dropped from here shows up as a field that lost its value, which is
+#: the failure this projection could otherwise cause silently.
+_WITHOUT_SCORE = ", ".join(
+    (
+        "id",
+        "user_id",
+        "title",
+        "composer",
+        "movement",
+        "source_image_url",
+        "source_image_urls",
+        "shared_with_studio",
+        "ocr_confidence",
+        "transcription_status",
+        "transcription_stage",
+        "transcription_error",
+        "transcription_accepted_at",
+        "page_image_discarded_at",
+        "created_at",
+        "updated_at",
+    )
+)
+
+
 def _row_to_response(
     row: dict[str, Any],
     *,
     image_url: str | None = None,
     expires_at: datetime | None = None,
+    image_urls: list[str] | None = None,
 ) -> ScoreResponse:
     return ScoreResponse(
         id=row["id"],
@@ -542,9 +828,10 @@ def _row_to_response(
         movement=row.get("movement"),
         source_image_url=row["source_image_url"],
         image_url=image_url,
+        image_urls=image_urls or ([image_url] if image_url else []),
         image_url_expires_at=expires_at,
         page_count=len(pages_of(row)),
-        score_json=row["score_json"],
+        score_json=row.get("score_json"),
         shared_with_studio=row.get("shared_with_studio"),
         ocr_confidence=row.get("ocr_confidence"),
         concerns=_concerns_for(row.get("score_json")),
@@ -585,12 +872,12 @@ def _hand_entered(body: CreateScoreRequest) -> ScoreJson:
 
     `measures` is empty and stays empty: this endpoint takes a title and a
     tempo, not a transcription, and there is no note entry anywhere in the app.
-    A piece like this is a real library entry — it can be opened, favourited
-    and practised against with the metronome — but the analysis pipeline has
-    nothing to align a recording to, so it cannot produce a verdict. That
-    limitation is the honest consequence of never having read the page, and
-    `ocr_confidence = 0` records it: no notes were read, so nothing is claimed
-    about any.
+    A piece like this is a real library entry — it can be opened and named —
+    but the app has no score-only metronome route and the analysis pipeline has
+    nothing to align a recording to, so it cannot yet be practised or produce a
+    verdict. That limitation is the honest consequence of never having read the
+    page, and `ocr_confidence = 0` records it: no notes were read, so nothing is
+    claimed about any.
     """
     return ScoreJson(
         clef=body.clef,
@@ -606,7 +893,6 @@ def _hand_entered(body: CreateScoreRequest) -> ScoreJson:
 @router.post("", response_model=ScoreResponse, status_code=status.HTTP_201_CREATED)
 def create_score(
     body: CreateScoreRequest,
-    background_tasks: BackgroundTasks,
     user_id: UUID = Depends(current_user_id_provisioned),
 ) -> ScoreResponse:
     """Create the piece, and — if it came from a photograph — start reading it.
@@ -626,15 +912,17 @@ def create_score(
     Still 201 with the row, not 202 with an id: the piece genuinely exists when
     this returns, and everything except its notes is already usable.
     """
-    pages = body.pages()
-    manual = not pages
-    for url in pages:
-        # Before anything is written, and **every page, not the first**. A URL
-        # that isn't this user's object is a 403 the caller can act on, and a
-        # row that could never be transcribed should not be created to discover
-        # that in a worker. Checking only page one would let a scan carry
-        # somebody else's page 2 into a read.
-        _assert_image_url_owned_by(url, user_id)
+    references = body.pages()
+    manual = not references
+    if not manual:
+        # Before anything is written, so a refusal leaves no half-made piece.
+        _assert_reading_rate(user_id)
+    # Canonicalise every page before anything is written. The returned values
+    # are durable private-storage URLs with no upload token; old signed URLs
+    # and new object keys converge on the same stored form.
+    pages = [
+        _durable_image_url(reference, user_id) for reference in references
+    ]
 
     score = _hand_entered(body) if manual else _awaiting_transcription()
 
@@ -659,6 +947,10 @@ def create_score(
         # A hand-entered piece is finished the moment it is written; there is
         # nothing to read and never will be.
         "transcription_status": "done" if manual else "queued",
+        # The first reading is a reading. Leaving it at the column's default of
+        # 0 would quietly make the ceiling one higher than it says, which is
+        # the kind of off-by-one a limit is worst at carrying.
+        "transcription_runs": 0 if manual else 1,
     }
     rows = _insert_score(insert_payload)
     if not rows:
@@ -667,16 +959,165 @@ def create_score(
             detail="failed to persist score",
         )
 
+    # **Claimed only after the row exists.** A row now points at these objects,
+    # so the sweeper must leave them alone — and clearing them before the
+    # insert would strand every object of a save that then failed, which is one
+    # of the three cases `pending_uploads` was written for.
+    pending_uploads.claim(SCORE_BUCKET, _object_keys_in(body.pages()))
+
     if not manual:
         # After the insert, so the worker cannot look for a row that is not
-        # there yet, and after the response is sent, which is what
-        # `BackgroundTasks` guarantees.
+        # there yet.
+        #
+        # It used to say "and after the response is sent, which is what
+        # `BackgroundTasks` guarantees" — and this handler took a
+        # `BackgroundTasks` it never added anything to. `start_transcription`
+        # puts the id on a queue that reader threads drain, so a worker can
+        # pick it up before this function returns; the insert above is what
+        # makes that safe, and the only ordering claim worth making.
         start_transcription(str(rows[0]["id"]))
 
     # Signed like every other read, so a client can render the page it just
     # uploaded without a second request. This used to return an unsigned row,
     # which meant POST was the one response whose `image_url` was always null.
     return _with_image_urls(rows)[0]
+
+
+@router.post("/{score_id}/transcription", response_model=ScoreResponse)
+def attach_score_pages(
+    score_id: UUID,
+    body: AttachScorePagesRequest,
+    user_id: UUID = Depends(current_user_id),
+) -> ScoreResponse:
+    """Read sheet music into an existing scoreless or failed piece.
+
+    A manual library entry keeps a title and intended tempo, but it has no notes
+    for recording analysis or score playback to follow. This turns that same
+    entry into a photographed score instead of forcing the musician to create a
+    duplicate and lose the details already attached to it.
+
+    A failed first reading is the other scoreless state. New photographs replace
+    its unreadable pages in the same row, so the recovery action does not create a
+    second copy of the piece. A failed *re-reading* of a score that still has
+    measures is not replaceable here: those usable notes may already have
+    practice history behind them and must not be erased by a photograph retry.
+    """
+    _assert_reading_rate(user_id)
+    pages = [
+        _durable_image_url(reference, user_id)
+        for reference in body.pages()
+    ]
+
+    client = require_service_client()
+    existing = (
+        client.table("scores")
+        .select("*")
+        .eq("id", str(score_id))
+        .eq("user_id", str(user_id))
+        .limit(1)
+        .execute()
+    ).data or []
+    if not existing:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="score not found"
+        )
+
+    row = existing[0]
+    state = row.get("transcription_status") or "done"
+    if state in {"queued", "reading"}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="this piece is already being read",
+        )
+    measures = (row.get("score_json") or {}).get("measures") or []
+    replacing_failed_pages = state == "failed" and not measures
+    if measures or (pages_of(row) and not replacing_failed_pages):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="this piece already has notation",
+        )
+
+    # Kept until the row points at the replacements. If the write loses a race,
+    # the original photographs remain available for the winning retry and the
+    # newly uploaded pages remain pending for the ordinary sweeper.
+    replaced_keys = _page_keys(row) if replacing_failed_pages else []
+
+    pending_score = _awaiting_transcription().model_dump(mode="json")
+    previous_score = row.get("score_json") or {}
+    # Keep the manual setup visible while the worker reads. The transcription
+    # replaces these fields when it finishes, but dropping the entered tempo in
+    # the queued response makes Today jump to a generic default in the meantime.
+    #
+    # `_MANUAL_FIELDS` rather than the same three names typed again: it is the
+    # one place that says which fields a person supplies and OCR overwrites,
+    # and a fourth added there and not here would vanish from the musician's
+    # screen for exactly as long as the reading takes — the failure this loop
+    # exists to prevent, reintroduced one field at a time.
+    for field in _MANUAL_FIELDS:
+        pending_score[field] = previous_score.get(field)
+
+    update = {
+        "source_image_url": pages[0],
+        "source_image_urls": pages,
+        "score_json": pending_score,
+        "ocr_confidence": None,
+        "transcription_status": "queued",
+        "transcription_stage": None,
+        "transcription_error": None,
+        "transcription_accepted_at": None,
+        "page_image_discarded_at": None,
+        # **Reset, not incremented.** These are new photographs, and the
+        # ceiling counts readings of *one* photograph — the refusal at the top
+        # of it says the answer is a clearer picture, so arriving with a
+        # clearer picture has to be an answer. A musician who takes the advice
+        # and is refused anyway would have been told to do something that does
+        # not work.
+        "transcription_runs": 1,
+    }
+    update_query = (
+        client.table("scores")
+        .update(update)
+        .eq("id", str(score_id))
+        .eq("user_id", str(user_id))
+    )
+    if replacing_failed_pages:
+        # Compare both facts that authorised replacement. "Try reading again"
+        # can race this request from another tab; once it changes the state, a
+        # late photograph must not overwrite the reading it started. Comparing
+        # the old first page also lets only one of two photograph retries win.
+        update_query = update_query.eq("transcription_status", "failed").eq(
+            "source_image_url", row.get("source_image_url")
+        )
+    updated = update_query.execute().data or []
+    if not updated:
+        raise HTTPException(
+            status_code=(
+                status.HTTP_409_CONFLICT
+                if replacing_failed_pages
+                else status.HTTP_404_NOT_FOUND
+            ),
+            detail=(
+                "this piece changed while the replacement pages were uploading; "
+                "open it and check the current reading"
+                if replacing_failed_pages
+                else "score not found"
+            ),
+        )
+
+    # The row points at them now, same as `create_score`.
+    new_keys = _object_keys_in(pages)
+    pending_uploads.claim(SCORE_BUCKET, new_keys)
+
+    # The old photographs are now unreachable. Remove them immediately; if
+    # storage is temporarily unavailable, put each one into the same durable
+    # pending registry used for an abandoned upload so the sweeper can retry.
+    # Never remove a key reused by an older client as its replacement.
+    for key in sorted(set(replaced_keys) - set(new_keys)):
+        if not _remove_object(client, key):
+            pending_uploads.record(user_id, SCORE_BUCKET, key)
+
+    start_transcription(str(score_id))
+    return _with_image_urls(updated)[0]
 
 
 @router.post("/import", response_model=ScoreResponse, status_code=status.HTTP_201_CREATED)
@@ -718,7 +1159,7 @@ def import_score(
         )
 
     inserted = (
-        _service_client()
+        require_service_client()
         .table("scores")
         .insert(
             {
@@ -748,11 +1189,41 @@ def list_scores(
     user_id: UUID = Depends(current_user_id),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
+    include_score: bool = Query(
+        default=True,
+        description=(
+            "Send the notation with each row. Say false when you only need the "
+            "pieces — it is by far the largest field."
+        ),
+    ),
 ) -> list[ScoreResponse]:
+    """The caller's scores, newest first.
+
+    **`include_score=false` exists because `score_json` dwarfs the rest of the
+    row.** Measured against the reader's own stored output: **111 to 130 bytes a
+    note**, so an ordinary study of three or four hundred notes is 35 to 50 KB —
+    and the app does not fetch one page of these, it pages through the *whole*
+    library on every Library open, because search filters the array it is given
+    and piece fifty-one would otherwise be unfindable. A hundred pieces is
+    several megabytes, repeated every time the tab is opened past
+    `STALE_TIME_MS`. The library grid draws a title, a composer and a
+    photograph, and has never drawn a note.
+
+    It narrows the **SQL projection**, not just the response, for the same
+    reason as `/v1/analyses`: dropping the field after Postgres has already sent
+    it leaves the expensive half of the transfer where it was, and the database
+    read is billed too.
+
+    Two fields go quiet with it, both correctly. `score_json` is null, and
+    `concerns` is empty — the concerns are *computed from* the notation, so
+    without it there is nothing to compute, and running the measure validator
+    over every row of a library listing was never work that screen asked for.
+    `GET /v1/scores/{id}` is where both are answered.
+    """
     response = (
-        _service_client()
+        require_service_client()
         .table("scores")
-        .select("*")
+        .select("*" if include_score else _WITHOUT_SCORE)
         .eq("user_id", str(user_id))
         .order("created_at", desc=True)
         .range(offset, offset + limit - 1)
@@ -767,7 +1238,7 @@ def get_score(
     user_id: UUID = Depends(current_user_id),
 ) -> ScoreResponse:
     response = (
-        _service_client()
+        require_service_client()
         .table("scores")
         .select("*")
         .eq("id", str(score_id))
@@ -778,27 +1249,8 @@ def get_score(
     rows = response.data or []
     if not rows:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="score not found")
-    return _with_image_urls(rows)[0]
-
-
-def _stored_score_json(score_id: UUID, user_id: UUID) -> dict[str, Any]:
-    """The score as it stands, or an empty dict when there is no row to read.
-
-    Not an error here: the update below runs against the same id and user and
-    raises its own 404. Returning nothing means "no measure matches", which
-    makes every incoming measure count as rewritten — the safe direction, since
-    the cost is one caveat lost and the alternative is one that cannot be.
-    """
-    rows = (
-        _service_client()
-        .table("scores")
-        .select("score_json")
-        .eq("id", str(score_id))
-        .eq("user_id", str(user_id))
-        .limit(1)
-        .execute()
-    ).data or []
-    return (rows[0].get("score_json") if rows else None) or {}
+    # Every page: this is the screen where a musician looks at what was read.
+    return _with_image_urls(rows, all_pages=True)[0]
 
 
 @router.patch("/{score_id}", response_model=ScoreResponse)
@@ -815,6 +1267,19 @@ def update_score(
     sent = body.model_fields_set
 
     update: dict[str, Any] = {}
+    # The reading as it stands, fetched once and used for two things: clearing
+    # the unwritable count on a rewritten bar, and — only where the musician has
+    # agreed to it — recording what they changed. Fetched only when a
+    # `score_json` is actually incoming, so renaming a piece still costs no
+    # extra round trip.
+    keeping = False
+    stored_row: dict[str, Any] = {}
+    previous: ScoreJson | None = None
+    if body.score_json is not None:
+        keeping = _consents_to_training(user_id)
+        if keeping or any(m.unwritable_notes for m in body.score_json.measures):
+            stored_row, previous = _score_before_edit(score_id, user_id)
+
     if body.score_json is not None:
         # A bar the musician has just rewritten no longer carries what the
         # *reading* lost in it — see `clear_unwritable_where_rewritten`. The
@@ -823,7 +1288,7 @@ def update_score(
         # costs no extra round trip.
         incoming = clear_unwritable_where_rewritten(
             body.score_json,
-            _stored_score_json(score_id, user_id)
+            stored_row.get("score_json")
             if any(m.unwritable_notes for m in body.score_json.measures)
             else None,
         )
@@ -850,7 +1315,7 @@ def update_score(
         # sent a whole `score_json` — if they have, theirs already carries a
         # clef and two sources for one field is how they disagree.
         current = (
-            _service_client()
+            require_service_client()
             .table("scores")
             .select("score_json")
             .eq("id", str(score_id))
@@ -872,7 +1337,7 @@ def update_score(
         )
 
     response = (
-        _service_client()
+        require_service_client()
         .table("scores")
         .update(update)
         .eq("id", str(score_id))
@@ -882,6 +1347,21 @@ def update_score(
     rows = response.data or []
     if not rows:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="score not found")
+
+    # **After the save, never before it.** A correction is evidence that the
+    # save happened; writing one first would leave a training row describing an
+    # edit that then 404'd. `_record_corrections` swallows its own failures for
+    # the same reason — the musician asked for their bar to be stored, and it
+    # has been.
+    if keeping and body.score_json is not None:
+        _record_corrections(
+            user_id=user_id,
+            score_id=score_id,
+            stored=stored_row,
+            before=previous,
+            after=incoming,
+        )
+
     # Signed like every other read. A rename returning a null `image_url` made
     # the caller's freshly-updated piece lose its thumbnail until the next
     # list fetch.
@@ -910,7 +1390,7 @@ def accept_transcription(
     Idempotent. Accepting twice is a double tap or a retried request, not an
     error, and the second call finds the object already gone.
     """
-    client = _service_client()
+    client = require_service_client()
     rows = (
         client.table("scores")
         .select("*")
@@ -940,6 +1420,23 @@ def accept_transcription(
         "updated_at": _now_iso(),
     }
 
+    # **The photograph is kept only where a person has said it may be.**
+    #
+    # 007 deletes on accept, and every reason it gives still stands — a page is
+    # megabytes of JPEG whose one remaining purpose has just been served. What
+    # changed is that there is now a second purpose, and it is not one this
+    # code may assume: the page plus the corrections made against it is the
+    # training example that makes the reader better next time.
+    #
+    # So this is 007 with a consent gate in front of it. No consent and nothing
+    # here behaves differently in any way. `page_image_retained_at` records the
+    # keeping as a deliberate act, because an accepted row whose photograph is
+    # still present is otherwise indistinguishable from one whose delete failed.
+    if _consents_to_training(user_id):
+        patch["page_image_retained_at"] = _now_iso()
+        log.info("keeping the photograph of %s: the owner consented", score_id)
+        return _accepted(client, score_id, user_id, patch)
+
     # **Every page, not the first.** Accepting a three-page scan used to
     # discard page one and leave pages two and three in the bucket with no row
     # naming them, no accept path and no delete path — the orphaned-upload hole
@@ -966,19 +1463,91 @@ def accept_transcription(
             patch["source_image_urls"] = None
         patch["page_image_discarded_at"] = _now_iso()
 
-    updated = (
-        client.table("scores")
-        .update(patch)
-        .eq("id", str(score_id))
-        .eq("user_id", str(user_id))
-        .execute()
-    ).data or []
-    if not updated:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="failed to record the acceptance",
+    return _accepted(client, score_id, user_id, patch)
+
+
+def _accepted(
+    client, score_id: UUID, user_id: UUID, patch: dict[str, Any]
+) -> ScoreResponse:
+    """Write the acceptance, narrowing if the database predates a column.
+
+    Both exits from `accept_transcription` come through here, so the retaining
+    branch and the discarding one cannot drift apart about what a written
+    acceptance looks like.
+
+    `page_image_retained_at` is 013 and Render deploys before the migrations
+    here are applied by hand, so naming it on a database that has not got it
+    would turn "accepting keeps the photograph" into "accepting is broken" for
+    the length of that window — the same failure the `source_image_urls` guard
+    a few lines up exists to prevent, and the reason that guard is written as it
+    is.
+    """
+    for attempt in (patch, {k: v for k, v in patch.items() if k != "page_image_retained_at"}):
+        try:
+            updated = (
+                client.table("scores")
+                .update(attempt)
+                .eq("id", str(score_id))
+                .eq("user_id", str(user_id))
+                .execute()
+            ).data or []
+        except Exception:  # noqa: BLE001 — pre-013 column; retry without it
+            if attempt is not patch:
+                raise
+            log.warning(
+                "accepting %s without page_image_retained_at; 013 looks unapplied",
+                score_id,
+            )
+            continue
+        if not updated:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="failed to record the acceptance",
+            )
+        return _with_image_urls(updated)[0]
+    raise HTTPException(  # pragma: no cover — the loop returns or raises
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail="failed to record the acceptance",
+    )
+
+
+def discard_pages_of(client, score: dict[str, Any]) -> bool:
+    """Delete one score's photographs and record it, returning whether they went.
+
+    Public because withdrawal of training consent has to do exactly what accept
+    does — `routers/me.py` calls it for every score whose page was retained.
+    Two copies of "remove the objects, then null the columns, but only if every
+    object actually went" is two chances to get the ordering wrong, and getting
+    it wrong strands a photograph that nothing can reach again.
+
+    Returns False and writes nothing when storage refused, which leaves
+    `page_image_retained_at` set — so the row still says a photograph is being
+    kept, and a later attempt can still find it. That is the honest state, and
+    it is better than a row claiming the file is gone while it sits in the
+    bucket.
+    """
+    keys = _page_keys(score)
+    if keys and not all(_remove_object(client, key) for key in keys):
+        return False
+
+    patch: dict[str, Any] = {
+        "source_image_url": None,
+        "page_image_discarded_at": _now_iso(),
+        "page_image_retained_at": None,
+        "updated_at": _now_iso(),
+    }
+    if "source_image_urls" in score:
+        patch["source_image_urls"] = None
+    try:
+        client.table("scores").update(patch).eq("id", str(score["id"])).execute()
+    except Exception:  # noqa: BLE001 — the objects are gone either way
+        log.warning(
+            "discarded the pages of %s but could not update the row",
+            score.get("id"),
+            exc_info=True,
         )
-    return _with_image_urls(updated)[0]
+        return False
+    return True
 
 
 def _remove_object(client, key: str) -> bool:
@@ -1000,7 +1569,6 @@ def _remove_object(client, key: str) -> bool:
 @router.post("/{score_id}/transcribe", response_model=ScoreResponse)
 def retranscribe(
     score_id: UUID,
-    background_tasks: BackgroundTasks,
     user_id: UUID = Depends(current_user_id),
 ) -> ScoreResponse:
     """Read the page again.
@@ -1032,7 +1600,8 @@ def retranscribe(
     looking at a transcription they can see is wrong should not have to fail
     first to ask for another go.
     """
-    client = _service_client()
+    _assert_reading_rate(user_id)
+    client = require_service_client()
     rows = (
         client.table("scores")
         .select("*")
@@ -1059,6 +1628,21 @@ def retranscribe(
                 "reading, so there is nothing left to read again"
             ),
         )
+    # **The ceiling, and this is the only endpoint that needs one.** Every
+    # other refusal above is about the row's state; this one is about the bill.
+    # A reading is a vision-model call per page, and until 017 nothing counted
+    # them — the concurrency guard below stops two taps starting two workers,
+    # and does nothing at all about the same tap arriving a thousand times.
+    #
+    # 409 rather than 429: this ceiling is per page and permanent, so waiting
+    # changes
+    # nothing. This page is finished, which is a conflict with its state, and
+    # `transcription_runs` is that state.
+    if not has_room(row):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=EXHAUSTED_MESSAGE,
+        )
 
     # Compare-and-set: the same condition the check above states, applied where
     # it actually settles the race. `transcription_status` is NOT NULL with a
@@ -1072,6 +1656,13 @@ def retranscribe(
                 "transcription_status": "queued",
                 "transcription_stage": None,
                 "transcription_error": None,
+                # Computed from the row read above rather than incremented in
+                # the database, which supabase-py cannot express — and safe for
+                # exactly the reason the status filter below exists: two racing
+                # requests both read the same count and both write the same
+                # successor, but only one gets past the compare-and-set, so the
+                # count advances once per reading that actually starts.
+                "transcription_runs": next_run_count(row),
                 "updated_at": _now_iso(),
             }
         )
@@ -1098,18 +1689,25 @@ def delete_score(
     score_id: UUID,
     user_id: UUID = Depends(current_user_id),
 ) -> Response:
-    client = _service_client()
+    """Permanently remove a piece, its practice history, and stored media.
 
-    # Read the photograph's key *before* the row goes, because the row is the
-    # only thing that knows it.
-    #
-    # **Deleting a score used to leak its page image forever.** The single
-    # storage deletion in the backend is reached from `POST /:id/accept`, keyed
-    # off an existing row — so once the row was gone the object had no row, no
-    # accept path and no delete path, and nothing anywhere could ever reach it
-    # again. That contradicts the rule the rest of this file states plainly:
-    # the photograph is discarded when a person is done with it. Deleting the
-    # piece is a person being done with it.
+    The initial schema deliberately uses RESTRICT from assignments and analyses
+    to scores. That protects history from an accidental bare row delete, but it
+    also meant the consumer-facing action stopped working as soon as someone
+    had practised the piece. This endpoint performs the complete owned cleanup
+    explicitly, in dependency order, and remains compatible with that deployed
+    schema.
+
+    Database work happens before storage removal. A failed or interrupted
+    request can therefore be retried without a row pointing at bytes that were
+    already destroyed. The sequence is idempotent at every dependent step:
+    assignments, analyses, then the score.
+    """
+    client = require_service_client()
+
+    # Inventory everything while its owner row still exists. The ownership
+    # check is the boundary for all later score-id-only deletes, including
+    # assignments that do not themselves carry the score owner's user id.
     existing = select_with_pages(
         lambda columns: (
             client.table("scores")
@@ -1121,12 +1719,65 @@ def delete_score(
         ),
         "",
     ).data or []
-    keys = _page_keys(existing[0]) if existing else []
+    if not existing:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="score not found",
+        )
 
-    # The schema declares analyses.score_id with ON DELETE RESTRICT, so a
-    # delete with dependent analyses will surface as a Postgres FK error.
-    # Convert that to 409 with a clear message rather than the SDK's 500.
+    page_keys = _page_keys(existing[0])
     try:
+        analysis_rows = (
+            client.table("analyses")
+            .select("audio_url, playback_key")
+            .eq("score_id", str(score_id))
+            .eq("user_id", str(user_id))
+            .execute()
+        ).data or []
+    except Exception as exc:  # noqa: BLE001 - no destructive action happened
+        log.exception("could not inventory recordings for score %s", score_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Could not prepare this piece for deletion. Try again.",
+        ) from exc
+
+    audio_keys: list[str] = []
+    for row in analysis_rows:
+        # **Both references, because a judged take has two.** The WAV is
+        # replaced by an Opus once the analysis finishes and `playback_key`
+        # names it (`services/take_archive`); collecting only `audio_url`
+        # would delete the piece and leave every compressed recording behind,
+        # which is the leak this whole change exists to close.
+        #
+        # Usually only one of the two still exists — the transcode removes the
+        # original — and asking storage to remove a key that is already gone is
+        # not an error there.
+        for field in ("audio_url", "playback_key"):
+            reference = row.get(field)
+            if not isinstance(reference, str) or not reference:
+                continue
+            try:
+                audio_keys.append(owned_audio_key(reference, user_id))
+            except InvalidAudioReference:
+                # A legacy or malformed row must not become authority to delete
+                # an arbitrary storage object. The database history can still go.
+                log.warning(
+                    "analysis for score %s has an unreadable %s",
+                    score_id,
+                    field,
+                )
+    audio_keys = list(dict.fromkeys(audio_keys))
+
+    try:
+        # assignments.score_id and analyses.score_id are both RESTRICT. The
+        # former may also point at one of these analyses as its submission; its
+        # FK is SET NULL, but the assignment itself is about the piece and goes.
+        client.table("assignments").delete().eq(
+            "score_id", str(score_id)
+        ).execute()
+        client.table("analyses").delete().eq(
+            "score_id", str(score_id)
+        ).eq("user_id", str(user_id)).execute()
         deleted = (
             client.table("scores")
             .delete()
@@ -1134,25 +1785,46 @@ def delete_score(
             .eq("user_id", str(user_id))
             .execute()
         )
-    except Exception as exc:  # noqa: BLE001
-        msg = str(exc).lower()
-        if "violates foreign key" in msg or "foreign key constraint" in msg:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="score has dependent analyses; delete those first (soft-delete is V2)",
-            ) from exc
-        raise
+    except Exception as exc:  # noqa: BLE001 - provider errors vary
+        log.exception("piece deletion stopped before score %s was removed", score_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "This piece could not be fully removed. Try again; completed "
+                "cleanup steps will not be repeated."
+            ),
+        ) from exc
 
     if not (deleted.data or []):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="score not found")
+        # The ownership read succeeded but the final delete matched nothing:
+        # another request won the race. It owns media cleanup, so do not remove
+        # objects on the strength of this stale snapshot.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="score not found",
+        )
 
-    # After the row, never before. A storage outage must not block someone
-    # deleting a piece — the row is what the app reads, and an object left
-    # behind by a failed removal is exactly what this is trying to stop, so it
-    # is logged rather than swallowed. `_remove_object` already refuses to
-    # raise for that reason.
-    for key in keys:
+    # The database is now the truth the app reads. Storage cleanup is best
+    # effort, matching account deletion: failure must not resurrect a library
+    # entry, and every key was recovered and ownership-checked before the rows
+    # disappeared.
+    if audio_keys:
+        try:
+            client.storage.from_(AUDIO_BUCKET).remove(audio_keys)
+        except Exception as exc:  # noqa: BLE001 - deletion already committed
+            log.error(
+                "score %s was deleted but %d recording(s) remain: %s",
+                score_id,
+                len(audio_keys),
+                exc,
+            )
+
+    for key in page_keys:
         if not _remove_object(client, key):
-            log.warning("score %s was deleted but its page image %s was not", score_id, key)
+            log.warning(
+                "score %s was deleted but its page image %s was not",
+                score_id,
+                key,
+            )
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)

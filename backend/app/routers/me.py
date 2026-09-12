@@ -10,12 +10,14 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import unquote, urlparse
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 
+from app.services import pending_uploads
 from app.auth import current_jwt_payload
-from app.db import get_service_client
+from app.routers.deps import require_service_client
 from app.models.user import (
     Instrument,
     MeResponse,
@@ -24,7 +26,10 @@ from app.models.user import (
     UserRole,
     UserTier,
 )
+from app.services.score_pages import pages_of
 from app.services.tier_limits import usage_for
+from app.services.training import may_keep_corrections
+from app.routers.upload import AUDIO_BUCKET, SCORE_BUCKET
 
 router = APIRouter(tags=["me"])
 log = logging.getLogger("intempo.me")
@@ -96,12 +101,7 @@ def get_me(payload: dict[str, Any] = Depends(current_jwt_payload)) -> MeResponse
             detail="Token subject is not a UUID",
         ) from exc
 
-    client = get_service_client()
-    if client is None:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Supabase service-role client is not configured",
-        )
+    client = require_service_client()
 
     existing = client.table("users").select("*").eq("id", str(user_id)).limit(1).execute()
     rows = existing.data or []
@@ -123,7 +123,114 @@ def get_me(payload: dict[str, Any] = Depends(current_jwt_payload)) -> MeResponse
     except Exception:  # noqa: BLE001
         analyses = None
 
-    return _to_response(user_id, row, tier, analyses)
+    return _to_response(client, user_id, row, tier, analyses)
+
+
+def _rows_owned_by(
+    client: Any,
+    table: str,
+    column: str,
+    user_id: UUID,
+) -> list[dict[str, Any]]:
+    return (
+        client.table(table)
+        .select("*")
+        .eq(column, str(user_id))
+        .execute()
+    ).data or []
+
+
+def _without(row: dict[str, Any], *keys: str) -> dict[str, Any]:
+    """Copy a database row without ephemeral storage credentials."""
+    blocked = set(keys)
+    return {key: value for key, value in row.items() if key not in blocked}
+
+
+@router.get("/me/export")
+def export_me(
+    payload: dict[str, Any] = Depends(current_jwt_payload),
+) -> dict[str, Any]:
+    """A portable JSON snapshot of the signed-in musician's account.
+
+    Stored upload URLs are deliberately omitted: they contain short-lived
+    tokens and are not durable data. The export carries the score itself and
+    every analysis result, while naming how many media objects exist so the
+    omission is explicit rather than silent.
+    """
+    user_id = _user_id_from(payload)
+    client = require_service_client()
+
+    account_rows = (
+        client.table("users")
+        .select("*")
+        .eq("id", str(user_id))
+        .limit(1)
+        .execute()
+    ).data or []
+    if not account_rows:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="user not found",
+        )
+
+    scores = _rows_owned_by(client, "scores", "user_id", user_id)
+    analyses = _rows_owned_by(client, "analyses", "user_id", user_id)
+    corrections = _rows_owned_by(
+        client, "verdict_corrections", "user_id", user_id
+    )
+    sync_events = _rows_owned_by(client, "sync_events", "user_id", user_id)
+    student_assignments = _rows_owned_by(
+        client, "assignments", "student_user_id", user_id
+    )
+    teacher_assignments = _rows_owned_by(
+        client, "assignments", "teacher_user_id", user_id
+    )
+    owned_studios = _rows_owned_by(
+        client, "studios", "owner_user_id", user_id
+    )
+
+    assignments_by_id: dict[str, dict[str, Any]] = {}
+    for assignment in [*student_assignments, *teacher_assignments]:
+        key = str(assignment.get("id") or len(assignments_by_id))
+        assignments_by_id[key] = assignment
+
+    account = account_rows[0]
+    score_export = [
+        _without(row, "source_image_url", "source_image_urls")
+        for row in scores
+    ]
+    analysis_export = [_without(row, "audio_url") for row in analyses]
+
+    # `pages_of` rather than reading the two columns here. It is the one place
+    # that knows the three shapes a scan comes in, including the one this used
+    # to get wrong: an **empty** array with a page still in the legacy column
+    # counted as zero pages, because `isinstance([], list)` is true and the
+    # `elif` never ran. Migration 011 writes NULL rather than `'{}'`, so that
+    # row is hand-built rather than common — which is exactly why a hand-rolled
+    # copy of the rule is the wrong thing to keep.
+    page_count = sum(len(pages_of(row)) for row in scores)
+
+    return {
+        "export_version": 1,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "account": _without(account, "avatar_key"),
+        "library": score_export,
+        "practice_analyses": analysis_export,
+        "verdict_corrections": corrections,
+        "assignments": list(assignments_by_id.values()),
+        "owned_studios": [
+            _without(studio, "invite_code") for studio in owned_studios
+        ],
+        "sync_events": sync_events,
+        "stored_media": {
+            "profile_photo": bool(account.get("avatar_key")),
+            "score_pages": page_count,
+            "practice_recordings": len(
+                [row for row in analyses if row.get("audio_url")]
+            ),
+            "included_in_json": False,
+        },
+    }
 
 
 def _avatar_url(client: Any, key: str | None) -> str | None:
@@ -152,6 +259,7 @@ def _avatar_url(client: Any, key: str | None) -> str | None:
 
 
 def _to_response(
+    client: Any,
     user_id: UUID,
     row: dict[str, Any],
     tier: UserTier,
@@ -162,8 +270,12 @@ def _to_response(
     Two builders drift, and the field that drifts is the one nobody notices —
     a PATCH that returns the row without the freshly signed avatar looks fine
     until a client trusts the response instead of refetching.
+
+    The client is passed in rather than fetched here. It used to call
+    `get_service_client()` a second time, which every caller had already done
+    and checked — so the `None` it could return was a branch no request could
+    reach, and the only honest thing to write for it was nothing at all.
     """
-    client = get_service_client()
     return MeResponse(
         id=user_id,
         email=row["email"],
@@ -177,6 +289,11 @@ def _to_response(
         display_name=row.get("display_name"),
         avatar_url=_avatar_url(client, row.get("avatar_key")),
         onboarded_at=row.get("onboarded_at"),
+        # The rule, not `bool(row.get(...))` — consent fails closed and there is
+        # one place that decides what that means. A row from a database without
+        # 013 has no key here and comes back false, which is correct: a
+        # deployment that cannot store consent has not got any.
+        training_consent=may_keep_corrections(row),
     )
 
 
@@ -193,12 +310,7 @@ def update_me(
     "omitted" cannot mean both "leave it" and "remove it".
     """
     user_id = _user_id_from(payload)
-    client = get_service_client()
-    if client is None:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Supabase service-role client is not configured",
-        )
+    client = require_service_client()
 
     sent = body.model_fields_set
 
@@ -208,7 +320,7 @@ def update_me(
     # the only thing that knows the old key, and after the write it knows a
     # different one.
     current: dict[str, Any] = {}
-    if "avatar_key" in sent or body.onboarded:
+    if "avatar_key" in sent or body.onboarded or "training_consent" in sent:
         rows = (
             client.table("users")
             .select("*")
@@ -235,6 +347,22 @@ def update_me(
         update["display_name"] = cleaned or None
     if "avatar_key" in sent:
         update["avatar_key"] = _own_avatar_key(user_id, body.avatar_key)
+    withdrawing = False
+    if "training_consent" in sent:
+        # **Granting is idempotent; withdrawing is an instruction.**
+        #
+        # Re-granting keeps the original timestamp: a consent record answers
+        # "when did they agree to this", and re-stamping it every time a screen
+        # saves would make the answer the date of the last save. Withdrawing
+        # clears it and, below, deletes what was kept — a switch that turns off
+        # while the data it authorised stays is not a withdrawal, it is a
+        # cosmetic control over somebody's photographs.
+        if body.training_consent:
+            if not may_keep_corrections(current):
+                update["training_consent_at"] = datetime.now(timezone.utc).isoformat()
+        else:
+            withdrawing = bool(may_keep_corrections(current))
+            update["training_consent_at"] = None
     if body.onboarded and not current.get("onboarded_at"):
         # Only ever forward, and only once. There is no route back to "never
         # asked", and re-stamping the timestamp on an account that is already
@@ -251,10 +379,12 @@ def update_me(
         update["onboarded_at"] = datetime.now(timezone.utc).isoformat()
 
     if not update:
-        if body.onboarded:
-            # Already onboarded, and nothing else was sent. A second tap, a
-            # retried request — not an error, and not a reason to write.
+        if body.onboarded or "training_consent" in sent:
+            # Already onboarded, or already consenting and consenting again. A
+            # second tap, a retried request, a screen saving its own state back
+            # — not an error, and not a reason to write.
             return _to_response(
+                client,
                 user_id,
                 current,
                 UserTier(current.get("tier", UserTier.free.value)),
@@ -285,7 +415,278 @@ def update_me(
     if superseded and superseded != row.get("avatar_key"):
         _remove_avatar(client, superseded)
 
-    return _to_response(user_id, row, UserTier(row.get("tier", UserTier.free.value)), None)
+    # The row points at this one now, so the sweeper must leave it alone. After
+    # the write, like every other claim: a failed update would otherwise strand
+    # the picture it did not save.
+    if row.get("avatar_key"):
+        pending_uploads.claim(AVATAR_BUCKET, [str(row["avatar_key"])])
+
+    # Same ordering rule, and here it matters more: the consent has to be gone
+    # from the row before anything is deleted on the strength of it being gone.
+    if withdrawing:
+        _forget_training_data(client, user_id)
+
+    return _to_response(
+        client, user_id, row, UserTier(row.get("tier", UserTier.free.value)), None
+    )
+
+
+def _forget_training_data(client: Any, user_id: UUID) -> None:
+    """Delete what consent was keeping: the corrections, and the photographs.
+
+    **Withdrawal is the only part of this feature that has to actually work.**
+    Failing to *record* a correction costs a training row nobody was promised;
+    failing to delete one after being asked keeps a person's photographs
+    against their word. So this is the one path here that reports its failures
+    rather than swallowing them — not by failing the request, which would leave
+    the switch stuck on, but by leaving the row's `page_image_retained_at` set
+    so a later sweep can still find what was missed.
+
+    The corrections go first and by user id, so a row whose score has since been
+    deleted goes with them. The photographs follow per score, because each one
+    needs its own storage call and one refusal must not strand the rest.
+    """
+    # Imported here rather than at module scope: `routers.scores` imports the
+    # transcription worker, and a top-level import of it from here is a cycle.
+    from app.routers.scores import discard_pages_of
+
+    try:
+        client.table("training_corrections").delete().eq(
+            "user_id", str(user_id)
+        ).execute()
+    except Exception:  # noqa: BLE001 — pre-013 database, or the table is gone
+        log.warning("could not delete corrections for %s", user_id, exc_info=True)
+
+    try:
+        rows = (
+            client.table("scores")
+            .select("id, source_image_url, source_image_urls, page_image_retained_at")
+            .eq("user_id", str(user_id))
+            .not_.is_("page_image_retained_at", "null")
+            .execute()
+        ).data or []
+    except Exception:  # noqa: BLE001 — pre-013 column
+        log.warning("could not list retained pages for %s", user_id, exc_info=True)
+        return
+
+    for score in rows:
+        discard_pages_of(client, score)
+def _storage_key(url: str | None, bucket: str) -> str | None:
+    """Recover an object key from any Supabase storage URL shape we issue."""
+    if not url:
+        return None
+    path = unquote(urlparse(url).path)
+    prefixes = (
+        f"/storage/v1/object/sign/{bucket}/",
+        f"/storage/v1/object/authenticated/{bucket}/",
+        f"/storage/v1/object/public/{bucket}/",
+    )
+    for prefix in prefixes:
+        if path.startswith(prefix):
+            key = path[len(prefix):]
+            return key or None
+    return None
+
+
+def _account_storage(client: Any, user_id: UUID) -> dict[str, list[str]]:
+    """Snapshot every object key before auth deletion cascades its rows.
+
+    The rows are the only durable index of uploads. Once the auth identity is
+    removed, `users`, `scores`, `analyses` **and `pending_uploads`** all cascade
+    away, so cleanup must collect their keys first even though it removes the
+    objects afterwards.
+
+    Four sources, because there are four places a key can be — the three that
+    mean the object became something, and `pending_uploads`, which means it has
+    not become anything yet. That fourth one was missing, and it is the only one
+    whose objects nothing else could ever reach afterwards.
+    """
+    user_rows = (
+        client.table("users")
+        .select("avatar_key")
+        .eq("id", str(user_id))
+        .limit(1)
+        .execute()
+    ).data or []
+
+    # `source_image_urls` arrived in migration 011. Keep deletion usable
+    # during a rolling deploy where the API is newer than the database.
+    try:
+        score_rows = (
+            client.table("scores")
+            .select("source_image_url,source_image_urls")
+            .eq("user_id", str(user_id))
+            .execute()
+        ).data or []
+    except Exception:  # noqa: BLE001 - compatibility fallback is deliberate
+        score_rows = (
+            client.table("scores")
+            .select("source_image_url")
+            .eq("user_id", str(user_id))
+            .execute()
+        ).data or []
+
+    analysis_rows = (
+        client.table("analyses")
+        .select("audio_url, playback_key")
+        .eq("user_id", str(user_id))
+        .execute()
+    ).data or []
+
+    avatars = [
+        row["avatar_key"]
+        for row in user_rows
+        if isinstance(row.get("avatar_key"), str) and row["avatar_key"]
+    ]
+    # Also `pages_of`, and here the empty-array case cost more than a count: a
+    # page still in the legacy column was never collected, so deleting the
+    # account left it in the bucket. `scores._page_keys` is the same two lines
+    # over the same function, with a comment saying one place — this was the
+    # third copy, and the only one that disagreed.
+    pages: list[str] = []
+    for row in score_rows:
+        for url in pages_of(row):
+            key = _storage_key(url, SCORE_BUCKET)
+            if key:
+                pages.append(key)
+
+    # **Both references, because a judged take has two.** The WAV is replaced
+    # by an Opus once the analysis finishes and `playback_key` names it; only
+    # one of the two normally still exists, and asking storage to remove a key
+    # that is already gone is not an error. Collecting one of them would delete
+    # the account and leave its recordings behind.
+    audio = []
+    for row in analysis_rows:
+        for field in ("audio_url", "playback_key"):
+            key = _storage_key(row.get(field), AUDIO_BUCKET)
+            if key:
+                audio.append(key)
+
+    # The three claimed sources, in a stable order so logs and tests are
+    # deterministic.
+    collected: dict[str, list[str]] = {
+        AVATAR_BUCKET: avatars,
+        SCORE_BUCKET: pages,
+        AUDIO_BUCKET: audio,
+    }
+
+    # **The fourth place an object can be, and it was missing.**
+    #
+    # `pending_uploads` is the row an object gets when it has been uploaded and
+    # has not become anything yet — a page photographed and then backed out of,
+    # a save that failed after the bytes landed. Migration 014's own comment
+    # says `user_id` is there "so that deleting an account can take its
+    # unclaimed uploads with it", and nothing read it. The row cascades from
+    # `auth.users`, so deleting the identity removed the only index of those
+    # objects and left them with no row, no owner and no sweeper entry —
+    # unreachable forever, produced by the one action a musician takes to make
+    # their data go away.
+    #
+    # Read **last**, so the compatibility fallback below can be narrow. Any
+    # failure that is not "this deployment has no `pending_uploads`" would have
+    # already failed the three queries above, which raise and abort the
+    # deletion. Migration 014 is not applied everywhere (see CLAUDE.md), and a
+    # deployment that predates it must still be able to delete an account.
+    try:
+        for bucket, keys in pending_uploads.keys_for_user(client, user_id).items():
+            collected.setdefault(bucket, []).extend(keys)
+    except Exception:  # noqa: BLE001 - see above; pre-014 deployments have no table
+        log.warning(
+            "could not inventory unclaimed uploads for account %s; "
+            "deleting the rest of its storage",
+            user_id,
+            exc_info=True,
+        )
+
+    # De-duplicated per bucket: migration 011 leaves the first page in both
+    # `source_image_url` and `source_image_urls`, and a save that succeeded
+    # after its pending row was written puts that key in two of the four
+    # sources. Storage should be asked once.
+    return {bucket: list(dict.fromkeys(keys)) for bucket, keys in collected.items()}
+
+
+def _remove_account_storage(
+    client: Any,
+    objects: dict[str, list[str]],
+    user_id: UUID,
+) -> None:
+    """Best-effort cleanup after the identity and database rows are gone."""
+    for bucket, keys in objects.items():
+        if not keys:
+            continue
+        try:
+            client.storage.from_(bucket).remove(keys)
+        except Exception as exc:  # noqa: BLE001 - deletion already committed
+            log.error(
+                "account %s was deleted but %d object(s) remain in %s: %s",
+                user_id,
+                len(keys),
+                bucket,
+                exc,
+            )
+
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+def delete_me(
+    payload: dict[str, Any] = Depends(current_jwt_payload),
+) -> Response:
+    """Permanently delete the signed-in identity and everything it owns.
+
+    `public.users.id` references `auth.users.id` with ON DELETE CASCADE, and
+    every personal row cascades from `users`. Deleting the auth identity is
+    therefore the single database operation; doing piecemeal table deletes
+    would create partially deleted accounts when a later call failed.
+    """
+    user_id = _user_id_from(payload)
+    client = require_service_client()
+
+    owned_studios = (
+        client.table("studios")
+        .select("id")
+        .eq("owner_user_id", str(user_id))
+        .limit(1)
+        .execute()
+    ).data or []
+    if owned_studios:
+        # The schema intentionally RESTRICTs deleting a studio owner. Silently
+        # deleting a teacher's studio would also delete student assignments.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "This account owns a studio. Transfer or close the studio "
+                "before deleting the account."
+            ),
+        )
+
+    try:
+        objects = _account_storage(client, user_id)
+    except Exception as exc:  # noqa: BLE001 - no destructive action has happened
+        log.exception("could not inventory account %s for deletion", user_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Could not prepare the account for deletion. Try again.",
+        ) from exc
+
+    try:
+        client.auth.admin.delete_user(str(user_id))
+    except Exception as exc:  # noqa: BLE001 - provider errors vary by version
+        message = str(exc).lower()
+        if "foreign key" in message or "constraint" in message:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "This account still owns shared data. Remove or transfer "
+                    "it before deleting the account."
+                ),
+            ) from exc
+        log.exception("auth identity deletion failed for account %s", user_id)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Account deletion could not be completed. Try again.",
+        ) from exc
+
+    _remove_account_storage(client, objects, user_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 #: What onboarding must have answered before it counts as done.

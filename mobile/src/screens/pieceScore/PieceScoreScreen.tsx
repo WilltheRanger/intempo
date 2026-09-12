@@ -1,4 +1,6 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import { Camera, Images } from '../../components/icons';
+import { useGoBack } from '../../navigation/useGoBack';
 import { useMemo, useState } from 'react';
 import {
   Pressable,
@@ -8,9 +10,11 @@ import {
   type LayoutChangeEvent,
 } from 'react-native';
 
+import { describePagePosition, pageAtOffset } from '../../lib/score/pageIndex';
 import { Stave } from '../../components/notation/Stave';
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
 import { ListenButton } from '../../components/score/ListenButton';
+import { PlaybackSettings } from '../../components/score/PlaybackSettings';
 import { TranscribingPanel } from '../../components/score/TranscribingPanel';
 import {
   EmptyState,
@@ -18,6 +22,7 @@ import {
   MetadataRow,
   PageHeader,
   ScreenContainer,
+  SecondaryButton,
   SegmentedControl,
   Text,
 } from '../../components/primitives';
@@ -30,14 +35,29 @@ import {
   useRetranscribe,
   useSetClef,
 } from '../../data/hooks/usePieces';
-import { BORDER_WIDTH, colors, MIN_TOUCH_TARGET, spacing } from '../../design';
+import {
+  BORDER_WIDTH,
+  colors,
+  MIN_TOUCH_TARGET,
+  pressedOpacity,
+  spacing,
+} from '../../design';
 import {
   describeOmissions,
   describeUndrawnScore,
   staveScoreFor,
 } from '../../lib/notation/fromScore';
 import { shortenLongRests, skippableBars } from '../../lib/notation/longRests';
-import { scheduleScore } from '../../lib/score';
+import { CLEF_LABELS, clefSummary, meterSummary } from '../../lib/notation/scoreSummary';
+import {
+  scheduleScore,
+  soundingMeasureAt,
+  startAtMeasure,
+  startableMeasures,
+} from '../../lib/score';
+import { practiceTempo, usePracticeTempos } from '../../data/practiceTempo';
+import { bpmForMarking } from '../../lib/tempoMarking';
+import { formatTempo } from '../../lib/tempo';
 import {
   describeConfidence,
   describeProblemMeasures,
@@ -45,6 +65,11 @@ import {
 } from '../../lib/notation/reading';
 import type { Clef } from '../../data/types';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
+import {
+  keySignatureFor,
+  timeSignatureDigits,
+} from '../../lib/notation/keySignature';
+import { loadStateFor } from '../../lib/loadState';
 
 /** Read from a stand, not glanced at — the same size the warmup page uses. */
 const STAVE_SCALE = 1.25;
@@ -55,13 +80,6 @@ const STAVE_SCALE = 1.25;
  * Spelled out rather than drawn: `engrave.ts` deliberately draws no clef, and a
  * hand-approximated treble clef would be the first thing a musician noticed.
  */
-const CLEF_LABELS: Record<Clef, string> = {
-  treble: 'Treble clef',
-  bass: 'Bass clef',
-  alto: 'Alto clef',
-  tenor: 'Tenor clef',
-};
-
 /** The four, in the order a string player meets them. */
 const CLEF_ORDER: Clef[] = ['treble', 'bass', 'alto', 'tenor'];
 
@@ -89,6 +107,17 @@ const UNREAD_CLEF_PLACEMENT: Clef = 'treble';
 const PAGE_HEIGHT = 420;
 
 /**
+ * A page's height as a share of its width, for the Original view.
+ *
+ * Derived from the width the viewport actually measured rather than fixed,
+ * because this screen is a phone column at 390 and a 1240px container at the
+ * desktop breakpoint. Portrait A4 is 1.414; a hair under, because a photograph
+ * of a page is nearly always cropped tighter than the paper.
+ */
+const PAGE_ASPECT = 1.35;
+
+
+/**
  * The same page while it is still being read.
  *
  * Shorter, because the screen is about the reading at that moment and a
@@ -99,14 +128,18 @@ const PAGE_HEIGHT = 420;
  */
 const PAGE_HEIGHT_WHILE_READING = 240;
 
-/**
- * The tempo to hear the transcription at when the page named none.
+/*
+ * There was a `FALLBACK_LISTEN_BPM = 72` here, and it is worth saying where it
+ * went. It was a study tempo — slow enough that a wrong bar is audible as a
+ * wrong bar rather than a blur — and it was the *only* tempo this screen had:
+ * a piece marked at 152 could be heard at 152 and at nothing else, because
+ * nothing on the screen could change it.
  *
- * A study tempo, not a claim about the music. Slow enough that a wrong bar is
- * audible as a wrong bar rather than a blur, which is the entire reason to
- * play a transcription back.
+ * Playback now runs at the piece's working tempo, which the musician can move
+ * (`PlaybackSettings`), so the argument for a slow default is answered by the
+ * control rather than by overriding the page. Where the page named no tempo
+ * and carries no marking, `practiceTempo` falls back to 80.
  */
-const FALLBACK_LISTEN_BPM = 72;
 
 type ScoreView = 'notation' | 'original';
 
@@ -131,7 +164,12 @@ type ScoreView = 'notation' | 'original';
 export function PieceScoreScreen() {
   const navigation = useNavigation<RootNavigation>();
   const { params } = useRoute<RouteProp<RootStackParamList, 'PieceScore'>>();
-  const { data: piece, isPending, isError } = usePiece(params.pieceId);
+  const goBack = useGoBack({
+    route: 'PieceDetail',
+    params: { pieceId: params.pieceId },
+  });
+  const { data: piece, isError } = usePiece(params.pieceId);
+  const load = loadStateFor({ isError, hasData: piece !== undefined });
 
   const accept = useAcceptTranscription(params.pieceId);
   const reread = useRetranscribe(params.pieceId);
@@ -154,6 +192,21 @@ export function PieceScoreScreen() {
    * separate, because there it changes what is analysed.
    */
   const [skipRests, setSkipRests] = useState(false);
+  /**
+   * Which photographed page is on screen, and how wide one is.
+   *
+   * **Above every early return, with the rest of the hooks.** Declared beside
+   * the code that uses them — after the `isPending` and `isError` branches —
+   * they changed the hook count between renders and React tore the screen down
+   * with error #310. The error boundary caught it, which is the only reason it
+   * showed as "Something broke" rather than a blank page.
+   *
+   * The width is measured rather than assumed: this screen is a phone column at
+   * 390 and a 1240px container at the desktop breakpoint, and a page has to be
+   * exactly one viewport for `pagingEnabled` to land on boundaries.
+   */
+  const [pageWidth, setPageWidth] = useState(0);
+  const [pageIndex, setPageIndex] = useState(0);
   const skippable = useMemo(() => skippableBars(piece?.score), [piece?.score]);
   const heard = useMemo(() => {
     if (!piece?.score) {
@@ -174,26 +227,41 @@ export function PieceScoreScreen() {
    * schedule.
    */
   const [elapsedS, setElapsedS] = useState<number | null>(null);
-  const playback = useMemo(
-    () => (heard ? scheduleScore(heard, piece?.markedBpm ?? FALLBACK_LISTEN_BPM) : null),
-    [heard, piece?.markedBpm],
+  /**
+   * The tempo playback runs at, remembered per piece.
+   *
+   * The same store the Record screen reads, so a passage slowed down to hear
+   * it is the tempo the take then opens at — which is what a musician working
+   * a hard bar means by slowing it down. It used to be `markedBpm` with no way
+   * to change it, so a piece marked at 152 could only ever be heard at 152.
+   */
+  usePracticeTempos();
+  const listenBpm = practiceTempo.for(
+    params.pieceId,
+    piece?.markedBpm ?? bpmForMarking(piece?.score?.tempo_marking),
   );
-  const soundingMeasure = useMemo(() => {
-    if (elapsedS === null || !playback) {
-      return null;
-    }
-    // The last note that has started. A note still sounding is where the ear
-    // is, so the bar stays lit through the note rather than blinking off in
-    // the gap `articulation` leaves before the next one.
-    let current: number | null = null;
-    for (const note of playback.notes) {
-      if (note.startS > elapsedS) {
-        break;
-      }
-      current = note.measureNumber;
-    }
-    return current;
-  }, [elapsedS, playback]);
+  /** Which bar Listen enters on. Reset when the piece changes underneath it. */
+  const [fromMeasure, setFromMeasure] = useState<number | null>(null);
+  const whole = useMemo(
+    () => (heard ? scheduleScore(heard, listenBpm) : null),
+    [heard, listenBpm],
+  );
+  const startable = useMemo(() => (whole ? startableMeasures(whole) : []), [whole]);
+  /** The chosen bar, or the first one that sounds — never a bar that does not. */
+  const listenFrom =
+    fromMeasure !== null && startable.includes(fromMeasure)
+      ? fromMeasure
+      : (startable[0] ?? 1);
+  // The schedule the *button* is running, so the lit bar and the speaker
+  // cannot disagree about where they are.
+  const playback = useMemo(
+    () => (whole ? startAtMeasure(whole, listenFrom) : null),
+    [whole, listenFrom],
+  );
+  const soundingMeasure = useMemo(
+    () => soundingMeasureAt(playback, elapsedS),
+    [elapsedS, playback],
+  );
 
   const reading = useMemo(
     () => (piece?.score ? readingNotesFor(piece.score, piece.concerns) : null),
@@ -204,7 +272,7 @@ export function PieceScoreScreen() {
     setWidth(event.nativeEvent.layout.width);
   }
 
-  if (isPending) {
+  if (load === 'loading') {
     return (
       <ScreenContainer>
         <LoadingState />
@@ -212,14 +280,15 @@ export function PieceScoreScreen() {
     );
   }
 
-  if (isError || !piece) {
+  if (load === 'unavailable' || !piece) {
     return (
       <ScreenContainer>
         <EmptyState
+          fill
           title="Couldn't open this score"
           description="The piece may have been removed from your library."
           actionLabel="Back"
-          onActionPress={() => navigation.goBack()}
+          onActionPress={goBack}
         />
       </ScreenContainer>
     );
@@ -227,6 +296,25 @@ export function PieceScoreScreen() {
 
   const hasNotation = (stave?.items.length ?? 0) > 0;
   const hasPages = piece.thumbnail !== null;
+  /**
+   * One page-shaped box for every page of this scan.
+   *
+   * **Fixed rather than measured from each image, and that is a retreat worth
+   * recording.** Sizing the box to the photograph's own aspect means nothing is
+   * ever letterboxed — and on the web build the scroll view and its pages then
+   * disagreed about the result: measured, a 122px page inside a 398px scroller,
+   * because react-native-web does not size a horizontal `ScrollView` from its
+   * content the way the native one does.
+   *
+   * Chasing that further was optimising for a fixture. `assets/fixtures` holds
+   * 1200x124 crops of a single system, and no photograph of a page looks like
+   * that: a portrait page fills this box, and the crops letterbox, which is an
+   * honest picture of what they are. One number, and nothing left to disagree.
+   */
+  const pageBox =
+    pageWidth > 0
+      ? { width: pageWidth, height: Math.round(pageWidth * PAGE_ASPECT) }
+      : null;
 
   // Still being read. Distinguished from "has no notes" by the status and only
   // by the status: an empty transcription looks identical either way, and one
@@ -240,7 +328,7 @@ export function PieceScoreScreen() {
         <PageHeader
           eyebrow={piece.composer}
           title={piece.title}
-          onBack={() => navigation.goBack()}
+          onBack={goBack}
           backLabel="Back to piece"
         />
         <TranscribingPanel piece={piece} />
@@ -257,7 +345,7 @@ export function PieceScoreScreen() {
         <PageHeader
           eyebrow={piece.composer}
           title={piece.title}
-          onBack={() => navigation.goBack()}
+          onBack={goBack}
           backLabel="Back to piece"
         />
         {/*
@@ -312,23 +400,49 @@ export function PieceScoreScreen() {
             {acceptError}
           </Text>
         ) : null}
-        <Pressable
-          onPress={() => navigation.navigate('Scanner')}
-          accessibilityRole="button"
-          style={styles.secondaryRow}
-        >
-          <Text variant="metadataSmall" color="accent">
-            Photograph it again instead
-          </Text>
-        </Pressable>
         {/*
-          The piece is still real and still practisable — it is in the library,
-          it has a title and a tempo, and the metronome does not need notes.
-          Saying so stops a failed read reading as a lost piece.
+          Both alternatives keep this piece's id. This used to open a fresh
+          scanner with no attachment target, so a successful retake created a
+          duplicate piece and left this failed one exactly as it was. The
+          server now replaces failed, note-less pages in this row and refuses
+          to erase a score that still has usable measures.
+        */}
+        <SecondaryButton
+          label="Take new photographs instead"
+          icon={Camera}
+          onPress={() =>
+            navigation.navigate('Scanner', { attachToPieceId: piece.id })
+          }
+          disabled={reread.isPending}
+          style={styles.recoveryAction}
+        />
+        <SecondaryButton
+          label="Choose different images"
+          icon={Images}
+          onPress={() =>
+            navigation.navigate('AddPiece', {
+              option: 'import',
+              attachToPieceId: piece.id,
+            })
+          }
+          disabled={reread.isPending}
+          style={styles.recoverySecondary}
+        />
+        {/*
+          **It said "you can practise it with the metronome", and you cannot.**
+          `PieceDetailScreen` gates its practice button on `hasNotation`, and
+          there is no other route to the metronome — so a musician who read
+          that sentence and went looking found a screen offering to photograph
+          the page instead. That screen is right: recording without notation
+          produces a take nothing can align, and it says so plainly ("InTempo
+          needs the written notes and rests to follow your playing"). The
+          promise was the only thing out of step.
+
+          What is still true, and worth saying, is that the piece is not lost.
         */}
         <Text variant="metadataSmall" color="textTertiary" style={styles.caveat}>
-          The piece is still in your library. You can practise it with the
-          metronome; only the verdict needs the notation.
+          The piece is still in your library, with its title and its tempo.
+          Only the notation is missing.
         </Text>
         {hasPages ? (
           <ScoreThumbnail source={piece.thumbnail} style={styles.pageWhileReading} />
@@ -344,29 +458,34 @@ export function PieceScoreScreen() {
   const showing: ScoreView = showToggle ? view : hasNotation ? 'notation' : 'original';
 
   return (
-    <ScreenContainer>
+    <ScreenContainer key={showing}>
       <PageHeader
         eyebrow={piece.composer}
         title={piece.title}
-        onBack={() => navigation.goBack()}
+        onBack={goBack}
         backLabel="Back to piece"
       />
 
       {/*
-        What a printed part states in its top-left corner, and what the stave
-        cannot: nothing here draws a clef, so without this line the same
-        notehead is a different pitch to a violist than to a violinist.
+        What a printed part states in its top-left corner.
+
+        The stave draws the clef now, and draws it again wherever the page
+        changes it — so this line is no longer the only thing standing between
+        a reader and the wrong pitch. It still earns its place: it names the
+        metre and the marked tempo, and it says **whether the clef or the metre
+        lasts**, which the stave can only show by being scrolled through.
+        `scoreSummary` holds those rules, where they are tested.
       */}
       {showing === 'notation' && hasNotation ? (
         <MetadataRow
           variant="metadataSmall"
           items={[
-            piece.score?.clef ? CLEF_LABELS[piece.score.clef] : 'Clef not read',
-            piece.score?.time_signature && piece.score.time_signature !== 'unknown'
-              ? piece.score.time_signature
-              : null,
+            ...clefSummary(piece.score),
+            ...meterSummary(piece.score),
             piece.score?.tempo_marking,
-            piece.markedBpm ? `${piece.markedBpm} BPM` : null,
+            piece.markedBpm
+              ? formatTempo(piece.markedBpm, piece.score?.tempo_beat_unit)
+              : null,
           ]}
           style={styles.scoreMeta}
         />
@@ -386,21 +505,55 @@ export function PieceScoreScreen() {
 
       {!hasNotation && !hasPages ? (
         <EmptyState
+          fill
           title="No score to show"
-          description="This piece was entered by hand, so there is no transcription and no photograph. Photograph the music to get both."
+          description="This piece was typed in by hand, so there are no notes read from a page and no photograph. Photograph the music to get both."
         />
       ) : null}
 
       {showing === 'notation' && hasNotation && stave ? (
-        <View style={styles.plate} onLayout={measure}>
+        <View style={styles.plate}>
+          {/* **Measured inside the paper's margins, not outside them.**
+              `onLayout` reports a view's border box, so measuring the padded
+              page handed the stave the paper's full width and every system ran
+              off the right edge. This inner view has no padding of its own, so
+              its width is the width the music may use. */}
+          <View onLayout={measure}>
           {width === null ? null : (
             <Stave
               notes={stave.items}
               highlightMeasure={soundingMeasure}
               clef={piece.score?.clef ?? UNREAD_CLEF_PLACEMENT}
               maxWidth={width}
+              // **Both, and they do different jobs.** `maxWidth` breaks the
+              // music into systems, but it can only break at a barline — so a
+              // bar denser than one line can hold stays over-wide however many
+              // systems it is given. `fitWidth` then shrinks the whole
+              // engraving until it fits, which is the only remedy left.
+              //
+              // Without it the layout squeezed the columns instead: the
+              // Kreutzer study's opening bar of sixteen sixteenths came out at
+              // 0.95 staff spaces a column, narrower than the 1.18 a notehead
+              // occupies, so the noteheads printed into each other.
+              fitWidth={width}
               scale={STAVE_SCALE}
               justify
+              beatQuarters={stave.beatQuarters}
+              closesWithRepeat={stave.closesWithRepeat}
+              endings={stave.endings}
+              // **The page's own furniture.** `key_signature` has been read
+              // off the page since Batch 2 and shown only as text, so a piece
+              // in E major was engraved with four accidentals missing from
+              // every system and an inline sharp on every note that needed
+              // one. That is a list of pitches, not a line of music.
+              head={{
+                clef: piece.score?.clef ?? null,
+                key: keySignatureFor(
+                  piece.score?.key_signature,
+                  piece.score?.clef ?? UNREAD_CLEF_PLACEMENT,
+                ),
+                time: timeSignatureDigits(piece.score?.time_signature),
+              }}
               // A letter under every note is a study-book aid. On repertoire it
               // reads as a crib, so the clef is stated as metadata above
               // instead — which is where a clef belongs on a screen for reading
@@ -408,7 +561,12 @@ export function PieceScoreScreen() {
               showNoteNames={false}
             />
           )}
+          </View>
+        </View>
+      ) : null}
 
+      {showing === 'notation' && hasNotation && stave ? (
+        <>
           {/*
             Hear what was read, at the tempo the page marked.
 
@@ -421,10 +579,20 @@ export function PieceScoreScreen() {
           <View style={styles.listen}>
             <ListenButton
               score={heard}
-              bpm={piece.markedBpm ?? FALLBACK_LISTEN_BPM}
+              bpm={listenBpm}
+              fromMeasure={listenFrom}
               onProgress={(elapsed, total) =>
                 setElapsedS(total > 0 ? elapsed : null)
               }
+            />
+            <PlaybackSettings
+              score={heard}
+              bars={startable}
+              fromMeasure={listenFrom}
+              onFromMeasureChange={setFromMeasure}
+              bpm={listenBpm}
+              beatUnit={piece.score?.tempo_beat_unit}
+              onBpmChange={(next) => practiceTempo.set(params.pieceId, next)}
             />
             {/*
               Only where there is something to skip. A control that is always
@@ -443,7 +611,7 @@ export function PieceScoreScreen() {
                 aria-checked={skipRests}
                 accessibilityLabel="Skip long rests"
                 onPress={() => setSkipRests((on) => !on)}
-                style={styles.skipToggle}
+                style={({ pressed }) => [styles.skipToggle, pressed && styles.pressed]}
               >
                 {/*
                   Not gold when on. At 13px the accent is 3.54:1, under the
@@ -462,7 +630,11 @@ export function PieceScoreScreen() {
               </Pressable>
             ) : null}
           </View>
+        </>
+      ) : null}
 
+      {showing === 'notation' && hasNotation && stave ? (
+        <>
           {/*
             What the reading is unsure about, in order of how much it matters.
 
@@ -498,7 +670,7 @@ export function PieceScoreScreen() {
               }
               accessibilityRole="button"
               accessibilityLabel={`Fix bar ${reading.problemMeasures[0]}`}
-              style={styles.fixRow}
+              style={({ pressed }) => [styles.fixRow, pressed && styles.pressed]}
             >
               <Text variant="metadataSmall" color="textSecondary">
                 {describeProblemMeasures(reading.problemMeasures, {
@@ -506,7 +678,7 @@ export function PieceScoreScreen() {
                   concerns: reading.concerns,
                 })}
               </Text>
-              <Text variant="metadataSmall" color="accent" style={styles.fixCue}>
+              <Text variant="metadataSmall" color="accentText" style={styles.fixCue}>
                 Fix bar {reading.problemMeasures[0]}
               </Text>
             </Pressable>
@@ -547,13 +719,13 @@ export function PieceScoreScreen() {
               onPress={() => setPickingClef(true)}
               accessibilityRole="button"
               accessibilityLabel="Set the clef"
-              style={styles.fixRow}
+              style={({ pressed }) => [styles.fixRow, pressed && styles.pressed]}
             >
               <Text variant="metadataSmall" color="textSecondary">
                 The clef wasn&apos;t read from this page, so the notes above are
                 placed as though in {CLEF_LABELS[UNREAD_CLEF_PLACEMENT].toLowerCase()}.
               </Text>
-              <Text variant="metadataSmall" color="accent" style={styles.fixCue}>
+              <Text variant="metadataSmall" color="accentText" style={styles.fixCue}>
                 Set the clef
               </Text>
             </Pressable>
@@ -575,9 +747,9 @@ export function PieceScoreScreen() {
             <Pressable
               onPress={() => setPickingMeasure(true)}
               accessibilityRole="button"
-              style={styles.secondaryRow}
+              style={({ pressed }) => [styles.secondaryRow, pressed && styles.pressed]}
             >
-              <Text variant="metadataSmall" color="accent">
+              <Text variant="metadataSmall" color="accentText">
                 Correct another bar
               </Text>
             </Pressable>
@@ -597,9 +769,9 @@ export function PieceScoreScreen() {
             <Pressable
               onPress={() => setPickingClef(true)}
               accessibilityRole="button"
-              style={styles.secondaryRow}
+              style={({ pressed }) => [styles.secondaryRow, pressed && styles.pressed]}
             >
-              <Text variant="metadataSmall" color="accent">
+              <Text variant="metadataSmall" color="accentText">
                 Change the clef
               </Text>
             </Pressable>
@@ -615,11 +787,68 @@ export function PieceScoreScreen() {
               {setClef.error.message}
             </Text>
           ) : null}
-        </View>
+        </>
       ) : null}
 
       {showing === 'original' && hasPages ? (
-        <ScoreThumbnail source={piece.thumbnail} style={styles.page} />
+        <>
+          {/*
+            **Every page, not just the first.** The row that leads here says
+            "The pages this piece was read from" and drew one image, so a
+            musician who photographed a four-page part could not look at the
+            bar flagged on page three — the one they most likely came to check.
+
+            A paging scroll view and a line of type, with no chrome of its own:
+            the photograph is the music and stays the thing you look at, and
+            the count is what tells you there is more (§3 laws 3 and 8). A
+            one-page scan renders exactly what it did before — the label is
+            silent and the row below it does not appear.
+          */}
+          <ScrollView
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            // **Explicit, because a horizontal ScrollView does not shrink to
+            // its content on the web build** — it kept `PAGE_HEIGHT` and left
+            // a third of the screen empty under a strip of one system.
+            style={[styles.pages, pageBox]}
+            onLayout={(event) => setPageWidth(event.nativeEvent.layout.width)}
+            onScroll={(event) =>
+              setPageIndex(
+                pageAtOffset(
+                  event.nativeEvent.contentOffset.x,
+                  pageWidth,
+                  piece.pages.length,
+                ),
+              )
+            }
+            // Often enough to keep the caption honest mid-swipe, rarely enough
+            // not to re-render on every frame of one.
+            scrollEventThrottle={64}
+          >
+            {piece.pages.map((page, index) => (
+              <ScoreThumbnail
+                key={index}
+                source={page}
+                // The whole page, not a crop of it: this view exists so a
+                // musician can read the bar that was flagged, and `cover` drew
+                // a band of a few notes across the middle of it.
+                fit="contain"
+                style={[styles.page, pageBox]}
+              />
+            ))}
+          </ScrollView>
+
+          {describePagePosition(pageIndex, piece.pages.length) ? (
+            <Text
+              variant="metadataSmall"
+              color="textTertiary"
+              style={styles.pagePosition}
+            >
+              {describePagePosition(pageIndex, piece.pages.length)}
+            </Text>
+          ) : null}
+        </>
       ) : null}
 
       {/*
@@ -709,7 +938,7 @@ export function PieceScoreScreen() {
                   });
                 }}
                 accessibilityRole="button"
-                style={styles.measureRow}
+                style={({ pressed }) => [styles.measureRow, pressed && styles.pressed]}
               >
                 <Text variant="body">Bar {measure.measure_number}</Text>
                 <Text variant="metadataSmall" color={flagged ? 'textSecondary' : 'textTertiary'}>
@@ -749,11 +978,12 @@ export function PieceScoreScreen() {
               }}
               accessibilityRole="button"
               accessibilityState={{ selected: piece.score?.clef === clef }}
-              style={styles.clefRow}
+              aria-pressed={piece.score?.clef === clef}
+              style={({ pressed }) => [styles.clefRow, pressed && styles.pressed]}
             >
               <Text
                 variant="body"
-                color={piece.score?.clef === clef ? 'accent' : 'textPrimary'}
+                color={piece.score?.clef === clef ? 'accentText' : 'textPrimary'}
               >
                 {CLEF_LABELS[clef]}
               </Text>
@@ -767,11 +997,12 @@ export function PieceScoreScreen() {
             }}
             accessibilityRole="button"
             accessibilityState={{ selected: !piece.score?.clef }}
-            style={styles.clefRow}
+            aria-pressed={!piece.score?.clef}
+            style={({ pressed }) => [styles.clefRow, pressed && styles.pressed]}
           >
             <Text
               variant="body"
-              color={piece.score?.clef ? 'textTertiary' : 'accent'}
+              color={piece.score?.clef ? 'textTertiary' : 'accentText'}
             >
               Not stated
             </Text>
@@ -785,7 +1016,7 @@ export function PieceScoreScreen() {
         // The consequence, not the verb. Naming what survives matters as much
         // as naming what goes: someone who thinks they are deleting the piece
         // will cancel a thing they actually wanted.
-        message={`The transcription stays in your library. The photograph of the page is deleted and cannot be recovered — so check the notation above first.`}
+        message={`The notes stay in your library. The photograph of the page is deleted and cannot be recovered — so check the notation above first.`}
         confirmLabel="Delete photograph"
         onConfirm={() => {
           setConfirmingAccept(false);
@@ -806,11 +1037,46 @@ export function PieceScoreScreen() {
 }
 
 const styles = StyleSheet.create({
+  /*
+    Every tappable thing on this screen acknowledges the touch. These were bare
+    `Pressable`s with a static style, so a tap produced no response at all until
+    whatever it triggered appeared — which on a slow action reads as the control
+    being dead. `PressableScale` is for the large targets; the app's answer for
+    small ones is a colour or opacity change, and these had neither.
+  */
+  pressed: {
+    opacity: pressedOpacity,
+  },
   scoreMeta: {
     marginTop: spacing.sm,
   },
+  /**
+   * The paper.
+   *
+   * **The one place in this app where a surface is the right answer**, and it
+   * is worth saying why, because §3 law 3 rules out exactly this move and law
+   * 6 calls a container an exception rather than a default. The exception here
+   * is not decorative: what is being shown *is* a page of music, and the whole
+   * of the owner's request was that it read as one — "make it generate a sort
+   * of sheet music page look, like how you see on music score or flat io".
+   * Every engraving application on earth draws white paper for the same reason
+   * a printed part is white: staff lines and noteheads are black ink, and ink
+   * on paper is what a musician's eye is trained on.
+   *
+   * White, not the app's warm ivory, and squared off rather than rounded — a
+   * rounded page is a card pretending to be paper. The hairline is the sheet's
+   * edge; there is no shadow, because a page lying on a stand does not float.
+   */
   plate: {
     marginTop: spacing.xl,
+    backgroundColor: colors.surface,
+    borderWidth: BORDER_WIDTH,
+    borderColor: colors.border,
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.lg,
+    // Full-bleed to the screen edges: a page with the app's own margin either
+    // side of it reads as a card in a list. Sheet music fills the paper.
+    marginHorizontal: -spacing.lg,
   },
   caveat: {
     marginTop: spacing.lg,
@@ -837,6 +1103,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: BORDER_WIDTH,
     borderBottomColor: colors.border,
   },
+  recoveryAction: {
+    marginTop: spacing.lg,
+  },
+  recoverySecondary: {
+    marginTop: spacing.sm,
+  },
   secondaryRow: {
     alignSelf: 'center',
     minHeight: 44,
@@ -846,10 +1118,20 @@ const styles = StyleSheet.create({
   fixCue: {
     marginTop: spacing.xs,
   },
+  pages: {
+    marginTop: spacing.xl,
+  },
   page: {
+    // Width comes from the measured viewport once layout has run, so a page is
+    // exactly one screen and `pagingEnabled` lands on boundaries. `100%` inside
+    // a horizontal ScrollView is the content's width, not the viewport's, which
+    // collapses every page onto the first.
     width: '100%',
     height: PAGE_HEIGHT,
-    marginTop: spacing.xl,
+  },
+  pagePosition: {
+    marginTop: spacing.sm,
+    textAlign: 'center',
   },
   pageWhileReading: {
     width: '100%',

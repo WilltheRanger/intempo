@@ -1,6 +1,7 @@
 export { Text, type TextProps } from './Text';
 export {
   ScreenContainer,
+  CONTENT_MAX_WIDTH,
   SCREEN_GUTTER,
   type ScreenContainerProps,
 } from './ScreenContainer';
@@ -20,7 +21,12 @@ export {
   type SegmentedControlOption,
 } from './SegmentedControl';
 export { EmptyState, type EmptyStateProps } from './EmptyState';
+export * from './GlassSurface';
 export { LoadingState, type LoadingStateProps } from './LoadingState';
+export {
+  RevealPasswordAction,
+  type RevealPasswordActionProps,
+} from './RevealPasswordAction';
 export {
   Skeleton,
   SkeletonText,

@@ -1,3 +1,4 @@
+import { FALLBACK_BPM } from '../lib/score/schedule';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSyncExternalStore } from 'react';
 
@@ -32,7 +33,9 @@ export const MAX_BPM = 300;
  * slow enough to be a sane default for something unknown, fast enough not to
  * feel like a statement about the piece.
  */
-export const FALLBACK_BPM = 80;
+// Re-exported, not redefined: `lib/score/schedule` owns it because that module
+// has no dependencies and can be imported by anything, this one cannot.
+export { FALLBACK_BPM };
 
 type Tempos = Record<string, number>;
 
@@ -119,8 +122,14 @@ export function clampBpm(bpm: number): number {
  */
 export function tempoFor(pieceId: string, markedBpm: number | null): number {
   const remembered = current[pieceId];
+  // **Clamped on the way out as well as on the way in.** The load path filters
+  // non-finite values and `set` clamps, so this should be redundant — but
+  // `typeof NaN === 'number'`, so the guard above admits one, and a `NaN`
+  // reaching `scheduleScore` used to become a `NaN` note time and an exception
+  // from Web Audio in the middle of scheduling. Cheap here, unrecoverable
+  // there.
   if (typeof remembered === 'number') {
-    return remembered;
+    return clampBpm(remembered);
   }
   return clampBpm(markedBpm ?? FALLBACK_BPM);
 }

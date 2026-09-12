@@ -1,5 +1,7 @@
 import { secondsPerBeat } from './beats';
 import type { ClickTrack, ClickTrackOptions } from './click.types';
+import { audioContext, resumeAudio } from '../audio/context.web';
+import { prepareForPlayback } from '../audio/session.web';
 
 /**
  * Audible clicks in a browser, scheduled against the audio clock.
@@ -40,18 +42,31 @@ const ACCENT_HZ = 1600;
 const CLICK_S = 0.03;
 const CLICK_GAIN = 0.25;
 
-export function startClicks({ bpm, perBar }: ClickTrackOptions): ClickTrack {
-  const AudioContextCtor =
-    window.AudioContext ??
-    (window as unknown as { webkitAudioContext?: typeof AudioContext })
-      .webkitAudioContext;
-
-  if (!AudioContextCtor) {
+export function startClicks({ bpm, perBar, beats }: ClickTrackOptions): ClickTrack {
+  const maybeContext = audioContext();
+  if (!maybeContext) {
     // Nothing will sound, so nothing has to be waited for.
     return { stop: () => {}, leadInS: 0 };
   }
 
-  const context = new AudioContextCtor();
+  const context = maybeContext;
+  void prepareForPlayback();
+  resumeAudio(context);
+
+  /**
+   * Every click of this run passes through here, and stopping means cutting it.
+   *
+   * **This is what `context.close()` used to do**, and it had to do something:
+   * a click booked 250 ms ahead must not sound after the take has ended. The
+   * context is shared now and outlives every run — see
+   * `lib/audio/context.web.ts` for why — so the cancellation has to be a node
+   * rather than the whole mixer. Disconnecting silences everything downstream,
+   * including oscillators already scheduled, which is exactly the old
+   * behaviour with nothing else taken down alongside it.
+   */
+  const track = context.createGain();
+  track.connect(context.destination);
+
   const period = secondsPerBeat(bpm);
   const startedAt = context.currentTime + LEAD_IN_S;
   let next = 0;
@@ -70,7 +85,7 @@ export function startClicks({ bpm, perBar }: ClickTrackOptions): ClickTrack {
     envelope.gain.exponentialRampToValueAtTime(0.0001, at + CLICK_S);
 
     oscillator.connect(envelope);
-    envelope.connect(context.destination);
+    envelope.connect(track);
     oscillator.start(at);
     oscillator.stop(at + CLICK_S + 0.01);
   }
@@ -80,6 +95,16 @@ export function startClicks({ bpm, perBar }: ClickTrackOptions): ClickTrack {
       return;
     }
     const until = context.currentTime + LOOKAHEAD_S;
+    if (beats) {
+      while (
+        next < beats.length &&
+        startedAt + beats[next].atS < until
+      ) {
+        schedule(startedAt + beats[next].atS, beats[next].downbeat);
+        next += 1;
+      }
+      return;
+    }
     while (startedAt + next * period < until) {
       schedule(startedAt + next * period, perBar !== null && next % perBar === 0);
       next += 1;
@@ -89,12 +114,6 @@ export function startClicks({ bpm, perBar }: ClickTrackOptions): ClickTrack {
   pump();
   const timer = setInterval(pump, WAKE_MS);
 
-  // Autoplay policy can hand back a suspended context even from a tap; without
-  // this the clicks are booked into a clock that isn't running.
-  if (context.state === 'suspended') {
-    void context.resume();
-  }
-
   return {
     leadInS: LEAD_IN_S,
     stop() {
@@ -103,9 +122,14 @@ export function startClicks({ bpm, perBar }: ClickTrackOptions): ClickTrack {
       }
       stopped = true;
       clearInterval(timer);
-      // Closing takes everything already booked with it, which is the point:
-      // a click scheduled 250ms out must not sound after the take has ended.
-      void context.close();
+      // Cutting the track takes everything already booked with it, which is
+      // the point: a click scheduled 250 ms out must not sound after the take
+      // has ended. The context stays; only this run's node goes.
+      try {
+        track.disconnect();
+      } catch {
+        // Already disconnected.
+      }
     },
   };
 }

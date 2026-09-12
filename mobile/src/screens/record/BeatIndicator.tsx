@@ -26,9 +26,15 @@ export interface BeatIndicatorProps {
  * the visible change *after* it, which is precisely the error being measured.
  */
 export function BeatIndicator({ beat, perBar }: BeatIndicatorProps) {
+  // A planned beat names the shape of its own bar, so the row can change from
+  // four marks to two at a 4/4 → 6/8 boundary without restarting the clock.
+  // Explicit null means this bar's meter is unreadable; do not fall back to the
+  // previous bar's shape.
+  const currentPerBar =
+    beat && beat.pulsesPerBar !== undefined ? beat.pulsesPerBar : perBar;
   // No usable time signature: one mark that alternates, which still carries
   // the pulse even though it can't carry the count.
-  const marks = perBar ?? 1;
+  const marks = currentPerBar ?? 1;
   const current = beat === null ? null : (beat.beatInBar ?? beat.index % 2);
 
   return (
@@ -48,7 +54,7 @@ export function BeatIndicator({ beat, perBar }: BeatIndicatorProps) {
             key={index}
             style={[
               styles.mark,
-              on && (index === 0 && perBar !== null ? styles.downbeat : styles.onbeat),
+              on && (index === 0 && currentPerBar !== null ? styles.downbeat : styles.onbeat),
             ]}
           />
         );

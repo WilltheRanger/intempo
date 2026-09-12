@@ -16,8 +16,9 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi.testclient import TestClient
 
+from app import db as db_module
 from app.main import app
-from app.routers import corrections as corrections_module
+from app.tests.served_routes import served_paths
 
 
 @pytest.fixture()
@@ -61,7 +62,7 @@ def _install_supabase(
     )
     table.insert.return_value.execute.return_value = MagicMock(data=inserted or [])
 
-    monkeypatch.setattr(corrections_module, "get_service_client", lambda: client)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: client)
     return client
 
 
@@ -262,6 +263,6 @@ def test_list_on_someone_elses_analysis_is_a_404(
 
 def test_corrections_route_does_not_shadow_get_analysis(client: TestClient) -> None:
     """Both live under /analyses; the sub-path must not swallow the parent."""
-    paths = {r.path for r in app.routes if hasattr(r, "methods")}
+    paths = set(served_paths())
     assert "/v1/analyses/{analysis_id}" in paths
     assert "/v1/analyses/{analysis_id}/corrections" in paths

@@ -14,8 +14,8 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
+from app import db as db_module
 from app.main import app
-from app.routers import upload as upload_module
 
 
 @pytest.fixture()
@@ -36,7 +36,7 @@ def _mock_storage(signed_url: str = "https://signed.example.com/upload") -> Magi
 def _install(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     """The mocked storage client, wired into the handler."""
     sb = _mock_storage()
-    monkeypatch.setattr(upload_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
     return sb
 
 
@@ -57,7 +57,7 @@ def test_audio_returns_signed_url(
 ) -> None:
     user_id = uuid4()
     mock_client = _mock_storage("https://signed.example.com/take.wav")
-    monkeypatch.setattr(upload_module, "get_service_client", lambda: mock_client)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: mock_client)
 
     res = client.post(
         "/v1/upload/audio",
@@ -80,7 +80,7 @@ def test_score_image_returns_signed_url(
 ) -> None:
     user_id = uuid4()
     mock_client = _mock_storage("https://signed.example.com/page.jpg")
-    monkeypatch.setattr(upload_module, "get_service_client", lambda: mock_client)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: mock_client)
 
     res = client.post(
         "/v1/upload/score-image",
@@ -100,7 +100,7 @@ def test_audio_rejects_disallowed_extension(
     make_token: Callable[..., str],
 ) -> None:
     user_id = uuid4()
-    monkeypatch.setattr(upload_module, "get_service_client", lambda: _mock_storage())
+    monkeypatch.setattr(db_module, "get_service_client", lambda: _mock_storage())
     res = client.post(
         "/v1/upload/audio",
         json={"filename": "evil.exe"},
@@ -115,7 +115,7 @@ def test_audio_rejects_no_extension(
     make_token: Callable[..., str],
 ) -> None:
     user_id = uuid4()
-    monkeypatch.setattr(upload_module, "get_service_client", lambda: _mock_storage())
+    monkeypatch.setattr(db_module, "get_service_client", lambda: _mock_storage())
     res = client.post(
         "/v1/upload/audio",
         json={"filename": "noextension"},
@@ -130,7 +130,7 @@ def test_expires_at_is_in_future(
     make_token: Callable[..., str],
 ) -> None:
     user_id = uuid4()
-    monkeypatch.setattr(upload_module, "get_service_client", lambda: _mock_storage())
+    monkeypatch.setattr(db_module, "get_service_client", lambda: _mock_storage())
     before = datetime.now(tz=timezone.utc)
     res = client.post(
         "/v1/upload/audio",

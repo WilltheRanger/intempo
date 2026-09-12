@@ -20,7 +20,7 @@ SR = 22050
 BPM = 60.0
 
 
-def _score(n_notes: int) -> ScoreJson:
+def _score(n_notes: int, *, ornamented: bool = False) -> ScoreJson:
     per_measure = 4
     measures = [
         {
@@ -30,6 +30,11 @@ def _score(n_notes: int) -> ScoreJson:
         }
         for m in range(n_notes // per_measure)
     ]
+    if ornamented:
+        # One acciaccatura, which is all it takes: it is placed a fraction of a
+        # beat before the note it decorates and so becomes the closest pair on
+        # the page, which is what sizes the detector's window.
+        measures[0]["notes"][1]["grace_notes"] = 1
     return ScoreJson.model_validate(
         {
             "time_signature": "4/4",
@@ -44,6 +49,27 @@ def _score(n_notes: int) -> ScoreJson:
 @pytest.fixture
 def clean_take() -> tuple[np.ndarray, int]:
     return synth_click_track(evenly_spaced(8, BPM), sr=SR), SR
+
+
+def test_diagnostics_matches_analyze_on_a_page_with_an_ornament(clean_take):
+    """The case the test below could not see, because its score has no ornaments.
+
+    `diagnostics` used to build its own detection call and passed
+    `closest_expected_gap(expected)` where `analyze()` passes
+    `optional=grace_onsets`. With no grace notes on the page the two arguments
+    are the same value, so eight quarters agreed and the drift stayed invisible.
+    Put one acciaccatura on the page and the dashboard sizes the detector off
+    it — the exact failure `closest_expected_gap` documents, happening to the
+    tool used to tune it away.
+    """
+    score = _score(8, ornamented=True)
+    result = analyze(clean_take, score, BPM)
+    diag = analyze_with_diagnostics(clean_take, score, BPM)
+
+    assert diag.n_detected == result.n_detected_onsets
+    assert diag.n_expected == result.n_expected_onsets
+    assert diag.quality == result.quality
+    assert diag.status == result.status
 
 
 def test_diagnostics_matches_analyze(clean_take):

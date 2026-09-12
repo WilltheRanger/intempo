@@ -315,18 +315,6 @@ def _signed_page(bars: list[tuple[bool, bool]], *, first: bool = False) -> Score
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "A repeat opening on one page and closing on another cannot be read. "
-        "The importer sees each page alone, and `Repeat` has no way to say "
-        "'a forward sign here, still open' — so page 1's sign is discarded and "
-        "page 2's closing sign falls back to the start of its own page. "
-        "Fixing it needs a field on a schema the app types against, which is "
-        "the owner's call. Multi-page is inert behind the unapplied 011, so "
-        "nothing reads this today."
-    ),
-)
 def test_a_repeat_spanning_a_page_break_is_read_from_its_forward_sign() -> None:
     """**The convention is right for a piece and wrong for a page**, the same
     shape as `pickup_complement` and the metre join before it.
@@ -338,10 +326,18 @@ def test_a_repeat_spanning_a_page_break_is_read_from_its_forward_sign() -> None:
     | forward p1 bar 5, backward p3 bar 4 | 4 bars repeated | 20 |
     | no forward at all, backward p2 bar 3 | 3 bars repeated | 13 |
 
-    Extending such a span back to bar 1 of the part would be closer in both —
-    but it is indistinguishable from a genuine forward sign printed at the top
-    of a page, which happens at section boundaries, so it trades a known error
-    for a guess. Left as an honest failure.
+    Extending such a span back to bar 1 of the part is closer in both and is
+    still a guess: it is indistinguishable from a genuine forward sign printed
+    at the top of a page, which happens at section boundaries. That is why this
+    was a strict `xfail` for a week rather than a heuristic.
+
+    **The fix is to carry the fact rather than infer it.** `ScoreJson` now
+    reports the forward signs still open where a page's music stopped, and
+    `Repeat.start_inferred` says whether a repeat's opening was printed or
+    fallen back to. `join_pages` keeps a stack of the first and rewrites only
+    the second — so the page-1 `|:` at bar 5 is paired with the page-3 `:|`,
+    and a genuine section repeat opening on a page's first bar is left exactly
+    as it was.
     """
     pages = [
         _signed_page([(index == 5, False) for index in range(1, 11)], first=True),
@@ -352,3 +348,176 @@ def test_a_repeat_spanning_a_page_break_is_read_from_its_forward_sign() -> None:
     joined = join_pages(pages)
 
     assert [(r.start_measure, r.end_measure) for r in joined.repeats] == [(5, 24)]
+
+
+def test_a_repeat_printed_at_the_top_of_a_page_keeps_its_own_opening() -> None:
+    """**The case that made the obvious fix wrong**, and the reason
+    `start_inferred` exists rather than a rule about page boundaries.
+
+    Page 2 opens with a real `|:` on its first bar and closes it on its own
+    last bar — an ordinary section boundary, and page 1 has an unrelated `|:`
+    still open. Pairing by position would hand page 2's `:|` the page-1 sign
+    and swallow the section whole; the page-1 opening is left pending instead,
+    which is what it is.
+    """
+    pages = [
+        _signed_page([(index == 5, False) for index in range(1, 11)], first=True),
+        _signed_page([(index == 1, index == 10) for index in range(1, 11)]),
+    ]
+
+    joined = join_pages(pages)
+
+    assert [(r.start_measure, r.end_measure) for r in joined.repeats] == [(11, 20)]
+    # And the page-1 sign is not invented into the joined score either: it was
+    # never closed, so there is nothing to report.
+    assert joined.unclosed_repeat_starts == []
+
+
+def test_two_openings_across_pages_close_innermost_first() -> None:
+    """Nested `|:` is legal, the importer keeps a stack, and so does the join.
+
+    Carrying one pending opening instead of a stack would lose the outer sign
+    silently — the same shape as the bug being fixed, one level down.
+    """
+    pages = [
+        _signed_page([(index in (2, 6), False) for index in range(1, 11)], first=True),
+        _signed_page([(False, index in (3, 8)) for index in range(1, 11)]),
+    ]
+
+    joined = join_pages(pages)
+
+    # Bar 6's opening is the innermost, so it closes first, at bar 13; bar 2's
+    # closes at bar 18.
+    assert [(r.start_measure, r.end_measure) for r in joined.repeats] == [
+        (6, 13),
+        (2, 18),
+    ]
+
+
+def test_a_single_page_scan_is_untouched_by_any_of_this() -> None:
+    """The common case, and `join_pages` returns it bit-identical by design.
+
+    A backward sign with no forward on a one-page scan still means "from the
+    beginning" — there is no earlier page for it to have opened on, and this
+    must not start reporting the page as unclosed or rewriting its span.
+    """
+    only = _signed_page([(False, index == 6) for index in range(1, 11)], first=True)
+
+    assert join_pages([only]) is only
+    assert [(r.start_measure, r.end_measure) for r in only.repeats] == [(1, 6)]
+
+
+# ---------------------------------------------------------------------------
+# The key in force across a page break
+# ---------------------------------------------------------------------------
+
+
+def test_a_second_page_in_a_new_key_stamps_the_change_on_its_first_bar() -> None:
+    """Page 2 of a part that turned to G major at the foot of page 1 prints one
+    sharp in its own header and nowhere else. Joined naively under page 1's
+    key, the whole of page 2 is engraved in the wrong signature."""
+    joined = join_pages(
+        [
+            _page([_bar(1, 4), _bar(2, 4)], key_signature="Bb major"),
+            _page([_bar(1, 4), _bar(2, 4)], key_signature="G major"),
+        ]
+    )
+
+    assert joined.key_signature == "Bb major"
+    assert [m.key_signature for m in joined.measures] == [None, None, "G major", None]
+
+
+def test_a_second_page_restating_the_key_stamps_nothing() -> None:
+    joined = join_pages(
+        [
+            _page([_bar(1, 4)], key_signature="D major"),
+            _page([_bar(1, 4)], key_signature="D major"),
+        ]
+    )
+
+    assert all(m.key_signature is None for m in joined.measures)
+
+
+def test_the_same_signature_under_another_name_is_not_a_change() -> None:
+    """B-flat major and G minor are the same two flats."""
+    joined = join_pages(
+        [
+            _page([_bar(1, 4)], key_signature="Bb major"),
+            _page([_bar(1, 4)], key_signature="G minor"),
+        ]
+    )
+
+    assert all(m.key_signature is None for m in joined.measures)
+
+
+def test_a_key_that_changed_mid_page_is_what_the_next_page_is_compared_to() -> None:
+    """Page 1 opens in B-flat and turns to G at its bar 2; page 2's header says
+    G. That is the key already in force, not a second change."""
+    page_one = _page(
+        [_bar(1, 4), Measure(measure_number=2, notes=_bar(2, 4).notes, key_signature="G major")],
+        key_signature="Bb major",
+    )
+    joined = join_pages([page_one, _page([_bar(1, 4)], key_signature="G major")])
+
+    assert [m.key_signature for m in joined.measures] == [None, "G major", None]
+
+
+def test_an_unknown_key_on_an_inner_page_is_not_a_change() -> None:
+    joined = join_pages(
+        [
+            _page([_bar(1, 4)], key_signature="D major"),
+            _page([_bar(1, 4)], key_signature="unknown"),
+        ]
+    )
+
+    assert all(m.key_signature is None for m in joined.measures)
+
+
+def test_a_page_in_another_clef_is_stamped_at_the_break() -> None:
+    """**The third of the same walk, and the one that moves the notes.**
+
+    A part that climbs into tenor at the foot of page one prints a C clef in
+    page two's own header and nowhere else. Without carrying it, the join
+    records page two as continuing in bass — and `staveScoreFor` then places
+    every note of it a sixth off. The metre version of this bug misreported bar
+    lengths; this one draws the wrong pitches.
+    """
+    joined = join_pages(
+        [
+            _page([_bar(1, 4), _bar(2, 4)], clef="bass"),
+            _page([_bar(1, 4), _bar(2, 4)], clef="tenor"),
+        ]
+    )
+
+    assert joined.clef == "bass"
+    assert [m.clef for m in joined.measures] == [None, None, "tenor", None]
+
+
+def test_a_page_continuing_in_the_same_clef_stamps_nothing() -> None:
+    """Every page of a bass part prints a bass clef in its own header. Stamping
+    each one would put a clef change at the top of every page — a change to the
+    clef already in force, which is the redundant-signature mistake one level
+    up."""
+    joined = join_pages(
+        [
+            _page([_bar(1, 4)], clef="bass"),
+            _page([_bar(1, 4)], clef="bass"),
+        ]
+    )
+
+    assert [m.clef for m in joined.measures] == [None, None]
+
+
+def test_a_page_returning_to_the_opening_clef_is_still_stamped() -> None:
+    """The trap the metre and the key both had: page three states bass, which
+    equals the *header*, so a header comparison drops the return and leaves the
+    rest of the part in tenor. Compared against what is in force."""
+    joined = join_pages(
+        [
+            _page([_bar(1, 4)], clef="bass"),
+            _page([_bar(1, 4)], clef="tenor"),
+            _page([_bar(1, 4)], clef="bass"),
+        ]
+    )
+
+    assert [m.clef for m in joined.measures] == [None, "tenor", "bass"]

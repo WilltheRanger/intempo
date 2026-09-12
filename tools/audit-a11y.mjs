@@ -1,0 +1,994 @@
+/**
+ * Measure the shipping app against three accessibility floors.
+ *
+ * An `audit-a11y.mjs` was run once against the legacy `frontend/` tree on
+ * 2026-08-20 and did not survive the rebuild into `mobile/`. This is that check
+ * pointed at the app that actually ships, so it is one command again rather
+ * than an argument.
+ *
+ * Four checks, chosen for this product rather than off a generic list:
+ *
+ *  - **Accessible names.** A control without one is unusable with VoiceOver.
+ *  - **44pt targets.** The iOS floor, and more pointed here than in most apps:
+ *    the person tapping has an instrument under their chin and a bow in the
+ *    other hand.
+ *  - **4.5:1 contrast.** Also more pointed than usual, since sheet music gets
+ *    read under whatever light the room has.
+ *  - **Large text.** Dynamic Type is the accessibility setting people actually
+ *    turn on, and a musician reading a phone on a stand is exactly who turns
+ *    it on. `PageHeader` records a title that ran 218pt off a 390pt screen at
+ *    2x — found by hand, fixed by hand, and nothing has watched for it since.
+ *    See `TEXT_SCALE` below for what this can and cannot see.
+ *
+ * Run against a served fixtures build. Playwright is not a dependency of this
+ * repository — install it into `mobile` with `--no-save`, so it is available
+ * to run without joining the list of packages that ship to a phone:
+ *
+ *     cd mobile && npm run build:web        # with .env moved aside
+ *     npx serve dist -l 4320 -s &
+ *     npm i -D playwright --no-save
+ *     node ../tools/audit-a11y.mjs 4320
+ *
+ * Exits non-zero when anything fails, so it can gate a change.
+ */
+import { existsSync, readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+
+/**
+ * Resolved from `mobile/`, not from here.
+ *
+ * A bare `import { chromium } from 'playwright'` resolves against **this
+ * file's** directory, not the working directory — so with playwright installed
+ * where the instructions above put it, the command in those same instructions
+ * failed with ERR_MODULE_NOT_FOUND. The tool has one documented way to run and
+ * it did not work; anchoring the lookup to `mobile/package.json` makes the
+ * lookup match the install, from any working directory.
+ */
+const require = createRequire(new URL('../mobile/package.json', import.meta.url));
+const { chromium } = require('playwright');
+
+const PORT = process.argv[2] ?? '4320';
+const BASE = `http://localhost:${PORT}`;
+
+/** The floor, in CSS pixels. `MIN_TOUCH_TARGET` in the design tokens. */
+const MIN_TARGET = 44;
+const MIN_CONTRAST = 4.5;
+/** WCAG's large-text threshold: 24px, or 18.66px when bold. */
+const LARGE_PX = 24;
+const LARGE_BOLD_PX = 18.66;
+const LARGE_CONTRAST = 3;
+
+const ROUTES = [
+  ['Today', ''],
+  ['Library', 'library'],
+  ['Insights', 'insights'],
+  ['Profile', 'profile'],
+  ['Piece detail', 'pieces/fixture-bach-bwv1001'],
+  // **The same two routes, in the two states every scan passes through.** A
+  // route list cannot see a state: `pieces/:pieceId` was already visited and
+  // `unvisitedRoutes` was satisfied, while the screen a musician lands on the
+  // moment a scan finishes had never been rendered by any sweep. Both of these
+  // draw controls the `done` piece has none of — a progress bar with a stage
+  // under it, and three recovery actions — so they are new touch targets and
+  // new contrast, not a second look at the same pixels.
+  ['Piece being read', 'pieces/fixture-reading-in-progress'],
+  ['Score, still being read', 'pieces/fixture-reading-in-progress/score'],
+  ['Page queued behind another', 'pieces/fixture-reading-queued/score'],
+  ['Piece that could not be read', 'pieces/fixture-reading-failed'],
+  ['Score that could not be read', 'pieces/fixture-reading-failed/score'],
+  ['Score', 'pieces/fixture-clef-change-study/score'],
+  ['Bar editor', 'pieces/fixture-clef-change-study/bars/3'],
+  // The photographs, paged. `fixture-wohlfahrt-01` is the one multi-page part
+  // in the library, so this is where the page caption and the pager exist at
+  // all — the other pieces render a single image and no control.
+  ['Original pages', 'pieces/fixture-wohlfahrt-01/score?view=original'],
+  // **The tips, which is what this route renders on a fresh page.** Every
+  // piece in the fixtures shows `PracticeSetup` first, so this entry — which
+  // has said "Record" since the first sweep — has never once audited the
+  // screen with the recording controls on it.
+  ['Record — first-take tips', 'pieces/fixture-bach-bwv1001/record', {
+    expect: 'Before your first take',
+  }],
+  // The screen behind it: target tempo with its steppers, the metronome
+  // control, Listen, the start-at picker, the timer and Start recording. Eight
+  // controls, none of them ever measured, on the screen where a take is made.
+  //
+  // Reached by seeding the preference the tips screen writes when it is
+  // dismissed, rather than by a query parameter the app does not have — see
+  // `seedPreferences`.
+  [
+    'Record — tempo and controls',
+    'pieces/fixture-bach-bwv1001/record',
+    { seed: { practiceSetupSeen: true }, expect: 'Target tempo' },
+  ],
+  // The payoff of the whole app, and the route the first sweep missed.
+  ['Verdict', 'analyses/fixture-take-1', { expect: 'rushed' }],
+  // **Its other three states, none of which had ever been on a screen.**
+  // `VerdictScreen` branches twice on `failure` — recoverable and not are
+  // different sentences and different buttons — and again on a status that is
+  // not `ok`, before it draws a verdict at all. One route, four screens; the
+  // path comparison in `unvisitedRoutes` sees one of them.
+  [
+    'Verdict — failed, recoverable',
+    'analyses/fixture-take-failed',
+    { expect: 'Try again' },
+  ],
+  [
+    'Verdict — failed for good',
+    'analyses/fixture-take-unrecoverable',
+    { expect: "We couldn't process this recording" },
+  ],
+  [
+    'Verdict — nothing heard',
+    'analyses/fixture-take-silent',
+    { expect: 'Nothing to measure' },
+  ],
+  [
+    'Verdict — could not be matched to the score',
+    'analyses/fixture-take-unmatched',
+    { expect: 'matching your recording to the score' },
+  ],
+  ['Warmup', 'warmup'],
+  ['Help', 'help'],
+  ['Legal', 'legal/privacy'],
+  ['Delete account', 'account/delete'],
+  // Reachable, and both carry the reveal-password control that the two
+  // *unreachable* auth screens also use — so this is where a regression in it
+  // would be caught without a throwaway build.
+  ['Change password', 'account/password'],
+  ['Change email', 'account/email'],
+
+  // **The scan flow, which no sweep had ever visited.** It is the app's main
+  // way of getting music in, and the four screens between a photograph and a
+  // saved piece were the largest unaudited area left.
+  //
+  // Reached by route, these render their **empty** states — the capture session
+  // starts empty and the scanner needs a camera this container does not have.
+  // That is real coverage of real screens (`/scan/pages` with nothing in it is
+  // reachable by backing out of a scan), and it is **not** coverage of the
+  // populated flow. `walk-app.mjs` covers that one, by importing two of the
+  // repository's own fixture pages through the file picker.
+  ['Add piece', 'add/import'],
+  ['Scanner', 'scan'],
+  ['Captured pages', 'scan/pages'],
+  ['Transcribe', 'scan/sending'],
+  ['Name the piece', 'scan/name'],
+
+  ['Export data', 'account/export'],
+  ['Acknowledgements', 'acknowledgements'],
+];
+
+const audit = () => {
+  const parse = (value) => {
+    const m = String(value).match(/rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)/);
+    return m
+      ? { r: +m[1], g: +m[2], b: +m[3], a: m[4] === undefined ? 1 : +m[4] }
+      : null;
+  };
+  const lum = ({ r, g, b }) => {
+    const c = [r, g, b]
+      .map((v) => v / 255)
+      .map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  };
+  const over = (fg, bg) => ({
+    r: fg.r * fg.a + bg.r * (1 - fg.a),
+    g: fg.g * fg.a + bg.g * (1 - fg.a),
+    b: fg.b * fg.a + bg.b * (1 - fg.a),
+    a: 1,
+  });
+  const ratio = (a, b) => {
+    const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
+    return (x + 0.05) / (y + 0.05);
+  };
+  /**
+   * Any translucent fill an ancestor paints *under* this text but does not own
+   * as its own `background-color`.
+   *
+   * `GlassSurface` is why this exists. A glass control's ground is a stack of
+   * absolutely-positioned children filling the control, not a colour on the
+   * control itself — so walking `backgroundColor` up the tree steps straight
+   * past it and lands on the page. Measured when the material shipped: every
+   * glass button reported its label at **1.07:1**, thirteen findings, all of
+   * them false; composited, the same labels sit near 11:1.
+   *
+   * A check that cannot see a layer does not report "unknown", it reports the
+   * wrong number — so this composites the layers rather than the alternative,
+   * which was to exempt glass controls and stop checking the app's most-used
+   * buttons entirely.
+   *
+   * Fills are gathered outermost-first so they can be composited in paint
+   * order. Only same-size absolutely-positioned children count: a fill is a
+   * layer covering the whole control, and anything smaller is a decoration
+   * that the text may or may not sit on.
+   */
+  const fillsUnder = (el) => {
+    const fills = [];
+    let node = el;
+    while (node && node !== document.documentElement) {
+      const box = node.getBoundingClientRect();
+      for (const child of node.children) {
+        if (child.contains(el)) continue;
+        if (getComputedStyle(child).position !== 'absolute') continue;
+        // The colour is rarely on the positioned child itself: `GlassSurface`
+        // is a transparent clipping box whose tint is a grandchild, so the
+        // whole subtree is searched, in paint order.
+        for (const layer of [child, ...child.querySelectorAll('*')]) {
+          const bg = parse(getComputedStyle(layer).backgroundColor);
+          if (!bg || bg.a === 0) continue;
+          const lb = layer.getBoundingClientRect();
+          const covers =
+            Math.abs(lb.width - box.width) < 1.5 && Math.abs(lb.height - box.height) < 1.5;
+          if (covers) fills.push(bg);
+        }
+      }
+      node = node.parentElement;
+    }
+    return fills.reverse();
+  };
+
+  /** The first painted background behind an element, glass layers included. */
+  const backdrop = (el) => {
+    let base = null;
+    let node = el;
+    while (node && node !== document.documentElement) {
+      const bg = parse(getComputedStyle(node).backgroundColor);
+      if (bg && bg.a > 0) {
+        if (bg.a !== 1) return null;
+        base = bg;
+        break;
+      }
+      node = node.parentElement;
+    }
+    if (!base) {
+      const body = parse(getComputedStyle(document.body).backgroundColor);
+      base = body && body.a === 1 ? body : { r: 255, g: 255, b: 255, a: 1 };
+    }
+    // Paint order: the outermost fill first, each one over what is already
+    // there, exactly as the browser composites them.
+    for (const fill of fillsUnder(el)) {
+      base = over(fill, base);
+    }
+    return base;
+  };
+
+  /**
+   * The ground, measured off the rendered page rather than modelled from CSS.
+   *
+   * **`backdrop` walks ancestors, and a floating control has none that matter.**
+   * The tab bar is drawn by the navigator as a sibling of the screen, so the
+   * chain from its label runs up through a transparent capsule to the body and
+   * stops — the answer is "glass over the page colour" whatever is actually
+   * underneath. On Today what is actually underneath is a photograph. At the
+   * heavy tint that read dark enough to pass and the blind spot cost nothing;
+   * lighten the tint so the manuscript shows through, as the whole surface is
+   * for, and the same blind spot reports **four failures on a screen measuring
+   * 4.82:1 on its own pixels**.
+   *
+   * The fix is the one this file already argues for twice — once for glass
+   * fills and once for SVG paint: when a check cannot see a layer it does not
+   * report "unknown", it reports a number, and the number sends you looking
+   * for a bug in the wrong file. So stop inferring the layer and photograph it.
+   *
+   * `groundShot` is one screenshot of the route with every glyph made
+   * transparent, so each element's own box holds exactly what is painted
+   * behind its text — backgrounds, blur, tint, rims, and whatever is scrolling
+   * under all of it. Sampling is a median of nine points across the box, which
+   * is what makes it usable over a *photograph*: a single centre pixel could
+   * land on a notehead, and the median of nine lands on the surface.
+   *
+   * **Only where the model is blind**, which is where `fillsUnder` found
+   * translucent layers. Everywhere else the CSS walk is exact, cheaper, and
+   * already trusted by every number this tool has ever printed — and a
+   * screenshot cannot distinguish a colour from the same colour with a shadow
+   * on it. This changes glass, and nothing else.
+   */
+  const groundShot = window.__a11yGround ?? null;
+  const sample = (box) => {
+    if (!groundShot) return null;
+    const { x, y, width, height } = box;
+    if (width < 2 || height < 2) return null;
+    const px = [];
+    for (const fx of [0.2, 0.5, 0.8]) {
+      for (const fy of [0.25, 0.5, 0.75]) {
+        const sx = Math.round((x + width * fx) * groundShot.scale);
+        const sy = Math.round((y + height * fy) * groundShot.scale);
+        if (sx < 0 || sy < 0 || sx >= groundShot.width || sy >= groundShot.height) continue;
+        const i = (sy * groundShot.width + sx) * 4;
+        px.push([groundShot.data[i], groundShot.data[i + 1], groundShot.data[i + 2]]);
+      }
+    }
+    if (px.length < 5) return null;
+    const median = (k) => px.map((p) => p[k]).sort((m, n) => m - n)[Math.floor(px.length / 2)];
+    return { r: median(0), g: median(1), b: median(2), a: 1 };
+  };
+
+  /** The measured ground where glass is involved, the modelled one elsewhere. */
+  const ground = (el) => {
+    if (fillsUnder(el).length === 0) return backdrop(el);
+    const r = el.getBoundingClientRect();
+    if (r.bottom < 0 || r.top > window.innerHeight) return backdrop(el);
+    return sample(r) ?? backdrop(el);
+  };
+  /**
+   * Hidden from assistive technology, or from touch, by any ancestor.
+   *
+   * **Both, and the first one cost a false report.** `ToggleRow` gives the
+   * whole row the switch semantics and wraps the picture of the switch in
+   * `aria-hidden` + `pointerEvents="none"`, so a screen reader hears one
+   * control rather than two. Reading the DOM without honouring that reported
+   * three unnamed 40x20 checkboxes on Profile that no user can reach or hear.
+   */
+  const hidden = (el) => {
+    let node = el;
+    while (node && node !== document.documentElement) {
+      if (node.getAttribute && node.getAttribute('aria-hidden') === 'true') return true;
+      if (getComputedStyle(node).pointerEvents === 'none') return true;
+      node = node.parentElement;
+    }
+    return false;
+  };
+  const visible = (el) => {
+    const r = el.getBoundingClientRect();
+    const s = getComputedStyle(el);
+    return (
+      r.width > 0 &&
+      r.height > 0 &&
+      s.visibility !== 'hidden' &&
+      s.display !== 'none' &&
+      Number(s.opacity) > 0.05 &&
+      !hidden(el)
+    );
+  };
+  const describe = (el) => {
+    const label = el.getAttribute('aria-label') || (el.textContent || '').trim();
+    return (label || '(no name)').slice(0, 60).replace(/\s+/g, ' ');
+  };
+
+  const INTERACTIVE =
+    'button,a[href],input,select,textarea,[role="button"],[role="link"],' +
+    '[role="switch"],[role="tab"],[role="checkbox"],[role="radio"]';
+
+  const unnamed = [];
+  const small = [];
+  const lowContrast = [];
+
+  for (const el of document.querySelectorAll(INTERACTIVE)) {
+    if (!visible(el)) continue;
+    const name =
+      el.getAttribute('aria-label') ||
+      el.getAttribute('aria-labelledby') ||
+      (el.textContent || '').trim() ||
+      el.getAttribute('title');
+    if (!name) unnamed.push(el.tagName + ' ' + (el.className || '').slice(0, 40));
+
+    const r = el.getBoundingClientRect();
+    // Only the innermost interactive element is the target; a wrapper that
+    // merely contains one is not itself undersized.
+    if (!el.querySelector(INTERACTIVE)) {
+      if (r.width < 44 || r.height < 44) {
+        small.push(`${describe(el)} — ${Math.round(r.width)}x${Math.round(r.height)}`);
+      }
+    }
+  }
+
+  /**
+   * The paint a run of text is actually drawn with.
+   *
+   * **SVG text is painted by `fill`, not by `color`.** This loop read `color`
+   * off every leaf that had text in it, and inside an `<svg>` that value is
+   * whatever `currentColor` would resolve to — black by default, whether or
+   * not a single element refers to it. So every engraved note name and every
+   * music glyph was measured as `#000000` on whatever was behind it.
+   *
+   * On ivory that composites to about 18:1 and passes, which is why the check
+   * looked correct for as long as the app had one appearance. Pointing it at
+   * the dark palette turned the entire notation layer red: **64 findings on
+   * the warmup and the score, none of them real** — `Stave` sets `fill` on all
+   * 21 of its text elements, and the pixels were the right colour the whole
+   * time. A check that cannot see how something is painted does not report
+   * "unknown"; it reports a number, and the number sends you looking for a bug
+   * in the wrong file.
+   *
+   * `fill: none` is text that is deliberately not painted, so it has no
+   * contrast to measure rather than a failing one. A paint server (`url(#…)`)
+   * has no single colour either; falling back to `color` at least measures
+   * something, and nothing in this app uses one.
+   */
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const paint = (el, s) => {
+    if (el.namespaceURI !== SVG_NS) return parse(s.color);
+    if (s.fill === 'none') return null;
+    return parse(s.fill) ?? parse(s.color);
+  };
+
+  for (const el of document.querySelectorAll('*')) {
+    if (el.children.length > 0) continue;
+    const text = (el.textContent || '').trim();
+    if (!text) continue;
+    if (!visible(el)) continue;
+    const s = getComputedStyle(el);
+    const fg = paint(el, s);
+    const bg = ground(el);
+    if (!fg || !bg) continue;
+    const size = parseFloat(s.fontSize);
+    const bold = Number(s.fontWeight) >= 700;
+    const large = size >= 24 || (bold && size >= 18.66);
+    const need = large ? 3 : 4.5;
+    const got = ratio(over(fg, bg), bg);
+    if (got < need - 0.01) {
+      // The two colours, not just the ratio. A finding that says only "1.27:1"
+      // sends you hunting through the palette; one that names the pair points
+      // at the token. Added while chasing a dark-mode regression where the
+      // ratio alone made three different root causes look identical.
+      const hex = ({ r, g, b }) =>
+        '#' + [r, g, b].map((v) => Math.round(v).toString(16).padStart(2, '0')).join('');
+      lowContrast.push(
+        `${text.slice(0, 40).replace(/\s+/g, ' ')} — ${got.toFixed(2)}:1 (needs ${need}) ` +
+          `${Math.round(size)}px  ${hex(over(fg, bg))} on ${hex(bg)}`,
+      );
+    }
+  }
+
+  /**
+   * The glass control layer, against Apple's two rules for it.
+   *
+   * **Over-layering.** "When placing elements on top of Liquid Glass, avoid
+   * applying the material to both layers" — a glass control inside a glass
+   * panel doubles the blur and the tint, and legibility is what pays. It is
+   * easy to do by accident here: `IconButton` and `SecondaryButton` both carry
+   * the material, so dropping either into a glass toolbar is one line.
+   *
+   * **Mixing variants.** Regular and Clear "should never be mixed". This app
+   * has one variant, and this is what keeps that true — a second
+   * `backdrop-filter` value appearing anywhere is either a new variant or a
+   * surface that drifted, and both want a human to look.
+   *
+   * Detected on the rendered page rather than in the source, because the
+   * material is a `backdrop-filter` on an absolutely-positioned child and the
+   * question is what actually composites over what. On a browser that declines
+   * `backdrop-filter` this finds nothing and reports nothing, which is correct:
+   * with no material there is no over-layering.
+   */
+  /**
+   * **`visible()` is the wrong predicate here, and using it made this check
+   * inert on every screen.**
+   *
+   * `visible()` calls `hidden()`, which walks up from the element and returns
+   * true at the first `pointer-events: none`. That is right for what it was
+   * written for — an element a finger cannot reach is not a touch target and
+   * has no accessible name to check. But *every* layer `GlassSurface` draws is
+   * `pointerEvents="none"`, deliberately, so that a tap lands on the control
+   * underneath. Filtering by `visible()` therefore discarded the entire control
+   * layer, and the glass checks below reported "clean" on all 27 screens
+   * without ever having looked at a single glass surface.
+   *
+   * Caught by mutation — nesting a `GlassSurface` inside the Today screen's
+   * add-piece row and finding the audit still passed. What matters for a
+   * question about *material* is whether the layer paints, which is geometry,
+   * visibility, display and opacity, and nothing about who can touch it.
+   */
+  const painted = (el) => {
+    const r = el.getBoundingClientRect();
+    const s = getComputedStyle(el);
+    return (
+      r.width > 0 &&
+      r.height > 0 &&
+      s.visibility !== 'hidden' &&
+      s.display !== 'none' &&
+      Number(s.opacity) > 0.05
+    );
+  };
+
+  const glassed = [...document.querySelectorAll('*')].filter((el) => {
+    const style = getComputedStyle(el);
+    const value = style.backdropFilter || style.webkitBackdropFilter;
+    return value && value !== 'none' && painted(el);
+  });
+
+  /**
+   * **Geometry, not DOM ancestry — and this is the whole difficulty.**
+   *
+   * The first version of this asked whether one filter-carrying element
+   * `contains` another, and a mutation test (a `GlassSurface` deliberately
+   * nested inside the Today screen's add-piece row) sailed straight through it.
+   * The reason is the material's own construction: `GlassSurface` paints the
+   * `backdrop-filter` on an absolutely-positioned *child* that fills the
+   * control. So the outer material's filter element is a **sibling** of the
+   * inner control, never its ancestor, and `contains` is false for the exact
+   * case the rule exists to catch.
+   *
+   * Over-layering is a question about what composites over what, so it is
+   * answered in pixels: a glass surface is over-layered when another glass
+   * surface's box encloses it. The 1px tolerance is for subpixel layout, not
+   * for slack — two capsules that merely touch do not enclose one another.
+   */
+  const rects = new Map(glassed.map((el) => [el, el.getBoundingClientRect()]));
+  const encloses = (outer, inner) =>
+    outer.left <= inner.left + 1 &&
+    outer.top <= inner.top + 1 &&
+    outer.right >= inner.right - 1 &&
+    outer.bottom >= inner.bottom - 1 &&
+    // Strictly bigger in area, so two surfaces sharing a box (which would each
+    // "enclose" the other) are reported once rather than twice.
+    outer.width * outer.height > inner.width * inner.height;
+
+  /**
+   * A glass layer carries no text of its own, so `describe` returns "(no name)"
+   * for every one of them — a finding that names nothing is a finding nobody
+   * can act on. The control it belongs to is the nearest ancestor that has a
+   * name, so that is what gets reported.
+   */
+  const owner = (el) => {
+    let node = el;
+    while (node && node !== document.body) {
+      const name = describe(node);
+      if (name !== '(no name)') return name;
+      node = node.parentElement;
+    }
+    return '(no name)';
+  };
+
+  const overLayered = [];
+  for (const el of glassed) {
+    const above = glassed.find(
+      (other) => other !== el && encloses(rects.get(other), rects.get(el)),
+    );
+    if (above) {
+      const r = rects.get(el);
+      const o = rects.get(above);
+      overLayered.push(
+        `${owner(el)} (${Math.round(r.width)}x${Math.round(r.height)}) ` +
+          `inside ${owner(above)} (${Math.round(o.width)}x${Math.round(o.height)})`,
+      );
+    }
+  }
+
+  const variants = [
+    ...new Set(
+      glassed.map((el) => {
+        const style = getComputedStyle(el);
+        return style.backdropFilter || style.webkitBackdropFilter;
+      }),
+    ),
+  ];
+
+  // **Deliberately not counted.** Apple's third rule for this material is to
+  // use it sparingly, and a count per screen would be easy to emit here. It is
+  // not, because "sparingly" has no threshold that is a measurement rather than
+  // a guess, and a number invented in a tool becomes a rule nobody chose. The
+  // two rules above have an objective answer; over-use is the owner's call.
+  return { unnamed, small, lowContrast, overLayered, variants };
+};
+
+/**
+ * How much bigger to make every word before looking for spill.
+ *
+ * **A proxy for Dynamic Type, and an honest one about its limits.** iOS scales
+ * text through the OS; a browser cannot be asked to do that to a
+ * react-native-web build, whose sizes are emitted as px. So this walks the
+ * rendered tree and multiplies each computed `font-size`, then measures what
+ * now hangs off the right edge.
+ *
+ * **`line-height` is scaled by the same factor, because that is what iOS
+ * does.** `RCTTextAttributes.mm` reads
+ * `_lineHeight * self.effectiveFontSizeMultiplier`, so a fixed
+ * `lineHeight: 42` in the design tokens becomes 84 at 2x on a real phone and
+ * the ratio holds. Scaling only `font-size` piles glyphs on top of one another
+ * and produces screenshots that look like bugs the app does not have — which
+ * is what the first version of this did.
+ *
+ * What it catches is layout that cannot absorb longer or taller text — fixed
+ * widths, flex items that will not shrink, rows that only fit at one size.
+ *
+ * What it still cannot see is anything iOS does that a browser does not:
+ * different font metrics, and text that opts out of scaling. The second is
+ * **measured rather than assumed** — `allowFontScaling` and
+ * `maxFontSizeMultiplier` appear nowhere in `src/`, so every `Text` in this app
+ * scales. It is a floor, not a simulation.
+ *
+ * 2x rather than the 3.1x an iPhone can actually reach: the largest
+ * accessibility sizes reflow text this app has not been designed against, and
+ * a check that fails on every screen is one nobody runs. 2x is the setting a
+ * great many people use every day.
+ */
+const TEXT_SCALE = 2;
+
+/**
+ * Anything hanging off the side once the text is doubled.
+ *
+ * Vertical overflow is deliberately not measured: screens scroll, and growing
+ * downward is what they are supposed to do. Sideways is the failure — there is
+ * no horizontal scroll, so whatever is out there simply cannot be read.
+ *
+ * Two things are skipped, and both would otherwise be reported as faults for
+ * doing their job:
+ *
+ *  - **`<svg>`.** Engraved staves are drawn at a fixed size and scroll in
+ *    their own container; their glyph elements carry font sizes that this
+ *    would scale into nonsense.
+ *  - **Anything inside a horizontal scroller.** The page pager on "Original
+ *    pages" holds every photographed page side by side, so pages two and three
+ *    are 330pt and 680pt off the right edge *by construction*. Content that
+ *    extends past the screen inside something built to scroll sideways is the
+ *    correct shape for wide content, not a spill.
+ */
+const spill = (scale) => {
+  const scrollsSideways = (el) => {
+    for (let node = el.parentElement; node; node = node.parentElement) {
+      const overflow = getComputedStyle(node).overflowX;
+      // Both conditions: `overflow-x: auto` on something that does not
+      // actually overflow is not a sideways scroller, and suppressing under it
+      // would hide a real spill in whatever it happens to wrap.
+      if (
+        (overflow === 'auto' || overflow === 'scroll') &&
+        node.scrollWidth > node.clientWidth + 1
+      ) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  for (const el of document.querySelectorAll('*')) {
+    if (el.closest('svg')) continue;
+    const style = getComputedStyle(el);
+    const px = parseFloat(style.fontSize);
+    if (!px) continue;
+    el.style.fontSize = `${px * scale}px`;
+    // Together, the way iOS scales them: a `line-height` left behind turns
+    // every block of text into overlapping glyphs and reports heights the app
+    // would never have.
+    const line = parseFloat(style.lineHeight);
+    if (line) el.style.lineHeight = `${line * scale}px`;
+  }
+
+  const width = document.documentElement.clientWidth;
+  const found = [];
+  for (const el of document.querySelectorAll('*')) {
+    if (el.closest('svg') || scrollsSideways(el)) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) continue;
+    // Only the innermost offender: a container is off-screen because its
+    // child is, and naming both says the same thing twice.
+    if ([...el.children].some((child) => child.getBoundingClientRect().right > width + 1)) {
+      continue;
+    }
+    const over = Math.round(r.right - width);
+    if (over > 1) {
+      const text = (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40);
+      found.push(`${el.tagName.toLowerCase()} ${over}pt off the right edge${text ? ` — "${text}"` : ''}`);
+    }
+  }
+  return found;
+};
+
+/**
+ * The Chromium to drive.
+ *
+ * This environment pre-installs one at a fixed path and sets
+ * `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD`, so Playwright's own resolution finds
+ * nothing; anywhere else — a laptop, a CI runner — Playwright has downloaded
+ * its own and knows where it is. Hardcoding the first path made both these
+ * tools runnable in exactly one place, which is not a property a check should
+ * have.
+ */
+function browserPath() {
+  return existsSync('/opt/pw-browsers/chromium')
+    ? { executablePath: '/opt/pw-browsers/chromium' }
+    : {};
+}
+
+/**
+ * Every route the app has a URL for, read out of `navigation/linking.ts`.
+ *
+ * **`ROUTES` above is hand-written, and a hand-written list of screens is the
+ * thing that goes stale.** `linking.test.ts` already makes a new screen get a
+ * URL — the browser's Back button walks out of the app from one that has none.
+ * Nothing made a new screen get *audited*, so it would ship with a URL, a link,
+ * and no check of its touch targets, its contrast or its accessible names.
+ *
+ * Read as text rather than imported: this file is `.mjs` running against a
+ * built bundle and cannot import TypeScript, and the same technique is how
+ * `describeError.test.ts` reads the sentences out of `client.ts`.
+ */
+function declaredPaths() {
+  const source = readFileSync(
+    new URL('../mobile/src/navigation/linking.ts', import.meta.url),
+    'utf8',
+  );
+  const config = source.slice(source.indexOf('screens: {'));
+  // One pattern covers both forms: `Today: ''` and `Library: 'library'`, and
+  // the `path: 'pieces/:pieceId/bars/:measureNumber'` of the `{ path, parse }`
+  // form used where a parameter is not a string. `parse` and `stringify` are
+  // functions rather than string literals, so they do not match.
+  const declared = [...config.matchAll(/^\s*\w+:\s*'([^']*)',$/gm)].map((m) => m[1]);
+  return [...new Set(declared)];
+}
+
+/**
+ * The route photographed with every glyph made transparent.
+ *
+ * What each element's own box holds in this picture is exactly what is painted
+ * *behind* its text — its background, and everything under that: a blur, a
+ * tint, two rims, and whatever is scrolling beneath the lot. `ground` samples
+ * it where the CSS walk is blind; see the note there for why that is the tab
+ * bar and not much else.
+ *
+ * **`color: transparent`, not `visibility: hidden`.** Hiding the text would
+ * take its element's own background with it, and that background is part of
+ * what is behind the glyphs. This removes the ink and leaves every surface
+ * standing. `-webkit-text-fill-color` is set alongside it because it wins over
+ * `color` where both apply, and `fill` for SVG text, which `color` does not
+ * paint at all — the same distinction this file already had to learn once.
+ *
+ * The stylesheet is removed before anything else runs, so nothing measured
+ * afterwards is measuring a page with its text turned off.
+ */
+async function groundPhoto(page) {
+  const STYLE_ID = 'a11y-ground-photo';
+  try {
+    await page.evaluate((id) => {
+      const style = document.createElement('style');
+      style.id = id;
+      style.textContent =
+        '*, *::before, *::after { color: transparent !important; ' +
+        '-webkit-text-fill-color: transparent !important; }' +
+        'svg text, svg tspan { fill: transparent !important; }';
+      document.head.appendChild(style);
+    }, STYLE_ID);
+    const png = await page.screenshot({ type: 'png' });
+    // **Decoded in the page and left there.** A viewport of pixels is about
+    // 4.9 million numbers; handing that back across the bridge and then in
+    // again, twice per route, costs more than every other check in this file
+    // put together. `audit` reads it off `window` instead.
+    return await page.evaluate(async (b64) => {
+      const img = new Image();
+      img.src = 'data:image/png;base64,' + b64;
+      await img.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      window.__a11yGround = {
+        width: img.width,
+        height: img.height,
+        scale: img.width / window.innerWidth,
+        data: ctx.getImageData(0, 0, img.width, img.height).data,
+      };
+      return true;
+    }, png.toString('base64'));
+  } catch {
+    // A screenshot is a convenience here, never a gate: `ground` falls back to
+    // the modelled backdrop when this returns false, which is what every
+    // number this tool printed before today was built on.
+    return false;
+  } finally {
+    await page.evaluate((id) => document.getElementById(id)?.remove(), STYLE_ID);
+  }
+}
+
+/**
+ * The declared paths no route in `ROUTES` visits.
+ *
+ * Compared as patterns, because a declared path carries `:pieceId` while the
+ * audit visits a real fixture id. A query string is ignored — `?view=original`
+ * is a second state of a route already covered, not a route of its own.
+ */
+function unvisitedRoutes() {
+  const visited = ROUTES.map(([, path]) => path.split('?')[0]);
+  return declaredPaths().filter((declared) => {
+    const pattern = new RegExp(
+      `^${declared.replace(/:[A-Za-z]+/g, '[^/]+').replace(/\//g, '\\/')}$`,
+    );
+    return !visited.some((path) => pattern.test(path));
+  });
+}
+
+/**
+ * Where the app keeps its device preferences on web.
+ *
+ * `data/preferences.ts` writes this key through `AsyncStorage`, which on
+ * react-native-web is `localStorage` under the same name. Read off a running
+ * build rather than assumed: after dismissing the tips screen it holds
+ * `{"instrument":"violin","metronomeMode":"off","haptics":true,
+ * "reduceMotion":false,"practiceSetupSeen":true}`.
+ */
+const PREFERENCES_KEY = 'intempo.preferences.v1';
+
+/**
+ * Put a route's screen into the state that route is *for*.
+ *
+ * **A route is not a screen.** `pieces/:pieceId/record` renders the first-take
+ * tips until `practiceSetupSeen` is stored, so auditing the URL audited the
+ * tips and never the recording controls — the same gap the post-scan states
+ * had, where `pieces/:pieceId` was visited by a piece that had finished
+ * reading. `unvisitedRoutes` cannot see this: it compares paths, and both
+ * states share one.
+ *
+ * Seeded rather than clicked through, so each route stays a single `goto` and
+ * a failure names a state rather than a sequence. This writes only what the
+ * app itself writes when a musician dismisses the screen.
+ */
+/**
+ * That a route in a state really reached that state.
+ *
+ * **The guard on `seed`.** Two entries above share one path and differ only by
+ * a stored preference; if seeding stopped working, the second would quietly
+ * audit the same screen as the first and pass, and the recording controls
+ * would be back to never having been looked at while a line of output said
+ * otherwise. Both record entries name a phrase only their own state renders,
+ * so the pair proves it is two screens.
+ *
+ * Optional, because most routes have one state and a fragment there would be a
+ * second copy of the screen's own copy, which rots.
+ */
+async function renders(page, fragment) {
+  return page.evaluate(
+    (text) => (document.getElementById('root')?.innerText ?? '').includes(text),
+    fragment,
+  );
+}
+
+async function seedPreferences(page, seed) {
+  await page.addInitScript(
+    ([key, value]) => {
+      try {
+        const held = JSON.parse(window.localStorage.getItem(key) ?? '{}');
+        window.localStorage.setItem(key, JSON.stringify({ ...held, ...value }));
+      } catch {
+        // A browser refusing site data leaves the route on its default state,
+        // which is a worse audit rather than a broken one.
+      }
+    },
+    [PREFERENCES_KEY, seed],
+  );
+}
+
+const browser = await chromium.launch(browserPath());
+let failures = 0;
+
+/**
+ * Which routes to run, when only some of them make sense.
+ *
+ * `node tools/audit-a11y.mjs 4323 Today Library Insights Profile` audits four
+ * names and skips the rest. There is exactly one caller with a reason: the
+ * **empty-account** build (`EXPO_PUBLIC_FIXTURES=empty`), where every route
+ * naming a `fixture-…` id points at a piece that does not exist, so sweeping
+ * the whole list would measure a page of not-found states and call it
+ * coverage.
+ *
+ * Skipping is announced, and `unvisitedRoutes` still runs on the **full**
+ * list — a filtered run must not be able to report that every screen has an
+ * audit when it looked at four.
+ */
+const ONLY = process.argv.slice(3).filter((a) => !a.startsWith('--'));
+
+/**
+ * Which appearance to audit.
+ *
+ * **Added 2026-09-10, with dark mode.** Everything below was written against
+ * one palette and swept one build, so the day the app grew a second appearance
+ * half of what it draws stopped being checked by a browser. `contrast.test.ts`
+ * holds the dark palette's *arithmetic* — every token against its own grounds —
+ * and arithmetic cannot see a touch target, a focus order, an accessible name,
+ * or a label that spills at 2x text. Those are the findings this file exists
+ * for, and they are palette-independent in principle and not in practice: a
+ * control whose label is drawn in the wrong token is invisible in exactly one
+ * of the two modes.
+ *
+ * A flag rather than a positional argument, because argument three onward is
+ * already the route filter.
+ */
+const SCHEME = process.argv.includes('--dark') ? 'dark' : 'light';
+const selected = ONLY.length
+  ? ROUTES.filter(([name]) => ONLY.some((want) => name.includes(want)))
+  : ROUTES;
+if (ONLY.length) {
+  console.log(
+    `\n## Auditing ${selected.length} of ${ROUTES.length} routes ` +
+      `(filtered by ${JSON.stringify(ONLY)})`,
+  );
+  if (selected.length === 0) {
+    console.log('  Nothing matched — check the names against ROUTES.');
+    failures += 1;
+  }
+}
+
+const unvisited = unvisitedRoutes();
+if (unvisited.length > 0) {
+  console.log('\n## Routes with a URL and no audit');
+  for (const path of unvisited) {
+    console.log(`  /${path}`);
+  }
+  console.log(
+    '  Add each to ROUTES with a fixture that reaches it. A screen nobody has\n' +
+      '  audited is a screen nobody has looked at, which is how this app shipped\n' +
+      '  a 32x44 back control on seven screens.',
+  );
+  failures += unvisited.length;
+}
+
+for (const [name, path, options = {}] of selected) {
+  /*
+   * **375pt, the narrowest iPhone this app can be installed on** — not the 390
+   * of an iPhone 14/15. Every check here that depends on width gets stricter
+   * for nothing, and the large-text check depends on it entirely.
+   *
+   * Measured across 19 routes at 2x text: clean at 375 and at 360 (a common
+   * Android width), and four spills at **320** — iPhone 5 / SE 1st generation,
+   * which current iOS does not run. Those four are single words wider than the
+   * screen ("connection" in a doubled page title), which cannot be fixed by
+   * layout: it needs a decision about shrinking or breaking the word, and that
+   * is the owner's under §2. Holding the app to a width no supported phone has
+   * would buy nothing and fail forever.
+   */
+  const page = await browser.newPage({
+    viewport: { width: 375, height: 812 },
+    colorScheme: SCHEME,
+  });
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  if (options.seed) await seedPreferences(page, options.seed);
+  try {
+    await page.goto(`${BASE}/${path}`, { waitUntil: 'networkidle', timeout: 30000 });
+    await page.waitForTimeout(1800);
+  } catch (e) {
+    console.log(`\n## ${name} (/${path})\n  COULD NOT LOAD: ${String(e).slice(0, 120)}`);
+    failures += 1;
+    await page.close();
+    continue;
+  }
+
+  if (options.expect && !(await renders(page, options.expect))) {
+    console.log(
+      `\n## ${name} (/${path})\n  WRONG STATE: nothing on the page says ` +
+        `${JSON.stringify(options.expect)} — this route did not reach the ` +
+        'state it is listed for, so whatever was audited is not it.',
+    );
+    failures += 1;
+    await page.close();
+    continue;
+  }
+  await groundPhoto(page);
+  const found = await page.evaluate(audit);
+  // Last, and on the same page: it rewrites every font size in the document,
+  // so nothing measured after it would be measuring the shipped app.
+  const spilled = await page.evaluate(spill, TEXT_SCALE);
+  // One variant is the design; two means Regular and Clear are mixed, or a
+  // surface has drifted off the shared material. Either way it is one finding
+  // for the screen, not one per surface.
+  const mixedVariants = found.variants.length > 1 ? 1 : 0;
+  const total =
+    found.unnamed.length +
+    found.small.length +
+    found.lowContrast.length +
+    found.overLayered.length +
+    mixedVariants +
+    spilled.length +
+    errors.length;
+  failures += total;
+
+  console.log(`\n## ${name} (/${path}) — ${total === 0 ? 'clean' : total + ' finding(s)'}`);
+  for (const e of errors) console.log(`  PAGE ERROR: ${e.slice(0, 120)}`);
+  for (const u of found.unnamed) console.log(`  UNNAMED CONTROL: ${u}`);
+  for (const s of new Set(found.small)) console.log(`  TARGET < ${MIN_TARGET}pt: ${s}`);
+  for (const c of new Set(found.lowContrast)) console.log(`  CONTRAST: ${c}`);
+  for (const g of new Set(found.overLayered)) console.log(`  GLASS ON GLASS: ${g}`);
+  if (mixedVariants) {
+    console.log(
+      `  GLASS VARIANTS MIXED: ${found.variants.length} distinct materials — ` +
+        found.variants.map((v) => JSON.stringify(v)).join(', '),
+    );
+  }
+  for (const o of new Set(spilled)) console.log(`  AT ${TEXT_SCALE}x TEXT: ${o}`);
+  await page.close();
+}
+
+await browser.close();
+console.log(
+  `\n${SCHEME} appearance: ` +
+    `${failures === 0 ? 'PASS' : `FAIL — ${failures} finding(s)`}`,
+);
+process.exit(failures === 0 ? 0 : 1);

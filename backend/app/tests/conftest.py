@@ -125,3 +125,23 @@ def _stub_provisioning(monkeypatch: pytest.MonkeyPatch):
     handler, not about the row already existing.
     """
     monkeypatch.setattr(auth_module, "get_service_client", lambda: MagicMock())
+
+
+@pytest.fixture(autouse=True)
+def _fresh_reading_rate(monkeypatch: pytest.MonkeyPatch):
+    """Give every test its own reading-rate limiter.
+
+    `services.reading_rate.readings` is process-wide by design — one dictionary
+    for the life of the server. Under pytest that makes it shared state between
+    tests, and the suite currently only survives it by accident: nearly every
+    test invents a fresh `uuid4()` account, so no single key gets near the
+    allowance. A test that reused an id, or a suite run in a different order,
+    would start failing somewhere unrelated to what it was testing.
+
+    Reset rather than disabled, so the guard is still in the path everything
+    exercises and a handler that stopped calling it would still be caught by
+    the tests that assert the refusal.
+    """
+    from app.services import reading_rate
+
+    monkeypatch.setattr(reading_rate, "readings", reading_rate.ReadingRate())

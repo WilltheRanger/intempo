@@ -51,18 +51,6 @@ export interface PieceEdit {
   movement: string | null;
 }
 
-/**
- * Why a piece with recordings can't be removed, in the musician's terms.
- *
- * The backend's own sentence is *"score has dependent analyses; delete those
- * first (soft-delete is V2)"* — correct for an API consumer, and three kinds
- * of wrong on a phone: it says "score" for a piece, "analyses" for
- * recordings, and carries an internal roadmap note. Both sources raise this
- * instead, so the two agree and neither invents its own wording.
- */
-export const PIECE_HAS_RECORDINGS =
-  "You've recorded this piece, so it stays in your library — removing it would take that practice history with it.";
-
 /** What the Add-manually form collects. */
 export interface NewPiece {
   title: string;
@@ -112,6 +100,13 @@ export interface TakeSource {
    * finished anything — the normal state of a new account, not an error.
    */
   getLatestTake(): Promise<TakeResult | null>;
+  /** Finished, readable takes, newest first. */
+  getRecentTakes(limit?: number): Promise<TakeResult[]>;
+  /**
+   * A fresh private URL for hearing one saved recording. Null only in the
+   * fixture build, where no recording was ever uploaded.
+   */
+  getRecordingUrl(analysisId: string): Promise<string | null>;
 }
 
 /**

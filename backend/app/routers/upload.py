@@ -29,7 +29,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.auth import current_user_id
-from app.db import get_service_client
+from app.routers.deps import require_service_client
+from app.services import pending_uploads
 
 router = APIRouter(prefix="/upload", tags=["upload"])
 
@@ -95,12 +96,7 @@ def _extract_ext(filename: str, allowed: set[str]) -> str:
 
 
 def _sign_upload(bucket: str, object_key: str) -> dict[str, Any]:
-    client = get_service_client()
-    if client is None:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Supabase service-role client is not configured",
-        )
+    client = require_service_client()
     storage = client.storage.from_(bucket)
     # Supabase python SDK exposes create_signed_upload_url on the bucket; the
     # exact method name varies by version, so we check both.
@@ -151,6 +147,10 @@ def upload_audio(
     ext = _extract_ext(body.filename, _ALLOWED_AUDIO_EXTS)
     object_key = _build_object_key(user_id, ext)
     signed = _sign_upload(AUDIO_BUCKET, object_key)
+    # **Recorded before the URL is handed over**, so an object cannot exist
+    # without a row even if the client uploads and then vanishes. See
+    # `services/pending_uploads`.
+    pending_uploads.record(user_id, AUDIO_BUCKET, object_key)
     return _make_response(AUDIO_BUCKET, object_key, signed)
 
 
@@ -169,6 +169,10 @@ def upload_avatar(
     ext = _extract_ext(body.filename, _ALLOWED_AVATAR_EXTS)
     object_key = _build_object_key(user_id, ext)
     signed = _sign_upload(AVATAR_BUCKET, object_key)
+    # **Recorded before the URL is handed over**, so an object cannot exist
+    # without a row even if the client uploads and then vanishes. See
+    # `services/pending_uploads`.
+    pending_uploads.record(user_id, AVATAR_BUCKET, object_key)
     return _make_response(AVATAR_BUCKET, object_key, signed)
 
 
@@ -180,4 +184,5 @@ def upload_score_image(
     ext = _extract_ext(body.filename, _ALLOWED_IMAGE_EXTS)
     object_key = _build_object_key(user_id, ext)
     signed = _sign_upload(SCORE_BUCKET, object_key)
+    pending_uploads.record(user_id, SCORE_BUCKET, object_key)
     return _make_response(SCORE_BUCKET, object_key, signed)

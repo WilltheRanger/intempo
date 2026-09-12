@@ -1,13 +1,18 @@
 import {
   EmptyRecordingError,
   maxTakeSamples,
-  MicrophonePermissionError,
   MicrophoneUnavailableError,
   takeFilename,
   type Recorder,
   type Recording,
 } from './audio/types';
+import { capturedNothing, createPeakMeter } from './audio/level';
+import {
+  microphoneFailure,
+  shouldRetryUnconstrained,
+} from './audio/microphoneFailure';
 import { durationOf, encodeWav } from './audio/wav';
+import { resolveWorkletUrl, WORKLET_FILE as WORKLET } from './audio/workletUrl';
 
 /**
  * Audio capture for a practice take, in a browser.
@@ -30,6 +35,15 @@ import { durationOf, encodeWav } from './audio/wav';
 const CHANNELS = 1;
 
 /**
+ * The worklet, copied verbatim into the build from `public/`.
+ *
+ * Re-exported rather than declared: the name and the rule for resolving it now
+ * live together in `audio/workletUrl.ts`, because getting the *name* right was
+ * never the part that broke.
+ */
+export { WORKLET_FILE } from './audio/workletUrl';
+
+/**
  * Quanta buffered in the worklet before it posts.
  *
  * `process` runs every 128 frames — 2.7 ms at 48 kHz, which is 375 messages a
@@ -37,68 +51,6 @@ const CHANNELS = 1;
  * 85 ms, which is a message every twelfth of a second instead.
  */
 const QUANTA_PER_MESSAGE = 32;
-
-/**
- * The worklet, as source.
- *
- * Loaded from a blob URL rather than a file in `public/`: a worklet fetched by
- * path breaks the moment the app is served from a sub-path, and this keeps the
- * processor beside the code that registers it.
- */
-const PROCESSOR_SOURCE = `
-class PcmRecorder extends AudioWorkletProcessor {
-  constructor() {
-    super();
-    this.buffer = [];
-    this.port.onmessage = (event) => {
-      if (event.data === 'flush') {
-        this.flush();
-        this.port.postMessage('flushed');
-      }
-    };
-  }
-
-  flush() {
-    if (this.buffer.length === 0) {
-      return;
-    }
-    let length = 0;
-    for (const part of this.buffer) {
-      length += part.length;
-    }
-    const out = new Int16Array(length);
-    let offset = 0;
-    for (const part of this.buffer) {
-      out.set(part, offset);
-      offset += part.length;
-    }
-    this.buffer = [];
-    // Transferred, not copied — the main thread owns it after this.
-    this.port.postMessage(out.buffer, [out.buffer]);
-  }
-
-  process(inputs) {
-    const channel = inputs[0] && inputs[0][0];
-    if (!channel) {
-      // No input connected yet. Staying alive rather than returning false,
-      // which would retire the processor for the rest of the take.
-      return true;
-    }
-    const pcm = new Int16Array(channel.length);
-    for (let i = 0; i < channel.length; i += 1) {
-      const sample = Math.max(-1, Math.min(1, channel[i]));
-      pcm[i] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
-    }
-    this.buffer.push(pcm);
-    if (this.buffer.length >= ${QUANTA_PER_MESSAGE}) {
-      this.flush();
-    }
-    return true;
-  }
-}
-
-registerProcessor('pcm-recorder', PcmRecorder);
-`;
 
 export async function startRecording(): Promise<Recorder> {
   if (!navigator.mediaDevices?.getUserMedia) {
@@ -115,146 +67,278 @@ export async function startRecording(): Promise<Recorder> {
     throw new MicrophoneUnavailableError('This browser has no Web Audio.');
   }
 
-  let media: MediaStream;
+  // Create and unlock while the Record tap still owns the user gesture, not
+  // after the permission prompt and worklet download have finished.
+  let context: AudioContext;
   try {
-    media = await navigator.mediaDevices.getUserMedia({
+    context = new AudioContextCtor();
+  } catch {
+    throw new MicrophoneUnavailableError(
+      'Audio could not start. Close other audio apps, return here, and try Record again.',
+    );
+  }
+  let resume: Promise<void> = Promise.resolve();
+  try {
+    if (context.state !== 'running') {
+      // Handle rejection immediately, while permission may still be pending.
+      resume = context.resume();
+      void resume.catch(() => {});
+    }
+  } catch {
+    void context.close().catch(() => {});
+    throw new MicrophoneUnavailableError(
+      'Audio could not start. Try Record again.',
+    );
+  }
+  let media: MediaStream | undefined;
+  try {
+    // Raw and unprocessed, because the analysis measures attacks as played and
+    // every one of these processors moves them. A **preference**, not a
+    // requirement — see the retry below.
+    const PREFERRED: MediaStreamConstraints = {
       audio: {
         channelCount: CHANNELS,
         echoCancellation: false,
         autoGainControl: false,
         noiseSuppression: false,
       },
-    });
-  } catch (error) {
-    // NotAllowedError covers both a refusal and a policy block; either way the
-    // musician's next step is the same.
-    if (error instanceof DOMException && error.name === 'NotAllowedError') {
-      throw new MicrophonePermissionError();
-    }
-    throw new MicrophoneUnavailableError();
-  }
+    };
 
-  const context = new AudioContextCtor();
-  const chunks: Int16Array[] = [];
-  let truncated = false;
-  let samples = 0;
-  let finished = false;
-
-  const stopTracks = () => media.getTracks().forEach((track) => track.stop());
-
-  if (!context.audioWorklet) {
-    stopTracks();
-    void context.close();
-    throw new MicrophoneUnavailableError(
-      'This browser has no AudioWorklet, which is needed to record losslessly.',
-    );
-  }
-
-  const moduleUrl = URL.createObjectURL(
-    new Blob([PROCESSOR_SOURCE], { type: 'application/javascript' }),
-  );
-  try {
-    await context.audioWorklet.addModule(moduleUrl);
-  } catch (error) {
-    stopTracks();
-    void context.close();
-    throw new MicrophoneUnavailableError(
-      'The recording worklet could not be loaded.',
-    );
-  } finally {
-    URL.revokeObjectURL(moduleUrl);
-  }
-
-  const sampleRate = context.sampleRate;
-  const maxSamples = maxTakeSamples(sampleRate, CHANNELS);
-
-  const source = context.createMediaStreamSource(media);
-  const node = new AudioWorkletNode(context, 'pcm-recorder', {
-    numberOfInputs: 1,
-    // No outputs: nothing downstream wants this audio, and routing it to the
-    // destination would play the musician back to themselves through their own
-    // speakers while they record.
-    numberOfOutputs: 0,
-    channelCount: CHANNELS,
-    channelCountMode: 'explicit',
-  });
-
-  let onFlushed: (() => void) | null = null;
-
-  node.port.onmessage = (event: MessageEvent) => {
-    if (event.data === 'flushed') {
-      onFlushed?.();
-      return;
-    }
-    if (samples >= maxSamples) {
-      truncated = true;
-      return;
-    }
-    const chunk = new Int16Array(event.data as ArrayBuffer);
-    chunks.push(chunk);
-    samples += chunk.length;
-  };
-
-  source.connect(node);
-
-  // Autoplay policy can hand back a suspended context even from a tap; without
-  // this the graph never pulls and the take is silence.
-  if (context.state === 'suspended') {
-    await context.resume();
-  }
-
-  const startedAt = new Date();
-
-  async function teardown() {
-    if (finished) {
-      return;
-    }
-    finished = true;
-    // Ask for the tail before disconnecting. The worklet holds up to 85 ms it
-    // hasn't posted, which is the end of the last note played.
-    await flush();
-    source.disconnect();
-    node.port.onmessage = null;
-    node.disconnect();
-    stopTracks();
-    await context.close();
-  }
-
-  function flush(): Promise<void> {
-    return new Promise((resolve) => {
-      // A worklet that has already gone away would never answer, and a take
-      // must not hang on its own teardown.
-      const timer = setTimeout(finish, 250);
-      function finish() {
-        clearTimeout(timer);
-        onFlushed = null;
-        resolve();
+    try {
+      media = await navigator.mediaDevices.getUserMedia(PREFERRED);
+    } catch (error) {
+      if (shouldRetryUnconstrained(error)) {
+        // A device that cannot give us raw audio should still get to record: a
+        // take with echo cancellation on beats no take at all.
+        try {
+          media = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch (retryError) {
+          throw microphoneFailure(retryError);
+        }
+      } else {
+        // Every failure that was not a refusal used to become "No microphone is
+        // available on this device.", on phones that plainly have one.
+        // `microphoneFailure` names what actually happened.
+        throw microphoneFailure(error);
       }
-      onFlushed = finish;
-      node.port.postMessage('flush');
+    }
+
+    const chunks: Int16Array[] = [];
+    const level = createPeakMeter();
+    let truncated = false;
+    let samples = 0;
+    let finished = false;
+
+    const stopTracks = () =>
+      media?.getTracks().forEach((track) => track.stop());
+
+    if (!context.audioWorklet) {
+      throw new MicrophoneUnavailableError(
+        'This browser has no AudioWorklet, which is needed to record losslessly.',
+      );
+    }
+
+    // **A real file on this origin, not a `blob:` URL.**
+    //
+    // It was a blob, and that is why recording failed on the deployed site
+    // while working everywhere it was tested. `public/_headers` pins
+    // `script-src` to `'self'` plus the boot script's hash — deliberately, so
+    // an injected `<script src>` cannot run — and `'self'` does not cover
+    // `blob:`. `addModule` was refused with `AbortError: Unable to load a
+    // worklet's module.`, which is what the sentence below reported.
+    //
+    // Measured in this repository's own Chromium against the built bundle:
+    // refused under the production CSP, loaded without it. Nothing local ever
+    // saw it because `npx serve` ignores `_headers` — see
+    // `tools/serve-with-headers.mjs`, which is now what the walk runs against.
+    //
+    // **Resolved from the app's root, never from the route.**
+    //
+    // This was the bare filename, left for `addModule` to resolve, on the
+    // reasoning that a relative path is what a build served from a sub-path
+    // needs. A relative URL resolves against the *document's* base, and this is
+    // a single page app: on `/pieces/<id>/record` that is `/pieces/<id>/`. The
+    // browser fetched `/pieces/<id>/pcm-recorder.worklet.js`, the server
+    // answered with `index.html` as a single page app must, and `addModule` was
+    // handed a page of HTML to parse as a module.
+    //
+    // It failed with a **200**, so there was no failed request and no console
+    // error — only the sentence below, on the one screen whose job is to
+    // record. The record screen is always nested under a piece, so this was
+    // every take. See `audio/workletUrl.ts` for the measurements.
+    try {
+      await context.audioWorklet.addModule(resolveWorkletUrl());
+    } catch {
+      throw new MicrophoneUnavailableError(
+        `The recording worklet (${WORKLET}) could not be loaded.`,
+      );
+    }
+
+    const sampleRate = context.sampleRate;
+    const maxSamples = maxTakeSamples(sampleRate, CHANNELS);
+
+    const source = context.createMediaStreamSource(media);
+    const node = new AudioWorkletNode(context, 'pcm-recorder', {
+      numberOfInputs: 1,
+      // No outputs: nothing downstream wants this audio, and routing it to the
+      // destination would play the musician back to themselves through their own
+      // speakers while they record.
+      numberOfOutputs: 0,
+      channelCount: CHANNELS,
+      channelCountMode: 'explicit',
+      // The worklet is a separate file now and cannot interpolate a constant,
+      // so it is handed one. `processorOptions` is what that option is for.
+      //
+      // The worklet defaults to the same number if this is missing, which is
+      // how the first draft of this change shipped without it and behaved
+      // identically — a silent fallback over a missing wire. The test asserts
+      // the wire, not the behaviour, for exactly that reason.
+      processorOptions: { quantaPerMessage: QUANTA_PER_MESSAGE },
     });
-  }
 
-  return {
-    async stop(): Promise<Recording> {
-      await teardown();
+    let onFlushed: (() => void) | null = null;
 
-      const seconds = durationOf(chunks, sampleRate, CHANNELS);
-      if (seconds === 0) {
-        throw new EmptyRecordingError();
+    node.port.onmessage = (event: MessageEvent) => {
+      if (event.data === 'flushed') {
+        onFlushed?.();
+        return;
       }
+      if (samples >= maxSamples) {
+        truncated = true;
+        return;
+      }
+      const chunk = new Int16Array(event.data as ArrayBuffer);
+      level.observe(chunk);
+      chunks.push(chunk);
+      samples += chunk.length;
+    };
 
-      return {
-        audio: encodeWav({ chunks, sampleRate, channels: CHANNELS }),
-        filename: takeFilename(startedAt),
-        sampleRate,
-        seconds,
-        truncated,
-      };
-    },
-    cancel() {
-      void teardown();
-      chunks.length = 0;
-    },
-  };
+    source.connect(node);
+
+    // Opening the microphone can suspend/interupt the context after its first
+    // unlock. That earlier promise may already be resolved; resume the current
+    // state as well, under the same bounded startup deadline.
+    if (context.state !== 'running') {
+      resume = Promise.all([resume, context.resume()]).then(() => {});
+      void resume.catch(() => {});
+    }
+
+    // Autoplay policy can hand back a suspended context even from a tap; without
+    // this the graph never pulls and the take is silence.
+    let resumeDeadline: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        resume,
+        new Promise<never>((_, reject) => {
+          resumeDeadline = setTimeout(
+            () =>
+              reject(
+                new MicrophoneUnavailableError(
+                  'Audio did not start. Return to this screen and try Record again.',
+                ),
+              ),
+            5000,
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(resumeDeadline);
+    }
+    if (context.state !== 'running') {
+      throw new MicrophoneUnavailableError(
+        'Audio was interrupted. Return to this screen and try Record again.',
+      );
+    }
+
+    const startedAt = new Date();
+
+    async function teardown() {
+      if (finished) {
+        return;
+      }
+      finished = true;
+      // Ask for the tail before disconnecting. The worklet holds up to 85 ms it
+      // hasn't posted, which is the end of the last note played.
+      try {
+        await flush();
+      } finally {
+        node.port.onmessage = null;
+        stopTracks();
+        // A browser may have already shut down the graph on interruption.
+        // Cleanup must not discard captured audio or leave an unhandled
+        // rejection when cancel() is called during navigation.
+        try { source.disconnect(); } catch { /* Already disconnected. */ }
+        try { node.disconnect(); } catch { /* Already disconnected. */ }
+        try { await context.close(); } catch { /* Already closed. */ }
+      }
+    }
+
+    function flush(): Promise<void> {
+      return new Promise((resolve) => {
+        // A worklet that has already gone away would never answer, and a take
+        // must not hang on its own teardown.
+        const timer = setTimeout(finish, 250);
+        function finish() {
+          clearTimeout(timer);
+          onFlushed = null;
+          resolve();
+        }
+        onFlushed = finish;
+        try {
+          node.port.postMessage('flush');
+        } catch {
+          finish();
+        }
+      });
+    }
+
+    return {
+      inputPeak: () => level.peak(),
+      async stop(): Promise<Recording> {
+        await teardown();
+
+        const seconds = durationOf(chunks, sampleRate, CHANNELS);
+        if (seconds === 0 || capturedNothing(level.peak())) {
+          // **Two ways a take can hold nothing, and only one of them used to be
+          // caught.** No samples at all means the graph never pulled. Samples
+          // that are every one of them zero is a *muted* input — which is what
+          // this error's own description has always claimed to cover, and did
+          // not: `durationOf` counts them, so the take sailed through, uploaded,
+          // waited, and came back `no_onsets` having spent one of three free
+          // analyses for the month.
+          throw new EmptyRecordingError();
+        }
+
+        return {
+          audio: encodeWav({ chunks, sampleRate, channels: CHANNELS }),
+          filename: takeFilename(startedAt),
+          sampleRate,
+          seconds,
+          truncated,
+        };
+      },
+      discardCapturedSoFar() {
+        chunks.length = 0;
+        level.reset();
+        samples = 0;
+        truncated = false;
+      },
+      cancel() {
+        void teardown();
+        chunks.length = 0;
+        level.reset();
+      },
+    };
+  } catch (error) {
+    // Every setup failure must release the mic, including InvalidStateError
+    // from graph creation. Otherwise the next attempt inherits a busy device.
+    media?.getTracks().forEach((track) => track.stop());
+    await context.close().catch(() => {});
+    if (error instanceof DOMException && error.name === 'InvalidStateError') {
+      throw new MicrophoneUnavailableError(
+        'Audio was interrupted before recording could start. Return to this screen and try Record again.',
+      );
+    }
+    throw error;
+  }
 }

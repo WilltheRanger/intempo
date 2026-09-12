@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { Stave } from '../../components/notation/Stave';
@@ -40,6 +41,16 @@ export function WarmupPanel({ instrument, onStart }: WarmupPanelProps) {
   // the block has to report the same number the page would.
   usePracticeTempos();
   const bpm = practiceTempo.for(warmup.id, warmup.bpm);
+  /**
+   * How much room the preview actually has.
+   *
+   * **Measured, because the stave used to be drawn at whatever width nine
+   * notes came to and clipped to whatever was left.** At 320pt — an SE, still
+   * in service — the engraving was 335pt inside a 280pt box under
+   * `overflow: hidden`, so a sixth of the music was cut, through a notehead.
+   * Told the width, the engraver breaks between notes where it should.
+   */
+  const [width, setWidth] = useState<number | null>(null);
 
   return (
     <View>
@@ -52,8 +63,26 @@ export function WarmupPanel({ instrument, onStart }: WarmupPanelProps) {
         Clipped rather than scrollable: this is a preview, and a block that
         scrolls sideways competes with the page it is advertising.
       */}
-      <View style={styles.stave} pointerEvents="none">
-        <Stave notes={warmup.notes} clef={warmup.clef} maxNotes={PREVIEW_NOTES} />
+      <View
+        style={styles.stave}
+        pointerEvents="none"
+        onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
+      >
+        <Stave
+          notes={warmup.notes}
+          clef={warmup.clef}
+          // A clef here too — see the warmup page for why. This preview is the
+          // more-seen of the two staves in the app.
+          head={{ clef: warmup.clef, key: [], time: null }}
+          maxNotes={PREVIEW_NOTES}
+          // `fitWidth`, not `maxWidth`: the engraver can only break at a
+          // barline, so a bar of four notes and a clef stays 335pt wide
+          // however small the box is. Shrinking is what fits it.
+          //
+          // Null on the very first render, before the box has been measured.
+          // One frame of the old behaviour is better than a frame of nothing.
+          {...(width ? { fitWidth: width } : {})}
+        />
       </View>
 
       <View style={styles.footer}>

@@ -1,10 +1,11 @@
 [project]
 name = "intempo-backend"
 version = "0.1.0"
-description = "Add your description here"
+description = "InTempo's API: sheet-music reading, take analysis and the accounts behind them."
 requires-python = ">=3.12"
 dependencies = [
     "anthropic>=0.97.0",
+    "defusedxml>=0.7.1",
     "fastapi>=0.136.1",
     "google-genai>=1.73.1",
     "httpx>=0.28.1",
@@ -26,8 +27,58 @@ dev = [
     "cryptography>=47.0.0",
     "httpx>=0.28.1",
     "jinja2>=3.1.6",
+    "pip-audit>=2.10.1",
     "pytest>=9.0.3",
     "pytest-cov>=7.1.0",
     "pytest-mock>=3.15.1",
     "pyyaml>=6.0.3",
+    "ruff>=0.16.6",
+]
+
+# The backend had no linter until 2026-09-09, while `mobile/` has had one since
+# 2026-09-03. 21,500 lines of Python had never had an unused import or a
+# shadowed name pointed at, and the first run found eleven — including one this
+# week's own refactor left behind, which a hand-rolled scanner had missed
+# because it only looked at module-level names and not at imports.
+#
+# **Ruff's default rules, named rather than inherited**, so that widening the
+# set is a deliberate edit with a reason beside it rather than a version bump.
+# `E4`/`E7`/`E9` are import, statement and runtime errors; `F` is pyflakes —
+# things that are wrong, not things that are unfashionable.
+#
+# What is deliberately *not* on, and why, so the next person does not have to
+# rediscover it:
+#
+#   * `B008` (function-call-in-default-argument) fires 29 times on
+#     `Depends(...)`, which is how FastAPI is meant to be written. Any future
+#     `B` selection has to exclude it.
+#   * `I` (import sorting) would reorder 38 files in one mechanical diff. Worth
+#     doing, worth doing on its own.
+#   * `RUF100` (unused `noqa`) reports 69, and most are honest: they suppress
+#     rules this config does not enable. It only becomes meaningful once the
+#     selected set is wide enough for the codes in those comments to fire.
+#   * `UP`, `SIM`, `RUF` and the rest are style. They are worth a pass; they are
+#     not worth mixing into a pass that is finding real defects.
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E4",
+    "E7",
+    "E9",
+    "F",
+    # **`zip()` must say what it does when the sequences differ.** Added
+    # 2026-09-09 after all twelve sites in the tree were read. Six were pairing
+    # two lists one of which is built from the other, where a truncation would
+    # be silent data loss — `_whole_rests_that_mean_a_bar` would have **dropped
+    # the remaining bars from the score**, because its output list is only
+    # appended to inside the loop. Those now say `strict=True`, and a planted
+    # off-by-one raises `ValueError` at the line instead.
+    #
+    # The other three were `zip(xs, xs[1:])`, where the lengths differ by one
+    # *on purpose* — `strict=` has no right answer for the pairwise idiom, so
+    # those became `itertools.pairwise`, which says the intent outright and
+    # stops building two slices to do it.
+    "B905",
 ]

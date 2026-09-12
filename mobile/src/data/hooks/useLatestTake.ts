@@ -6,6 +6,7 @@ import type { TakeResult } from '../types';
 export const takeKeys = {
   all: ['takes'] as const,
   latest: () => [...takeKeys.all, 'latest'] as const,
+  recent: (limit: number) => [...takeKeys.all, 'recent', limit] as const,
 };
 
 /**
@@ -20,5 +21,14 @@ export function useLatestTake() {
   return useQuery<TakeResult | null>({
     queryKey: takeKeys.latest(),
     queryFn: () => takeSource.getLatestTake(),
+  });
+}
+
+
+/** Recent finished takes for the Today practice history. */
+export function useRecentTakes(limit = 3) {
+  return useQuery<TakeResult[]>({
+    queryKey: takeKeys.recent(limit),
+    queryFn: () => takeSource.getRecentTakes(limit),
   });
 }

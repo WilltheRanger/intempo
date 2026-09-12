@@ -8,6 +8,8 @@ in-memory mock instead of touching Supabase.
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
 from typing import Any, Callable
 from unittest.mock import MagicMock
 from uuid import uuid4
@@ -17,7 +19,7 @@ from fastapi.testclient import TestClient
 
 from app import db as db_module
 from app.main import app
-from app.routers import me as me_module
+from app.tests.fake_supabase import FakeSupabase
 
 
 @pytest.fixture()
@@ -68,7 +70,6 @@ def test_existing_user_returns_row(
         "studio_id": str(studio_id),
     }
     mock_client = _build_supabase_mock(existing_row=row)
-    monkeypatch.setattr(me_module, "get_service_client", lambda: mock_client)
     monkeypatch.setattr(db_module, "get_service_client", lambda: mock_client)
 
     res = client.get(
@@ -107,7 +108,6 @@ def test_first_touch_provisioning(
     table = mock_client.table.return_value
     table.select.return_value.eq.return_value.limit.return_value.execute.return_value = MagicMock(data=[])
     table.insert.return_value.execute.return_value = MagicMock(data=[new_row])
-    monkeypatch.setattr(me_module, "get_service_client", lambda: mock_client)
     monkeypatch.setattr(db_module, "get_service_client", lambda: mock_client)
 
     res = client.get(
@@ -194,7 +194,7 @@ def test_an_instrument_nobody_has_chosen_is_null_not_violin(
     """
     user_id = uuid4()
     monkeypatch.setattr(
-        me_module, "get_service_client", lambda: _profile_mock(row=_row(id=str(user_id)))
+        db_module, "get_service_client", lambda: _profile_mock(row=_row(id=str(user_id)))
     )
 
     body = client.get(
@@ -211,7 +211,7 @@ def test_the_profile_comes_back_on_get(
 ) -> None:
     user_id = uuid4()
     monkeypatch.setattr(
-        me_module,
+        db_module,
         "get_service_client",
         lambda: _profile_mock(
             row=_row(
@@ -240,7 +240,7 @@ def test_the_avatar_is_signed_fresh_and_never_stored_as_a_url(
     someone's picture quietly stops loading."""
     user_id = uuid4()
     sb = _profile_mock(row=_row(id=str(user_id), avatar_key=f"{user_id}/face.jpg"))
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     client.get("/v1/me", headers={"Authorization": f"Bearer {make_token(sub=user_id)}"})
 
@@ -256,7 +256,7 @@ def test_storage_being_down_does_not_fail_the_call_that_provisions_an_account(
     user_id = uuid4()
     sb = _profile_mock(row=_row(id=str(user_id), avatar_key=f"{user_id}/face.jpg"))
     sb.storage.from_.return_value.create_signed_url.side_effect = RuntimeError("down")
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     res = client.get(
         "/v1/me", headers={"Authorization": f"Bearer {make_token(sub=user_id)}"}
@@ -271,7 +271,7 @@ def test_patching_one_field_leaves_the_others_alone(
 ) -> None:
     user_id = uuid4()
     sb = _profile_mock(row=_row(id=str(user_id), display_name="Aryam"))
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     res = _patch(client, make_token(sub=user_id), {"instrument": "cello"})
     assert res.status_code == 200, res.text
@@ -290,7 +290,7 @@ def test_an_explicit_null_clears_and_an_omission_does_not(
     "omitted" cannot mean both "leave it" and "remove it"."""
     user_id = uuid4()
     sb = _profile_mock(row=_row(id=str(user_id), avatar_key=f"{user_id}/face.jpg"))
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     _patch(client, make_token(sub=user_id), {"avatar_key": None})
 
@@ -304,7 +304,7 @@ def test_a_name_of_spaces_is_no_name(
     """Storing "   " shows as a blank greeting that nothing reads as absent."""
     user_id = uuid4()
     sb = _profile_mock(row=_row(id=str(user_id)))
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     _patch(client, make_token(sub=user_id), {"display_name": "   "})
 
@@ -326,7 +326,7 @@ def test_finishing_onboarding_stamps_the_time(
 ) -> None:
     user_id = uuid4()
     sb = _profile_mock(row=_row(id=str(user_id)))
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     res = _patch(client, make_token(sub=user_id), _finished(user_id))
 
@@ -347,7 +347,7 @@ def test_onboarding_is_refused_until_all_three_are_answered(
     """
     user_id = uuid4()
     sb = _profile_mock(row=_row(id=str(user_id)))
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     res = _patch(client, make_token(sub=user_id), {"onboarded": True})
 
@@ -371,7 +371,7 @@ def test_any_one_missing_answer_refuses_the_finish(
     that only looked at one would pass a two-thirds test."""
     user_id = uuid4()
     sb = _profile_mock(row=_row(id=str(user_id)))
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     body = _finished(user_id)
     body.pop(withheld)
@@ -393,7 +393,7 @@ def test_an_answer_already_on_the_row_counts(
     """
     user_id = uuid4()
     sb = _profile_mock(row=_row(id=str(user_id), display_name="Aryam"))
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     res = _patch(
         client,
@@ -417,7 +417,7 @@ def test_an_empty_name_on_the_row_does_not_count(
     blank has not answered the question."""
     user_id = uuid4()
     sb = _profile_mock(row=_row(id=str(user_id), display_name=""))
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     res = _patch(
         client,
@@ -445,7 +445,7 @@ def test_finishing_twice_is_a_no_op_rather_than_an_error(
     sb = _profile_mock(
         row=_row(id=str(user_id), onboarded_at="2026-08-24T00:00:00Z")
     )
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     res = _patch(client, make_token(sub=user_id), {"onboarded": True})
 
@@ -460,7 +460,7 @@ def test_onboarding_cannot_be_un_done(
     reappear over a musician who had already dealt with it."""
     user_id = uuid4()
     sb = _profile_mock(row=_row(id=str(user_id), onboarded_at="2026-08-24T00:00:00Z"))
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     _patch(client, make_token(sub=user_id), {"onboarded": False, "instrument": "viola"})
 
@@ -473,7 +473,7 @@ def test_an_empty_patch_is_refused(
 ) -> None:
     user_id = uuid4()
     monkeypatch.setattr(
-        me_module, "get_service_client", lambda: _profile_mock(row=_row(id=str(user_id)))
+        db_module, "get_service_client", lambda: _profile_mock(row=_row(id=str(user_id)))
     )
 
     assert _patch(client, make_token(sub=user_id), {}).status_code == 400
@@ -486,7 +486,7 @@ def test_an_instrument_the_app_does_not_have_is_refused(
     that passes here and fails at the database is a 500 for a typo."""
     user_id = uuid4()
     monkeypatch.setattr(
-        me_module, "get_service_client", lambda: _profile_mock(row=_row(id=str(user_id)))
+        db_module, "get_service_client", lambda: _profile_mock(row=_row(id=str(user_id)))
     )
 
     assert _patch(client, make_token(sub=user_id), {"instrument": "trombone"}).status_code == 422
@@ -499,7 +499,7 @@ def test_an_unknown_field_is_refused(
     have it ignored — it must be told the field is not theirs to set."""
     user_id = uuid4()
     monkeypatch.setattr(
-        me_module, "get_service_client", lambda: _profile_mock(row=_row(id=str(user_id)))
+        db_module, "get_service_client", lambda: _profile_mock(row=_row(id=str(user_id)))
     )
 
     assert _patch(client, make_token(sub=user_id), {"tier": "pro"}).status_code == 422
@@ -512,7 +512,7 @@ def test_a_patch_only_ever_touches_the_callers_own_row(
     forbid` means it cannot even be offered."""
     user_id = uuid4()
     sb = _profile_mock(row=_row(id=str(user_id)))
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     _patch(client, make_token(sub=user_id), {"instrument": "viola"})
 
@@ -538,7 +538,7 @@ def test_a_key_belonging_to_someone_else_is_refused(
     """
     user_id, stranger = uuid4(), uuid4()
     sb = _profile_mock(row=_row(id=str(user_id)))
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     res = _patch(client, make_token(sub=user_id), {"avatar_key": f"{stranger}/face.jpg"})
 
@@ -553,7 +553,7 @@ def test_a_key_that_escapes_the_prefix_is_refused(
     this account's object. The check is the whole key, not just its start."""
     user_id, stranger = uuid4(), uuid4()
     sb = _profile_mock(row=_row(id=str(user_id)))
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     res = _patch(
         client, make_token(sub=user_id), {"avatar_key": f"{user_id}/../{stranger}/face.jpg"}
@@ -569,7 +569,7 @@ def test_the_accounts_own_key_is_accepted(
     user_id = uuid4()
     key = f"{user_id}/abc.jpg"
     sb = _profile_mock(row=_row(id=str(user_id)), updated=_row(id=str(user_id), avatar_key=key))
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     res = _patch(client, make_token(sub=user_id), {"avatar_key": key})
 
@@ -588,7 +588,7 @@ def test_replacing_a_picture_removes_the_one_it_replaced(
         row=_row(id=str(user_id), avatar_key=old_key),
         updated=_row(id=str(user_id), avatar_key=new_key),
     )
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     _patch(client, make_token(sub=user_id), {"avatar_key": new_key})
 
@@ -610,7 +610,7 @@ def test_clearing_a_picture_removes_it_too(
         row=_row(id=str(user_id), avatar_key=old_key),
         updated=_row(id=str(user_id), avatar_key=None),
     )
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     _patch(client, make_token(sub=user_id), {"avatar_key": None})
 
@@ -628,7 +628,7 @@ def test_a_patch_that_does_not_touch_the_picture_removes_nothing(
     """Changing your name must not cost you your photograph."""
     user_id = uuid4()
     sb = _profile_mock(row=_row(id=str(user_id), avatar_key=f"{user_id}/face.jpg"))
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     _patch(client, make_token(sub=user_id), {"display_name": "Aryam"})
 
@@ -644,7 +644,7 @@ def test_storage_being_down_does_not_fail_a_picture_change(
         updated=_row(id=str(user_id), avatar_key=f"{user_id}/new.jpg"),
     )
     sb.storage.from_.return_value.remove.side_effect = RuntimeError("storage unreachable")
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     res = _patch(client, make_token(sub=user_id), {"avatar_key": f"{user_id}/new.jpg"})
 
@@ -670,7 +670,7 @@ def test_setting_the_same_picture_again_does_not_delete_it(
         row=_row(id=str(user_id), avatar_key=key),
         updated=_row(id=str(user_id), avatar_key=key),
     )
-    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
 
     res = _patch(client, make_token(sub=user_id), {"avatar_key": key})
 
@@ -678,3 +678,490 @@ def test_setting_the_same_picture_again_does_not_delete_it(
     assert not sb.storage.from_.return_value.remove.called, (
         "the picture the row still points at was deleted"
     )
+
+
+# ---- permanent account deletion --------------------------------------------
+
+
+def _delete_account_mock(
+    user_id: Any,
+    *,
+    owns_studio: bool = False,
+    with_assets: bool = True,
+) -> MagicMock:
+    """A service client with separately addressable account tables."""
+    mock_client = MagicMock()
+    uid = str(user_id)
+
+    rows = {
+        "studios": [{"id": str(uuid4())}] if owns_studio else [],
+        "users": (
+            [{"avatar_key": f"{uid}/avatar.jpg"}] if with_assets else []
+        ),
+        "scores": (
+            [
+                {
+                    "source_image_url": (
+                        "https://project.supabase.co/storage/v1/object/sign/"
+                        f"score-images/{uid}/page-1.jpg?token=old"
+                    ),
+                    # The first page appears in both columns during migration
+                    # 011; deletion must de-duplicate it.
+                    "source_image_urls": [
+                        (
+                            "https://project.supabase.co/storage/v1/object/sign/"
+                            f"score-images/{uid}/page-1.jpg?token=new"
+                        ),
+                        (
+                            "https://project.supabase.co/storage/v1/object/"
+                            f"authenticated/score-images/{uid}/page-2.jpg"
+                        ),
+                    ],
+                }
+            ]
+            if with_assets
+            else []
+        ),
+        "analyses": (
+            [
+                {
+                    "audio_url": (
+                        "https://project.supabase.co/storage/v1/object/sign/"
+                        f"audio-uploads/{uid}/take.wav?token=audio"
+                    )
+                }
+            ]
+            if with_assets
+            else []
+        ),
+    }
+
+    # An upload that was signed for and never became anything — the fourth
+    # place an object can live. Migration 014's `user_id` exists so account
+    # deletion can take these with it; for a long time nothing read them.
+    rows["pending_uploads"] = (
+        [
+            {"bucket": "score-images", "object_key": f"{uid}/abandoned.jpg"},
+            # Also in `scores` above: deletion must not ask twice.
+            {"bucket": "score-images", "object_key": f"{uid}/page-1.jpg"},
+            {"bucket": "audio-uploads", "object_key": f"{uid}/unsent.wav"},
+        ]
+        if with_assets
+        else []
+    )
+
+    tables: dict[str, MagicMock] = {}
+    for name, data in rows.items():
+        table = MagicMock()
+        query = table.select.return_value
+        query.eq.return_value = query
+        query.limit.return_value = query
+        query.execute.return_value = MagicMock(data=data)
+        tables[name] = table
+
+    def _table(name: str) -> MagicMock:
+        if name not in tables:
+            # What a deployment that predates the migration does.
+            raise RuntimeError(f'relation "{name}" does not exist')
+        return tables[name]
+
+    mock_client.table.side_effect = _table
+    return mock_client
+
+
+def _delete_me(client: TestClient, token: str):
+    return client.delete(
+        "/v1/me",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+
+def test_account_deletion_requires_authentication(client: TestClient) -> None:
+    assert client.delete("/v1/me").status_code == 401
+
+
+def test_account_deletion_removes_identity_then_owned_storage(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    user_id = uuid4()
+    sb = _delete_account_mock(user_id)
+    events: list[str] = []
+    sb.auth.admin.delete_user.side_effect = lambda _uid: events.append("identity")
+    sb.storage.from_.return_value.remove.side_effect = (
+        lambda _keys: events.append("storage")
+    )
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
+
+    res = _delete_me(client, make_token(sub=user_id))
+
+    assert res.status_code == 204, res.text
+    sb.auth.admin.delete_user.assert_called_once_with(str(user_id))
+    assert events[0] == "identity"
+    assert events[1:] == ["storage", "storage", "storage"]
+
+    sb.storage.from_.assert_any_call("avatars")
+    sb.storage.from_.assert_any_call("score-images")
+    sb.storage.from_.assert_any_call("audio-uploads")
+    removed = [call.args[0] for call in sb.storage.from_.return_value.remove.call_args_list]
+    assert [f"{user_id}/avatar.jpg"] in removed
+    # The unclaimed page joins the claimed ones, and `page-1.jpg` — which is in
+    # both `scores` and `pending_uploads` — is still asked for once.
+    assert [
+        f"{user_id}/page-1.jpg",
+        f"{user_id}/page-2.jpg",
+        f"{user_id}/abandoned.jpg",
+    ] in removed
+    assert [f"{user_id}/take.wav", f"{user_id}/unsent.wav"] in removed
+
+
+def test_deleting_an_account_takes_its_abandoned_uploads_with_it(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    """The fourth place an object can be, and the one with no way back.
+
+    A page photographed and then backed out of leaves an object and a
+    `pending_uploads` row. That row cascades from `auth.users`, so deleting the
+    identity removes the only index of the object — no `scores` row, no owner,
+    no sweeper entry. It is then unreachable by every screen and every request
+    forever, produced by the one action a musician takes to make their data go
+    away. Migration 014 put `user_id` on that table for exactly this, and
+    nothing read it.
+    """
+    user_id = uuid4()
+    sb = _delete_account_mock(user_id)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
+
+    assert _delete_me(client, make_token(sub=user_id)).status_code == 204
+
+    removed = [
+        key
+        for call in sb.storage.from_.return_value.remove.call_args_list
+        for key in call.args[0]
+    ]
+    assert f"{user_id}/abandoned.jpg" in removed
+    assert f"{user_id}/unsent.wav" in removed
+
+
+def test_the_inventory_reads_pending_uploads_before_the_identity_goes(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    """Ordering, which is the whole of the fix.
+
+    `user_id` cascades, so a snapshot taken after `delete_user` finds nothing
+    and reports success over stranded objects.
+    """
+    user_id = uuid4()
+    sb = _delete_account_mock(user_id)
+    order: list[str] = []
+    inner = sb.table("pending_uploads").select.return_value
+    inner.execute.side_effect = lambda: (
+        order.append("inventory"),
+        MagicMock(data=[{"bucket": "score-images", "object_key": f"{user_id}/x.jpg"}]),
+    )[1]
+    sb.auth.admin.delete_user.side_effect = lambda _uid: order.append("identity")
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
+
+    assert _delete_me(client, make_token(sub=user_id)).status_code == 204
+    assert order == ["inventory", "identity"]
+
+
+def test_an_account_can_still_be_deleted_where_migration_014_never_ran(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    """A missing table must not make deletion impossible.
+
+    Migration 014 is applied on `intempo-dev` and not everywhere (CLAUDE.md),
+    and a failed inventory aborts the deletion with a 503 — correctly, for a
+    database that is down. "This deployment has no `pending_uploads`" is not
+    that, and refusing to delete an account over it would be a worse bug than
+    the one being fixed. Everything the deployment *does* know about is still
+    removed.
+    """
+    user_id = uuid4()
+    sb = _delete_account_mock(user_id)
+    tables = {
+        name: sb.table(name) for name in ("users", "scores", "analyses", "studios")
+    }
+    sb.table.side_effect = lambda name: (
+        tables[name]
+        if name in tables
+        else (_ for _ in ()).throw(RuntimeError('relation "pending_uploads" does not exist'))
+    )
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
+
+    assert _delete_me(client, make_token(sub=user_id)).status_code == 204
+    sb.auth.admin.delete_user.assert_called_once_with(str(user_id))
+    removed = [
+        key
+        for call in sb.storage.from_.return_value.remove.call_args_list
+        for key in call.args[0]
+    ]
+    assert f"{user_id}/avatar.jpg" in removed
+    assert f"{user_id}/page-2.jpg" in removed
+
+
+def test_an_empty_page_array_does_not_hide_the_legacy_page(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    """The shape `pages_of` exists to get right, and two copies got wrong.
+
+    `source_image_urls` empty with a page still in the deprecated
+    `source_image_url`. Both hand-rolled readers in this module took
+    `isinstance([], list)` as "the array is the answer" and stopped — the
+    export counted zero pages, and deletion left the photograph in the bucket.
+    Migration 011 writes NULL rather than `'{}'`, so such a row is hand-built
+    rather than common, which is the argument for using the shared reader
+    rather than for keeping a copy that is nearly right.
+    """
+    user_id = uuid4()
+    sb = _delete_account_mock(user_id)
+    legacy = (
+        "https://project.supabase.co/storage/v1/object/sign/"
+        f"score-images/{user_id}/legacy.jpg?token=old"
+    )
+    sb.table("scores").select.return_value.execute.return_value = MagicMock(
+        data=[{"source_image_url": legacy, "source_image_urls": []}]
+    )
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
+
+    assert _delete_me(client, make_token(sub=user_id)).status_code == 204
+
+    removed = [
+        key
+        for call in sb.storage.from_.return_value.remove.call_args_list
+        for key in call.args[0]
+    ]
+    assert f"{user_id}/legacy.jpg" in removed
+
+
+def test_account_deletion_refuses_to_orphan_a_owned_studio(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    user_id = uuid4()
+    sb = _delete_account_mock(user_id, owns_studio=True)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
+
+    res = _delete_me(client, make_token(sub=user_id))
+
+    assert res.status_code == 409
+    assert "studio" in res.json()["detail"].lower()
+    sb.auth.admin.delete_user.assert_not_called()
+
+
+def test_identity_failure_leaves_storage_in_place_for_retry(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    user_id = uuid4()
+    sb = _delete_account_mock(user_id)
+    sb.auth.admin.delete_user.side_effect = RuntimeError("provider unavailable")
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
+
+    res = _delete_me(client, make_token(sub=user_id))
+
+    assert res.status_code == 502
+    sb.storage.from_.return_value.remove.assert_not_called()
+
+
+def test_storage_failure_does_not_resurrect_a_deleted_account(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    user_id = uuid4()
+    sb = _delete_account_mock(user_id)
+    sb.storage.from_.return_value.remove.side_effect = RuntimeError("storage down")
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
+
+    res = _delete_me(client, make_token(sub=user_id))
+
+    assert res.status_code == 204
+    sb.auth.admin.delete_user.assert_called_once_with(str(user_id))
+
+
+# ---- portable account export ------------------------------------------------
+
+
+#: The app's typed claim about what `/v1/me/export` returns.
+_ACCOUNT_EXPORT_TS = (
+    Path(__file__).resolve().parents[3]
+    / "mobile"
+    / "src"
+    / "data"
+    / "accountExport.ts"
+)
+
+
+def _app_export_fields(interface: str) -> set[str]:
+    """Field names on one interface in `accountExport.ts`.
+
+    The same technique as `test_client_enums.py`: a TypeScript interface cannot
+    be imported from Python, and the app is compiled against this one — so
+    every screen believes it, and nothing on either side notices when the
+    server stops sending a field it names.
+    """
+    source = _ACCOUNT_EXPORT_TS.read_text()
+    body = re.search(
+        rf"export interface {interface} \{{(.*?)\n\}}", source, re.DOTALL
+    )
+    assert body, f"no `export interface {interface}` in accountExport.ts"
+    # Field lines only: `name: type;`, at one level of indent, skipping the
+    # nested object's members and every comment line.
+    return set(re.findall(r"^  (\w+)[?]?:", body.group(1), re.MULTILINE))
+
+
+def _stored_media_fields() -> set[str]:
+    """The nested `stored_media` object's members."""
+    source = _ACCOUNT_EXPORT_TS.read_text()
+    body = re.search(r"stored_media: \{(.*?)\n  \};", source, re.DOTALL)
+    assert body, "no `stored_media` object in AccountExport"
+    return set(re.findall(r"^    (\w+)[?]?:", body.group(1), re.MULTILINE))
+
+
+def test_account_export_requires_authentication(client: TestClient) -> None:
+    assert client.get("/v1/me/export").status_code == 401
+
+
+def test_account_export_contains_owned_records_without_storage_tokens(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    user_id = uuid4()
+    other_id = uuid4()
+    assignment_id = uuid4()
+    sb = FakeSupabase()
+    sb.seed(
+        "users",
+        [
+            {
+                "id": str(user_id),
+                "email": "player@example.com",
+                "tier": "free",
+                "role": "student",
+                "studio_id": None,
+                "avatar_key": f"{user_id}/face.jpg",
+                "baseline_profile": {"piece": "personal"},
+            }
+        ],
+    )
+    sb.seed(
+        "scores",
+        [
+            {
+                "id": "score-mine",
+                "user_id": str(user_id),
+                "title": "Suite",
+                "score_json": {"measures": []},
+                "source_image_url": "https://storage.test/old-token",
+                "source_image_urls": ["https://storage.test/new-token-1", "x2"],
+            },
+            {
+                "id": "score-other",
+                "user_id": str(other_id),
+                "title": "Not mine",
+                "score_json": {"measures": []},
+            },
+        ],
+    )
+    sb.seed(
+        "analyses",
+        [
+            {
+                "id": "analysis-mine",
+                "user_id": str(user_id),
+                "score_id": "score-mine",
+                "audio_url": "https://storage.test/audio-token",
+                "result_json": {"verdict": "on_tempo"},
+            },
+            {
+                "id": "analysis-other",
+                "user_id": str(other_id),
+                "score_id": "score-other",
+                "audio_url": "secret",
+            },
+        ],
+    )
+    sb.seed(
+        "verdict_corrections",
+        [{"id": "correction", "user_id": str(user_id), "comment": "late"}],
+    )
+    sb.seed(
+        "assignments",
+        [
+            {
+                "id": str(assignment_id),
+                "student_user_id": str(user_id),
+                "teacher_user_id": str(user_id),
+                "teacher_instructions": "slowly",
+            }
+        ],
+    )
+    sb.seed(
+        "studios",
+        [
+            {
+                "id": "studio",
+                "owner_user_id": str(user_id),
+                "name": "My studio",
+                "invite_code": "SECRET",
+            }
+        ],
+    )
+    sb.seed(
+        "sync_events",
+        [{"id": "sync", "user_id": str(user_id), "payload": {"take": 1}}],
+    )
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
+
+    res = client.get(
+        "/v1/me/export",
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["export_version"] == 1
+    assert body["generated_at"]
+    assert body["account"]["email"] == "player@example.com"
+    assert "avatar_key" not in body["account"]
+    assert [row["id"] for row in body["library"]] == ["score-mine"]
+    assert "source_image_url" not in body["library"][0]
+    assert "source_image_urls" not in body["library"][0]
+    assert [row["id"] for row in body["practice_analyses"]] == ["analysis-mine"]
+    assert "audio_url" not in body["practice_analyses"][0]
+    assert len(body["assignments"]) == 1, "student + teacher queries must de-duplicate"
+    assert "invite_code" not in body["owned_studios"][0]
+    assert body["stored_media"] == {
+        "profile_photo": True,
+        "score_pages": 2,
+        "practice_recordings": 1,
+        "included_in_json": False,
+    }
+
+    # Both directions, against the interface every screen is compiled against.
+    # A field renamed here becomes `undefined` in the app with nothing failing
+    # anywhere; a field the app names and the server never sends is a promise
+    # on a screen. `verdict_corrections` and `sync_events` are in this set and
+    # were asserted nowhere above — the export is the one response whose
+    # *completeness* is the product.
+    app_fields = _app_export_fields("AccountExport")
+    assert app_fields, "the interface reader found nothing"
+    assert set(body) == app_fields
+
+    media_fields = _stored_media_fields()
+    assert media_fields, "the stored_media reader found nothing"
+    assert set(body["stored_media"]) == media_fields

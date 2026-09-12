@@ -5,15 +5,13 @@ import { apiFetch } from './client';
  * POST /v1/upload/score-image — presigned PUT straight to Supabase Storage.
  * Files never stream through FastAPI.
  *
- * Pass the returned `upload_url` to `POST /v1/scores` as `image_url`: it is
- * the only form the backend's validator accepts, because `public_url` comes
- * back as a bare bucket path with no scheme. It expires five minutes after
- * issue, so create the score in the same flow as the upload rather than
- * storing it for later.
+ * Use `upload_url` only for the PUT. Once storage accepts the bytes, pass the
+ * returned owner-prefixed `object_key` to `POST /v1/scores` as the page
+ * reference. Unlike the upload permission it does not expire while later pages
+ * are still moving or while the musician names the piece.
  *
- * That expiry is why `scores.source_image_url` is never rendered. Displaying
- * a score image reads `image_url` from `/v1/scores`, which the backend signs
- * fresh on every read and returns with `image_url_expires_at`.
+ * The backend validates ownership, stores a token-free private-storage
+ * reference, and signs a fresh `image_url` for every read.
  */
 export function requestScoreImageUpload(
   filename: string,
@@ -82,7 +80,19 @@ export class UploadError extends Error {
   }
 }
 
+export type UploadSubject = 'page' | 'recording' | 'photo';
+
+/** What each subject is called in front of a musician. */
+const SUBJECT_NAMES: Record<UploadSubject, string> = {
+  page: 'page',
+  recording: 'your recording',
+  photo: 'your profile picture',
+};
+
 export interface UploadOptions {
+  /** The thing being sent, so recovery copy names what the musician chose. */
+  subject?: UploadSubject;
+
   /**
    * Bytes sent so far and bytes in total, as the upload proceeds.
    *
@@ -128,8 +138,16 @@ export function uploadToSignedUrl(
   uploadUrl: string,
   file: Blob,
   contentType: string,
-  { onProgress, signal }: UploadOptions = {},
+  { onProgress, signal, subject = 'page' }: UploadOptions = {},
 ): Promise<void> {
+  // Named from a table, not interpolated from the subject. The enum member
+  // used to be the word the musician read, so renaming "photo" to "profile
+  // picture" in front of people would have meant renaming an internal union —
+  // and every message that quietly said "your photo" was invisible until the
+  // one that spelled it out was found.
+  const thing = SUBJECT_NAMES[subject];
+  const retry = subject === 'page' ? 'Take the photograph again.' : 'Try sending it again.';
+
   return new Promise((resolve, reject) => {
     // Already cancelled before anything opened — the screen was left while the
     // bytes were still being read off the device. Nothing to abort, and
@@ -173,7 +191,7 @@ export function uploadToSignedUrl(
       if (request.status === 400 || request.status === 403) {
         settle(() => reject(
           new UploadError(
-            'The upload link expired before the page finished sending. Take the photograph again.',
+            `The upload link expired before ${thing} finished sending. ${retry}`,
           ),
         ));
         return;
@@ -197,17 +215,18 @@ export function uploadToSignedUrl(
       // says what happened and offers the one route that genuinely produces a
       // smaller file, and nothing else.
       if (request.status === 413) {
-        settle(() => reject(
-          new UploadError(
-            'Storage refused the page for being too large. Photographing it ' +
-              "with this app's camera makes a smaller file than the original " +
-              'from your camera roll.',
-          ),
-        ));
+        const message = subject === 'page'
+          ? 'Storage refused the page for being too large. Photographing it ' +
+            "with this app's camera makes a smaller file than the original " +
+            'from your camera roll.'
+          : subject === 'recording'
+            ? 'Storage refused your recording for being too large. Record a shorter take.'
+            : 'Storage refused your profile picture for being too large. Choose a smaller one.';
+        settle(() => reject(new UploadError(message)));
         return;
       }
       settle(() =>
-        reject(new UploadError(`Storage refused the page (${request.status}). Try again.`)),
+        reject(new UploadError(`Storage refused ${thing} (${request.status}). Try again.`)),
       );
     };
 
@@ -215,7 +234,7 @@ export function uploadToSignedUrl(
       settle(() =>
         reject(
           new UploadError(
-            'Sending the page took too long. A stronger connection — or moving closer to the router — usually fixes it.',
+            `Sending ${thing} took too long. A stronger connection — or moving closer to the router — usually fixes it.`,
           ),
         ),
       );
@@ -224,7 +243,7 @@ export function uploadToSignedUrl(
       settle(() =>
         reject(
           new UploadError(
-            'The page could not be sent. Check your connection and try again.',
+            `${thing[0].toUpperCase()}${thing.slice(1)} could not be sent. Check your connection and try again.`,
           ),
         ),
       );

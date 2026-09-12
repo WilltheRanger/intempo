@@ -1,6 +1,8 @@
 import { useNavigation } from '@react-navigation/native';
-import { ChevronLeft, ChevronRight } from 'lucide-react-native';
-import { useState } from 'react';
+import { ChevronLeft, ChevronRight } from '../../components/icons';
+import { useGoBack } from '../../navigation/useGoBack';
+import { ComposerField } from '../../components/pieces/ComposerField';
+import { useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
@@ -14,7 +16,7 @@ import {
   Text,
 } from '../../components/primitives';
 import { captureSession, useCapturedPages } from '../../data/captureSession';
-import { useTranscribePage } from '../../data/hooks/useScan';
+import { useAttachScorePages, useTranscribePage } from '../../data/hooks/useScan';
 import { spacing } from '../../design';
 import type { RootNavigation } from '../../navigation/types';
 
@@ -46,92 +48,80 @@ const PAGE_HEIGHT = 300;
  */
 export function TranscriptionReviewScreen() {
   const navigation = useNavigation<RootNavigation>();
+  const goBack = useGoBack({ tab: 'Library' });
   const pages = useCapturedPages();
   const transcribe = useTranscribePage();
+  const attachmentPieceId = captureSession.attachmentPieceId();
+  const attach = useAttachScorePages(attachmentPieceId ?? '');
 
   const [title, setTitle] = useState('');
   const [composer, setComposer] = useState('');
   const [movement, setMovement] = useState('');
   const [pageIndex, setPageIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const saving = useRef(false);
 
-  const imageUrl = captureSession.uploadedImageUrl();
+  const imageKeys = captureSession.uploadedImageKeys();
+
+  function openReading(pieceId: string) {
+    // The scan is finished with; leaving it in place would let a later save
+    // reuse the previous scan's object keys or attach to the wrong piece.
+    captureSession.reset();
+    const tabs = navigation
+      .getState()
+      ?.routes.find((route) => route.name === 'Tabs')?.state;
+    const activeTab = tabs?.routes[tabs.index ?? 0]?.name;
+    navigation.reset({
+      index: 1,
+      routes: [
+        {
+          name: 'Tabs',
+          state: activeTab
+            ? { index: 0, routes: [{ name: activeTab }] }
+            : undefined,
+        },
+        { name: 'PieceScore', params: { pieceId } },
+      ],
+    });
+  }
 
   async function save() {
-    const trimmed = title.trim();
-    if (!trimmed) {
-      setError('Give the piece a title — it is how you will find it again.');
-      return;
-    }
-    if (!imageUrl) {
+    if (saving.current) return;
+    if (pages.length === 0 || imageKeys.length !== pages.length) {
       setError(
-        'The uploaded page has expired. Go back and send it again.',
+        'The uploaded pages are incomplete. Go back and send them again.',
       );
       return;
     }
 
+    const trimmed = title.trim();
+    if (!attachmentPieceId && !trimmed) {
+      setError('Give the piece a title — it is how you will find it again.');
+      return;
+    }
+
+    saving.current = true;
     setError(null);
     try {
-      const piece = await transcribe.mutateAsync({
-        imageUrl,
-        title: trimmed,
-        composer: composer.trim() || null,
-        movement: movement.trim() || null,
-      });
-      // The scan is finished with; leaving it in place would let a later save
-      // reuse an expired upload URL.
-      captureSession.reset();
-      // Unwind the finished flow, then open the piece.
-      //
-      // `replace` was wrong first: it swaps out only this screen and leaves the
-      // scanner and the page list underneath, so Back from the piece you just
-      // saved walked *into* the scan flow you had finished, whose session had
-      // been cleared a line earlier.
-      //
-      // `reset({routes: [{name: 'Tabs'}, …]})` fixed that and broke something
-      // quieter: it rebuilds the whole stack, so the `Tabs` entry it writes is
-      // a *fresh* one and the tab navigator falls back to its initial tab.
-      // Someone who opened the scanner from the Library was returned to Today,
-      // having lost the tab they were on for no reason they could see.
-      //
-      // `popTo('Tabs')` then `navigate` looked like the answer and wasn't: two
-      // dispatches, the second from a screen the first had already unmounted,
-      // and the tab still came back as Today.
-      //
-      // So: one dispatch, and carry the existing `Tabs` route object across
-      // rather than writing a fresh `{ name: 'Tabs' }`. The nested tab state
-      // travels with it, which is the whole point — `{ name: 'Tabs' }` is a
-      // *new* Tabs with no state, and a navigator with no state falls back to
-      // its initial route.
-      const tabs = navigation
-        .getState()
-        ?.routes.find((route) => route.name === 'Tabs')?.state;
-      const activeTab = tabs?.routes[tabs.index ?? 0]?.name;
-      navigation.reset({
-        index: 1,
-        routes: [
-          {
-            name: 'Tabs',
-            // Naming the tab is what preserves it. The live nested state can't
-            // be passed straight through — `reset` takes a *partial* state and
-            // that one is a settled one — and it doesn't need to be: every tab
-            // here is a leaf screen, so which tab is the whole of it.
-            // Undefined on a cold start, which is honestly "no tab chosen yet".
-            state: activeTab ? { index: 0, routes: [{ name: activeTab }] } : undefined,
-          },
-          // The score, not the piece screen. The musician just photographed a
-          // page and the only question they have is what came off it — which
-          // was two taps away, behind a screen showing a tempo they hadn't
-          // chosen yet for a piece they hadn't seen read.
-          { name: 'PieceScore', params: { pieceId: piece.id } },
-        ],
-      });
+      const piece = attachmentPieceId
+        ? await attach.mutateAsync(imageKeys)
+        : await transcribe.mutateAsync({
+            imageKeys,
+            title: trimmed,
+            composer: composer.trim() || null,
+            movement: movement.trim() || null,
+          });
+      openReading(piece.id);
     } catch (cause) {
       setError(
         cause instanceof Error
           ? cause.message
-          : 'The score could not be saved. Try again.',
+          : attachmentPieceId
+            ? 'The sheet music could not be attached. Try again.'
+            : 'The score could not be saved. Try again.',
       );
+    } finally {
+      saving.current = false;
     }
   }
 
@@ -139,10 +129,11 @@ export function TranscriptionReviewScreen() {
     return (
       <ScreenContainer>
         <EmptyState
+          fill
           title="Nothing to review"
           description="Capture a page of sheet music first."
           actionLabel="Back"
-          onActionPress={() => navigation.goBack()}
+          onActionPress={goBack}
         />
       </ScreenContainer>
     );
@@ -151,48 +142,52 @@ export function TranscriptionReviewScreen() {
   return (
     <ScreenContainer>
       <PageHeader
-        title="Name this piece"
-        onBack={() => navigation.goBack()}
+        eyebrow="Step 2 of 3"
+        title={attachmentPieceId ? 'Attach sheet music' : 'Name this piece'}
+        onBack={goBack}
         backLabel="Back to pages"
       />
 
       <Text variant="body" color="textSecondary" style={styles.lede}>
-        Saving adds the piece straight away. Reading the notation happens after
-        that, and you can watch it or leave it running.
+        {attachmentPieceId
+          ? 'Check the page order. InTempo will read these into the piece already in your library.'
+          : 'Name the piece now. After you save it, InTempo reads every page in order and opens the notation for you to check.'}
       </Text>
 
-      <Input
-        label="Title"
-        value={title}
-        onChangeText={setTitle}
-        placeholder="Sonata No. 1 in G minor"
-        serif
-        autoCapitalize="words"
-        style={styles.first}
-      />
-      <Input
-        label="Composer"
-        value={composer}
-        onChangeText={setComposer}
-        placeholder="Optional"
-        autoCapitalize="words"
-        style={styles.field}
-      />
+      {!attachmentPieceId ? (
+        <>
+          <Input
+            label="Title"
+            value={title}
+            onChangeText={setTitle}
+            placeholder="Sonata No. 1 in G minor"
+            serif
+            autoCapitalize="words"
+            style={styles.first}
+          />
+          {/* The commonest way a piece enters the library, and it had the
+              plainest field of the three. */}
+          <ComposerField
+            value={composer}
+            onChangeText={setComposer}
+            style={styles.field}
+          />
 
-      <Input
-        label="Movement"
-        value={movement}
-        onChangeText={setMovement}
-        placeholder="I. Adagio — optional"
-        autoCapitalize="words"
-        style={styles.field}
-      />
+          <Input
+            label="Movement"
+            value={movement}
+            onChangeText={setMovement}
+            placeholder="I. Adagio — optional"
+            autoCapitalize="words"
+            style={styles.field}
+          />
+        </>
+      ) : null}
 
       {/*
-        The page stays visible while they type, because the title is usually
-        printed on it. Paging through is kept for the same reason — the title
-        can be on a different sheet from the one that opens the scan — even
-        though only the first page is transcribed.
+        Every page stays available while they type, because title, movement and
+        composer can be printed on different sheets. This order is also the
+        order the worker reads and joins.
       */}
       {pages.length > 1 ? (
         <View style={styles.pageNav}>
@@ -219,12 +214,11 @@ export function TranscriptionReviewScreen() {
         style={styles.page}
       />
 
-      {pages.length > 1 ? (
-        <Text variant="metadataSmall" color="textTertiary" style={styles.caveat}>
-          Only the first page is transcribed. A score spanning several pages
-          isn&apos;t supported yet.
-        </Text>
-      ) : null}
+      <Text variant="metadataSmall" color="textSecondary" style={styles.field}>
+        Before saving: check that every staff is visible, the pages are in order,
+        and the image isn't blurred or covered by shadows. You'll check the
+        recognized notes next, before recording.
+      </Text>
 
       {error ? (
         <Text variant="metadataSmall" color="textSecondary" style={styles.error}>
@@ -238,10 +232,18 @@ export function TranscriptionReviewScreen() {
         is watched on the score screen this lands on.
       */}
       <PrimaryButton
-        label="Save piece"
+        label={
+          attachmentPieceId
+            ? pages.length === 1
+              ? 'Attach and read page'
+              : `Attach and read ${pages.length} pages`
+            : pages.length === 1
+              ? 'Save and read page'
+              : `Save and read ${pages.length} pages`
+        }
         onPress={() => void save()}
-        loading={transcribe.isPending}
-        disabled={transcribe.isPending}
+        loading={attachmentPieceId ? attach.isPending : transcribe.isPending}
+        disabled={attachmentPieceId ? attach.isPending : transcribe.isPending}
         style={styles.save}
       />
     </ScreenContainer>
@@ -268,9 +270,6 @@ const styles = StyleSheet.create({
     width: '100%',
     height: PAGE_HEIGHT,
     marginTop: spacing.xl,
-  },
-  caveat: {
-    marginTop: spacing.md,
   },
   error: {
     marginTop: spacing.lg,

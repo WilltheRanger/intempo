@@ -20,12 +20,14 @@ is the part that can be established for free.
   from the transcription itself** when the header cannot be read: if most
   measures agree on a beat count, that count is the meter, and the measures that
   disagree are the suspects. See `infer_beats_per_measure`.
-- **Tuplets.** `Duration` now names triplets — `triplet_eighth` and friends —
-  so a 3:2 passage *can* be written correctly and a bar of them sums. What
-  still cannot be written is a quintuplet, a septuplet, or a dotted triplet.
-  Those approximate and will not sum, and flagging that as a transcription
-  error would be blaming the reader for the schema's remaining gap — see
-  `TUPLET_NOTE`.
+- **Tuplets.** `Duration` names triplets, quintuplets and septuplets —
+  `triplet_eighth`, `quintuplet_sixteenth` and friends — so 3:2, 5:4 and 7:4
+  passages *can* be written correctly and a bar of them sums. A dotted triplet
+  resolves too, because the product lands on a written value. What still cannot
+  be written is a ratio landing on none of those lengths, such as a 5:6 group in
+  a compound metre. Those approximate and will not sum, and flagging that as a
+  transcription error would be blaming the reader for the schema's remaining
+  gap — see `TUPLET_NOTE`.
 - **A pickup measure**, which is short by design. Only the first measure can be
   one, so only the first measure gets that benefit of the doubt.
 """
@@ -36,6 +38,7 @@ from dataclasses import dataclass
 from statistics import median
 from typing import Literal
 
+from app.services.ocr.meter import quarter_beats
 from app.services.score_schema import (
     DURATION_BEATS,
     BrokenTie,
@@ -59,8 +62,10 @@ from app.services.score_schema import (
 TOLERANCE = 1e-6
 
 TUPLET_NOTE = (
-    "triplets can be written, but no other tuplet can — a quintuplet, a "
-    "septuplet or a dotted triplet has to be approximated and will not sum"
+    "triplets, quintuplets and septuplets can be written, and so can a dotted "
+    "triplet — a ratio landing on none of those lengths (a 5:6 group in a "
+    "compound metre, a triplet of thirty-seconds) still has to be approximated "
+    "and will not sum"
 )
 
 Verdict = Literal["ok", "short", "long", "empty", "pickup", "unverifiable"]
@@ -467,25 +472,6 @@ class MeasureFinding:
         )
 
 
-def beats_per_measure(time_signature: str | None) -> float | None:
-    """Quarter-note beats in one measure, or None when it cannot be known.
-
-    Quarter-note beats rather than notated beats, to match `alignment.py`,
-    where `target_bpm` is always quarter-notes-per-minute regardless of the
-    time signature's lower number. So 6/8 is 3.0 quarter-beats, not 6.
-    """
-    if not time_signature or time_signature == "unknown":
-        return None
-    try:
-        upper, lower = time_signature.split("/")
-        count, unit = int(upper), int(lower)
-    except (ValueError, AttributeError):
-        return None
-    if count <= 0 or unit <= 0:
-        return None
-    return count * (4.0 / unit)
-
-
 def infer_beats_per_measure(sums: list[float]) -> float | None:
     """The meter, read off the music, or None when the music does not agree.
 
@@ -547,15 +533,59 @@ def meters_in_force(score: ScoreJson) -> list[float | None]:
     done here, because it looks at the whole piece at once and a piece that
     changes meter has no single answer to give it.
     """
-    running = beats_per_measure(score.time_signature)
+    running = quarter_beats(score.time_signature)
     out: list[float | None] = []
     for measure in score.measures:
         if measure.time_signature is not None:
-            changed = beats_per_measure(measure.time_signature)
+            changed = quarter_beats(measure.time_signature)
             # "unknown" on a measure means the change is visible but illegible,
             # which is worse than no change at all — it invalidates the meter
             # that was running rather than continuing it.
             running = changed
+        out.append(running)
+    return out
+
+
+def keys_in_force(score: ScoreJson) -> list[str | None]:
+    """The key signature each measure is written in, key changes included.
+
+    The sibling of `meters_in_force`, and the same walk: a key holds until
+    another one is printed. `ScoreJson.key_signature` is only the key the page
+    *opens* in, so reading it for a bar after a change names the wrong one.
+
+    **This produces no finding, so the sandbox ports owe it nothing.** Every
+    rule in this module that decides whether a bar is wrong is mirrored in
+    `tools/validator-sandbox.template.html` and held there by
+    `test_sandbox_parity.py`. This one only tells the corrector which key to
+    name in a prompt — a page's beats add up or do not add up regardless of
+    what key it is in.
+    """
+    running = score.key_signature
+    out: list[str | None] = []
+    for measure in score.measures:
+        if measure.key_signature is not None:
+            running = measure.key_signature
+        out.append(running)
+    return out
+
+
+def clefs_in_force(score: ScoreJson) -> list[str | None]:
+    """The clef each measure is written in, clef changes included.
+
+    The third of the same walk, after `meters_in_force` and `keys_in_force`.
+    `ScoreJson.clef` is only the clef the page *opens* in, so reading it for a
+    bar after a change names the wrong one — and a clef names the wrong one
+    harder than a key does: a key misplaces the accidented notes, a clef
+    misplaces every note on the staff.
+
+    Produces no finding, so the sandbox ports owe it nothing — the same note
+    `keys_in_force` carries, and for the same reason.
+    """
+    running = score.clef
+    out: list[str | None] = []
+    for measure in score.measures:
+        if measure.clef is not None:
+            running = measure.clef
         out.append(running)
     return out
 
@@ -579,7 +609,7 @@ def validate_measures(score: ScoreJson) -> list[MeasureFinding]:
     # it against the header called every one of those bars short, on a page
     # written and read correctly. See `Measure.time_signature`.
     meters = meters_in_force(score)
-    stated = meters[0] if meters else beats_per_measure(score.time_signature)
+    stated = meters[0] if meters else quarter_beats(score.time_signature)
     inferred = None
     densities: list[float] = []
     if all(m is None for m in meters):
@@ -620,7 +650,12 @@ def validate_measures(score: ScoreJson) -> list[MeasureFinding]:
     # against a limit of 3, so nothing it was for has been given up.
     densities = [
         len(measure.notes) / meter
-        for measure, meter in zip(score.measures, expected_per_measure)
+        # `strict`: `expected_per_measure` is built from `meters_in_force`,
+        # whose contract is one entry per measure. Truncating here would
+        # quietly drop the last bars out of the density evidence rather
+        # than fail, and a check with fewer bars in it than it thinks is
+        # worse than one that stops.
+        for measure, meter in zip(score.measures, expected_per_measure, strict=True)
         if measure.notes and meter
         and not all(note.pitch == "rest" for note in measure.notes)
     ]
@@ -642,7 +677,10 @@ def validate_measures(score: ScoreJson) -> list[MeasureFinding]:
     # `MIN_MEASURES_TO_INFER` shared with the metre vote deliberately: both ask
     # the same question, which is whether there are enough bars for the page to
     # be evidence about itself.
-    lengths = [total for total, m in zip(sums, score.measures) if m.notes]
+    # `strict`: `sums` is one per measure, built from `score.measures`.
+    lengths = [
+        total for total, m in zip(sums, score.measures, strict=True) if m.notes
+    ]
     median_length = (
         median(lengths) if len(lengths) >= MIN_MEASURES_TO_INFER else 0.0
     )

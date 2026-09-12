@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSyncExternalStore } from 'react';
 
 import type { Instrument, MetronomeMode } from './types';
+import { isInstrument } from './instruments';
 
 export interface Preferences {
   /**
@@ -28,6 +29,13 @@ export interface Preferences {
    * who has already asked for it.
    */
   reduceMotion: boolean;
+  /**
+   * Whether this device has shown the first-take microphone and count-in guide.
+   *
+   * Device-local because microphone placement and permission belong to the
+   * hardware, not to a score or an account.
+   */
+  practiceSetupSeen: boolean;
 }
 
 const DEFAULTS: Preferences = {
@@ -35,9 +43,20 @@ const DEFAULTS: Preferences = {
   metronomeMode: 'off',
   haptics: true,
   reduceMotion: false,
+  practiceSetupSeen: false,
 };
 
 const STORAGE_KEY = 'intempo.preferences.v1';
+
+/**
+ * Whether this device has an instrument of its own, as opposed to the default.
+ *
+ * `DEFAULTS.instrument` is `violin`, so "the stored value is violin" and
+ * "nobody has said" are indistinguishable from `current` alone — and the whole
+ * point of `adoptAccountInstrument` is to tell them apart. False until
+ * hydration finds a stored one or someone sets one.
+ */
+let instrumentIsStored = false;
 
 /**
  * Device preferences.
@@ -83,10 +102,15 @@ function commit(next: Preferences): void {
 export async function hydratePreferences(): Promise<void> {
   try {
     const raw = await AsyncStorage.getItem(STORAGE_KEY);
+    // Cleared here rather than only in the branch below, so the fresh-install
+    // path — `raw` null, early return — states the answer instead of relying
+    // on the initialiser being untouched.
+    instrumentIsStored = false;
     if (!raw) {
       return;
     }
     const saved = JSON.parse(raw) as Partial<Preferences>;
+    instrumentIsStored = isInstrument(saved.instrument);
     current = {
       instrument: isInstrument(saved.instrument)
         ? saved.instrument
@@ -100,17 +124,15 @@ export async function hydratePreferences(): Promise<void> {
         typeof saved.reduceMotion === 'boolean'
           ? saved.reduceMotion
           : DEFAULTS.reduceMotion,
+      practiceSetupSeen:
+        typeof saved.practiceSetupSeen === 'boolean'
+          ? saved.practiceSetupSeen
+          : DEFAULTS.practiceSetupSeen,
     };
     listeners.forEach((listener) => listener());
   } catch {
     // Unreadable or malformed: the defaults are already in place.
   }
-}
-
-const INSTRUMENTS: Instrument[] = ['violin', 'viola', 'cello', 'double_bass'];
-
-function isInstrument(value: unknown): value is Instrument {
-  return INSTRUMENTS.includes(value as Instrument);
 }
 
 const METRONOME_MODES: MetronomeMode[] = [
@@ -136,7 +158,39 @@ export const preferences = {
   },
 
   setInstrument(instrument: Instrument): void {
+    instrumentIsStored = true;
     commit({ ...current, instrument });
+  },
+
+  /**
+   * Take the account's instrument, but only on a device that has none.
+   *
+   * **The account is the source of truth and this cache was never filled from
+   * it.** Onboarding writes both, so the first device is right; a reinstall or
+   * a second device starts at `DEFAULTS.instrument` — `violin` — with nothing
+   * to correct it. Everything that acts on an instrument reads this cache:
+   * the warmup, the labels, and `submitTake`, which the server turns into
+   * `analyze(double_bass=...)`. So a cellist signing in on a new phone was
+   * given violin warmups and analysed with violin onset thresholds.
+   *
+   * **Only when nothing is stored, which is what makes this safe.** A device
+   * that has an instrument has one because somebody chose it here, and the
+   * Profile control does not write it back to the account — so overwriting on
+   * every load would revert their choice from a value the server was never
+   * told about. Seeding an empty cache cannot conflict with anything.
+   *
+   * Null does nothing: an account from before the instrument was required has
+   * no answer to copy, and `violin` is then a default rather than a mistake.
+   *
+   * Idempotent, so a caller may run it on every change of the account value.
+   */
+  adoptAccountInstrument(fromAccount: Instrument | null | undefined): boolean {
+    if (instrumentIsStored || !fromAccount || !isInstrument(fromAccount)) {
+      return false;
+    }
+    instrumentIsStored = true;
+    commit({ ...current, instrument: fromAccount });
+    return true;
   },
 
   setMetronomeMode(metronomeMode: MetronomeMode): void {
@@ -149,5 +203,9 @@ export const preferences = {
 
   setReduceMotion(reduceMotion: boolean): void {
     commit({ ...current, reduceMotion });
+  },
+
+  setPracticeSetupSeen(practiceSetupSeen: boolean): void {
+    commit({ ...current, practiceSetupSeen });
   },
 };

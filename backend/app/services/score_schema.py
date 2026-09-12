@@ -39,7 +39,26 @@ Duration = Literal[
     "eighth", "dotted_eighth",
     "sixteenth", "dotted_sixteenth",
     "thirty_second", "dotted_thirty_second",
-    "sixty_fourth",
+    "sixty_fourth", "dotted_sixty_fourth",
+    # **One level finer than each family reached before**, which is the whole
+    # rule. `tools/notation-coverage.py` prints every written value against dots
+    # and the common ratios, and these were the gaps in it that real music
+    # actually contains: a run of 128ths in a cadenza, a dotted 64th in an
+    # ornamental figure, thirty-second triplets in fast passagework, and
+    # whole-note triplets in a slow metre.
+    #
+    # A note with no name here is **dropped**, and a dropped note is a lost
+    # onset that `alignment.py` accumulates into every bar after it — so the
+    # cost of a gap is not the note, it is the rest of the page.
+    #
+    # **What is deliberately still missing**, and it is 31 more values: the
+    # exotic corners of the same cross-product — `septuplet_dotted_breve`,
+    # `quintuplet_dotted_sixteenth` and the like. They are not music. This is a
+    # closed union shared with the app, so every name costs a widening on both
+    # sides; adding them all would more than double it to describe figures no
+    # part contains. The coverage tool prints them as missing on every run, so
+    # the day one turns up it is one line and a measurement, not a discovery.
+    "one_twenty_eighth",
     # A breve, and the double dots.
     #
     # **Both were named as known gaps in `musicxml.py` and both cost notes.**
@@ -76,8 +95,62 @@ Duration = Literal[
     # `validate.py` and `reading.ts` both compare with an epsilon — which is
     # what makes adding them safe rather than a source of false "does not add
     # up" reports.
-    "triplet_half", "triplet_quarter", "triplet_eighth", "triplet_sixteenth",
+    "triplet_breve", "triplet_whole", "triplet_half", "triplet_quarter",
+    "triplet_eighth", "triplet_sixteenth", "triplet_thirty_second",
+    "triplet_sixty_fourth", "triplet_one_twenty_eighth",
+    # Quintuplets and septuplets, on exactly the argument that added the
+    # triplets above — and they cost more than the triplets did, because of
+    # what the importer does when it cannot name a group.
+    #
+    # A note with no name is not dropped any more: `_unnameable_tuplet_beats`
+    # keeps the *group's* length and writes it as rests, so the bar still adds
+    # up. That is the right trade when the alternative is moving every later
+    # bar, and it means the failure is now completely silent to the beat check.
+    # Measured on a 4/4 bar of a 5:4 quintuplet of sixteenths and three
+    # quarters, read correctly off the page:
+    #
+    #     onsets in the transcription   3 of 8
+    #     beat-sum verdict              ok, 4.0 of 4.0
+    #     the only trace                unwritable_notes = 5
+    #
+    # Five attacks the musician plays are silence in the expected timeline, and
+    # `alignment.py` matches detections against that timeline — so a passage
+    # played correctly is scored against a bar that says nothing happens there.
+    # The septuplet case is the same with seven.
+    #
+    # 5:4 and 7:4 are the ratios an engraver actually writes, and they are the
+    # two the gate in `tuplet_ratio_is_writable` was documented to refuse. Each
+    # name here is a *length*, exactly as `triplet_eighth` is: it is what the
+    # base value becomes under the bracket, which is why 7:8 eighths need no
+    # name of their own — they land on `septuplet_quarter`'s 4/7 and the
+    # beats-to-name lookup finds them. What still has no name is a ratio landing
+    # on none of these values at all (5:6 in compound metre, a triplet of
+    # thirty-seconds), and those still keep their length as rests.
+    #
+    # Fifths and sevenths are not exactly representable in binary. Every
+    # comparison downstream already carries `validate.TOLERANCE`, and the sums
+    # are checked exhaustively rather than assumed — see
+    # `test_duration_beats.py`.
+    "quintuplet_half", "quintuplet_quarter",
+    "quintuplet_breve", "quintuplet_whole",
+    "quintuplet_eighth", "quintuplet_sixteenth", "quintuplet_thirty_second",
+    "quintuplet_sixty_fourth", "quintuplet_one_twenty_eighth",
+    "septuplet_half", "septuplet_quarter",
+    "septuplet_breve", "septuplet_whole",
+    "septuplet_eighth", "septuplet_sixteenth", "septuplet_thirty_second",
+    "septuplet_sixty_fourth", "septuplet_one_twenty_eighth",
 ]
+
+#: The names a bracket produces and a plain notehead never does.
+#:
+#: `_WRITTEN_BEATS` used to be spelled "every name that does not start with
+#: `triplet_`", which was correct while triplets were the only tuplet in the
+#: schema and silently wrong the moment they were not: a `quintuplet_eighth`
+#: would have been filed as a value an engraver writes, and
+#: `untuplets_cleanly` — which asks whether a stored duration is what the
+#: bracket over it would produce — would have called a correctly-read
+#: quintuplet a fault. Named here so that adding a tuplet is one edit.
+TUPLET_PREFIXES: tuple[str, ...] = ("triplet_", "quintuplet_", "septuplet_")
 
 #: Quarter-note beats per duration — the single table.
 #:
@@ -103,6 +176,8 @@ DURATION_BEATS: dict[str, float] = {
     "thirty_second": 0.125,
     "dotted_thirty_second": 0.1875,
     "sixty_fourth": 0.0625,
+    "dotted_sixty_fourth": 0.09375,
+    "one_twenty_eighth": 0.03125,
     "double_whole": 8.0,
     # A double dot adds half the dot again: base × 1.75.
     "double_dotted_half": 3.5,
@@ -116,18 +191,69 @@ DURATION_BEATS: dict[str, float] = {
     "triplet_quarter": 2.0 / 3.0,
     "triplet_eighth": 1.0 / 3.0,
     "triplet_sixteenth": 1.0 / 6.0,
+    "triplet_breve": 16.0 / 3.0,
+    "triplet_one_twenty_eighth": 1.0 / 48.0,
+    "triplet_thirty_second": 1.0 / 12.0,
+    "triplet_sixty_fourth": 1.0 / 24.0,
+    # Three whole notes in the time of two: two bars of slow 4/4, and ordinary
+    # in a Adagio. `triplet_half` was already here; this is its parent.
+    "triplet_whole": 8.0 / 3.0,
+    # Five in the time of four, and seven in the time of four: the written
+    # value scaled by normal/actual, which is the same arithmetic the triplets
+    # above are and the same arithmetic `musicxml._duration_name` does on the
+    # way in. A half is 2 beats, so a quintuplet half is 2 × 4/5 = 8/5.
+    #
+    # Written as a single division of two exact integers, in this order, on
+    # both sides. `test_client_enums` compares these against the app's table to
+    # 1e-12 and evaluates the app's arithmetic literally, so `8 / 5` and
+    # `2 * 4 / 5` agreeing is a fact about these particular numbers rather than
+    # a rule — reduced fractions make the two files the same expression.
+    "quintuplet_half": 8.0 / 5.0,
+    "quintuplet_quarter": 4.0 / 5.0,
+    "quintuplet_eighth": 2.0 / 5.0,
+    "quintuplet_sixteenth": 1.0 / 5.0,
+    "quintuplet_breve": 32.0 / 5.0,
+    "quintuplet_whole": 16.0 / 5.0,
+    "quintuplet_sixty_fourth": 1.0 / 20.0,
+    "quintuplet_one_twenty_eighth": 1.0 / 40.0,
+    "quintuplet_thirty_second": 1.0 / 10.0,
+    "septuplet_half": 8.0 / 7.0,
+    "septuplet_quarter": 4.0 / 7.0,
+    "septuplet_eighth": 2.0 / 7.0,
+    "septuplet_sixteenth": 1.0 / 7.0,
+    "septuplet_breve": 32.0 / 7.0,
+    "septuplet_whole": 16.0 / 7.0,
+    "septuplet_sixty_fourth": 1.0 / 28.0,
+    "septuplet_one_twenty_eighth": 1.0 / 56.0,
+    "septuplet_thirty_second": 1.0 / 14.0,
 }
 
-# Pitch: "rest" or scientific-pitch like "C4", "F#3", "Bb2".
-#: What `Note.pitch` accepts: `rest`, or a step A–G with an optional single
-#: accidental and **one** octave digit.
+# Pitch: "rest" or scientific-pitch like "C4", "F#3", "Bb2", "F##4", "Bbb3".
+#: What `Note.pitch` accepts: `rest`, or a step A–G with an optional accidental
+#: — single or **double** — and one octave digit.
+#:
+#: **Double accidentals were outside the grammar, and the note was dropped.**
+#: `_pitch_name` said so in as many words: "Naming the natural instead would be
+#: a wrong note, so drop it and let the note count fall short, which the
+#: validator can see." Both halves of that were true and the choice was still
+#: between two damaging options, because a dropped note is not a quiet loss —
+#: it is a **lost onset**, and `alignment.py` accumulates durations, so every
+#: bar after it is judged against music that is not there. A double sharp is
+#: ordinary in the repertoire this app is for: any chromatic passage in a sharp
+#: key writes them, and Kreutzer, Bach and Paganini are full of them.
+#:
+#: Widening the grammar removes the choice rather than picking a side.
+#: `##` and `bb` are matched **before** `#` and `b` — a regex alternation takes
+#: the first branch that matches, so the single-accidental branch first would
+#: match `F#` out of `F##4` and leave `#4` unconsumed, failing the anchor and
+#: dropping exactly the note this exists to keep.
 #:
 #: Exported so `musicxml.py` can ask the same question before it builds a note
 #: rather than after. It used to hand over whatever the file said and let the
 #: model reject it — which raised `ValidationError` out of the importer, past
 #: the `MusicXMLError` the import route catches, and turned a file with one bad
 #: notehead into a 500. See `_pitch_name`.
-PITCH_PATTERN = re.compile(r"^(?:rest|[A-G](?:#|b)?-?\d)$")
+PITCH_PATTERN = re.compile(r"^(?:rest|[A-G](?:##|bb|#|b)?-?\d)$")
 _PITCH_PATTERN = PITCH_PATTERN
 
 
@@ -266,6 +392,38 @@ class Note(_Strict):
     #: Chorded graces count once — a rolled grace chord is one attack — and a
     #: grace before a rest or a cue is dropped, because neither is played.
     grace_notes: int = Field(default=0, ge=0)
+    #: The other noteheads struck together with this one, lowest first.
+    #:
+    #: **Additive, and deliberately not part of the timeline.** `pitch` stays
+    #: the single pitch it always was and `duration` still governs when the next
+    #: note starts, so `alignment.py` is untouched: a chord is one attack, which
+    #: is why the importer counts only its first note and must keep doing so.
+    #:
+    #: What this adds is the part that was simply lost. A double stop is two
+    #: noteheads on the page and the reading kept one, so any stave drawn from
+    #: it shows a single note where the music has two, and `MeasureEditScreen`
+    #: cannot express the fix because there is nowhere to put the second pitch.
+    #: For a violin part that is a Bach chaconne rendered wrong; for a corrected
+    #: reading kept as training data it is a wrong label.
+    #:
+    #: Empty for the overwhelming majority of notes and for every score written
+    #: before the field existed, which is why it defaults rather than being
+    #: required. A rest never has any.
+    chord_pitches: list[str] = Field(default_factory=list)
+
+    @field_validator("chord_pitches")
+    @classmethod
+    def _validate_chord_pitches(cls, values: list[str]) -> list[str]:
+        for value in values:
+            # `rest` is a legal `pitch` and never a legal chord member: silence
+            # does not sound with a note, and a "rest" here would draw a
+            # notehead for nothing.
+            if value == "rest" or not _PITCH_PATTERN.match(value):
+                raise ValueError(
+                    "chord_pitches must be scientific-pitch (e.g. 'D3', 'F#4'); "
+                    f"got {value!r}"
+                )
+        return values
 
     _keep_known_articulation = field_validator("articulation", mode="before")(
         _one_of(_ARTICULATIONS, "articulation")
@@ -338,6 +496,24 @@ class Tuplet(_Strict):
 
 class Measure(_Strict):
     measure_number: int = Field(ge=1)
+    #: Which staff system on the page this bar was printed on, from 0.
+    #:
+    #: **Where the bar is, so a re-read can be asked about the right piece of
+    #: paper.** `OCR_CORRECTOR` sends the bars that do not add up back to a
+    #: model, and sending the whole page with "look at bar 14" asks it to count
+    #: to fourteen on a photograph — which it can get wrong in a way nothing
+    #: downstream detects, because a wrong bar that happens to add up passes
+    #: every guard there is. With this, the crop it is shown contains the bar
+    #: and little else.
+    #:
+    #: Null whenever the file does not say, which is most of the time: it comes
+    #: from `<print new-system="yes">`, and an engraver's export usually omits
+    #: it. Null is not "system 0" and must never be defaulted to one — the whole
+    #: point is knowing when the position is unknown, and a wrong crop is worse
+    #: than no crop. Same rule as `ScoreJson.clef` and `users.instrument`.
+    #:
+    #: Additive, so an app that has never heard of it is unaffected.
+    system: int | None = Field(default=None, ge=0)
     notes: list[Note] = Field(default_factory=list)
     slurs: list[Slur] = Field(default_factory=list)
     #: Empty for the overwhelming majority of measures, and for every score
@@ -356,6 +532,46 @@ class Measure(_Strict):
     #: The onset timeline never cared: it accumulates durations, so where the
     #: barlines fall does not move a note. This exists for the beat check.
     time_signature: str | None = Field(default=None, max_length=20)
+    #: The clef, when it *changes* at this measure. Null everywhere else.
+    #:
+    #: Exactly the shape `time_signature` above has, for exactly the same
+    #: reason. A single clef for a whole piece is a simplification the
+    #: repertoire does not honour: a cello or bass part moving into tenor or
+    #: treble for a high passage and back again is ordinary writing, not an edge
+    #: case, and `ScoreJson.clef` has nowhere to put the second one.
+    #:
+    #: The cost of not having it is the same cost `ScoreJson.clef` being
+    #: defaulted would have — every notehead after the change drawn at the wrong
+    #: staff position, captioned with a clef the page stopped using. The onset
+    #: timeline never cared, because `alignment.py` reads pitch only to ask
+    #: whether a note is a rest.
+    #:
+    #: `_one_of` rather than a bare `Clef`, matching `ScoreJson.clef`: a clef
+    #: this schema cannot place becomes null — "no change here" — rather than
+    #: costing the page. Wrong in the direction that loses a caption, never in
+    #: the direction that invents one.
+    clef: Clef | None = None
+    #: The key, when it *changes* at this measure. Null everywhere else.
+    #:
+    #: The third field of this shape, after `time_signature` and `clef`, and
+    #: the same rule: a fact printed on one bar that holds until the next one
+    #: is printed. `ScoreJson.key_signature` stays the key the page **opens**
+    #: in.
+    #:
+    #: Until this existed the importer read the first `<key>` and discarded
+    #: every later one — so a part that moves from B-flat to G at bar 7 (the
+    #: real phone photograph in `fixtures/musicxml/audiveris_phone_photo`) was
+    #: engraved with two flats on every system to the end, and every F sharp
+    #: after the change printed as an inline sharp against a signature that no
+    #: longer applied. The timeline never cared; the *page* was wrong, and it
+    #: was wrong in the way that matters most — a musician reading from it
+    #: plays the wrong notes.
+    #:
+    #: The name as printed, `G major` / `E minor`, the same grammar as the
+    #: header. Compared by signature rather than by name wherever a change is
+    #: detected: `Bb major` and `G minor` print the same two flats, and a mode
+    #: that changes with the signature unchanged is not a change on the page.
+    key_signature: str | None = Field(default=None, max_length=40)
     #: How many notes in this measure the reading saw and could not write.
     #:
     #: **Because the bar can now come out looking perfect.** A double accidental,
@@ -374,6 +590,19 @@ class Measure(_Strict):
     #: with nothing missing — which is the only honest answer for a row that
     #: never recorded it.
     unwritable_notes: int = Field(default=0, ge=0)
+
+    _keep_known_measure_clef = field_validator("clef", mode="before")(
+        _one_of(_CLEFS, "clef")
+    )
+
+    @field_validator("key_signature")
+    @classmethod
+    def _validate_measure_key_signature(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not value.strip():
+            raise ValueError("key_signature must be non-empty when provided")
+        return value
 
     @field_validator("time_signature")
     @classmethod
@@ -416,6 +645,25 @@ class Repeat(_Strict):
     start_measure: int = Field(ge=1)
     end_measure: int = Field(ge=1)
     type: RepeatType
+    #: True when no forward sign was printed and the opening was inferred.
+    #:
+    #: **The page-break repeat, which used to be read from the wrong bar.**
+    #: Most pieces that repeat their opening print no `|:` at all, so a
+    #: backward sign with nothing to pair it with falls back to the start of
+    #: what was read — right for a piece, wrong for a *page*. Read alone, page
+    #: 3 of a part reports a repeat starting at page 3's first bar; the truth
+    #: may be a `|:` printed on page 1.
+    #:
+    #: `join_pages` needs to tell those two apart, and only the importer knows
+    #: which it was. False here means a forward sign was actually printed, and
+    #: that repeat is correct as it stands even when it opens on a page's first
+    #: bar — which is a real section boundary in a lot of music, and the reason
+    #: dropping such repeats wholesale was the wrong fix.
+    #:
+    #: Defaults False, so every score written before this reads back as "the
+    #: opening was printed" — the assumption that leaves them exactly as they
+    #: were.
+    start_inferred: bool = False
 
 
 #: What a stated time signature has to look like: `N/N`.
@@ -437,6 +685,11 @@ class ScoreJson(_Strict):
     time_signature: str | None = Field(default=None, max_length=20)
     key_signature: str | None = Field(default=None, max_length=40)
     tempo_marking: str | None = None
+    #: The note value the printed metronome mark counts. `bpm_hint` itself is
+    #: always quarter notes per minute because alignment uses quarter-beats;
+    #: keeping this lets the interface show the musician the number written on
+    #: the page without changing that internal clock. Absent on older scores.
+    tempo_beat_unit: Duration | None = None
     bpm_hint: int | None = Field(default=None, ge=20, le=300)
     #: Which clef the staff is in, or None when nothing has read the page yet.
     #:
@@ -460,6 +713,22 @@ class ScoreJson(_Strict):
     #: trying the next provider instead of losing the page.
     _keep_known_clef = field_validator("clef", mode="before")(_one_of(_CLEFS, "clef"))
     repeats: list[Repeat] = Field(default_factory=list)
+    #: Forward repeat signs still open where this page's music stopped.
+    #:
+    #: **A page is not a piece, and this is the half of that which used to be
+    #: thrown away.** A `|:` printed on page 1 and closed on page 3 is invisible
+    #: to an importer reading page 1 alone: the sign opens, nothing closes it,
+    #: and the reader discarded it. `join_pages` can pair it with the closing
+    #: sign on a later page, but only if the earlier page says it is there.
+    #:
+    #: A list rather than one value, because the importer already keeps a stack
+    #: — nested `|:` is legal — and carrying only the innermost would lose the
+    #: rest silently, which is the failure being fixed one level down.
+    #:
+    #: Measure numbers, like every other span here. Cleared by `join_pages` on
+    #: its output: a sign still open at the end of the *last* page is genuinely
+    #: unclosed and there is nothing left to pair it with.
+    unclosed_repeat_starts: list[int] = Field(default_factory=list)
     #: Empty for most music and for every score written before the field
     #: existed, which is why it defaults rather than being required.
     tempo_changes: list[TempoChange] = Field(default_factory=list)
@@ -605,21 +874,23 @@ def broken_ties(measures: Sequence[Measure]) -> list[BrokenTie]:
 # the reading is silently wrong. Stating the ratio makes that answerable.
 
 
-#: Ratios `Duration` can express. Three in the time of two, and nothing else.
+#: Ratios `Duration` can express: 3:2, 5:4 and 7:4, plus every ratio that maps a
+#: written value onto another written value (2:3, 4:3, 6:4).
 #:
-#: A quintuplet, a septuplet or a dotted triplet has no name in `Duration`, so a
-#: score claiming one is telling us it holds notes we cannot place. That is
-#: worth reporting rather than approximating: `TUPLET_NOTE` in `ocr/validate`
-#: is the sentence the model is given about it.
+#: What remains unnameable is a ratio that lands on none of those lengths — 5:6
+#: in a compound metre, a triplet of thirty-seconds. A score claiming one is
+#: telling us it holds notes we cannot place, which is worth reporting rather
+#: than approximating: `TUPLET_NOTE` in `ocr/validate` is the sentence the model
+#: is given about it.
 #: Every length, in quarter-beats, that a plain notehead and its dots write —
 #: no bracket involved.
 #:
-#: The triplet names are exactly the complement: they are what a bracket
+#: The tuplet names are exactly the complement: they are what a bracket
 #: produces and nothing else, which is what makes them evidence.
 _WRITTEN_BEATS: frozenset[float] = frozenset(
     round(beats, 6)
     for name, beats in DURATION_BEATS.items()
-    if not name.startswith("triplet_")
+    if not name.startswith(TUPLET_PREFIXES)
 )
 
 #: The lengths only a bracket can produce.
@@ -674,8 +945,14 @@ def tuplet_ratio_is_writable(actual: int, normal: int) -> bool:
 
     A coarse gate in front of the per-note check, and it has to stay coarse:
     what a bracket is worth depends on the value under it, so the ratio alone
-    can only say that nothing at all fits. 5:4 is the ordinary ratio that does
-    not — a fifth of a beat has no notehead — and it is why the gate exists.
+    can only say that nothing at all fits.
+
+    5:4 used to be the ordinary ratio that did not fit, and was the reason the
+    gate was written. It fits now — `Duration` names quintuplets and septuplets
+    — so what this refuses is narrower than it was: a ratio landing on no named
+    length at all, such as 5:6 in a compound metre. The gate is still worth
+    having for exactly the reason it always was, since a ratio that fits nothing
+    would otherwise be approximated silently.
     """
     nameable = _WRITTEN_BEATS | _TUPLET_ONLY_BEATS
     return any(

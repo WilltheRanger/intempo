@@ -1,7 +1,7 @@
-import { Platform, StyleSheet, Switch, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Switch, View } from 'react-native';
 
 import { Text } from '../../components/primitives/Text';
-import { BORDER_WIDTH, colors, spacing } from '../../design';
+import { BORDER_WIDTH, colors, disabledOpacity, spacing } from '../../design';
 
 /**
  * react-native-web reads `activeThumbColor` for the "on" thumb and leaves
@@ -23,6 +23,8 @@ export interface ToggleRowProps {
   onChange: (value: boolean) => void;
   /** Hairline above the row. Omit on the first row in a group. */
   divided?: boolean;
+  /** Holds the value steady while a server-backed setting is being saved. */
+  disabled?: boolean;
 }
 
 /**
@@ -38,9 +40,43 @@ export function ToggleRow({
   value,
   onChange,
   divided = true,
+  disabled = false,
 }: ToggleRowProps) {
   return (
-    <View style={[styles.row, divided && styles.divided]}>
+    /*
+      **The whole row is the control, not just the switch.**
+      A `Switch` measures 40x20 — under half the platform's minimum target on
+      its short side — so the only tappable part of a row two hundred points
+      wide was a thumbnail-sized rectangle in the corner. Every setting screen
+      worth using lets you press the label.
+
+      The row carries the semantics (`role="switch"` and the checked state) and
+      the switch is the picture of it: `accessible={false}` and
+      `pointerEvents="none"` so a screen reader hears one control rather than
+      two, and a tap on the switch itself falls through to the row instead of
+      being swallowed by a second handler that would toggle twice.
+    */
+    <Pressable
+      onPress={() => onChange(!value)}
+      disabled={disabled}
+      accessibilityRole="switch"
+      accessibilityLabel={label}
+      accessibilityHint={description}
+      // **Both spellings, deliberately.** `accessibilityState` is what React
+      // Native reads; `aria-checked` is what react-native-web emits, and it
+      // does *not* derive one from the other — measured: with only the first,
+      // the row announced "switch, Haptic feedback" and never said whether it
+      // was on.
+      accessibilityState={{ checked: value, disabled }}
+      aria-checked={value}
+      aria-disabled={disabled}
+      style={({ pressed }) => [
+        styles.row,
+        divided && styles.divided,
+        pressed && !disabled && styles.pressed,
+        disabled && styles.disabled,
+      ]}
+    >
       <View style={styles.text}>
         <Text variant="button">{label}</Text>
         {description ? (
@@ -54,16 +90,25 @@ export function ToggleRow({
         ) : null}
       </View>
 
-      <Switch
-        value={value}
-        onValueChange={onChange}
-        accessibilityLabel={label}
-        trackColor={{ false: colors.borderStrong, true: colors.accent }}
-        thumbColor={colors.surface}
-        ios_backgroundColor={colors.borderStrong}
-        {...WEB_THUMB}
-      />
-    </View>
+      {/*
+        Hidden from the accessibility tree as well as from touch. Without
+        `aria-hidden` react-native-web still renders its own
+        `input[type=checkbox][role=switch]` inside, so every setting announced
+        **two** switches: the row, labelled but stateless, and the input,
+        stateful but unlabelled.
+      */}
+      <View pointerEvents="none" aria-hidden>
+        <Switch
+          value={value}
+          disabled={disabled}
+          accessible={false}
+          trackColor={{ false: colors.borderStrong, true: colors.accent }}
+          thumbColor={colors.surface}
+          ios_backgroundColor={colors.borderStrong}
+          {...WEB_THUMB}
+        />
+      </View>
+    </Pressable>
   );
 }
 
@@ -74,6 +119,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing.lg,
     paddingVertical: spacing.lg,
+  },
+  disabled: {
+    opacity: disabledOpacity,
+  },
+  pressed: {
+    backgroundColor: colors.surfacePressed,
   },
   divided: {
     borderTopWidth: BORDER_WIDTH,

@@ -5,7 +5,9 @@ import type {
   MeasureVerdict,
   Tolerance,
   Verdict,
+  TempoBeatUnit,
 } from '../data/types';
+import { BEATS } from './score/schedule';
 
 /**
  * The pipeline's band and direction, in the words the UI shows.
@@ -34,10 +36,17 @@ export function verdictFor(band: Band, direction: Direction): Verdict {
  * The outer threshold to assume when a take doesn't carry its own.
  *
  * Only reachable for analyses finished before the pipeline started recording
- * them — every new result carries the real numbers. It matches the shipped
- * `backend/config.toml` default, which is what those takes were judged by, so
- * it is a correct answer for exactly the rows that need it and a stale one for
- * nothing.
+ * them — every new result carries the real numbers. It is the band those takes
+ * were **judged by**, which today is also what `backend/config.toml` ships.
+ *
+ * **A historical value, not a mirror of the config.** The two agree only
+ * because the bands have never been tuned, and the tuning appendix says they
+ * will be. When that happens the reflex — update this to follow the config —
+ * re-bands takes already in a musician's history by a number the pipeline
+ * never applied to them, which is re-judging a performance nobody
+ * re-recorded. Leave it, unless the old bands were *wrong* rather than merely
+ * being tuned. `backend/app/tests/test_fallback_bands.py` fires on the day
+ * they diverge and states both answers.
  */
 const FALLBACK_OUTER_PCT = 20;
 
@@ -65,6 +74,92 @@ export function fullScaleFor(
 }
 
 /**
+ * The default inner threshold, for takes that carry no tolerance of their own.
+ *
+ * The sibling of `FALLBACK_OUTER_PCT` and reachable for the same rows: takes
+ * analysed before the pipeline started recording the numbers it judged them
+ * by — so the same rule applies. It is what those takes were judged by, which
+ * today is also what `backend/config.toml` ships, and it does not follow the
+ * config when the bands are tuned.
+ */
+const FALLBACK_INNER_PCT = 5;
+
+/**
+ * Which band one signed deviation falls in, by the thresholds it was judged by.
+ *
+ * **A port of the pipeline's `classify_band`, and only safe because the
+ * thresholds travel with the take.** `result_json.tolerance` carries the six
+ * numbers the server used, so this applies the server's cutoffs rather than
+ * inventing cutoffs here — the objection that kept the aggregate from being
+ * banded at all, and the reason Insights borrowed a band off an arbitrary take
+ * instead.
+ *
+ * Rush-positive, the convention everything downstream of `toTake` uses, so the
+ * sign selects the opposite side from the pipeline's own drag-positive code.
+ * The two sets are independent because musicians tolerate dragging better.
+ */
+export function bandFor(deviationPct: number, tolerance: Tolerance | null): Band {
+  const magnitude = Math.abs(deviationPct);
+  const [inner, mid, outer] =
+    tolerance === null
+      ? [FALLBACK_INNER_PCT, FALLBACK_OUTER_PCT / 2, FALLBACK_OUTER_PCT]
+      : deviationPct >= 0
+        ? [
+            tolerance.rushing_inner_pct,
+            tolerance.rushing_mid_pct,
+            tolerance.rushing_outer_pct,
+          ]
+        : [
+            tolerance.dragging_inner_pct,
+            tolerance.dragging_mid_pct,
+            tolerance.dragging_outer_pct,
+          ];
+  if (magnitude <= inner) {
+    return 'on';
+  }
+  if (magnitude <= mid) {
+    return 'slight';
+  }
+  return magnitude <= outer ? 'rush_drag' : 'severe';
+}
+
+/**
+ * Which side of the beat a deviation fell on, once it is outside tolerance.
+ *
+ * A port of the pipeline's `_direction`. Inside the inner band there is no
+ * side to name: a deviation the thresholds call `on` is one the app has
+ * agreed not to call rushing or dragging, and naming a side anyway is how a
+ * musician gets told which way they drift when the answer is "you didn't".
+ */
+export function directionFor(deviationPct: number, band: Band): Direction {
+  if (band === 'on') {
+    return 'on';
+  }
+  return deviationPct > 0 ? 'rush' : 'drag';
+}
+
+/**
+ * How far off the beat a spread has to be before it is worth a word.
+ *
+ * The **wider** of the two inner thresholds, deliberately. A spread has no
+ * side — it is an average distance measured in both directions — so there is
+ * no sign to pick a set with, and taking the wider one means the app never
+ * calls a take uneven over a distance it would have called on-tempo on either
+ * side. This screen's credibility rests on not inventing problems, so where
+ * the two thresholds disagree the quiet one wins.
+ */
+export function spreadIsBeyondTolerance(
+  spreadPct: number,
+  tolerance: Tolerance | null,
+): boolean {
+  const inner =
+    tolerance === null
+      ? FALLBACK_INNER_PCT
+      : Math.max(tolerance.rushing_inner_pct, tolerance.dragging_inner_pct);
+  return spreadPct > inner;
+}
+
+/**
  * One scale for a chart that draws both sides of the beat on a shared axis.
  *
  * The wider of the two, deliberately. A line crossing zero has to stay
@@ -79,6 +174,55 @@ export function sharedFullScaleFor(tolerance: Tolerance | null): number {
     return FALLBACK_OUTER_PCT;
   }
   return Math.max(tolerance.rushing_outer_pct, tolerance.dragging_outer_pct);
+}
+
+/** Quarter-note BPM expressed in the note value printed on the page. */
+export function displayTempoBpm(
+  quarterBpm: number,
+  unit: TempoBeatUnit | null | undefined,
+): number {
+  return Math.round(quarterBpm / BEATS[unit ?? 'quarter']);
+}
+
+/** A displayed metronome number returned to the quarter-note timing clock. */
+export function quarterBpmFromDisplay(
+  displayedBpm: number,
+  unit: TempoBeatUnit | null | undefined,
+): number {
+  return Math.round(displayedBpm * BEATS[unit ?? 'quarter']);
+}
+
+/** The readable unit beside a tempo number. */
+export function tempoUnitLabel(
+  unit: TempoBeatUnit | null | undefined,
+): string {
+  const value = unit ?? 'quarter';
+  if (value === 'quarter') {
+    return 'BPM';
+  }
+  const words = value.replace(/_/g, '-');
+  return value === 'double_whole' ? 'breve BPM' : `${words}-note BPM`;
+}
+
+/** A complete tempo label using the number a musician sees on the page. */
+export function formatTempo(
+  quarterBpm: number,
+  unit: TempoBeatUnit | null | undefined,
+): string {
+  return `${displayTempoBpm(quarterBpm, unit)} ${tempoUnitLabel(unit)}`;
+}
+
+/** Display-space bounds corresponding to the backend's quarter-BPM bounds. */
+export function tempoDisplayRange(
+  unit: TempoBeatUnit | null | undefined,
+  minQuarterBpm = 20,
+  maxQuarterBpm = 300,
+): { min: number; max: number } {
+  const beats = BEATS[unit ?? 'quarter'];
+  return {
+    min: Math.ceil(minQuarterBpm / beats),
+    max: Math.floor(maxQuarterBpm / beats),
+  };
 }
 
 /**
@@ -96,11 +240,14 @@ export function sharedFullScaleFor(tolerance: Tolerance | null): number {
 export function formatWorkingTempo(
   workingBpm: number,
   markedBpm: number | null,
+  unit?: TempoBeatUnit | null,
 ): string {
+  const working = displayTempoBpm(workingBpm, unit);
+  const label = tempoUnitLabel(unit);
   if (markedBpm === null || markedBpm === workingBpm) {
-    return `${workingBpm} BPM`;
+    return `${working} ${label}`;
   }
-  return `Working at ${workingBpm}  ·  marked ${markedBpm}`;
+  return `Working at ${working}  ·  marked ${displayTempoBpm(markedBpm, unit)} ${label}`;
 }
 
 const VERDICT_LABELS: Record<Verdict, string> = {
@@ -116,51 +263,20 @@ export function formatVerdict(verdict: Verdict): string {
   return VERDICT_LABELS[verdict] ?? VERDICT_LABELS.on_tempo;
 }
 
-const TENDENCY_HEADLINES: Record<Verdict, string> = {
-  on_tempo: 'You play steadily',
-  slight_rush: 'You drift slightly ahead',
-  rushing: 'You tend to rush',
-  slight_drag: 'You drift slightly behind',
-  dragging: 'You tend to drag',
-};
-
-/**
- * The headline for a whole window of practice — Insights, not one take.
+/*
+ * **The tendency wording lives in `lib/insights/tendency.ts` now.**
  *
- * "You tend to..." is a claim about a habit, and a habit needs more than one
- * recording to observe. A single take gets `formatTakeVerdict` instead.
+ * It used to be exported from here as a plain lookup from a verdict, which was
+ * right while that was all it was. It is a *rule* now — the direction is only
+ * the finding when the wandering is not — and anything calling the lookup
+ * directly gets the old answer with none of that.
  *
- * A description of what happened, not encouragement about it — the spec is
- * explicit that words carry the verdict, and a musician can tell the
- * difference between a diagnosis and a compliment.
+ * Not a convention: they are module-private there, so a screen reaching past
+ * `readTendency` does not compile. Insights was fixed and Today was not, and
+ * for one commit a musician read "Your tempo wanders" on one tab and "You tend
+ * to rush" on the next, about the same thirty days.
  */
-export function formatTendency(verdict: Verdict): string {
-  return TENDENCY_HEADLINES[verdict] ?? TENDENCY_HEADLINES.on_tempo;
-}
 
-const TENDENCY_DETAIL: Record<Verdict, string> = {
-  on_tempo: 'you held the beat',
-  slight_rush: 'you sat a little ahead of the beat',
-  rushing: 'you were usually ahead of the beat',
-  slight_drag: 'you sat a little behind the beat',
-  dragging: 'you were usually behind the beat',
-};
-
-/**
- * "Across 34 sessions, you were usually ahead of the beat."
- *
- * No timing figure: the spec keeps deviations out of production copy and
- * leaves the magnitude to the bar. Session counts aren't a timing
- * measurement, so they stay.
- */
-export function formatTendencyDetail(
-  verdict: Verdict,
-  sessions: number,
-): string {
-  const count = sessions === 1 ? '1 session' : `${sessions} sessions`;
-  const detail = TENDENCY_DETAIL[verdict] ?? TENDENCY_DETAIL.on_tempo;
-  return `Across ${count}, ${detail}.`;
-}
 
 /**
  * The colour for a band, on the verdict screen only.

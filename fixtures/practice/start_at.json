@@ -1,0 +1,427 @@
+{
+  "_comment": [
+    "Recording from partway into a piece, and the contract both implementations",
+    "must keep.",
+    "",
+    "**Why a fixture rather than a shared function.** The app trims the score to",
+    "know where the take's clock starts \u2014 long-rest cues are measured in beats",
+    "from the first bar played, so cues computed from bar 1 fire at the wrong",
+    "moments for a take that began at bar 12. The backend trims it again before",
+    "`build_timeline`, or the analysis compares the recording against bars the",
+    "musician never played. Different languages, no way to share the walk, so",
+    "this file is the contract \u2014 the same arrangement as `long_rests.json`, and",
+    "for the same reason.",
+    "",
+    "The rules:",
+    "",
+    "1. Keep every bar from `from_measure` on, with the numbers it has on the",
+    "   page. Not rebased to one: a verdict about the fourteenth bar has to say",
+    "   fourteen.",
+    "2. Drop a repeat that opens before the entry bar, including one that spans",
+    "   it \u2014 someone starting mid-passage plays straight on rather than jumping",
+    "   back to a sign they never passed.",
+    "3. Keep tempo changes at or after the entry bar, plus the last one printed",
+    "   before it, moved to the entry bar. That carried one is the point: a",
+    "   `rit.` printed at bar 3 is still in force at bar 4, and the analysis",
+    "   refuses to time notes under a written change. Dropping it reports a",
+    "   musician dragging for slowing exactly as the page told them to.",
+    "4. A change printed on the entry bar itself supersedes the carried one.",
+    "5. Entering at the first bar, or at a bar the piece does not have, changes",
+    "   nothing at all.",
+    "`stated` (optional) maps a bar number to the metre, clef or key it prints; `out_entry` (optional) is what the first bar of the trimmed score carries."
+  ],
+  "cases": [
+    {
+      "name": "bars keep the numbers they have on the page",
+      "bars": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "repeats": [],
+      "tempo_changes": [],
+      "from_measure": 4,
+      "out_bars": [
+        4,
+        5,
+        6
+      ],
+      "out_repeats": [],
+      "out_tempo_changes": []
+    },
+    {
+      "name": "entering at the first bar changes nothing",
+      "bars": [
+        1,
+        2,
+        3
+      ],
+      "repeats": [
+        [
+          1,
+          2
+        ]
+      ],
+      "tempo_changes": [
+        [
+          2,
+          "ritardando"
+        ]
+      ],
+      "from_measure": 1,
+      "out_bars": [
+        1,
+        2,
+        3
+      ],
+      "out_repeats": [
+        [
+          1,
+          2
+        ]
+      ],
+      "out_tempo_changes": [
+        [
+          2,
+          "ritardando"
+        ]
+      ]
+    },
+    {
+      "name": "a bar the piece does not have changes nothing",
+      "bars": [
+        1,
+        2,
+        3
+      ],
+      "repeats": [],
+      "tempo_changes": [],
+      "from_measure": 99,
+      "out_bars": [
+        1,
+        2,
+        3
+      ],
+      "out_repeats": [],
+      "out_tempo_changes": []
+    },
+    {
+      "name": "a repeat the musician never passed is dropped, spanning ones included",
+      "bars": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "repeats": [
+        [
+          2,
+          4
+        ],
+        [
+          5,
+          6
+        ]
+      ],
+      "tempo_changes": [],
+      "from_measure": 4,
+      "out_bars": [
+        4,
+        5,
+        6
+      ],
+      "out_repeats": [
+        [
+          5,
+          6
+        ]
+      ],
+      "out_tempo_changes": []
+    },
+    {
+      "name": "a tempo change still in force is carried to the entry bar",
+      "bars": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "repeats": [],
+      "tempo_changes": [
+        [
+          3,
+          "ritardando"
+        ]
+      ],
+      "from_measure": 4,
+      "out_bars": [
+        4,
+        5
+      ],
+      "out_repeats": [],
+      "out_tempo_changes": [
+        [
+          4,
+          "ritardando"
+        ]
+      ]
+    },
+    {
+      "name": "only the last change before the entry bar is carried",
+      "bars": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "repeats": [],
+      "tempo_changes": [
+        [
+          1,
+          "ritardando"
+        ],
+        [
+          3,
+          "a_tempo"
+        ]
+      ],
+      "from_measure": 4,
+      "out_bars": [
+        4,
+        5
+      ],
+      "out_repeats": [],
+      "out_tempo_changes": [
+        [
+          4,
+          "a_tempo"
+        ]
+      ]
+    },
+    {
+      "name": "a change printed on the entry bar supersedes the carried one",
+      "bars": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "repeats": [],
+      "tempo_changes": [
+        [
+          2,
+          "ritardando"
+        ],
+        [
+          4,
+          "a_tempo"
+        ]
+      ],
+      "from_measure": 4,
+      "out_bars": [
+        4,
+        5
+      ],
+      "out_repeats": [],
+      "out_tempo_changes": [
+        [
+          4,
+          "a_tempo"
+        ]
+      ]
+    },
+    {
+      "name": "changes after the entry bar are untouched",
+      "bars": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "repeats": [],
+      "tempo_changes": [
+        [
+          5,
+          "ritardando"
+        ]
+      ],
+      "from_measure": 4,
+      "out_bars": [
+        4,
+        5
+      ],
+      "out_repeats": [],
+      "out_tempo_changes": [
+        [
+          5,
+          "ritardando"
+        ]
+      ]
+    },
+    {
+      "name": "a metre still in force is carried to the entry bar",
+      "bars": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "repeats": [],
+      "tempo_changes": [],
+      "stated": {
+        "3": {
+          "time_signature": "3/4"
+        }
+      },
+      "from_measure": 5,
+      "out_bars": [
+        5,
+        6
+      ],
+      "out_repeats": [],
+      "out_tempo_changes": [],
+      "out_entry": {
+        "time_signature": "3/4",
+        "clef": null,
+        "key_signature": null
+      }
+    },
+    {
+      "name": "a clef and a key still in force are carried too",
+      "bars": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "repeats": [],
+      "tempo_changes": [],
+      "stated": {
+        "2": {
+          "clef": "tenor",
+          "key_signature": "G major"
+        }
+      },
+      "from_measure": 4,
+      "out_bars": [
+        4,
+        5,
+        6
+      ],
+      "out_repeats": [],
+      "out_tempo_changes": [],
+      "out_entry": {
+        "time_signature": null,
+        "clef": "tenor",
+        "key_signature": "G major"
+      }
+    },
+    {
+      "name": "only the last one printed before the entry bar is carried",
+      "bars": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "repeats": [],
+      "tempo_changes": [],
+      "stated": {
+        "2": {
+          "key_signature": "G major"
+        },
+        "3": {
+          "key_signature": "D major"
+        }
+      },
+      "from_measure": 5,
+      "out_bars": [
+        5,
+        6
+      ],
+      "out_repeats": [],
+      "out_tempo_changes": [],
+      "out_entry": {
+        "time_signature": null,
+        "clef": null,
+        "key_signature": "D major"
+      }
+    },
+    {
+      "name": "a change printed on the entry bar is kept over the carried one",
+      "bars": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "repeats": [],
+      "tempo_changes": [],
+      "stated": {
+        "2": {
+          "time_signature": "3/4"
+        },
+        "4": {
+          "time_signature": "2/4"
+        }
+      },
+      "from_measure": 4,
+      "out_bars": [
+        4,
+        5,
+        6
+      ],
+      "out_repeats": [],
+      "out_tempo_changes": [],
+      "out_entry": {
+        "time_signature": "2/4",
+        "clef": null,
+        "key_signature": null
+      }
+    },
+    {
+      "name": "nothing is invented when nothing was printed",
+      "bars": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "repeats": [],
+      "tempo_changes": [],
+      "stated": {},
+      "from_measure": 4,
+      "out_bars": [
+        4,
+        5,
+        6
+      ],
+      "out_repeats": [],
+      "out_tempo_changes": [],
+      "out_entry": {
+        "time_signature": null,
+        "clef": null,
+        "key_signature": null
+      }
+    }
+  ]
+}

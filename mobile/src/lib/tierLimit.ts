@@ -1,4 +1,5 @@
 import { ApiError } from '../data/api/client';
+import { whenAnalysisAllowanceResets } from './analysisAllowance';
 
 /**
  * The free-tier refusal, recognised and said out loud.
@@ -47,21 +48,6 @@ export function tierLimitOf(error: unknown): TierLimit | null {
   };
 }
 
-/** When the count goes back to zero, as a person would say it. */
-function whenItResets(resetsAt: string | null): string {
-  if (!resetsAt) {
-    return 'next month';
-  }
-  const date = new Date(resetsAt);
-  if (Number.isNaN(date.getTime())) {
-    return 'next month';
-  }
-  return `on ${date.toLocaleDateString(undefined, {
-    day: 'numeric',
-    month: 'long',
-  })}`;
-}
-
 /**
  * What to tell someone who has run out, or null if that isn't what happened.
  *
@@ -86,5 +72,5 @@ export function describeTierLimit(error: unknown): string | null {
     limit.limit === null
       ? `${limit.used} analyses`
       : `all ${limit.limit} of your free analyses`;
-  return `That take wasn't analysed — you've used ${count} this month. The count resets ${whenItResets(limit.resetsAt)}.`;
+  return `That take wasn't analysed — you've used ${count} this month. The count resets ${whenAnalysisAllowanceResets(limit.resetsAt)}.`;
 }

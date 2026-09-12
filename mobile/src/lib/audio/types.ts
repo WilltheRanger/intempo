@@ -16,9 +16,26 @@ export interface Recording {
 }
 
 export interface Recorder {
+  /** Peak captured since the count-in/reset. Signal presence, not quality. */
+  inputPeak?(): number;
   stop(): Promise<Recording>;
   /** Abandons the take without producing a file. Safe to call twice. */
   cancel(): void;
+  /**
+   * Throw away everything captured up to now and keep recording.
+   *
+   * **This is what makes an audible count-in safe.** The microphone opens
+   * before the count, on purpose — starting it afterwards would put an
+   * unpredictable hardware delay between "four" and the downbeat, in an app
+   * whose entire subject is where notes land. So the count-in's clicks are in
+   * the capture, and `alignment.py` measures every onset from *the first one
+   * it detects*: a click over the phone's speaker would become the note the
+   * whole take is judged against.
+   *
+   * Called on the downbeat, it drops the pre-roll — the clicks, the room, and
+   * the hardware's start-up — and the file begins where the music does.
+   */
+  discardCapturedSoFar(): void;
 }
 
 /**
@@ -93,7 +110,16 @@ export class MicrophoneUnavailableError extends Error {
   }
 }
 
-/** A take that captured nothing — a muted input, or a stop before any audio. */
+/**
+ * A take that captured nothing — a muted input, or a stop before any audio.
+ *
+ * **Both halves of that sentence are now true.** For a long time only the
+ * second was: the check was `durationOf(chunks) === 0`, and a muted microphone
+ * delivers samples like any other — they are simply all zero — so the take had
+ * a duration, passed, uploaded, and came back `no_onsets` after the wait,
+ * having spent one of three free analyses for the month. `capturedNothing` in
+ * `./level` is the other half.
+ */
 export class EmptyRecordingError extends Error {
   constructor() {
     super('The recording captured no audio.');

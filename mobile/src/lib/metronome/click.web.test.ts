@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { resetAudioContextForTests } from '../audio/context.web';
+
 /**
  * The audible metronome on web, which had no test.
  *
@@ -31,7 +33,11 @@ class StubNode {
   type = '';
   frequency = { value: 0 };
   gain = new StubParam();
+  disconnected = false;
   connect() {}
+  disconnect() {
+    this.disconnected = true;
+  }
   start(at: number) {
     bookings.push({ at, hz: this.frequency.value });
   }
@@ -43,6 +49,8 @@ class StubContext {
   destination = {};
   closed = false;
   resumed = false;
+  /** Every gain node this context made, oldest first. The first is the track. */
+  gains: StubNode[] = [];
   constructor() {
     contexts.push(this);
   }
@@ -53,7 +61,9 @@ class StubContext {
     return new StubNode();
   }
   createGain() {
-    return new StubNode();
+    const node = new StubNode();
+    this.gains.push(node);
+    return node;
   }
   resume() {
     this.resumed = true;
@@ -82,6 +92,10 @@ beforeEach(() => {
   contexts = [];
   audioNow = 5;
   vi.stubGlobal('window', { AudioContext: StubContext });
+  // The context is shared for the life of the page (`lib/audio/context.web.ts`),
+  // and a test file is one page. Without this the second test in the file would
+  // be handed the first test's context and `contexts` would be empty.
+  resetAudioContextForTests();
 });
 
 afterEach(() => {
@@ -105,6 +119,32 @@ describe('the web click track', () => {
     bookings.forEach((booking, index) => {
       expect(booking.at).toBeCloseTo(startedAt + index * 0.5, 9);
     });
+  });
+
+  it('books a changing-meter plan at its exact irregular times', async () => {
+    const startClicks = await loadStartClicks();
+    const beats = [
+      { atS: 0, index: 0, beatInBar: 0, downbeat: true, pulsesPerBar: 4 },
+      { atS: 1, index: 1, beatInBar: 1, downbeat: false, pulsesPerBar: 4 },
+      { atS: 2.5, index: 2, beatInBar: 0, downbeat: true, pulsesPerBar: 2 },
+      { atS: 4, index: 3, beatInBar: 1, downbeat: false, pulsesPerBar: 2 },
+    ];
+    const track = startClicks({ bpm: 60, perBar: 4, beats });
+    const startedAt = audioNow + track.leadInS;
+
+    advance(5);
+    track.stop();
+
+    const offsets = bookings.map((booking) => booking.at - startedAt);
+    [0, 1, 2.5, 4].forEach((expected, index) => {
+      expect(offsets[index]).toBeCloseTo(expected, 9);
+    });
+    expect(bookings.map((booking) => booking.hz > 1000)).toEqual([
+      true,
+      false,
+      true,
+      false,
+    ]);
   });
 
   it('books nothing late even when the waking timer is starved', async () => {
@@ -166,8 +206,14 @@ describe('the web click track', () => {
     track.stop();
   });
 
-  it('closes the context on stop, taking booked clicks with it', async () => {
+  it('cuts this run off the mixer on stop, taking booked clicks with it', async () => {
     // "A click scheduled 250ms out must not sound after the take has ended."
+    //
+    // This used to close the whole context, and the requirement is unchanged —
+    // only the instrument. The context is shared now, so cancelling has to be a
+    // node: disconnecting the run's own gain silences every oscillator already
+    // booked through it and leaves the mixer standing for the next run. See
+    // `lib/audio/context.web.ts` for why closing it was the wrong tool.
     const startClicks = await loadStartClicks();
     const track = startClicks({ bpm: 120, perBar: 4 });
 
@@ -176,8 +222,29 @@ describe('the web click track', () => {
     track.stop();
     advance(5);
 
-    expect(contexts[0].closed).toBe(true);
+    expect(contexts[0].gains[0].disconnected).toBe(true);
+    expect(contexts[0].closed).toBe(false);
     expect(bookings).toHaveLength(booked);
+  });
+
+  it('reuses the context on a second run rather than building another', async () => {
+    // **The "audio only works the first time" bug.** iOS Safari caps how many
+    // audio contexts a page may hold and does not reliably return the slot on
+    // close, so a per-run context means the second Listen — or the second take
+    // — is silent with every other sign of working. One context, forever.
+    const startClicks = await loadStartClicks();
+
+    startClicks({ bpm: 120, perBar: 4 }).stop();
+    const afterFirst = bookings.length;
+
+    const second = startClicks({ bpm: 120, perBar: 4 });
+    advance(1);
+    second.stop();
+
+    expect(contexts).toHaveLength(1);
+    // And the run after a stop still books clicks: cutting the first run's
+    // track must not have taken the mixer with it.
+    expect(bookings.length).toBeGreaterThan(afterFirst);
   });
 
   it('stops twice without complaint', async () => {

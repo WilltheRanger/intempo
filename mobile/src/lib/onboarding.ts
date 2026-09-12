@@ -18,8 +18,28 @@ export interface OnboardingAnswers {
   /** As typed, untrimmed. Trimming is this module's job, not the screen's. */
   name: string;
   instrument: Instrument | null;
-  /** The object key from `useUploadAvatar`, or null if none was chosen or it failed. */
+  /** The object key from `useUploadAvatar`, once the upload has finished. */
   avatarKey: string | null;
+  /**
+   * Whether a local photograph is ready to upload when Continue is pressed.
+   *
+   * Optional so profile-update callers and older tests remain honest: an
+   * existing object key is enough on its own. Onboarding deliberately treats a
+   * local selection as complete before the bytes have moved; sending them is
+   * part of finishing, not part of choosing.
+   */
+  photoSelected?: boolean;
+  /**
+   * The account already has a photograph on it.
+   *
+   * **Because onboarding can be answered across two sittings.** `PATCH /v1/me`
+   * stores what it is given and stamps `onboarded_at` only once the resulting
+   * row carries all three — so someone who chose a photo, was interrupted, and
+   * came back has that photograph on their account and this screen in front of
+   * them again. Asking for it a second time is asking for the one answer that
+   * cannot be given by thinking, twice.
+   */
+  storedPhoto?: boolean;
 }
 
 /**
@@ -42,7 +62,7 @@ export type OnboardingRequirement = 'name' | 'photo' | 'instrument';
 /** What each missing answer is called in front of a musician. */
 export const MISSING_LABELS: Record<OnboardingRequirement, string> = {
   name: 'your name',
-  photo: 'a photo',
+  photo: 'a profile picture',
   instrument: 'your instrument',
 };
 
@@ -56,6 +76,12 @@ export const MISSING_LABELS: Record<OnboardingRequirement, string> = {
  * A name of only spaces is not a name, matching what the server stores: it
  * strips and writes NULL, so accepting one here would let someone through to
  * an account with no name on it.
+ *
+ * A selected local photograph is enough to enable Continue. The screen uploads
+ * it as the first part of finishing and does not save the profile until an
+ * object key exists. Requiring the key here would force the old behaviour:
+ * uploading as an unrelated side effect of choosing. So is one already on the
+ * account — see `storedPhoto`.
  */
 export function missingFromOnboarding(
   answers: OnboardingAnswers,
@@ -64,7 +90,7 @@ export function missingFromOnboarding(
   if (!answers.name.trim()) {
     missing.push('name');
   }
-  if (!answers.avatarKey) {
+  if (!answers.avatarKey && !answers.photoSelected && !answers.storedPhoto) {
     missing.push('photo');
   }
   if (!answers.instrument) {
@@ -120,6 +146,76 @@ export function profileUpdateFor(answers: OnboardingAnswers): UpdateMeInput {
     ...(answers.instrument ? { instrument: answers.instrument } : {}),
     ...(answers.avatarKey ? { avatar_key: answers.avatarKey } : {}),
   };
+}
+
+/**
+ * The PATCH body for answers given **before** the account existed.
+ *
+ * The same fields as `profileUpdateFor`, with one difference that matters:
+ * `onboarded` is claimed only when all three answers are actually present.
+ *
+ * `PATCH /v1/me` **refuses** `onboarded: true` against a row still missing
+ * one — a 400 naming what is absent — so a draft that lost its photograph on
+ * the way through a confirmation link would fail the request outright and land
+ * nothing, including the name and instrument it *did* carry. Sending what
+ * there is leaves the account un-onboarded on purpose: the gate opens with
+ * those two already filled and asks only for the picture.
+ */
+export function draftUpdateFor(answers: OnboardingAnswers): UpdateMeInput {
+  const name = answers.name.trim();
+  const complete = missingFromOnboarding(answers).length === 0;
+  return {
+    ...(complete ? { onboarded: true } : {}),
+    ...(name ? { display_name: name } : {}),
+    ...(answers.instrument ? { instrument: answers.instrument } : {}),
+    ...(answers.avatarKey ? { avatar_key: answers.avatarKey } : {}),
+  };
+}
+
+/**
+ * Whether a draft is worth sending at all.
+ *
+ * Nothing answered means nothing to apply, and the difference is visible: a
+ * request that sets no fields would still cost a round trip in front of
+ * someone waiting for the app to open, and `PATCH /v1/me` reads an empty body
+ * as a 400 rather than a no-op.
+ *
+ * A photograph on its own counts, and counts before it has been uploaded —
+ * `photoSelected`, not `avatarKey`. It is the answer with the real cost, and
+ * the upload has not happened yet at the moment this is asked: reading only
+ * the key would decide there was nothing to send and throw the picture away.
+ */
+export function draftIsWorthSending(answers: OnboardingAnswers): boolean {
+  return Boolean(
+    answers.name.trim() ||
+      answers.instrument ||
+      answers.avatarKey ||
+      answers.photoSelected,
+  );
+}
+
+/**
+ * The object key to reuse for this photograph, if the upload already happened.
+ *
+ * Saving is two requests — put the bytes in the avatars bucket, then save the
+ * key with the rest of the profile — and only the second one usually fails. A
+ * retry that uploaded again would leave an orphan in storage every time, on
+ * exactly the connection least able to afford it.
+ *
+ * Keyed on the file, not on a flag. The screen used to hold `avatarKey` in
+ * state and clear it inside the photo picker, so "is this key still the right
+ * one" was a fact spread across two handlers; picking a *different* photograph
+ * and retrying is the case that gets that wrong, and it is silent — the
+ * account ends up pointing at the picture they backed out of.
+ */
+export function reusableAvatarKey(
+  photo: { uri: string } | null,
+  uploaded: { uri: string; key: string } | null,
+): string | null {
+  if (!photo || !uploaded) {
+    return null;
+  }
+  return photo.uri === uploaded.uri ? uploaded.key : null;
 }
 
 /**

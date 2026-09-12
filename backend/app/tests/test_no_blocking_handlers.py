@@ -29,7 +29,7 @@ import inspect
 
 from fastapi.routing import APIRoute
 
-from app.main import app
+from app.tests.served_routes import served_routes
 
 #: Coroutine handlers that have been checked and do not block.
 #:
@@ -40,7 +40,8 @@ _ASYNC_BY_DESIGN: set[str] = set()
 
 
 def _routes() -> list[APIRoute]:
-    return [route for route in app.routes if isinstance(route, APIRoute)]
+    """Every route's `APIRoute`, whatever shape FastAPI is holding them in."""
+    return served_routes()
 
 
 def test_there_are_routes_to_check() -> None:

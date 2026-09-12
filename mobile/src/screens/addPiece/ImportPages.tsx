@@ -1,6 +1,7 @@
 import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
-import { Images } from 'lucide-react-native';
+import { Images } from '../../components/icons';
+import { useGoBack } from '../../navigation/useGoBack';
 import { useState } from 'react';
 import { Platform, StyleSheet } from 'react-native';
 
@@ -11,7 +12,10 @@ import {
   SecondaryButton,
   Text,
 } from '../../components/primitives';
-import { captureSession } from '../../data/captureSession';
+import {
+  captureSession,
+  MAX_SCAN_PAGES,
+} from '../../data/captureSession';
 import { spacing } from '../../design';
 import {
   cameraCanPhotographAPage,
@@ -39,14 +43,42 @@ import type { RootNavigation } from '../../navigation/types';
  * grants access to that file alone — asking for the whole library first would
  * request more than this screen uses.
  */
-export function ImportPagesScreen() {
+export function ImportPagesScreen({
+  attachToPieceId,
+  adding = false,
+}: {
+  attachToPieceId?: string;
+  /**
+   * Add to the scan in progress rather than replacing it.
+   *
+   * Set only by "Add page" on the review list. Importing normally *starts* a
+   * piece, and that reset is what stops an abandoned scan absorbing the first
+   * page of the next one — so the caller says which this is, exactly as
+   * `Scanner` takes `adding`.
+   */
+  adding?: boolean;
+}) {
   const navigation = useNavigation<RootNavigation>();
+  const goBack = useGoBack({ tab: 'Library' });
+  /**
+   * Where "Add page" returns to, once the images are in the session.
+   *
+   * `useGoBack` rather than a bare `navigation.goBack()`, which
+   * `goBack.test.ts` refuses and is right to: on a screen opened directly —
+   * and `/add/import` is a real URL in the web build — `goBack` is a no-op, so
+   * the pages would land in the scan and the musician would be left on the
+   * picker with nothing to press.
+   */
+  const backToPages = useGoBack({ route: 'CapturedPages', params: undefined });
   // Read once: nothing about the device changes while the screen is open.
   const [hasUsableCamera] = useState(() =>
     cameraCanPhotographAPage(deviceHints(Platform.OS)),
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Read at the moment of picking rather than held in state: the review screen
+  // can delete a page while this is open on top of it.
+  const room = MAX_SCAN_PAGES - captureSession.current().length;
 
   async function pick() {
     setBusy(true);
@@ -55,6 +87,10 @@ export function ImportPagesScreen() {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         allowsMultipleSelection: true,
+        // What is left, when adding to a scan that already holds pages. The
+        // picker refusing the thirteenth is a better answer than accepting it
+        // and dropping it afterwards.
+        selectionLimit: adding ? room : MAX_SCAN_PAGES,
         // No cropping. A page of music cropped to a square is a page of music
         // with its music cut off, and the framing that matters was decided when
         // the photograph was taken.
@@ -71,9 +107,29 @@ export function ImportPagesScreen() {
         return;
       }
 
+      const chosen = assets.map((asset) => asset.uri);
+
+      if (adding) {
+        // Back to the list this came from, rather than a second copy of it
+        // pushed on top: "Add page" is a round trip, and the pages, the order
+        // they were dragged into and the scanner underneath all have to
+        // survive it.
+        const taken = captureSession.appendAll(chosen);
+        if (taken < chosen.length) {
+          setError(
+            taken === 0
+              ? `This scan already has ${MAX_SCAN_PAGES} pages, which is the most InTempo can read at once.`
+              : `Only ${taken === 1 ? '1 image' : `${taken} images`} fitted — a scan can hold ${MAX_SCAN_PAGES} pages.`,
+          );
+          return;
+        }
+        backToPages();
+        return;
+      }
+
       // A fresh session, exactly as opening the scanner does — importing is
       // starting a new piece, not adding to whatever was photographed earlier.
-      captureSession.importAll(assets.map((asset) => asset.uri));
+      captureSession.importAll(chosen, { attachToPieceId });
       navigation.replace('CapturedPages');
     } catch (cause) {
       setError(
@@ -90,7 +146,7 @@ export function ImportPagesScreen() {
     <ScreenContainer>
       <PageHeader
         title="Import score"
-        onBack={() => navigation.goBack()}
+        onBack={goBack}
         backLabel="Back"
       />
 
@@ -132,8 +188,8 @@ export function ImportPagesScreen() {
       ) : null}
 
       <Text variant="metadataSmall" color="textTertiary" style={styles.caveat}>
-        Only the first page is transcribed. A score spanning several pages
-        isn&apos;t supported yet.
+        Choose up to {MAX_SCAN_PAGES} pages. InTempo keeps their order and reads
+        all of them.
       </Text>
     </ScreenContainer>
   );

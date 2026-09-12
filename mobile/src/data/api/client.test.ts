@@ -11,7 +11,7 @@ vi.mock('../auth/session', () => ({
   signOut: async () => {},
 }));
 
-import { ApiError, apiFetch } from './client';
+import { ApiError, apiFetch, REQUEST_FAILED, SERVER_FAULT } from './client';
 
 /**
  * The first request after a quiet period.
@@ -145,7 +145,7 @@ describe('a request that never settles', () => {
     // the network when the token is near expiry. Unbounded, it hangs before
     // the request is sent: nothing on the wire, nothing to time out.
     session.token = () => new Promise(() => {});
-    const fetching = vi.fn((url: string) =>
+    const fetching = vi.fn((_url: string) =>
       Promise.resolve(new Response(JSON.stringify({ status: 'ok' }), { status: 200 })),
     );
     vi.stubGlobal('fetch', fetching);
@@ -188,7 +188,7 @@ describe('a request that never settles', () => {
    * it the stub hangs whether the fix is present or not, which would make the
    * test pass by timing out rather than by aborting.
    */
-  function headersThenNothing() {
+  function headersThenNothing(status = 200) {
     return vi.fn((_url: string, init: RequestInit) => {
       const body = new ReadableStream({
         start(controller) {
@@ -197,7 +197,7 @@ describe('a request that never settles', () => {
           });
         },
       });
-      return Promise.resolve(new Response(body, { status: 200 }));
+      return Promise.resolve(new Response(body, { status }));
     });
   }
 
@@ -223,6 +223,20 @@ describe('a request that never settles', () => {
     );
     await vi.advanceTimersByTimeAsync(46_000);
     await settled;
+  });
+
+  it('reports a stalled error response as an interrupted answer too', async () => {
+    const fetching = headersThenNothing(503);
+    vi.stubGlobal('fetch', fetching);
+    const pending = apiFetch('/v1/ready', { authenticated: false });
+    const settled = pending.catch((cause: unknown) => cause);
+    await vi.advanceTimersByTimeAsync(46_000);
+    expect(await settled).toMatchObject({
+      status: 0,
+      message: expect.stringMatching(/started answering and then stopped/i),
+    });
+    expect(fetching).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('does not retry a stalled body, even on a GET', async () => {
@@ -525,5 +539,75 @@ describe('waking the host', () => {
 
     resolveHealth?.(new Response(JSON.stringify({ status: 'ok' }), { status: 200 }));
     await expect(pending).resolves.toEqual({ ok: true });
+  });
+});
+
+
+/**
+ * What a failure says when the server said nothing readable.
+ *
+ * **The screens show it.** This project's convention for a write is the
+ * error's own words — argued in `VerdictScreen` and followed by roughly ten
+ * screens — and that argument holds for the sentences this app writes. It did
+ * not hold for `Request failed (502): /v1/scores`, which is what `readError`
+ * minted whenever a body was not JSON: a proxy page, a cold-start HTML error,
+ * a gateway timeout. A musician saving a piece saw an HTTP status and a URL.
+ */
+describe('a server that says nothing a person can read', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  /** A fetch that answers with `status` and a body that is not JSON. */
+  function answering(status: number, body = '<html>502 Bad Gateway</html>') {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(body, { status })),
+    );
+  }
+
+  async function failureOf(status: number, body?: string): Promise<ApiError> {
+    answering(status, body);
+    try {
+      await apiFetch('/v1/scores', { authenticated: false });
+    } catch (error) {
+      return error as ApiError;
+    }
+    throw new Error('the request should have failed');
+  }
+
+  it('does not put an HTTP status and a URL in front of a musician', async () => {
+    const error = await failureOf(502);
+
+    expect(error.message).not.toMatch(/502/);
+    expect(error.message).not.toMatch(/\/v1\//);
+  });
+
+  it('names a server fault as not the musician\'s doing', async () => {
+    // The difference between a musician retrying and a musician assuming they
+    // broke their own library.
+    expect((await failureOf(500)).message).toBe(SERVER_FAULT);
+    expect((await failureOf(502)).message).toBe(SERVER_FAULT);
+  });
+
+  it('does not blame the server for a request the server refused', async () => {
+    // A 4xx with an unreadable body is not a server fault, and saying it was
+    // would send someone away to wait for a problem that is not going to fix
+    // itself.
+    expect((await failureOf(422)).message).toBe(REQUEST_FAILED);
+  });
+
+  it('still prefers the server\'s own sentence when it sent one', async () => {
+    // The fallback is a last resort, not a replacement. A backend that writes
+    // for a musician — and this one does, at length — must still be heard.
+    const error = await failureOf(409, JSON.stringify({ detail: 'this page is already being read' }));
+
+    expect(error.message).toBe('this page is already being read');
+  });
+
+  it('keeps the status and the path for whoever is debugging', async () => {
+    // They were only ever removed from the *sentence*.
+    const error = await failureOf(502);
+
+    expect(error.status).toBe(502);
+    expect(error.path).toBe('/v1/scores');
   });
 });

@@ -16,8 +16,12 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi.testclient import TestClient
 
+from app import db as db_module
 from app.main import app
+from app.services.transcription_budget import EXHAUSTED_MESSAGE, MAX_RUNS_PER_PAGE
 from app.routers import scores as scores_module
+from app.services import display_urls
+from app.tests.fake_supabase import FakeSupabase
 
 
 GOOD_PAYLOAD = {
@@ -118,7 +122,9 @@ def _install_supabase(monkeypatch: pytest.MonkeyPatch, *, returning_row: dict | 
         delete_chain.execute.return_value = MagicMock(
             data=[returning_row] if returning_row else []
         )
-    monkeypatch.setattr(scores_module, "get_service_client", lambda: client)
+    # One binding for the whole HTTP layer: `require_service_client` and the
+    # display-URL memo both resolve the client on the `db` module.
+    monkeypatch.setattr(db_module, "get_service_client", lambda: client)
     return client
 
 
@@ -150,6 +156,50 @@ def _stub_worker(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 def test_post_unauthenticated_returns_401(client: TestClient) -> None:
     res = client.post("/v1/scores", json={"image_url": "x", "title": "t"})
     assert res.status_code == 401
+
+
+def test_the_first_reading_is_counted_against_the_ceiling(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    """1, not the column's default of 0.
+
+    Leaving the first reading uncounted would make the real ceiling one higher
+    than `MAX_RUNS_PER_PAGE` says it is — the kind of off-by-one a limit is
+    worst at carrying, because nothing ever contradicts it out loud.
+    """
+    user_id, score_id = uuid4(), uuid4()
+    _stub_worker(monkeypatch)
+    sb = _install_supabase(monkeypatch, returning_row=_row_for(score_id, user_id))
+
+    res = client.post(
+        "/v1/scores",
+        json={"image_url": _signed_url(user_id), "title": "Etude #1"},
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+    assert res.status_code == 201, res.text
+    assert sb.table.return_value.insert.call_args.args[0]["transcription_runs"] == 1
+
+
+def test_a_hand_entered_piece_spends_no_reading(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    """Nothing is read, so nothing is counted — and the day a photograph is
+    attached to it, the full allowance is there."""
+    user_id, score_id = uuid4(), uuid4()
+    _stub_worker(monkeypatch)
+    sb = _install_supabase(monkeypatch, returning_row=_row_for(score_id, user_id))
+
+    res = client.post(
+        "/v1/scores",
+        json={"title": "Etude #1", "clef": "treble", "time_signature": "4/4"},
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+    assert res.status_code == 201, res.text
+    assert sb.table.return_value.insert.call_args.args[0]["transcription_runs"] == 0
 
 
 def test_post_creates_score(
@@ -374,6 +424,108 @@ def test_list_returns_owner_scores(
     body = res.json()
     assert len(body) == 3
     assert [r["title"] for r in body] == ["row 0", "row 1", "row 2"]
+
+
+def _unphotographed(user_id: UUID, **over: Any) -> dict[str, Any]:
+    """A score row with no photograph, so nothing here touches storage.
+
+    The listing signs page one of every row it returns; a row with no page
+    signs nothing, which keeps these tests about ordering and paging rather
+    than about the signer.
+    """
+    row = _row_for(uuid4(), user_id, source_image_url=None, source_image_urls=None)
+    row.update(over)
+    return row
+
+
+def test_the_library_listing_is_newest_first(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """**Ordered since it was written, checked by nothing until now.**
+
+    `_install_supabase` is a `MagicMock` chain: `.order()` and `.range()`
+    return the next mock and hand back whatever `returning_rows` was seeded
+    with, in that order. So the endpoint's ordering could have been removed
+    entirely and every test in this file would still have passed —
+    `FakeSupabase` sorts, which is what makes this a test rather than a
+    restatement.
+
+    It matters because the app pages: an offset into an unordered list is not
+    a page of anything, and `listAllScores` walks the whole library by offset.
+    """
+    user_id = uuid4()
+    fake = FakeSupabase()
+    fake.seed(
+        "scores",
+        [
+            _unphotographed(user_id, title="middle", created_at="2026-05-01T00:00:00+00:00"),
+            _unphotographed(user_id, title="newest", created_at="2026-09-01T00:00:00+00:00"),
+            _unphotographed(user_id, title="oldest", created_at="2026-01-01T00:00:00+00:00"),
+        ],
+    )
+    monkeypatch.setattr(db_module, "get_service_client", lambda: fake)
+
+    res = client.get(
+        "/v1/scores", headers={"Authorization": f"Bearer {make_token(sub=user_id)}"}
+    )
+
+    assert res.status_code == 200, res.text
+    assert [row["title"] for row in res.json()] == ["newest", "middle", "oldest"]
+
+
+def test_the_library_pages_without_repeating_or_skipping_a_piece(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """`range(offset, offset + limit - 1)` is inclusive at both ends.
+
+    Off by one in either direction and the app's walk through the library
+    either shows a piece twice or never shows it — and the second reads as a
+    piece that has been lost, which is the bug `listAllScores` was written to
+    fix in the first place.
+    """
+    user_id = uuid4()
+    fake = FakeSupabase()
+    fake.seed(
+        "scores",
+        [
+            _unphotographed(
+                user_id, title=f"piece {n:02d}", created_at=f"2026-01-{n:02d}T00:00:00+00:00"
+            )
+            for n in range(1, 11)
+        ],
+    )
+    monkeypatch.setattr(db_module, "get_service_client", lambda: fake)
+    headers = {"Authorization": f"Bearer {make_token(sub=user_id)}"}
+
+    def page(offset: int, limit: int) -> list[str]:
+        res = client.get(f"/v1/scores?limit={limit}&offset={offset}", headers=headers)
+        assert res.status_code == 200, res.text
+        return [row["title"] for row in res.json()]
+
+    walked = page(0, 4) + page(4, 4) + page(8, 4)
+
+    assert len(walked) == 10
+    assert len(set(walked)) == 10, "a page repeated a piece"
+    assert walked == sorted(walked, reverse=True), "the walk lost the ordering"
+
+
+def test_a_page_past_the_end_of_the_library_is_empty_not_an_error(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """`listAllScores` asks once more when the last page came back exactly
+    full — that request must answer with nothing, not with a failure."""
+    user_id = uuid4()
+    fake = FakeSupabase()
+    fake.seed("scores", [_unphotographed(user_id) for _ in range(3)])
+    monkeypatch.setattr(db_module, "get_service_client", lambda: fake)
+
+    res = client.get(
+        "/v1/scores?limit=3&offset=3",
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+
+    assert res.status_code == 200
+    assert res.json() == []
 
 
 # ---- GET /v1/scores/:id ---------------------------------------------------
@@ -657,23 +809,151 @@ def test_delete_unknown_returns_404(
     assert res.status_code == 404
 
 
-def test_delete_with_dependent_analyses_returns_409(
+def test_delete_cleanup_failure_is_retryable(
     monkeypatch: pytest.MonkeyPatch,
     client: TestClient,
     make_token: Callable[..., str],
 ) -> None:
     user_id = uuid4()
-    fk_violation = RuntimeError(
-        "update or delete on table scores violates foreign key constraint analyses_score_id_fkey"
+    score_id = uuid4()
+    failure = RuntimeError("connection dropped during dependent cleanup")
+    _install_supabase(
+        monkeypatch,
+        returning_row=_row_for(score_id, user_id),
+        raise_on_delete=failure,
     )
-    _install_supabase(monkeypatch, raise_on_delete=fk_violation)
     res = client.delete(
-        f"/v1/scores/{uuid4()}",
+        f"/v1/scores/{score_id}",
         headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
     )
-    assert res.status_code == 409
-    assert "analyses" in res.json()["detail"]
+    assert res.status_code == 503
+    assert "try again" in res.json()["detail"].lower()
 
+
+
+def test_delete_with_history_removes_dependents_then_owned_media(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    """A practised piece is one deletion, including every row and byte."""
+    user_id, score_id = uuid4(), uuid4()
+    page_key = f"{user_id}/page.jpg"
+    audio_key = f"{user_id}/take.wav"
+    row = _row_for(
+        score_id,
+        user_id,
+        source_image_url=(
+            f"{PROJECT_HOST}/storage/v1/object/authenticated/"
+            f"{scores_module.SCORE_BUCKET}/{page_key}"
+        ),
+    )
+    analysis_row = {
+        "audio_url": (
+            f"{PROJECT_HOST}/storage/v1/object/authenticated/"
+            f"{scores_module.AUDIO_BUCKET}/{audio_key}"
+        )
+    }
+
+    sb = MagicMock()
+    score_table = MagicMock(name="scores")
+    analysis_table = MagicMock(name="analyses")
+    assignment_table = MagicMock(name="assignments")
+    tables = {
+        "scores": score_table,
+        "analyses": analysis_table,
+        "assignments": assignment_table,
+    }
+    sb.table.side_effect = lambda name: tables[name]
+
+    score_table.select.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value = MagicMock(
+        data=[row]
+    )
+    analysis_table.select.return_value.eq.return_value.eq.return_value.execute.return_value = MagicMock(
+        data=[analysis_row]
+    )
+
+    order: list[str] = []
+    assignment_table.delete.return_value.eq.return_value.execute.side_effect = (
+        lambda: (order.append("assignments"), MagicMock(data=[]))[1]
+    )
+    analysis_table.delete.return_value.eq.return_value.eq.return_value.execute.side_effect = (
+        lambda: (order.append("analyses"), MagicMock(data=[analysis_row]))[1]
+    )
+    score_table.delete.return_value.eq.return_value.eq.return_value.execute.side_effect = (
+        lambda: (order.append("score"), MagicMock(data=[row]))[1]
+    )
+
+    page_bucket = MagicMock(name="score-images")
+    audio_bucket = MagicMock(name="audio")
+    buckets = {
+        scores_module.SCORE_BUCKET: page_bucket,
+        scores_module.AUDIO_BUCKET: audio_bucket,
+    }
+    sb.storage.from_.side_effect = lambda name: buckets[name]
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
+
+    res = client.delete(
+        f"/v1/scores/{score_id}",
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+
+    assert res.status_code == 204, res.text
+    assert order == ["assignments", "analyses", "score"]
+    assignment_table.delete.return_value.eq.assert_called_once_with(
+        "score_id", str(score_id)
+    )
+    analysis_table.delete.return_value.eq.return_value.eq.assert_called_once_with(
+        "user_id", str(user_id)
+    )
+    audio_bucket.remove.assert_called_once_with([audio_key])
+    page_bucket.remove.assert_called_once_with([page_key])
+
+
+def test_delete_never_uses_a_foreign_audio_reference_as_storage_authority(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    user_id, score_id = uuid4(), uuid4()
+    other_user = uuid4()
+    row = _row_for(score_id, user_id, source_image_url=None)
+
+    sb = MagicMock()
+    score_table = MagicMock(name="scores")
+    analysis_table = MagicMock(name="analyses")
+    assignment_table = MagicMock(name="assignments")
+    sb.table.side_effect = lambda name: {
+        "scores": score_table,
+        "analyses": analysis_table,
+        "assignments": assignment_table,
+    }[name]
+    score_table.select.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value = MagicMock(
+        data=[row]
+    )
+    analysis_table.select.return_value.eq.return_value.eq.return_value.execute.return_value = MagicMock(
+        data=[{"audio_url": f"{scores_module.AUDIO_BUCKET}/{other_user}/take.wav"}]
+    )
+    assignment_table.delete.return_value.eq.return_value.execute.return_value = MagicMock(
+        data=[]
+    )
+    analysis_table.delete.return_value.eq.return_value.eq.return_value.execute.return_value = MagicMock(
+        data=[]
+    )
+    score_table.delete.return_value.eq.return_value.eq.return_value.execute.return_value = MagicMock(
+        data=[row]
+    )
+    audio_bucket = MagicMock()
+    sb.storage.from_.return_value = audio_bucket
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
+
+    res = client.delete(
+        f"/v1/scores/{score_id}",
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+
+    assert res.status_code == 204, res.text
+    audio_bucket.remove.assert_not_called()
 
 
 # ---- Signed download URLs -------------------------------------------------
@@ -930,6 +1210,52 @@ def test_accepting_twice_is_not_an_error(
     sb.storage.from_.return_value.remove.assert_not_called()
 
 
+def test_a_discarded_photograph_is_not_signed(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """**The large empty box on an accepted piece.**
+
+    Signing does not check that the object exists. A row whose page was deleted
+    by `POST /:id/accept` kept its `source_image_url`, so it went on being handed
+    a perfectly well-formed URL that 404s — and the app cannot tell that from a
+    slow download. What a musician saw on a piece they had accepted was a large
+    empty box where the photograph used to be and an "Original" tab that showed
+    nothing.
+    """
+    user_id, score_id = uuid4(), uuid4()
+    row = _row_for(
+        score_id,
+        user_id,
+        transcription_accepted_at="2026-08-24T00:00:00+00:00",
+        page_image_discarded_at="2026-08-24T00:00:00+00:00",
+    )
+    sb = _install_supabase(monkeypatch, returning_row=row)
+    _install_storage(sb, signed=[])
+
+    res = client.get(f"/v1/scores/{score_id}", headers={"Authorization": f"Bearer {make_token(sub=user_id)}"})
+
+    assert res.status_code == 200, res.text
+    assert res.json()["image_url"] is None
+    # Not merely null in the response — never asked for. Signing a key whose
+    # object is gone is a round trip to be told nothing.
+    sb.storage.from_.return_value.create_signed_urls.assert_not_called()
+
+
+def test_a_photograph_that_is_still_there_is_signed(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """The other half, so the guard above cannot pass by signing nothing ever."""
+    user_id, score_id = uuid4(), uuid4()
+    row = _row_for(score_id, user_id)
+    sb = _install_supabase(monkeypatch, returning_row=row)
+    _install_storage(sb, signed=[])
+
+    res = client.get(f"/v1/scores/{score_id}", headers={"Authorization": f"Bearer {make_token(sub=user_id)}"})
+
+    assert res.status_code == 200, res.text
+    sb.storage.from_.return_value.create_signed_urls.assert_called_once()
+
+
 def test_accepting_someone_elses_score_is_404(
     monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
 ) -> None:
@@ -1101,6 +1427,86 @@ def test_a_discarded_photograph_cannot_be_read_again(
     assert res.status_code == 409
     assert "discarded" in res.json()["detail"]
     assert enqueued == []
+
+
+def test_a_page_read_to_its_ceiling_is_not_read_again(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """**The only refusal here that is about the bill rather than the row.**
+
+    A reading is a vision-model call per page. Every other check on this
+    endpoint is about state — already reading, photograph discarded — and none
+    of them stops the same tap arriving a thousand times. The free tier does
+    not reach this path either: it counts rows in `analyses`, and a re-read
+    creates none.
+    """
+    user_id, score_id = uuid4(), uuid4()
+    enqueued = _stub_worker(monkeypatch)
+    sb = _install_supabase(
+        monkeypatch,
+        returning_row=_row_for(
+            score_id,
+            user_id,
+            transcription_status="failed",
+            transcription_runs=MAX_RUNS_PER_PAGE,
+        ),
+    )
+    _install_storage(sb, signed=[])
+
+    res = _retranscribe(client, score_id, make_token(sub=user_id))
+
+    assert res.status_code == 409
+    assert res.json()["detail"] == EXHAUSTED_MESSAGE
+    # The refusal has to happen before the worker, or the ceiling costs a model
+    # call to enforce and is not a ceiling.
+    assert enqueued == []
+
+
+def test_the_reading_that_starts_is_counted(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """Written in the same patch as the status, so the count advances exactly
+    when a worker is dispatched — never on a request that lost the race."""
+    user_id, score_id = uuid4(), uuid4()
+    _stub_worker(monkeypatch)
+    sb = _install_supabase(
+        monkeypatch,
+        returning_row=_row_for(
+            score_id, user_id, transcription_status="failed", transcription_runs=4
+        ),
+    )
+    _install_storage(sb, signed=[])
+
+    assert _retranscribe(client, score_id, make_token(sub=user_id)).status_code == 200
+
+    patch = sb.table.return_value.update.call_args.args[0]
+    assert patch["transcription_runs"] == 5
+
+
+def test_the_last_allowed_reading_is_allowed(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """The boundary in the direction that takes something away from a musician
+    rather than the one that costs a model call."""
+    user_id, score_id = uuid4(), uuid4()
+    enqueued = _stub_worker(monkeypatch)
+    sb = _install_supabase(
+        monkeypatch,
+        returning_row=_row_for(
+            score_id,
+            user_id,
+            transcription_status="failed",
+            transcription_runs=MAX_RUNS_PER_PAGE - 1,
+        ),
+    )
+    _install_storage(sb, signed=[])
+
+    assert _retranscribe(client, score_id, make_token(sub=user_id)).status_code == 200
+    assert enqueued == [str(score_id)]
+    assert (
+        sb.table.return_value.update.call_args.args[0]["transcription_runs"]
+        == MAX_RUNS_PER_PAGE
+    )
 
 
 def _lose_the_race(sb: MagicMock) -> None:
@@ -1398,6 +1804,128 @@ def test_a_bar_that_lost_notes_and_runs_short_is_named_for_the_notes() -> None:
     (concern,) = _concerns_for(both)
     assert concern.kind == "unwritable"
     assert "could not write" in concern.detail and "short" in concern.detail
+
+
+def test_every_fault_a_measure_can_carry_has_its_own_concern_kind() -> None:
+    """**A fault with no branch becomes `"beats"`, and `"beats"` is a promise.**
+
+    The app prints `detail` verbatim for every kind except `"beats"`, which it
+    is allowed to reword as "doesn't add up to the time signature". So a fault
+    that falls past the ladder in `_concern_kind` does not go unreported — it
+    gets reported as arithmetic.
+
+    That happened. `out_of_line` is set **only where no metre could be read**,
+    and it was sent as `"beats"`: a bar flagged for being out of step with the
+    rest of the page, described to the musician as disagreeing with a time
+    signature the server had just said it could not read.
+
+    The field list is read off the dataclass rather than typed out, so a *new*
+    flag fails here instead of silently joining `"beats"` — the same shape as
+    `test_the_cases_exercise_every_flag_there_is` in `test_sandbox_parity.py`,
+    and for the same reason: the last count written down by hand went stale.
+    """
+    from app.routers.scores import _concern_kind
+    from app.services.ocr.validate import MeasureFinding
+    from app.services.score_schema import BrokenTie, TupletFault
+
+    #: What each fault field looks like when it is the only thing wrong.
+    faults: dict[str, object] = {
+        "broken_ties": (BrokenTie(1, 0, "C4", "E4"),),
+        "tuplet_faults": (TupletFault(1, 0, 5, 4, "count", "holds 3 notes"),),
+        "too_dense": True,
+        "unwritable_notes": 1,
+        "out_of_line": True,
+    }
+    #: Fields that describe the measure rather than accuse it.
+    not_a_fault = {
+        "measure_number",
+        "verdict",
+        "expected_beats",
+        "actual_beats",
+        "note_count",
+        "meter_inferred",
+    }
+
+    fields = set(MeasureFinding.__dataclass_fields__)
+    unclassified = fields - set(faults) - not_a_fault
+    assert not unclassified, (
+        f"MeasureFinding grew {sorted(unclassified)}. If it is a fault, give it "
+        "a branch in `_concern_kind` and an entry above; if it is not, name it "
+        "in `not_a_fault`."
+    )
+
+    kinds: dict[str, str] = {}
+    for flag, value in faults.items():
+        finding = MeasureFinding(
+            measure_number=1,
+            verdict="ok",
+            expected_beats=4.0,
+            actual_beats=4.0,
+            note_count=4,
+            **{flag: value},  # type: ignore[arg-type]
+        )
+        # Every one of these fires on a bar whose beats add up exactly, which
+        # is the whole reason they are separate fields from `verdict`.
+        assert finding.is_problem, flag
+        kinds[flag] = _concern_kind(finding)
+
+    beats = sorted(flag for flag, kind in kinds.items() if kind == "beats")
+    assert not beats, (
+        f"{beats} reach the app as \"beats\", which it may reword as "
+        "\"doesn't add up to the time signature\" — a true sentence under a "
+        "false heading"
+    )
+    assert len(set(kinds.values())) == len(kinds), (
+        f"two faults share a name: {kinds}"
+    )
+
+
+def test_a_bar_out_of_step_on_a_page_with_no_metre_is_not_called_arithmetic() -> None:
+    """The defect above, end to end through `_concerns_for`.
+
+    No `time_signature` anywhere, so no metre can be read and `short`/`long`
+    cannot be said; one bar far longer than its neighbours. The sentence the
+    musician gets must be the server's own — which says the metre could not be
+    read — and never the arithmetic wording.
+    """
+    from app.routers.scores import _concerns_for
+
+    # **Every bar a different length, so nothing wins the metre vote.** Two
+    # earlier fixtures here tested the wrong branch and one of them passed
+    # anyway, because the `-k` filter I ran the mutation under did not select
+    # this test by name:
+    #
+    #  - forty quarter notes in the odd bar tripped `too_dense` first, which is
+    #    a different fault and is correctly called `"density"`;
+    #  - four whole notes among quarters let `infer_beats_per_measure` succeed,
+    #    which makes the bar plainly `long` — and `"beats"` is then the right
+    #    word, not the bug.
+    #
+    # `out_of_line` is reachable only where no metre could be read at all, so
+    # the page has to disagree with itself.
+    def bar(number: int, notes: int) -> dict[str, object]:
+        return {
+            "measure_number": number,
+            "slurs": [],
+            "notes": [{"pitch": "E2", "duration": "quarter"} for _ in range(notes)],
+        }
+
+    no_metre = {
+        "time_signature": None,
+        "key_signature": None,
+        "clef": "bass",
+        "ocr_confidence": 0.9,
+        "measures": [bar(n, n) for n in range(1, 7)] + [bar(7, 24)],
+    }
+
+    concerns = {c.measure_number: c for c in _concerns_for(no_metre)}
+    assert 7 in concerns, "a bar six times the median length was not flagged at all"
+    assert concerns[7].kind == "adrift"
+    assert "metre could not be read" in concerns[7].detail
+    # Not one of the wordings that would be false here. `"beats"` is the one
+    # the app may reword as "doesn't add up to the time signature", on a page
+    # whose time signature the server has just said it could not read.
+    assert {c.kind for c in concerns.values()} == {"adrift"}
 
 
 def test_an_unreadable_score_column_has_no_concerns_rather_than_raising() -> None:
@@ -1734,9 +2262,9 @@ def test_nothing_is_removed_until_the_row_is_actually_gone(
 
 @pytest.fixture(autouse=True)
 def _fresh_url_cache():
-    scores_module.reset_display_url_cache()
+    display_urls.reset_cache()
     yield
-    scores_module.reset_display_url_cache()
+    display_urls.reset_cache()
 
 
 def _signed_for(user_id, name: str = "abc.jpg"):
@@ -1800,9 +2328,9 @@ def test_a_url_near_the_end_of_its_life_is_signed_afresh(
 
     client.get("/v1/scores", headers=headers)
     # Age the memo entry to just inside the floor.
-    with scores_module._display_url_lock:
-        for key, (url, _) in list(scores_module._display_urls.items()):
-            scores_module._display_urls[key] = (
+    with display_urls._lock:
+        for key, (url, _) in list(display_urls._urls.items()):
+            display_urls._urls[key] = (
                 url,
                 datetime.now(tz=timezone.utc) + timedelta(seconds=60),
             )
@@ -1878,3 +2406,358 @@ def test_a_request_mixing_a_memo_hit_and_a_miss_keeps_the_cached_url(
     by_id = {row["id"]: row["image_url"] for row in body}
     assert by_id[first_score["id"]] == cached_url
     assert by_id[second_score["id"]].startswith("https://cdn.example/second.jpg")
+
+
+def test_the_light_listing_loses_the_notation_and_nothing_else(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """`include_score=false` narrows the SQL projection, and a column left out
+    of `_WITHOUT_SCORE` would come back as a field that quietly lost its value.
+
+    That is the failure mode worth a test rather than the saving: a listing that
+    is smaller *and* has forgotten every piece's composer is worse than the one
+    it replaced, and nothing about the response shape would say so — `composer`
+    is nullable, `movement` is nullable, `transcription_status` defaults to
+    "done". Every one of them would 200.
+
+    So this is a comparison rather than a list of column names. Every column
+    carries a value it does not share with another, both listings are fetched,
+    and the two responses must differ in exactly `score_json` and `concerns` —
+    the notation, and the concerns computed from it.
+
+    **Two rows, because one cannot exercise every column.** A row with a
+    photograph is the only one that populates `page_count`, `image_url` and
+    `image_urls`, all three built from `source_image_urls`; a row whose pages
+    were discarded is the only one that populates
+    `page_image_discarded_at` — and `_with_image_urls` skips signing exactly
+    those, so no single row is both. With only the second, dropping
+    `source_image_urls` from the projection emptied every thumbnail in the
+    library and this test passed. It did, on its first run.
+    """
+    from datetime import datetime, timezone
+
+    user_id = uuid4()
+
+    # A bar that runs short of its metre, so `concerns` is non-empty and the
+    # comparison below is between two populated lists rather than two empty
+    # ones. `GOOD_PAYLOAD` is a clean reading and raises nothing.
+    short_bar = {
+        "time_signature": "4/4",
+        "key_signature": "D major",
+        "clef": "treble",
+        "tempo_marking": None,
+        "bpm_hint": None,
+        "ocr_confidence": 0.9,
+        "measures": [
+            {
+                "measure_number": number,
+                "notes": [
+                    {"pitch": "D3", "duration": "quarter"}
+                    for _ in range(3 if number == 2 else 4)
+                ],
+                "slurs": [],
+                "ties": [],
+            }
+            for number in (1, 2, 3)
+        ],
+    }
+
+    photographed = _row_for(
+        uuid4(),
+        user_id,
+        score_json=short_bar,
+        composer="Wohlfahrt",
+        movement="II. Adagio",
+        source_image_url=_signed_url(user_id),
+        source_image_urls=[_signed_url(user_id, ext=f"p{n}.jpg") for n in (1, 2, 3)],
+        ocr_confidence=0.77,
+        transcription_status="reading",
+        transcription_stage="Reading the page",
+        created_at="2026-05-02T00:00:00+00:00",
+        updated_at="2026-05-03T00:00:00+00:00",
+    )
+    discarded = _row_for(
+        uuid4(),
+        user_id,
+        score_json=short_bar,
+        composer="Kreutzer",
+        movement="No. 2",
+        source_image_url=_signed_url(user_id),
+        source_image_urls=[_signed_url(user_id, ext="only.jpg")],
+        ocr_confidence=0.55,
+        transcription_status="failed",
+        transcription_error="the reader gave up",
+        transcription_accepted_at="2026-05-05T00:00:00+00:00",
+        page_image_discarded_at="2026-05-06T00:00:00+00:00",
+        created_at="2026-05-01T00:00:00+00:00",
+        updated_at="2026-05-04T00:00:00+00:00",
+    )
+
+    fake = FakeSupabase()
+    fake.seed("scores", [photographed, discarded])
+    monkeypatch.setattr(db_module, "get_service_client", lambda: fake)
+    # Signing stands in for storage: the same key always signs to the same URL,
+    # so the two listings are comparable and any difference is the projection's.
+    monkeypatch.setattr(
+        display_urls,
+        "signed_display_urls",
+        lambda keys: {
+            key: (f"https://signed.test/{key}", datetime(2026, 6, 1, tzinfo=timezone.utc))
+            for key in keys
+        },
+    )
+    headers = {"Authorization": f"Bearer {make_token(sub=user_id)}"}
+
+    full = client.get("/v1/scores", headers=headers)
+    light = client.get("/v1/scores?include_score=false", headers=headers)
+    assert full.status_code == 200, full.text
+    assert light.status_code == 200, light.text
+    assert len(full.json()) == len(light.json()) == 2
+
+    # The rows have to actually exercise the fields, or this compares two sets
+    # of defaults and passes on a projection of one column.
+    heavy_pages, heavy_gone = full.json()
+    assert heavy_pages["score_json"], "the seeded row has no notation to drop"
+    assert heavy_pages["concerns"], "the seeded row raises no concerns to drop"
+    assert heavy_pages["page_count"] == 3, "the photographed row has no pages to lose"
+    assert heavy_pages["image_url"], "the photographed row has no thumbnail to lose"
+    assert len(heavy_pages["image_urls"]) == 1, "the listing signs page one"
+    assert heavy_gone["page_image_discarded_at"], "no discarded row to check"
+
+    for heavy, thin in zip(full.json(), light.json(), strict=True):
+        assert thin["score_json"] is None
+        assert thin["concerns"] == []
+        differing = {key for key in heavy if heavy[key] != thin[key]}
+        assert differing == {"score_json", "concerns"}, (
+            f"the light listing changed {differing - {'score_json', 'concerns'}}, "
+            "which it has no business changing — a column is missing from "
+            "_WITHOUT_SCORE"
+        )
+
+
+def test_the_library_listing_still_carries_the_notation_by_default(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """The default is unchanged, so a client that never heard of the parameter
+    keeps the response it has always had. Every installed build is one."""
+    user_id = uuid4()
+    fake = FakeSupabase()
+    fake.seed("scores", [_unphotographed(user_id)])
+    monkeypatch.setattr(db_module, "get_service_client", lambda: fake)
+
+    res = client.get(
+        "/v1/scores", headers={"Authorization": f"Bearer {make_token(sub=user_id)}"}
+    )
+
+    assert res.status_code == 200, res.text
+    assert res.json()[0]["score_json"] == GOOD_PAYLOAD
+
+
+# ---- The cost guard on starting a reading ---------------------------------
+#
+# `services/reading_rate` holds the rule and its own tests drive the clock.
+# These are about the wiring: that the three endpoints which spend money call
+# it, that the ones which don't are never charged, and that the refusal is an
+# answer a client can act on.
+
+
+def _burst_limit() -> int:
+    from app.services.reading_rate import LIMITS
+
+    return LIMITS[0].allowance
+
+
+def test_a_client_stuck_in_a_loop_stops_costing_money(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """The failure this exists for. Every one of these would otherwise be a
+    vision-model call at the spec's own $0.05–$0.15."""
+    user_id = uuid4()
+    started = _stub_worker(monkeypatch)
+    _install_supabase(monkeypatch, returning_row=_row_for(uuid4(), user_id))
+    headers = {"Authorization": f"Bearer {make_token(sub=user_id)}"}
+    body = {"image_url": _signed_url(user_id), "title": "Etude #1"}
+
+    codes = [
+        client.post("/v1/scores", json=body, headers=headers).status_code
+        for _ in range(_burst_limit() + 5)
+    ]
+
+    assert codes[: _burst_limit()] == [201] * _burst_limit()
+    assert set(codes[_burst_limit() :]) == {429}
+    assert len(started) == _burst_limit(), "a refused request must not reach the worker"
+
+
+def test_the_refusal_says_how_long_to_wait(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """429 without `Retry-After` is a client guessing, and a client that guesses
+    short is the loop this was written to stop."""
+    user_id = uuid4()
+    _stub_worker(monkeypatch)
+    _install_supabase(monkeypatch, returning_row=_row_for(uuid4(), user_id))
+    headers = {"Authorization": f"Bearer {make_token(sub=user_id)}"}
+    body = {"image_url": _signed_url(user_id), "title": "Etude #1"}
+
+    for _ in range(_burst_limit()):
+        client.post("/v1/scores", json=body, headers=headers)
+    refused = client.post("/v1/scores", json=body, headers=headers)
+
+    assert refused.status_code == 429
+    assert int(refused.headers["Retry-After"]) >= 1
+    # And a sentence written for a musician, not a status name.
+    assert "minute" in refused.json()["detail"]
+
+
+def test_one_busy_account_does_not_refuse_another(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    busy, other = uuid4(), uuid4()
+    _stub_worker(monkeypatch)
+    _install_supabase(monkeypatch, returning_row=_row_for(uuid4(), busy))
+    body = {"image_url": _signed_url(busy), "title": "Etude #1"}
+
+    for _ in range(_burst_limit() + 2):
+        client.post(
+            "/v1/scores",
+            json=body,
+            headers={"Authorization": f"Bearer {make_token(sub=busy)}"},
+        )
+
+    res = client.post(
+        "/v1/scores",
+        json={"image_url": _signed_url(other), "title": "Etude #1"},
+        headers={"Authorization": f"Bearer {make_token(sub=other)}"},
+    )
+    assert res.status_code == 201, res.text
+
+
+def test_a_hand_entered_piece_is_never_charged_against_the_rate(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """Typing a piece in reads nothing and costs nothing. Counting it would
+    make a musician who added a dozen études by hand unable to photograph one.
+    """
+    user_id = uuid4()
+    _stub_worker(monkeypatch)
+    _install_supabase(
+        monkeypatch, returning_row=_row_for(uuid4(), user_id, source_image_url=None)
+    )
+    headers = {"Authorization": f"Bearer {make_token(sub=user_id)}"}
+
+    for _ in range(_burst_limit() + 5):
+        res = client.post(
+            "/v1/scores",
+            json={"title": "By hand", "clef": "treble", "time_signature": "4/4"},
+            headers=headers,
+        )
+        assert res.status_code == 201, res.text
+
+    # And the full allowance is still there for a photograph.
+    photographed = client.post(
+        "/v1/scores",
+        json={"image_url": _signed_url(user_id), "title": "Etude #1"},
+        headers=headers,
+    )
+    assert photographed.status_code == 201, photographed.text
+
+
+def test_a_musicxml_import_is_never_charged_against_the_rate(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """A MusicXML file states its durations — no OCR, no model, no cost. The
+    comment above `_MXL` says so, and this is that comment as a test."""
+    user_id = uuid4()
+    sb = _install_supabase(
+        monkeypatch, returning_row=_row_for(uuid4(), user_id, source_image_url=None)
+    )
+    _install_storage(sb, signed=[])
+    headers = {"Authorization": f"Bearer {make_token(sub=user_id)}"}
+
+    for _ in range(_burst_limit() + 5):
+        res = client.post(
+            "/v1/scores/import",
+            json={"title": "Suite No. 1", "musicxml": _MXL},
+            headers=headers,
+        )
+        assert res.status_code == 201, res.text
+
+
+def test_asking_for_a_re_read_is_charged_against_the_rate(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """`retranscribe` reaches the same vision model as creating a piece, and its
+    button sits on an error state that invites tapping."""
+    user_id, score_id = uuid4(), uuid4()
+    _stub_worker(monkeypatch)
+    fake = FakeSupabase()
+    fake.seed(
+        "scores",
+        [
+            _row_for(
+                score_id,
+                user_id,
+                transcription_status="failed",
+                source_image_urls=None,
+                score_json={"measures": []},
+            )
+        ],
+    )
+    monkeypatch.setattr(db_module, "get_service_client", lambda: fake)
+    headers = {"Authorization": f"Bearer {make_token(sub=user_id)}"}
+
+    # Spend the burst allowance elsewhere, then ask for a re-read.
+    from app.services import reading_rate
+
+    for _ in range(_burst_limit()):
+        reading_rate.readings.check(str(user_id))
+
+    res = client.post(f"/v1/scores/{score_id}/transcribe", headers=headers)
+    assert res.status_code == 429, res.text
+
+
+#: One account id, shared by the pair of tests below.
+#:
+#: Every other test in this file invents a fresh `uuid4()`, which is the only
+#: reason the suite survived the rate guard being added — no key ever got near
+#: the allowance. That is luck, not isolation, and the `_fresh_reading_rate`
+#: fixture in `conftest.py` is what turns it into isolation. These two tests are
+#: what proves the fixture works: without it the second one to run finds the
+#: first one's readings already spent and is refused.
+_SHARED_ACCOUNT = UUID("11111111-2222-3333-4444-555555555555")
+
+
+def _spend_the_burst_allowance(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, token: str
+) -> list[int]:
+    _stub_worker(monkeypatch)
+    _install_supabase(monkeypatch, returning_row=_row_for(uuid4(), _SHARED_ACCOUNT))
+    return [
+        client.post(
+            "/v1/scores",
+            json={"image_url": _signed_url(_SHARED_ACCOUNT), "title": "Etude #1"},
+            headers={"Authorization": f"Bearer {token}"},
+        ).status_code
+        for _ in range(_burst_limit())
+    ]
+
+
+def test_one_test_s_readings_do_not_reach_the_next_a(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    codes = _spend_the_burst_allowance(
+        monkeypatch, client, make_token(sub=_SHARED_ACCOUNT)
+    )
+    assert codes == [201] * _burst_limit(), codes
+
+
+def test_one_test_s_readings_do_not_reach_the_next_b(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """Deliberately identical to the test above, and named so the pair reads as
+    what it is: the same account spending the same allowance twice, which only
+    both pass if something reset it in between."""
+    codes = _spend_the_burst_allowance(
+        monkeypatch, client, make_token(sub=_SHARED_ACCOUNT)
+    )
+    assert codes == [201] * _burst_limit(), codes

@@ -1,5 +1,5 @@
-import type { LucideIcon } from 'lucide-react-native';
-import { Pressable, StyleSheet, View } from 'react-native';
+import type { LucideIcon } from '../icons';
+import { StyleSheet, View } from 'react-native';
 
 import {
   BORDER_WIDTH,
@@ -9,6 +9,7 @@ import {
   MIN_TOUCH_TARGET,
   spacing,
 } from '../../design';
+import { PressableScale } from '../motion/PressableScale';
 import { Text } from '../primitives/Text';
 
 export interface SheetOptionRowProps {
@@ -29,8 +30,9 @@ export function SheetOptionRow({
   divided = true,
 }: SheetOptionRowProps) {
   return (
-    <Pressable
+    <PressableScale
       onPress={onPress}
+      activeScale={0.99}
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityHint={description}
@@ -56,7 +58,7 @@ export function SheetOptionRow({
           {description}
         </Text>
       </View>
-    </Pressable>
+    </PressableScale>
   );
 }
 

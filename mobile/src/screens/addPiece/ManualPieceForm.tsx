@@ -1,6 +1,7 @@
 import { useNavigation } from '@react-navigation/native';
 import { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet } from 'react-native';
+import { useGoBack } from '../../navigation/useGoBack';
 
 import {
   Input,
@@ -13,14 +14,32 @@ import { useCreatePiece } from '../../data/hooks/usePieces';
 import { usePreferences } from '../../data/preferences';
 import { spacing } from '../../design';
 import { clefFor } from '../../lib/instrument';
+import { beatsPerMeasure } from '../../lib/notation/reading';
 import type { RootNavigation } from '../../navigation/types';
+import { ComposerField } from '../../components/pieces/ComposerField';
 
 /** The backend's `bpm_hint` bounds. Rejecting here saves a round trip. */
 const MIN_BPM = 20;
 const MAX_BPM = 300;
 
-/** `4/4`, `6/8`, `12/8`. Anything else is a typo, not a metre. */
-const TIME_SIGNATURE = /^\d{1,2}\/\d{1,2}$/;
+/**
+ * Accepted exactly when the app can count a bar of it.
+ *
+ * **This was its own regex, `/^\d{1,2}\/\d{1,2}$/`, and it was looser than
+ * the counter.** It matched `0/4`, `4/0` and `0/0`, so a musician could type a
+ * metre the rest of the app treats as unreadable and have the piece saved with
+ * it — `beatsPerMeasure` returns null for all three, and the meter parity
+ * fixture names them (`"0/4": null`, `"4/0": null`, `"0/0": null`). The
+ * metronome, the bar check and the editor would then all behave as though no
+ * metre had been read, while the piece screen displayed `0/4` as if it were one.
+ *
+ * Asking the counter instead of keeping a second rule also accepts the spaces
+ * the backend tolerates (`" 4 / 4 "`), so the form now agrees with what the
+ * server would have sent for the same page.
+ */
+function looksLikeAMetre(value: string): boolean {
+  return beatsPerMeasure(value) !== null;
+}
 
 /**
  * A piece the musician types in rather than photographs.
@@ -34,10 +53,14 @@ const TIME_SIGNATURE = /^\d{1,2}\/\d{1,2}$/;
  *
  * **What it cannot do, and says so.** Four fields describe a piece; they don't
  * transcribe it. Without notes the analysis pipeline has nothing to align a
- * recording against, so a piece added here can be opened and practised with
- * the metronome but will not produce a verdict. The line under the button says
+ * recording against, so `PieceDetailScreen` offers no practice button for such
+ * a piece and asks for the sheet music instead. The line under the button says
  * that in the musician's own terms rather than letting them find out after a
  * take.
+ *
+ * It used to say the piece "can be practised with the metronome", which was
+ * never true — there is no route to the metronome that does not go through
+ * that button.
  *
  * The clef is not asked for. It comes from the instrument in the profile,
  * which is right for nearly every piece a player works on — and "which clef is
@@ -51,6 +74,7 @@ const TIME_SIGNATURE = /^\d{1,2}\/\d{1,2}$/;
  */
 export function ManualPieceForm() {
   const navigation = useNavigation<RootNavigation>();
+  const goBack = useGoBack({ tab: 'Library' });
   const { instrument } = usePreferences();
   const createPiece = useCreatePiece();
 
@@ -69,7 +93,7 @@ export function ManualPieceForm() {
     }
 
     const trimmedSignature = timeSignature.trim();
-    if (trimmedSignature && !TIME_SIGNATURE.test(trimmedSignature)) {
+    if (trimmedSignature && !looksLikeAMetre(trimmedSignature)) {
       setError('Time signature looks like 4/4 or 6/8.');
       return;
     }
@@ -112,7 +136,7 @@ export function ManualPieceForm() {
     <ScreenContainer>
       <PageHeader
         title="Add manually"
-        onBack={() => navigation.goBack()}
+        onBack={goBack}
         backLabel="Back"
       />
 
@@ -126,15 +150,7 @@ export function ManualPieceForm() {
         returnKeyType="next"
         style={styles.first}
       />
-      <Input
-        label="Composer"
-        value={composer}
-        onChangeText={setComposer}
-        placeholder="Optional"
-        autoCapitalize="words"
-        returnKeyType="next"
-        style={styles.field}
-      />
+      <ComposerField value={composer} onChangeText={setComposer} style={styles.field} />
       <Input
         label="Movement"
         value={movement}
@@ -178,10 +194,16 @@ export function ManualPieceForm() {
         style={styles.submit}
       />
 
+      {/*
+        The same correction as the failed-read screen: this promised metronome
+        practice, and the piece screen gates its practice button on having
+        notation. Photographing the music is the actual next step, and it is
+        the one this now names.
+      */}
       <Text variant="metadataSmall" color="textTertiary" style={styles.caveat}>
-        A piece added this way has no notes behind it, so you can practise it
-        with the metronome but it won&apos;t be analysed. Photograph the music
-        to get verdicts.
+        A piece added this way keeps its title and intended tempo, but there are
+        no notes behind it yet. Photograph the music to listen, record, and get
+        timing verdicts.
       </Text>
     </ScreenContainer>
   );

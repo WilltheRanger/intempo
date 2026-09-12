@@ -164,3 +164,4 @@ describe('hydrating from storage', () => {
     expect(JSON.parse(store.get(KEY)!)).toEqual({ kept: 76 });
   });
 });
+

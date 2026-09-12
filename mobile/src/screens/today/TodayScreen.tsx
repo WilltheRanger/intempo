@@ -1,38 +1,53 @@
 import { useNavigation } from '@react-navigation/native';
-import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 
 import { FadeIn } from '../../components/motion';
 import { AddPieceSheet } from '../../components/pieces/AddPieceSheet';
 import {
   Avatar,
+  Card,
   EmptyState,
   PageHeader,
   ScreenContainer,
+  SecondaryButton,
   SectionHeader,
   Text,
 } from '../../components/primitives';
-import { ContinueSkeleton } from '../../components/skeletons';
+import { SCREEN_GUTTER } from '../../components/primitives/ScreenContainer';
 import { useInsights } from '../../data/hooks/useInsights';
-import { useLatestTake } from '../../data/hooks/useLatestTake';
+import { useRecentTakes } from '../../data/hooks/useLatestTake';
 import { useMe } from '../../data/hooks/useMe';
 import { useCurrentPiece, useLibrary } from '../../data/hooks/usePieces';
 import { practiceTempo, usePracticeTempos } from '../../data/practiceTempo';
 import { usePreferences } from '../../data/preferences';
 import type { Piece } from '../../data/types';
 import { describeLoadError } from '../../data/api/describeError';
+import { getAnalysis } from '../../data/api/analyses';
+import { ApiError } from '../../data/api/client';
+import {
+  forgetPendingAnalysis,
+  usePendingAnalysis,
+} from '../../data/practice/pendingAnalysis';
 import { spacing } from '../../design';
+import {
+  formatLastPracticedShort,
+  joinMetadata,
+} from '../../lib/format';
 import { getGreeting } from '../../lib/greeting';
-import { factFor } from '../../lib/facts';
-import { formatTendency } from '../../lib/tempo';
-import { motion } from '../../design';
+import { formatTempo, formatVerdict } from '../../lib/tempo';
+import { readTendency } from '../../lib/insights/tendency';
 import { suggestionsFor } from '../../lib/today';
-import type { AddPieceOption, TabScreenNavigation } from '../../navigation/types';
+import type { TabScreenNavigation } from '../../navigation/types';
 import { WarmupPanel } from './WarmupPanel';
-import { PracticeCard } from './PracticeCard';
+import { PracticeHero, useHeroHeight } from './PracticeHero';
+import { heroContentFor } from './heroContent';
 import { TodayRow } from './TodayRow';
+import { useAddPieceOption } from '../../navigation/useAddPieceOption';
+import { loadStateFor } from '../../lib/loadState';
 
-const AVATAR_SIZE = 36;
+const AVATAR_SIZE = 52;
+const WIDE_HOME_BREAKPOINT = 900;
 
 /**
  * Tappable box around the mark.
@@ -43,45 +58,82 @@ const AVATAR_SIZE = 36;
  * no effect under react-native-web, so the target couldn't be verified in the
  * one place this build can be driven. A real box behaves the same everywhere.
  */
-const AVATAR_TARGET = 48;
+const AVATAR_TARGET = 52;
 const AVATAR_INSET = (AVATAR_TARGET - AVATAR_SIZE) / 2;
 
 /**
- * Today: the piece to pick back up, then a few reasons to look elsewhere.
+ * Today is a practice dashboard, not a miniature library.
  *
- * **The card is a card again**, and it is the only one on the screen. A piece,
- * its tempo and the action that starts it are one object and earn the box
- * (§3 law 3); what follows are separate suggestions, so they get rules instead.
- *
- * The order is deliberate: the two things to play first — the piece you are on
- * and the warmup — then the fact, then the two blocks you read rather than act
- * on. The last two are doors to other screens, so they belong at the foot of
- * this one.
- *
- * **What is not here is the library preview.** Three rows of the Library tab
- * once sat at the bottom of this screen, which made its lower two-thirds a
- * copy of a destination one tap away. The rows below are not that: each names
- * a piece *and the reason it is being raised*. A row without a reason would be
- * a list, and a list belongs in the Library.
- *
- * **Nor is there a "Last take" section any more.** `getCurrentPiece` resolves
- * through the newest analysis, so the piece being continued and the piece last
- * recorded are the same piece by construction — the section was a second copy
- * of the card. Its one piece of information, the pipeline's verdict sentence,
- * moved onto the card where it belongs.
- *
- * Every block hides itself when its data is absent, so a new account with one
- * piece and no analyses sees a card and nothing else — which is the truth
- * about a new account rather than a screen full of empty furniture.
+ * The first column gets someone playing: resume the current piece, then warm
+ * up. The supporting column answers the next three useful questions: what
+ * should this take accomplish, what else needs attention, and what pattern is
+ * showing up across recent sessions. Every block is either an action or an
+ * explanation of real practice data; decorative trivia does not compete with
+ * the session a musician came here to start.
  */
 export function TodayScreen() {
   const navigation = useNavigation<TabScreenNavigation<'Today'>>();
+  const { width: viewportWidth } = useWindowDimensions();
+  // The hero is the dark ground the floating chrome sits on, and it is exactly
+  // one viewport tall — so the chrome is over it until the screen scrolls that
+  // far, and `ScreenContainer` reports the crossing. Every branch below that
+  // draws the hero has to say so; the one that does not draw it must not.
+  const heroHeight = useHeroHeight();
+  const isWide = viewportWidth >= WIDE_HOME_BREAKPOINT;
   const currentPiece = useCurrentPiece();
   const library = useLibrary();
   const insights = useInsights();
-  const latestTake = useLatestTake();
+  const recentTakes = useRecentTakes(3);
   const me = useMe();
   const [addSheetVisible, setAddSheetVisible] = useState(false);
+  const pendingAnalysis = usePendingAnalysis();
+  const [pendingCheck, setPendingCheck] = useState<
+    'checking' | 'working' | 'ready' | 'unavailable' | null
+  >(null);
+
+  /**
+   * Ask once on arrival, and again only when the musician asks.
+   *
+   * The recording screen already polled continuously while it was open. After
+   * a refresh this card is deliberately quieter: one request tells us whether
+   * the durable row is ready, while a button makes a slow or offline result
+   * recoverable without keeping a hidden tab polling forever.
+   */
+  // The id, not the record: it is the only field this uses, and it is what the
+  // callback's identity should turn on. Naming the whole record would rebuild
+  // the callback — and re-run the effect below it — every time the stored row
+  // is re-read into a new object.
+  const pendingAnalysisId = pendingAnalysis?.analysisId ?? null;
+
+  const checkPendingAnalysis = useCallback(async () => {
+    if (!pendingAnalysisId) {
+      setPendingCheck(null);
+      return;
+    }
+    setPendingCheck('checking');
+    try {
+      const analysis = await getAnalysis(pendingAnalysisId);
+      setPendingCheck(
+        analysis.status === 'done' ||
+          analysis.status === 'failed' ||
+          analysis.status === 'failed_recoverable'
+          ? 'ready'
+          : 'working',
+      );
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) {
+        // It belongs to an old/deleted account or was removed with its piece.
+        await forgetPendingAnalysis(pendingAnalysisId);
+        setPendingCheck(null);
+        return;
+      }
+      setPendingCheck('unavailable');
+    }
+  }, [pendingAnalysisId]);
+
+  useEffect(() => {
+    void checkPendingAnalysis();
+  }, [checkPendingAnalysis]);
 
   // The working tempo is local and per piece, so this subscribes rather than
   // reading once — changing it on the Record screen has to show here.
@@ -95,37 +147,48 @@ export function TodayScreen() {
       currentPiece.refetch(),
       library.refetch(),
       insights.refetch(),
-      latestTake.refetch(),
+      recentTakes.refetch(),
       me.refetch(),
     ]);
   }
 
   const piece = currentPiece.data ?? null;
+  const pendingPiece =
+    pendingAnalysis && library.data
+      ? library.data.find((item) => item.id === pendingAnalysis.scoreId) ?? null
+      : null;
+
+  function openPendingVerdict() {
+    if (!pendingAnalysis) {
+      return;
+    }
+    navigation.navigate('Verdict', { analysisId: pendingAnalysis.analysisId });
+    // Dispatch first. If the app closes on the exact boundary, leaving the
+    // hand-off behind is harmless and preferable to losing the result.
+    void forgetPendingAnalysis(pendingAnalysis.analysisId);
+    void recentTakes.refetch();
+    void insights.refetch();
+  }
 
   // Straight to a take: what someone means by "continue practicing" is
   // recording one. Reading the score without recording is `PieceScore`,
   // reached from the piece itself.
   function openPractice(target: Piece) {
+    if ((target.score?.measures.length ?? 0) === 0) {
+      navigation.navigate('PieceDetail', { pieceId: target.id });
+      return;
+    }
     navigation.navigate('Record', { pieceId: target.id });
   }
 
   // The same three destinations the Library's button reaches, by the same
   // route — one definition of "add a piece", not two that can drift.
-  function handleSelectOption(option: AddPieceOption) {
-    setAddSheetVisible(false);
-    // Let the sheet finish dismissing before the push, so the two animations
-    // don't overlap.
-    setTimeout(() => {
-      if (option === 'scan') {
-        navigation.navigate('Scanner');
-        return;
-      }
-      navigation.navigate('AddPiece', { option });
-    }, motion.fast);
-  }
+  const handleSelectOption = useAddPieceOption(() =>
+    setAddSheetVisible(false),
+  );
 
-  const take = latestTake.data ?? null;
-  const fact = factFor();
+  const takes = recentTakes.data ?? [];
+  const take = takes[0] ?? null;
 
   const { attention, neglected } = suggestionsFor({
     pieces: library.data ?? [],
@@ -146,24 +209,82 @@ export function TodayScreen() {
     </Pressable>
   ) : null;
 
+  /*
+    **The greeting and the avatar, and nothing else.**
+    A bare "+" was put here for one commit, on the reasoning that a primary
+    action belongs in the header. It looked wrong: two unrelated circles
+    crowding the trailing corner, the smaller of which gave no clue what it
+    added. Adding a piece is a labelled row further down — it always was — and
+    it now carries the same material as the rest of the control layer.
+  */
   const header = <PageHeader title={getGreeting()} action={avatar} />;
 
-  if (currentPiece.isPending) {
+  /**
+   * The hero, for whichever state this screen is in.
+   *
+   * **One composition, not two.** The empty account used to get a different
+   * screen — an `EmptyState` with its own title, description and button —
+   * while the populated one got a card. They are the same shape: a label, the
+   * thing to do next, a sentence about it, one button. `heroContentFor` is
+   * where the two differ, which is one tested function rather than two screens
+   * that drift.
+   *
+   * A closure rather than a value, because `workingBpm` is not known until
+   * past the early returns above and a hoisted element would have to invent
+   * one for a piece that does not exist.
+   */
+  const renderHero = (
+    forPiece: Piece | null,
+    bpm: number,
+    headline: string | null,
+    { loading = false }: { loading?: boolean } = {},
+  ) => (
+    <PracticeHero
+      content={
+        loading
+          ? null
+          : heroContentFor({
+              piece: forPiece,
+              workingBpm: bpm,
+              lastTakeHeadline: headline,
+            })
+      }
+      greeting={getGreeting()}
+      name={me.data?.displayName ?? null}
+      onAction={() =>
+        forPiece ? openPractice(forPiece) : setAddSheetVisible(true)
+      }
+      onAdd={() => setAddSheetVisible(true)}
+    />
+  );
+
+  const load = loadStateFor({
+    isError: currentPiece.isError,
+    hasData: currentPiece.data !== undefined,
+  });
+
+  if (load === 'loading') {
     return (
-      <ScreenContainer>
-        {header}
-        <ContinueSkeleton />
+      <ScreenContainer bleed darkGround={heroHeight} contentStyle={styles.page}>
+        {renderHero(null, 0, null, { loading: true })}
       </ScreenContainer>
     );
   }
 
-  if (currentPiece.isError) {
+  if (load === 'unavailable') {
     return (
-      <ScreenContainer onRefresh={refresh}>
+      <ScreenContainer onRefresh={refresh} contentStyle={styles.page}>
         {header}
         <EmptyState
           title="Couldn't load your pieces"
           description={describeLoadError(currentPiece.error)}
+          // **A dead end needs the action it names.** Without this the screen
+          // says the pieces could not be loaded and offers nothing to do about
+          // it — pull-to-refresh is not discoverable and is not available at
+          // all on the web build, which is where most of this is used.
+          actionLabel={currentPiece.isFetching ? 'Trying…' : 'Try again'}
+          onActionPress={() => void refresh()}
+          actionDisabled={currentPiece.isFetching}
         />
       </ScreenContainer>
     );
@@ -177,14 +298,44 @@ export function TodayScreen() {
   // duplicated, so all three routes in are offered from the first screen.
   if (!piece) {
     return (
-      <ScreenContainer onRefresh={refresh}>
-        {header}
-        <EmptyState
-          title="Nothing to practice yet"
-          description="Add a piece of sheet music and it will show up here."
-          actionLabel="Add a piece"
-          onActionPress={() => setAddSheetVisible(true)}
-        />
+      <ScreenContainer onRefresh={refresh} bleed darkGround={heroHeight} contentStyle={styles.page}>
+        {/*
+          **The same hero the populated screen gets.** This used to be a
+          different screen — an `EmptyState` with its own title, description
+          and button, plus a comment explaining why it could not be centred
+          any more. It is the same four things in the same order, so it is now
+          the same component and `heroContentFor` decides what they say.
+        */}
+        {renderHero(null, 0, null)}
+        <View style={styles.belowHero}>
+        {/*
+          **The same warmup block the populated screen renders**, deliberately
+          not a variant of it: it depends on nothing but the instrument, so a
+          new account can play something in its first minute instead of being
+          told there is nothing. It was only ever absent here because it sits
+          below this early return.
+        */}
+        <View style={[styles.section, styles.emptyWarmup]}>
+          <SectionHeader label="Warmup" />
+          {/*
+            **On the page background, not in a card — and that is hierarchy,
+            not tidiness.** Carded, it was the heaviest thing on the screen: a
+            bordered block wrapping real engraved notation beats unenclosed
+            text and a button every time, so the three-foot test read greeting,
+            warmup, add-a-piece — the opposite of what this screen is for. It
+            is also the only card that would be on the screen, which is exactly
+            the habit §3 law 3 names. On the populated Today it is one of a
+            column of cards and recedes by position instead; here position
+            cannot do that work, so the panel goes back to the background
+            `WarmupPanel`'s own docstring says it was designed for.
+          */}
+          <WarmupPanel
+            instrument={instrument}
+            onStart={() => navigation.navigate('Warmup')}
+          />
+        </View>
+        </View>
+
         <AddPieceSheet
           visible={addSheetVisible}
           onClose={() => setAddSheetVisible(false)}
@@ -194,115 +345,282 @@ export function TodayScreen() {
     );
   }
 
-  return (
-    <ScreenContainer onRefresh={refresh}>
-      {header}
+  const workingBpm = practiceTempo.for(piece.id, piece.markedBpm);
+  const hasCurrentTake = take?.pieceId === piece.id;
+  const hasNotation = (piece.score?.measures.length ?? 0) > 0;
+  const readingNotation =
+    piece.transcriptionStatus === 'queued' ||
+    piece.transcriptionStatus === 'reading';
+  const summaryDetail = summary
+    ? `Across ${summary.sessions === 1 ? '1 session' : `${summary.sessions} sessions`} in the last ${summary.windowDays} days`
+    : '';
 
-      <SectionHeader label="Continue practicing" />
-      <PracticeCard
-        piece={piece}
-        workingBpm={practiceTempo.for(piece.id, piece.markedBpm)}
+  return (
+    <ScreenContainer onRefresh={refresh} bleed darkGround={heroHeight} contentStyle={styles.page}>
+      {renderHero(
+        piece,
+        workingBpm,
         // Only when it is genuinely this piece's take. Against the API it
         // always is; a fixture or a deleted score could disagree, and a
-        // verdict about a different piece on this card would be a lie.
-        lastTakeHeadline={take && take.pieceId === piece.id ? take.headline : null}
-        onContinue={() => openPractice(piece)}
-      />
+        // verdict about a different piece under this title would be a lie.
+        hasCurrentTake && take ? take.headline : null,
+      )}
 
-      {/*
-        Straight after the piece you are working. Both are things to play, so
-        they belong together — the fact below them is the only block on the
-        screen that asks nothing of you, and it reads better once the playing
-        is done.
-      */}
-      <FadeIn index={0}>
-        <View style={styles.section}>
-          <SectionHeader label="Warmup" />
-          <WarmupPanel
-            instrument={instrument}
-            onStart={() => navigation.navigate('Warmup')}
-          />
-        </View>
-      </FadeIn>
-
-      {/*
-        Label, lead, detail — the shape stays; the lead is sans now.
-
-        On this screen `pieceTitle` renders five times and three of them name
-        something you can play: the warmup above and the two suggestions below.
-        A serif lead put the fact in the repertoire's voice while sitting in
-        the middle of that run — and five of the twenty-four leads in
-        `facts.ts` are outright names of things ("The Chaconne", "Il Cannone",
-        "The wolf tone"), so on those days the block was indistinguishable from
-        a suggestion row.
-
-        Nothing here is misaligned; the geometry was checked and is exact. It
-        is the *meaning* of a style that was wrong, which is why it read as off
-        without being locatable. The block is a footnote by its own docstring,
-        and sans is it saying so (§3 law 4).
-      */}
-      <FadeIn index={1}>
-        <View style={styles.section}>
-          <SectionHeader label="Did you know" />
-          <Text variant="body">{fact.lead}</Text>
-          <Text
-            variant="metadataSmall"
-            color="textSecondary"
-            style={styles.factText}
-          >
-            {fact.text}
-          </Text>
-        </View>
-      </FadeIn>
-
-      {attention || neglected ? (
-        <FadeIn index={2}>
-          <View style={styles.section}>
-            <SectionHeader label="Also worth a look" />
-            {attention ? (
-              <TodayRow
-                title={attention.title}
-                detail={attention.detail}
-                onPress={() =>
-                  navigation.navigate('PieceDetail', { pieceId: attention.pieceId })
-                }
-                last={!neglected}
-              />
-            ) : null}
-            {neglected ? (
-              <TodayRow
-                title={neglected.title}
-                detail={neglected.detail}
-                onPress={() =>
-                  navigation.navigate('PieceDetail', { pieceId: neglected.pieceId })
-                }
-                last
-              />
-            ) : null}
-          </View>
-        </FadeIn>
-      ) : null}
-
-      {summary ? (
-        <FadeIn index={3}>
-          <View style={styles.section}>
-            <SectionHeader label={`Last ${summary.windowDays} days`} />
-            <TodayRow
-              title={formatTendency(summary.verdict)}
-              detail={
-                summary.sessions === 1 ? '1 session' : `${summary.sessions} sessions`
+      <View style={styles.belowHero}>
+      {pendingAnalysis && pendingCheck ? (
+        <View style={styles.pendingTake}>
+          <Card>
+            <Text variant="sectionLabel" color="textSecondary">
+              LAST RECORDING
+            </Text>
+            <Text variant="pieceTitle" style={styles.pendingTakeTitle}>
+              {pendingCheck === 'ready'
+                ? 'Your result is ready'
+                : pendingCheck === 'unavailable'
+                  ? "We couldn't check your result"
+                  : 'Finishing your last take'}
+            </Text>
+            <Text variant="body" color="textSecondary" style={styles.pendingTakeBody}>
+              {pendingCheck === 'ready'
+                ? `Open the feedback${pendingPiece ? ` for ${pendingPiece.title}` : ''}.`
+                : pendingCheck === 'unavailable'
+                  ? 'Your recording was accepted and is still safe. Check again when your connection is steadier.'
+                  : `InTempo is still listening${pendingPiece ? ` to ${pendingPiece.title}` : ''}. You can leave this screen and come back.`}
+            </Text>
+            <SecondaryButton
+              label={
+                pendingCheck === 'ready'
+                  ? 'View result'
+                  : pendingCheck === 'checking'
+                    ? 'Checking…'
+                    : 'Check again'
               }
-              onPress={() => navigation.navigate('Insights')}
-              last
+              onPress={
+                pendingCheck === 'ready'
+                  ? openPendingVerdict
+                  : () => void checkPendingAnalysis()
+              }
+              disabled={pendingCheck === 'checking'}
+              style={styles.pendingTakeAction}
             />
-          </View>
-        </FadeIn>
+          </Card>
+        </View>
       ) : null}
+
+      <View style={[styles.dashboard, isWide && styles.dashboardWide]}>
+        <View style={styles.primaryColumn}>
+          {/*
+            **The card and the add-a-piece row are gone: the hero is both.**
+            The card said the piece, its tempo and how the last take went, and
+            offered one button — which is exactly what is now written across
+            the photograph above, at a size that can be read from a stand.
+            Repeating it here would be the same content twice on one screen,
+            the second time smaller.
+
+            Adding a piece is the "+" in the hero's corner. A labelled row was
+            the right answer while the header held an avatar it would have
+            crowded; the avatar is a tab now.
+          */}
+          <FadeIn index={1}>
+            <View style={styles.section}>
+              <SectionHeader label="Warmup" />
+              <Card>
+                <WarmupPanel
+                  instrument={instrument}
+                  onStart={() => navigation.navigate('Warmup')}
+                />
+              </Card>
+            </View>
+          </FadeIn>
+
+          {takes.length > 0 ? (
+            <FadeIn index={2}>
+              <View style={styles.section}>
+                <SectionHeader label="Recent practice" />
+                <Card>
+                  {takes.map((recentTake, index) => (
+                    <TodayRow
+                      key={recentTake.id}
+                      title={recentTake.pieceTitle}
+                      detail={joinMetadata([
+                        formatLastPracticedShort(recentTake.recordedAt),
+                        formatTempo(recentTake.targetBpm, recentTake.tempoBeatUnit),
+                        // One recording, so `formatVerdict` — the tendency
+                        // wording is a claim about a habit and its own comment
+                        // says a single take cannot see one. This rendered as
+                        // "Today · 96 BPM · You tend to rush".
+                        formatVerdict(recentTake.verdict),
+                      ])}
+                      onPress={() =>
+                        navigation.navigate('Verdict', {
+                          analysisId: recentTake.id,
+                        })
+                      }
+                      last={index === takes.length - 1}
+                    />
+                  ))}
+                </Card>
+              </View>
+            </FadeIn>
+          ) : null}
+        </View>
+
+        <View
+          style={[
+            styles.secondaryColumn,
+            isWide ? styles.secondaryColumnWide : styles.secondaryColumnNarrow,
+          ]}
+        >
+          <FadeIn index={3}>
+            <View>
+              <SectionHeader label="Practice focus" />
+              <Card>
+                <Text variant="pieceTitle">
+                  {readingNotation
+                    ? 'Reading your sheet music'
+                    : !hasNotation
+                      ? 'Add the music first'
+                    : hasCurrentTake
+                      ? 'Make the next take comparable'
+                      : 'Set your first benchmark'}
+                </Text>
+                <Text
+                  variant="body"
+                  color="textSecondary"
+                  style={styles.focusText}
+                >
+                  {readingNotation
+                    ? 'InTempo is turning the pages into notation. Practice recording will unlock when that reading finishes.'
+                    : !hasNotation
+                      ? `Attach the sheet music for ${piece.title} so InTempo can follow notes, rests, and re-entries before recording.`
+                    : hasCurrentTake
+                      ? `Stay at ${formatTempo(workingBpm, piece.score?.tempo_beat_unit)} and record one more honest run. Comparing two takes shows whether the change held.`
+                      : `Record one honest run of ${piece.title}. InTempo will map where your tempo holds and where it drifts.`}
+                </Text>
+                <SecondaryButton
+                  label={
+                    readingNotation
+                      ? 'View reading progress'
+                      : !hasNotation
+                        ? 'Add sheet music'
+                      : hasCurrentTake
+                        ? 'Record another take'
+                        : 'Record first take'
+                  }
+                  onPress={() => openPractice(piece)}
+                  style={styles.focusAction}
+                />
+              </Card>
+            </View>
+          </FadeIn>
+
+          {attention || neglected ? (
+            <FadeIn index={4}>
+              <View style={styles.section}>
+                <SectionHeader label="Repertoire queue" />
+                {attention ? (
+                  <TodayRow
+                    title={attention.title}
+                    detail={attention.detail}
+                    onPress={() =>
+                      navigation.navigate('PieceDetail', { pieceId: attention.pieceId })
+                    }
+                    last={!neglected}
+                  />
+                ) : null}
+                {neglected ? (
+                  <TodayRow
+                    title={neglected.title}
+                    detail={neglected.detail}
+                    onPress={() =>
+                      navigation.navigate('PieceDetail', { pieceId: neglected.pieceId })
+                    }
+                    last
+                  />
+                ) : null}
+              </View>
+            </FadeIn>
+          ) : null}
+
+          {summary ? (
+            <FadeIn index={5}>
+              <View style={styles.section}>
+                <SectionHeader label="Practice snapshot" />
+                <TodayRow
+                  // **The same reading Insights shows, from the same module.**
+                  // `formatTendency(summary.verdict)` is the aggregate's
+                  // direction and nothing else, so a musician whose practice
+                  // wanders read "Your tempo wanders" on one tab and "You tend
+                  // to rush" on the next, about the same thirty days.
+                  title={readTendency(summary).title}
+                  detail={summaryDetail}
+                  onPress={() => navigation.navigate('Insights')}
+                  last
+                />
+              </View>
+            </FadeIn>
+          ) : null}
+        </View>
+      </View>
+      </View>
+
+      <AddPieceSheet
+        visible={addSheetVisible}
+        onClose={() => setAddSheetVisible(false)}
+        onSelect={handleSelectOption}
+      />
     </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
+  /**
+   * The gutter, restored for the ordinary page below the hero.
+   *
+   * The hero is full-bleed, which `ScreenContainer`'s `bleed` prop arranges —
+   * it drops the horizontal gutter *and* the web build's reserved scrollbar
+   * gutter, which is the 10pt stripe of page background that was running down
+   * the right of the photograph.
+   */
+  belowHero: { paddingHorizontal: SCREEN_GUTTER },
+  page: {
+    width: '100%',
+    maxWidth: 1180,
+    alignSelf: 'center',
+  },
+  pendingTake: {
+    marginBottom: spacing['2xl'],
+  },
+  pendingTakeTitle: {
+    marginTop: spacing.xs,
+  },
+  pendingTakeBody: {
+    marginTop: spacing.sm,
+  },
+  pendingTakeAction: {
+    marginTop: spacing.lg,
+  },
+  dashboard: {
+    width: '100%',
+  },
+  dashboardWide: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing['3xl'],
+  },
+  primaryColumn: {
+    flex: 1,
+    minWidth: 0,
+  },
+  secondaryColumn: {
+    minWidth: 0,
+  },
+  secondaryColumnWide: {
+    width: 340,
+  },
+  secondaryColumnNarrow: {
+    marginTop: spacing['2xl'],
+  },
   avatar: {
     width: AVATAR_TARGET,
     height: AVATAR_TARGET,
@@ -317,8 +635,28 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.6,
   },
-  factText: {
-    marginTop: 2,
+  focusText: {
+    marginTop: spacing.sm,
+  },
+  focusAction: {
+    marginTop: spacing.lg,
+  },
+  emptyBody: {
+    // Needs `flexGrow` on `ScreenContainer`'s content container to have any
+    // effect — see the note there. Content taller than the viewport still
+    // scrolls; this only decides where shorter content sits.
+    flex: 1,
+    justifyContent: 'center',
+  },
+  emptyWarmup: {
+    // **Zero, and it is not a missing value.** `EmptyState` already ends in
+    // 32pt of its own padding, so the ordinary 24pt section gap stacked on top
+    // of it put 56pt between the button and this label — more than double any
+    // other gap on Today, which is what left the empty screen looking like it
+    // had stopped early. The 32pt that remains is still a step looser than a
+    // normal section break, which is right: these are two different kinds of
+    // block, not two sections of one flow.
+    marginTop: 0,
   },
   section: {
     // One step tighter than it was. At 32pt the blocks read as separate pages

@@ -1,11 +1,15 @@
-"""The analysis worker — Phase 1: called via FastAPI `BackgroundTasks`.
+"""The analysis worker — Phase 1: called off a bounded pool in `dispatch`.
 
 `run_analysis` is a plain SYNC function on purpose:
 
-- FastAPI runs a sync background task in a worker thread (Starlette's
-  threadpool), so the CPU-bound `analyze()` never blocks the event loop
-  — which is the #1 Batch 4 pitfall. No `run_in_executor` gymnastics
-  needed.
+- It runs on a worker thread, so the CPU-bound `analyze()` never blocks the
+  event loop — which is the #1 Batch 4 pitfall. No `run_in_executor`
+  gymnastics needed.
+- **The thread is `dispatch`'s, not Starlette's.** This was a
+  `BackgroundTasks` task until 2026-09-10, which meant the forty-thread pool
+  the request handlers share, with nothing counting how many analyses were in
+  flight — at ~460 MB each against a 512 MB instance. See
+  `ANALYSIS_MAX_CONCURRENT`.
 - The Supabase client is sync anyway.
 - The body is structured so the Celery migration is mechanical: add a
   `@celery_app.task` decorator and swap `add_task` → `.delay` at the
@@ -23,8 +27,12 @@ import httpx
 from app.db import get_service_client
 from app.models.analysis import Instrument
 from app.services import audio as audio_svc
+from app.services.audio_storage import AudioStorageError, readable_audio_url
+from app.services.take_archive import keep_playback_copy
 from app.services.analysis import analyze
+from app.services.take_comparison import comparison_key
 from app.services.long_rests import shorten_long_rests
+from app.services.start_at import start_from_measure
 from app.services.score_schema import ScoreJson
 
 log = logging.getLogger("intempo.analysis")
@@ -84,19 +92,72 @@ def _now_iso() -> str:
     return datetime.now(tz=timezone.utc).isoformat()
 
 
-def download_audio(url: str) -> bytes:
-    """Fetch a recording from its (already ownership-validated) storage URL."""
+#: Redirects to follow. Supabase serves signed object URLs from the project
+#: host and is not expected to redirect off it at all.
+#:
+#: **A tightening, not the bound.** httpx already defaults to 20, measured —
+#: so removing this line does not make a chain unbounded, and a mutation that
+#: removes it survives every test here for exactly that reason. It is written
+#: down rather than left implicit because 3 states the expectation (one hop, or
+#: none) where 20 states nothing, and because the origin check below is what
+#: actually stops a redirect going somewhere it should not.
+MAX_AUDIO_REDIRECTS = 3
+
+
+def download_audio(url: str, *, expected_origin: str | None = None) -> bytes:
+    """Fetch a recording, refusing anything too large, too far, or not there.
+
+    **Three protections the image path grew after a review and this never
+    did.** `download_image` caps redirects, checks where it actually ended up,
+    and enforces the size limit while reading. This followed redirects without
+    limit, never looked at the final host, and read the whole body into memory
+    before measuring it — so an object storage would accept at 50 MB was fully
+    buffered before being rejected, and a 302 from the storage host to a
+    link-local address was followed without comment.
+
+    `expected_origin` is `host:port`, and a redirect that leaves it is refused.
+    Port as well as host, because another port on the same host is another
+    service. None disables the check, which is what the analysis worker passes
+    while its own URL is signed from a stored object key rather than supplied by
+    anyone — but the caller that takes a URL from a request body must pass one.
+    """
     try:
-        with httpx.Client(timeout=AUDIO_DOWNLOAD_TIMEOUT, follow_redirects=True) as client:
-            response = client.get(url)
+        with httpx.Client(
+            timeout=AUDIO_DOWNLOAD_TIMEOUT,
+            follow_redirects=True,
+            max_redirects=MAX_AUDIO_REDIRECTS,
+        ) as client:
+            with client.stream("GET", url) as response:
+                if response.status_code != 200:
+                    raise AudioFetchError(
+                        f"download returned status {response.status_code}"
+                    )
+                final = response.url
+                final_origin = f"{final.host}:{final.port}"
+                if expected_origin and final_origin != expected_origin:
+                    raise AudioFetchError(
+                        "audio download redirected off the storage host "
+                        f"({expected_origin} -> {final_origin})"
+                    )
+                declared = response.headers.get("content-length")
+                if declared and declared.isdigit() and int(declared) > MAX_AUDIO_BYTES:
+                    raise AudioFetchError(
+                        f"audio larger than {MAX_AUDIO_BYTES} bytes"
+                    )
+                chunks: list[bytes] = []
+                total = 0
+                for chunk in response.iter_bytes():
+                    total += len(chunk)
+                    if total > MAX_AUDIO_BYTES:
+                        # Stop at the first chunk over the line rather than
+                        # after allocating whatever was sent.
+                        raise AudioFetchError(
+                            f"audio larger than {MAX_AUDIO_BYTES} bytes"
+                        )
+                    chunks.append(chunk)
     except httpx.RequestError as exc:
         raise AudioFetchError(f"download failed: {exc}") from exc
-    if response.status_code != 200:
-        raise AudioFetchError(f"download returned status {response.status_code}")
-    body = response.content
-    if len(body) > MAX_AUDIO_BYTES:
-        raise AudioFetchError(f"audio larger than {MAX_AUDIO_BYTES} bytes")
-    return body
+    return b"".join(chunks)
 
 
 def run_analysis(analysis_id: str) -> None:
@@ -129,7 +190,9 @@ def run_analysis(analysis_id: str) -> None:
     _update(client, analysis_id, {"status": "processing", "updated_at": _now_iso()})
 
     try:
-        audio_bytes = download_audio(row["audio_url"])
+        # Rows keep a durable key-shaped reference, never the five-minute PUT
+        # permission. Sign a fresh private GET immediately before reading.
+        audio_bytes = download_audio(readable_audio_url(client, row["audio_url"]))
         score = _load_score(client, row["score_id"], row["user_id"])
         # **The take was played against a shortened score, so judge it against
         # one.** Skipping a long rest the timeline still contains takes an
@@ -140,6 +203,13 @@ def run_analysis(analysis_id: str) -> None:
         # The same transformation the app applied to play and count it. The rule
         # lives in `fixtures/practice/long_rests.json` because there is no way to
         # share the walk between the two languages; see `services/long_rests.py`.
+        # **The entry bar first, the rest-shortening second**, and the order is
+        # load-bearing: `shorten_long_rests` rewrites bars, so trimming after it
+        # would be asking for bar 14 of a score whose bar 14 is no longer the
+        # page's bar 14. Trimming first keeps `from_measure` meaning what the
+        # musician read off the page.
+        if row.get("from_measure"):
+            score = start_from_measure(score, int(row["from_measure"]))
         if row.get("skip_long_rests"):
             score = shorten_long_rests(score).score
         y, sr = audio_svc.load_audio_bytes(audio_bytes)
@@ -157,7 +227,11 @@ def run_analysis(analysis_id: str) -> None:
             float(row["target_bpm"]),
             double_bass=row.get("instrument") == Instrument.double_bass.value,
         )
-    except AudioFetchError as exc:
+        # Stamped on the model, not bolted onto the dump, so `AnalysisResult`
+        # stays the whole truth about what an analysis result contains.
+        result.comparison_key = comparison_key(score.model_dump(mode="json"), row)
+        result_payload = result.model_dump(mode="json")
+    except (AudioFetchError, AudioStorageError) as exc:
         log.warning("analysis %s: %s", analysis_id, exc)
         _finish_failed(client, analysis_id, "audio_unavailable")
         return
@@ -171,13 +245,24 @@ def run_analysis(analysis_id: str) -> None:
         analysis_id,
         {
             "status": "done",
-            "result_json": result.model_dump(mode="json"),
+            "result_json": result_payload,
             "alignment_quality": result.quality,
             "failure_reason": None,
             "finished_at": _now_iso(),
             "updated_at": _now_iso(),
         },
     )
+
+    # **After the verdict is written, never before it.** The WAV existed for
+    # `analyze()` and that is now finished; what is kept from here is a
+    # playback copy at a fraction of the size — the difference between four
+    # musicians fitting in the free storage tier and seventy.
+    #
+    # Outside the `try` above on purpose. A failure in here must not reach
+    # `_finish_failed` and turn a judged take into a failed one; the whole
+    # module is best effort and returns None rather than raising, and the row
+    # is already `done` either way.
+    keep_playback_copy(client, analysis_id, str(row["audio_url"]), audio_bytes)
 
 
 def _fetch_analysis(client, analysis_id: str) -> dict | None:
@@ -213,10 +298,14 @@ def _finish_failed(client, analysis_id: str, reason: str) -> None:
     )
 
 
-# In-process BackgroundTasks don't survive a crash/restart: a job that was
-# 'processing' when the server died would spin forever in the UI. Any
+# In-process work does not survive a crash/restart: a job that was
+# 'processing' when the server died would spin forever in the UI, and so would
+# one still sitting in `dispatch`'s queue, which is memory like any other. Any
 # 'queued'/'processing' row older than this window is marked
 # 'failed_recoverable' so the client can offer a retry (spec Batch 4 §4).
+# Matching 'queued' as well as 'processing' is what makes a bounded pool safe
+# to queue into: work that never reached a thread ends the same way as work
+# that did.
 STUCK_AFTER = timedelta(minutes=10)
 
 #: How often to look, once the server is up.

@@ -1,3 +1,34 @@
+# Browser boundaries for every public route and hashed asset.
+#
+# Camera and microphone stay available to InTempo itself — they are the score
+# scanner and recorder — but embedded or unrelated browser features cannot ask
+# through this origin. The app is never meant to run inside another site's
+# frame, and no page needs plugins or a different document base.
+#
+# `script-src` is **appended to the line below at build time**, by
+# `scripts/flatten-vendor-assets.mjs`, and is deliberately absent here.
+#
+# This file used to say a script-src policy could not be added at all: the boot
+# watchdog is inline, the export injects content-hashed bundles, and tightening
+# script sources without build-generated hashes would turn a security
+# improvement into a production outage. That was right about the risk and wrong
+# about the conclusion — the hashes can be generated, and now are. The export
+# has exactly one same-origin bundle and one inline block, so the policy comes
+# out as `script-src 'self' 'sha256-…'` with **no `unsafe-inline`**, which
+# would have permitted the injected inline script the directive exists to stop.
+#
+# Do not write a hash in here by hand. One edited comment inside the watchdog
+# changes it, and a stale hash means the browser refuses the script — measured,
+# and the app still *mounts* when that happens, so the symptom is the crash
+# watchdog silently dead rather than anything you would notice.
+/*
+  Content-Security-Policy: base-uri 'self'; object-src 'none'; frame-ancestors 'none'
+  Permissions-Policy: camera=(self), microphone=(self), geolocation=(), payment=(), usb=()
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  X-XSS-Protection: 0
+
 # Cloudflare Pages headers. Copied into the export by Expo, same as _redirects.
 #
 # Everything Expo emits under these two paths carries a content hash in its

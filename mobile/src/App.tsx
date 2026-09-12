@@ -1,95 +1,51 @@
 import {
+  DarkTheme,
   DefaultTheme,
   NavigationContainer,
   type Theme,
 } from '@react-navigation/native';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { useFonts } from 'expo-font';
 import { useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import * as Linking from 'expo-linking';
+
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { ApiError, warmApi } from './data/api/client';
+import { screenConfig } from './navigation/linking';
+import { warmApi } from './data/api/client';
 import { describeFixtureReason, IS_LIVE_BACKEND } from './data/environment';
+import { createQueryClient } from './data/queryClient';
+import { prepareForPlayback } from './lib/audio/session';
+import { formatDocumentTitle } from './lib/documentTitle';
 import { hydratePracticeTempos } from './data/practiceTempo';
 import { hydratePreferences } from './data/preferences';
-import { colors, fontsToLoad } from './design';
+import { hydratePendingAnalysis } from './data/practice/pendingAnalysis';
+import { hydrateOnboardingDraft } from './data/onboardingDraft';
+import * as SystemUI from 'expo-system-ui';
+
+import { colors, fontsToLoad, scheme } from './design';
+import { ChromeToneProvider } from './navigation/ChromeToneContext';
 import { RootNavigator } from './navigation/RootNavigator';
+import { startLibraryCache } from './data/cache/libraryCache';
+import { startTakeDrainer } from './lib/sync/takeDrainer';
 
-/**
- * How long a fetched answer is treated as current.
- *
- * **Without this every screen refetched from scratch every time it was
- * opened.** React Query's default is zero, so a query is stale the instant it
- * resolves: tapping Library, then Today, then Library again is three full
- * round trips and three skeletons, for a repertoire that has not changed in
- * between. Against a host that costs two serial round trips per authenticated
- * request, that is the app feeling slow everywhere at once, and it is entirely
- * self-inflicted.
- *
- * Thirty seconds. Long enough that moving around the app is instant, short
- * enough that nothing here goes visibly out of date — and every write already
- * invalidates what it changed, which is what actually keeps these screens
- * honest. Staleness is the fallback, not the mechanism.
- *
- * It does not touch polling: `usePiece` drives a page being read with
- * `refetchInterval`, which ignores this.
- */
-const STALE_TIME_MS = 30_000;
-
-/**
- * Whether to ask again after a failure.
- *
- * **Never for an `ApiError`, and the reason is that the retrying already
- * happened.** `send` gives a repeatable request two attempts of
- * `REQUEST_TIMEOUT_MS` before it reports anything, so a GET against a dead
- * connection has already spent ninety seconds by the time it throws — and
- * React Query's default of one retry ran the whole `queryFn` again, wake and
- * all, for **three minutes** of a screen showing a skeleton before it showed an
- * error. A musician waiting three minutes is not waiting, they have closed the
- * app.
- *
- * Anything with a status was answered, and answered the same way twice is the
- * same answer: a 404 is not going to become a 200, and a 403 over the tier
- * limit is a thing to render rather than to ask about again.
- *
- * A non-`ApiError` gets one retry. That is the unfamiliar failure — something
- * threw that this layer does not recognise — and one more attempt is a fair
- * price for a class of error we cannot reason about.
- */
-function retryQuery(failureCount: number, error: unknown): boolean {
-  if (error instanceof ApiError) {
-    return false;
-  }
-  return failureCount < 1;
-}
-
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      retry: retryQuery,
-      staleTime: STALE_TIME_MS,
-      refetchOnWindowFocus: false,
-    },
-    mutations: {
-      // A write is never repeated automatically. `send` will not retry one
-      // either, and for the same reason: a POST that timed out may have been
-      // received and run, with only its answer lost — asking again submits a
-      // second take, or creates a second piece, and the musician finds a
-      // duplicate they never made.
-      retry: false,
-    },
-  },
-});
+const queryClient = createQueryClient();
 
 /**
  * React Navigation paints its own background between screens; without this it
- * would flash white against the warm ivory page.
+ * would flash white against the warm ivory page — or, in dark mode, against a
+ * page that is not white at all.
+ *
+ * The base is `DarkTheme` when the app is dark. Every colour below is
+ * overridden from the palette, so the base contributes only its `dark: true`
+ * flag — which the library's own built-ins read, and which is the difference
+ * between a modal's default backdrop being right and being a pale rectangle.
  */
 const navigationTheme: Theme = {
-  ...DefaultTheme,
+  ...(scheme === 'dark' ? DarkTheme : DefaultTheme),
   colors: {
     ...DefaultTheme.colors,
     background: colors.bg,
@@ -112,6 +68,19 @@ const navigationTheme: Theme = {
  */
 const FONT_TIMEOUT_MS = 5000;
 
+/**
+ * Where the app answers from.
+ *
+ * Composed here rather than in `navigation/linking.ts` because `expo-linking`
+ * reaches `react-native`, and a module that imports it cannot be unit-tested —
+ * see the note there. The route map is the part worth testing; the prefixes are
+ * one line of configuration.
+ */
+const linking = {
+  prefixes: [Linking.createURL('/'), 'https://intempo.app', 'https://www.intempo.app'],
+  config: screenConfig,
+};
+
 export default function App() {
   const [fontsLoaded, fontError] = useFonts(fontsToLoad);
   const [fontsTimedOut, setFontsTimedOut] = useState(false);
@@ -133,8 +102,27 @@ export default function App() {
   // have to be in memory before anything can consult them. Fonts gate the
   // first frame anyway, which is more than enough time for one storage read.
   useEffect(() => {
+    // The colour the OS paints behind the app — on launch, and behind an
+    // over-scroll bounce. `app.json` can only carry one value and it carries
+    // the light one, so a dark launch has to correct it here or every bounce
+    // flashes ivory. Never rejects in a way worth handling: the fallback is
+    // the static value, which is merely the wrong shade.
+    void SystemUI.setBackgroundColorAsync(colors.bg).catch(() => {});
     void hydratePreferences();
     void hydratePracticeTempos();
+    // Restore a take the server accepted before the browser or app was closed.
+    // Today turns this tiny hand-off into a visible, resumable result.
+    void hydratePendingAnalysis();
+    // The onboarding answers given before there was an account to put them on.
+    // A confirmation link relaunches the app, so this restore is the whole
+    // reason they were written down: without it the questions are asked twice.
+    void hydrateOnboardingDraft();
+    // Ask iOS to let this app be heard on a phone that is on silent, once, at
+    // launch. Every player asserts it again before it makes a sound — the
+    // recorder takes the session away and does not give it back in a state
+    // that plays — but doing it here means the *first* tap is not the one that
+    // races a category change.
+    void prepareForPlayback();
     // Start waking the host now rather than when the first screen asks.
     //
     // The API sleeps when idle and takes about 75 seconds to come back, and
@@ -168,19 +156,60 @@ export default function App() {
     console.info(reason ?? 'InTempo: connected to the API — showing your data.');
   }, []);
 
+  // Takes that could not be sent go into a queue on the device. Until now
+  // nothing emptied it: the only thing that ever sent one was the recording
+  // screen restoring it, which needed the musician to remember which piece it
+  // was and go back there. So a take recorded out of signal was *kept*, not
+  // *sent* — and after a rehearsal across three pieces, that was three
+  // journeys nobody was told to make.
+  //
+  // Started here because the queue is the app's, not a screen's: a musician
+  // who walks back into coverage and opens the library should find their
+  // takes going, not have to visit the room they recorded them in.
+  useEffect(() => startTakeDrainer(), []);
+
+  // The other half of practising without a connection.
+  //
+  // Takes recorded out of signal have been kept and sent later since the queue
+  // above existed — and the piece they were recorded *into* could not be
+  // opened, because every screen's data lived in a cache that dies with the
+  // process. A musician in a rehearsal room could record into music they could
+  // not read. This writes the repertoire to the device so that relaunching
+  // without signal still opens a library.
+  //
+  // What is written, what is stripped from it and how much of it fits are all
+  // in `data/cache/persistCache.ts`, where they are tested.
+  useEffect(() => startLibraryCache(queryClient), []);
+
   return (
     <SafeAreaProvider>
       <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         {/*
-          Visible, with dark content for the ivory page beneath it. `app.json`
-          pins `userInterfaceStyle: light`, so this stays correct even when the
-          device is in dark mode.
+          Dark glyphs on the ivory page, light glyphs on the ink one.
+
+          This used to be a hardcoded `"dark"` with a comment explaining that
+          `app.json` pinned `userInterfaceStyle: light` so it stayed correct on
+          a dark device. That pin is now `automatic`, so the comment's premise
+          is gone and the value has to follow the palette this launch resolved.
         */}
-        <StatusBar style="dark" />
+        <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
         {typographyReady ? (
-          <NavigationContainer theme={navigationTheme}>
-            <RootNavigator />
+          <NavigationContainer
+            theme={navigationTheme}
+            documentTitle={{ formatter: formatDocumentTitle }}
+            // Without this the whole app is one URL: back leaves the site,
+            // a refresh returns to Today, and nothing can be linked to.
+            // See `navigation/linking.ts`.
+            linking={linking}
+          >
+            {/* Inside the container, because the tab bar it feeds is drawn by
+                the navigator; above `RootNavigator`, because the screen that
+                reports the tone and the bar that reads it are siblings under
+                it. */}
+            <ChromeToneProvider>
+              <RootNavigator />
+            </ChromeToneProvider>
           </NavigationContainer>
         ) : (
           // Holds the page colour so the first frame doesn't flash white.

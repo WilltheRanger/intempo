@@ -1,4 +1,4 @@
-import { Search, X } from 'lucide-react-native';
+import { Search, X } from '../icons';
 import { useState } from 'react';
 import {
   Platform,
@@ -17,6 +17,7 @@ import {
   ICON_SIZE,
   ICON_STROKE_WIDTH,
   MIN_TOUCH_TARGET,
+  pressedOpacity,
   radii,
   spacing,
   typography,
@@ -86,7 +87,7 @@ export function SearchField({
           onPress={() => onChangeText('')}
           accessibilityRole="button"
           accessibilityLabel="Clear search"
-          hitSlop={spacing.md}
+          style={({ pressed }) => [styles.target, pressed && styles.pressed]}
         >
           <X
             size={ICON_SIZE.md}
@@ -100,6 +101,29 @@ export function SearchField({
 }
 
 const styles = StyleSheet.create({
+  /*
+    Every tappable thing on this screen acknowledges the touch. These were bare
+    `Pressable`s with a static style, so a tap produced no response at all until
+    whatever it triggered appeared — which on a slow action reads as the control
+    being dead. `PressableScale` is for the large targets; the app's answer for
+    small ones is a colour or opacity change, and these had neither.
+  */
+  pressed: {
+    opacity: pressedOpacity,
+  },
+  /**
+   * Padded to a real touch target, not `hitSlop`-ed to one.
+   *
+   * **`hitSlop` does nothing on the web build.** Measured in Chromium: a click
+   * 8pt above this control — well inside a 12pt slop — did not activate it,
+   * while a click on the visible 18pt box did. `PlaybackSettings` reached the
+   * same conclusion from the other direction: "a hit area nothing can see is a
+   * hit area nothing checks."
+   */
+  target: {
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: 'center',
+  },
   field: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -120,6 +144,26 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
+    /*
+     * **`flex: 1` alone does not let a DOM input shrink.**
+     *
+     * react-native-web renders `TextInput` as an `<input>`, and a flex item in
+     * CSS defaults to `min-width: auto` — which for a replaced element is its
+     * *intrinsic* width. So the field grows with the text size and cannot be
+     * squeezed back. Measured in Chromium at a 390px viewport: it fits at 1x
+     * (right edge 343), and at 1.5x it is already 32px off the screen, at 2x
+     * 164px, at 3x 407px. Yoga has no `min-width: auto` rule, so native was
+     * never affected and nothing on a phone would ever have shown it.
+     *
+     * With this line the field measures 274px and ends at 343 at **every**
+     * scale; the text scrolls inside it, which is what an input is for. The
+     * same one-line fix is already on seven flex rows elsewhere in the app.
+     */
+    minWidth: 0,
+    // **Full height, so the target is the field and not the text.** The
+    // container is `MIN_TOUCH_TARGET` tall; the input inside it measured 24pt,
+    // so half the row looked tappable and was not.
+    alignSelf: 'stretch',
     ...typography.body,
     color: colors.textPrimary,
     // Android centres poorly without this; iOS ignores it.

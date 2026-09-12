@@ -5,23 +5,33 @@ import {
   Library,
   User,
   type LucideIcon,
-} from 'lucide-react-native';
-import { Pressable, StyleSheet, View } from 'react-native';
+} from '../components/icons';
+import { useEffect, useRef, type ReactNode } from 'react';
+import { Animated, Platform, Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { GlassSurface } from '../components/primitives/GlassSurface';
 import { Text } from '../components/primitives/Text';
 import {
-  BORDER_WIDTH,
   colors,
+  darkColors,
   ICON_SIZE,
   ICON_STROKE_WIDTH,
+  motion,
+  SPRING,
+  SPRING_CSS,
   spacing,
 } from '../design';
 import {
-  TAB_BAR_MIN_PADDING_BOTTOM,
+  TAB_BAR_CAPSULE_HEIGHT,
+  TAB_BAR_FLOAT_INSET,
   TAB_BAR_PADDING_TOP,
   TAB_BAR_ROW_HEIGHT,
+  tabBarFloatBottom,
 } from './tabBarMetrics';
+import { useChromeTone } from './ChromeToneContext';
+import { impact, ImpactFeedbackStyle } from '../lib/haptics';
+import { useReducedMotion } from '../lib/useReducedMotion';
 import type { TabParamList } from './types';
 
 const TAB_ICONS: Record<keyof TabParamList, LucideIcon> = {
@@ -31,12 +41,108 @@ const TAB_ICONS: Record<keyof TabParamList, LucideIcon> = {
   Profile: User,
 };
 
+function webTabSelectionStyle(focused: boolean): ViewStyle {
+  return {
+    opacity: focused ? 1 : 0.78,
+    transform: [
+      { translateY: focused ? -2 : 0 },
+      { scale: focused ? 1 : 0.96 },
+    ],
+    transitionProperty: 'opacity, transform',
+    // The web build cannot run `Animated.spring`, so this is the closest curve
+    // to it: long enough to read as settling, with the small overshoot past 1
+    // that makes a spring feel like one.
+    transitionDuration: `${motion.spring}ms`,
+    transitionTimingFunction: SPRING_CSS,
+    willChange: 'opacity, transform',
+  } as unknown as ViewStyle;
+}
+
+function TabSelectionMotion({
+  focused,
+  children,
+}: {
+  focused: boolean;
+  children: ReactNode;
+}) {
+  const reduceMotion = useReducedMotion();
+  const selected = useRef(new Animated.Value(focused ? 1 : 0)).current;
+
+  useEffect(() => {
+    if (reduceMotion || Platform.OS === 'web') {
+      selected.setValue(focused ? 1 : 0);
+      return;
+    }
+    // **A spring, not a 120ms ease-out.** The old curve reached its target and
+    // stopped dead; iOS settles. Physical parameters rather than a duration,
+    // so an interrupted change continues from wherever it had got to instead of
+    // restarting.
+    const animation = Animated.spring(selected, {
+      toValue: focused ? 1 : 0,
+      useNativeDriver: true,
+      ...SPRING,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [focused, reduceMotion, selected]);
+
+  if (reduceMotion) {
+    return <View style={styles.tabContent}>{children}</View>;
+  }
+
+  return (
+    <Animated.View
+      style={[
+        styles.tabContent,
+        Platform.OS === 'web'
+          ? webTabSelectionStyle(focused)
+          : {
+              opacity: selected.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0.78, 1],
+              }),
+              transform: [
+                {
+                  translateY: selected.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, -2],
+                  }),
+                },
+                {
+                  scale: selected.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.96, 1],
+                  }),
+                },
+              ],
+            },
+      ]}
+    >
+      {children}
+    </Animated.View>
+  );
+}
+
 /**
- * The tab bar. Quiet by design — it sits on the page background behind a
- * hairline rule rather than on a raised surface, so it doesn't compete with
- * screen content.
+ * The tab bar: a floating glass capsule with content passing beneath it.
  *
- * The accent colour marks the active tab and nothing else here.
+ * **This reverses design law 9**, which called bottom navigation "opaque,
+ * anchored, unrounded, part of the frame". The law is rewritten rather than
+ * quietly overridden — see `DECISIONS.md`, 2026-09-06 — because a rule left
+ * standing in `CLAUDE.md` while the code contradicts it is how the next
+ * session "fixes" this back.
+ *
+ * Two things it deliberately does **not** do, both of which were prototyped and
+ * rejected:
+ *
+ * - **It does not resize on scroll.** Furniture that changes size while you
+ *   read is chrome asking to be looked at, which is the opposite of what
+ *   furniture is for. iOS 26 shrinks its tab bar; this one does not.
+ * - **It has no pill behind the active tab.** A filled selection chip is a
+ *   Material convention. iOS marks the selection on the symbol and the label,
+ *   which is what the accent and the ink weight already do here.
+ *
+ * The accent colour marks the active tab and nothing else.
  */
 export function BottomTabBar({
   state,
@@ -44,17 +150,27 @@ export function BottomTabBar({
   navigation,
 }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
+  const reduceMotion = useReducedMotion();
+
+  const bottomGap = tabBarFloatBottom(insets);
+  // **What is behind the capsule right now**, which the screen under it works
+  // out and reports — not which screen it is. A route is a name; the tone is
+  // about a rectangle, and Today is a photograph for exactly one viewport.
+  // `chromeTone.ts` holds the rule and what it cost to learn it.
+  const tone = useChromeTone();
+  const palette = tone === 'onDark' ? darkColors : colors;
 
   return (
-    <View
-      // Bottom padding is the device's own inset, so the home indicator is
-      // cleared on modern iPhones and the bar stays at its approved height on
-      // phones without one. The floor only applies when the inset is 0 — it is
-      // never added on top of it. `styles.bar` carries the background, so the
-      // ivory extends through the safe-area region rather than stopping short.
+    <GlassSurface
+      radius={TAB_BAR_CAPSULE_HEIGHT / 2}
+      tone={tone}
       style={[
         styles.bar,
-        { paddingBottom: Math.max(insets.bottom, TAB_BAR_MIN_PADDING_BOTTOM) },
+        {
+          left: TAB_BAR_FLOAT_INSET,
+          right: TAB_BAR_FLOAT_INSET,
+          bottom: bottomGap,
+        },
       ]}
     >
       {state.routes.map((route, index) => {
@@ -70,6 +186,9 @@ export function BottomTabBar({
             canPreventDefault: true,
           });
           if (!focused && !event.defaultPrevented) {
+            // A tab change is a small but definite mode switch. Confirm it at
+            // the same instant as the visible press, before the scene settles.
+            impact(ImpactFeedbackStyle.Light);
             navigation.navigate(route.name);
           }
         }
@@ -80,46 +199,85 @@ export function BottomTabBar({
             onPress={handlePress}
             accessibilityRole="tab"
             accessibilityState={{ selected: focused }}
+            // Which tab you are on, for a screen reader. The bar is the app's
+            // primary furniture and it announced four identical tabs.
+            aria-selected={focused}
             accessibilityLabel={label}
-            style={styles.tab}
+            style={({ pressed }) => [
+              styles.tab,
+              pressed && (reduceMotion ? styles.tabPressedStill : styles.tabPressed),
+            ]}
           >
-            <Icon
-              size={ICON_SIZE.lg}
-              strokeWidth={ICON_STROKE_WIDTH}
-              // The icon keeps the gold. Non-text has a 3:1 contrast floor
-              // and the accent clears it; text has 4.5:1 and it does not.
-              color={focused ? colors.accent : colors.textSecondary}
-            />
-            <Text
-              variant="sectionLabel"
-              // Ink rather than gold: at 13px the accent is 3.54:1, under the
-              // 4.5:1 floor. The active tab is still marked twice — the gold
-              // icon above, and ink against grey here.
-              color={focused ? 'textPrimary' : 'textSecondary'}
-              style={styles.label}
-            >
-              {label}
-            </Text>
+            <TabSelectionMotion focused={focused}>
+              <Icon
+                size={ICON_SIZE.lg}
+                strokeWidth={ICON_STROKE_WIDTH}
+                // Every colour here comes out of one palette, picked once.
+                // The gold is the same value in both and clears the 3:1
+                // non-text floor on either ground; the grey is not, which is
+                // the whole reason a palette is chosen rather than a colour.
+                color={focused ? palette.accent : palette.textSecondary}
+              />
+              <Text
+                variant="sectionLabel"
+                // Ink rather than gold: at 13px the accent is 3.54:1, under
+                // the 4.5:1 floor. The active tab is still marked twice — the
+                // gold icon above, and full-strength ink against grey here.
+                //
+                // **The dark tone takes the dark palette's own text tokens**,
+                // not `onDarkMuted`. That one is the scanner's chrome — white
+                // at 0.55 — and borrowing it put these labels at 4.13:1 on the
+                // ground `audit-a11y` resolves behind the capsule. The
+                // appearance's own tab bar already had the right answer.
+                color={focused ? 'textPrimary' : 'textSecondary'}
+                tone={tone}
+                style={styles.label}
+              >
+                {label}
+              </Text>
+            </TabSelectionMotion>
           </Pressable>
         );
       })}
-    </View>
+    </GlassSurface>
   );
 }
 
+
 const styles = StyleSheet.create({
   bar: {
+    // Absolutely positioned so content scrolls *under* it. `ScreenContainer`
+    // pays for that by adding `useTabBarHeight()` to its bottom padding, so the
+    // last row of any list is still reachable above the capsule.
+    position: 'absolute',
     flexDirection: 'row',
-    backgroundColor: colors.bg,
-    borderTopWidth: BORDER_WIDTH,
-    borderTopColor: colors.border,
     paddingTop: TAB_BAR_PADDING_TOP,
+    paddingBottom: TAB_BAR_PADDING_TOP,
   },
+  /*
+    **Above the glass.** `GlassSurface` fills the control absolutely, and a
+    positioned element paints over its non-positioned siblings whatever the DOM
+    order — so without this the material covers each tab instead of sitting
+    behind it. Measured: the header's "+" rendered pale grey rather than ink.
+  */
   tab: {
+    zIndex: 1,
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     height: TAB_BAR_ROW_HEIGHT,
+    gap: spacing.xs,
+  },
+  tabPressed: {
+    opacity: 0.82,
+    transform: [{ scale: 0.975 }],
+  },
+  tabPressedStill: {
+    opacity: 0.82,
+  },
+  tabContent: {
+    alignItems: 'center',
+    justifyContent: 'center',
     gap: spacing.xs,
   },
   label: {

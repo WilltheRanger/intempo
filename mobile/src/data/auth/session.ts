@@ -4,7 +4,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
 
-import { authRedirectUrl } from '../../lib/authRedirect';
+import {
+  authRedirectPayload,
+  authRedirectUrl,
+} from '../../lib/authRedirect';
+import { onboardingDraft } from '../onboardingDraft';
 
 /**
  * Supabase client for auth only. The backend verifies the access token this
@@ -81,6 +85,38 @@ export interface AuthResult {
    * account-enumeration oracle Supabase is withholding.
    */
   possiblyAlreadyRegistered: boolean;
+}
+
+export type ConsumedAuthRedirect = 'ignored' | 'signedIn' | 'recovery';
+
+/**
+ * Establishes the session carried by an emailed link on iOS or Android.
+ *
+ * Web callbacks are consumed by auth-js's `detectSessionInUrl`. Native links
+ * arrive through Expo Linking instead, and without this bridge confirmation,
+ * passwordless sign-in, and password recovery merely opened the app while
+ * leaving it signed out.
+ */
+export async function consumeAuthRedirect(
+  url: string,
+): Promise<ConsumedAuthRedirect> {
+  const payload = authRedirectPayload(url);
+  if (!payload) {
+    return 'ignored';
+  }
+  if (payload.kind === 'error') {
+    throw new Error(payload.message);
+  }
+
+  const supabase = requireClient();
+  const { error } = await supabase.auth.setSession({
+    access_token: payload.accessToken,
+    refresh_token: payload.refreshToken,
+  });
+  if (error) {
+    throw error;
+  }
+  return payload.recovery ? 'recovery' : 'signedIn';
 }
 
 /** Signs in with an email and password. Throws with the provider's reason. */
@@ -275,13 +311,38 @@ export async function getAuthAvatarUrl(): Promise<string | null> {
  *
  * A no-op when Supabase isn't configured, which is the state the app boots in
  * until the env vars are set.
+ *
+ * **The onboarding draft goes with it**, before the request rather than after:
+ * unanswered answers on a shared device would be applied to whoever signs in
+ * next, which is somebody else's name and instrument on their account. Dropped
+ * even if the sign-out request then fails, because the intent to leave is what
+ * makes them the wrong person's.
  */
 export async function signOut(): Promise<void> {
+  onboardingDraft.clear();
   const supabase = getSupabaseClient();
   if (!supabase) {
     return;
   }
   const { error } = await supabase.auth.signOut();
+  if (error) {
+    throw error;
+  }
+}
+
+/**
+ * Clears only this device's session after the server has deleted the identity.
+ *
+ * A normal sign-out asks the auth server to revoke a session. Once the user no
+ * longer exists that request may be rejected, leaving stale tokens on the
+ * device. Local scope removes them without asking a deleted account to answer.
+ */
+export async function forgetDeletedSession(): Promise<void> {
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return;
+  }
+  const { error } = await supabase.auth.signOut({ scope: 'local' });
   if (error) {
     throw error;
   }

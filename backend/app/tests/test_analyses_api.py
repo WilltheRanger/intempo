@@ -9,11 +9,12 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi.testclient import TestClient
 
+from app import db as db_module
 from app.main import app
 from app.routers import analyses as analyses_module
 from app.tests.audio_helpers import evenly_spaced, synth_click_track
 from app.tests.fake_supabase import FakeSupabase
-from app.workers import analysis_runner
+from app.workers import analysis_runner, dispatch
 from app.workers.analysis_runner import sweep_stuck_analyses
 
 PROJECT_HOST = "https://test.supabase.invalid"
@@ -40,7 +41,13 @@ def client() -> TestClient:
 
 
 def _audio_url(user_id: UUID) -> str:
-    return f"{PROJECT_HOST}/storage/v1/object/sign/audio-uploads/{user_id}/take.wav?token=x"
+    # Every real /upload/audio call creates a new object key. A fixed filename
+    # makes two independent test takes look like one retried submission now
+    # that enqueue correctly deduplicates one uploaded object.
+    return (
+        f"{PROJECT_HOST}/storage/v1/object/sign/audio-uploads/"
+        f"{user_id}/{uuid4()}.wav?token=x"
+    )
 
 
 def _wav_bytes(bpm: float = 120.0, n: int = 8) -> bytes:
@@ -57,8 +64,13 @@ def _wav_bytes(bpm: float = 120.0, n: int = 8) -> bytes:
 def _install(monkeypatch: pytest.MonkeyPatch, fake: FakeSupabase) -> None:
     # Router and worker must share the SAME fake so the enqueue→run→poll
     # flow is consistent.
-    monkeypatch.setattr(analyses_module, "get_service_client", lambda: fake)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: fake)
     monkeypatch.setattr(analysis_runner, "get_service_client", lambda: fake)
+    # Storage signing itself is covered in test_audio_storage. This fake models
+    # database state only, so worker-flow tests keep their supplied readable URL.
+    monkeypatch.setattr(
+        analysis_runner, "readable_audio_url", lambda _client, reference: reference
+    )
 
 
 # ---- auth / validation ----------------------------------------------------
@@ -125,7 +137,7 @@ def test_post_enqueues_and_returns_202(
     # Spy on the background worker instead of running it here.
     called: list[str] = []
     monkeypatch.setattr(
-        analyses_module, "start_analysis", lambda aid, _tasks: called.append(aid)
+        analyses_module, "start_analysis", lambda aid: called.append(aid)
     )
 
     res = client.post(
@@ -144,6 +156,63 @@ def test_post_enqueues_and_returns_202(
     assert called == [body["analysis_id"]]  # background task got the new id
 
 
+def test_audio_key_is_stored_durably_and_retry_is_idempotent(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """A lost POST response must not upload, charge or enqueue the take twice."""
+    user_id = uuid4()
+    score_id = uuid4()
+    fake = FakeSupabase()
+    fake.seed(
+        "scores",
+        [{"id": str(score_id), "user_id": str(user_id), "score_json": GOOD_SCORE_JSON}],
+    )
+    _install(monkeypatch, fake)
+    called: list[str] = []
+    monkeypatch.setattr(
+        analyses_module, "start_analysis", lambda aid: called.append(aid)
+    )
+    headers = {"Authorization": f"Bearer {make_token(sub=user_id)}"}
+    body = {
+        "score_id": str(score_id),
+        "audio_key": f"{user_id}/take.wav",
+        "target_bpm": 120,
+        "bpm_source": "manual",
+    }
+
+    first = client.post("/v1/analyses", headers=headers, json=body)
+    second = client.post("/v1/analyses", headers=headers, json=body)
+
+    assert first.status_code == second.status_code == 202
+    assert first.json()["analysis_id"] == second.json()["analysis_id"]
+    assert len(fake.table("analyses").rows) == 1
+    stored = fake.table("analyses").rows[0]["audio_url"]
+    assert f"/object/authenticated/audio-uploads/{user_id}/take.wav" in stored
+    assert "token=" not in stored
+    assert called == [first.json()["analysis_id"]]
+
+
+def test_post_rejects_another_accounts_audio_key(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    user_id = uuid4()
+    fake = FakeSupabase()
+    _install(monkeypatch, fake)
+
+    res = client.post(
+        "/v1/analyses",
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+        json={
+            "score_id": str(uuid4()),
+            "audio_key": f"{uuid4()}/take.wav",
+            "target_bpm": 120,
+            "bpm_source": "manual",
+        },
+    )
+
+    assert res.status_code == 403
+
+
 def test_full_flow_queued_to_done(
     monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
 ) -> None:
@@ -152,8 +221,9 @@ def test_full_flow_queued_to_done(
     fake = FakeSupabase()
     fake.seed("scores", [{"id": str(score_id), "user_id": str(user_id), "score_json": GOOD_SCORE_JSON}])
     _install(monkeypatch, fake)
-    # Real worker runs (TestClient executes BackgroundTasks after response);
-    # only stub the storage fetch so the real pipeline analyzes real audio.
+    # Real worker runs, on `dispatch`'s pool; only stub the storage fetch so
+    # the real pipeline analyzes real audio. `_analysed()` below is what waits
+    # for it — see that helper for why the wait is now explicit.
     monkeypatch.setattr(analysis_runner, "download_audio", lambda _url: _wav_bytes())
 
     token = make_token(sub=user_id)
@@ -169,6 +239,7 @@ def test_full_flow_queued_to_done(
     )
     assert post.status_code == 202
     analysis_id = post.json()["analysis_id"]
+    _analysed()
 
     got = client.get(f"/v1/analyses/{analysis_id}", headers={"Authorization": f"Bearer {token}"})
     assert got.status_code == 200
@@ -240,6 +311,83 @@ def _analysis_row(user_id: UUID, score_id: UUID, **over: Any) -> dict:
     return row
 
 
+def test_recording_playback_is_private_and_short_lived(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    mine, theirs = uuid4(), uuid4()
+    mine_row = _analysis_row(mine, uuid4())
+    their_row = _analysis_row(theirs, uuid4())
+    fake = FakeSupabase()
+    fake.seed("analyses", [mine_row, their_row])
+    _install(monkeypatch, fake)
+    seen: list[str] = []
+
+    def _sign(_client: Any, reference: str) -> str:
+        seen.append(reference)
+        return "https://storage.test/signed/take.wav?token=short-lived"
+
+    monkeypatch.setattr(analyses_module, "readable_audio_url", _sign)
+    headers = {"Authorization": f"Bearer {make_token(sub=mine)}"}
+
+    response = client.get(
+        f"/v1/analyses/{mine_row['id']}/recording", headers=headers
+    )
+    assert response.status_code == 200
+    assert response.json() == {
+        "url": "https://storage.test/signed/take.wav?token=short-lived",
+        "expires_in": analyses_module.SIGNED_AUDIO_DOWNLOAD_TTL_SECONDS,
+    }
+    assert response.headers["cache-control"] == "private, no-store"
+    assert seen == [mine_row["audio_url"]]
+
+    # The same response covers an unknown id and another musician's id. The
+    # endpoint must not reveal that the latter recording exists.
+    hidden = client.get(
+        f"/v1/analyses/{their_row['id']}/recording", headers=headers
+    )
+    assert hidden.status_code == 404
+    assert len(seen) == 1
+
+    # A row scoped to this account but pointing at somebody else's storage is
+    # corrupt data, not permission to sign that object.
+    corrupt = _analysis_row(
+        mine,
+        uuid4(),
+        audio_url=f"{PROJECT_HOST}/storage/v1/object/authenticated/audio-uploads/{theirs}/take.wav",
+    )
+    fake.table("analyses").rows.append(corrupt)
+    refused = client.get(
+        f"/v1/analyses/{corrupt['id']}/recording", headers=headers
+    )
+    assert refused.status_code == 404
+    assert len(seen) == 1
+
+
+def test_recording_playback_requires_a_session(client: TestClient) -> None:
+    assert client.get(f"/v1/analyses/{uuid4()}/recording").status_code == 401
+
+
+def test_recording_playback_reports_a_temporary_storage_failure(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    user_id = uuid4()
+    row = _analysis_row(user_id, uuid4())
+    fake = FakeSupabase()
+    fake.seed("analyses", [row])
+    _install(monkeypatch, fake)
+
+    def _unavailable(_client: Any, _reference: str) -> str:
+        raise analyses_module.AudioStorageError("storage is down")
+
+    monkeypatch.setattr(analyses_module, "readable_audio_url", _unavailable)
+    response = client.get(
+        f"/v1/analyses/{row['id']}/recording",
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+    assert response.status_code == 503
+    assert response.json()["detail"] == "recording is temporarily unavailable"
+
+
 def test_list_returns_only_the_callers_analyses(
     monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
 ) -> None:
@@ -292,6 +440,179 @@ def test_list_filters_by_score_and_status(
     assert [row["status"] for row in done_only.json()] == ["done"]
 
 
+def test_the_list_carries_the_analysis_by_default(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """Insights reads `result_json` off this endpoint, so the default may not
+    change without changing that with it."""
+    user_id = uuid4()
+    fake = FakeSupabase()
+    fake.seed("analyses", [_analysis_row(user_id, uuid4(), status="done")])
+    _install(monkeypatch, fake)
+
+    res = client.get(
+        "/v1/analyses", headers={"Authorization": f"Bearer {make_token(sub=user_id)}"}
+    )
+
+    assert res.status_code == 200
+    assert res.json()[0]["result_json"] is not None
+
+
+def test_include_result_false_does_not_fetch_the_analysis(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """**Not fetched, not merely hidden**, and that distinction is the feature.
+
+    `result_json` is by far the largest thing in the row — measured against the
+    real response models at **214 bytes per note**, so a 200-note take is 52 KB
+    and a page of 200 takes is 10 MB. The app's "when did I last play this" map
+    reads two fields out of that on every Library open.
+
+    Dropping the field after Postgres has already sent it would leave the
+    expensive half of the transfer exactly where it was; the database read is
+    billed too. `FakeSupabase` applies the projection, so a row that still
+    carried the field here would mean the narrowing never reached the query.
+    """
+    user_id = uuid4()
+    fake = FakeSupabase()
+    fake.seed("analyses", [_analysis_row(user_id, uuid4(), status="done")])
+    _install(monkeypatch, fake)
+
+    res = client.get(
+        "/v1/analyses?include_result=false",
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+
+    assert res.status_code == 200
+    [row] = res.json()
+    assert row["result_json"] is None
+    # Everything the caller actually asked for survives — a projection that
+    # dropped `created_at` would make the map it feeds silently empty.
+    assert row["score_id"] and row["created_at"] and row["status"] == "done"
+
+
+def test_the_light_projection_names_every_other_field(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """A field added to `AnalysisResponse` and forgotten in the projection
+    would come back null from this path and be perfectly valid — which is why
+    the column list is derived from the model rather than typed out. This is
+    the check that the derivation is complete rather than merely plausible.
+
+    **The row is built from the model, and the first assertion is why.** An
+    earlier version of this test seeded `_analysis_row`, which does not set
+    `instrument`, `skip_long_rests`, `from_measure` or `failure_reason` — so
+    those four were null on both sides and dropping one from the projection
+    changed nothing the comparison could see. Measured: removing `instrument`
+    from the derivation left this test passing. A field with no distinguishing
+    value is a field this cannot check, so the row must carry one for every
+    field and must fail rather than skip when it does not.
+    """
+    from app.routers.analyses import AnalysisResponse
+
+    distinctive: dict[str, Any] = {
+        "instrument": "double_bass",
+        "skip_long_rests": True,
+        "from_measure": 17,
+        "failure_reason": "the take was silent",
+    }
+    user_id = uuid4()
+    row = _analysis_row(user_id, uuid4(), status="done", **distinctive)
+    unseeded = [
+        name
+        for name in AnalysisResponse.model_fields
+        if row.get(name) in (None, "", [], {})
+    ]
+    assert not unseeded, (
+        f"{unseeded} have no value in the seeded row, so this comparison cannot "
+        "tell a projection that keeps them from one that drops them. Give each "
+        "a distinctive value above."
+    )
+
+    fake = FakeSupabase()
+    fake.seed("analyses", [row])
+    _install(monkeypatch, fake)
+    headers = {"Authorization": f"Bearer {make_token(sub=user_id)}"}
+
+    full = client.get("/v1/analyses", headers=headers).json()[0]
+    light = client.get("/v1/analyses?include_result=false", headers=headers).json()[0]
+
+    differing = {k for k in full if full[k] != light.get(k)}
+    assert differing == {"result_json"}, differing
+
+
+def test_the_list_is_newest_first(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """**A documented contract with no test, which the app does not believe.**
+
+    The docstring has said "newest first" since this endpoint was written, and
+    `FakeSupabase.order` accepted the call and discarded it — so nothing here
+    ever checked it. The app sorts the list again on arrival, with a comment
+    saying the ordering "is settled here rather than assumed of the server",
+    which is the reasonable thing to do about a promise nothing holds.
+
+    It is worth testing because paging depends on it: an offset into an
+    unordered list is not a page of anything.
+    """
+    user_id, score_id = uuid4(), uuid4()
+    fake = FakeSupabase()
+    fake.seed(
+        "analyses",
+        [
+            _analysis_row(user_id, score_id, created_at="2026-03-02T09:00:00+00:00"),
+            _analysis_row(user_id, score_id, created_at="2026-09-01T09:00:00+00:00"),
+            _analysis_row(user_id, score_id, created_at="2026-06-14T09:00:00+00:00"),
+        ],
+    )
+    _install(monkeypatch, fake)
+
+    res = client.get(
+        "/v1/analyses", headers={"Authorization": f"Bearer {make_token(sub=user_id)}"}
+    )
+
+    assert [row["created_at"] for row in res.json()] == [
+        "2026-09-01T09:00:00+00:00",
+        "2026-06-14T09:00:00+00:00",
+        "2026-03-02T09:00:00+00:00",
+    ]
+
+
+def test_paging_walks_the_list_without_repeating_or_skipping(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """`range(offset, offset + limit - 1)` is inclusive at both ends.
+
+    Off by one in either direction and a caller paging through either sees a
+    row twice or never sees it at all — and until `FakeSupabase.range` did
+    anything, both were invisible here.
+    """
+    user_id, score_id = uuid4(), uuid4()
+    fake = FakeSupabase()
+    fake.seed(
+        "analyses",
+        [
+            _analysis_row(user_id, score_id, created_at=f"2026-01-{day:02d}T09:00:00+00:00")
+            for day in range(1, 8)
+        ],
+    )
+    _install(monkeypatch, fake)
+    headers = {"Authorization": f"Bearer {make_token(sub=user_id)}"}
+
+    def page(offset: int, limit: int) -> list[str]:
+        res = client.get(f"/v1/analyses?limit={limit}&offset={offset}", headers=headers)
+        assert res.status_code == 200
+        return [row["created_at"] for row in res.json()]
+
+    first, second, third = page(0, 3), page(3, 3), page(6, 3)
+
+    assert len(first) == 3 and len(second) == 3 and len(third) == 1
+    walked = first + second + third
+    assert len(set(walked)) == 7, "a page repeated a row"
+    # Newest first, all the way through, and every row exactly once.
+    assert walked == sorted(walked, reverse=True)
+
+
 def test_list_unauthenticated_returns_401(client: TestClient) -> None:
     assert client.get("/v1/analyses").status_code == 401
 
@@ -320,6 +641,22 @@ def test_sweeper_recovers_stuck_rows(monkeypatch: pytest.MonkeyPatch) -> None:
     assert by_id["4"]["status"] == "done"
 
 
+def _analysed() -> None:
+    """Wait for the in-process pool to drain.
+
+    **The 202 is now genuinely a 202.** These tests used to rely on
+    `TestClient` running FastAPI's background tasks inline before returning
+    from `post()`, so the analysis was finished by the time the next line ran.
+    The work goes to `dispatch`'s bounded pool instead — a queue and its own
+    threads — because `BackgroundTasks` gave forty of them a shared, uncounted
+    forty-thread pool at ~460 MB a take.
+
+    So the test waits where the app polls. A drain of an empty queue is a
+    no-op, which is what the tests that stub `start_analysis` get.
+    """
+    dispatch._analysing._pending.join()
+
+
 def _submit(
     client: TestClient,
     token: str,
@@ -339,6 +676,7 @@ def _submit(
         },
     )
     assert res.status_code == 202, res.text
+    _analysed()
     return res.json()["analysis_id"]
 
 
@@ -410,7 +748,7 @@ def test_the_instrument_is_stored_and_read_back(
         [{"id": str(score_id), "user_id": str(user_id), "score_json": GOOD_SCORE_JSON}],
     )
     _install(monkeypatch, fake)
-    monkeypatch.setattr(analyses_module, "start_analysis", lambda _id, _tasks: None)
+    monkeypatch.setattr(analyses_module, "start_analysis", lambda _id: None)
 
     token = make_token(sub=user_id)
     analysis_id = _submit(client, token, user_id, score_id, instrument="double_bass")
@@ -518,3 +856,102 @@ def test_a_take_that_did_not_skip_writes_no_key_at_all(
         == 202
     )
     assert "skip_long_rests" not in fake.table("analyses").rows[1]
+
+
+# ---------------------------------------------------------------------------
+# Recording from a chosen bar on a database that cannot store one
+# ---------------------------------------------------------------------------
+
+
+def _install_insert_that_lacks_from_measure(monkeypatch, fake) -> None:
+    """A table whose `analyses` predates migration 015.
+
+    The real client raises from `execute()` with PostgREST's message naming
+    the column. Only an insert that *carries* the key fails — every other take
+    is unaffected, which is what a missing nullable column actually does.
+    """
+    table = fake.table("analyses")
+    real_insert = table.insert
+
+    def insert(payload):
+        if isinstance(payload, dict) and "from_measure" in payload:
+            class _Boom:
+                def execute(self):
+                    raise RuntimeError(
+                        'column "from_measure" of relation "analyses" does not exist'
+                    )
+
+            return _Boom()
+        return real_insert(payload)
+
+    monkeypatch.setattr(table, "insert", insert)
+
+
+def test_a_chosen_bar_on_a_pre_015_database_is_refused_with_advice(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """**The bar is refused, not the take, and not quietly.**
+
+    Dropping the key and analysing from bar 1 would be the misalignment this
+    feature exists to prevent, reintroduced by a missing column. A raw 500 —
+    the 012 precedent — shows "something went wrong" for a request that was
+    entirely reasonable. The refusal names the one thing the musician can
+    change, and the picker lets them change it.
+    """
+    user_id = uuid4()
+    score_id = uuid4()
+    fake = FakeSupabase()
+    fake.seed(
+        "scores",
+        [{"id": str(score_id), "user_id": str(user_id), "score_json": GOOD_SCORE_JSON}],
+    )
+    _install(monkeypatch, fake)
+    _install_insert_that_lacks_from_measure(monkeypatch, fake)
+    monkeypatch.setattr(analyses_module, "start_analysis", lambda *_: None)
+
+    res = client.post(
+        "/v1/analyses",
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+        json={
+            "score_id": str(score_id),
+            "audio_url": _audio_url(user_id),
+            "target_bpm": 120,
+            "bpm_source": "manual",
+            "from_measure": 2,
+        },
+    )
+
+    assert res.status_code == 400
+    assert "bar 1" in res.json()["detail"]
+    assert len(fake.table("analyses").rows) == 0
+
+
+def test_a_take_from_the_start_still_works_on_a_pre_015_database(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """The column is nullable and the key is only sent when a bar was chosen,
+    so every take that does not choose one is untouched by the migration."""
+    user_id = uuid4()
+    score_id = uuid4()
+    fake = FakeSupabase()
+    fake.seed(
+        "scores",
+        [{"id": str(score_id), "user_id": str(user_id), "score_json": GOOD_SCORE_JSON}],
+    )
+    _install(monkeypatch, fake)
+    _install_insert_that_lacks_from_measure(monkeypatch, fake)
+    monkeypatch.setattr(analyses_module, "start_analysis", lambda *_: None)
+
+    res = client.post(
+        "/v1/analyses",
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+        json={
+            "score_id": str(score_id),
+            "audio_url": _audio_url(user_id),
+            "target_bpm": 120,
+            "bpm_source": "manual",
+        },
+    )
+
+    assert res.status_code == 202
+    assert len(fake.table("analyses").rows) == 1

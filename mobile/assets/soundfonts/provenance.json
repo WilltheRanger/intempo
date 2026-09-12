@@ -1,0 +1,36 @@
+{
+  "source": "https://raw.githubusercontent.com/mrbumpy409/GeneralUser-GS/684543d5e5efaef08d02be50dcda8d552478fa60/GeneralUser-GS.sf2",
+  "revision": "684543d5e5efaef08d02be50dcda8d552478fa60",
+  "sourceSha256": "9575028c7a1f589f5770fccc8cff2734566af40cd26ed836944e9a5152688cfe",
+  "tool": "spessasynth_core 4.3.22",
+  "presets": [
+    {
+      "instrument": "violin",
+      "program": 40,
+      "name": "Violin",
+      "bytes": 937662,
+      "sha256": "9e2d46af573d5e6f99aeb849a8861370342a35581860b53aa8e8e9b816c8ffb5"
+    },
+    {
+      "instrument": "viola",
+      "program": 41,
+      "name": "Viola",
+      "bytes": 774930,
+      "sha256": "9fab36abc07379eeaa35598f593eb448a15d22676c1d282481c6fda1e444fc63"
+    },
+    {
+      "instrument": "cello",
+      "program": 42,
+      "name": "Cello",
+      "bytes": 1008632,
+      "sha256": "4bd0139827b1ace01b70b8cc458be344e37dab5de1af8fab7e8bb13eb4ffae79"
+    },
+    {
+      "instrument": "double_bass",
+      "program": 43,
+      "name": "Double Bass",
+      "bytes": 598980,
+      "sha256": "5ee7e1589f0606a6981bbb172ad8abb5e2e6903b455d48781d11a754c70871d7"
+    }
+  ]
+}

@@ -1,9 +1,11 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
-import { Mic, Square } from 'lucide-react-native';
+import { useQueryClient } from '@tanstack/react-query';
+import { Mic, Square } from '../../components/icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Linking, Platform, Pressable, StyleSheet, View } from 'react-native';
 
 import {
+  Card,
   EmptyState,
   LoadingState,
   PageHeader,
@@ -12,20 +14,29 @@ import {
   Text,
 } from '../../components/primitives';
 import { usePiece } from '../../data/hooks/usePieces';
+import { meKeys, useMe } from '../../data/hooks/useMe';
 import { practiceTempo, usePracticeTempos } from '../../data/practiceTempo';
+import { bpmForMarking } from '../../lib/tempoMarking';
 import { preferences, usePreferences } from '../../data/preferences';
 import { PressableScale } from '../../components/motion';
 import { takeSubmissionSource } from '../../data/sources';
-import type { MetronomeMode } from '../../data/types';
 import {
-  EmptyRecordingError,
-  MicrophonePermissionError,
-  MicrophoneUnavailableError,
-  type Recorder,
-} from '../../lib/audio/types';
+  TakeSubmissionError,
+  type TakeSubmissionState,
+} from '../../data/practice/submitTake';
+import { forgetPendingAnalysis } from '../../data/practice/pendingAnalysis';
+import type { MetronomeMode } from '../../data/types';
+import { MicrophonePermissionError, type Recorder } from '../../lib/audio/types';
+import { readTakeFailure } from '../../lib/audio/takeFailure';
+import {
+  keepTakeForLater,
+  restoreQueuedTake,
+  takeWasAccepted,
+} from '../../lib/sync/queuedTakes';
 import { startRecording } from '../../lib/audioRecorder';
 import {
   colors,
+  disabledOpacity,
   ICON_SIZE,
   ICON_STROKE_WIDTH,
   radii,
@@ -33,12 +44,41 @@ import {
 } from '../../design';
 import { TempoStepper } from '../../components/practice/TempoStepper';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
-import { beatsPerBar, useMetronome } from '../../lib/metronome';
+import {
+  displayTempoBpm,
+  quarterBpmFromDisplay,
+  tempoDisplayRange,
+  tempoUnitLabel,
+} from '../../lib/tempo';
+import { metronomePulse, monotonicNow, useMetronome } from '../../lib/metronome';
+import { countInIsOver } from '../../lib/metronome/countIn';
+import { buildMetronomePlan } from '../../lib/metronome/plan';
+import {
+  longRestCues,
+  restCueAt,
+  type RestCueState,
+} from '../../lib/practiceCues';
 import { shortenLongRests, skippableBars } from '../../lib/notation/longRests';
-import { describeTierLimit } from '../../lib/tierLimit';
+import { openingTimeSignature } from '../../lib/notation/meter';
+import {
+  describeLastFreeAnalysis,
+  describeReachedAnalysisLimit,
+} from '../../lib/analysisAllowance';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
 import { BeatIndicator } from './BeatIndicator';
+import { PracticeSetup } from './PracticeSetup';
 import { ListenButton } from '../../components/score/ListenButton';
+import { PlaybackSettings } from '../../components/score/PlaybackSettings';
+import { scheduleScore, startableMeasures } from '../../lib/score';
+import { startFromMeasure } from '../../lib/score/startFrom';
+import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
+import {
+  leavingRecord,
+  shouldGuardBrowserExit,
+  type RecordPhase,
+} from '../../lib/record/leaving';
+import { useGoBack } from '../../navigation/useGoBack';
+import { loadStateFor } from '../../lib/loadState';
 
 const METRONOME_LABELS = {
   off: 'Metronome off',
@@ -55,14 +95,19 @@ const METRONOME_LABELS = {
  */
 const DEFAULT_ON_MODE: MetronomeMode = 'visual';
 
-type Phase = 'ready' | 'recording' | 'analysing';
+/**
+ * One union, not two. `leavingRecord` decides what each phase is worth asking
+ * about, and a copy here would let a new phase be added to the screen and not
+ * to the rule — where an unknown phase falls through to "just leave", which is
+ * the answer that loses a take.
+ */
+type Phase = RecordPhase;
 
 /**
  * Recording a take.
  *
- * The two places the spec allows a number on screen are both here: the target
- * tempo, which the musician set and needs to see, and the elapsed timer, which
- * they are watching. Everywhere else words do the work.
+ * Numbers appear only where a musician has to act on them: target tempo,
+ * elapsed time, the count-in, and the final beats before a re-entry.
  *
  * Capture is real: `lib/audioRecorder` records mono 16-bit PCM into a WAV on
  * both platforms. Where the file goes afterwards is `takeSubmissionSource`'s
@@ -72,18 +117,62 @@ type Phase = 'ready' | 'recording' | 'analysing';
  */
 export function RecordScreen() {
   const navigation = useNavigation<RootNavigation>();
+  const queryClient = useQueryClient();
   const { params } = useRoute<RouteProp<RootStackParamList, 'Record'>>();
-  const { data: piece, isPending } = usePiece(params.pieceId);
-  const { metronomeMode } = usePreferences();
+  const goBack = useGoBack({ route: 'PieceDetail', params: { pieceId: params.pieceId } });
+  const { data: piece, isError } = usePiece(params.pieceId);
+  // This is the same cached account read held by the signed-in gate, not a
+  // second request. It lets the screen refuse an impossible take before the
+  // musician plays it rather than after the WAV has already been uploaded.
+  const { data: musician } = useMe();
+  const limitMessage = describeReachedAnalysisLimit(musician?.usage);
+  const { instrument, metronomeMode, practiceSetupSeen } = usePreferences();
 
   // Read through the store so the piece's own marking seeds it and yesterday's
   // choice survives. Subscribing keeps this in step if the tempo is changed
   // elsewhere; the store is the source of truth, not this component.
   usePracticeTempos();
-  const targetBpm = practiceTempo.for(params.pieceId, piece?.markedBpm ?? null);
+  /**
+   * What the page says the tempo is, and how it says it.
+   *
+   * A metronome mark first, because it is a *reading*. Failing that, the
+   * conventional speed of a printed word — a page headed "Allegro moderato"
+   * and nothing else left `markedBpm` null, and the practice tempo fell back
+   * to 80: a moderately fast movement offered at a walking pace, on most of
+   * the standard repertoire, since editors wrote words rather than marks until
+   * well into the nineteenth century.
+   *
+   * The word is a convention and not a reading, so the screen says so under
+   * the control rather than presenting the number as the page's own.
+   */
+  const marking = piece?.score?.tempo_marking ?? null;
+  const markingBpm = piece?.markedBpm === null || piece?.markedBpm === undefined
+    ? bpmForMarking(marking)
+    : null;
+  const targetBpm = practiceTempo.for(
+    params.pieceId,
+    piece?.markedBpm ?? markingBpm,
+  );
+  const tempoBeatUnit = piece?.score?.tempo_beat_unit ?? null;
+  const displayedBpm = displayTempoBpm(targetBpm, tempoBeatUnit);
+  const displayedRange = tempoDisplayRange(tempoBeatUnit);
   const [phase, setPhase] = useState<Phase>('ready');
+  // The first recording on this device gets a short orientation before the
+  // system permission prompt. It can always be reopened from the ready screen.
+  const [showSetup, setShowSetup] = useState(!practiceSetupSeen);
   const [elapsedMs, setElapsedMs] = useState(0);
+  const [hasInputSignal, setHasInputSignal] = useState(false);
+  useEffect(() => {
+    if (phase !== 'recording' && phase !== 'counting_in') return;
+    const timer = setInterval(() => {
+      setHasInputSignal((recorder.current?.inputPeak?.() ?? 0) > 0);
+    }, 200);
+    return () => clearInterval(timer);
+  }, [phase]);
   const [problem, setProblem] = useState<string | null>(null);
+  const lastFreeMessage = describeLastFreeAnalysis(musician?.usage);
+  const visibleProblem = limitMessage ?? problem;
+  const [microphoneBlocked, setMicrophoneBlocked] = useState(false);
   const [truncated, setTruncated] = useState(false);
   // How much was actually kept. The cap is bytes, not minutes — a device at
   // 44.1 kHz fits nearly a minute more music into the same file than one at 48
@@ -97,7 +186,9 @@ export function RecordScreen() {
   // re-render between starting and stopping must not lose the handle to a
   // microphone that is currently open.
   const recorder = useRef<Recorder | null>(null);
+  const mounted = useRef(true);
   const starting = useRef(false);
+  const [isStarting, setIsStarting] = useState(false);
 
   // The finished take, kept when sending it fails.
   //
@@ -109,18 +200,113 @@ export function RecordScreen() {
   // A ref rather than state: nothing renders from the blob, and re-rendering
   // between a failure and a retry must not lose it. `pendingTake` below is the
   // state the button reads.
-  const unsent = useRef<{ audio: Blob; filename: string } | null>(null);
+  const unsent = useRef<{
+    audio: Blob;
+    filename: string;
+    resume?: TakeSubmissionState;
+  } | null>(null);
   const [pendingTake, setPendingTake] = useState(false);
+  /** The open "you are about to lose this" dialog, or null. */
+  const [leavePrompt, setLeavePrompt] = useState<
+    Extract<ReturnType<typeof leavingRecord>, { kind: 'confirm' }> | null
+  >(null);
 
   // Leaving mid-take — back gesture, a deep link, anything — has to release
   // the microphone. Nothing else will.
   useEffect(
-    () => () => {
-      recorder.current?.cancel();
-      recorder.current = null;
+    () => {
+      mounted.current = true;
+      return () => {
+        mounted.current = false;
+        recorder.current?.cancel();
+        recorder.current = null;
+      };
     },
     [],
   );
+
+  /**
+   * **The phase the guard reads, written at the same instant as the state.**
+   *
+   * `beforeRemove` fires inside the `navigation.replace` call, before React has
+   * committed anything set beside it — so a listener closed over `phase` and
+   * `pendingTake` is one render stale exactly when it is consulted. The case
+   * that broke: a retried take succeeds, `send` clears the held take and
+   * replaces the screen with the verdict, and the guard — still seeing the take
+   * as unsent — blocked the navigation and asked whether to discard a take that
+   * had just been accepted. Refs are the fix, not a dependency array.
+   */
+  const phaseRef = useRef<Phase>('ready');
+  function goPhase(next: Phase) {
+    phaseRef.current = next;
+    setPhase(next);
+  }
+
+  /** Set once the musician has said yes, so the guard lets the second go through. */
+  const leaving = useRef(false);
+  /** The navigation `beforeRemove` held back, replayed if they confirm. */
+  const blocked = useRef<(() => void) | null>(null);
+
+  /**
+   * **The cleanup above is correct and silent, which is the whole problem.**
+   * Releasing the microphone also throws away what it captured, so leaving
+   * mid-take lost the recording on one reflex tap with nothing said about it.
+   *
+   * `beforeRemove` rather than an `onPress` on the chevron, because the chevron
+   * is the one way out that is *not* the risk: the swipe-back gesture, Android's
+   * system back and the browser's back button all remove this screen without
+   * touching a control the app drew. A guard on the button would have covered
+   * the deliberate exit and missed every accidental one.
+   *
+   * What is worth asking about lives in `lib/record/leaving.ts`, where it can
+   * be tested — there is no React Native testing library here.
+   */
+  useEffect(
+    () =>
+      navigation.addListener('beforeRemove', (event) => {
+        if (leaving.current) {
+          return;
+        }
+        const answer = leavingRecord({
+          phase: phaseRef.current,
+          // The ref, not `pendingTake`: `send` clears it synchronously on the
+          // line above the navigation that fires this listener.
+          unsentTake: unsent.current !== null,
+          pieceTitle: piece?.title,
+        });
+        if (answer.kind !== 'confirm') {
+          return;
+        }
+        event.preventDefault();
+        blocked.current = () => navigation.dispatch(event.data.action);
+        setLeavePrompt(answer);
+      }),
+    [navigation, piece?.title],
+  );
+
+  // A refresh, closed tab, or changed address bypasses React Navigation and
+  // used to throw away a live take or the finished WAV currently uploading.
+  // Browsers deliberately control the wording of this confirmation; our job
+  // is only to request it while audio really would be lost.
+  useEffect(() => {
+    if (Platform.OS !== 'web') {
+      return;
+    }
+    function guardBrowserExit(event: BeforeUnloadEvent) {
+      if (
+        !shouldGuardBrowserExit({
+          phase: phaseRef.current,
+          unsentTake: unsent.current !== null,
+        })
+      ) {
+        return;
+      }
+      event.preventDefault();
+      event.returnValue = '';
+    }
+    window.addEventListener('beforeunload', guardBrowserExit);
+    return () => window.removeEventListener('beforeunload', guardBrowserExit);
+  }, []);
 
   // Turning the metronome back on restores the mode it was on, rather than
   // silently demoting someone's haptic or headphone choice to the default.
@@ -137,9 +323,9 @@ export function RecordScreen() {
     if (phase !== 'recording') {
       return;
     }
-    startedAt.current = Date.now() - elapsedMs;
+    startedAt.current = monotonicNow() - elapsedMs;
     const timer = setInterval(
-      () => setElapsedMs(Date.now() - startedAt.current),
+      () => setElapsedMs(monotonicNow() - startedAt.current),
       100,
     );
     return () => clearInterval(timer);
@@ -153,9 +339,18 @@ export function RecordScreen() {
     if (starting.current || recorder.current) {
       return;
     }
+    if (limitMessage) {
+      // The disabled control prevents ordinary taps; this guard protects a
+      // stale queued press and future callers from opening the microphone.
+      setProblem(limitMessage);
+      return;
+    }
     starting.current = true;
+    setIsStarting(true);
     impact(ImpactFeedbackStyle.Medium);
     setProblem(null);
+    setHasInputSignal(false);
+    setMicrophoneBlocked(false);
     setTruncated(false);
     setKeptSeconds(0);
     // A new take supersedes the held one. Without this, "Send it again" stayed
@@ -166,38 +361,74 @@ export function RecordScreen() {
     setPendingTake(false);
 
     try {
-      recorder.current = await startRecording();
+      const started = await startRecording();
+      // Permission may resolve after the musician has already left. Never
+      // retain a microphone opened for a screen that no longer exists.
+      if (!mounted.current) {
+        started.cancel();
+        return;
+      }
+      recorder.current = started;
     } catch (error) {
-      setProblem(messageFor(error));
+      if (!mounted.current) return;
+      setMicrophoneBlocked(error instanceof MicrophonePermissionError);
+      setProblem(readTakeFailure(error, Platform.OS).message);
       return;
     } finally {
       starting.current = false;
+      if (mounted.current) setIsStarting(false);
     }
 
-    // Only now: the timer has to agree with the file, and the file starts when
-    // the hardware does, not when the button was pressed.
+    // The recorder starts before the count-in. Its leading silence is intentional:
+    // alignment already ignores startup silence, while beginning the microphone
+    // afterwards would put an unpredictable hardware delay between "one" and
+    // the first playable downbeat.
     setElapsedMs(0);
-    setPhase('recording');
+    goPhase('counting_in');
+  }
+
+  function cancelCountIn() {
+    recorder.current?.cancel();
+    recorder.current = null;
+    setElapsedMs(0);
+    goPhase('ready');
+  }
+
+  /** Confirmed: the audio goes, and so does the screen. */
+  function confirmLeave() {
+    recorder.current?.cancel();
+    recorder.current = null;
+    unsent.current = null;
+    setLeavePrompt(null);
+    // Past the guard below, then the navigation that was held back.
+    leaving.current = true;
+    const held = blocked.current;
+    blocked.current = null;
+    if (held) {
+      held();
+    } else {
+      goBack();
+    }
   }
 
   async function stop() {
     const active = recorder.current;
     recorder.current = null;
     if (!active) {
-      setPhase('ready');
+      goPhase('ready');
       return;
     }
 
     impact(ImpactFeedbackStyle.Medium);
-    setPhase('analysing');
+    goPhase('analysing');
 
     let recording;
     try {
       recording = await active.stop();
     } catch (error) {
-      setProblem(messageFor(error));
+      setProblem(readTakeFailure(error, Platform.OS).message);
       setElapsedMs(0);
-      setPhase('ready');
+      goPhase('ready');
       return;
     }
 
@@ -212,8 +443,16 @@ export function RecordScreen() {
    * Separate from `stop` so a retry runs the same path with the same bytes
    * rather than a second code path that could diverge from the first.
    */
-  async function send(recording: { audio: Blob; filename: string }) {
-    setPhase('analysing');
+  async function send(recording: {
+    audio: Blob;
+    filename: string;
+    resume?: TakeSubmissionState;
+  }) {
+    // Hold the bytes before the first awaited upload step. This is not yet a
+    // visible retry state, but it makes both navigation and browser-exit guards
+    // truthful during the vulnerable gap before the server accepts the take.
+    unsent.current = recording;
+    goPhase('analysing');
     setProblem(null);
     try {
       const analysisId = await takeSubmissionSource.submit({
@@ -223,26 +462,67 @@ export function RecordScreen() {
         metronomeMode,
         audio: recording.audio,
         filename: recording.filename,
+        resume: recording.resume,
         // **Sent, not just applied on the phone.** The metronome counted a
         // shortened piece, so the analysis has to judge a shortened one — see
         // `SubmitTakeInput.skipLongRests` for what happens when it does not.
         skipLongRests: skipRests,
+        // Sent, not just applied on the phone: the analysis happens after the
+        // response, so the row is the only thing that survives to say which
+        // bar was played first.
+        fromMeasure: startFrom,
       });
       unsent.current = null;
       setPendingTake(false);
+      // The server has it; the device copy is now the only one that could go
+      // stale. Not awaited — the verdict is what the musician is waiting for.
+      void takeWasAccepted(recording.filename);
+      // `/v1/me` carries the remaining monthly allowance. Mark it stale as
+      // soon as this analysis finishes so Record again cannot reuse the count
+      // from before the take and invite a fourth performance the server will
+      // refuse.
+      void queryClient.invalidateQueries({ queryKey: meKeys.all });
       navigation.replace('Verdict', { analysisId });
+      // The verdict now owns the hand-off. Clear after the navigation is
+      // dispatched so a refresh in the gap still recovers the accepted take.
+      void forgetPendingAnalysis(analysisId);
     } catch (error) {
       // The quota is the one failure a retry cannot clear — the count does not
       // move until next month, so offering "Send again" would be offering the
       // same refusal. Everything else is worth one tap.
-      const retriable = describeTierLimit(error) === null;
-      unsent.current = retriable ? recording : null;
-      setPendingTake(retriable);
+      // One read, so the sentence and the offer of another go cannot
+      // disagree — see `lib/audio/takeFailure.ts`.
+      const failure = readTakeFailure(error, Platform.OS);
+      // A failed step reports the last server-issued key/id it reached. Hold
+      // that beside the WAV so retry resumes there rather than paying for the
+      // completed upload or creating a second analysis.
+      const resumable =
+        error instanceof TakeSubmissionError
+          ? { ...recording, resume: error.resume }
+          : recording;
+      unsent.current = failure.retriable ? resumable : null;
+      setPendingTake(failure.retriable);
+      if (failure.retriable) {
+        // **The ref survives a retry and not a restart.** A musician who
+        // records with no signal and backgrounds the app used to lose the
+        // performance, which is the one part of this that cannot be repeated.
+        void keepTakeForLater(
+          resumable,
+          {
+            scoreId: params.pieceId,
+            targetBpm,
+            metronomeMode,
+            skipLongRests: skipRests,
+            fromMeasure: startFrom,
+          },
+          failure.message,
+        );
+      }
       // Back to the top of the screen with the tempo still set, so the reply
       // to a failed take is one tap rather than a re-setup.
-      setProblem(messageFor(error));
+      setProblem(failure.message);
       setElapsedMs(0);
-      setPhase('ready');
+      goPhase('ready');
     }
   }
 
@@ -253,12 +533,31 @@ export function RecordScreen() {
     );
   }
 
-  const recording = phase === 'recording';
+  async function openMicrophoneSettings() {
+    try {
+      await Linking.openSettings();
+    } catch {
+      setProblem(
+        'Open your device Settings, choose InTempo, and allow Microphone. Then return and press Start again.',
+      );
+    }
+  }
 
-  // Runs for the length of the take and no longer. The accent follows the
-  // score's own time signature, so "one" lands where the musician is counting
-  // it rather than every four beats regardless.
-  const perBar = beatsPerBar(piece?.score?.time_signature);
+  const recording = phase === 'recording';
+  // **One slot, two senders, and the allowance notice yields.** A refused quota
+  // and a failed take are both about the take in hand; this is about the next
+  // one, so it never takes the slot from either.
+  //
+  // It is *not* hidden once recording starts, though it has nothing left to
+  // decide by then. The record button sits directly under this line in a flex
+  // column, so dropping two lines of text moves the button at the exact moment
+  // a thumb is on it — and the count-in would move it a second time. The
+  // sentence stays true for the whole take, and the take ending leaves this
+  // screen anyway.
+  const footerNote = visibleProblem ?? lastFreeMessage;
+  const countingIn = phase === 'counting_in';
+  const capturing = countingIn || recording;
+
   /**
    * Practise the notes without sitting through the rests.
    *
@@ -277,14 +576,138 @@ export function RecordScreen() {
     [piece?.score, skipRests],
   );
 
+  /**
+   * Which bar the musician enters on — for the take as well as for Listen.
+   *
+   * **It used to govern Listen alone**, and the comment here said so: the
+   * analysis built its timeline from the whole score, so a take that began at
+   * bar 40 would have been compared against bar 1 onward and reported wrong
+   * from its first note. The request now carries the bar, migration 015 stores
+   * it, and the worker trims the score to match — the same arrangement
+   * `skip_long_rests` has, and for the same reason.
+   */
+  const [chosenStartFrom, setChosenStartFrom] = useState<number | null>(null);
+  const listenSchedule = useMemo(
+    () => (heard ? scheduleScore(heard, targetBpm) : null),
+    [heard, targetBpm],
+  );
+  const startable = useMemo(
+    () => (listenSchedule ? startableMeasures(listenSchedule) : []),
+    [listenSchedule],
+  );
+  const startFrom =
+    chosenStartFrom !== null && startable.includes(chosenStartFrom)
+      ? chosenStartFrom
+      : (startable[0] ?? 1);
+  const setStartFrom = setChosenStartFrom;
+
+  /**
+   * The piece as the take will actually be played: from the entry bar on.
+   *
+   * **The cues are measured in beats from the first bar played**, so cues
+   * computed from the whole score fire at the wrong moments for a take that
+   * began partway in — and the count-in would lead into the wrong music. The
+   * server trims the same way before it builds the timeline;
+   * `fixtures/practice/start_at.json` is the contract between the two.
+   */
+  const takeScore = useMemo(
+    () => (heard ? startFromMeasure(heard, startFrom) : null),
+    [heard, startFrom],
+  );
+
+  // One written bar in the pulse a musician actually feels, in the meter
+  // where this take actually begins. A take starting after a 4/4 → 6/8 change
+  // gets two dotted-quarter pulses, not four quarter-note clicks from the
+  // score header. `startFromMeasure` carries the standing meter onto its
+  // entry bar, and the first bar's own printed change wins.
+  const entryTimeSignature = openingTimeSignature(takeScore);
+  const pulse = metronomePulse(entryTimeSignature);
+  const perBar = pulse?.pulsesPerBar ?? null;
+  const metronomePlan = useMemo(
+    () => buildMetronomePlan(takeScore, targetBpm),
+    [takeScore, targetBpm],
+  );
+  const countInBeats = metronomePlan.countInPulses;
+
+  const restCues = useMemo(
+    () => longRestCues(takeScore, skipRests ? 1 : undefined),
+    [takeScore, skipRests],
+  );
+
+  // **The count-in is not the metronome setting.** It ticks, taps and counts
+  // on screen whatever the take is set to, the way a conductor counts you in —
+  // you cannot start together with something that has not given you the beat.
+  // What the take may then produce is a different question, and the microphone
+  // answers it: see `lib/metronome/countIn.ts`.
   const metronome = useMetronome({
     mode: metronomeMode,
     bpm: targetBpm,
-    timeSignature: piece?.score?.time_signature,
-    running: recording,
+    timeSignature: entryTimeSignature,
+    beatPlan: metronomePlan.beats,
+    running: capturing,
+    countingIn,
   });
 
-  if (isPending) {
+  // Hoisted out of the effect so the dependency below is the value the effect
+  // actually uses. Depending on `metronome.beat` itself would re-run this on
+  // every beat object the clock emits, including the ones before the count is
+  // up — same outcome today, and one refactor away from not being.
+  const beatIndex = metronome.beat?.index ?? null;
+
+  // **Bring back a take an earlier session could not send.**
+  //
+  // Once, on mount, and only into an idle screen with nothing in hand: a live
+  // recording or a take already waiting is newer than anything on disk, and
+  // overwriting either with a restored one would discard the performance the
+  // musician is actually looking at.
+  //
+  // `restoreQueuedTake` drops an entry whose bytes are gone rather than
+  // returning it, so this cannot offer "Send it again" for a take that is not
+  // there any more.
+  useEffect(() => {
+    let cancelled = false;
+    void restoreQueuedTake(params.pieceId).then((restored) => {
+      if (cancelled || !restored || unsent.current !== null) {
+        return;
+      }
+      unsent.current = {
+        audio: restored.audio,
+        filename: restored.filename,
+        resume: restored.resume,
+      };
+      setPendingTake(true);
+      if (restored.lastError) {
+        setProblem(restored.lastError);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [params.pieceId]);
+
+  useEffect(() => {
+    if (!countInIsOver({ countingIn, beatIndex, countInBeats })) {
+      return;
+    }
+    // Beat N is the downbeat after N count-in beats. Keeping the metronome
+    // running across this state change preserves phase exactly.
+    //
+    // **The pre-roll goes here.** The microphone has been open since before
+    // the count — deliberately, so no hardware start-up delay lands between
+    // "four" and the downbeat — which means the count-in's clicks are in the
+    // capture, and `alignment.py` measures every onset from the first one it
+    // detects. Dropping what has been captured makes the file begin where the
+    // music does, and is what lets the count-in be audible at all.
+    recorder.current?.discardCapturedSoFar();
+    setElapsedMs(0);
+    goPhase('recording');
+  }, [countInBeats, countingIn, beatIndex]);
+
+  const activeRest = recording
+    ? restCueAt(restCues, elapsedMs, targetBpm)
+    : null;
+
+  if (loadStateFor({ isError, hasData: piece !== undefined }) === 'loading') {
     return (
       <ScreenContainer>
         <LoadingState />
@@ -299,8 +722,114 @@ export function RecordScreen() {
           title="Couldn't open this piece"
           description="It may have been removed from your library."
           actionLabel="Back"
-          onActionPress={() => navigation.goBack()}
+          onActionPress={goBack}
         />
+      </ScreenContainer>
+    );
+  }
+
+  if ((piece.score?.measures.length ?? 0) === 0) {
+    const reading =
+      piece.transcriptionStatus === 'queued' ||
+      piece.transcriptionStatus === 'reading';
+    return (
+      <ScreenContainer>
+        <EmptyState
+          title={reading ? 'Sheet music is still being read' : 'Add sheet music before recording'}
+          description={
+            reading
+              ? 'Practice recording will be ready as soon as the notation appears.'
+              : 'InTempo needs the written notes and rests to align your take and produce an accurate analysis.'
+          }
+          actionLabel="Open piece"
+          onActionPress={() =>
+            navigation.replace('PieceDetail', { pieceId: piece.id })
+          }
+        />
+      </ScreenContainer>
+    );
+  }
+
+  if (showSetup) {
+    return (
+      <PracticeSetup
+        title={piece.title}
+        onBack={() => {
+          if (practiceSetupSeen) {
+            setShowSetup(false);
+          } else {
+            goBack();
+          }
+        }}
+        onContinue={() => {
+          preferences.setPracticeSetupSeen(true);
+          setShowSetup(false);
+        }}
+      />
+    );
+  }
+
+  if (phase === 'counting_in') {
+    /**
+     * The beat being counted, the way a conductor counts it: **up**.
+     *
+     * This was `countInBeats - beat.index` — a countdown — while the dots below
+     * it fill left to right. So on the last click of the bar the screen showed
+     * a large **1** with the *fourth* dot lit, and a musician glancing at it
+     * could read "beat one" and come in a whole beat early. On an app whose
+     * entire job is measuring whether you came in on time, that is the one
+     * mistake the count-in must not invite.
+     *
+     * Counting up also matches the two things already on the screen: the dots,
+     * and "Start on the next downbeat" — which is a sentence about the beat
+     * *after* four, not about a countdown reaching zero. A conductor never
+     * counts down.
+     */
+    const counted = Math.min(countInBeats, (metronome.beat?.index ?? 0) + 1);
+    return (
+      <ScreenContainer
+        scrollable={false}
+        contentStyle={styles.screen}
+        footer={
+          <RecordButton
+            active
+            countingIn
+            onPress={cancelCountIn}
+          />
+        }
+      >
+        <PageHeader
+          eyebrow={piece.composer}
+          title={piece.title}
+          onBack={goBack}
+          // **The same words as every other phase of this screen.** It said
+          // "Cancel count-in" — which the record button below it also says, so
+          // a screen reader announced one label for two controls, and the
+          // chevron did something no other chevron in the app does.
+          backLabel="Back to the piece"
+        />
+
+        <View style={styles.countIn}>
+          <Text variant="sectionLabel" color="textSecondary">
+            {perBar === null ? 'Four-beat count-in' : 'One-bar count-in'}
+          </Text>
+          <Text
+            variant="heroTitle"
+            style={styles.countInNumber}
+            accessibilityLiveRegion="polite"
+          >
+            {counted}
+          </Text>
+          <Text variant="body" color="textSecondary" style={styles.countInCopy}>
+            {perBar === null ? 'Start after the count' : 'Start on the next downbeat'}
+          </Text>
+          <BeatIndicator beat={metronome.beat} perBar={perBar} />
+          {metronome.silent ? (
+            <Text variant="metadataSmall" color="textTertiary" style={styles.note}>
+              Haptics are off. Follow the visual count.
+            </Text>
+          ) : null}
+        </View>
       </ScreenContainer>
     );
   }
@@ -326,14 +855,21 @@ export function RecordScreen() {
       contentStyle={styles.screen}
       footer={
         <View style={styles.footer}>
-          {problem ? (
+          {footerNote ? (
             <Text
               variant="metadataSmall"
               color="textSecondary"
               style={styles.problem}
             >
-              {problem}
+              {footerNote}
             </Text>
+          ) : null}
+          {microphoneBlocked && Platform.OS !== 'web' ? (
+            <SecondaryButton
+              label="Open microphone settings"
+              onPress={() => void openMicrophoneSettings()}
+              style={styles.permissionAction}
+            />
           ) : null}
           {/*
             Offered only while a take is actually being held, so the control
@@ -354,7 +890,10 @@ export function RecordScreen() {
             />
           ) : null}
           <RecordButton
-            recording={recording}
+            active={recording}
+            countingIn={false}
+            busy={isStarting}
+            disabled={!recording && Boolean(limitMessage)}
             onPress={() => void (recording ? stop() : start())}
           />
         </View>
@@ -363,7 +902,7 @@ export function RecordScreen() {
       <PageHeader
         eyebrow={piece.composer}
         title={piece.title}
-        onBack={() => navigation.goBack()}
+        onBack={goBack}
         backLabel="Back to the piece"
       />
 
@@ -376,10 +915,40 @@ export function RecordScreen() {
         <View style={styles.tempo}>
           <TempoStepper
             label="Target tempo"
-            bpm={targetBpm}
-            onChange={(next) => practiceTempo.set(params.pieceId, next)}
+            bpm={displayedBpm}
+            unitLabel={tempoUnitLabel(tempoBeatUnit)}
+            minBpm={displayedRange.min}
+            maxBpm={displayedRange.max}
+            onChange={(next) =>
+              practiceTempo.set(
+                params.pieceId,
+                quarterBpmFromDisplay(next, tempoBeatUnit),
+              )
+            }
             disabled={recording}
           />
+
+          {markingBpm !== null && marking ? (
+            <Text
+              variant="metadataSmall"
+              color="textSecondary"
+              style={styles.bassNote}
+            >
+              The page is marked {marking} and gives no metronome mark. This is
+              what that usually means — move it to what you play.
+            </Text>
+          ) : null}
+
+          {instrument === 'double_bass' ? (
+            <Text
+              variant="metadataSmall"
+              color="textSecondary"
+              style={styles.bassNote}
+            >
+              Double-bass detection is on. Keep the microphone uncovered and
+              give bowed attacks a clear start.
+            </Text>
+          ) : null}
 
           {/*
             Locked with the tempo once recording starts: the mode is written
@@ -483,44 +1052,127 @@ export function RecordScreen() {
             // about to judge.
             score={heard}
             bpm={targetBpm}
+            fromMeasure={startFrom}
             // Silenced the moment a take starts: anything through the speaker
             // lands in the microphone as phantom onsets (§4).
+            disabled={recording || isStarting}
+          />
+
+          {/* **One bar for both**, which is what makes it safe to say so. The
+              take carries this bar to the server, which trims the score before
+              building its timeline — so hearing the passage and recording it
+              now start in the same place, and the analysis is told which. */}
+          <PlaybackSettings
+            entry="take"
+            score={heard}
+            bars={startable}
+            fromMeasure={startFrom}
+            onFromMeasureChange={setStartFrom}
+            bpm={targetBpm}
+            beatUnit={tempoBeatUnit}
             disabled={recording}
           />
+
+          {!recording ? (
+            <Pressable
+              onPress={() => setShowSetup(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Open recording tips"
+              style={({ pressed }) => [
+                styles.metronome,
+                pressed && styles.metronomePressed,
+              ]}
+            >
+              <Text variant="metadataSmall" color="textPrimary">
+                Recording tips
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
 
-        <Text variant="screenTitle" style={styles.timer}>
-          {formatElapsed(elapsedMs)}
-        </Text>
+        {activeRest ? (
+          <RestCountdown state={activeRest} />
+        ) : (
+          <Text
+            variant="screenTitle"
+            /*
+             * **Ink while it is counting, quiet while it reads 00:00.**
+             *
+             * Before a take the screen had two things set in its largest type
+             * — the tempo and a timer showing zero — plus the record button, so
+             * the eye had three places to land and design law 4 asks for one.
+             * The timer is the one carrying no information yet.
+             *
+             * Dimmed rather than removed, and that is the whole point. `body`
+             * distributes with `space-evenly` and this node reserves the height
+             * the running timer needs; taking it out redistributes the screen
+             * and everything above it moves **at the instant the count-in
+             * starts** — when a musician has an instrument up and is watching
+             * for the downbeat. Measured: removing it leaves a visible void
+             * between the settings and the button, which is a worse trade than
+             * the numeral it removes.
+             */
+            color={elapsedMs > 0 || recording || countingIn ? 'textPrimary' : 'textTertiary'}
+            style={styles.timer}
+          >
+            {formatElapsed(elapsedMs)}
+          </Text>
+        )}
+        {capturing ? (
+          <Text variant="metadataSmall" color="textSecondary">
+            {hasInputSignal
+              ? 'Microphone: audio received'
+              : 'Microphone: waiting for sound'}
+          </Text>
+        ) : null}
       </View>
+
+      {/*
+        Only this view can raise it: the count-in leaves outright, and by
+        `analysing` the audio is already on its way. Both cases that hold
+        unsent audio — a live take, and one whose upload failed — are here.
+      */}
+      <ConfirmDialog
+        visible={leavePrompt !== null}
+        title={leavePrompt?.title ?? ''}
+        message={leavePrompt?.message ?? ''}
+        confirmLabel={leavePrompt?.confirmLabel ?? ''}
+        cancelLabel={leavePrompt?.cancelLabel}
+        onConfirm={confirmLeave}
+        onCancel={() => setLeavePrompt(null)}
+      />
     </ScreenContainer>
   );
 }
 
-/**
- * What went wrong, in a sentence a musician can act on.
- *
- * Never the underlying error: "NotAllowedError" and "Failed to fetch" tell
- * someone holding a violin nothing they can do anything about. Each of these
- * names the next move instead.
- */
-function messageFor(error: unknown): string {
-  if (error instanceof MicrophonePermissionError) {
-    return 'InTempo needs the microphone to hear you play. Allow it for InTempo, then start again.';
-  }
-  if (error instanceof MicrophoneUnavailableError) {
-    return error.message;
-  }
-  if (error instanceof EmptyRecordingError) {
-    return 'That take came back silent. Check the microphone isn\u2019t muted or covered, then try again.';
-  }
-  // Before the generic message, because this one is neither a connection
-  // problem nor something trying again will fix.
-  const quota = describeTierLimit(error);
-  if (quota) {
-    return quota;
-  }
-  return 'That take couldn\u2019t be sent. It is still here \u2014 check your connection and send it again.';
+function RestCountdown({ state }: { state: RestCueState }) {
+  const finalBar = state.barsRemaining === 1;
+  const value = finalBar
+    ? state.beatsRemainingInBar
+    : state.barsRemaining;
+  const unit = finalBar
+    ? value === 1
+      ? 'beat to entry'
+      : 'beats to entry'
+    : 'bars to entry';
+
+  return (
+    <Card emphasis style={styles.restCue}>
+      <Text variant="sectionLabel" color="textSecondary">
+        Rest · come in at measure {state.cue.resumeMeasure}
+      </Text>
+      <Text
+        variant="heroTitle"
+        style={styles.restCueNumber}
+        accessibilityLiveRegion="polite"
+      >
+        {value}
+      </Text>
+      <Text variant="body" color="textSecondary">
+        {unit}
+      </Text>
+    </Card>
+  );
 }
 
 /** `03:07`. Minutes and seconds only — a take is not an hour long. */
@@ -542,18 +1194,33 @@ function formatElapsed(ms: number): string {
  * settle it either way. The label is part of the tap target, not a caption.
  */
 function RecordButton({
-  recording,
+  active,
+  countingIn,
+  busy = false,
+  disabled = false,
   onPress,
 }: {
-  recording: boolean;
+  active: boolean;
+  countingIn: boolean;
+  busy?: boolean;
+  disabled?: boolean;
   onPress: () => void;
 }) {
+  const label = busy ? 'Starting microphone…' : disabled
+    ? 'Monthly analysis limit reached'
+    : countingIn
+      ? 'Cancel count-in'
+      : active
+        ? 'Stop recording'
+        : 'Start recording';
   return (
     <PressableScale
       onPress={onPress}
+      disabled={disabled || busy}
       accessibilityRole="button"
-      accessibilityLabel={recording ? 'Stop recording' : 'Start recording'}
-      style={styles.control}
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: disabled || busy, busy }}
+      style={[styles.control, disabled && styles.controlDisabled]}
       // More give than the default: this is the one control a musician reaches
       // for without looking, and it has to answer the finger.
       activeScale={0.94}
@@ -561,7 +1228,7 @@ function RecordButton({
       {({ pressed }) => (
         <>
           <View style={[styles.record, pressed && styles.recordPressed]}>
-            {recording ? (
+            {active ? (
               <Square
                 size={ICON_SIZE.lg}
                 strokeWidth={ICON_STROKE_WIDTH}
@@ -576,9 +1243,7 @@ function RecordButton({
               />
             )}
           </View>
-          <Text variant="metadata">
-            {recording ? 'Stop recording' : 'Start recording'}
-          </Text>
+          <Text variant="metadata">{label}</Text>
         </>
       )}
     </PressableScale>
@@ -612,6 +1277,31 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.md,
   },
+  countIn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  countInNumber: {
+    marginTop: spacing.xl,
+    fontVariant: ['tabular-nums'],
+  },
+  countInCopy: {
+    marginTop: spacing.sm,
+    marginBottom: spacing.xl,
+  },
+  restCue: {
+    width: '100%',
+    alignItems: 'center',
+  },
+  restCueNumber: {
+    marginTop: spacing.md,
+    fontVariant: ['tabular-nums'],
+  },
+  bassNote: {
+    maxWidth: 320,
+    textAlign: 'center',
+  },
   timer: {
     textAlign: 'center',
     fontVariant: ['tabular-nums'],
@@ -637,6 +1327,9 @@ const styles = StyleSheet.create({
   retry: {
     marginBottom: spacing.md,
   },
+  permissionAction: {
+    marginBottom: spacing.md,
+  },
   problem: {
     textAlign: 'center',
     marginBottom: spacing.xl,
@@ -652,6 +1345,9 @@ const styles = StyleSheet.create({
     // where a thumb actually rests — that is around a sixth of the screen up,
     // not against the edge.
     marginBottom: spacing['4xl'],
+  },
+  controlDisabled: {
+    opacity: disabledOpacity,
   },
   record: {
     width: RECORD_SIZE,

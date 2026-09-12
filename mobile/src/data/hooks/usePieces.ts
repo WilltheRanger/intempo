@@ -1,4 +1,10 @@
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
+import {
+  beginOptimistic,
+  patchEverywhere,
+  removeEverywhere,
+  type Rollback,
+} from '../optimistic/apply';
 
 import {
   acceptTranscription,
@@ -9,9 +15,14 @@ import {
 } from '../api/scores';
 import { IS_LIVE_BACKEND } from '../environment';
 import { pieceSource } from '../sources';
+import { practiceTempo } from '../practiceTempo';
+import { insightsKeys } from './useInsights';
+import { pieceFromCaches } from './knownPiece';
+import { takeKeys } from './useLatestTake';
 import { toPiece } from '../sources/api';
 import type { NewPiece, PieceEdit } from '../sources/types';
 import type { Clef, Piece, ScoreJson } from '../types';
+import { forgetTakesFor } from '../../lib/sync/queuedTakes';
 
 export const pieceKeys = {
   all: ['pieces'] as const,
@@ -48,10 +59,32 @@ export function useCurrentPiece() {
 const TRANSCRIPTION_POLL_MS = 3000;
 
 export function usePiece(id: string) {
+  const queryClient = useQueryClient();
   return useQuery<Piece | null>({
     queryKey: pieceKeys.detail(id),
     queryFn: () => pieceSource.getPiece(id),
     enabled: Boolean(id),
+    /**
+     * Open on what the library already told us, not on a blank screen.
+     *
+     * Tapping a piece used to push a screen that rendered `LoadingState` and
+     * then replaced it — reported as "it's like waiting to load and then
+     * loads". The row that was tapped already held this piece's title,
+     * composer, movement and cover, fetched and rendered a moment earlier, and
+     * the detail screen threw all of it away to ask again.
+     *
+     * `placeholderData` rather than `initialData`, deliberately: `initialData`
+     * is written into the cache as if it were a real answer and inherits the
+     * query's staleness, so a thin listing row would be *stored* as the piece.
+     * A placeholder is never cached, is flagged by `isPlaceholderData`, and the
+     * real fetch still runs underneath and replaces it.
+     */
+    placeholderData: () =>
+      pieceFromCaches(
+        id,
+        queryClient.getQueryData<Piece[]>(pieceKeys.list()),
+        queryClient.getQueryData<Piece | null>(pieceKeys.current()),
+      ),
     // Keep asking only while there is an answer coming. `queued` and `reading`
     // are the two states a worker is going to move off; `done` and `failed`
     // are terminal, and polling either would be asking a settled question
@@ -85,9 +118,22 @@ export function useCreatePiece() {
 /** Corrects a piece's title or composer. */
 export function useUpdatePiece(id: string) {
   const queryClient = useQueryClient();
-  return useMutation<Piece, Error, PieceEdit>({
+  return useMutation<Piece, Error, PieceEdit, Rollback>({
     mutationFn: (input) => pieceSource.updatePiece(id, input),
-    onSuccess: () => {
+    // **Shown before the server agrees, and taken back if it disagrees.** A
+    // rename or a favourite is reversible, which is the whole test for whether
+    // optimism is honest here: `acceptTranscription` and `submitTake`
+    // deliberately still wait, because neither can be undone.
+    onMutate: async (input) => {
+      const undo = await beginOptimistic(queryClient, pieceKeys.all);
+      patchEverywhere<Piece>(queryClient, pieceKeys.all, id, (piece) => ({
+        ...piece,
+        ...input,
+      }));
+      return undo;
+    },
+    onError: (_error, _input, undo) => undo?.(),
+    onSettled: () => {
       // The title appears on Today, in the library, in insights and on the
       // verdict screen, so this invalidates everything rather than patching
       // the detail entry and leaving four stale copies of the old name.
@@ -97,18 +143,44 @@ export function useUpdatePiece(id: string) {
 }
 
 /**
- * Removes a piece from the library.
+ * Permanently removes a piece and the history that belongs to it.
  *
- * Expect this to reject: a piece that has been recorded against cannot be
- * deleted, and the rejection carries the backend's own sentence explaining
- * why. Callers must render it rather than treating it as a retryable error.
+ * The endpoint clears the server-side score, assignments, analyses, recordings
+ * and retained pages. The client clears its one piece-scoped device value and
+ * refreshes every query derived from that history so Today and Insights cannot
+ * keep showing a take that no longer exists.
  */
 export function useDeletePiece() {
   const queryClient = useQueryClient();
-  return useMutation<void, Error, string>({
+  return useMutation<void, Error, string, Rollback>({
     mutationFn: (id) => pieceSource.deletePiece(id),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: pieceKeys.all });
+    // The row goes from every list immediately; a failure puts it back exactly
+    // where it was. `practiceTempo` is *not* cleared here — that is a device
+    // value the server knows nothing about, and clearing it optimistically
+    // would lose a musician's tempo for a delete that then failed.
+    onMutate: async (id) => {
+      const undo = await beginOptimistic(queryClient, pieceKeys.all);
+      removeEverywhere<Piece>(queryClient, pieceKeys.all, id);
+      return undo;
+    },
+    onError: (_error, _id, undo) => undo?.(),
+    onSettled: async (_data, _error, id) => {
+      practiceTempo.clear(id);
+      // **And its unsent takes**, which nothing removed. The WAV is up to 50 MB
+      // and the only thing that ever dropped an entry unasked was noticing its
+      // bytes were gone — and they are not. It is not inert either: the drain
+      // retries it for ever against a score the server answers 404 for, and a
+      // pass stops at the first failure, so one orphan blocks every real take
+      // behind it.
+      //
+      // In `onSettled` rather than `onMutate`: a delete that fails is undone
+      // above, and a take thrown away optimistically could not be.
+      void forgetTakesFor(id);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: pieceKeys.all }),
+        queryClient.invalidateQueries({ queryKey: takeKeys.all }),
+        queryClient.invalidateQueries({ queryKey: insightsKeys.all }),
+      ]);
     },
   });
 }
@@ -194,7 +266,19 @@ export function useCorrectScore(id: string) {
  */
 export function useSetClef(id: string) {
   const queryClient = useQueryClient();
-  return useMutation<void, Error, Clef | null>({
+  return useMutation<void, Error, Clef | null, Rollback>({
+    // A clef is one word and entirely reversible — "Not stated" is a real
+    // choice here, so the control has to feel like a control rather than a
+    // request. It is also the one field a musician corrects while looking
+    // straight at the stave it redraws.
+    onMutate: async (clef) => {
+      const undo = await beginOptimistic(queryClient, pieceKeys.all);
+      patchEverywhere<Piece>(queryClient, pieceKeys.all, id, (piece) =>
+        piece.score ? { ...piece, score: { ...piece.score, clef } } : piece,
+      );
+      return undo;
+    },
+    onError: (_error, _clef, undo) => undo?.(),
     mutationFn: async (clef) => {
       if (!IS_LIVE_BACKEND) {
         throw new Error(
@@ -203,7 +287,11 @@ export function useSetClef(id: string) {
       }
       await updateScore(id, { clef });
     },
-    onSuccess: () => {
+    // **`onSettled`, not `onSuccess`.** After a failure the rollback restores
+    // what this client believed was there, which is not necessarily what the
+    // server holds — only a refetch knows. Re-syncing on both outcomes is what
+    // stops an optimistic write leaving the cache subtly wrong.
+    onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: pieceKeys.all });
     },
   });

@@ -1,8 +1,1881 @@
 # InTempo Decisions
 
+## 2026-09-11 — Delete the four features no screen could reach, rather than find them homes
+
+**Context.** `check-dead-exports.py` has reported the same four for weeks:
+`factFor`, `practiceLessonFor`, `notationSetupLesson` and `tempoLadderFor`.
+Each is complete, documented and tested, and no screen imports any of them.
+The check calls this its *other* kind of finding — not a test seam, not a
+reference implementation, but "a feature designed, written and tested, that no
+screen can reach". Every session has left them alone because wiring one changes
+a screen (`CLAUDE.md` §2) and deleting finished work is a product call.
+
+The owner made the call: delete all four.
+
+**Decision.** Gone, with their tests:
+
+  src/lib/facts.ts                24 facts and a daily rotation
+  src/lib/practiceLesson.ts       practiceLessonFor, notationSetupLesson
+  src/data/practiceTempo.ts       the TempoRung / tempoLadderFor block only
+
+`practiceTempo.ts` keeps everything else — `clampBpm`, `tempoFor`,
+`hydratePracticeTempos`, `usePracticeTempos` and the `practiceTempo` object are
+imported by ten modules and are untouched. `lib/warmup.ts` also stays: both
+deleted modules imported `dayIndex` from it, and `WarmupPanel`, `WarmupScreen`
+and `ListenButton` still use it.
+
+**Why deleting was the right answer for these four**, recorded because the
+argument differs per feature and "it was unreachable" is not on its own a
+reason to delete rather than to wire:
+
+- **`factFor`** — a violin fact a day, on Today. It was written for the carded
+  Today that no longer exists; the screen is now one photograph with one focal
+  point (§3 law 4), and a paragraph of trivia on it is the thing law 10 asks
+  you to remove. Its own docstring already called it "a footnote here rather
+  than a feature".
+- **`notationSetupLesson`** — tells you to check the transcription before
+  recording. `PracticeSetup`'s "Before your first take" card says it, and the
+  hero says "Reading the notation from your photograph…" while it happens. A
+  third copy is a third thing to keep in step.
+- **`tempoLadderFor`** — a Warm up / Build / Marked ladder beside the tempo
+  stepper. A genuinely better affordance than pressing + eight times, and the
+  one deletion worth regretting.
+- **`practiceLessonFor`** — turns "you rushed measures 5-8" into a drill for
+  it, rotating daily so the advice does not go stale. This is the strongest of
+  the four and arguably the product's whole proposition past the diagnosis.
+
+**Alternatives considered.**
+
+- *Wire `practiceLessonFor` onto the verdict screen.* Recommended and
+  declined. It is the moment the diagnosis lands and the natural home for a
+  drill; the owner's call was to clear the debt rather than open new UI before
+  a demo, which is a schedule decision the code cannot make.
+- *Leave them and mark them as seams.* Rejected, and the check is explicit
+  about why: `@test-seam` is for a module a suite genuinely needs, and
+  declaring one of these would be using the marker to silence a report rather
+  than to explain it. Three real seams carry it; these were never that.
+- *Keep the ladder, delete the rest.* Consistent with the reasoning above and
+  not what was asked. It is four lines of `git revert` away.
+
+**Trade-offs accepted.**
+
+- **458 lines of working, tested code deleted**, and the two with real product
+  value — the drill and the ladder — are the ones that will have to be written
+  again if they come back. They are in `git log`, which is the argument
+  `EDIT_LOG.md`'s removal already rests on: history is the record, not a file
+  full of code nothing calls.
+- **`check-dead-exports` now reports only its three declared seams**, which
+  means the next unreachable export will be the only thing in that list. That
+  is the point of clearing it.
+
+## 2026-09-11 — The chrome's tone follows the scroll offset, not the route name; and the over-content tint is 0.50, not 0.86
+
+Supersedes the mechanism and the value chosen in yesterday's entry below. The
+decision it records — that the floating control layer's material follows the
+screen under it rather than the appearance — stands. Both of the things built
+to carry it out were wrong, and in the same way: each substituted something
+easy to read for the thing actually being asked about.
+
+**The tint. 0.86 was arithmetic about a file nobody was looking at.** It came
+from taking `#CCB198` — a bright block of the manuscript *fixture* — as the
+worst case behind the capsule, and concluding that a fifth of that lifted the
+gold on the focused icon to 2.49:1. But the hero composites that fixture under
+a 0.45 wash and a bottom gradient before anything floats over it. Photographing
+the real backdrop, with the capsule hidden, gives `darkest #1E1814, brightest
+#3F372F, mean #332B24`. Against the brightest of those, 0.50 leaves the active
+label at 14.16:1, the inactive one at 4.58 with the tab's own dim on it, and
+the gold at 3.75. On the rendered page, where the blur has averaged the
+backdrop, those come out 15.44 / 4.82 / 3.95.
+
+The visible difference is the whole point: 0.86 was a solid slab with a faint
+gradient on it and no manuscript showing through. It was reported as "not a
+gradient — transparent", which is exactly right, and is the kind of thing a
+contrast number cannot tell you.
+
+**The mechanism. A route is a name; the tone is about a rectangle.** Keying on
+`state.routes[state.index].name === 'Today'` reads as obviously correct and is
+wrong the moment anything moves: Today's hero is one viewport tall and ordinary
+page content follows it, so scrolling slides the capsule off the photograph and
+onto ivory with the route unchanged. Measured on the built bundle, scrolled to
+the bottom: the dark capsule composited to `#88857D` on the page, its inactive
+labels at **1.46:1**. Navigation furniture, gone. That was introduced by
+yesterday's change, not found in it.
+
+**Decision.** A screen declares how tall its dark ground is — `ScreenContainer`
+takes `darkGround`, and Today passes `useHeroHeight()`, the same hook the hero
+sizes itself from. `chromeToneFor({scrollY, darkGroundHeight, chromeMidline})`
+answers whether the chrome is still over it, and `ScreenContainer` reports the
+answer through `ChromeToneContext` for `BottomTabBar` to read.
+
+The threshold is the capsule's **midline**. Its bottom edge crosses the
+ground's end at one offset and its top edge 76 points later, and in between it
+is genuinely half on a photograph and half on a page; no single threshold is
+right throughout, and the midline is wrong for the least of that span.
+
+**Alternatives considered.**
+
+- *Publish the scroll offset through the context.* Rejected: `onScroll` fires
+  at the frame rate, so the tab bar would re-render sixty times a second to
+  redraw something that changes twice in a session. The rule runs on the
+  screen's side and only the answer crosses, so state is set on a flip.
+- *Cross-fade the material across the transition.* What a real material would
+  do, and rejected for now: the fill, the specular, the two rims and both glyph
+  colours would all have to interpolate, and `Text` and the icons take plain
+  colour strings. It is a lot of machinery for a screen whose composition below
+  the hero is still the old Today and openly a prototype.
+- *Sample the actual backdrop and adapt.* What iOS does, and not available:
+  `BlurView` has no read-back, and the `backdrop-filter` trick that would fake
+  it (a fixed `brightness()`) is web-only — design law 1 makes the phone the
+  product and the browser the adaptation.
+- *Make the whole Today screen dark, so there is no transition.* A real
+  option and possibly the right one, but it is a design decision about a screen
+  the owner is still iterating on, which `CLAUDE.md` §2 reserves to them.
+
+**Trade-offs accepted.**
+
+- **The tone changes in one step, not a fade.** Visible if you scroll slowly
+  and watch for it.
+- **A screen with a dark ground must say so on every branch that draws it.**
+  Today has three — loading, empty library, populated — and a fourth that
+  correctly does not. `chromeTone.test.ts` counts them against the number of
+  `bleed` containers, which is the closest a text assertion gets to catching
+  the branch someone adds later.
+- **`useFocusEffect` is now load-bearing in `ScreenContainer`.** React
+  Navigation keeps a tab mounted when you leave it, so a screen that reported
+  `onDark` and went quiet would hand its material to Library. Clearing on blur
+  is what stops that, and it is tested by reading the source rather than by
+  rendering, which is weaker than it deserves.
+
+## 2026-09-10 — The floating control layer's material follows the screen under it, not the appearance
+
+**Context.** Design law 9 was amended on 2026-09-06 to make the bottom bar a
+translucent capsule with content scrolling beneath it, and law 6 names the
+control layer as the one place the glass material is allowed. Both assume the
+thing behind the glass is the appearance's page colour, which was true of every
+screen in the app.
+
+Today is now a photograph — an opaque ink ground with a manuscript on it, in
+*both* appearances, because the ground is a property of that screen rather than
+of the appearance (the same argument `colors.darkBg` is named for). The chrome
+over it did not know that. Measured on the built bundle rather than eyeballed:
+
+  light appearance, over the hero    capsule composited to #CECAC4 on #2E2620
+  dark appearance, over the hero     capsule composited to #241F1B on #2E2620
+
+The light one is a pale slab laid across a photograph, and the header's "+" —
+an ivory glyph on ivory glass — came out at **1.36:1**. The dark appearance had
+been right by accident, which is why this shipped: the screenshot that was
+looked at was a dark one.
+
+**Decision.** `GlassSurface` takes a `tone`, and `tone="onDark"` draws the
+whole material from `darkColors` — tint, specular, rim, separator — rather than
+from the active appearance. `IconButton` and `Text` take the same prop with the
+same two values, so a glyph and its material can no longer disagree.
+`BottomTabBar` asks `tabBarToneFor(routeName)` once, resolves a palette from the
+answer, and every colour in the bar comes out of that one palette. Today is the
+one name in the dark-ground set.
+
+Two things fell out of measuring it, and both are the point:
+
+**The labels take the dark palette's own `textPrimary`/`textSecondary`, not
+`onDarkMuted`.** That token is the scanner's chrome — white at 0.55 — and
+borrowing it for a 13px tab label gave **4.13:1** against a 4.5 floor. The dark
+*appearance*'s tab bar already had the right answer, which is what a palette is
+for: the tone picks the palette, the component keeps its tokens.
+
+**The tint is heavier over content: `glassTintOverContent`, 0.86 against
+`glassTint`'s 0.80.** Over the app's page the missing fifth is a flat colour, so
+the composited ground is known. Over the hero it is a fifth of a *photograph* —
+`audit-a11y` resolves the ground behind the capsule to `#46433F`, because it can
+read no background through an `<img>` and falls back to the page, and a bright
+block of the manuscript fixture really does measure `#CCB198`. On that ground
+the gold on the focused icon was **2.49:1** against a 3:1 non-text floor, which
+nothing had reported because the sweep only visits elements with text. Six
+points of opacity put the same worst case at `#393632`, and a seventh of the
+manuscript still comes through.
+
+Measured on the built bundle, identical in both appearances (was, in light:
+capsule `#CECAC4`, "+" 1.36:1, inactive label 4.00:1):
+
+  capsule ground   #1C1915        header "+"        17.62:1
+  active icon       4.39:1        active label      16.74:1
+  inactive icon     5.10:1        inactive label     5.07:1
+
+**Alternatives considered.**
+
+- *Give Today an opaque tab bar.* Rejected — it re-litigates law 9 for one
+  screen, and the capsule floating over the manuscript is the effect the screen
+  is for.
+- *Set the glyph colours and leave the material alone.* This is what the first
+  attempt did, and it is the bug: an ivory glyph on ivory glass. Colour and
+  material are one decision, which is why the tone prop is on all three.
+- *Make the capsule opaque over the hero.* Rejected — it answers the contrast
+  arithmetic by deleting the thing the screen is for. The tint moved by six
+  points, not to 1.
+- *Leave the tint and brighten the labels instead.* Rejected. It fixes text and
+  leaves the focused icon at 2.49:1, because a mark cannot be brightened without
+  ceasing to be the brand gold. The ground was the thing that was wrong.
+- *Read the appearance and force dark mode on Today.* Rejected. It would drag
+  every other token on the screen with it, and the screen is not "dark mode" —
+  it is a photograph, which is a different thing that happens to be dark.
+- *A `dark` prop passed down from the screen.* Rejected in favour of a lookup
+  keyed by route name. The tab bar is app furniture that outlives any one
+  screen's render, and the navigator already knows which route is focused; a
+  prop would need threading through `BottomTabBarProps`, which is React
+  Navigation's type, not ours.
+
+**Trade-offs accepted.**
+
+- **A second place that knows Today is dark.** `PracticeHero` paints the ground
+  and `tabBarTone.ts` names it, and a screen that stopped being dark would have
+  to change both. The alternative — chrome measuring what is actually behind it
+  — is not something a translucent surface can do; `colors.ts` already records
+  that glass is the one group of tokens the a11y sweep cannot check.
+- **The inactive tab labels are still 4.04:1 in the light appearance, on every
+  other screen.** Not this change — `TabSelectionMotion` dims an unfocused tab
+  to `opacity: 0.78`, and the tokens were chosen at full strength, so every
+  inactive label in the app has been paying a multiplier nobody measured. The
+  sweep cannot see it (it models a token's own alpha, not an ancestor's), and
+  the pixels say Library light reads 4.04 exactly as Today did. Raising 0.78 to
+  0.86 clears it. Left alone here because it changes how selection feels on
+  every screen, which is the owner's call under `CLAUDE.md` §2, and because the
+  dark tone now clears the floor at 5.07 either way.
+- **The rule is tested by reading the component's source.** There is no React
+  Native testing library here (`DECISIONS.md`, 2026-08-24), so
+  `tabBarTone.test.ts` asserts against `BottomTabBar.tsx?raw` that the tone is
+  asked for and passed on. It is a weak check on a strong rule, and it exists
+  because the strong rule with no caller is this repository's most-repeated
+  defect — the same reason `avatarImage.reach.test.ts` exists, and found the
+  same way: by deleting the call and watching every test pass.
+
+## 2026-09-10 — Analyses queue on a bounded pool, one at a time, rather than going to `BackgroundTasks`
+
+**Context.** `workers/dispatch.py` has opened with this since it was written:
+the instance has 512 MB for the whole application, one analysis peaks near 460,
+"so two musicians finishing takes within a few seconds of each other is an
+out-of-memory kill", and the work runs in the web process, "so it takes sign-in
+down with it rather than just the analysis".
+
+Nothing enforced it. `start_analysis` handed the take to FastAPI's
+`BackgroundTasks`, which runs sync work on Starlette's threadpool — forty
+threads, shared with every request handler, with no count kept. So the
+reachable state was never two at once; it was forty, and the first arithmetic
+in the file says two does not fit.
+
+Reading a page hit exactly this in 2026-08 and was given a bounded queue with
+its own daemon threads. Analysing a take — five times heavier, on the same pool
+— was not. The rule was written down once and applied to one of two paths.
+
+**Decision.** One `_WorkerPool` class, two instances: `_reading` sized by
+`TRANSCRIPTION_MAX_CONCURRENT`, `_analysing` by a new
+`ANALYSIS_MAX_CONCURRENT` defaulting to **1**. `start_analysis` submits to the
+queue and returns; it no longer takes a `BackgroundTasks`, and
+`POST /v1/analyses` no longer asks for one.
+
+One, not two, because there is no value above 1 that fits: 2 x 460 MB against
+512. This is not a throughput knob, and the answer to volume is
+`ANALYSIS_RUNTIME=modal`, where each take gets its own container.
+
+**Alternatives considered.**
+
+- *A semaphore around `run_analysis`, like `_scan_slots`.* Rejected for the
+  reason `dispatch.py` already gives for reading: waiting on a semaphore holds
+  the thread it is waiting on, and those threads are Starlette's. That trades
+  the event loop the handlers were taken off for a pool they can be starved out
+  of — the same outage with more steps. A queue holds no thread.
+- *A `ThreadPoolExecutor`.* Rejected, again for the reason already written
+  down: it registers an `atexit` hook that joins its workers, so a restart
+  during an analysis blocks for the length of the analysis. Measured at the
+  time on the reading path: an eight-second task delayed `sys.exit(0)` by eight
+  seconds.
+- *Copy the reader pool's shape into a second set of module globals.* Rejected.
+  Two copies of a rule is how the second stops being updated, which is the
+  defect being fixed here and the one that put an SSRF in one of two twin fetch
+  functions on 2026-09-09.
+- *Reject a take when the pool is busy, rather than queueing.* Rejected: a
+  musician who has just finished playing would lose it, and the row is already
+  durable and already says `queued`. Waiting is a slower answer; refusing is no
+  answer.
+
+**Trade-offs accepted.**
+
+- **Takes now wait behind each other**, which is the point, and the client had
+  to learn patience for it: `waitForAnalysis` gave up after sixty seconds and
+  now eases off to just under three minutes. That is a real change to what a
+  second musician experiences on a busy instance — a wait instead of a verdict
+  — and it is strictly better than the OOM that was the alternative.
+- **Queued work is lost on restart.** Already true of `BackgroundTasks`, and
+  already recovered: `sweep_stuck_analyses` matches `queued` as well as
+  `processing`, so a take that never reached a thread ends the same way as one
+  that did.
+- **The bound is per process.** Correct today — the Dockerfile runs one uvicorn
+  worker — and it would need to be a shared queue if that ever changes. So
+  would the rate limiter, which says so in its own docstring.
+
+---
+
+## 2026-09-10 — A surface that is dark in both appearances gets its own token pair
+
+**Context.** `actionBg` `#1A1714` and `actionText` `#FBFAF7` did two jobs. They
+were the primary action — ink button, ivory label — and they were also the
+camera scanner's ground and chrome, which the light palette's own comment
+recorded as deliberate: "these two double as the palette for full-bleed dark
+surfaces … rather than introducing a parallel set of near-blacks." While the app
+had one appearance that was free. The two roles wanted the same two colours and
+there was nothing to tell apart.
+
+Dark mode ended that on the day it shipped. The primary action inverts — an ivory
+button on ink — so `actionBg` became ivory, and the scanner's ground inverted
+with it while `onDarkMuted` (ivory at 55%) stayed put. The first dark
+accessibility sweep found the viewfinder's chrome at **1.00:1**: ivory on ivory,
+a screen with nothing on it.
+
+**Decision.** Split the roles into two pairs. `actionBg`/`actionText` invert with
+the appearance and belong to the primary action. `darkBg`/`onDark`/`onDarkMuted`
+are **identical in both palettes** and belong to a surface that is dark because
+of what it shows, not because of a setting — today, the camera scanner and the
+photographs coming off it. `contrast.test.ts` asserts the identity directly, so
+anything that ties those three back to an appearance-varying token fails there
+rather than on a screenshot nobody takes of the scanner in dark mode.
+
+**Alternatives considered.**
+
+- *Keep one pair and special-case the scanner in its own file.* Rejected: it
+  puts a hex back in a screen, which §4 of `CLAUDE.md` forbids for the reason
+  this project already paid for once, and it leaves the next full-bleed dark
+  surface to rediscover the same trap.
+- *Let the scanner invert.* Rejected on the merits, not on effort. A viewfinder
+  is dark so the eye stays on the page being framed; an ivory scanner in dark
+  mode is not the dark version of the screen, it is the wrong screen.
+- *Drop `Stave`'s `tone="dark"` into the new pair.* It went the other way — the
+  prop had no caller anywhere in the app, so it was removed rather than
+  repointed. Its docstring described a warmup panel that is not dark.
+
+**Trade-off accepted.** Five colour tokens where there were three, and two of
+them hold the same values as two others in the light palette. That duplication
+is the point: the names now say which of the two things a caller meant, and only
+a name can carry that.
+
+---
+
+## 2026-09-09 — Rate-limit starting a reading, in memory, as a cost guard
+
+**Context.** Three endpoints reach `start_transcription`, each spending a vision
+API call the spec prices at $0.05–$0.15. Nothing bounded them; `scores.py`
+carried a comment saying so. A client in a retry loop — and the retry button
+lives on an error state, which is the screen people tap — had no ceiling.
+
+**Decision.** A per-account sliding-window limiter in
+`services/reading_rate.py`, checked by the handler immediately before it starts
+a reading. Two windows: 10/minute and 60/hour. In-process memory. 429 with
+`Retry-After` and a sentence written for a musician.
+
+**Alternatives considered.**
+
+- *A free-tier limit on saved pieces.* Rejected as not mine to make. Spec §8
+  defines the free tier ("3 analyses/month, no save/history") and pricing is the
+  owner's decision, gated by `CLAUDE.md` §2. A cost guard and a product limit
+  look similar and are not the same thing; conflating them would have shipped a
+  pricing change disguised as infrastructure.
+- *Redis, so the bound is exact across instances.* Rejected for now. It adds a
+  dependency and an ops surface to make a bound precise that nobody legitimate
+  approaches. `docker-compose.yml` says "no Redis until the Celery migration",
+  and this is not a reason to bring it forward. Named in the module docstring
+  as the thing to do if this ever runs multi-instance.
+- *A `Depends` on the three routes.* Rejected. `create_score` serves a
+  photographed piece and a hand-entered one through one route and cannot know
+  which until it has parsed the body, so a dependency would have to charge both
+  — and typing in a dozen études would then stop you photographing one.
+- *One window instead of two.* Rejected: a burst limit alone lets a patient
+  script sit just under it indefinitely, and an hourly limit alone lets a
+  runaway spend the whole hour's worth in ten seconds, which is the actual shape
+  of the failure.
+- *Counting refused attempts too.* Rejected. It makes a retrying client lock
+  itself out for longer each time it tries, turning a wait into a spiral. There
+  is a test for it.
+
+**Trade-offs accepted.**
+
+- **The bound is per process.** A second instance doubles it; a restart forgets
+  it. Acceptable because what is capped is money, not access — and explicitly
+  not acceptable for anything security-shaped, which this must not be reused
+  for.
+- **A 429 is a wall a legitimate musician could theoretically meet**, on a bulk
+  capture session past ten pieces a minute. They get a sentence naming the wait
+  and a sliding window that gives room back continuously, rather than a refusal
+  until the top of the hour.
+- **Process-wide mutable state under test.** It is reset per test by an autouse
+  fixture, and a deliberate pair of identically-bodied tests sharing one account
+  id is what proves the fixture works — without it the second is refused.
+
+## 2026-09-09 — Delete the legacy `frontend/` tree rather than keep documenting it
+
+**Context.** `frontend/` was the Vite/React web app batches 5–7 were first built
+in. Its screens were rebuilt in `mobile/` in July; since then nothing has built,
+deployed, tested or linted it. CI's `frontend-build` job was removed on
+2026-09-09 and the tree was deliberately kept, with the reason written into
+`ci.yml`: *"`docs/subsystems.md` documents its conventions and points at it, and
+deleting it would cost that reference for a saving already taken by not building
+it."*
+
+**Decision.** Delete the tree, its 92-line section of `docs/subsystems.md`, and
+`docs/deploy-cloudflare.md` which deployed it. Also delete `bakeoff/`, a one-off
+OCR provider comparison harness, keeping its reports in `docs/ocr-bakeoff/`.
+
+**Why the earlier reasoning does not hold.** It treated the documentation as a
+benefit the tree paid for. It was the opposite: `CLAUDE.md` §5 was restructured
+precisely because a session read that section's conventions as binding for
+`mobile/` — two applications whose palettes share no colour but white — and
+`CLAUDE.md` §4 carried a standing warning about it. A description of a dead
+codebase, loaded near the top of a document sessions read before they know what
+they are touching, is a trap with a warning sign on it. Removing the trap beats
+maintaining the sign.
+
+**Alternatives considered.**
+
+- *Keep the tree, keep the section.* Rejected: the status quo, and the thing
+  that has already caused one documented defect.
+- *Keep the tree, delete the section.* Rejected. It leaves 89 unbuilt, unlinted,
+  untested files that every corpus-wide tool has to be taught to skip — which
+  `check-dead-exports.py` and `check-log-entry.py` both already were.
+- *Move it to a branch or an archive tag.* Rejected as ceremony: `git log --
+  frontend/` is that, for free, and every commit that ever contained the tree
+  still does.
+- *Delete `docs/ocr-bakeoff/` too.* Rejected. The harness was the tooling; the
+  reports are the finding — which OCR provider chain to ship, and at what cost
+  and latency. That is still the answer in `backend/.env`.
+
+**Trade-offs accepted.**
+
+- **Batches 5–7 no longer have the tree their DoD notes describe.** Their
+  screens were rebuilt in `mobile/` and their remaining gates (live auth,
+  upload→OCR→save, mic→analysis) are about Supabase keys and a device, not about
+  which tree. `CLAUDE.md` §4 now says so.
+- **A future reader loses the legacy conventions at a glance** and has to reach
+  for `git log`. That is the intended cost: at a glance was the problem.
+- **History is not rewritten.** `EDIT_LOG.md`, `DECISIONS.md` and `TUNING_LOG.md`
+  still describe the tree in the present tense where they always did, and
+  `intempo-combined.md` still calls 5–7 web batches. Those are records of what
+  was true when written; editing them to match today would be the only
+  dishonest option here.
+
+## 2026-09-09 — The library listing sends the pieces, not the notation
+
+**Context.** The owner reported their Supabase egress maxed out. `GET /v1/scores`
+was `select("*")`, so every row carried its full `score_json` — measured at 111
+to 130 bytes a note, **39 KB for an ordinary fifty-bar study**. The app does not
+fetch one page of these: `listAllScores` walks the whole library by offset,
+because `LibraryScreen` filters the array it is handed and piece fifty-one would
+otherwise be unfindable by search. Opening the Library tab past `STALE_TIME_MS`
+therefore transferred every note of every piece the musician owns, to draw a
+grid of titles and photographs that has never drawn a note. Measured
+end-to-end: **1961 KB for fifty pieces, against 28.9 KB without the notation —
+a 98.5% cut.**
+
+**Decision.** `GET /v1/scores?include_score=false` narrows the SQL projection to
+the columns the response actually reads. Default `true`. The app opts in at the
+two call sites that never draw a note — the library walk, and the score titles
+behind Today's recent takes — and leaves it off for the single row
+`getCurrentPiece` falls back to.
+
+**Alternatives considered.**
+
+- *Three denormalised columns on `scores`* (note count, first bar, tempo hint)
+  so the listing never touches `score_json`. Rejected for now: it is the right
+  end state for a listing that needs *derived* facts, but it costs a migration
+  and six write sites kept in step, and it does not answer this problem any
+  better than not selecting a column does.
+- *Drop `score_json` in the response mapper.* Rejected — it leaves the expensive
+  half exactly where it was. Postgres has already read and sent the bytes, and
+  that read is billed. Same reasoning as `/v1/analyses`' `include_result`.
+- *Make `include_score=false` the default.* Rejected. Every installed build
+  would lose the notation from its listing at once, including versions that
+  cannot be updated on a musician's phone. The parameter defaults to the old
+  behaviour and the client asks.
+- *A server-side cursor so the app stops walking the whole library.* Deferred,
+  and named in `EDIT_LOG.md`. It needs a paging design for search — a product
+  decision — and with rows this small the walk is 29 KB rather than 2 MB, so it
+  is no longer the problem.
+
+**Trade-offs accepted.**
+
+- **`score_json` becomes nullable on `ScoreResponse`**, and a client cannot tell
+  "not sent" from "no notation". It does not need to: `transcription_status`
+  says whether notation is coming, and `GET /v1/scores/{id}` is the authority on
+  what it is. The mobile mapper already read the field with `?? null`.
+- **`concerns` is empty on the light listing**, because it is computed from the
+  notation. The only screen that reads it already guards on `piece.score`.
+- **A listed piece has no notation**, so `pieceFromCaches` supplies a thinner
+  placeholder. No screen loses anything today: `PieceScore` is reachable only
+  from `PieceDetail`, which has already fetched the piece in full. A future
+  screen reached straight from the grid would need to know this.
+- **The projection is a hand-written column list.** `/v1/analyses` derives its
+  equivalent from `model_fields`, which works there because every field is a
+  column; half of a `ScoreResponse` is computed. The list is held to the row
+  mapper behaviourally by `test_scores_router.py` rather than by name.
+
+## 2026-09-09 — Persist the pieces cache to the device, and nothing else
+
+**Context.** The app queued takes offline and could read nothing offline. Every
+screen's data lived in a React Query cache tied to the process, so relaunching
+without signal showed an empty library — the musician could record into a piece
+they could not open. Practice rooms and basements are the app's setting, so this
+is the normal case rather than an edge one.
+
+**Decision.** Persist the React Query cache to AsyncStorage via
+`persistQueryClient`, restricted to the three `pieces` queries, with signed URLs
+stripped, the listing written without its notation, a 2 MB budget, a 14-day
+maximum age, and the signed-in account id as the buster.
+
+**Alternatives considered.**
+
+- *Persist the whole cache.* Rejected. Insights and this week's practice figures
+  would restore as numbers the screen presents as current; a fortnight-old
+  figure with nothing saying so is worse than the skeleton it replaces. The
+  recording and avatar URLs it would also carry expire within the hour.
+- *A per-account storage key instead of a buster.* Rejected. Both keep one
+  musician from seeing another's repertoire, but the buster makes the library
+  *remove* a mismatched client on restore; a per-account key leaves the previous
+  account's copy on the device indefinitely.
+- *Keep notation in the persisted listing.* Rejected on size. `score_json` is
+  ~111 B a note, so a fifty-piece listing alone is megabytes against a
+  `localStorage` quota of about five for the whole origin, shared with the
+  Supabase session and the take queue. The library grid has never drawn a note
+  and `pieceFromCaches` already documents that a listed `score` may be absent.
+- *A hand-rolled AsyncStorage mirror of the library.* Rejected. It would
+  duplicate invalidation, staleness and refetch — all of which the query client
+  already gets right — to avoid two small dependencies (+4 KB gzipped).
+- *Do nothing until there is an offline-mode design.* Rejected as the reason the
+  gap survived this long. The data layer is the part that can be built and
+  tested now; the screens already render a piece without notation, and a piece
+  without a photograph, as deliberate states.
+
+**Trade-offs accepted.**
+
+- **Nothing on screen says the data is saved rather than fetched.** That is copy
+  and a visual treatment, so it is a §2 gate item for the owner. Until then a
+  restored screen is quieter than a live one but never says anything untrue.
+- **Restored pieces show ruled staves instead of their photograph** until a
+  fetch succeeds. Chosen over a broken image box from an expired signed URL.
+- **A large library is trimmed, not warned about.** Details are dropped
+  newest-first, so what survives is what the musician has been opening. Nothing
+  tells them a piece they have never opened has no notation offline.
+- **Insights, the profile and takes stay online-only**, which is a partial
+  offline story by design rather than by omission.
+
+## 2026-09-09 — A key server we cannot reach is 503, not 401 (reversing an earlier call)
+
+**Context.** `_decode_token` answered **401** for every failure, including a
+failure to *fetch* the signing keys. `test_auth.py` asserted that, with a
+reason written down: *"401 rather than 500 is also deliberate: the caller is
+not authenticated, whatever the cause."*
+
+That reasoning is sound about authentication and incomplete about consequences.
+Two facts, both measured rather than argued:
+
+1. **`PyJWKClientConnectionError` is a subclass of `PyJWTError`.** So a network
+   blip between this service and Supabase — a timeout, a DNS hiccup, a 5xx from
+   the key endpoint — landed in the *same* branch as a forged signature and was
+   answered 401.
+2. **The app calls `signOut()` on every 401**, deliberately, with its own
+   written argument: a rejected token is unusable, and leaving it in place
+   makes every screen fail against a credential that will never work.
+
+Together: **a Supabase hiccup lasting seconds ended every active session in
+the app** and returned every musician to the sign-in screen, with no way to
+tell that from an expiry.
+
+**Decision.** Split the refusal. `PyJWKClientConnectionError`, and anything
+that is not a `PyJWTError` at all, answer **503** with *"could not check your
+sign-in just now — try again in a moment"*. Everything pyjwt decides about the
+token itself still answers 401.
+
+**The property the old test protected is kept, and kept as its own test.** A
+key server that is down must never return a payload — otherwise a forged token
+would be accepted — and 503 refuses exactly as hard as 401 does. That
+assertion is now separate from the assertion about *which* refusal, because
+they are two different claims and only one of them changed.
+
+**Why not 500.** The condition is transient and the right response is to try
+again; 503 says that and 500 does not. The client already treats anything ≥500
+as *"The server had a problem. This is not something you did — try again in a
+minute"*, and does not sign out.
+
+**The codebase already drew this line and only half-applied it.**
+`test_jwks_client_without_supabase_url_raises_500` says *"no project configured
+is a server fault, not a rejected caller"*. An unreachable project is the same
+category; it was getting the opposite answer.
+
+**Alternatives considered.**
+
+- **Retry the fetch inside `_decode_token`.** Worth having eventually, and it
+  does not resolve this: a retry that also fails still has to be answered, and
+  answering it 401 has the same effect. Orthogonal.
+- **Keep 401 and stop the client signing out on it.** Rejected — the client's
+  behaviour is right for a rejected token, which is the common case, and
+  weakening it to accommodate one server-side condition trades a correct rule
+  for a workaround.
+
+**Trade-offs accepted.**
+
+- **A genuinely broken deployment now answers 503 rather than 401** on this
+  path, so a client that only handles 401 sees a less specific failure. Nothing
+  in this app does; `/v1/ready` is where a broken deployment is meant to show.
+- **The distinction rests on pyjwt's exception hierarchy.** If a future version
+  stops raising `PyJWKClientConnectionError` for fetch failures, the case falls
+  through to 401 again — silently. The test plants that exact exception, so the
+  day it stops being raised is the day the test stops meaning anything, which
+  is a weaker guarantee than I would like and is recorded here for whoever
+  meets it.
+
+## 2026-09-09 — A per-page reading cap, not an account quota
+
+**Context.** `POST /v1/scores/{id}/transcribe` sends a worker to read a page,
+which is a vision-model call per page — the only endpoint in this API that
+spends real money on every call. It was guarded against *concurrency* (006's
+compare-and-set stops two taps starting two workers on one row) and against
+nothing else. An account could wait for `done` and ask again, in a loop, for as
+long as it liked.
+
+The free tier does not reach this path: `tier_limits` counts rows in
+`analyses`, and a re-read creates none. So the most expensive endpoint had the
+weakest ceiling, which was none.
+
+**Decision.** Cap readings **per page**: `scores.transcription_runs` (migration
+017), `MAX_RUNS_PER_PAGE = 12`, enforced before the worker is dispatched.
+Attaching a new photograph resets the count to 1.
+
+**Why not an account quota, which is the obvious shape.** Because it is a
+**pricing decision and not mine to make.** "How many pieces may a free account
+scan per month" sets what the free tier is worth, and answering it in a commit
+would be answering it for the owner. A per-page cap needs no such answer: how
+many times it is reasonable to re-read *the same photograph* has an obvious
+ceiling regardless of what anything costs, because a reading still wrong on the
+twelfth attempt will not come right on the thirteenth.
+
+**Why not a rate limit.** Requests per minute is the reflex, and it is the
+wrong instrument twice over. It would need either a dependency (`slowapi`) or
+in-process state that a second Render instance does not share and a restart
+forgets — and it would not actually stop the loop, only slow it to whatever
+rate was allowed. A durable count in the row the request is already reading
+costs one column and no new failure mode.
+
+**Trade-offs accepted.**
+
+- **A determined account can still spend money**, by uploading a *new*
+  photograph each round: attach resets the count. That is deliberate — the
+  refusal tells a musician a clearer photograph will do more than another
+  attempt, and refusing them when they take that advice would be advising them
+  to do something that does not work. What it costs an attacker is a fresh
+  multi-megabyte upload per round rather than a free retry, and what bounds it
+  properly is a limit on scans per account, which is the pricing question
+  above. **Named, not closed.**
+- **Twelve is a judgement**, not a measurement. It is set to be invisible to a
+  person and fatal to a loop; if real failure rates make a musician meet it,
+  the number is wrong and should move.
+- **The column defaults to 0 rather than being backfilled**, so every existing
+  page starts with a full allowance despite having been read at least once.
+  The generous direction: the cap is about further readings, and charging
+  somebody for history they cannot see is the one way this could take something
+  away from a musician who did nothing.
+
+## 2026-09-08 — Onboarding before sign-up, with the answers held on the device
+
+**Context.** Onboarding — name, photograph, instrument — ran *after* sign-in,
+gated on `me.onboarded === false`. The owner asked for it to run before
+sign-up: someone deciding whether to try InTempo answers who they are and what
+they play, and only then hands over an email and a password.
+
+The obstacle is that creating an account usually returns **no session**.
+Supabase emails a confirmation link, the musician leaves for their inbox, and
+the app may be relaunched — possibly on another device — before there is
+anything to save a profile to. And two of the three answers need a session
+anyway: the photograph is an authenticated upload, and the profile is
+`PATCH /v1/me`.
+
+**Decision.** Ask all three before the sign-up form; hold the answers in a
+device-local draft (`data/onboardingDraft.ts`); apply them from
+`useApplyOnboardingDraft` the first time `/v1/me` says the account is not
+onboarded. **Keep the post-sign-in gate** as the fallback rather than removing
+it.
+
+**The photograph is deliberately not persisted.** A picked URI is a cache path
+on native and a `blob:` URL on the web; neither reliably survives a relaunch. A
+persisted URI that no longer resolves is *worse* than none — it fails at the
+one moment the upload matters, after the account exists and the musician
+believes they are done. Name and instrument are text and do persist.
+
+**Alternatives considered.**
+
+- *Move only name and instrument, leave the photo after sign-in.* Cleaner —
+  neither needs a session — but it splits one question into two screens on
+  either side of an email round trip, and the photograph is the answer people
+  are most likely to abandon. Offered to the owner and not chosen.
+- *A short "what InTempo does" intro instead.* Does not answer the request; it
+  adds a screen rather than moving one.
+- *Persist the photograph as a data URL.* Would close the relaunch gap, and
+  costs a multi-hundred-kilobyte write to a store with a 2 MB per-item limit on
+  Android and 5 MB total on the web. Failing that write silently is the same
+  outcome with more ways to go wrong.
+- *Drop the post-sign-in gate.* Cannot: the confirmation link can be opened on
+  a device the draft never existed on, and `PATCH /v1/me` is reachable without
+  this app at all.
+
+**Trade-offs accepted.**
+
+- Someone who confirms on another device, or relaunches before confirming, is
+  asked for the photograph a second time. The name and instrument still land,
+  so the gate opens pre-filled asking only for the picture — a degrade, not a
+  reset.
+- `draftUpdateFor` claims `onboarded` only when all three answers are present,
+  because `PATCH /v1/me` answers **400** to `onboarded: true` against an
+  incomplete row. Claiming it anyway would land nothing at all.
+- The draft is cleared on sign-out and whenever the account reads as onboarded.
+  A draft left behind would be applied to the *next* account signed in on that
+  device — somebody else's name and instrument on their profile.
+- `AuthScreen` grows two optional props (`initialMode`, `onRequestSignUp`) so
+  the flow above it owns the ordering. Absent, it behaves exactly as before,
+  which keeps it usable on its own.
+
+
+## 2026-09-06 — The web build gets its own push transition; `native-stack` keeps the phone
+
+**Context.** Measured on the built bundle: pushing a screen in a browser
+produced 3 distinct frames out of 35 sampled, and going back produced 1. A hard
+cut, on every navigation in the app. On iOS the same code is already correct —
+`@react-navigation/native-stack` hands the push to `UINavigationController`, so
+the slide, the parallax and the swipe-back are Apple's own.
+
+**Decision.** A `ScreenTransition` wrapper that animates on **web only** and is
+a pass-through everywhere else, applied once at the navigator to every pushed
+route. Thresholds in `lib/motion/screenTransition.ts` with 18 tests.
+
+**Alternatives considered.**
+
+- *`@react-navigation/stack` (the JS stack) on web.* The complete answer: real
+  push/pop, the outgoing screen parallaxing, and an interactive gesture, all
+  built and maintained by people who do this properly. Rejected **for now**. It
+  requires `react-native-gesture-handler` and `@react-native-masked-view`, and
+  using it only on web means maintaining two navigators with different
+  behaviour, while using it everywhere means giving up the real
+  `UINavigationController` transition on the platform that ships. A large,
+  permanent structural change to fix a browser.
+- *`screenOptions={{ animation: … }}`.* What the API suggests, and it does
+  nothing here — that is what the measurement above is of.
+- *Parallaxing the outgoing screen, as iOS does.* Not possible without fighting
+  the navigator. Measured: both screens stay mounted as absolutely-positioned
+  siblings and `react-native-screens` sets `display: none` on the lower one the
+  moment the push commits. Overriding a library's internal styling from outside
+  breaks on any upgrade. Depth is carried by a scrim instead.
+
+**Trade-offs accepted.**
+
+- The transition runs on the JS thread, like the sheet's. Same reasoning, same
+  cost.
+- The screen underneath is not visible during a swipe-back; what shows in the
+  gap is dimmed page ground. Less informative than iOS, and it does not look
+  broken — checked on a screenshot mid-gesture.
+- Every pushed screen is wrapped, so a bug here is a bug on eighteen screens.
+  That is the price of fixing it in one place instead of eighteen.
+
+**The scrim is rendered only while a transition is in flight**, and that is not
+an optimisation. Left in the tree at rest it is a full-screen ink fill behind an
+opaque screen — invisible, and indistinguishable *to a static reader of the DOM*
+from a glass layer painted over content. `audit-a11y.mjs` read it exactly that
+way and reported 414 contrast failures on text that measures at full contrast in
+pixels (#14110E on #F7F2E9, sampled). The first fix attempted was to teach the
+audit the difference; it silenced the glass check the audit was written for,
+which mutation-testing caught. Removing the element when it has no job is
+smaller, costs nothing at rest, and needs no change to the check at all. **The
+audit is byte-identical to what it was.**
+
+## 2026-09-06 — The app icon inverts the app: ink ground, ivory note, gold barline
+
+**Context.** All six brand assets were the Expo starter's blue chevron —
+`check-brand-assets.py` existed only to say so. The owner chose the direction
+from four proposals; this records what was chosen and what was rejected,
+because the next person to touch the icon should not have to re-derive it.
+
+**Decision.** A Bravura half note followed by a gold barline, ivory `#F7F2E9`
+and gold `#9A7B4F` on a warm-ink `#14110E` ground. Generated by
+`tools/draw-brand-assets.py`, not exported from a design tool.
+
+**Alternatives considered.**
+
+- *Ivory ground, ink mark* — the app's own paper, continuous with the product
+  when you open it. Rejected: a pale icon disappears against a light wallpaper,
+  and the wallpaper is the one place an icon has to work. The icon inverts the
+  app rather than matching it, which is the usual answer and the right one.
+- *An abstract pulse — three ascending strokes.* Most distinctive, least
+  literal. Rejected: it needs the app's name beneath it to read as music at
+  all, and an icon that only works with its label is half an icon.
+- *A stacked time signature in Newsreader.* On-brand typographically and it
+  names what the app is about. Rejected: at small sizes it reads as a document.
+
+**The gold element was a small square first, and that was a defect, not a
+preference.** A dot to the right of a notehead, level with it, is an
+augmentation dot — the icon read "dotted half note" to anyone who reads music,
+which is precisely the audience. It also vanished at 29 points. A barline does
+the same compositional job (the mark alone is a tall shape in the left half of
+a square, and the eye reads the empty right half as a mistake), is unambiguous,
+and survives at every size. Judged by rendering all three side by side at 360px
+and at a true 29px, not by argument.
+
+**Trade-offs accepted.**
+
+- **Engraving proportions are bent.** A real stem is 3.5 staff spaces and
+  hair-thin; at 29 points it vanishes. The stem is 2.6 spaces and about a third
+  thicker. The notehead's angle, its 1.18:1 width and the way the stem meets
+  its right edge are Bravura's, untouched.
+- **The themed Android icon loses the gold**, because Android tints the
+  silhouette itself. The barline stays as a shape, so the mark is still the
+  same mark when the system recolours it.
+- `android.adaptiveIcon.backgroundColor` moves from the app's paper to the
+  icon's ink. `appConfig.test.ts` asserted the old value and now asserts the
+  new one against `colors.textPrimary` — the rule is unchanged, it is pointed
+  at the right thing.
+
+**Why a script and not six PNGs.** An icon that exists only as a binary cannot
+be adjusted without whatever tool drew it, and nobody reviewing it can see what
+it is made of. Here the mark is about thirty lines of geometry against the
+design tokens' own values, and `check-brand-assets.py` now verifies that the
+committed art is what the script draws — so a hand-edited PNG, or a generator
+edited without re-running it, is caught rather than shipped.
+
+## 2026-09-06 — `PanResponder` for the sheet gesture, over adding a gesture library
+
+**Context.** `BottomSheet` drew a grab handle and nothing dragged it; the only
+ways out were the close button and a backdrop tap. Six sheets, including the
+add-a-piece one, and the owner hit it immediately. Adding the gesture needs
+something to read a drag with.
+
+**Decision.** React Native's built-in `PanResponder` with `Animated`, and the
+thresholds in `mobile/src/lib/motion/sheetDrag.ts` with unit tests.
+
+**Alternatives considered.**
+
+- *`react-native-gesture-handler` + `react-native-reanimated`.* The standard
+  answer, and genuinely better: gestures and animation on the UI thread, so a
+  drag cannot be interrupted by JS work. Rejected **for now**. Both are native
+  modules, so adopting them is a native rebuild and an Expo config change; the
+  app currently has neither installed and ships `react-native-screens` alone.
+  That is a large, permanent widening of the dependency surface bought for one
+  interaction that `PanResponder` answers adequately — and this is a web build
+  today, where neither library gets its UI-thread advantage anyway. Revisit when
+  a second gesture wants it (a swipe-to-delete row, a pull-to-refresh with
+  custom motion) or when the native build becomes the one that ships.
+- *`Modal`'s built-in `animationType="slide"` plus a close button.* That is what
+  was already there. It is not a gesture; it is the absence of one.
+- *A drag on the handle only.* Rejected as too small a target — 36×4pt. The grab
+  area is the handle and the title row together, which is a comfortable strip.
+  The exception is an `expand` sheet, where the body scrolls and the responder
+  must stay off it.
+
+**Trade-offs accepted.**
+
+- The drag runs on the JS thread. A frame dropped under load shows as a stutter
+  in the sheet following the finger. Not observed in the browser at 393×852,
+  but it is the honest cost.
+- `PanResponder`'s `gestureState.vy` is not used; velocity is computed from a
+  sample window in the module instead. That is more code, and it is what makes
+  the threshold a tested number rather than a platform-dependent one.
+
+**What this does not settle.** Whether 0.5 pt/ms and 0.28 of the sheet height
+*feel* right. Both are reasoned starting values, verified to fire, and neither
+has met a real finger — the browser harness cannot produce a gesture faster than
+~0.27 pt/ms. They are the kind of number `TUNING_LOG.md` exists for, if the
+owner wants them moved.
+
+## 2026-09-06 — Glass rules are checked in the a11y audit, in pixels, and only where an objective answer exists
+
+**Context.** Apple names three pitfalls for Liquid Glass: don't over-layer,
+don't mix Regular with Clear, don't over-use. Nothing in this repository checked
+any of them, and two of the three are the kind of mistake a single line
+introduces — `IconButton` and `SecondaryButton` both carry the material.
+
+**Decision.** The two rules with an objective answer go into `audit-a11y.mjs`,
+detected geometrically on the rendered page. Over-use is left to the owner.
+
+**Alternatives considered.**
+
+- *A new `tools/audit-glass.mjs`.* Rejected. The a11y audit already visits 27
+  routes with preference seeding and state assertions; a second tool would
+  either duplicate that route list or drift from it. And the framing is honest
+  rather than convenient — Liquid Glass done wrong is a legibility failure,
+  which is precisely what that audit measures.
+- *A static check over the source, or a React context counting nesting depth.*
+  Rejected: the material is a `backdrop-filter` on an absolutely-positioned
+  child, and the question is what composites over what. Source cannot answer it,
+  and a runtime counter would be a rule inside a `.tsx` that nothing here can
+  render under test.
+- *Checking DOM containment.* Tried, shipped in a first draft, and **wrong** —
+  see below.
+- *Also flagging over-use above N surfaces per screen.* Rejected. "Sparingly"
+  has no threshold that is a measurement rather than a guess, and a number
+  invented inside a tool hardens into a rule nobody chose. The two checks that
+  remain have a right answer; this one has a judgement, and it is the owner's.
+
+**Why the predicate is `painted()` and not the audit's own `visible()`.**
+`visible()` calls `hidden()`, which returns true at the first
+`pointer-events: none` on the way up. That is correct for its purpose — an
+element a finger cannot reach is not a touch target. But every layer
+`GlassSurface` draws is `pointerEvents="none"` so taps land on the control
+beneath, so reusing `visible()` filtered out the whole control layer and the
+check reported clean on 27 screens without ever examining a glass surface. Two
+predicates, because there are two questions: *can this be touched* and *does
+this paint*.
+
+**Trade-off accepted, and it is the important line here.** Both defects —
+`contains` never being true for sibling filter elements, and `visible()`
+emptying the input — were invisible to review and caught only by building a
+mutant with a `GlassSurface` deliberately nested and watching the audit still
+pass. A green check is evidence of nothing until it has been seen to go red, and
+neither of these would have been noticed for as long as the app happened to
+contain no over-layering. The mutation is not automated; it was run by hand and
+`EDIT_LOG.md` records both directions.
+
+## 2026-09-06 — The Reduce Transparency fallback is opaque, and drops the bright edge
+
+**Context.** `GlassSurface` is a custom element, so Reduce Transparency is ours
+to honour — a system bar adapts on its own, this does not. Measured: the setting
+was completely inert, three surfaces still refracting with it on. The question
+was not *whether* to honour it but what the surface becomes when it stops being
+glass.
+
+**Decision.** A rule module, `lib/glass/material.ts`, decides layer by layer, and
+the fallback is a genuinely opaque control on `glassOpaque` — `glassTint`
+composited over `bg`, derived rather than picked. Diffusion, refraction and the
+specular go; the separation ring stays; the bright edge goes.
+
+**Alternatives considered.**
+
+- *Drop the blur and keep everything else.* The obvious minimal change, and
+  wrong twice. The tint at 0.80 alpha over unpredictable scrolling content is
+  precisely the legibility risk the setting exists to remove — someone asking
+  for less transparency would still get content showing through a label. And a
+  specular gradient over an opaque fill is not light; it is a smudge in the
+  corner of a solid button.
+- *Keep both hairlines, as the component says never to separate them.* Rejected
+  on the component's own stated reason rather than against it: the pairing is
+  there because either edge alone disappears against half of *an unknown
+  ground*. Opaque, the ground is known. Following the rule past its reason would
+  have put a white line along the top of a solid ivory capsule.
+- *A ternary in `GlassSurface.tsx`.* Rejected under `CLAUDE.md` §3 — there is no
+  React Native testing library here, so a rule in a `.tsx` is a rule nothing
+  checks. It is seven tests as a module, including one that recomputes
+  `glassOpaque` from `glassTint` and `bg` so the fallback cannot drift off the
+  colour the material settles to.
+- *An in-app toggle alongside the OS one, as `useReducedMotion` has.* Deferred,
+  not rejected. It needs a settings row, which is UI/UX and gated on the owner
+  (`CLAUDE.md` §2). The hook is shaped to OR a preference in when there is one.
+
+**Trade-offs accepted.**
+
+1. **Two materials to keep true, now by choice.** The opaque look already
+   existed on Android and in any browser declining the blur; this makes it a
+   designed state rather than a degradation, which means every future glass
+   change has to be looked at twice.
+2. **`audit-a11y.mjs` still cannot check either.** A translucent surface has no
+   fixed ground and the audit does not drive the media query. What it does check
+   is `glassOpaque` as an ordinary opaque background, which is more than the
+   translucent material can offer — and the screenshot script is what covers
+   the rest, by measurement (3 backdrop filters → 0) rather than by eye.
+3. **Untested on a real device.** Verified in Chromium against
+   `prefers-reduced-transparency`. The native path — `expo-blur` under iOS's own
+   Reduce Transparency — is written to the same rule but has not been seen, and
+   `EDIT_LOG.md` says so rather than claiming otherwise.
+
+## 2026-09-06 — `CLAUDE.md` holds rules; `docs/subsystems.md` holds what was learned
+
+**Context.** `CLAUDE.md` is read in full at the start of every session and had
+grown to 12,096 words. Measured: §1–§4, the actually binding rules, were 1,456
+of them. The remaining 10,640 were five subsystem post-mortems — accurate,
+valuable, and irrelevant to most turns.
+
+Two costs, one of them already paid. The obvious one is context: ~10,600 words
+delivered before any work starts, on every turn, whatever the task. The other is
+that a rule is harder to find in a long document than a short one — and this
+project has already lost a session to exactly that, a reader taking the
+`frontend/` conventions as binding for the shipping `mobile/` tree. The file
+warns about that in its own text, which is the tell: a document that has to warn
+you about how to read it is too long.
+
+**Decision.** Split by *when the reader needs it*, not by topic. `CLAUDE.md`
+keeps what changes behaviour before a session knows which subsystem it is
+touching. `docs/subsystems.md` keeps what only matters once it does. Nothing is
+deleted, and the split is verified line-by-line rather than by eye.
+
+**Alternatives considered.**
+
+- *Delete the archaeology.* Rejected outright. Every entry exists because
+  something was actually got wrong; several are the only record of why a
+  constant has the value it has. The problem was never the content.
+- *Summarise it.* Rejected: a summary of a post-mortem keeps the rule and drops
+  the reason, and a rule whose reason has expired is worse than no rule — this
+  document contains at least two of those and says so where it knows.
+- *Leave it.* Rejected on the measurement, but honestly: the failures that
+  prompted this were not caused by the file. They were guesses that should have
+  been measurements. The split does not fix that, and should not be sold as
+  though it does.
+
+**Trade-off accepted.** A session that does not read the subsystem file will
+miss things `CLAUDE.md` used to force on it. That is the point — but it means §5
+has to be obeyed, and there is no check that it is. The mitigation is that the
+five sections are named in §5 and in a contents list, so finding the right one
+costs a single read rather than a judgement.
+
+## 2026-09-06 — The contrast audit composites glass rather than exempting it
+
+**Context.** Glass controls put their ground in absolutely-positioned children.
+`audit-a11y.mjs` resolved a text colour's background by walking
+`backgroundColor` up the ancestors, which steps straight past that and lands on
+the page — thirteen false findings at 1.07:1 the moment the material shipped.
+
+**Decision.** Teach the audit to composite. `fillsUnder` collects covering fills
+from each ancestor's positioned subtrees, outermost first, and alpha-composites
+them onto the first opaque background.
+
+**Alternative rejected: exempt glass controls.** It is one line and it would
+have stopped the app's most-used buttons being checked at all — the primary
+action on nearly every screen. An exemption also rots: the next translucent
+surface inherits a hole nobody remembers opening.
+
+**Trade-off accepted.** The audit still measures the *worst case it can see* —
+glass over the page background — not glass over arbitrary scrolling content,
+which has no fixed answer. That is why `glassTint` and `glassTintProminent` are
+deliberately opaque: the tint, not the backdrop, is what guarantees the label.
+The mutation test (0.88 → 0.06 alpha ⇒ 1.20:1 on every glass button) is what
+keeps that claim honest.
+
+## 2026-09-06 — Liquid Glass for the control layer, over the app's own laws 6 and 9
+
+**Context.** The owner asked for iOS 26 Liquid Glass and reviewed four
+prototype rounds. Design law 9 said bottom navigation is "opaque, anchored,
+unrounded, part of the frame"; law 6 said floating, rounded and gradient
+elements are exceptions rather than the default. A floating translucent capsule
+is both, deliberately.
+
+**Decision.** Adopt glass for the **control layer only** — navigation, toolbars,
+the tab bar — and rewrite laws 6 and 9 to say what is now true. Content stays on
+an opaque layer: paper, engraving and type are untouched.
+
+**Alternatives considered.**
+
+- *Leave the laws and override in the component.* Rejected: the laws are read at
+  the start of every session, and a session that follows them would revert this.
+- *Glass everywhere, including cards.* Rejected — it is Apple's own rule not to,
+  and it is what would make this app look like every other frosted app.
+- *`expo-glass-effect` now.* It is the real `UIGlassEffect` and matches this
+  Expo version, but it is iOS 26+ only and nothing here can build or see it.
+  `expo-blur` works on the web build, which is what actually deploys.
+
+**Trade-offs accepted.**
+
+1. **Two looks to maintain.** The blur does not land on Android, on iOS below
+   26 in its full form, or wherever a platform declines it. `glassTint` is
+   therefore opaque enough that the fallback is a legitimate solid bar — paid
+   once in `GlassSurface` rather than badly in each screen.
+2. **`audit-a11y.mjs` cannot check this.** It computes ratios between known
+   tokens, and a translucent surface has no fixed ground. The mitigation is the
+   tint's opacity, chosen against the worst case the app can actually produce
+   (a bar over engraved notation), not a lighter value that looks better on
+   ivory and fails over ink.
+3. **The honest finding stands.** Liquid Glass reads as a material because
+   content passes beneath it — maps, photographs, album art. This app is warm
+   paper and black type, so the material has less to do here than it does in the
+   apps it was designed for. Adopted because the owner asked to try it, with a
+   named rollback anchor rather than on a claim that it is clearly better.
+
+## 2026-09-06 — Section labels are uppercase, reversing "no decorative uppercase"
+
+`SectionHeader` documented "sentence case — the brief rules out decorative
+uppercase labels". At 13px sentence case, a label and a title differ only by
+size, so a screen carrying several groups reads as a flat stack of headings.
+
+Uppercase at 11px with letterspacing is not decoration here: it is the only
+thing that makes a label a different *register* from the content under it, and
+it is what iOS uses for this exact element. The label is uppercased in render
+rather than by `textTransform` so assistive technology receives the written
+string.
+
 Architectural "X over Y because Z" choices only. Format: date, decision,
 alternatives considered, why we picked this. See intempo-combined.md
 Operating Principle #5.
+
+---
+
+## 2026-09-04 — The failed-scan row keeps its own sentence, over printing the server's reason
+
+**Context.** `PieceDetailScreen`'s row for a scan that failed hardcodes
+*"Photograph it again to try once more."* and does not read
+`piece.transcriptionError`. Its sibling row three lines up, for a scan still
+running, prints `piece.transcriptionStage ?? …` — the server's own words.
+
+So a fault on our side reaches the musician as something to fix with their
+camera: "homr is not installed in this container", "CUDA out of memory", a bad
+API key. That is the exact failure `_FAILURE_REASONS` was written to stop, and
+which `EDIT_LOG.md` records this project shipping **three** times before the
+needles were added and a fourth time in the four templates found on 2026-09-04.
+The reason now exists, is written for a musician, is stored on the row, and is
+already on the `Piece` object this screen reads — and one screen throws it away.
+
+**Decision.** Leave it. Owner's call, 2026-09-04, asked directly with the
+one-expression fix and a before/after in front of them.
+
+**Alternative: `piece.transcriptionError ?? 'Photograph it again to try once
+more.'`** — one expression, no data work, the old sentence surviving as the
+fallback for a row with no reason stored. Recommended and declined.
+
+**What this costs, stated so it is not rediscovered as a bug.** The server-side
+work on `_FAILURE_REASONS` reaches a musician on `PieceScoreScreen` and **not**
+on this row. `test_failure_sentences.py` still holds every raise site to a
+sentence or a stated reason, so the pipeline's half is intact; what is
+deliberately not wired is this one row's description. §3 law 10 says every
+element must justify its presence — this one now justifies itself as a
+deliberate constant rather than as an oversight.
+
+**Do not re-raise it.** It was reported in five consecutive session summaries
+before being asked as a question, which is the cost of a §2 item with no
+recorded answer. The answer is recorded here and beside the code.
+
+---
+
+## 2026-09-03 — A narrow ESLint over the recommended preset, and `error` over `warn`
+
+**Context.** The shipping app had no linter. Not a lax one — no dependency, no
+config, no script, nothing in CI. `frontend/`, the legacy tree that is not the
+product, was the one with the config. Six files in `mobile/src` carried
+`eslint-disable` directives for a linter that was not running, and two of those
+directives were suppressing rules that no longer fired at all.
+
+**Decision.** ESLint with `js.configs.recommended` +
+`tseslint.configs.recommended` and exactly four rules named on top of them:
+`react-hooks/rules-of-hooks` (error), `react-hooks/exhaustive-deps` (error),
+`no-console` (error), and `no-unused-vars` with a `^_` escape.
+
+**Alternative: `reactHooks.configs.flat.recommended`,** the way `frontend/`
+does it. Rejected because the preset brings rules for the React Compiler that
+this tree has not been through, and a first lint pass whose output is mostly
+questions nobody has answered is a lint pass people turn off. The narrow set
+produced 65 findings, of which the 25 that survived config tuning were all
+real: 17 pieces of dead code, five hook dependency arrays and three inert
+suppressions.
+
+**Alternative: `exhaustive-deps` as `warn`,** which is how most projects
+introduce it. Rejected: a warning in a tree that has never been linted is a
+warning nobody sees, and the four pre-existing suppressions are already written
+as `eslint-disable-next-line` with a reason beside each — which is the honest
+form of the same exception, and one a reviewer can argue with. `warn` would
+have converted five findings into five lines of output that a green CI run
+prints and nobody reads.
+
+**Why it is worth the four devDependencies.** `rules-of-hooks` is the one that
+pays for the install: a hook below an early return is React error #310, this
+project has shipped exactly that, and it compiles, typechecks, passes its tests
+and shows a white screen. The tree is clean on it today, which is a fact nobody
+could previously state.
+
+**Accepted trade-off.** Three rule families are switched off where they are
+wrong rather than argued with: `no-require-imports` for `.ts`/`.tsx` (React
+Native resolves bundled assets through `require()` and there is no import form
+that does it), `no-console` for `scripts/**` (a bench that cannot say what it
+measured is not a bench), and `no-explicit-any` / `no-this-alias` in tests
+(stubs are built deliberately wrong to drive code down paths a well-typed
+caller cannot reach). Each is scoped to a file glob rather than disabled
+globally, so the rule still applies everywhere the reasoning does not.
+
+---
+
+## 2026-09-02 — The app refuses a digitally silent take, despite the standing rule against a client-side copy of a server check
+
+**Context.** A muted microphone delivers samples like any other — all zero. The
+take uploaded, ran the pipeline, came back `no_onsets`, and had spent one of
+three free monthly analyses to tell the musician something their phone knew
+before the upload started.
+
+Refusing it locally runs straight into a rule this project holds hard, and
+holds for good reason: *"The app does not have a fourth copy, and must not grow
+one."* The app once carried its own beat-sum check, three more checks landed on
+the server, and the app went silent on all of them.
+
+**Decision.** Refuse in the app, at **exactly zero**, and only there.
+
+**Why this is not the fourth-copy mistake.** The validator case is a *judgement
+about a reading* — a body of knowledge that grew from one check to four and will
+grow again, where a client copy falls behind and lies. This is a **precondition
+on the upload**: a file with no signal in it. It cannot fall behind, because
+there is nothing for it to fall behind of — the server did not become better at
+recognising an all-zero file while the app was not looking.
+
+The invariant that makes it safe is directional. Every take the app refuses,
+the server also refuses; the app never refuses one the server could have
+analysed. Disagreement in the *other* direction is expected and fine — constant
+DC yields no onsets on the server while being far from zero here, and that take
+still goes up and gets the server's answer. The server stays the authority; the
+app declines only the case with no argument in it.
+
+**Alternatives considered.**
+
+*Let the server keep deciding, and stop charging for failures.* The kinder
+version of the current behaviour, and it fixes the quota but not the wait or the
+upload — a musician on a rehearsal-room connection still sends a file of zeros
+and still waits for it. It is also a change to billing, which this project has
+deliberately not settled (`tier_limits.py` says so). Worth doing as well, one
+day; it is not a substitute.
+
+*Refuse quiet takes too, at some dBFS floor.* The intuitive version, and
+measurement killed it. The onset detector is amplitude-invariant — identical
+readings from 0 dBFS to -90, tables in `TUNING_LOG.md` — so a take at the
+bottom of 16-bit resolution analyses exactly as well as a loud one, and **any**
+non-zero floor takes a verdict away from a musician who could have had one.
+This is the rare threshold that is not a judgement call.
+
+*Warn during the take instead of refusing after it.* Better for the musician —
+they would learn in two seconds rather than after three minutes of playing — and
+it is a new element on a screen, so it belongs behind the §2 gate rather than in
+a bug fix. The refusal is correct on its own and does not preclude it.
+
+**Trade-off accepted.** One rule about audio now lives in two places, and the
+app's copy is deliberately the weaker of the two. If the server ever starts
+refusing a *different* set — a minimum take length, say — the app will not know,
+and that is acceptable precisely because the app's rule is a subset that can
+only under-refuse.
+
+---
+
+## 2026-09-02 — Two threshold tests over a ratio, for calling a tempo uneven
+
+**Context.** Insights summarised a window of practice with one statistic, a
+signed mean, which cancels: a musician 18% ahead in one bar and 18% behind in
+the next averages to zero. The window needed a second measurement — the mean
+*distance* from the beat, ignoring side — and a rule for when that distance,
+rather than the direction, is the finding worth leading with.
+
+**Decision.** The tempo "wanders" when the **bias falls inside the pipeline's
+on-tempo band and the distance does not**. Both cutoffs come from
+`result_json.tolerance`, the numbers the server judged those takes by. The
+distance is tested against the **wider** of the two inner thresholds.
+
+**Alternatives considered.**
+
+*A ratio between the two figures* — spread more than twice the bias, say. It
+describes the shape well and it is a number invented in the app. Every number
+this project has invented has needed retuning against real playing, and this one
+would sit in a screen that makes claims about a person's musicianship while
+being reachable by nothing in `TUNING_LOG.md`.
+
+*The standard deviation of the per-take deviations.* Statistically the
+conventional answer, and it measures the wrong thing here: it is dispersion
+around the musician's own bias, so a player consistently 15% ahead scores near
+zero — steady, in the sense that a listener with a metronome would not call
+them steady. Distance from the beat is the quantity a musician is being told
+about.
+
+*A single threshold of our own — "wandering above 8%".* The same objection as
+the ratio, plus it would not move when the tuning does.
+
+**Why.** The rule invents nothing. It is two applications of cutoffs the
+pipeline already publishes per take, so retuning the backend retunes this with
+it — which is the property that made it safe to put a new claim about a
+musician's playing on the screen at all.
+
+**Trade-offs accepted.** A spread has no side, so there is no sign to select a
+threshold set with, and the two sides are deliberately asymmetric (§4: dragging
+is tolerated better). Taking the wider inner threshold means a distance that
+one side would call out-of-tolerance and the other would not is left unnamed.
+That is a real loss of sensitivity, accepted because the failure it prevents is
+worse: telling a musician their tempo wanders over a distance the app would
+have called on-tempo had they been on the other side of the beat.
+
+**Second decision, same change: the deviation bar draws both ways when the
+finding is the wandering.** The alternative was leaving it signed, which puts a
+bar sitting dead centre directly under the words "Your tempo wanders" — the
+same contradiction between a word and its picture that this whole change exists
+to remove. A symmetric fill is not decoration on the signed reading; it is the
+honest drawing of a different quantity, so it appears only when that quantity is
+what is being reported.
+
+---
+
+## 2026-09-02 — A field on the measure over a list of key changes
+
+**Context.** A page can change key, and the schema had one `key_signature` on
+the score. Two shapes were available for recording a change: a
+`key_changes: list[KeyChange]` alongside `tempo_changes` and `repeats`, or a
+nullable `key_signature` on `Measure` alongside `time_signature` and `clef`.
+
+**Decision.** The field on `Measure`.
+
+**Why.** The two existing shapes are not arbitrary — they divide on whether the
+thing has *extent*. A `rit.` has no printed end: what stops it is the next
+marking or the music, so `tempo_change_spans` derives its extent and a list is
+the only honest home for it. A repeat names a span outright. A key signature
+has neither: it is printed at a bar and holds until another is printed, which
+is exactly what `time_signature` and `clef` already are and exactly how
+`meters_in_force` already reads them. Recording it as a list would mean a third
+walk to answer "what key is bar 40 in", when two such walks already exist and
+agree.
+
+The measure field also survives everything that rebuilds a measure by spreading
+it — `MeasureEditScreen`, `join_pages`, `_expand_multiple_rests`, `renumber` —
+because they all carry unknown fields. A parallel list has to be shifted by
+hand at every one of those points, and `pages.py` and `pipeline.py` already
+carry that cost for `repeats` and `tempo_changes`: both offset every
+`measure_number` by hand, and getting it wrong attaches a marking to the wrong
+bar silently.
+
+**Alternatives considered.**
+
+- *`key_changes: list[KeyChange]`.* Rejected on the above. It also makes the
+  common case — a piece that never changes key — carry an empty list through
+  every join and trim, where the measure field simply is not there.
+- *Re-deriving the key from the accidentals actually printed.* Rejected. It is
+  not recoverable: a page in G with no F in it prints no sharp, and a bar of
+  chromatic writing in C prints many. The signature is a fact on the page and
+  the reader's job is to read it, not to infer it.
+- *Storing fifths (an integer) rather than the key name.* Tempting, because
+  every comparison here is by signature and `key_fifths` exists to do it. But
+  `ScoreJson.key_signature` is a name — read off the page as printed, `"unknown"`
+  allowed — and a measure that spoke a different language from the header would
+  need converting at every boundary. The name is stored; comparison converts.
+
+**Trade-off accepted.** "Bb major" and "G minor" are one signature under two
+names, so every comparison has to go through `key_fifths` / `accidentalCount`
+rather than string equality. That is a real footgun — a future `!=` on the
+names would report a change the page does not print — and it is why the
+comparison is done in one named helper on each side rather than inline.
+
+---
+
+## 2026-09-01 — Grafting two glyphs from an older Bravura, over the alternatives
+
+**Context.** Fermatas needed drawing (`EDIT_LOG.md`, same date). The glyphs are
+`E4C0`/`E4C1`, which the shipped subset does not contain. The shipped subset is
+Bravura **1.482**; every Bravura reachable from this environment is **1.392** —
+the npm packages, the copy vendored by Audiveris on this machine. Steinberg's
+own release and the CDNs that mirror it are refused by the egress proxy.
+
+**Decision.** Graft `fermataAbove` and `fermataBelow` from 1.392 into the 1.482
+subset with `fontTools.merge`, and add `E4C0-E4C1` to `tools/subset-bravura.py`
+so a future regeneration against a real 1.482 ends the special case without
+anyone needing to remember it.
+
+**Alternatives considered.**
+
+- *Regenerate the whole subset from 1.392.* Rejected on a measurement: **45 of
+  the 76 shipped glyphs differ** between 1.392 and 1.482 — the treble clef,
+  every accidental, every flag, three of four noteheads. Two new marks are not
+  worth silently redrawing most of the app's notation, and the redrawn version
+  is the older one.
+- *Draw the fermata as a path.* Rejected. It is the rule this project already
+  argued out for the treble clef: hand-approximated notation is the first thing
+  a musician notices. A fermata is simpler than a clef, which makes it a
+  tempting exception, and the exception is how the rule stops meaning anything.
+- *Wait for the owner to supply 1.482.* Rejected as the default but it is the
+  real fix, which is why the script and this entry both say so. Blocking a
+  correctness fix — a musician being told they dragged a note the page told
+  them to hold — on a font-file errand is the wrong trade.
+
+**Why the graft is safe here specifically, and how that was checked.** All six
+articulation glyphs (`E4A0-E4A5`) and the augmentation dot are byte-identical
+across the two versions while the core glyphs are not: the marks were left
+alone in the release that redrew the clefs. The fermatas sit in the same block
+as those marks. That is evidence, not proof — no 1.482 fermata exists here to
+compare against — and it is the strongest available. The merge was then
+verified to alter **zero** previously shipped glyphs and to reproduce both new
+ones byte-for-byte from the source.
+
+**Trade-off accepted.** The shipped binary is no longer purely the script's
+output, which is exactly the failure mode the script's own docstring warns
+about ("a checked-in binary nobody can regenerate is a binary nobody can
+update"). Mitigated by writing the divergence into the script itself rather
+than a commit message, and by making the regeneration path already correct.
+
+---
+
+## 2026-09-01 — Measure the engraver against the schema, over against the fixtures
+
+**Context:** `tools/engraver-coverage.py` reported **100% of every page in the
+corpus**, 0 of 393 notes without a glyph. Four of the schema's forty-six
+durations had no glyph at all, and the corpus could not see it: not one of the
+ten fixture pages contains a note shorter than a sixteenth. The same tool once
+read 5% missing with a worst page of 67% while the first real orchestral part
+photographed scored **0%** and rendered as a title and a photograph.
+
+The tool's own header already said why — "every fixture here is a page somebody
+chose in order to check something" — and then went on reporting the number that
+sentence disowns.
+
+**Alternatives considered:**
+
+1. **Grow the corpus.** The direct reading of the problem, and it does not
+   converge: any set of pages is a set somebody chose, and the failure mode is
+   precisely the page nobody thought to add. It also costs a real page per gap,
+   which is the scarcest thing this project has.
+2. **Trust the worst page instead of the average.** Already the rule, already in
+   `CLAUDE.md`, and it did not help — the worst page was also 100%.
+3. **Measure against the vocabulary the backend is allowed to send.** Taken.
+   `score_schema.DURATION_BEATS` is closed, shared with the app, and load-bearing
+   on both sides; every value in it can arrive on a real page tomorrow.
+
+**Decision:** coverage is reported against the schema as well as the corpus.
+`tools/engraver-coverage.py` prints both tables, and
+`mobile/src/lib/notation/durations.test.ts` asserts the app side of it — every
+duration draws except a named list of four. `docs/subsystems.md`, "Frontend UI rebuild"
+convention 7b, now says to read the schema table, because a rule that says
+"read the worst page" was satisfied by a corpus where the worst page was
+perfect.
+
+**Trade-offs accepted:**
+
+- **The schema number says nothing about real pages.** A page can be read wrong
+  in a hundred ways that have nothing to do with which durations exist. The
+  corpus table stays for exactly that reason; this is a second measurement, not
+  a replacement.
+- **A named exception list has to be maintained.** `DELIBERATELY_UNDRAWN` will
+  go stale the day something in it becomes drawable — but it fails loudly then,
+  which is the opposite of how the corpus number went stale.
+- **It made four values drawable that no page here needs.** The 32nd, the 64th,
+  the double dot and the breve cost a wider font subset (25.2 KB → 27.0 KB) and
+  a second dot in the renderer. A Kreutzer study is thirty-seconds; a march is
+  written with double dots. They are not exotic, they were only absent from the
+  fixtures.
+
+---
+
+## 2026-09-01 — One AudioContext for the life of the page, over one per playback
+
+**Context:** the owner reported that Listen works once and not again, on every
+screen that has the button. Both web players built an `AudioContext` when they
+started and closed it when they finished.
+
+**Alternatives considered:**
+
+1. **A context per playback, closed at the end.** What shipped. It is the
+   obvious reading of "acquire, use, release", and it is wrong on the platform
+   that matters most here: iOS Safari caps how many audio contexts a page may
+   hold and `close()` does not reliably return the slot. The failure is
+   invisible — the button toggles, the schedule is built, every oscillator is
+   created and started, and nothing comes out — so nothing short of counting
+   contexts notices it.
+2. **A context per playback, closed more carefully.** Chasing every path that
+   can skip the close: a hidden page that never delivers the ending frame, an
+   unmount mid-play, an exception. Each is fixable; the set is not closed, and
+   every miss is permanent for that page.
+3. **One context, created lazily, never closed.** Taken.
+
+**Decision:** `lib/audio/context.web.ts` owns a single context, built on the
+first sound and resumed before every play. Web Audio is built for this — a
+context is a mixer, not a sound — and the resource being conserved is the thing
+iOS actually meters.
+
+**Trade-offs accepted:**
+
+- **A running context costs something when nothing is playing.** Real, and
+  small: an idle context with nothing connected does no work beyond holding an
+  audio thread. Against it, the leak the old code produced was a context that
+  could never be reclaimed at all.
+- **Cancellation had to be rebuilt.** The metronome was using `close()` as its
+  cancel — a click booked 250 ms ahead must not sound after the take ends — so
+  each run now owns a gain node and disconnects it. Same silence, nothing else
+  taken down with it. This is the part a future edit is most likely to undo by
+  accident, so it is asserted directly.
+- **One context is shared between the player and the click track.** They cannot
+  be independently interrupted. Nothing wants that: they are the same app
+  making sound to the same person, and a metronome another part of the app can
+  duck is the failure logged against `interruptionMode` on the native side.
+
+The recorder keeps its own context (`audioRecorder.web.ts`). It is not sharing
+a mixer with playback; it is an analyser on a microphone stream with a
+different lifetime, and iOS gives recording its own session anyway.
+
+---
+
+## 2026-09-01 — Ship a music font rather than draw notation by hand
+
+**Context:** the owner asked for the transcription to read as a page —
+*"instead of writing like how were doing where you scroll and what not. Make
+it generate a sort of sheet music page look, like how you see on music score
+or flat io."*
+
+The obstacle is real and `engrave.ts` had already named it: *"a clef is a piece
+of calligraphy; a hand-approximated treble clef in an app for classical
+musicians would be the first thing a reader noticed and the last thing they
+forgave."* So it drew **no clef at all**, which was the right call given the
+options it had. The same reasoning had kept the key signature off the page:
+`key_signature` has been read since Batch 2 and shown only as text, so a piece
+in E major was engraved with four accidentals missing from every system.
+
+**Alternatives considered:**
+
+1. **Hand-authored SVG paths for the clefs.** The cheapest, and it is precisely
+   the near-miss `engrave.ts` refused. A treble clef is a spiral with four
+   centuries of settled proportion; an approximation is legible and wrong, and
+   a musician sees it instantly.
+2. **Keep drawing nothing.** Honest, and what shipped. It also means the app
+   can never show a key signature, which is not a stylistic omission — it is
+   music the page contains and the screen does not.
+3. **Bundle the full Bravura.** 889 KB for a few thousand glyphs, of which this
+   app draws forty.
+4. **Bundle a subset of Bravura.** ← chosen. **22 KB.**
+
+**Decision:** `mobile/assets/fonts/Bravura.otf`, subset in-repo by
+`tools/subset-bravura.py`, loaded alongside the app's text faces and used by
+`Stave` for clefs, key signatures and time signatures.
+
+Bravura is the reference implementation of SMuFL and the font MuseScore ships;
+flat.io and MuseScore look the way they do largely because of it. It is SIL
+Open Font License 1.1, so it can be redistributed inside an application. The
+licence text sits beside the font and the Acknowledgements screen lists it —
+a page that credits every MIT package while omitting the one file with an
+actual attribution requirement would be backwards.
+
+**Why a font and not paths, beyond the drawing quality.** A SMuFL em is four
+staff spaces *by definition*, so `fontSize = 4 * lineGap` renders every glyph
+at exactly the right size for that staff, at any scale, with no per-glyph fudge
+factor and no second set of numbers to keep in step with the engraver's
+geometry. That property is the reason SMuFL exists.
+
+**Trade-offs accepted.** 22 KB of binary in the repository, and a font is not
+reviewable in a diff — which is why the subset is produced by a checked-in
+script against a named upstream rather than pasted in. A glyph used without
+being added to that script's ranges renders as **nothing at all**, silently: a
+music font has no tofu box. The codepoint table in `Stave.tsx` says so at the
+point where someone would add one.
+
+Noteheads, rests and flags are still drawn by hand and still look right; moving
+them onto the font is a further change with its own geometry to re-verify, and
+it is not part of this decision.
+
+---
+
+## 2026-09-01 — Record the upload, rather than walking the bucket
+
+**Context:** CLAUDE.md has carried this since 2026-08-24 under its own heading,
+and explicitly said what it needed: *"Known hole, unfixed: orphaned uploads. An
+upload that never becomes a score row is permanent and unreachable… This
+contradicts the rule above it; it needs a lifecycle decision, not a patch."*
+
+The rule it contradicts is *"The photograph is deleted only when a person
+accepts the reading."* That rule is about **who decides**, and it is right. It
+says nothing about photographs that never became a reading at all, and those
+have no path out — no row, so no accept, no delete, and no request a musician
+could make about their own file.
+
+Three ordinary things produce one: backing out of the naming screen after the
+upload finishes, a save that fails after the bytes land, and a transcribe
+retried against a fresh key. None is an error.
+
+**Alternatives considered:**
+
+1. **Sweep the bucket.** List the storage bucket and delete what no `scores`
+   row references. Correct, and it scales badly: objects live under
+   `{user_id}/{uuid}`, so it is one list request per user folder per sweep,
+   forever, almost always to be told there is nothing to do. It also cannot
+   state the invariant — it can only keep rediscovering it.
+2. **Delete from the client when the musician backs out.** Handles the common
+   case and none of the others: an app killed mid-flow, a crash, a lost
+   network. It cannot be the only mechanism, and as a second one it is extra
+   surface for a case the sweeper already covers.
+3. **Create the row first, upload second.** Removes the window entirely and
+   reverses the whole capture flow — the scanner uploads pages before there is
+   a title to name a piece with, and asking for one first is a worse product to
+   fix a storage leak.
+4. **Record the upload in a table, and sweep that.** ← chosen.
+
+**Decision:** `pending_uploads` (migration 014). The upload endpoint inserts a
+row when it signs a key; the endpoints that consume an object delete it. The
+sweeper — already running on a timer for stuck analyses and transcriptions —
+deletes objects whose row is older than `UNCLAIMED_TTL_HOURS` (24), and their
+rows.
+
+It makes the invariant sayable, which the bucket walk never could: **every
+object in these buckets has a row somewhere** — a `scores` row because it
+became a piece, an `analyses` row because it became a take, a `users` row
+because it became a face, or a `pending_uploads` row because it has not become
+anything yet. An object with no row is now a bug rather than a Tuesday.
+
+**Trade-offs accepted.**
+
+- **A day of latency.** An abandoned photograph sits for up to 24 hours. The
+  gap between minting a key and creating the row is seconds, so an hour would
+  do; a day is chosen because sweeping too early deletes a page somebody is
+  still using and sweeping too late costs a few megabytes for a few hours.
+- **Bookkeeping that can fail.** `record` never raises: failing to record costs
+  a swept object later, and failing the *upload* because the bookkeeping failed
+  costs the musician their page. So the invariant is best-effort at the
+  recording end — an unrecorded object is exactly as orphaned as before, which
+  is no worse than the status quo it replaces.
+- **Two orderings that must not be inverted**, and both are tested. A key is
+  claimed *after* the row exists, never before, or a failed save strands the
+  object — one of the three cases this was written for. And the sweeper removes
+  the **object before the row**: a row deleted first leaks its object silently
+  and permanently, which is this bug reintroduced one level down.
+
+All three buckets, not just `score-images`. A take's audio and an avatar are
+minted the same way and abandoned the same way; only the page had ever been
+talked about.
+
+---
+
+## 2026-09-01 — The count-in is audible, and the pre-roll is thrown away
+
+**Context:** the owner asked for a conductor's count-in — *"when they click the
+record give them a haptic and tick sound countdown for when to start, just like
+how an conductor does when he counts you in."*
+
+The obstacle is real and is why the count-in was silent. `alignment.py` measures
+every onset **from the first one it detects**, so a click over the phone's
+speaker while the microphone is open does not merely add noise: it becomes the
+note the entire take is judged against, and every measure after it is reported
+against a timeline that started on a metronome tick. That is the whole reason
+the audible metronome mode is named `audio_with_headphones` and is the
+musician's own assertion rather than something the app detects.
+
+And the microphone is deliberately already open: `start()` opens the recorder
+*before* the count so that no unpredictable hardware start-up delay lands
+between "four" and the downbeat, in an app whose subject is exactly where notes
+land.
+
+**Alternatives considered:**
+
+1. **Count in before opening the microphone.** Removes the leak completely and
+   reintroduces the delay the current ordering exists to avoid — 100–300ms of
+   variable latency at the one instant that must not be variable.
+2. **Send the count-in and have the backend trim it.** A new field on the take,
+   a new contract between two implementations, and the app's word for something
+   the server cannot check.
+3. **Keep the count-in silent unless headphones are asserted.** What it did.
+   Nobody is counted in on speaker, which is most takes.
+4. **Discard the pre-roll in the app.** ← chosen.
+
+**Decision:** `Recorder.discardCapturedSoFar()` drops everything captured so far
+and keeps recording; the Record screen calls it on the downbeat, at the same
+instant it flips out of `counting_in`. The count-in ticks and taps whatever the
+take's metronome is set to — including "off", because a count-in is not the
+metronome feature, it is how a take starts — and those seconds never leave the
+phone.
+
+**Trade-offs accepted.** The clicks are still *recorded*, briefly, so a bug that
+failed to call the discard would leak them; the call sits on the same line as
+the phase change so that the two cannot drift apart, and `countIn.ts` states the
+rule where it is tested. The downbeat's own accent click is inside the kept
+audio by one click-length; it coincides with the note the musician plays, so it
+adds no onset the alignment does not already expect there. And the take's
+metronome is unchanged: after the count, only `audio_with_headphones` clicks,
+because that audio cannot be discarded.
+
+---
+
+## 2026-08-30 — A vision model may correct a bar, but may never read a page
+
+**Context:** the chain has been homr alone since 2026-08-24, when the owner
+called it — *"run homr only, no backup AI"* — because the vision models had
+invented notes: handed a page they could not read, they returned notation nobody
+had printed, at a confidence the app drew as a transcription. That decision was
+right and the evidence for it is in `config.py` beside `OCR_PROVIDER_CHAIN`.
+
+It had a cost nobody had priced. `confirm.retry_with_arithmetic` re-reads the
+bars whose durations do not add up — it names them, asks for those and nothing
+else, and splices the answer back over only those bars. It can only ask a
+provider that `takes_a_note`, and homr is deterministic with no prompt. So since
+that day the branch has logged *"cannot reconsider"* and stopped, on every page
+that needed it. The single mechanism this pipeline had for repairing a misread
+bar has been dead for the whole of its production life.
+
+The owner proposed the resolution on 2026-08-30: *"if the model cant effectively
+read or note or is not that confident we have a Visual llm such as claude to
+review it and correct that bar for the model."*
+
+**Decision:** `OCR_CORRECTOR` names a provider that answers the arithmetic
+retry, and nothing else. Empty by default. The reading is always homr's; a
+corrector can only edit parts of it that arithmetic has already proved untrue.
+
+**Why this is not the thing that was turned off.** The failure was not "a vision
+model was involved". It was that a vision model was asked an **unfalsifiable**
+question — *what is on this page* — and there was nothing to check the answer
+against, so an invention and a reading were the same shape. This question is
+different in the one way that matters:
+
+| | reading a page | correcting a bar |
+|---|---|---|
+| what is asked | what is here | this bar sums to 3 in 4/4, look again |
+| how many bars it may write | all of them | only the ones already proved wrong |
+| what happens if it invents | stored and drawn | still does not sum, discarded |
+
+Four limits, all already in `confirm.py` and all now load-bearing rather than
+theoretical: only bars in `asked_for` are spliced, so a retry aimed at bar 2
+cannot rewrite bar 12; a reply leaving more bars broken than it found is thrown
+away; a metre cannot be lost by omission; and nothing here raises, so a failed
+correction costs the page nothing.
+
+**Alternatives considered.**
+
+*Teach homr to reconsider.* It is an ONNX model with no prompt. Asking it again
+returns the same answer, which is why the branch was dead.
+
+*Send the whole page to a vision model when homr's confidence is low.* This is
+the thing that was turned off, restated. A low-confidence page is exactly the
+page a model is most likely to invent on, and nothing checks the result.
+
+*Ask the musician instead.* `MeasureEditScreen` already does, and stays the
+final authority. But a page with nine broken bars is nine repairs by hand before
+a single practice, and most of them are the same misread beam.
+
+*Leave it dead and widen the vocabulary instead.* Partly done — 17 note values
+were added the same day, and every one closes a real drop. But a bar can fail to
+add up for reasons no vocabulary fixes: a beam misread, a rest missed, a tuplet
+bracket lost.
+
+**Trade-offs accepted.**
+
+- **It costs money per page that needs it**, on a metered API, which is why it
+  is off by default and named rather than implied.
+- **The residual risk is a plausible wrong answer**, and it is real: a corrector
+  told "bar 14 is short" might look at bar 15, return something that sums, and
+  be accepted. The arithmetic guard catches invention that *does not add up*, not
+  invention that does. Sending a crop of the bar would close this, and the bar's
+  position on the page is not something homr's MusicXML reliably carries — see
+  the follow-up below.
+- **The musician is not yet told which bars a corrector touched.** They should
+  be; `Measure` has no field for it and adding one reaches the app, so it is a
+  separate change under the UI gate.
+
+**Follow-up, in order:** mark corrected bars in the score so the caveat line can
+name them; then locate bars on the page — via `<print new-system="yes">` where
+homr emits it — so a correction can be asked about a crop rather than a page.
+
+## 2026-08-29 — The photograph is kept only where a person said so, and withdrawal deletes
+
+**Context:** migration 007 deletes the page photograph when a musician accepts
+the reading, and every reason it gives still stands — a page is megabytes of
+JPEG whose one remaining purpose has just been served. What changed is that
+there is now a second purpose: the page, the reading, and the correction made
+against it are the training example that makes the reader better, and that is
+the one asset here nobody can buy.
+
+**Decision:** keep the photograph *only* where the account has explicitly
+agreed, record corrections the same way, and make withdrawal delete both. With
+no consent, nothing about the existing behaviour changes in any way — this is
+007 with a gate in front of it, not a reversal of it.
+
+**Alternatives considered:**
+
+- **Keep every photograph and ask later.** The cheapest way to start the
+  flywheel, and it takes the decision away from the person whose photographs
+  they are. Also a storage bill that grows with every scan, on a project already
+  near its egress cap.
+- **Infer consent from something already stored** — the tier, an existing
+  privacy setting, having shared to a studio. All of these are a way of not
+  asking, and none of them is what the person agreed to.
+- **A boolean rather than a timestamp.** A consent record has to answer *when*
+  they agreed, because the wording changes and a boolean cannot say which
+  wording it belongs to. Re-granting therefore keeps the original timestamp
+  rather than re-stamping, or the answer becomes the date of the last save.
+- **Keep a `withdrawn_at` tombstone.** Useful for an audit trail, and it is a
+  row recording that someone once consented, retained after they asked to be
+  forgotten. NULL means all three of "never asked", "declined" and "withdrew",
+  because all three mean the same thing to every caller.
+- **Store the whole `ScoreJson` before and after.** The obvious shape, and it
+  stores sixty-eight unchanged bars twice to say nothing about them, then makes
+  whoever trains on it diff the signal back out. One row per corrected measure.
+
+**Failing closed, which is the opposite of the sibling rule.** `shouldOnboard`
+deliberately fails *open* — a slow or failed `/v1/me` opens the app rather than
+holding it behind a network request (2026-08-25) — because the cost of guessing
+wrong there is one screen shown twice. Here the cost is keeping a person's
+photographs without being told to, so every uncertainty is a no: no row, no
+timestamp, a value that is not a timestamp, a lookup that threw. `may_keep_
+corrections` takes the row rather than a user id specifically so it cannot do
+IO, because a consent check that can time out is one that can fail open.
+
+**What is deliberately weaker than it should be:** the training example wants an
+*image crop* of the bar, and the finest pointer available is the page key plus a
+measure number. homr knows where each measure sits and neither `musicxml.py` nor
+the schema carries it. Recording the honest pointer now is what makes
+re-locating the bar possible later; inventing a crop we do not have would not.
+
+**Known cost, accepted:** retention makes the bucket grow where it used to
+shrink, on a project whose egress is the thing being watched. It is bounded by
+being opt-in and by nobody being able to opt in until the consent screen
+exists — but when that screen ships, storage growth becomes a real number to
+watch rather than a hypothetical.
+
+---
+
+## 2026-08-29 — Tuplet names are additive; the pitch grammar is not, so it waits
+
+**Context:** two gaps in the schema were discarding music that homr had read
+correctly. Both looked like one-line widenings. Only one of them is.
+
+Measured before deciding, on fixtures in this repository:
+
+    5:4 quintuplet, bar otherwise correct   3 of 8 onsets kept, beat check "ok"
+    Ebb3 in bass_excerpt.musicxml           note dropped, bar 3.0 of 4.0, "short"
+
+**Decision:** ship the tuplet names (`quintuplet_*`, `septuplet_*`) now. Leave
+`PITCH_PATTERN` alone, and record why here rather than leaving the next person
+to rediscover the cost.
+
+**Why the two are not the same size.** A duration is a *number*: adding a name
+adds a row to one table, and every consumer either reads that table
+(`DURATION_BEATS`, substituted into both browser tools by `sandbox_shared`) or
+is forced by `Record<Duration, …>` to declare it. The compiler and
+`test_client_enums` between them find every site. A pitch is a *string that
+five separate places parse*, and only one of them imports the canonical
+pattern. An audit of every consumer found:
+
+- **`engrave.ts`** — `stepOf` returns null on an unparseable pitch and the
+  caller draws the notehead at `step === null ? 0`, i.e. **on the middle staff
+  line**. A double sharp would silently engrave as B4 in treble. There is also
+  no flat glyph at all today (`accidentalOf` only ever returns `'sharp'`), so
+  `##`/`bb` need new glyphs before they can be drawn at all.
+- **`schedule.ts`** — `frequencyOf` returns null, and the note is dropped from
+  playback while the clock still advances. Silent, not desynced.
+- **`reading.ts`** — `stepPitch` and `cycleAccidental` return the pitch
+  unchanged on a non-match, so the ▲/▼ and accidental controls become no-ops on
+  **exactly the notes a musician would open the editor to fix**.
+- **`frontend/src/lib/score.ts`** — a second grammar feeding `canSave`, so an
+  imported score containing one would be unsaveable in the web editor.
+- **`scan-bench.template.html`** — a third copy of the engraver; it degrades
+  visibly (`?`) rather than silently, which is the only one that fails well.
+
+So widening the regex alone converts "one note is missing, the bar is short,
+and the beat check says so" into "the bar looks complete and a notehead is
+drawn a seventh out of place." That is strictly worse by this codebase's own
+standard — the rule that keeps `ScoreJson.clef` nullable, because a bass part
+labelled "Treble clef" is worse than no label. **A wrong notehead presented as
+a right one is the failure mode, not the missing note.**
+
+**Alternatives considered:**
+
+- **Widen the grammar and fix the four TS parsers in the same change.** The
+  honest version, and what should eventually happen. It needs new accidental
+  glyphs on the stave and a `cycleAccidental` that can reach and clear a double
+  — both design decisions about a screen, which CLAUDE.md §2 gates. Not
+  something to decide inside a schema change.
+- **Widen the grammar now, fix the engraver later.** Rejected on the paragraph
+  above: it trades a visible failure for an invisible one.
+- **Keep the note's time as a rest**, the way an unwritable tuplet does. This
+  is the tempting middle and it is wrong here for a reason that does not apply
+  to tuplets: a tuplet's parts were *unnameable*, so a rest was the best
+  available answer, whereas `Ebb3` is a note this app could name if it chose to.
+  Writing a rest would make the bar sum correctly and silence the one check
+  that currently catches it. Today the bar comes up short, the musician is
+  shown a concern, and `MeasureEditScreen` can already correct pitch — so the
+  existing behaviour is a working repair path, not a dead end.
+
+**What it costs to wait:** a dropped note also shortens its bar, and
+`alignment.py` accumulates durations, so every later bar on the page is judged
+early. That is real. It is bounded by being *reported* — `unwritable_notes` and
+the short verdict both fire — which is what makes waiting tolerable rather than
+free. Double accidentals are common in sharp keys and romantic repertoire, so
+this should not wait indefinitely.
+
+**Also worth converging when that happens:** the copies already disagree about
+octaves. The canonical pattern ends `-?\d` (one digit); `engrave.ts`,
+`schedule.ts` and both scan-bench copies use `(-?\d+)`. `A99` is rejected by the
+backend and happily engraved by the app today.
 
 ---
 

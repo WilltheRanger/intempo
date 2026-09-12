@@ -13,6 +13,7 @@ Flow (spec §4 pseudocode):
 from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
@@ -25,6 +26,7 @@ from app.services.alignment import (
     AlignmentResult,
     apply_fuzzy_match,
     build_timeline,
+    ExpectedTimeline,
     is_alignment_broken,
     closest_expected_gap,
 )
@@ -33,6 +35,7 @@ from app.services.classification import (
     Band,
     Delta,
     Direction,
+    UntimedReason,
     compute_deltas,
     generate_verdict,
     rolling_trend,
@@ -50,6 +53,14 @@ class PerNote(BaseModel):
     band: Band
     direction: Direction
     is_slur_interior: bool
+    #: This note's deviation was measured against a time the page states —
+    #: see `classification.Delta.timed`. False for a `rit.`, a fermata, an
+    #: ornament and the note it decorates.
+    timed: bool = True
+    #: Which of those, when `timed` is false. `None` on a result stored before
+    #: this field existed, which reads as "not said" rather than as a fourth
+    #: reason.
+    untimed_reason: UntimedReason | None = None
     #: A written tempo change covers this note's measure, so `band` and
     #: `direction` are `on` by refusal rather than by measurement — see
     #: `classification.Delta`.
@@ -61,7 +72,31 @@ class PerNote(BaseModel):
 class PerMeasure(BaseModel):
     measure_number: int
     note_count: int
+    #: The mean deviation of the notes that were **timed**.
+    #:
+    #: A bar with one grace note in it used to average that note's deviation in
+    #: with the rest — and its "expected" time is `ORNAMENT_SHARE` splitting the
+    #: difference between two readings an engraver may have meant, a number this
+    #: code invented. The app draws this as the bar's deviation, so one ornament
+    #: moved a bar's whole reading. `worst_band` never had the problem, because
+    #: an untimed note's band is `on`.
     avg_delta_pct: float
+    #: How many of `note_count` were actually measured.
+    #:
+    #: `None` on a result stored before this field existed — read as "all of
+    #: them", which is what those rows meant. Zero means the bar was not timed
+    #: at all and `avg_delta_pct` falls back to the whole bar, because a field
+    #: that is sometimes absent is worse than one that is sometimes unjudged.
+    timed_note_count: int | None = None
+    #: Why nothing in this bar was timed, when every untimed note agrees.
+    #:
+    #: **Only when they agree, and only when the bar is wholly untimed.** A bar
+    #: holding a fermata *and* an ornament has no single answer, and inventing
+    #: a headline for it would be worse than the honest silence the app already
+    #: falls back to. `None` therefore means "no single reason" as well as "an
+    #: older result" — both land on the same wording, which is why they can
+    #: share a value.
+    untimed_reason: UntimedReason | None = None
     worst_band: Band
     direction: Direction
     #: A written tempo change covers this measure. A screen showing a rushing
@@ -123,9 +158,43 @@ class AnalysisResult(BaseModel):
     n_expected_onsets: int = 0
     n_missed_notes: int = 0
     n_extra_notes: int = 0
+    #: Which takes may be compared with which, stamped by the runner.
+    #:
+    #: **Not computed here**, because `analyze` is given audio and a score and
+    #: has never seen the analyses row — the key depends on the target tempo and
+    #: the instrument, which live on it. The runner sets it before the dump.
+    #:
+    #: It was set on the *payload dict* after the dump instead, so this model —
+    #: the thing that documents what an analysis result is — did not mention a
+    #: field the app reads on every take (`lib/insights/comparison.ts` decides
+    #: which takes are comparable by matching it). Nothing was lost in practice,
+    #: because `result_json` is read back as a plain dict and never revalidated
+    #: through this class. But `test_client_body_fields.py` had been failing on
+    #: exactly that gap, and a field that only exists between the dump and the
+    #: database is one strip-and-revalidate away from disappearing.
+    comparison_key: str | None = None
 
 
 _BAND_SEVERITY = {Band.on: 0, Band.slight: 1, Band.rush_drag: 2, Band.severe: 3}
+
+
+def _shared_untimed_reason(
+    group: list[Delta], timed: list[Delta]
+) -> UntimedReason | None:
+    """The one reason a whole bar went unjudged, or None if there isn't one.
+
+    Two conditions, and dropping either produces a sentence that is not true.
+    The bar must be **wholly** untimed — naming a reason on a bar that also has
+    measured notes in it would caption the whole row with something that
+    explains part of it. And the untimed notes must **agree**: a bar holding
+    both a fermata and an ornament has no single answer, and the app's existing
+    wording for "nothing here could be timed" is the honest thing to fall back
+    to.
+    """
+    if timed or not group:
+        return None
+    reasons = {d.untimed_reason for d in group}
+    return reasons.pop() if len(reasons) == 1 else None
 
 
 def _summarize_measures(deltas: list[Delta]) -> list[PerMeasure]:
@@ -138,7 +207,11 @@ def _summarize_measures(deltas: list[Delta]) -> list[PerMeasure]:
     summaries: list[PerMeasure] = []
     for measure_number in sorted(by_measure):
         group = by_measure[measure_number]
-        avg_pct = float(np.mean([d.delta_pct for d in group]))
+        timed = [d for d in group if d.timed]
+        # The whole bar only when nothing in it was timed — a bar that is
+        # entirely a `rit.` still has to report something, and `timed_note_count`
+        # is what says the number should not be read as a verdict.
+        avg_pct = float(np.mean([d.delta_pct for d in (timed or group)]))
         worst = max(group, key=lambda d: _BAND_SEVERITY[d.band])
         if avg_pct < 0:
             direction = Direction.rush
@@ -155,6 +228,8 @@ def _summarize_measures(deltas: list[Delta]) -> list[PerMeasure]:
                 direction=direction,
                 under_tempo_change=any(d.under_tempo_change for d in group),
                 uneven=any(d.uneven for d in group),
+                timed_note_count=len(timed),
+                untimed_reason=_shared_untimed_reason(group, timed),
             )
         )
     return summaries
@@ -244,6 +319,123 @@ def _take_is_much_longer_than_the_page(
     return page > 0 and take > page * TAKE_TOO_LONG_RATIO
 
 
+def _why_nothing_to_compare(expected: np.ndarray) -> str:
+    """Nothing was heard, or nothing was written. Which, and what to do.
+
+    This branch used to say *"try re-recording a bit louder"* for both, and that
+    is wrong twice over.
+
+    **Loudness has nothing to do with it.** `onset_strength` differences a
+    dB-scaled mel spectrogram, so scaling a waveform shifts every frame by the
+    same constant and the differencing removes it — the detector is
+    amplitude-invariant by construction. Measured on all six audio fixtures,
+    requantised to 16-bit at each level: the onset count is **identical from
+    0 dBFS down to -90 dBFS**, where the samples are barely more than one LSB
+    (`01_detache_clean` finds its 32 notes at every level, `06_pizzicato` its
+    16). Ten seconds of white noise at -60 dBFS produces ten onsets; ten seconds
+    of digital silence produces none. Level is not what separates them.
+
+    So the only recording that reaches here is one that is *digitally silent* —
+    every sample zero. A muted input, a device recording from a source with
+    nothing routed to it, a permission granted and then revoked. Playing louder
+    into a muted microphone produces exactly the same file, so the advice sent
+    the musician to repeat the one thing that could not help.
+
+    **And the score may be the empty one.** `expected.size == 0` means the page
+    has no notes on it — nothing to do with the recording at all, and told to
+    the musician as though their playing were at fault, which is the same
+    mistake `_read_page`'s failure reasons made three times. It is named first
+    when both are true: a take against a page with no notes cannot be analysed
+    however well it is recorded, so sending them back to the microphone would
+    cost them a second take and change nothing.
+
+    Only `expected` is needed to tell them apart: the caller enters this branch
+    when either is empty, so a non-empty score here means the recording was the
+    silent one.
+    """
+    if expected.size == 0:
+        return (
+            "There are no notes on this piece for us to compare against — the "
+            "transcription came back empty. Open the piece and check the "
+            "reading before recording again."
+        )
+    return (
+        "Your recording is completely silent — no sound reached the microphone "
+        "at all. Check which input your device is recording from, and that "
+        "nothing is muting it, then record again."
+    )
+
+
+@dataclass(frozen=True)
+class Heard:
+    """What the detector made of a recording, before anything is aligned."""
+
+    #: The waveform as loaded and filtered — what the dashboard plots.
+    y: np.ndarray
+    sr: int
+    timeline: ExpectedTimeline
+    #: Where the score says the onsets are, on the timeline's clock.
+    expected: np.ndarray
+    #: Which of `expected` are ornaments, and so not a mistake to miss.
+    grace: np.ndarray
+    #: What the detector fired on, on the recording's clock.
+    onsets: np.ndarray
+
+
+def prepare_for_alignment(
+    audio: Path | str | tuple[np.ndarray, int],
+    score: ScoreJson,
+    target_bpm: float,
+    *,
+    double_bass: bool,
+    config: AudioConfig,
+) -> Heard:
+    """Decode, filter, read the score, and detect — the steps before aligning.
+
+    **Shared with `diagnostics.analyze_with_diagnostics`, which had copied
+    them.** That module's docstring promises "everything here calls the same
+    functions `analyze()` calls … so a number on the dashboard is the number
+    the pipeline used", and it was one argument short of true: its
+    `closest_expected_gap(expected)` omitted `optional=`, so on any page with
+    an ornament on it the dashboard sized the detector's window off the
+    acciaccatura. `closest_expected_gap` records what that costs — 14 onsets
+    detected for 8 clicks, quality 0.665 on a perfect take — which is the
+    failure the dashboard exists to tune away, happening to the dashboard.
+
+    Two implementations of one order of operations cannot be kept in step by
+    reading them, so there is one.
+    """
+    if isinstance(audio, tuple):
+        y, sr = audio
+    else:
+        y, sr = audio_svc.load_audio(audio, sr=config.onset.sr)
+    if double_bass:
+        y = audio_svc.high_pass(y, sr, config.onset.double_bass_highpass_hz)
+
+    # The score is read *before* the audio, so the detector can be told how
+    # close together the notes it is looking for actually are. Nothing about
+    # this depends on the recording, and it is what stops a fixed window from
+    # making fast passages undetectable.
+    timeline = build_timeline(score, target_bpm)
+    expected = timeline.onsets
+    # Which expected onsets it is not a mistake to miss: the grace notes, whose
+    # written time is `ORNAMENT_SHARE` splitting the difference between two
+    # readings the page did not choose between. Built here because the detector
+    # is sized from it too — see `closest_expected_gap`.
+    grace = np.array([n.is_grace_note for n in timeline.notes], dtype=bool)
+
+    onsets = audio_svc.detect_onsets(
+        audio_svc.pre_emphasis(y, config=config),
+        sr,
+        double_bass=double_bass,
+        config=config,
+        min_gap_s=closest_expected_gap(expected, optional=grace),
+    )
+    return Heard(
+        y=y, sr=sr, timeline=timeline, expected=expected, grace=grace, onsets=onsets
+    )
+
+
 def analyze(
     audio: str | Path | tuple[np.ndarray, int],
     score: ScoreJson,
@@ -263,40 +455,20 @@ def analyze(
     the right user-facing state.
     """
     cfg = config or load_audio_config()
-
-    if isinstance(audio, tuple):
-        y, sr = audio
-    else:
-        y, sr = audio_svc.load_audio(audio, sr=cfg.onset.sr)
-    if double_bass:
-        y = audio_svc.high_pass(y, sr, cfg.onset.double_bass_highpass_hz)
-
-    # The score is read *before* the audio, so the detector can be told how
-    # close together the notes it is looking for actually are. Nothing about
-    # this depends on the recording, and it is what stops a fixed window from
-    # making fast passages undetectable.
-    timeline = build_timeline(score, target_bpm)
-    expected = timeline.onsets
-    # Which expected onsets it is not a mistake to miss: the grace notes, whose
-    # written time is `ORNAMENT_SHARE` splitting the difference between two
-    # readings the page did not choose between. Built here because the detector
-    # is sized from it too — see `closest_expected_gap`.
-    grace_onsets = np.array([n.is_grace_note for n in timeline.notes], dtype=bool)
-
-    onsets = audio_svc.detect_onsets(
-        audio_svc.pre_emphasis(y, config=cfg),
-        sr,
-        double_bass=double_bass,
-        config=cfg,
-        min_gap_s=closest_expected_gap(expected, optional=grace_onsets),
+    heard = prepare_for_alignment(
+        audio, score, target_bpm, double_bass=double_bass, config=cfg
     )
+    timeline = heard.timeline
+    expected = heard.expected
+    grace_onsets = heard.grace
+    onsets = heard.onsets
 
     if onsets.size == 0 or expected.size == 0:
         return AnalysisResult(
             status="no_onsets",
             quality=0.0,
             tolerance=Tolerance.of(cfg),
-            verdict="We couldn't hear any notes to analyze — try re-recording a bit louder.",
+            verdict=_why_nothing_to_compare(expected),
             n_detected_onsets=int(onsets.size),
             n_expected_onsets=int(expected.size),
         )
@@ -369,6 +541,8 @@ def analyze(
             is_slur_interior=d.is_slur_interior,
             under_tempo_change=d.under_tempo_change,
             uneven=d.uneven,
+            timed=d.timed,
+            untimed_reason=d.untimed_reason,
         )
         for d in deltas
     ]

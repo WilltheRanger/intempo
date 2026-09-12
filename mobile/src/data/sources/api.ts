@@ -1,26 +1,29 @@
-import { getAnalysis, listAnalyses } from '../api/analyses';
-import { submitTake, waitForAnalysis } from '../practice/submitTake';
+import { getAnalysis, getAnalysisRecording, listAnalyses } from '../api/analyses';
+import { submitTake, TakeSubmissionError, waitForAnalysis } from '../practice/submitTake';
+import { rememberPendingAnalysis } from '../practice/pendingAnalysis';
+import { newestReadable, type Readable } from '../practice/newestReadable';
 import { getMe } from '../api/me';
-import { ApiError } from '../api/client';
 import { createScore, deleteScore, getScore, listScores, updateScore } from '../api/scores';
 import { getAuthAvatarUrl } from '../auth/session';
 import { stableImage } from '../../lib/imageSource';
 import { verdictFor } from '../../lib/tempo';
+import { judgeAggregate } from '../../lib/insights/tendency';
+import { wasTimed } from '../../lib/verdict/measureReading';
 import type {
   AnalysisResponse,
   AnalysisResultJson,
   AnalysisStatus,
   Band,
-  Direction,
   MeasureVerdict,
-  Musician,
+  PerMeasureResult,
   Piece,
   PieceInsight,
   PracticeInsights,
   ScoreResponse,
+  Tolerance,
   TakeResult,
 } from '../types';
-import { PIECE_HAS_RECORDINGS } from './types';
+import { toMusician } from './musician';
 import type {
   InsightsSource,
   MusicianSource,
@@ -54,6 +57,14 @@ export function toPiece(
     // a thumbnail-shaped hole rather than an error — `ScoreThumbnail` already
     // falls back to its ruled-staff drawing.
     thumbnail: stableImage(score.image_url),
+    // Only `GET /v1/scores/:id` fills `image_urls`; the listing sends page one
+    // alone. Falling back to the thumbnail keeps a listed piece showing its
+    // photograph rather than none, and an older backend that has never heard
+    // of the field behaves exactly as it did.
+    pages: (score.image_urls?.length
+      ? score.image_urls.map(stableImage)
+      : [stableImage(score.image_url)]
+    ).filter((page): page is NonNullable<typeof page> => page !== null),
     markedBpm: score.score_json?.bpm_hint ?? null,
     score: score.score_json ?? null,
     concerns: score.concerns ?? [],
@@ -81,7 +92,12 @@ export function toPiece(
 async function lastPracticedByScore(): Promise<Map<string, string>> {
   const out = new Map<string, string>();
   try {
-    const analyses = await listAnalyses({ limit: 200 });
+    // **Two fields out of two hundred rows.** This builds the map of "when
+    // did I last play this", which reads `score_id` and `created_at` and
+    // nothing else — and it runs on every Library open and every piece open.
+    // With the analysis attached that is 10 MB off the database and down the
+    // wire for about four kilobytes of answer.
+    const analyses = await listAnalyses({ limit: 200, includeResult: false });
     for (const analysis of analyses) {
       if (!out.has(analysis.score_id)) {
         out.set(analysis.score_id, analysis.created_at);
@@ -120,6 +136,13 @@ async function listAllScores(): Promise<ScoreResponse[]> {
     const batch = await listScores({
       limit: SCORES_PAGE,
       offset: page * SCORES_PAGE,
+      // **The one place this mattered most.** This walks the whole library, so
+      // the notation it was carrying was every piece's, every time the tab was
+      // opened past `STALE_TIME_MS` — measured at 111 to 130 bytes a note, and
+      // nothing downstream draws a note from it. `usePiece` refetches the piece
+      // being opened, and `pieceFromCaches` already documents that a listed
+      // piece's `score` may be absent.
+      includeScore: false,
     });
     all.push(...batch);
     // A short page is the last page. An exactly-full final page costs one more
@@ -145,7 +168,9 @@ export const apiPieceSource: PieceSource = {
     // most recently added — so the newest analysis names it. A library with no
     // analyses yet falls back to the newest score, which is the only sensible
     // thing to offer someone who has never recorded.
-    const analyses = await listAnalyses({ limit: 1 }).catch(() => []);
+    const analyses = await listAnalyses({ limit: 1, includeResult: false }).catch(
+      () => [],
+    );
     const [latest] = analyses;
 
     if (latest) {
@@ -193,50 +218,12 @@ export const apiPieceSource: PieceSource = {
   },
 
   async deletePiece(id) {
-    try {
-      await deleteScore(id);
-    } catch (cause) {
-      // 409 is the "this piece has takes" rule. The backend's sentence is
-      // written for an API consumer — see `PIECE_HAS_RECORDINGS`. Everything
-      // else is a genuine failure and keeps its own message.
-      if (cause instanceof ApiError && cause.status === 409) {
-        throw new Error(PIECE_HAS_RECORDINGS);
-      }
-      throw cause;
-    }
+    // The endpoint owns the whole lifecycle: assignments, analyses, score row,
+    // recording audio and any retained page image. A failure is retryable and
+    // already phrased for the musician by the API error layer.
+    await deleteScore(id);
   },
 };
-
-/**
- * The account, from `/v1/me` plus the auth session.
- *
- * Every field but the photo comes from the endpoint. The photo has no column
- * on `users` and no upload endpoint, so it is read from the Supabase auth
- * user's metadata — the one avatar the app can reach without a schema change,
- * and only present for accounts created through an OAuth provider.
- */
-function toMusician(
-  me: Awaited<ReturnType<typeof getMe>>,
-  avatarUrl: string | null,
-): Musician {
-  return {
-    id: me.id,
-    email: me.email,
-    tier: me.tier,
-    role: me.role,
-    studioId: me.studio_id,
-    usage: me.analyses ?? null,
-    // The account's picture wins; the provider's is the fallback for accounts
-    // that never set one. Someone who deliberately cleared theirs must not
-    // have Google's put back in its place.
-    avatarUrl: me.avatar_url ?? avatarUrl,
-    displayName: me.display_name,
-    instrument: me.instrument,
-    // A timestamp on the wire, a boolean here: the app only ever asks *whether*
-    // they were asked. Nothing renders when it happened.
-    onboarded: me.onboarded_at !== null,
-  };
-}
 
 export const apiMusicianSource: MusicianSource = {
   async getMusician() {
@@ -279,15 +266,59 @@ function toRushPositive(dragPositivePct: number): number {
   return -dragPositivePct;
 }
 
-/** The mean deviation of a finished take, rush-positive, or null. */
-function meanDeviationOf(result: AnalysisResultJson): number | null {
-  const measures = result.per_measure ?? [];
-  if (measures.length === 0) {
-    return null;
-  }
+/**
+ * The bars a take was actually judged on.
+ *
+ * **Only the bars that were timed.** A four-bar `rit.` played exactly as
+ * marked reports a real, large deviation on each of its bars, and averaging
+ * those into "how steadily was this played" answers the question with a number
+ * the pipeline explicitly refused to judge.
+ *
+ * **One function because both readings below must select the same bars.** They
+ * used to filter separately with identical code, which is what let the call
+ * site fall back from the spread to `Math.abs(mean)` — unreachable while the
+ * two agreed, and the most flattering possible answer the moment they did not.
+ * Sharing the selection makes them agree by construction rather than by
+ * coincidence, and lets the emptiness check happen once, where the decision to
+ * skip the take belongs.
+ */
+function timedMeasures(result: AnalysisResultJson): PerMeasureResult[] {
+  return (result.per_measure ?? []).filter((m) =>
+    wasTimed({
+      underTempoChange: m.under_tempo_change === true,
+      timedNoteCount: m.timed_note_count ?? null,
+    }),
+  );
+}
+
+/** The mean deviation of a finished take, rush-positive. Bars must be timed. */
+function meanDeviationOf(measures: PerMeasureResult[]): number {
   const mean =
     measures.reduce((total, m) => total + m.avg_delta_pct, 0) / measures.length;
   return toRushPositive(mean);
+}
+
+/**
+ * How far this take sat from the beat, ignoring which side.
+ *
+ * The sibling `meanDeviationOf` cannot answer that, and reading it as though
+ * it could is what made Insights claim a direction over a musician who had
+ * none: a bar 18% ahead and a bar 18% behind average to zero, and the same
+ * two bars are 18 out here.
+ *
+ * Averaged over the take's **measures**, not taken as the take's own mean,
+ * because that is where the cancelling happens — a take whose bars alternate
+ * has a mean of zero and every one of its bars is a long way off.
+ *
+ * Takes the same bars as its sibling — `timedMeasures` selects them once, for
+ * the same reason: a `rit.` played exactly as marked reports a real, large
+ * deviation per bar, and it is not distance from a beat the page asked for.
+ */
+function spreadOf(measures: PerMeasureResult[]): number {
+  return (
+    measures.reduce((total, m) => total + Math.abs(m.avg_delta_pct), 0) /
+    measures.length
+  );
 }
 
 /** The worst band in the take, which is what a summary should lead with. */
@@ -304,6 +335,60 @@ function worstBandOf(result: AnalysisResultJson): Band {
       BAND_SEVERITY[m.worst_band] > BAND_SEVERITY[worst] ? m.worst_band : worst,
     'on',
   );
+}
+
+/** One finished take, reduced to what a summary is built out of. */
+interface Reading {
+  at: number;
+  deviationPct: number;
+  spreadPct: number;
+  tolerance: Tolerance | null;
+}
+
+/**
+ * A set of takes, judged as a set.
+ *
+ * **The band and direction come from the aggregate**, not from whichever take
+ * sat nearest its mean. The old code borrowed them, defending it with "the
+ * thresholds are the server's and they move" — true, and answered by the fact
+ * that the thresholds travel with each take, so `judgeAggregate` applies the
+ * server's own cutoffs to the aggregate figure. Borrowing produced a headline
+ * that flipped between "You tend to rush" and "You tend to drag" when two
+ * opposite takes arrived in the other order, over identical practice.
+ *
+ * One function for the window and for each piece, because they are the same
+ * question at two scales and they have disagreed before — `api.test.ts` still
+ * carries the test named for the last time they did.
+ *
+ * The tolerance is the **newest** take's: a window can span a retune, and the
+ * numbers a musician is judged by now are the ones their chart should be
+ * scaled to. Ties fall to the widest, so the answer never depends on the order
+ * the server happened to return two same-second takes in.
+ */
+function summarise(readings: Reading[]) {
+  const meanDeviationPct =
+    readings.reduce((total, r) => total + r.deviationPct, 0) / readings.length;
+  const spreadPct =
+    readings.reduce((total, r) => total + r.spreadPct, 0) / readings.length;
+  const current = readings.reduce((newest, r) =>
+    r.at > newest.at ||
+    (r.at === newest.at && outerWidth(r.tolerance) > outerWidth(newest.tolerance))
+      ? r
+      : newest,
+  );
+  return {
+    meanDeviationPct,
+    spreadPct,
+    ...judgeAggregate(meanDeviationPct, current.tolerance),
+    tolerance: current.tolerance,
+  };
+}
+
+/** Only ever compared, never shown. `null` sorts below every real set. */
+function outerWidth(tolerance: Tolerance | null): number {
+  return tolerance === null
+    ? -1
+    : tolerance.rushing_outer_pct + tolerance.dragging_outer_pct;
 }
 
 /**
@@ -335,16 +420,21 @@ export const apiInsightsSource: InsightsSource = {
         if (!result || result.status !== 'ok') {
           return [];
         }
-        const deviationPct = meanDeviationOf(result);
-        if (deviationPct === null) {
+        // **One selection, one emptiness check.** A take with nothing timed
+        // has neither a mean nor a spread, and skipping it here is what makes
+        // both readings below unconditional — no fallback, and therefore no
+        // chance of answering the spread with `|mean|`, which is the one
+        // number it exists not to be.
+        const timed = timedMeasures(result);
+        if (timed.length === 0) {
           return [];
         }
         return [
           {
             scoreId: analysis.score_id,
-            deviationPct,
-            band: worstBandOf(result),
-            direction: result.verdict_direction,
+            at: Date.parse(analysis.created_at),
+            deviationPct: meanDeviationOf(timed),
+            spreadPct: spreadOf(timed),
             tolerance: result.tolerance ?? null,
           },
         ];
@@ -364,47 +454,27 @@ export const apiInsightsSource: InsightsSource = {
     const pieces: PieceInsight[] = [...byScore.entries()]
       .map(([scoreId, group]) => {
         const score = titles.get(scoreId);
-        const mean =
-          group.reduce((total, r) => total + r.deviationPct, 0) / group.length;
-        // The band of the take nearest the mean, rather than a band computed
-        // here: the thresholds are the server's and they move.
-        const nearest = group.reduce((best, r) =>
-          Math.abs(r.deviationPct - mean) < Math.abs(best.deviationPct - mean)
-            ? r
-            : best,
-        );
+        const summary = summarise(group);
         return {
           pieceId: scoreId,
           title: score?.title ?? 'Unknown piece',
           composer: score?.composer ?? null,
           sessions: group.length,
-          meanDeviationPct: mean,
-          band: nearest.band,
-          direction: nearest.direction,
-          verdict: verdictFor(nearest.band, nearest.direction),
-          tolerance: nearest.tolerance,
+          ...summary,
         };
       })
-      .sort((a, b) => Math.abs(b.meanDeviationPct) - Math.abs(a.meanDeviationPct));
-
-    const sessions = readings.length;
-    const meanDeviationPct =
-      readings.reduce((total, r) => total + r.deviationPct, 0) / sessions;
-    const headline = readings.reduce((best, r) =>
-      Math.abs(r.deviationPct - meanDeviationPct) <
-      Math.abs(best.deviationPct - meanDeviationPct)
-        ? r
-        : best,
-    );
+      // **By distance from the beat, not by bias.** Sorting on the signed mean
+      // put a piece a musician plays 18% out on both sides at the bottom of
+      // the list, under pieces they play a consistent 3% ahead of it — and the
+      // first row of this list is what Today reads to name the piece worth a
+      // look. `spreadPct` is never smaller than the bias, so for a piece that
+      // does drift one way this is the same ordering it always was.
+      .sort((a, b) => b.spreadPct - a.spreadPct);
 
     return {
       windowDays: INSIGHTS_WINDOW_DAYS,
-      sessions,
-      meanDeviationPct,
-      band: headline.band,
-      direction: headline.direction,
-      verdict: verdictFor(headline.band, headline.direction),
-      tolerance: headline.tolerance,
+      sessions: readings.length,
+      ...summarise(readings),
       pieces,
     };
   },
@@ -430,15 +500,25 @@ function toTake(
     band: m.worst_band,
     direction: m.direction,
     verdict: verdictFor(m.worst_band, m.direction),
+    // **Both were dropped here**, and the screen then drew a bar under a
+    // written `rit.` as a large deviation labelled "On the beat". See
+    // `lib/verdict/measureReading.ts`.
+    underTempoChange: m.under_tempo_change === true,
+    uneven: m.uneven === true,
+    timedNoteCount: m.timed_note_count ?? null,
+    untimedReason: m.untimed_reason ?? null,
   }));
 
   return {
     id: analysis.id,
+    recordingAvailable: true,
+    comparisonKey: typeof result.comparison_key === 'string' ? result.comparison_key : null,
     pieceId: analysis.score_id,
     pieceTitle: score?.title ?? 'Unknown piece',
     composer: score?.composer ?? null,
     recordedAt: analysis.created_at,
     targetBpm: analysis.target_bpm,
+    tempoBeatUnit: score?.score_json?.tempo_beat_unit ?? null,
     failure: null,
     status: result.status,
     headline: result.verdict,
@@ -468,11 +548,13 @@ function toFailedTake(
 ): TakeResult {
   return {
     id: analysis.id,
+    recordingAvailable: true,
     pieceId: analysis.score_id,
     pieceTitle: score?.title ?? 'Unknown piece',
     composer: score?.composer ?? null,
     recordedAt: analysis.created_at,
     targetBpm: analysis.target_bpm,
+    tempoBeatUnit: score?.score_json?.tempo_beat_unit ?? null,
     failure: {
       recoverable: analysis.status === 'failed_recoverable',
       reason: analysis.failure_reason,
@@ -493,6 +575,29 @@ function toFailedTake(
 }
 
 const RUN_FAILED = new Set<AnalysisStatus>(['failed', 'failed_recoverable']);
+
+/**
+ * The newest finished takes whose result can actually be read.
+ *
+ * Both take readers wanted the same thing and each built it differently — one
+ * fetched the whole default page and took the first readable row, the other
+ * fetched `×3` and hoped. One function so they cannot disagree about what
+ * "the newest takes" means, in the same spirit as `readTakeFailure`.
+ *
+ * The server orders newest first and `test_analyses_api.py` holds it to that,
+ * which is what lets this page by offset rather than sorting the world.
+ */
+function donePage(
+  want: number,
+): Promise<Readable<AnalysisResponse, AnalysisResultJson>[]> {
+  return newestReadable(
+    (offset, limit) =>
+      listAnalyses({ status: 'done', limit, offset }),
+    asResult,
+    want,
+  );
+}
+
 
 export const apiTakeSource: TakeSource = {
   async getTake(analysisId) {
@@ -518,25 +623,55 @@ export const apiTakeSource: TakeSource = {
   },
 
   async getLatestTake() {
-    // The same call Insights makes, sorted rather than aggregated. No new
-    // endpoint: `GET /v1/analyses` returns the caller's own analyses and the
-    // ordering is settled here rather than assumed of the server.
-    const analyses = await listAnalyses({ status: 'done' });
-
-    const newest = analyses
-      .slice()
-      .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
-      // A finished analysis whose `result_json` can't be read is not a take
-      // anyone can be shown, so it is skipped rather than rendered blank.
-      .map((analysis) => ({ analysis, result: asResult(analysis) }))
-      .find((entry) => entry.result !== null);
-
-    if (!newest?.result) {
+    // **One request for a handful of rows, not two hundred.** This used to ask
+    // for every finished analysis — the default page — sort them here, and
+    // return the first whose result could be read, to render one verdict. Each
+    // row carries its per-note analysis at 214 bytes a note, so a library of
+    // 200-note takes moved 10 MB for one screen.
+    //
+    // It could not simply ask for one, and the reason was real: a finished
+    // analysis whose `result_json` cannot be read is not a take anyone can be
+    // shown, so how many rows are needed is not known until they are read.
+    // `newestReadable` pages instead, and its ceiling is the same 200 this
+    // examined, so a library that produced an answer still produces that one.
+    const [newest] = await donePage(1);
+    if (!newest) {
       return null;
     }
 
-    const score = await getScore(newest.analysis.score_id).catch(() => null);
-    return toTake(newest.analysis, newest.result, score);
+    // A deleted score would 404 the whole screen over a title, so a missing
+    // one degrades to "Unknown piece" instead.
+    const score = await getScore(newest.row.score_id).catch(() => null);
+    return toTake(newest.row, newest.result, score);
+  },
+
+  async getRecentTakes(limit = 3) {
+    const safeLimit = Math.max(1, Math.round(limit));
+    // **`×3` was a guess, and it was short when it was wrong.** The old call
+    // asked for three times as many rows as it wanted and kept whichever of
+    // those happened to be readable — so a run of unreadable takes silently
+    // returned fewer than the homepage asked for, with nothing to say why.
+    // Paging asks again instead.
+    const recent = await donePage(safeLimit);
+
+    if (recent.length === 0) {
+      return [];
+    }
+
+    // One score listing instead of one request per row. A missing score only
+    // costs its title; the take and its verdict remain valid practice history.
+    // Titles and composers for the takes on Today. No notation is drawn here
+    // at all — `toTake` reads the piece's name and nothing else from these.
+    const scores = await listScores({ includeScore: false }).catch(() => []);
+    const scoresById = new Map(scores.map((score) => [score.id, score]));
+    return recent.map(({ row, result }) =>
+      toTake(row, result, scoresById.get(row.score_id) ?? null),
+    );
+  },
+
+  async getRecordingUrl(analysisId) {
+    const playback = await getAnalysisRecording(analysisId);
+    return playback.url;
   },
 };
 
@@ -549,8 +684,27 @@ export const apiTakeSource: TakeSource = {
  */
 export const apiTakeSubmissionSource: TakeSubmissionSource = {
   async submit(input) {
-    const analysisId = await submitTake(input);
-    await waitForAnalysis(analysisId);
-    return analysisId;
+    const submitted = await submitTake(input);
+    // The row and audio are durable at this point. Remember the hand-off before
+    // the first poll so a refresh, tab close, or phone suspension can resume
+    // from the accepted id instead of making the musician wonder where the
+    // recording went.
+    await rememberPendingAnalysis({
+      analysisId: submitted.analysisId,
+      scoreId: input.scoreId,
+      createdAt: Date.now(),
+    });
+    try {
+      await waitForAnalysis(submitted.analysisId);
+      return submitted.analysisId;
+    } catch (cause) {
+      // Enqueue already succeeded. Keep its id so "Send it again" resumes the
+      // poll instead of uploading the WAV and creating another analysis row.
+      const message =
+        cause instanceof Error
+          ? cause.message
+          : 'The analysis could not be checked. Try again.';
+      throw new TakeSubmissionError(message, submitted, cause);
+    }
   },
 };

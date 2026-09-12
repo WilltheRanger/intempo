@@ -41,6 +41,13 @@ export class ErrorBoundary extends Component<
   componentDidCatch(error: Error, info: ErrorInfo) {
     // The only place this is recorded today. When crash reporting is wired up,
     // it reports from here.
+    //
+    // The one `console` in shipped code besides `App.tsx`'s boot line, and the
+    // exception `CLAUDE.md` §1 is about is *debug* output. A render that threw
+    // has already put a fallback in front of the musician; the stack is the
+    // only trace of why, and dropping it to satisfy a lint rule would leave
+    // the crash with no record at all.
+    // eslint-disable-next-line no-console
     console.error('Unhandled render error', error, info.componentStack);
   }
 

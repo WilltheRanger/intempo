@@ -1,4 +1,4 @@
-import { Camera, FileMusic, Images, PencilLine } from 'lucide-react-native';
+import { Camera, FileMusic, Images, PencilLine } from '../icons';
 
 import { BottomSheet } from '../overlays/BottomSheet';
 import { SheetOptionRow } from '../overlays/SheetOptionRow';
@@ -14,31 +14,37 @@ const OPTIONS = [
   {
     option: 'scan' as const,
     icon: Camera,
-    label: 'Scan sheet music',
-    description: 'Take photos of physical sheet music.',
+    label: 'Photograph sheet music',
+    description: 'Use the camera on the pages in front of you.',
   },
   {
     option: 'import' as const,
     icon: Images,
-    label: 'Import score',
-    description: 'Choose existing images or a PDF.',
+    label: 'Choose photos',
+    description: 'Pictures of the music already on this device.',
   },
   {
     option: 'notation' as const,
     icon: FileMusic,
-    label: 'Open a notation file',
-    description: 'MusicXML from MuseScore, Sibelius or Finale.',
+    label: 'Open a MusicXML file',
+    description: 'Exported from MuseScore, Sibelius or Finale.',
   },
   {
     option: 'manual' as const,
     icon: PencilLine,
-    label: 'Add manually',
-    description: 'Create a piece without transcription.',
+    label: 'Enter it by hand',
+    description: 'Type the details in. Nothing is read from a page.',
   },
 ];
 
 /**
- * The four ways a piece enters the library.
+ * The four ways a piece enters the library, named by what you have in your
+ * hand rather than by what the app does with it.
+ *
+ * "Import score" described the second option by the verb and promised a PDF
+ * the screen behind it never accepted — `launchImageLibraryAsync` is called
+ * with `mediaTypes: ['images']`. "Add manually" and "Scan" named the app's
+ * actions; a musician has paper, or files, or neither.
  *
  * Shared rather than the Library's own, because Today needs it too: a new
  * account lands on Today with nothing, and until this moved, the screen told

@@ -1,6 +1,6 @@
-import { useNavigation } from '@react-navigation/native';
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, StyleSheet, View } from 'react-native';
+import { useGoBack } from '../../navigation/useGoBack';
 
 import {
   Input,
@@ -24,7 +24,7 @@ import { describeAuthError, isEmail } from '../auth/authErrors';
  * happened and where to look.
  */
 export function ChangeEmailScreen() {
-  const navigation = useNavigation();
+  const goBack = useGoBack({ tab: 'Profile' });
   const { data: musician } = useMe();
 
   const [email, setEmail] = useState('');
@@ -64,7 +64,7 @@ export function ChangeEmailScreen() {
       <ScreenContainer>
         <PageHeader
           title="Confirm the change"
-          onBack={() => navigation.goBack()}
+          onBack={goBack}
           backLabel="Back to profile"
         />
         <Text variant="body" color="textSecondary">
@@ -73,7 +73,7 @@ export function ChangeEmailScreen() {
         </Text>
         <SecondaryButton
           label="Done"
-          onPress={() => navigation.goBack()}
+          onPress={goBack}
           style={styles.done}
         />
       </ScreenContainer>
@@ -89,7 +89,7 @@ export function ChangeEmailScreen() {
         <PageHeader
           eyebrow={musician ? `Currently ${musician.email}` : null}
           title="Change email"
-          onBack={() => navigation.goBack()}
+          onBack={goBack}
           backLabel="Back to profile"
         />
 

@@ -5,8 +5,8 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
-    "backgroundColor": "#FBFAF7",
+    "userInterfaceStyle": "automatic",
+    "backgroundColor": "#F7F2E9",
     "plugins": [
       [
         "expo-audio",
@@ -31,7 +31,11 @@
       ]
     ],
     "ios": {
-      "supportsTablet": false
+      "bundleIdentifier": "com.intempo.app",
+      "supportsTablet": false,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "androidStatusBar": {
       "barStyle": "dark-content"
@@ -40,8 +44,9 @@
       "barStyle": "dark-content"
     },
     "android": {
+      "package": "com.intempo.app",
       "adaptiveIcon": {
-        "backgroundColor": "#FBFAF7",
+        "backgroundColor": "#14110E",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"

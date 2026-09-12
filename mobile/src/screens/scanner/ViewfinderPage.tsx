@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { colors, radii, spacing } from '../../design';
+import { PAGE_ASPECT } from '../../lib/scan/framing';
 
 /** Corner bracket length, in points. */
 const CORNER = 26;
@@ -41,8 +42,10 @@ export function ViewfinderPage({ children }: ViewfinderPageProps) {
 const styles = StyleSheet.create({
   frame: {
     width: '82%',
-    // Close to A4 portrait, which is what most sheet music is.
-    aspectRatio: 0.74,
+    // Close to A4 portrait, which is what most sheet music is. Imported rather
+    // than written here: the capture is cropped to exactly this shape
+    // (`cropToViewfinder`), and two copies of the number is two shapes.
+    aspectRatio: PAGE_ASPECT,
     padding: spacing.md,
   },
   page: {
@@ -52,13 +55,13 @@ const styles = StyleSheet.create({
     // The preview is a child that doesn't know about the radius, so the frame
     // does the clipping.
     overflow: 'hidden',
-    backgroundColor: colors.actionBg,
+    backgroundColor: colors.darkBg,
   },
   corner: {
     position: 'absolute',
     width: CORNER,
     height: CORNER,
-    borderColor: colors.actionText,
+    borderColor: colors.onDark,
   },
   topLeft: {
     top: 0,

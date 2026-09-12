@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ScoreJson } from '../../data/types';
+import { measuresInPlayOrder } from './playOrder';
 import { scheduleScore } from './schedule';
 
 // The shared contract, imported rather than read off disk: this is the one
@@ -27,18 +28,24 @@ import parity from '../../../../fixtures/timeline/parity.json';
  * the server stops producing them. Whichever side drifts, its own suite goes
  * red.
  *
- * The fixture leaves out repeats and slurs on purpose. The two walks differ on
- * both, deliberately, and each side has its reason written down: the server
- * writes repeats out because the musician plays them twice, while playback
- * plays straight through; the server emits no onset under a bow stroke because
- * there is no attack, while playback sounds the note because you want to hear
- * it. Those are decisions. Everything in the fixture is arithmetic.
+ * The fixture leaves out slurs on purpose. The server emits no onset under a
+ * bow stroke because there is no attack, while playback still sounds the note
+ * because a reference has to be audible.
+ *
+ * Repeats are not a difference, and the fixture now holds them. This file used
+ * to say so in a comment while checking the performed order against numbers
+ * typed in below, under a test named `follows the same repeat order the backend
+ * grades` — which consulted no backend and would have passed unchanged if
+ * `expand_repeats` had been rewritten. `measuresInPlayOrder` is a hand port of
+ * that function, recursive, with first and second endings; it is the most
+ * likely thing here to drift and it was the one thing not held.
  */
 
 interface Fixture {
   bpm: number;
   score: ScoreJson;
   expected_onsets_s: number[];
+  expected_measures: number[];
 }
 
 const fixture = parity as unknown as Fixture;
@@ -68,8 +75,28 @@ describe('scheduleScore against the server timeline', () => {
     expect(Math.max(...gaps)).toBeGreaterThan(60 / fixture.bpm);
   });
 
+  it('plays the bars in the order the server grades them', () => {
+    // Onsets alone cannot catch a swap between two bars of equal length, and a
+    // repeated section is where that swap lives. The fixture's bars hold two,
+    // four, one and three notes so the times *do* discriminate — and this
+    // holds the order directly, so a later edit that evens those bars out
+    // cannot quietly take the coverage with it.
+    expect(schedule.notes.map((note) => note.measureNumber)).toEqual(
+      fixture.expected_measures,
+    );
+  });
+
   it('folds a real tie into one note and leaves a fake one alone', () => {
-    const written = fixture.score.measures.flatMap((m) => m.notes ?? []);
+    // Counted over the *performed* bars, not the written page: the fixture
+    // repeats a section, so the page's note count is no longer the
+    // performance's. Reading `fixture.score.measures` here would have made
+    // this assertion fail for the repeat rather than for a tie.
+    //
+    // Not circular, though it reads that way. The test above holds that same
+    // performed order against the server's, so a wrong `measuresInPlayOrder`
+    // fails there first and this one never gets to agree with it.
+    const played = measuresInPlayOrder(fixture.score);
+    const written = played.flatMap((m) => m.notes ?? []);
     const rests = written.filter((n) => n.pitch === 'rest').length;
     const realTies = written.filter(
       (note, i) => note.tied_to_next && written[i + 1]?.pitch === note.pitch,

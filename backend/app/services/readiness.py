@@ -67,10 +67,10 @@ class Check:
 
 #: Columns this build writes to that a migration had to add.
 #:
-#: Kept because the schema is applied **by hand** through the Supabase SQL
-#: editor — nothing auto-applies `app/migrations/*.sql` — so shipping code and
-#: applying its migration are two separate acts and the gap between them is
-#: invisible. It has already happened once: `analyses.instrument` went live in
+#: Kept because **no deploy applies `app/migrations/*.sql`** — someone runs each
+#: one, through the Supabase SQL editor or through a session holding the
+#: Supabase MCP — so shipping code and applying its migration are two separate
+#: acts and the gap between them is invisible. It has already happened once: `analyses.instrument` went live in
 #: code before the column existed, and every take submission would have failed
 #: with a column-not-found error that reads like a server bug.
 #:
@@ -83,8 +83,27 @@ REQUIRED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     # which at least names the column it is about. Recorded so the next reader
     # knows it is absent by argument rather than by oversight.
     ("scores", "movement", "005"),
+    # 006. Three columns, three different failures, which is why the rule two
+    # blocks down — one row per column, not one per migration — applies here
+    # too. It did not, until `test_readiness_columns.py` went looking.
     ("scores", "transcription_status", "006"),
+    # Written on every step the worker reports. A deployment without it errors
+    # partway through every read, leaving the row `reading` for the sweeper to
+    # find, and the measured progress bar with nothing to move on.
+    ("scores", "transcription_stage", "006"),
+    # Written when a read fails, and it is the only place the sentence goes.
+    # Without it `_FAILURE_REASONS` — the whole table of wordings written for a
+    # musician rather than a log, rewritten three times to stop blaming a
+    # photograph for a fault on our side — reaches nobody: the scan shows as
+    # failed with no reason at all.
+    ("scores", "transcription_error", "006"),
     ("scores", "transcription_accepted_at", "007"),
+    # Also 007, and the half that actually writes. `accept` is the only thing
+    # that discards a photograph; missing this column, the accept fails, so the
+    # object is never removed and the row never records that it was. The
+    # storage side then has no row saying the photograph is gone and no request
+    # that can remove it.
+    ("scores", "page_image_discarded_at", "007"),
     ("analyses", "instrument", "008"),
     # 009. One row per column the code reads, not one per migration: a
     # deployment can be half-applied, and each of these fails differently.
@@ -114,6 +133,39 @@ REQUIRED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     # is the right piece — but an error a musician meets by using a control the
     # app offered them is worth naming here before they meet it.
     ("analyses", "skip_long_rests", "012"),
+    ("analyses", "from_measure", "015"),
+    # 013. All three degrade quietly on purpose — every caller narrows its
+    # select or retries its write without them, because the alternative was a
+    # save that 500s and a scan that sits `reading` forever during the window
+    # between Render deploying `main` and somebody applying the migration by
+    # hand. Quietly is the right behaviour and a bad thing to be unable to see:
+    # a deployment missing these keeps nothing, and looks exactly like one where
+    # nobody has consented.
+    ("users", "training_consent_at", "013"),
+    ("scores", "transcription_reader", "013"),
+    ("scores", "page_image_retained_at", "013"),
+    # 017. The ceiling on how many times one page may be read, and the only
+    # thing standing between a loop on `POST /v1/scores/{id}/transcribe` and an
+    # unbounded model bill. A deployment missing it does **not** degrade
+    # quietly: the column is written on every reading that starts, so the first
+    # scan after a deploy without it fails at the insert — which is the right
+    # direction for a spend ceiling to fail in, and worth naming here so it is
+    # read as a half-applied schema rather than a broken scanner.
+    ("scores", "transcription_runs", "017"),
+    ("analyses", "playback_key", "018"),
+)
+
+#: Tables added after the initial schema that production behavior depends on.
+#:
+#: A column probe cannot discover a table the code reaches only during cleanup
+#: or after consent. Migration 014 was absent in production while every
+#: readiness check said nothing about it: uploads could be abandoned forever,
+#: precisely the failure that table exists to prevent. Keep table migrations
+#: here for the same reason columns live above — deployment and schema are two
+#: separate manual acts today.
+REQUIRED_TABLES: tuple[tuple[str, str], ...] = (
+    ("training_corrections", "013"),
+    ("pending_uploads", "014"),
 )
 
 
@@ -135,6 +187,72 @@ class Readiness:
             "blocking": self.blocking,
             "checks": [c.as_dict() for c in self.checks],
         }
+
+
+def _corrector_check() -> Check:
+    """Whether the bars that do not add up can actually be re-read.
+
+    **A configuration check, and it says so.** It asks whether a corrector is
+    named and whether its key is present — not whether one has ever run. That
+    distinction has bitten this project before (`transcription_dispatch` exists
+    because every readiness check passed while every spawn raised), so the
+    detail says which question it answered.
+
+    Non-blocking either way. A page with no corrector is read exactly as it was
+    before one existed: homr's reading stands, the bars that do not add up are
+    named for the musician, and `MeasureEditScreen` fixes them by hand.
+    """
+    from app.config import settings
+    from app.services.ocr.pipeline import PROVIDER_REGISTRY
+
+    named = settings.OCR_CORRECTOR.strip()
+    if not named:
+        return Check(
+            name="ocr_corrector",
+            ok=True,
+            detail=(
+                "OCR_CORRECTOR is empty, so bars that do not add up are left "
+                "for the musician to correct rather than re-read."
+            ),
+            blocking=False,
+        )
+
+    provider = PROVIDER_REGISTRY.get(named)
+    if provider is None:
+        return Check(
+            name="ocr_corrector",
+            ok=False,
+            detail=(
+                f"OCR_CORRECTOR names {named!r}, which this build does not "
+                f"know ({', '.join(sorted(PROVIDER_REGISTRY))}). Bars that do "
+                "not add up will not be re-read."
+            ),
+            blocking=False,
+        )
+
+    setting = getattr(provider, "api_key_setting", "")
+    has_key = bool(getattr(settings, setting, "")) if setting else True
+    return Check(
+        name="ocr_corrector",
+        ok=has_key,
+        detail=(
+            f"{named} is configured to re-read bars that do not add up. "
+            "Configured, not exercised — `transcription_dispatch` is what says "
+            "whether pages reach a reader at all."
+            if has_key
+            else (
+                f"OCR_CORRECTOR is {named} but {setting} is not set **in this "
+                "process**. When TRANSCRIPTION_RUNTIME=modal the re-read runs "
+                "in the Modal container and reads that container's secret, so "
+                "this is expected and harmless there — the same caveat the "
+                f"ocr:{named} check carries. Set it here only if pages are read "
+                "here. If it is missing in both, no bar is ever re-read: the "
+                "reading still stands and the bars that do not add up are "
+                "still named for the musician."
+            )
+        ),
+        blocking=False,
+    )
 
 
 def _configuration_checks() -> list[Check]:
@@ -261,6 +379,8 @@ def _configuration_checks() -> list[Check]:
                 blocking=False,
             )
         )
+
+    checks.append(_corrector_check())
 
     # A reader can live here or behind the page runtime. The production
     # deployment deliberately keeps homr off this 512 MB process and sends
@@ -638,6 +758,20 @@ def _schema_checks(client) -> list[Check]:
                 f"editor. Until then anything writing {table} fails. ({type(exc).__name__})"
             )
         checks.append(Check(name=f"schema:{table}.{column}", ok=ok, detail=detail))
+
+    for table, migration in REQUIRED_TABLES:
+        try:
+            client.table(table).select("id").limit(1).execute()
+            ok, detail = True, ""
+        except Exception as exc:  # noqa: BLE001 — any failure is "not usable"
+            ok = False
+            detail = (
+                f"`{table}` is missing — apply "
+                f"`backend/app/migrations/{migration}_*.sql` in the Supabase SQL "
+                "editor. Until then the feature backed by that table cannot run. "
+                f"({type(exc).__name__})"
+            )
+        checks.append(Check(name=f"schema:{table}", ok=ok, detail=detail))
     return checks
 
 

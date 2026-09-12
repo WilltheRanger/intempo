@@ -222,6 +222,58 @@ HOSTILE: dict[str, str] = {
 }
 
 
+def test_an_entity_bomb_is_refused_rather_than_expanded() -> None:
+    """**A kilobyte of upload must not become a gigabyte of allocation.**
+
+    `POST /v1/scores` takes MusicXML out of a request body and hands it
+    straight to this parser, so the document is whatever somebody sent.
+    Python's `ElementTree` expands internal entities: measured before the fix,
+    four levels of ten turned a 200-byte document into 100,000 characters, and
+    nine levels reach a gigabyte. One account could have taken the API down for
+    everybody, repeatedly, with a file smaller than this docstring.
+
+    External entities were never expanded — there is no file read here and
+    never was — so the exposure is expansion alone, which is enough.
+    """
+    levels = "".join(
+        f'<!ENTITY e{i} "{"&e%d;" % (i - 1) * 10}">' for i in range(1, 5)
+    )
+    bomb = (
+        f'<!DOCTYPE score-partwise [<!ENTITY e0 "AAAAAAAAAA">{levels}]>'
+        "<score-partwise><part-list/><part id=\"P1\"><measure number=\"1\">"
+        "&e4;</measure></part></score-partwise>"
+    )
+
+    with pytest.raises(MusicXMLError, match="entities"):
+        score_json_from_musicxml(bomb)
+
+
+def test_a_real_musicxml_doctype_is_still_accepted() -> None:
+    """The reason this is `defusedxml` and not a blanket refusal of DOCTYPEs.
+
+    Every file a notation program exports declares one. Refusing the
+    declaration would refuse the format.
+    """
+    declared = (
+        '<?xml version="1.0"?>'
+        '<!DOCTYPE score-partwise PUBLIC '
+        '"-//Recordare//DTD MusicXML 4.0 Partwise//EN" '
+        '"http://www.musicxml.org/dtds/partwise.dtd">'
+        '<score-partwise version="4.0"><part-list>'
+        '<score-part id="P1"><part-name>Cello</part-name></score-part>'
+        '</part-list><part id="P1"><measure number="1">'
+        "<attributes><divisions>1</divisions></attributes>"
+        "<note><pitch><step>D</step><octave>3</octave></pitch>"
+        "<duration>1</duration><type>quarter</type></note>"
+        "</measure></part></score-partwise>"
+    )
+
+    score = score_json_from_musicxml(declared)
+
+    assert len(score.measures) == 1
+    assert [n.pitch for n in score.measures[0].notes] == ["D3"]
+
+
 @pytest.mark.parametrize("label", sorted(HOSTILE))
 def test_it_reads_it_or_refuses_it_and_never_raises_anything_else(label: str) -> None:
     try:
@@ -261,7 +313,23 @@ def test_whatever_it_reads_survives_everything_downstream(label: str) -> None:
 
 @pytest.mark.parametrize(
     "value",
-    ["rest", "A3", "C#4", "Bb2", "F#0", "G9", "A-1"],
+    [
+        "rest",
+        "A3",
+        "C#4",
+        "Bb2",
+        "F#0",
+        "G9",
+        "A-1",
+        # **Doubles moved up from the refusal list**, where they sat with a
+        # `# double flat` comment as though being one were the reason to refuse
+        # it. They are ordinary notation — any chromatic passage in a sharp key
+        # writes a double sharp — and refusing them dropped the note, which
+        # costs an onset rather than a symbol. See `PITCH_PATTERN`.
+        "A##3",
+        "Abb2",
+        "F##-1",
+    ],
 )
 def test_the_pitch_grammar_accepts_a_pitch(value: str) -> None:
     from app.services.score_schema import PITCH_PATTERN
@@ -274,8 +342,9 @@ def test_the_pitch_grammar_accepts_a_pitch(value: str) -> None:
     [
         "H3",  # German for B natural, and not a step MusicXML has
         "A99",  # two octave digits
-        "Abb2",  # double flat
-        "A##3",
+        "A###3",  # a triple: past a double there is no spelling here
+        "Abbb2",
+        "A#b3",  # a sharp and a flat at once is not a note
         "",
         "A",  # no octave
         "3",

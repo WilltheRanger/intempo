@@ -1,13 +1,17 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import {
+  Camera,
   FileMusic,
+  Images,
   Layers,
   MoreVertical,
   PencilLine,
   Trash2,
-} from 'lucide-react-native';
+} from '../../components/icons';
 import { useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { useGoBack } from '../../navigation/useGoBack';
+import { ComposerField } from '../../components/pieces/ComposerField';
 
 import { BottomSheet } from '../../components/overlays/BottomSheet';
 import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
@@ -22,6 +26,7 @@ import {
   MetadataRow,
   PageHeader,
   PrimaryButton,
+  SCREEN_GUTTER,
   ScreenContainer,
   SecondaryButton,
   Text,
@@ -33,35 +38,22 @@ import {
 } from '../../data/hooks/usePieces';
 import type { Piece } from '../../data/types';
 import { practiceTempo, usePracticeTempos } from '../../data/practiceTempo';
-import { spacing } from '../../design';
+import { BORDER_WIDTH, colors, spacing } from '../../design';
 import { formatLastPracticed } from '../../lib/format';
-import { scheduleScore, type Schedule } from '../../lib/score';
+import { formatTempo } from '../../lib/tempo';
+import { scheduleScore, soundingMeasureAt } from '../../lib/score';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
 import { ListenButton } from '../../components/score/ListenButton';
-
-/** Height of the score strip across the top of the score card. */
-const BANNER_HEIGHT = 88;
+import { loadStateFor } from '../../lib/loadState';
 
 /**
- * Which measure is sounding at `elapsedS`.
+ * How tall the score band across the top of the screen is.
  *
- * The last note to have started, not the nearest — a playhead names what you
- * are hearing, and between two notes you are still hearing the first. Null
- * before the first note, which is where a lead-in sits.
+ * Enough to read as a page and not enough to argue with the title. It used to
+ * be 88 inside a bordered card; it is taller now because it is doing more work
+ * — see the band itself.
  */
-function measureAt(schedule: Schedule | null, elapsedS: number): number | null {
-  if (!schedule) {
-    return null;
-  }
-  let current: number | null = null;
-  for (const note of schedule.notes) {
-    if (note.startS > elapsedS) {
-      break;
-    }
-    current = note.measureNumber;
-  }
-  return current;
-}
+const BANNER_HEIGHT = 116;
 
 /**
  * A saved piece.
@@ -80,8 +72,10 @@ function measureAt(schedule: Schedule | null, elapsedS: number): number | null {
  */
 export function PieceDetailScreen() {
   const navigation = useNavigation<RootNavigation>();
+  const goBack = useGoBack({ tab: 'Library' });
   const { params } = useRoute<RouteProp<RootStackParamList, 'PieceDetail'>>();
-  const { data: piece, isPending, isError } = usePiece(params.pieceId);
+  const { data: piece, isError } = usePiece(params.pieceId);
+  const load = loadStateFor({ isError, hasData: piece !== undefined });
 
   // Null when nothing is sounding, so the readout can say how long the piece
   // is rather than claiming a playhead sits on measure 1.
@@ -131,11 +125,10 @@ export function PieceDetailScreen() {
       await deletePiece.mutateAsync(params.pieceId);
       // The piece this screen is about no longer exists, so there is nothing
       // to return to it for.
-      navigation.goBack();
+      goBack();
     } catch (cause) {
-      // Nearly always the "this piece has takes" rule, which is a fact about
-      // the musician's history rather than a failure — so it stays on screen
-      // instead of vanishing with the dialog.
+      // The backend makes each cleanup step safe to repeat. Keep the failure
+      // visible on the piece so the musician can retry the same action.
       setError(
         cause instanceof Error ? cause.message : "Couldn't delete that piece.",
       );
@@ -157,7 +150,7 @@ export function PieceDetailScreen() {
     [piece?.score, bpm],
   );
 
-  if (isPending) {
+  if (load === 'loading') {
     return (
       <ScreenContainer>
         <LoadingState />
@@ -165,14 +158,15 @@ export function PieceDetailScreen() {
     );
   }
 
-  if (isError || !piece) {
+  if (load === 'unavailable' || !piece) {
     return (
       <ScreenContainer>
         <EmptyState
+          fill
           title="Couldn't open this piece"
           description="It may have been removed from your library."
           actionLabel="Back"
-          onActionPress={() => navigation.goBack()}
+          onActionPress={goBack}
         />
       </ScreenContainer>
     );
@@ -197,14 +191,30 @@ export function PieceDetailScreen() {
   const stillReading =
     piece.transcriptionStatus === 'queued' || piece.transcriptionStatus === 'reading';
   const readingFailed = piece.transcriptionStatus === 'failed';
-  /** Whether there is state worth grouping with the action — see the card below. */
-  const hasState = hasPages || played;
+  const canPractice = hasNotation && !stillReading && !readingFailed;
+  const needsNotation = !hasNotation && !hasPages && !stillReading;
 
   return (
-    <ScreenContainer>
+    /*
+      **The action is the footer, not a row in the middle of the page.**
+      "Continue practice" is the one thing this screen is for, and §3 law 7 puts
+      the primary action where a thumb reaches. It used to sit at about a third
+      of the way down, inside a card, level with the score band — so the screen
+      opened with two things competing to be looked at first.
+    */
+    <ScreenContainer
+      footer={
+        canPractice ? (
+          <PrimaryButton
+            label={played ? 'Continue practice' : 'Start practice'}
+            onPress={() => navigation.navigate('Record', { pieceId: piece.id })}
+          />
+        ) : undefined
+      }
+    >
       <PageHeader
         title={piece.title}
-        onBack={() => navigation.goBack()}
+        onBack={goBack}
         backLabel="Back to library"
         action={
           <IconButton
@@ -245,12 +255,11 @@ export function PieceDetailScreen() {
             serif
             autoCapitalize="words"
           />
-          <Input
-            label="Composer"
+          {/* Correcting a name afterwards is exactly when a musician reaches
+              for the spelling the rest of their library uses. */}
+          <ComposerField
             value={draftComposer}
             onChangeText={setDraftComposer}
-            placeholder="Optional"
-            autoCapitalize="words"
             style={styles.editField}
           />
           <Input
@@ -286,92 +295,118 @@ export function PieceDetailScreen() {
       ) : null}
 
       {/*
-        The card groups the piece's *state* — its page, how far in you are, when
-        you last played it — with the action that continues it. That is what a
-        card is for (§3 law 3).
+        **A band, not a thumbnail in a box.** Sheet music is this app's visual
+        identity, and the page it was read from is the truest picture of a
+        piece there is. Inside a bordered card it read as an attachment to the
+        piece; edge to edge under the title it reads as the piece. The gutter
+        is cancelled rather than the screen re-laid out, which is what
+        `SCREEN_GUTTER` is exported for.
 
-        A piece with none of that had all three hidden one by one until the card
-        held a single button, which is a box drawn around nothing (§3 law 10).
-        So the box now depends on there being something to group: with state, a
-        card; without it, the action on the page, where it reads as the one thing
-        to do next rather than as the sole occupant of a container.
+        A hairline underneath and nothing else: a page crop is nearly white and
+        the page it sits on is ivory, so without an edge the band dissolves into
+        the background (§3 law 6 — structure from hairlines, not elevation).
       */}
-      {hasState ? (
-        <Card emphasis padded={false} style={styles.scoreCard}>
-          {hasPages ? (
-            <ScoreThumbnail
-              source={piece.thumbnail}
-              radius={0}
-              style={styles.banner}
-            />
-          ) : null}
-
-          <View style={styles.scoreBody}>
-            {/*
-              No progress bar. It rendered `piece.progress`, a field with no
-              backing column anywhere in the schema — Today's card dropped it as
-              "fixture-only ornament" and this was the last screen still drawing
-              it, so against the live API it was a bar that never appeared and a
-              percentage that was never computed. What is left is true: when you
-              last played this.
-            */}
-            {played ? (
-              <MetadataRow
-                variant="metadataSmall"
-                items={[formatLastPracticed(piece.lastPracticedAt)]}
-              />
-            ) : null}
-
-            <PrimaryButton
-              label={played ? 'Continue practice' : 'Start practice'}
-              onPress={() => navigation.navigate('Record', { pieceId: piece.id })}
-              
-            />
-          </View>
-        </Card>
-      ) : (
-        <PrimaryButton
-          label="Start practice"
-          onPress={() => navigation.navigate('Record', { pieceId: piece.id })}
-          style={styles.bareAction}
+      {hasPages ? (
+        <ScoreThumbnail
+          source={piece.thumbnail}
+          composer={piece.composer}
+          radius={0}
+          style={styles.band}
         />
-      )}
+      ) : null}
 
       {/*
-        Only for a piece that has notes. A hand-entered piece has none, and a
-        transport that can't sound anything is furniture (§3 law 10).
+        **One line of facts, in place of two cards.** When you last played it,
+        how long it is, and the tempo it will be heard at — typography doing
+        what a box was doing (§3 law 8). The middle item becomes the playhead
+        while something is sounding, so the line changes in one place instead of
+        being replaced.
+      */}
+      <MetadataRow
+        style={styles.facts}
+        items={[
+          played ? formatLastPracticed(piece.lastPracticedAt) : null,
+          measureCount === 0
+            ? null
+            : measure === null
+              ? `${measureCount} ${measureCount === 1 ? 'measure' : 'measures'}`
+              : `Measure ${measure} of ${measureCount}`,
+          // **In the page's own unit.** `bpm` is quarter-note BPM, which is the
+          // clock the score and the analysis run on and not always the number
+          // printed on the music: a 6/8 piece marked dotted-quarter = 60 is 90
+          // here. Saying "90 BPM" beside a Record screen that says 60 is two
+          // numbers for one tempo.
+          hasNotation ? formatTempo(bpm, piece.score?.tempo_beat_unit) : null,
+        ]}
+      />
+
+      {stillReading ? (
+        <Text variant="metadataSmall" color="textSecondary" style={styles.facts}>
+          Reading the sheet music before practice can begin.
+        </Text>
+      ) : null}
+
+      {/*
+        Hearing the piece belongs with the piece, not with the decision to
+        practise — so it stays in the flow while the footer holds the one
+        action. Choosing a tempo and a starting bar lives on the score screen,
+        where you can see the bars you would be choosing between.
       */}
       {measureCount > 0 ? (
-        <Card style={styles.playbackCard}>
+        <View style={styles.listen}>
+          <ListenButton
+            score={piece.score}
+            bpm={bpm}
+            onProgress={(elapsed, total) =>
+              setMeasure(total > 0 ? soundingMeasureAt(schedule, elapsed) : null)
+            }
+          />
+        </View>
+      ) : null}
+
+      {needsNotation ? (
+        <Card style={styles.notationCard}>
           <Text variant="sectionLabel" color="textSecondary">
-            Playback
+            Add sheet music before recording
           </Text>
-
           <Text
-            variant="metadataSmall"
-            color="textTertiary"
-            style={styles.position}
+            variant="body"
+            color="textSecondary"
+            style={styles.notationCopy}
           >
-            {measure === null
-              ? `${measureCount} ${measureCount === 1 ? 'measure' : 'measures'}`
-              : `Measure ${measure} of ${measureCount}`}
+            InTempo needs the written notes and rests to follow your playing,
+            count long rests, and explain where the tempo changed.
           </Text>
-
-          <View style={styles.transport}>
-            <ListenButton
-              score={piece.score}
-              bpm={bpm}
-              onProgress={(elapsed, total) =>
-                setMeasure(total > 0 ? measureAt(schedule, elapsed) : null)
-              }
-            />
-          </View>
+          <PrimaryButton
+            label="Photograph sheet music"
+            icon={Camera}
+            onPress={() =>
+              navigation.navigate('Scanner', { attachToPieceId: piece.id })
+            }
+            style={styles.notationPrimary}
+          />
+          <SecondaryButton
+            label="Choose existing images"
+            icon={Images}
+            onPress={() =>
+              navigation.navigate('AddPiece', {
+                option: 'import',
+                attachToPieceId: piece.id,
+              })
+            }
+            style={styles.notationSecondary}
+          />
         </Card>
       ) : null}
 
+      {/*
+        **Ruled rows on the page, not a card.** Two destinations with a label
+        and a line each — the library's own `PieceRow` separates forty of these
+        with a hairline apiece, and a box around two of them groups nothing that
+        the rule between them does not already say (§3 law 3).
+      */}
       {hasNotation || hasPages || stillReading || readingFailed ? (
-        <Card padded={false} style={styles.accessCard}>
-          <View style={styles.accessRows}>
+        <View style={styles.accessRows}>
             {/*
               A scan in flight, or one that failed, needs a way back to the
               screen that says so. Without this the only route to it was the
@@ -386,7 +421,13 @@ export function PieceDetailScreen() {
                 description={
                   stillReading
                     ? piece.transcriptionStage ?? 'Transcribing the notation.'
-                    : 'Photograph it again to try once more.'
+                    : // **Deliberately not `piece.transcriptionError`**, unlike
+                      // the branch above and unlike `PieceScoreScreen`, which
+                      // does print the server's reason. Owner's call,
+                      // 2026-09-04 — `DECISIONS.md`. The cost is stated there:
+                      // a fault on our side reads here as something to fix
+                      // with the camera. Do not "fix" this in passing.
+                      'Photograph it again to try once more.'
                 }
                 divided={false}
                 onPress={() =>
@@ -406,7 +447,7 @@ export function PieceDetailScreen() {
               <SheetOptionRow
                 icon={FileMusic}
                 label="Digital score"
-                description="The transcribed notation."
+                description="The notes read from the page."
                 divided={false}
                 onPress={() =>
                   navigation.navigate('PieceScore', {
@@ -425,7 +466,7 @@ export function PieceDetailScreen() {
               <SheetOptionRow
                 icon={Layers}
                 label="Original pages"
-                description="The photograph this piece was transcribed from."
+                description="The pages this piece was read from."
                 divided={hasNotation || stillReading || readingFailed}
                 onPress={() =>
                   navigation.navigate('PieceScore', {
@@ -434,9 +475,8 @@ export function PieceDetailScreen() {
                   })
                 }
               />
-            ) : null}
-          </View>
-        </Card>
+          ) : null}
+        </View>
       ) : null}
 
       <BottomSheet
@@ -459,8 +499,8 @@ export function PieceDetailScreen() {
           label="Remove from library"
           description={
             piece.lastPracticedAt
-              ? 'Only possible before a piece has been recorded.'
-              : 'This piece has no recordings, so it can be removed.'
+              ? 'Also removes its practice history and recordings.'
+              : 'Permanently removes this piece from your library.'
           }
           onPress={() => {
             setMenuVisible(false);
@@ -472,13 +512,13 @@ export function PieceDetailScreen() {
 
       <ConfirmDialog
         visible={confirmingDelete}
-        title="Remove this piece?"
-        // Accurate whichever way this goes. The old line — "nothing you have
-        // recorded is deleted" — was true of a successful removal and
-        // bewildering in front of the refusal, which is exactly the case a
-        // piece with recordings is heading for.
-        message={`${piece.title} goes out of your library. This cannot be undone.`}
-        confirmLabel="Remove"
+        title="Delete this piece?"
+        message={
+          piece.lastPracticedAt
+            ? `${piece.title}, its practice history, and its recordings will be permanently deleted.`
+            : `${piece.title} will be permanently deleted from your library.`
+        }
+        confirmLabel="Delete piece"
         onConfirm={() => void confirmDelete()}
         onCancel={() => setConfirmingDelete(false)}
       />
@@ -505,39 +545,47 @@ const styles = StyleSheet.create({
   error: {
     marginTop: spacing.md,
   },
-  scoreCard: {
+  /**
+   * The score band, edge to edge.
+   *
+   * The negative margin cancels `ScreenContainer`'s gutter exactly, so this is
+   * the only thing on the screen that reaches the edges — which is the point:
+   * it is a picture, and everything else is set in a column.
+   */
+  band: {
     marginTop: spacing.xl,
-  },
-  banner: {
-    width: '100%',
+    marginHorizontal: -SCREEN_GUTTER,
+    width: undefined,
+    alignSelf: 'stretch',
     height: BANNER_HEIGHT,
+    // Both edges. One was enough to stop the band dissolving downward into the
+    // page and left its top edge floating, which reads as a crop that failed
+    // rather than as a band.
+    borderTopWidth: BORDER_WIDTH,
+    borderBottomWidth: BORDER_WIDTH,
+    borderColor: colors.border,
   },
-  scoreBody: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
-  },
-  practice: {
+  facts: {
     marginTop: spacing.lg,
   },
-  // The action standing on the page rather than inside a card. Same gap the card
-  // would have taken, so a library of mixed pieces doesn't shift as you page
-  // between them.
-  bareAction: {
+  listen: {
+    marginTop: spacing.lg,
+  },
+  notationCard: {
     marginTop: spacing.xl,
   },
-  playbackCard: {
+  notationCopy: {
     marginTop: spacing.md,
   },
-  position: {
-    marginTop: spacing.md,
+  notationPrimary: {
+    marginTop: spacing.lg,
   },
-  transport: {
-    marginTop: spacing.md,
-  },
-  accessCard: {
+  notationSecondary: {
     marginTop: spacing.md,
   },
   accessRows: {
-    paddingHorizontal: spacing.lg,
+    marginTop: spacing['2xl'],
+    borderTopWidth: BORDER_WIDTH,
+    borderTopColor: colors.border,
   },
 });

@@ -1,5 +1,5 @@
-import { useNavigation } from '@react-navigation/native';
-import { ChevronLeft } from 'lucide-react-native';
+import { useGoBack } from '../../navigation/useGoBack';
+import { ChevronLeft } from '../../components/icons';
 import { useState } from 'react';
 import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 
@@ -19,7 +19,6 @@ import {
 import { usePreferences } from '../../data/preferences';
 import { BORDER_WIDTH, colors, spacing } from '../../design';
 import { INSTRUMENT_LABELS, warmupFor, warmupScore } from '../../lib/warmup';
-import type { RootNavigation } from '../../navigation/types';
 import { ListenButton } from '../../components/score/ListenButton';
 
 /**
@@ -39,7 +38,7 @@ import { ListenButton } from '../../components/score/ListenButton';
  * feature, not a placeholder for a Record button.
  */
 export function WarmupScreen() {
-  const navigation = useNavigation<RootNavigation>();
+  const goBack = useGoBack({ tab: 'Today' });
   const { instrument } = usePreferences();
 
   // The remembered tempo is keyed by piece id everywhere else; a warmup's id
@@ -86,12 +85,10 @@ export function WarmupScreen() {
         which warmup it is changes daily.
       */}
       <View style={styles.nav}>
-        <IconButton
-          icon={ChevronLeft}
-          label="Back to today"
-          onPress={() => navigation.goBack()}
-          style={styles.back}
-        />
+        {/* No negative margin on the button: `PressableScale` styles its inner
+            view, so one comes off the outer press target. The row closes the
+            gap instead — see `nav`. Measured before: 40x44. */}
+        <IconButton icon={ChevronLeft} label="Back to today" onPress={goBack} />
         <Text variant="button">Warmup</Text>
       </View>
 
@@ -121,7 +118,25 @@ export function WarmupScreen() {
           <Stave
             notes={warmup.notes}
             clef={warmup.clef}
+            /*
+              **A clef, and nothing else.** `Stave`'s note on `head` says the
+              warmup is "a study-book exercise: a bare stave with the note names
+              underneath", and that character is right — this is a reference
+              card, not a page to read from.
+
+              The clef is the exception, because the noteheads are *already*
+              placed by `warmup.clef`: the same scale sits on different lines
+              for a violinist and a bassist. A stave that asserts staff
+              positions while refusing to say which clef they are in is asking
+              a musician to read a diagram. No key signature and no metre — a
+              scale has no metre, and the accidentals stay inline where the note
+              names underneath already spell them out.
+            */
+            head={{ clef: warmup.clef, key: [], time: null }}
             maxWidth={plateWidth - SCREEN_GUTTER * 2}
+            // Breaks between bars, then shrinks whatever a break cannot fix —
+            // see `PieceScoreScreen` for the bar this exists for.
+            fitWidth={plateWidth - SCREEN_GUTTER * 2}
             scale={STAVE_SCALE}
             justify
           />
@@ -153,14 +168,16 @@ const styles = StyleSheet.create({
   nav: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xs,
+    // **No gap, rather than a gap the button cancels with a negative margin.**
+    // The glyph's own padding is already the space between it and the word;
+    // the margin that used to close this cost the button 4 of its 44 points,
+    // because `PressableScale` puts a caller's style on its inner view and the
+    // outer press target shrinks around it.
+    gap: 0,
     // Pulled out to the gutter so the glyph lines up with the text below it
     // rather than sitting indented by its own padding.
     marginLeft: -spacing.md,
     paddingTop: spacing.sm,
-  },
-  back: {
-    marginRight: -spacing.xs,
   },
   name: {
     marginTop: spacing.lg,

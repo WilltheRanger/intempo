@@ -1,5 +1,6 @@
 import type { Duration, ScoreJson } from '../../data/types';
 import { flattenNotes, readTies } from '../notation/ties';
+import { measuresInPlayOrder } from './playOrder';
 
 /**
  * A score and a tempo, turned into notes with times and pitches.
@@ -17,33 +18,52 @@ import { flattenNotes, readTies } from '../notation/ties';
 
 /** Beats per note value, at any tempo. A dot adds half again. */
 export const BEATS: Record<Duration, number> = {
-  whole: 4,
-  dotted_whole: 6,
-  half: 2,
-  dotted_half: 3,
-  quarter: 1,
-  dotted_quarter: 1.5,
-  eighth: 0.5,
-  dotted_eighth: 0.75,
-  sixteenth: 0.25,
-  dotted_sixteenth: 0.375,
-  thirty_second: 0.125,
-  dotted_thirty_second: 0.1875,
-  sixty_fourth: 0.0625,
   double_whole: 8,
-  // A double dot adds half the dot again: base x 1.75. Ordinary notation, and
-  // how a march is written — see score_schema.py for what leaving them out
-  // cost on both the import and the OCR side.
-  double_dotted_half: 3.5,
-  double_dotted_quarter: 1.75,
-  double_dotted_eighth: 0.875,
-  // Three in the time of two. Thirds are not exactly representable in binary,
-  // which is why every beat-sum comparison carries a tolerance rather than
-  // testing equality — see TOLERANCE in backend services/ocr/validate.py.
+  dotted_whole: 6,
+  whole: 4,
+  double_dotted_half: 7 / 2,
+  dotted_half: 3,
+  half: 2,
+  double_dotted_quarter: 7 / 4,
+  dotted_quarter: 3 / 2,
+  quarter: 1,
+  double_dotted_eighth: 7 / 8,
+  dotted_eighth: 3 / 4,
+  eighth: 1 / 2,
+  dotted_sixteenth: 3 / 8,
+  sixteenth: 1 / 4,
+  dotted_thirty_second: 3 / 16,
+  thirty_second: 1 / 8,
+  dotted_sixty_fourth: 3 / 32,
+  sixty_fourth: 1 / 16,
+  one_twenty_eighth: 1 / 32,
+  triplet_breve: 16 / 3,
+  triplet_whole: 8 / 3,
   triplet_half: 4 / 3,
   triplet_quarter: 2 / 3,
   triplet_eighth: 1 / 3,
   triplet_sixteenth: 1 / 6,
+  triplet_thirty_second: 1 / 12,
+  triplet_sixty_fourth: 1 / 24,
+  triplet_one_twenty_eighth: 1 / 48,
+  quintuplet_breve: 32 / 5,
+  quintuplet_whole: 16 / 5,
+  quintuplet_half: 8 / 5,
+  quintuplet_quarter: 4 / 5,
+  quintuplet_eighth: 2 / 5,
+  quintuplet_sixteenth: 1 / 5,
+  quintuplet_thirty_second: 1 / 10,
+  quintuplet_sixty_fourth: 1 / 20,
+  quintuplet_one_twenty_eighth: 1 / 40,
+  septuplet_breve: 32 / 7,
+  septuplet_whole: 16 / 7,
+  septuplet_half: 8 / 7,
+  septuplet_quarter: 4 / 7,
+  septuplet_eighth: 2 / 7,
+  septuplet_sixteenth: 1 / 7,
+  septuplet_thirty_second: 1 / 14,
+  septuplet_sixty_fourth: 1 / 28,
+  septuplet_one_twenty_eighth: 1 / 56,
 };
 
 /**
@@ -56,6 +76,19 @@ export const BEATS: Record<Duration, number> = {
  * make the musician think the app had lost the passage.
  */
 const UNKNOWN_DURATION_BEATS = 1;
+
+/**
+ * The tempo to use when there is no usable one.
+ *
+ * **Defined here, in the module with no dependencies**, and re-exported by
+ * `data/practiceTempo` — which reaches for AsyncStorage and so cannot be
+ * imported by anything that wants to stay testable. One number rather than
+ * two that have to be remembered to agree.
+ *
+ * Reached by a tempo that is not a number at all, which a clamp does not
+ * catch: `Math.max` and `Math.min` both pass `NaN` straight through.
+ */
+export const FALLBACK_BPM = 80;
 
 /** Semitones above C for each letter, before any accidental. */
 const SEMITONES: Record<string, number> = {
@@ -124,6 +157,29 @@ export interface ScheduleOptions {
 const DEFAULT_ARTICULATION = 0.85;
 
 /**
+ * How long a marked note actually sounds, as a fraction of its written value.
+ *
+ * **Because a staccato dot is an instruction, not a decoration.** The page says
+ * play it short; a reference that plays it long teaches the passage wrong, and
+ * a musician copying what they hear then records a take the analysis judges
+ * against the written durations they were never shown.
+ *
+ * A half is the conventional reading of a staccato quarter and it is what a
+ * metronome-and-scale app should give: short enough to be unmistakably detached,
+ * long enough to keep the pitch audible. Tenuto is the opposite instruction —
+ * hold it for its whole value — so it overrides the default gap entirely rather
+ * than shortening it slightly less.
+ *
+ * An accent changes weight, not length, and this player has no dynamics; it
+ * therefore sounds exactly like an unmarked note. Saying so here is the point —
+ * a future reader should not have to wonder whether it was forgotten.
+ */
+const ARTICULATION_LENGTH: Record<string, number> = {
+  staccato: 0.5,
+  tenuto: 1,
+};
+
+/**
  * Walk the score, emitting one entry per sounded note.
  *
  * Rests advance the clock and emit nothing. Ties are folded into the note they
@@ -131,17 +187,23 @@ const DEFAULT_ARTICULATION = 0.85;
  * rather than being re-struck — re-striking is precisely the error a musician
  * would hear.
  *
- * **Repeats are not followed.** `score_json` carries them and this plays
- * straight through. Listening to a passage is the use here, and a repeat that
- * doubles the length of a preview is more surprising than useful. If that
- * changes, it belongs here rather than in a player.
+ * Repeats and first/second endings follow the same performed order as backend
+ * alignment. A reference that skips a repeat teaches a different timeline from
+ * the one the take is graded against.
  */
 export function scheduleScore(
   score: ScoreJson,
   bpm: number,
   { articulation = DEFAULT_ARTICULATION, leadInS = 0 }: ScheduleOptions = {},
 ): Schedule {
-  const secondsPerBeat = 60 / Math.max(1, bpm);
+  // **`Math.max(1, NaN)` is `NaN`**, so clamping alone does not make this
+  // safe. A non-finite tempo propagated into every note's start and duration,
+  // and `playSchedule` then handed `NaN` to `oscillator.stop()`, which throws
+  // — out of the loop, after earlier notes had already been `start()`ed, with
+  // no handle returned to stop them. A note sounding that nothing can silence,
+  // from one bad number.
+  const beatsPerMinute = Number.isFinite(bpm) ? Math.max(1, bpm) : FALLBACK_BPM;
+  const secondsPerBeat = 60 / beatsPerMinute;
   const notes: ScheduledNote[] = [];
 
   let clock = leadInS;
@@ -152,7 +214,7 @@ export function scheduleScore(
   // could not see one, and a tie is only real when both noteheads are the same
   // pitch — otherwise it is a slur, which sounds as separate notes. See
   // `notation/ties.ts`.
-  const measures = score.measures ?? [];
+  const measures = measuresInPlayOrder(score);
   const flat = flattenNotes(measures);
   const ties = readTies(measures);
   // Which measure each flat note belongs to, so a scheduled note can still say.
@@ -174,21 +236,109 @@ export function scheduleScore(
     }
 
     const durationS = beats * secondsPerBeat;
+    // The note's own marking wins over the global gap; without one, the gap.
+    const sounded =
+      durationS *
+      (ARTICULATION_LENGTH[note.articulation ?? ''] ?? articulation);
     const frequency = note.pitch === 'rest' ? null : frequencyOf(note.pitch);
 
     if (frequency !== null) {
       notes.push({
         startS: clock,
-        durationS: durationS * articulation,
+        durationS: sounded,
         frequency,
         measureNumber: measureOf[i],
         globalIndex,
       });
       globalIndex += 1;
+
+      // **The rest of the chord, at the same instant.** A double stop played
+      // back as its lower note alone is not the piece: the demo fixture opens
+      // with a four-note chord, and Listen sounded one of them. They share the
+      // onset and the duration — that is what makes them chord members — and
+      // they take the **same** `globalIndex`, because a playhead names the
+      // moment you are hearing and a chord is one moment.
+      for (const member of note.chord_pitches ?? []) {
+        const chordHz = frequencyOf(member);
+        if (chordHz === null) {
+          continue;
+        }
+        notes.push({
+          startS: clock,
+          durationS: sounded,
+          frequency: chordHz,
+          measureNumber: measureOf[i],
+          globalIndex: globalIndex - 1,
+        });
+      }
     }
 
     clock += durationS;
   }
 
   return { notes, durationS: clock, bpm };
+}
+
+/**
+ * The same performance, entered at a chosen bar.
+ *
+ * **Trimmed by time, not by measure number**, and that is the whole design.
+ * `measuresInPlayOrder` expands repeats, so bar 5 of a piece with a repeat is
+ * played twice and "notes in bar 5 or later" is not a thing that exists — it
+ * would keep the second pass through bars 1–4 and drop nothing useful. What a
+ * musician means by "start at bar 5" is *the first time bar 5 is played, then
+ * carry on*, including the repeat back to bar 1 if that is what the page says.
+ * So this finds the earliest note that belongs to that bar and keeps
+ * everything from there.
+ *
+ * A note **tied into** the start bar is not replayed. It began before you did;
+ * re-striking it would sound a note the page does not have, which is exactly
+ * the error a musician would hear.
+ *
+ * A bar the piece never reaches — past the end, or one whose every note was a
+ * rest — returns the schedule unchanged rather than silence. Playing from the
+ * top is a recoverable surprise; a button that does nothing is not.
+ */
+export function startAtMeasure(schedule: Schedule, measureNumber: number): Schedule {
+  const first = schedule.notes.find((note) => note.measureNumber === measureNumber);
+  if (!first) {
+    return schedule;
+  }
+
+  const offset = first.startS;
+  const notes = schedule.notes
+    .filter((note) => note.startS >= offset)
+    .map((note, index) => ({
+      ...note,
+      startS: note.startS - offset,
+      // Renumbered, because `globalIndex` is what a playhead uses to say which
+      // note is sounding, and it has to index the notes actually being played.
+      globalIndex: index,
+    }));
+
+  return {
+    ...schedule,
+    notes,
+    durationS: Math.max(0, schedule.durationS - offset),
+  };
+}
+
+/**
+ * Every bar a listener could sensibly start from, in the order they are played.
+ *
+ * Read off the schedule rather than the score so it can only ever offer bars
+ * that actually sound — a bar of rests has nothing to enter on, and a picker
+ * that offers it produces a Listen that appears to do nothing. Deduplicated,
+ * because a repeat plays the same bar twice and a picker should list it once.
+ */
+export function startableMeasures(schedule: Schedule): number[] {
+  const seen = new Set<number>();
+  const out: number[] = [];
+  for (const note of schedule.notes) {
+    if (!seen.has(note.measureNumber)) {
+      seen.add(note.measureNumber);
+      out.push(note.measureNumber);
+    }
+  }
+  return out;
 }

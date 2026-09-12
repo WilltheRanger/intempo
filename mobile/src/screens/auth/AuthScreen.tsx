@@ -10,6 +10,7 @@ import {
 import {
   Input,
   PrimaryButton,
+  RevealPasswordAction,
   ScreenContainer,
   Text,
 } from '../../components/primitives';
@@ -20,13 +21,20 @@ import {
   signIn,
   signUp,
 } from '../../data/auth/session';
-import { spacing } from '../../design';
+import {
+  clearAuthRedirectNotice,
+  useAuthRedirectNotice,
+} from '../../data/auth/redirectNotice';
+import { MIN_TOUCH_TARGET, spacing } from '../../design';
 import {
   describeAuthError,
   needsPassword,
   validate,
   type AuthMode,
 } from './authErrors';
+import { LegalDocumentView } from '../legal/LegalScreen';
+import { SIGN_UP_DOCUMENTS } from './signUpDocuments';
+import type { LegalDocument } from '../../lib/legal';
 
 /** What the screen is waiting on the musician's inbox for. */
 type Sent = 'confirmation' | 'reset' | 'maybeExisting' | 'magicLink';
@@ -37,7 +45,7 @@ const COPY: Record<AuthMode, { lede: string; submit: string }> = {
     submit: 'Sign in',
   },
   signUp: {
-    lede: 'Create an account to start building a library.',
+    lede: 'Create an account to start building a library. We’ll email you a confirmation link.',
     submit: 'Create account',
   },
   reset: {
@@ -61,8 +69,29 @@ const COPY: Record<AuthMode, { lede: string; submit: string }> = {
  * success. Supabase emits the new session, `useAuthStatus` hears it, and the
  * app replaces this screen with the tabs. Nothing here has to know that.
  */
-export function AuthScreen() {
-  const [mode, setMode] = useState<AuthMode>('signIn');
+export interface AuthScreenProps {
+  /**
+   * Which form to open on. `signUp` is how `SignedOutFlow` comes back from
+   * onboarding — the questions are answered, so the account form is what is
+   * left, not the sign-in one somebody would have to switch away from again.
+   */
+  initialMode?: AuthMode;
+  /**
+   * Called instead of switching to the sign-up form.
+   *
+   * Onboarding runs **before** creating an account (2026-09-08), and this
+   * screen is where that is asked for — so the flow above it takes the tap and
+   * decides what comes first. Absent, the switch works as it always did, which
+   * keeps this screen usable on its own.
+   */
+  onRequestSignUp?: () => void;
+}
+
+export function AuthScreen({
+  initialMode = 'signIn',
+  onRequestSignUp,
+}: AuthScreenProps = {}) {
+  const [mode, setMode] = useState<AuthMode>(initialMode);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [revealed, setRevealed] = useState(false);
@@ -70,16 +99,21 @@ export function AuthScreen() {
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState<Sent | null>(null);
   const [resent, setResent] = useState(false);
+  const [legalDocument, setLegalDocument] =
+    useState<LegalDocument['id'] | null>(null);
+  const redirectNotice = useAuthRedirectNotice();
 
   const showPassword = needsPassword(mode);
   const copy = COPY[mode];
 
   function go(next: AuthMode) {
+    clearAuthRedirectNotice();
     setMode(next);
     setError(null);
   }
 
   async function submit() {
+    clearAuthRedirectNotice();
     const complaint = validate(mode, email, password);
     if (complaint) {
       setError(complaint);
@@ -139,9 +173,19 @@ export function AuthScreen() {
     }
   }
 
+  if (legalDocument) {
+    return (
+      <LegalDocumentView
+        documentId={legalDocument}
+        onBack={() => setLegalDocument(null)}
+        backLabel="Back to create account"
+      />
+    );
+  }
+
   if (sent) {
     return (
-      <ScreenContainer contentStyle={styles.centred}>
+      <ScreenContainer contentStyle={[styles.centred, styles.authColumn]}>
         <View>
           {/*
             "Check your email" contradicts the line below it when no mail was
@@ -207,8 +251,8 @@ export function AuthScreen() {
             }}
             accessibilityRole="button"
             accessibilityLabel="Back to sign in"
-            hitSlop={spacing.md}
             style={({ pressed }) => [
+              styles.target,
               styles.switch,
               pressed && styles.switchPressed,
             ]}
@@ -229,7 +273,7 @@ export function AuthScreen() {
       // up under the keyboard on shorter phones.
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScreenContainer contentStyle={styles.centred}>
+      <ScreenContainer contentStyle={[styles.centred, styles.authColumn]}>
         <View>
           <Text variant="screenTitle">InTempo</Text>
           <Text variant="body" color="textSecondary" style={styles.lede}>
@@ -268,21 +312,10 @@ export function AuthScreen() {
               onSubmitEditing={() => void submit()}
               editable={!busy}
               action={
-                <Pressable
+                <RevealPasswordAction
+                  revealed={revealed}
                   onPress={() => setRevealed((shown) => !shown)}
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    revealed ? 'Hide password' : 'Show password'
-                  }
-                  hitSlop={spacing.md}
-                  style={({ pressed }) =>
-                    pressed ? styles.switchPressed : undefined
-                  }
-                >
-                  <Text variant="sectionAction" color="textPrimary">
-                    {revealed ? 'Hide' : 'Show'}
-                  </Text>
-                </Pressable>
+                />
               }
               style={styles.field}
             />
@@ -294,8 +327,10 @@ export function AuthScreen() {
                 onPress={() => go('magicLink')}
                 accessibilityRole="button"
                 accessibilityLabel="Email me a sign-in link instead"
-                hitSlop={spacing.sm}
-                style={({ pressed }) => (pressed ? styles.switchPressed : undefined)}
+                style={({ pressed }) => [
+                  styles.target,
+                  pressed ? styles.switchPressed : undefined,
+                ]}
               >
                 <Text variant="sectionAction" color="textPrimary">
                   Email me a link
@@ -306,8 +341,10 @@ export function AuthScreen() {
                 onPress={() => go('reset')}
                 accessibilityRole="button"
                 accessibilityLabel="Forgot your password"
-                hitSlop={spacing.sm}
-                style={({ pressed }) => (pressed ? styles.switchPressed : undefined)}
+                style={({ pressed }) => [
+                  styles.target,
+                  pressed ? styles.switchPressed : undefined,
+                ]}
               >
                 <Text variant="sectionAction" color="textPrimary">
                   Forgot your password?
@@ -326,8 +363,8 @@ export function AuthScreen() {
               onPress={() => go('signIn')}
               accessibilityRole="button"
               accessibilityLabel="Use a password instead"
-              hitSlop={spacing.sm}
               style={({ pressed }) => [
+                styles.target,
                 styles.forgot,
                 pressed && styles.switchPressed,
               ]}
@@ -338,13 +375,41 @@ export function AuthScreen() {
             </Pressable>
           ) : null}
 
-          {error ? (
+          {mode === 'signUp' ? (
+            <View style={styles.legal}>
+              <Text variant="metadataSmall" color="textSecondary">
+                Before creating an account, you can review how InTempo handles
+                your data and the terms for using it.
+              </Text>
+              <View style={styles.legalLinks}>
+                {SIGN_UP_DOCUMENTS.map((document) => (
+                  <Pressable
+                    key={document.id}
+                    onPress={() => setLegalDocument(document.id)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Read ${document.label}`}
+                    style={({ pressed }) => [
+                      styles.target,
+                      styles.legalLink,
+                      pressed && styles.switchPressed,
+                    ]}
+                  >
+                    <Text variant="sectionAction" color="textPrimary">
+                      {document.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          ) : null}
+
+          {(error ?? redirectNotice) ? (
             <Text
               variant="metadataSmall"
               color="textSecondary"
               style={styles.error}
             >
-              {error}
+              {error ?? redirectNotice}
             </Text>
           ) : null}
 
@@ -357,13 +422,20 @@ export function AuthScreen() {
         </View>
 
         <Pressable
-          onPress={() => go(mode === 'signUp' ? 'signIn' : 'signUp')}
+          onPress={() => {
+            if (mode !== 'signUp' && onRequestSignUp) {
+              clearAuthRedirectNotice();
+              onRequestSignUp();
+              return;
+            }
+            go(mode === 'signUp' ? 'signIn' : 'signUp');
+          }}
           accessibilityRole="button"
           accessibilityLabel={
             mode === 'signUp' ? 'Sign in instead' : 'Create an account'
           }
-          hitSlop={spacing.md}
           style={({ pressed }) => [
+            styles.target,
             styles.switch,
             pressed && styles.switchPressed,
           ]}
@@ -383,8 +455,29 @@ export function AuthScreen() {
 }
 
 const styles = StyleSheet.create({
+  /**
+   * Padded to a real touch target, not `hitSlop`-ed to one.
+   *
+   * **`hitSlop` does nothing on the web build**, which is where these controls
+   * are reached today. Measured in Chromium: a click 8pt above a control with
+   * a 12pt slop did not activate it, while a click on its visible 18pt box
+   * did. Every link on the sign-in screen was one line of type — under half
+   * the platform minimum — with a hit area that existed only on device.
+   */
+  target: {
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: 'center',
+  },
   flex: {
     flex: 1,
+  },
+  // A readable desktop measure. On phones the available width is smaller than
+  // this, so the screen keeps the normal gutter and loses no space. On web it
+  // stops labels, fields, and the primary action spanning the whole window.
+  authColumn: {
+    width: '100%',
+    maxWidth: 720,
+    alignSelf: 'center',
   },
   // The two things you can ask for from the sign-in form, on one line: a link
   // instead of a password, and a link because you have forgotten it.
@@ -409,6 +502,18 @@ const styles = StyleSheet.create({
   forgot: {
     marginTop: spacing.md,
     alignSelf: 'flex-start',
+  },
+  legal: {
+    marginTop: spacing.xl,
+  },
+  legalLinks: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.lg,
+    marginTop: spacing.xs,
+  },
+  legalLink: {
+    justifyContent: 'center',
   },
   error: {
     marginTop: spacing.lg,

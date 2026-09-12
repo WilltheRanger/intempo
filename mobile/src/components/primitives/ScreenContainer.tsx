@@ -1,17 +1,61 @@
 import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
-import { useContext, useRef, useState, type ReactNode } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import { useCallback, useContext, useRef, useState, type ReactNode } from 'react';
 import {
+  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
   View,
+  useWindowDimensions,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BORDER_WIDTH, colors, spacing } from '../../design';
-import { useTabBarHeight } from '../../navigation/tabBarMetrics';
+import { useChromeToneReporter } from '../../navigation/ChromeToneContext';
+import { chromeToneFor } from '../../navigation/chromeTone';
+import { useTabBarHeight, useTabBarMidline } from '../../navigation/tabBarMetrics';
+
+const WEB_SCROLL_STYLE = Platform.select({
+  web: {
+    // Keep wheel, trackpad, and touch scrolling inside the app's own viewport
+    // and let the browser compositor carry momentum independently of React.
+    overscrollBehaviorY: 'contain',
+    overscrollBehaviorX: 'hidden',
+    // Gesture scrolling already has the browser's native momentum. CSS smooth
+    // scrolling only stretches programmatic jumps (focus, back, scroll-to-top)
+    // and makes them feel as though the interface is catching up.
+    scrollBehavior: 'auto',
+    WebkitOverflowScrolling: 'touch',
+    scrollbarWidth: 'thin',
+    scrollbarColor: `${colors.borderStrong} transparent`,
+    scrollbarGutter: 'stable',
+    touchAction: 'pan-y pinch-zoom',
+  } as unknown as ViewStyle,
+  default: undefined,
+});
+
+/**
+ * The scrollbar gutter, given back.
+ *
+ * `WEB_SCROLL_STYLE` reserves it permanently with `scrollbarGutter: 'stable'`
+ * so a page does not jump sideways the moment its content grows past a screen.
+ * On every screen with a margin that reservation *is* part of the margin and
+ * nobody can see it. On a full-bleed one it is a 10pt stripe of page
+ * background running down the right of a photograph — measured at exactly 20
+ * device pixels on the Today hero, ivory in light mode and black in dark.
+ *
+ * A phone has no scrollbar at all, so this only ever affects the web build,
+ * which §3 law 1 calls the adaptation rather than the product.
+ */
+const WEB_NO_GUTTER = Platform.select({
+  web: { scrollbarWidth: 'none', scrollbarGutter: 'auto' } as unknown as ViewStyle,
+  default: undefined,
+});
 
 export interface ScreenContainerProps {
   children: ReactNode;
@@ -33,6 +77,22 @@ export interface ScreenContainerProps {
    */
   onRefresh?: () => Promise<unknown>;
   /**
+   * Let content run to the edge of the screen.
+   *
+   * Drops the horizontal gutter, and on the web build drops the **scrollbar
+   * gutter with it**. Those two go together or neither works: `scrollbarGutter:
+   * 'stable'` below reserves about 10pt permanently so a page does not jump
+   * when its content grows past a screen, and that reservation is invisible on
+   * every screen with a margin — it is simply part of the margin. On a
+   * full-bleed screen it is a 10pt stripe of page background down the right of
+   * a photograph, which is what it looked like on the Today hero.
+   *
+   * Only for a screen whose *content* owns the full width. Everything inside
+   * still has to put the gutter back for its own text; `TodayScreen` does that
+   * below the hero.
+   */
+  bleed?: boolean;
+  /**
    * The footer's ground.
    *
    * `page` is the default and the app's usual bottom bar: the ivory carried
@@ -41,6 +101,19 @@ export interface ScreenContainerProps {
    * in rather than a single action you finish with.
    */
   footerTone?: 'page' | 'surface';
+  /**
+   * How much of the top of this screen's content is a dark ground, in points.
+   *
+   * For a screen whose own content — a photograph, a viewfinder — is dark in
+   * both appearances, so the floating chrome over it has to be dark too. The
+   * height rather than a flag, because the chrome is only over it until the
+   * screen scrolls; `chromeTone.ts` holds that rule and the measurements that
+   * made it necessary.
+   *
+   * Omit it and the chrome takes the appearance's own glass, which is right
+   * for every screen whose ground is the app's page.
+   */
+  darkGround?: number;
 }
 
 /**
@@ -56,7 +129,9 @@ export function ScreenContainer({
   contentStyle,
   footer,
   onRefresh,
+  bleed = false,
   footerTone = 'page',
+  darkGround,
 }: ScreenContainerProps) {
   const [refreshing, setRefreshing] = useState(false);
 
@@ -85,6 +160,39 @@ export function ScreenContainer({
   const viewportHeight = useRef(0);
   const contentHeight = useRef(0);
 
+  // **What is behind the tab bar, reported as it changes.** Only a screen with
+  // a dark ground has anything to say here; for every other one `darkGround`
+  // is undefined, `reportTone` is never called from the scroll handler, and
+  // the context keeps its `auto` default.
+  const reportTone = useChromeToneReporter();
+  const chromeMidline = useTabBarMidline(useWindowDimensions().height);
+  const toneFor = useCallback(
+    (scrollY: number) =>
+      chromeToneFor({ scrollY, darkGroundHeight: darkGround ?? 0, chromeMidline }),
+    [darkGround, chromeMidline],
+  );
+
+  // **Cleared on blur, and that is not belt-and-braces.** React Navigation
+  // keeps a tab's screen mounted when you leave it, so a screen that reported
+  // `onDark` and then went quiet would hand its material to Library, Insights
+  // and Profile — a dark capsule on an ivory page, which is the exact defect
+  // this whole mechanism exists to fix. Re-reported on focus from the top,
+  // because a tab that is returned to has its old offset.
+  const scrollY = useRef(0);
+  useFocusEffect(
+    useCallback(() => {
+      reportTone(toneFor(scrollY.current));
+      return () => reportTone('auto');
+    }, [reportTone, toneFor]),
+  );
+
+  function handleScroll(event: NativeSyntheticEvent<NativeScrollEvent>) {
+    scrollY.current = event.nativeEvent.contentOffset.y;
+    if (darkGround !== undefined) {
+      reportTone(toneFor(scrollY.current));
+    }
+  }
+
   function measureOverflow() {
     if (!footer) {
       return;
@@ -98,7 +206,7 @@ export function ScreenContainer({
   // whatever the footer holds. Without one the content still has to clear the
   // tab bar itself, since that bar overlays the screen.
   const bottomInset = {
-    paddingBottom: spacing['2xl'] + (footer ? 0 : barHeight),
+    paddingBottom: spacing['2xl'] + (footer ? 0 : Math.max(barHeight, insets.bottom)),
   };
 
   // The footer takes over the bottom edge: the home indicator on a phone that
@@ -111,8 +219,17 @@ export function ScreenContainer({
 
   const scrollArea = scrollable ? (
     <ScrollView
-      style={styles.flex}
-      contentContainerStyle={[styles.content, bottomInset, contentStyle]}
+      style={[styles.flex, WEB_SCROLL_STYLE, bleed ? WEB_NO_GUTTER : null]}
+      directionalLockEnabled
+      decelerationRate="normal"
+      keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+      automaticallyAdjustKeyboardInsets
+      contentContainerStyle={[
+        styles.content,
+        bleed ? styles.contentBleed : null,
+        bottomInset,
+        contentStyle,
+      ]}
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
       refreshControl={
@@ -131,6 +248,11 @@ export function ScreenContainer({
         viewportHeight.current = event.nativeEvent.layout.height;
         measureOverflow();
       }}
+      onScroll={handleScroll}
+      // 16ms so the flip lands within a frame of the capsule crossing the
+      // ground's edge. It sets state only when the tone actually changes, so
+      // the cost of a tighter interval is the handler, not a re-render.
+      scrollEventThrottle={16}
       onContentSizeChange={(_width, height) => {
         contentHeight.current = height;
         measureOverflow();
@@ -163,7 +285,7 @@ export function ScreenContainer({
             footerInset,
           ]}
         >
-          {footer}
+          <View style={styles.footerRow}>{footer}</View>
         </View>
       ) : null}
     </SafeAreaView>
@@ -173,6 +295,15 @@ export function ScreenContainer({
 /** The horizontal gutter, exported so full-bleed sections can cancel it out. */
 export const SCREEN_GUTTER = spacing.xl;
 
+/**
+ * How wide the column of content is allowed to get.
+ *
+ * A reading measure. This is a phone product built to the web as well, and a
+ * laptop browser will happily set a piece title in 36pt serif across two
+ * thousand pixels if nothing stops it.
+ */
+export const CONTENT_MAX_WIDTH = 560;
+
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -181,8 +312,49 @@ const styles = StyleSheet.create({
   flex: {
     flex: 1,
   },
+  /** No gutter: a `bleed` screen's own content puts it back where it wants it. */
+  contentBleed: { paddingHorizontal: 0 },
   content: {
     paddingHorizontal: SCREEN_GUTTER,
+    // **A reading measure, on every screen.**
+    //
+    // This app is a phone product and it is also the web build on Cloudflare
+    // Pages, so a laptop browser gave every row the full two thousand pixels:
+    // a piece title in 36pt serif running the width of a desk, a deviation bar
+    // two thousand pixels long, a library row whose composer sat a foot from
+    // its title. A printed page has a measure for the same reason.
+    //
+    // Here rather than on each screen so no screen has to remember. Screens
+    // that set their own `contentStyle` still win, which is what that prop is
+    // for.
+    width: '100%',
+    maxWidth: CONTENT_MAX_WIDTH,
+    alignSelf: 'center',
+    /**
+     * **So a child can ask for the height that is left.**
+     *
+     * A `ScrollView`'s content container is sized by its content, so `flex: 1`
+     * on a child of it does nothing — which is why every screen-level
+     * `EmptyState` sat in the top quarter with the rest of the screen blank
+     * beneath it. `flexGrow` makes the container at least a viewport tall and
+     * changes nothing else: with no `justifyContent` here, shorter content
+     * still stacks from the top and longer content still scrolls.
+     */
+    flexGrow: 1,
+  },
+  /**
+   * The footer holds the measure too.
+   *
+   * It sits outside the scroll area, so it does not inherit `content` — and a
+   * full-width action bar under a 560pt column reads as a different screen's
+   * furniture. The background still spans the window, because a bar that stops
+   * short of the edges is a floating card, and §3 law 9 is explicit that this
+   * is app furniture.
+   */
+  footerRow: {
+    width: '100%',
+    maxWidth: CONTENT_MAX_WIDTH,
+    alignSelf: 'center',
   },
   footer: {
     backgroundColor: colors.bg,

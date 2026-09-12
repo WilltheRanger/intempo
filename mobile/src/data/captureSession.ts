@@ -16,7 +16,15 @@ export interface CapturedPage {
 }
 
 /** What became of an image the session was handed. */
-export type CaptureOutcome = 'added' | 'replaced';
+export type CaptureOutcome = 'added' | 'replaced' | 'full';
+
+/**
+ * Maximum pages the backend accepts for one scan.
+ *
+ * Shared by the camera and image picker so the app refuses page 13 before it
+ * photographs or uploads anything. The server enforces the same ceiling.
+ */
+export const MAX_SCAN_PAGES = 12;
 
 /**
  * The pages captured in the current scan, shared between the scanner and the
@@ -38,8 +46,10 @@ export type CaptureOutcome = 'added' | 'replaced';
  */
 let pages: CapturedPage[] = [];
 let nextId = 1;
-/** Set by the transcribe step, consumed by the save. See `setUploadedImageUrl`. */
-let uploadedImageUrl: string | null = null;
+/** Durable object keys set by upload, consumed by save in the same page order. */
+let uploadedImageKeys: string[] = [];
+/** Existing manual piece these pages should be read into, rather than duplicated. */
+let attachmentPieceId: string | null = null;
 /**
  * The page a retake is going to replace, while one is in flight.
  *
@@ -58,6 +68,22 @@ function notify(): void {
 }
 
 function commit(next: CapturedPage[]): void {
+  const changed =
+    next.length !== pages.length ||
+    next.some(
+      (page, index) =>
+        page.id !== pages[index]?.id || page.source !== pages[index]?.source,
+    );
+
+  // Uploaded keys describe the exact pixels in the exact order that existed
+  // when the transfer ran. A retake, reorder, addition or removal makes that
+  // snapshot stale even when the number of pages is unchanged. Keeping it
+  // would let Save attach the old photograph or old page order while the
+  // review screen shows the edited one.
+  if (changed) {
+    uploadedImageKeys = [];
+  }
+
   pages = next;
   notify();
 }
@@ -86,12 +112,28 @@ export function useCapturedPages(): CapturedPage[] {
   return useSyncExternalStore(subscribeToCaptureSession, getSnapshot, getSnapshot);
 }
 
+/**
+ * Whether this session has ever held a page.
+ *
+ * An empty session has two meanings and the screens that render it say
+ * different things: a scan whose pages were all removed ("you've removed every
+ * page") and one that never had any — which is what a refresh or a deep link to
+ * `/scan/pages` produces, and which the routing deliberately allows. Telling
+ * someone they removed pages they never took is a small lie about their own
+ * actions, which is the kind that is most disorienting.
+ *
+ * Not derivable from `pages`: both cases are the empty array.
+ */
+let everHeldPages = false;
+
 export const captureSession = {
   /** Clears the session, retake included. Called when the scanner opens fresh. */
-  reset(): void {
+  reset(options: { attachToPieceId?: string } = {}): void {
     nextId = 1;
-    uploadedImageUrl = null;
+    uploadedImageKeys = [];
+    attachmentPieceId = options.attachToPieceId ?? null;
     retakingId = null;
+    everHeldPages = false;
     commit([]);
   },
 
@@ -111,14 +153,20 @@ export const captureSession = {
     retakingId = null;
 
     if (target !== null && pages.some((page) => page.id === target)) {
+      everHeldPages = true;
       commit(pages.map((page) => (page.id === target ? { ...page, source } : page)));
       return 'replaced';
     }
 
     // The page being retaken is no longer in the session — deleted from
-    // another screen, or a session reset underneath. Append rather than drop:
-    // a photograph someone has just taken is never thrown away, and an extra
-    // page at the end is visible and removable in a way a discarded one is not.
+    // another screen, or a session reset underneath. Append rather than drop
+    // while there is room. The camera checks this before taking a photograph;
+    // the guard here keeps programmatic callers from creating a scan the API
+    // will refuse after every page has already uploaded.
+    if (pages.length >= MAX_SCAN_PAGES) {
+      return 'full';
+    }
+    everHeldPages = true;
     commit([...pages, { id: `page-${nextId++}`, source }]);
     return 'added';
   },
@@ -130,11 +178,60 @@ export const captureSession = {
    * earlier, so this resets — but in one commit rather than a reset followed by
    * a loop of appends, which published an empty list to every subscriber first.
    */
-  importAll(sources: CapturedSource[]): void {
+  importAll(
+    sources: CapturedSource[],
+    options: { attachToPieceId?: string } = {},
+  ): void {
+    if (sources.length > MAX_SCAN_PAGES) {
+      throw new Error(
+        `A score can have at most ${MAX_SCAN_PAGES} pages in one scan.`,
+      );
+    }
     nextId = 1;
-    uploadedImageUrl = null;
+    uploadedImageKeys = [];
+    attachmentPieceId = options.attachToPieceId ?? null;
     retakingId = null;
+    // A replacement, not an addition: this resets the session above.
+    everHeldPages = sources.length > 0;
     commit(sources.map((source) => ({ id: `page-${nextId++}`, source })));
+  },
+
+  /**
+   * Adds library pages to the scan already in progress.
+   *
+   * **The counterpart to `importAll`, and the distinction is the caller's to
+   * make, never this module's.** `importAll` resets because importing normally
+   * *starts* a piece; that reset is what stops an abandoned scan silently
+   * absorbing the first page of the next one. But it also meant a photograph
+   * already on the phone could only ever join a scan in the single action that
+   * began it — go back to add page two from the library and page one was
+   * thrown away, so in practice "Add page" was the camera and nothing else.
+   *
+   * Which of the two a screen wants is decided the same way `Scanner` decides
+   * whether to reset: the caller says. An abandoned scan and one being added
+   * to are the same array from in here.
+   *
+   * **A pending retake is deliberately left armed.** Appending is not an
+   * answer to "which page am I replacing" — clearing it would silently cancel
+   * a retake the musician asked for, which is the shape of the bug `capture`
+   * exists to prevent.
+   *
+   * Returns how many were taken. The picker's own limit cannot know how many
+   * pages the scan already holds, so a selection can be partly refused, and
+   * the screen has to be able to say so rather than drop the tail in silence.
+   */
+  appendAll(sources: CapturedSource[]): number {
+    const room = MAX_SCAN_PAGES - pages.length;
+    const taken = room > 0 ? sources.slice(0, room) : [];
+    if (taken.length === 0) {
+      return 0;
+    }
+    everHeldPages = true;
+    commit([
+      ...pages,
+      ...taken.map((source) => ({ id: `page-${nextId++}`, source })),
+    ]);
+    return taken.length;
   },
 
   /**
@@ -193,21 +290,34 @@ export const captureSession = {
   },
 
   /**
-   * Remembers where the uploaded page landed, for the save that follows.
+   * Whether anything was ever in this session — see `everHeldPages`.
    *
-   * The value is a **signed upload URL that expires five minutes after
-   * issue** — the only form `POST /v1/scores` accepts. It lives here rather
-   * than in route params because the review screen can be left and returned
-   * to, and because `reset()` must be able to clear it: a stale URL from a
-   * previous scan is worse than none, since the save would fail against an
-   * expired signature with nothing on screen explaining why.
+   * Read by the review screen to tell "you removed them all" from "there was
+   * never anything here", which are the same empty array.
    */
-  setUploadedImageUrl(url: string | null): void {
-    uploadedImageUrl = url;
+  hasHeldPages(): boolean {
+    return everHeldPages;
+  },
+
+  /**
+   * Remembers where every ordered page landed, for the save that follows.
+   *
+   * These are owner-prefixed object keys, not signed upload URLs. They remain
+   * valid while the musician names the piece, and remain in the same order as
+   * `current()`; sending only the first one was how a multi-page scan silently
+   * became a one-page score.
+   */
+  setUploadedImageKeys(keys: string[]): void {
+    uploadedImageKeys = [...keys];
     notify();
   },
 
-  uploadedImageUrl(): string | null {
-    return uploadedImageUrl;
+  uploadedImageKeys(): string[] {
+    return [...uploadedImageKeys];
+  },
+
+  /** Existing library entry that receives this scan, when there is one. */
+  attachmentPieceId(): string | null {
+    return attachmentPieceId;
   },
 };

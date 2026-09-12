@@ -83,12 +83,21 @@ of that example.
 
 ### Applying the schema
 
-**Nothing auto-applies `backend/app/migrations/*.sql`.** They are run by hand in
-the Supabase SQL editor, so shipping code and applying its migration are two
-separate acts, and the gap between them is invisible: the service starts fine
-and every write that touches the missing column returns a 500 that reads like a
-server bug. It has happened once already — `analyses.instrument` went live in
-code before the column existed.
+**Nothing auto-applies `backend/app/migrations/*.sql`.** No deploy runs them,
+so shipping code and applying its migration are two separate acts, and the gap
+between them is invisible: the service starts fine and every write that touches
+the missing column returns a 500 that reads like a server bug. It has happened
+once already — `analyses.instrument` went live in code before the column
+existed.
+
+Two ways to apply one, and **the second was overlooked for weeks**:
+
+1. Paste it into the Supabase SQL editor.
+2. A Claude session with the Supabase MCP server connected can apply it
+   directly — `list_migrations` to see what a project has, `apply_migration` to
+   add one. Migration 017 sat unapplied for several sessions, each of them
+   reporting it as blocked on the owner, because this file said the SQL editor
+   and nobody checked whether that was still the only route.
 
 Run any migration you have not run, in numeric order. The check below names the
 ones that are missing.
@@ -191,8 +200,30 @@ The app asks for the right thing already: `authRedirectUrl()` returns
 preview and production's to production. Hardcoding one would cross them. The
 allowlist is the half that lives outside the repo.
 
-## 4. Adding the OMR second opinion (optional, later)
+## 4. The page reader (not optional, and not a second opinion)
 
-Get the API up first. Then see `docs/deploy-omr.md` — it means rebuilding the
-Until then the step is skipped automatically: one failed lookup on `PATH`, a log
-line, and the vision chain answers exactly as before.
+Get the API up first, then see [`docs/deploy-modal.md`](./deploy-modal.md).
+
+**This section used to say the opposite, and following it would have cost you a
+deploy.** It called the reader an optional second opinion and promised that
+until it was added "the step is skipped automatically: one failed lookup on
+`PATH`, a log line, and the vision chain answers exactly as before". That was
+true when the chain had a vision model behind homr. It has not been true since
+the chain became homr alone (`backend/app/config.py`, 2026-08-24), and the
+sentence pointed at `docs/deploy-omr.md`, which has never existed.
+
+What is actually true, from `backend/app/workers/transcription_runner.py`:
+
+- the chain is `OCR_PROVIDER_CHAIN`, which defaults to `homr` and has nothing
+  behind it;
+- homr is installed **only in the Modal container**, so an API host on its own
+  has no reader in it at all;
+- `_nothing_here_can_read()` catches that up front and fails the row with a
+  message that blames the server rather than the photograph — *"the machine
+  that reads them could not be reached… the photograph is still here, so try
+  reading it again in a few minutes"*.
+
+So the API alone will sign people in, hold a library and analyse recordings, and
+**every scan will refuse**. That is the accepted trade rather than a bug: a
+refused scan is retakeable because the photograph is kept. It is not a step you
+can defer and still have a working scanner.

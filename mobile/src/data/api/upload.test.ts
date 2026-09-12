@@ -145,11 +145,28 @@ describe('the request itself', () => {
 });
 
 describe('what the musician is told', () => {
-  async function messageFor(status: number): Promise<string> {
-    const thrown = await upload(status).catch((e) => e);
+  async function messageFor(status: number, options = {}): Promise<string> {
+    const thrown = await upload(status, options).catch((e) => e);
     expect(thrown).toBeInstanceOf(UploadError);
     return (thrown as UploadError).message;
   }
+
+  it.each([
+    ['recording', 403, /try sending it again/i],
+    ['recording', 413, /record a shorter take/i],
+    ['recording', 500, /your recording/i],
+    ['photo', 403, /try sending it again/i],
+    ['photo', 413, /choose a smaller one/i],
+    ['photo', 500, /your profile picture/i],
+  ] as const)(
+    'names a %s and gives recovery that fits it for status %s',
+    async (subject, status, recovery) => {
+      const message = await messageFor(status, { subject });
+
+      expect(message).toMatch(recovery);
+      expect(message).not.toMatch(/page|photograph/i);
+    },
+  );
 
   it('says to take the photograph again when the link has expired', async () => {
     // An expired URL cannot be retried as-is — the link is the thing that

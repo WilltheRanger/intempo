@@ -270,6 +270,188 @@ def test_every_column_migration_has_a_readiness_check() -> None:
     )
 
 
+def test_a_missing_post_initial_table_names_its_migration() -> None:
+    """Cleanup and consent tables are not covered by column probes.
+
+    The pending-upload registry was missing from production while readiness
+    checked every score column and reported no fact about abandoned uploads.
+    """
+
+    class _MissingTable:
+        current = ""
+
+        def table(self, name):
+            self.current = name
+            return self
+
+        def select(self, *_columns):
+            if self.current == "pending_uploads":
+                raise RuntimeError("relation pending_uploads does not exist")
+            return self
+
+        def limit(self, _count):
+            return self
+
+        def execute(self):
+            return None
+
+    checks = {
+        check.name: check
+        for check in readiness._schema_checks(_MissingTable())
+    }
+
+    missing = checks["schema:pending_uploads"]
+    assert missing.ok is False
+    assert "014" in missing.detail
+    assert checks["schema:training_corrections"].ok is True
+
+
+def test_every_post_initial_table_migration_has_a_readiness_check() -> None:
+    """A new CREATE TABLE cannot silently outgrow `/v1/ready`."""
+    import re
+    from pathlib import Path
+
+    from app.services.readiness import REQUIRED_TABLES
+
+    migrations = Path(__file__).resolve().parents[1] / "migrations"
+    checked = {number for _, number in REQUIRED_TABLES}
+    missing: list[str] = []
+    for path in sorted(migrations.glob("*.sql")):
+        number = path.name.split("_", 1)[0]
+        creates_table = re.search(
+            r"CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+",
+            path.read_text(),
+            re.IGNORECASE,
+        )
+        if creates_table and number != "001" and number not in checked:
+            missing.append(path.name)
+
+    assert missing == [], (
+        f"{missing} create tables with no entry in REQUIRED_TABLES — a "
+        "deployment missing them would look ready"
+    )
+
+
+#: The first migration written under the rule that a migration may be run twice.
+#:
+#: 001 and 005-011 predate it and are left alone deliberately: they have run
+#: everywhere they need to, and rewriting applied history to satisfy a test is a
+#: worse trade than recording where the rule starts. Re-running one of those is
+#: an error rather than damage — `ADD COLUMN` on an existing column simply
+#: fails — so the cost of the exemption is a confusing message to an operator,
+#: not a broken database.
+FIRST_IDEMPOTENT_MIGRATION = 13
+
+
+def test_the_runtime_check_agrees_about_which_migrations_are_under_the_rule() -> None:
+    """One number, two enforcers, and they must not drift apart.
+
+    This file checks the **spelling** — that a migration from
+    `FIRST_IDEMPOTENT_MIGRATION` on is written so that running it twice is a
+    no-op. `tools/check-migrations.py` checks the **behaviour**, by actually
+    applying each of those a second time to a real database.
+
+    They used to disagree by a wide margin: the rule here has covered
+    everything from 013 since it was generalised, while the tool re-applied a
+    hand-written set containing exactly one filename. Four migrations were
+    making a promise that nothing ran. Deriving the tool's set from a number
+    fixes that only for as long as the two numbers match, so this is the thing
+    that keeps them matching — read out of the source rather than imported,
+    because `tools/` is not a package this suite can import from.
+    """
+    import re
+    from pathlib import Path
+
+    tool = (
+        Path(__file__).resolve().parents[3] / "tools" / "check-migrations.py"
+    ).read_text()
+    found = re.search(r"^FIRST_IDEMPOTENT_MIGRATION\s*=\s*(\d+)", tool, re.M)
+    assert found, (
+        "tools/check-migrations.py no longer defines FIRST_IDEMPOTENT_MIGRATION; "
+        "if the rule moved, move this check with it rather than deleting it"
+    )
+    assert int(found.group(1)) == FIRST_IDEMPOTENT_MIGRATION, (
+        f"this file enforces the guarded spelling from {FIRST_IDEMPOTENT_MIGRATION} "
+        f"on, and tools/check-migrations.py re-applies from {found.group(1)} on. "
+        "The gap between them is migrations that claim to be re-runnable and "
+        "are never run twice."
+    )
+
+
+def test_migrations_written_under_the_rule_are_safe_to_run_again() -> None:
+    """The SQL editor is manual; uncertainty must not make retry dangerous.
+
+    **Generalised from a test that named 013 and 014 by hand.** Those two were
+    checked statement by statement and nothing covered 015, or anything after
+    it — so the rule was enforced for the two files that happened to exist when
+    it was written, which is the shape of a convention rather than a check.
+    Applying migrations is a manual act against a production database, and the
+    operator's guess about whether one already ran is exactly what the guards
+    exist to make free.
+
+    `ADD CONSTRAINT` is called out separately because Postgres has no
+    `IF NOT EXISTS` form for it. The only safe spelling is to drop it first,
+    which 015 does, and a reader copying the surrounding style would not know
+    that from the other statements.
+    """
+    import re
+    from pathlib import Path
+
+    migrations = Path(__file__).resolve().parents[1] / "migrations"
+
+    #: Statement, and the spelling that makes re-running it a no-op.
+    GUARDED = (
+        (r"ADD\s+COLUMN\b", r"ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\b"),
+        (r"CREATE\s+TABLE\b", r"CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\b"),
+        (r"CREATE\s+INDEX\b", r"CREATE\s+INDEX\s+IF\s+NOT\s+EXISTS\b"),
+        (r"CREATE\s+POLICY\b", r"IF\s+NOT\s+EXISTS\s*\("),
+    )
+
+    unguarded: list[str] = []
+    for path in sorted(migrations.glob("*.sql")):
+        number = path.name.split("_", 1)[0]
+        if not number.isdigit() or int(number) < FIRST_IDEMPOTENT_MIGRATION:
+            continue
+        sql = path.read_text()
+        for statement, guard in GUARDED:
+            bare = len(re.findall(statement, sql, re.IGNORECASE))
+            safe = len(re.findall(guard, sql, re.IGNORECASE))
+            if bare > safe:
+                unguarded.append(f"{path.name}: {bare - safe}x {statement}")
+        # No `IF NOT EXISTS` exists for this one, so the guard is a prior drop.
+        adds = len(re.findall(r"ADD\s+CONSTRAINT\b", sql, re.IGNORECASE))
+        drops = len(re.findall(r"DROP\s+CONSTRAINT\s+IF\s+EXISTS\b", sql, re.IGNORECASE))
+        if adds > drops:
+            unguarded.append(
+                f"{path.name}: {adds - drops}x ADD CONSTRAINT with no DROP ... IF EXISTS before it"
+            )
+
+    assert unguarded == [], (
+        f"{unguarded} cannot be run twice. Migrations are applied by hand in "
+        "the Supabase SQL editor, where an operator unsure whether one already "
+        "ran must be free to run it again."
+    )
+
+
+def test_the_idempotency_rule_still_covers_the_migrations_it_was_written_for() -> None:
+    """The generalised check must not have gone vacuous.
+
+    A rule that skips every file is a passing test that guards nothing, which
+    is how a cut-off constant fails. 013, 014 and 015 were verified by hand and
+    are the floor: whatever else changes, those three stay in scope.
+    """
+    from pathlib import Path
+
+    migrations = Path(__file__).resolve().parents[1] / "migrations"
+    covered = sorted(
+        path.name.split("_", 1)[0]
+        for path in migrations.glob("*.sql")
+        if path.name.split("_", 1)[0].isdigit()
+        and int(path.name.split("_", 1)[0]) >= FIRST_IDEMPOTENT_MIGRATION
+    )
+    assert {"013", "014", "015"} <= set(covered), covered
+
+
 class TestTheWorkerWillFetchWhatStorageAccepted:
     """Two numbers in two systems, and nothing ever compared them.
 
@@ -653,7 +835,7 @@ def test_a_build_without_its_thresholds_is_reported_as_unready(monkeypatch) -> N
 
     assert not check.ok
     assert check.blocking, "an app that cannot analyse a take is not ready"
-    assert "/nowhere/config.toml" in check.detail, "say which file is missing"
+    assert str(audio_config.CONFIG_PATH) in check.detail, "say which file is missing"
 
     audio_config.load_audio_config.cache_clear()
 

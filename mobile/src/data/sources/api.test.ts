@@ -3,9 +3,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // `vi.hoisted`, because `vi.mock` is lifted above every declaration in the
 // file — a plain `const` above it is still in its temporal dead zone when the
 // factory runs.
-const { listAnalyses, listScores } = vi.hoisted(() => ({
+const {
+  listAnalyses,
+  listScores,
+  submitTake,
+  waitForAnalysis,
+  rememberPendingAnalysis,
+} = vi.hoisted(() => ({
   listAnalyses: vi.fn(),
   listScores: vi.fn(),
+  submitTake: vi.fn(),
+  waitForAnalysis: vi.fn(),
+  rememberPendingAnalysis: vi.fn(),
 }));
 
 vi.mock('../api/analyses', () => ({ listAnalyses, getAnalysis: vi.fn() }));
@@ -17,11 +26,18 @@ vi.mock('../api/scores', () => ({
   deleteScore: vi.fn(),
 }));
 vi.mock('../api/me', () => ({ getMe: vi.fn() }));
-vi.mock('../practice/submitTake', () => ({ submitTake: vi.fn(), waitForAnalysis: vi.fn() }));
+vi.mock('../practice/submitTake', () => ({ submitTake, waitForAnalysis, TakeSubmissionError: class TakeSubmissionError extends Error {} }));
+vi.mock('../practice/pendingAnalysis', () => ({ rememberPendingAnalysis }));
 vi.mock('../auth/session', () => ({ getAuthAvatarUrl: vi.fn() }));
 vi.mock('../api/client', () => ({ ApiError: class ApiError extends Error {} }));
 
-import { apiInsightsSource, toPiece } from './api';
+import {
+  apiInsightsSource,
+  apiPieceSource,
+  apiTakeSubmissionSource,
+  toPiece,
+} from './api';
+import { readTendency } from '../../lib/insights/tendency';
 
 /**
  * The mapping layer, and the one sign in it.
@@ -105,6 +121,150 @@ describe('the sign convention', () => {
   });
 });
 
+describe('the headline comes from the practice, not from one take', () => {
+  /** A take whose bars alternate by `pct`, drag-positive as the pipeline emits. */
+  function alternating(id: string, pct: number, bars = 4) {
+    return analysis({
+      id,
+      result_json: {
+        status: 'ok',
+        verdict: 'x',
+        verdict_direction: 'rush',
+        per_measure: Array.from({ length: bars }, (_, i) => ({
+          measure_number: i + 1,
+          avg_delta_pct: i % 2 === 0 ? -pct : pct,
+          worst_band: 'severe',
+        })),
+        tolerance: null,
+      },
+    });
+  }
+
+  function steady(id: string, pct: number, direction: string) {
+    return analysis({
+      id,
+      result_json: {
+        status: 'ok',
+        verdict: 'x',
+        verdict_direction: direction,
+        per_measure: [{ measure_number: 1, avg_delta_pct: pct, worst_band: 'rush_drag' }],
+        tolerance: null,
+      },
+    });
+  }
+
+  it('does not claim a direction over a take that had none', async () => {
+    // **Measured before this was fixed:** the title read "You tend to rush"
+    // and the sentence "you were usually ahead of the beat", above a deviation
+    // bar sitting dead centre — because the band and direction were borrowed
+    // from the take nearest the mean and the mean itself is zero.
+    listAnalyses.mockResolvedValue([alternating('a1', 18)]);
+
+    const insights = await apiInsightsSource.getInsights();
+
+    expect(insights!.meanDeviationPct).toBeCloseTo(0, 9);
+    expect(insights!.spreadPct).toBeCloseTo(18, 9);
+    expect(insights!.direction).toBe('on');
+    expect(readTendency(insights!).title).toBe('Your tempo wanders');
+  });
+
+  it('says the same thing whichever order two opposite takes arrive in', async () => {
+    // One take 15% behind and one 15% ahead. This used to read "You tend to
+    // drag" or "You tend to rush" depending purely on which the server
+    // returned first — the same practice, opposite claims.
+    const forwards = [steady('a1', 15, 'drag'), steady('a2', -15, 'rush')];
+
+    listAnalyses.mockResolvedValue(forwards);
+    const first = await apiInsightsSource.getInsights();
+    listAnalyses.mockResolvedValue([...forwards].reverse());
+    const second = await apiInsightsSource.getInsights();
+
+    expect(first!.verdict).toBe(second!.verdict);
+    expect(first!.direction).toBe('on');
+    expect(readTendency(first!).title).toBe('Your tempo wanders');
+  });
+
+  it('still names the direction when the takes agree about one', async () => {
+    listAnalyses.mockResolvedValue([steady('a1', 12, 'drag'), steady('a2', 14, 'drag')]);
+
+    const insights = await apiInsightsSource.getInsights();
+
+    expect(insights!.meanDeviationPct).toBeCloseTo(-13, 9);
+    expect(insights!.verdict).toBe('dragging');
+    expect(readTendency(insights!).title).toBe('You tend to drag');
+  });
+
+  it('orders pieces by distance from the beat, not by bias', async () => {
+    // The wandering piece is the one worth practising and its bias is near
+    // zero, so sorting on the bias buried it under pieces that drift less.
+    listScores.mockResolvedValue([
+      { id: 's1', title: 'Steady drifter', composer: null },
+      { id: 's2', title: 'Wanderer', composer: null },
+    ]);
+    listAnalyses.mockResolvedValue([
+      steady('a1', 8, 'drag'),
+      { ...alternating('a2', 18), score_id: 's2' },
+    ]);
+
+    const insights = await apiInsightsSource.getInsights();
+
+    expect(insights!.pieces.map((piece) => piece.title)).toEqual([
+      'Wanderer',
+      'Steady drifter',
+    ]);
+  });
+
+  it('scales the window by the newest take\'s thresholds', async () => {
+    // A window can span a retune. Reported for the same reason the band is:
+    // the chart a musician reads should be scaled to the numbers they are
+    // judged by now, and it must not depend on arrival order.
+    const older = {
+      ...steady('a1', 6, 'drag'),
+      created_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
+      result_json: {
+        status: 'ok',
+        verdict: 'x',
+        verdict_direction: 'drag',
+        per_measure: [{ measure_number: 1, avg_delta_pct: 6, worst_band: 'slight' }],
+        tolerance: {
+          rushing_inner_pct: 9,
+          rushing_mid_pct: 18,
+          rushing_outer_pct: 36,
+          dragging_inner_pct: 9,
+          dragging_mid_pct: 18,
+          dragging_outer_pct: 36,
+        },
+      },
+    };
+    const newer = {
+      ...steady('a2', 6, 'drag'),
+      result_json: {
+        status: 'ok',
+        verdict: 'x',
+        verdict_direction: 'drag',
+        per_measure: [{ measure_number: 1, avg_delta_pct: 6, worst_band: 'slight' }],
+        tolerance: {
+          rushing_inner_pct: 3,
+          rushing_mid_pct: 6,
+          rushing_outer_pct: 12,
+          dragging_inner_pct: 3,
+          dragging_mid_pct: 6,
+          dragging_outer_pct: 12,
+        },
+      },
+    };
+
+    for (const order of [[older, newer], [newer, older]]) {
+      listAnalyses.mockResolvedValue(order);
+      const insights = await apiInsightsSource.getInsights();
+      expect(insights!.tolerance!.rushing_outer_pct).toBe(12);
+      // -6% against a 3% inner is a clear drag; against the older 9% it was
+      // on tempo, which is the whole point of reporting the current one.
+      expect(insights!.verdict).toBe('slight_drag');
+    }
+  });
+});
+
 describe('which takes count', () => {
   it('ignores anything older than the window', async () => {
     const old = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000).toISOString();
@@ -173,8 +333,17 @@ describe('which takes count', () => {
   });
 });
 
-describe('the worst band leads', () => {
-  it('takes the worst measure in a take, not the first or the last', async () => {
+describe('one severe note does not become a habit', () => {
+  it('bands the window by the window, not by the worst note in it', async () => {
+    // `worst_band` is the worst band of any **note** in a measure, so a bar
+    // averaging 2% of a beat can carry `severe` because one note inside it was
+    // a long way out. This window used to take that band whole: three bars
+    // averaging 1.3% off the beat produced the headline "You tend to drag".
+    //
+    // A note that far out is worth seeing, and it still is — `toTake` reports
+    // the worst band of a take and the verdict screen shows it. What it is not
+    // is thirty days of evidence about how a musician plays, which is the only
+    // claim this screen makes.
     listAnalyses.mockResolvedValue([
       analysis({
         result_json: {
@@ -193,7 +362,9 @@ describe('the worst band leads', () => {
 
     const insights = await apiInsightsSource.getInsights();
 
-    expect(insights!.band).toBe('severe');
+    expect(insights!.meanDeviationPct).toBeCloseTo(-1.333, 2);
+    expect(insights!.band).toBe('on');
+    expect(readTendency(insights!).title).toBe('You play steadily');
   });
 });
 
@@ -233,5 +404,258 @@ describe('toPiece', () => {
     } as never);
 
     expect(piece.markedBpm).toBe(96);
+  });
+});
+
+describe('bars the pipeline refused to judge', () => {
+  it('keeps a written tempo change out of the mean', async () => {
+    // **The bar under a `rit.` reports a real, large deviation** — the
+    // musician did slow, exactly as the page asked — while the pipeline forces
+    // its band to `on` because the tolerance bands measure distance from a
+    // steady beat and the page has said there is none. Averaging it in answers
+    // "how steadily was this played" with a number nobody judged.
+    listAnalyses.mockResolvedValue([
+      analysis({
+        result_json: {
+          status: 'ok',
+          verdict: 'Steady',
+          verdict_direction: 'drag',
+          per_measure: [
+            { measure_number: 1, avg_delta_pct: 4, worst_band: 'on' },
+            {
+              measure_number: 2,
+              avg_delta_pct: 40,
+              worst_band: 'on',
+              under_tempo_change: true,
+            },
+          ],
+          tolerance: null,
+        },
+      }),
+    ]);
+
+    const insights = await apiInsightsSource.getInsights();
+
+    // The mean of the timed bar alone, flipped: -4, not the -22 both would give.
+    expect(insights!.meanDeviationPct).toBeCloseTo(-4, 9);
+  });
+
+  it('says nothing at all about a take that was entirely a tempo change', async () => {
+    listAnalyses.mockResolvedValue([
+      analysis({
+        result_json: {
+          status: 'ok',
+          verdict: 'Steady',
+          verdict_direction: 'on',
+          per_measure: [
+            {
+              measure_number: 1,
+              avg_delta_pct: 40,
+              worst_band: 'on',
+              under_tempo_change: true,
+            },
+          ],
+          tolerance: null,
+        },
+      }),
+    ]);
+
+    // Nothing in it was timed, so there is no number — the same answer the
+    // window filter and the failed-run filter give, and for the same reason.
+    expect(await apiInsightsSource.getInsights()).toBeNull();
+  });
+});
+
+describe('a bar nothing in which was timed', () => {
+  it('stays out of the mean even without a tempo change', async () => {
+    // A held final chord under a fermata. `under_tempo_change` is false — the
+    // page did not mark a `rit.` — and the bar is still not a verdict.
+    listAnalyses.mockResolvedValue([
+      analysis({
+        result_json: {
+          status: 'ok',
+          verdict: 'Steady',
+          verdict_direction: 'drag',
+          per_measure: [
+            { measure_number: 1, avg_delta_pct: 4, worst_band: 'on', timed_note_count: 4 },
+            { measure_number: 2, avg_delta_pct: 64, worst_band: 'on', timed_note_count: 0 },
+          ],
+          tolerance: null,
+        },
+      }),
+    ]);
+
+    const insights = await apiInsightsSource.getInsights();
+
+    expect(insights!.meanDeviationPct).toBeCloseTo(-4, 9);
+  });
+
+  it('counts a take stored before the field existed exactly as before', async () => {
+    // No `timed_note_count` anywhere. Every bar is a verdict, which is what
+    // those rows meant — reading a missing field as zero would silently drop
+    // every measure of every take already recorded.
+    listAnalyses.mockResolvedValue([analysis()]);
+
+    const insights = await apiInsightsSource.getInsights();
+
+    expect(insights!.meanDeviationPct).toBeCloseTo(-8, 9);
+  });
+});
+
+
+describe('accepted take hand-off', () => {
+  it('remembers the analysis before waiting for the worker', async () => {
+    submitTake.mockResolvedValue({
+      audioKey: 'user-1/take.wav',
+      analysisId: 'analysis-9',
+    });
+    rememberPendingAnalysis.mockResolvedValue(undefined);
+    waitForAnalysis.mockResolvedValue({ id: 'analysis-9', status: 'done' });
+    const order: string[] = [];
+    rememberPendingAnalysis.mockImplementation(async () => {
+      order.push('remember');
+    });
+    waitForAnalysis.mockImplementation(async () => {
+      order.push('wait');
+      return { id: 'analysis-9', status: 'done' };
+    });
+
+    await expect(
+      apiTakeSubmissionSource.submit({
+        scoreId: 'score-3',
+        targetBpm: 88,
+        metronomeMode: 'off',
+        audio: new Blob(['wav']),
+        filename: 'take.wav',
+      }),
+    ).resolves.toBe('analysis-9');
+
+    expect(rememberPendingAnalysis).toHaveBeenCalledWith({
+      analysisId: 'analysis-9',
+      scoreId: 'score-3',
+      createdAt: expect.any(Number),
+    });
+    expect(order).toEqual(['remember', 'wait']);
+  });
+});
+
+
+/**
+ * Reading the whole library, which is a paging loop nothing tested.
+ *
+ * `listScores()` defaults to fifty and the library rendered exactly that with
+ * no indication there was more — and `LibraryScreen`'s search filters the
+ * array it is given, so piece 51 was not below the fold, it was unfindable.
+ * The loop that fixed it has a page size, an offset and a hard stop, which is
+ * three things that can be off by one, and none of them was checked.
+ */
+describe('reading the whole library', () => {
+  /** `n` scores, newest first, as the endpoint serves them. */
+  function shelf(n: number) {
+    return Array.from({ length: n }, (_, i) => ({
+      id: `score-${i}`,
+      user_id: 'u',
+      title: `Piece ${i}`,
+      composer: null,
+      movement: null,
+      image_url: null,
+      score_json: null,
+      concerns: [],
+      created_at: `2026-01-01T00:00:00Z`,
+      updated_at: `2026-01-01T00:00:00Z`,
+    }));
+  }
+
+  /** Serve `rows` a page at a time, and record what was asked for. */
+  function serve(rows: ReturnType<typeof shelf>) {
+    const asked: Array<{ limit: number; offset: number }> = [];
+    listScores.mockImplementation(
+      async ({ limit, offset }: { limit: number; offset: number }) => {
+        asked.push({ limit, offset });
+        return rows.slice(offset, offset + limit);
+      },
+    );
+    return asked;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    listAnalyses.mockResolvedValue([]);
+  });
+
+  it('returns every piece exactly once, in order', async () => {
+    // The bug this loop exists to fix, stated as a test: a library past one
+    // page must not lose the pieces past it.
+    serve(shelf(457));
+
+    const pieces = await apiPieceSource.listPieces();
+
+    expect(pieces).toHaveLength(457);
+    expect(new Set(pieces.map((p) => p.id)).size).toBe(457);
+    expect(pieces[0].id).toBe('score-0');
+    expect(pieces.at(-1)?.id).toBe('score-456');
+  });
+
+  it('advances the offset by a whole page each time', async () => {
+    // An offset off by one either repeats a piece or hides one, and both look
+    // like a rendering problem rather than a paging one.
+    const asked = serve(shelf(457));
+
+    await apiPieceSource.listPieces();
+
+    const size = asked[0].limit;
+    expect(asked.map((a) => a.offset)).toEqual(
+      asked.map((_, i) => i * size),
+    );
+  });
+
+  it('stops on a short page', async () => {
+    const asked = serve(shelf(10));
+
+    await apiPieceSource.listPieces();
+
+    expect(asked).toHaveLength(1);
+  });
+
+  it('pays one empty request when the last page is exactly full', async () => {
+    // The documented price of not guessing: a full page could be the last one
+    // or could not, and the only way to know is to ask.
+    const asked = serve(shelf(200));
+
+    const pieces = await apiPieceSource.listPieces();
+
+    expect(pieces).toHaveLength(200);
+    expect(asked).toHaveLength(2);
+    expect(asked[1].offset).toBe(200);
+  });
+
+  it('stops instead of spinning on a server that always answers in full', async () => {
+    // Not a hypothetical shape: a filter the server ignores, or an offset it
+    // does not apply, both look exactly like this — and without the stop the
+    // app hangs on the Library tab with no error to show.
+    const asked: Array<{ limit: number }> = [];
+    listScores.mockImplementation(async ({ limit }: { limit: number }) => {
+      asked.push({ limit });
+      return shelf(limit);
+    });
+
+    const pieces = await apiPieceSource.listPieces();
+
+    expect(asked.length).toBeLessThanOrEqual(200);
+    expect(pieces.length).toBe(asked.length * asked[0].limit);
+  });
+
+  it('does not ask for the per-note analysis it is not going to read', async () => {
+    // `lastPracticedByScore` reads `score_id` and `created_at`. With the
+    // analysis attached that is measured at 214 bytes a note — 10 MB for a
+    // page of 200-note takes, on every Library open, for four kilobytes of
+    // answer.
+    serve(shelf(3));
+
+    await apiPieceSource.listPieces();
+
+    expect(listAnalyses).toHaveBeenCalledWith(
+      expect.objectContaining({ includeResult: false }),
+    );
   });
 });

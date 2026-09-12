@@ -4,7 +4,7 @@ import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
 import { PressableScale } from '../../components/motion';
 import { Text } from '../../components/primitives/Text';
 import type { Piece } from '../../data/types';
-import { BORDER_WIDTH, colors, spacing } from '../../design';
+import { BORDER_WIDTH, colors, radii, spacing } from '../../design';
 import { formatLastPracticedShort, joinMetadata } from '../../lib/format';
 
 export interface PieceRowProps {
@@ -47,25 +47,32 @@ export function PieceRow({ piece, onPress, last = false }: PieceRowProps) {
       // Barely there: a whole row scaling is a lurch, where a card the size of
       // a thumb is not.
       activeScale={0.99}
+      style={({ pressed }) => [
+        styles.row,
+        !last && styles.ruled,
+        pressed && styles.pressed,
+      ]}
     >
-      <View style={[styles.row, !last && styles.ruled]}>
-        <ScoreThumbnail source={piece.thumbnail} style={styles.thumbnail} />
+      <ScoreThumbnail
+        source={piece.thumbnail}
+        composer={piece.composer}
+        style={styles.thumbnail}
+      />
 
-        <View style={styles.details}>
-          <Text variant="pieceTitle" numberOfLines={2}>
-            {piece.title}
+      <View style={styles.details}>
+        <Text variant="pieceTitle" numberOfLines={2}>
+          {piece.title}
+        </Text>
+        {meta ? (
+          <Text
+            variant="metadataSmall"
+            color="textSecondary"
+            numberOfLines={1}
+            style={styles.meta}
+          >
+            {meta}
           </Text>
-          {meta ? (
-            <Text
-              variant="metadataSmall"
-              color="textSecondary"
-              numberOfLines={1}
-              style={styles.meta}
-            >
-              {meta}
-            </Text>
-          ) : null}
-        </View>
+        ) : null}
       </View>
     </PressableScale>
   );
@@ -77,10 +84,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.lg,
     paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
+    marginHorizontal: -spacing.sm,
+    borderRadius: radii.sm,
   },
   ruled: {
     borderBottomWidth: BORDER_WIDTH,
     borderBottomColor: colors.border,
+  },
+  pressed: {
+    backgroundColor: colors.surfacePressed,
   },
   thumbnail: {
     width: THUMBNAIL_WIDTH,

@@ -5,46 +5,60 @@ on:
   push:
     branches: [main]
 
+# **Only the newest commit on a ref is worth checking, and this repository
+# learned that the expensive way.** Actions minutes are billed on a private
+# repo, and without this every push to a branch left its predecessor's five
+# jobs running to completion — during one session on 2026-09-04 that was 33
+# pushes, so up to 32 full runs of work nobody was going to read.
+#
+# `main` is deliberately excluded from the cancelling: a push to main can be a
+# deploy, and cancelling the run that would have caught a bad one saves minutes
+# by not looking. Branches and pull requests cancel; main queues.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
-  # **The four logs are part of the Definition of Done, and nothing checked
-  # them.** On 2026-08-26 a commit landed with its tooling changes and without
-  # its `EDIT_LOG` entry: the script writing the entry ran from the wrong
-  # directory and failed on a relative path, while the `git commit` in the same
-  # shell command succeeded. Nothing noticed.
+  # Two checks that need nothing but Python and a checkout, so they share the
+  # cheapest job in the file.
   #
-  # A log entry is a claim about work, so this cannot check that the entry is
-  # any good. It checks the one thing a program can — that the change did not
-  # go out in silence. The rule itself is a tested function in
-  # `tools/check-log-entry.py`, not shell in this file, because a rule that
-  # only runs inside a workflow is a rule nothing checks.
-  log-entry:
-    name: Change is recorded (EDIT_LOG)
+  # This job used to be `log-entry`, which enforced that every change carried an
+  # `EDIT_LOG.md` entry. That log was removed on 2026-09-10: measured, every
+  # commit carried both a detailed message *and* an entry roughly 1.8x its
+  # length saying the same thing, and 668 entries had grown to 43,577 lines —
+  # a quarter of every diff. The commit message is the entry now. `git log -p`
+  # is the running account, and it is attached to the change it describes.
+  repo-checks:
+    name: Repository checks
     runs-on: ubuntu-latest
+    # **Every job here carries one, and GitHub's default is 360 minutes.** A
+    # single hung job — `app-walk` starts a server and drives a browser, which
+    # is exactly the shape of thing that hangs — would otherwise bill six hours
+    # against a private repository's allowance without anybody watching. These
+    # are the locally measured durations, roughly tripled: generous enough that
+    # a slow runner is not a red cross, small enough that a hang is caught in
+    # the same hour it happened.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-        with:
-          # The whole history, so a push of several commits is compared with
-          # what was there before it rather than with its own last commit —
-          # which would check one commit and wave the rest through.
-          fetch-depth: 0
 
-      - name: Check for an EDIT_LOG entry
-        run: |
-          base="${{ github.event.pull_request.base.sha }}"
-          if [ -z "$base" ]; then base="${{ github.event.before }}"; fi
-          # A first push to a branch reports an all-zero "before", and a
-          # shallow or grafted history can leave it unreachable. Falling back
-          # to the parent checks less than it should, which is the right
-          # direction to fail in: this job must never be the thing that blocks
-          # a push it cannot reason about.
-          if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
-            base="$(git rev-parse HEAD~1)"
-          fi
-          python3 tools/check-log-entry.py "$base..HEAD"
+      # It does not fail while the placeholders are listed — see the tool's own
+      # docstring for why that is deliberate — so what it actually guards is a
+      # *new* asset shipped as the starter's, and a listed one that has been
+      # drawn and whose line is now a false claim.
+      - name: Brand assets are ours
+        run: python3 tools/check-brand-assets.py
+
+      # `test_client_reachability.py`'s counterpart for the app — code that is
+      # built, documented and never wired up is this project's most-repeated
+      # defect, and it compiles and tests clean every time.
+      - name: Every export has a caller
+        run: python3 tools/check-dead-exports.py
 
   backend-test:
     name: Backend tests (pytest)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: backend
@@ -63,21 +77,61 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras --dev
 
+      # Before the tests, because a lint failure is a two-second answer and the
+      # suite is six minutes. A step inside this job rather than a job of its
+      # own: a separate runner would spend a fresh checkout, a Python install
+      # and a dependency sync to run something that takes under a second, and
+      # this repository is on a metered Actions allowance.
+      - name: Lint (ruff)
+        run: uv run ruff check app/ scripts/ modal_app.py
+
       - name: Run pytest
         run: uv run pytest -q
 
-  # The app that actually ships. `mobile/` is the Expo tree, built to web for
-  # Cloudflare Pages — and until this job existed nothing in CI touched it:
-  # 52 vitest tests, a `tsc --noEmit` and the web build all ran only on
-  # somebody's laptop, while the job below built the *legacy* `frontend/` tree
-  # that nobody deploys.
+      # **A gate that existed only on somebody's laptop.** `preflight.py` has
+      # run this since the day it was written and this file never did, so the
+      # npm advisories and the backend's `pip-audit` were checked exactly when
+      # a session remembered to check them.
+      #
+      # Here rather than in a job of its own because `npm audit` reads
+      # `package-lock.json` and does not need `node_modules` — so it costs a
+      # `setup-node` and nothing else, and this repository is on a metered
+      # Actions allowance that has already lost a job for less.
+      #
+      # Last, because it queries a registry: a network flake here must not
+      # stand between a push and the answer from the suite above it.
+      - name: Set up Node (for `npm audit`)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Dependency advisories
+        working-directory: .
+        run: python3 tools/check-dependencies.py
+
+      # Added 2026-09-09, after `download_image` and `download_audio` — two
+      # functions doing the same job — drifted apart and the one without a
+      # final-origin check shipped an SSRF. An inventory rather than an
+      # analysis: it fails when the set of places this service reaches the
+      # network changes, so a third one is a decision somebody makes rather
+      # than a copy of the wrong twin. Needs no install, so it sits here.
+      - name: Outbound fetch inventory
+        working-directory: .
+        run: python3 tools/check-outbound-fetch.py
+
+  # The app that actually ships, and since 2026-09-09 the only one. `mobile/` is
+  # the Expo tree, built to web for Cloudflare Pages — and until this job existed
+  # nothing in CI touched it: 52 vitest tests, a `tsc --noEmit` and the web build
+  # all ran only on somebody's laptop, while a job below built the legacy
+  # `frontend/` tree that nobody deployed. That tree is now deleted.
   #
   # Pages builds it too, on the same push. That is not a substitute: a failed
   # Pages build leaves the last good version serving, so the site looks fine
   # and the change is simply not there.
   mobile-check:
-    name: Mobile (vitest, tsc, web build)
+    name: Mobile (vitest, tsc, lint, web build)
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     defaults:
       run:
         working-directory: mobile
@@ -100,17 +154,68 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      # The last step on purpose: a type error should be reported as a type
-      # error, not as a bundler failure thirty seconds later.
+      # The app had no linter at all until 2026-09-03, while carrying
+      # `eslint-disable` directives for one — two of which were suppressing
+      # rules that no longer fired. The rule worth the install is
+      # `react-hooks/rules-of-hooks`: a hook below an early return is React
+      # error #310, which this project has shipped, and which compiles,
+      # typechecks and passes its tests.
+      - name: Lint
+        run: npm run lint
+
+      # The last two steps on purpose: a type error should be reported as a
+      # type error, not as a bundler failure thirty seconds later.
       - name: Web build
         run: npm run build:web
 
-  frontend-build:
-    name: Frontend build (vite)
+      # **A ratchet on what a musician downloads.** `lucide-react-native` ships
+      # 1,768 icons and this app draws 25; importing from the package barrel
+      # put the other 1,743 in front of every visitor and roughly doubled the
+      # bundle. Deep imports took it from 697 KB gzipped to 515 KB.
+      #
+      # Nothing else here would notice that coming back. One barrel import —
+      # the obvious spelling, the one every example uses — type-checks, lints,
+      # passes every test and leaves the app identical. Measured: planting it
+      # in a single screen puts the bundle back to 698 KB, and this step fails.
+      - name: Bundle size
+        run: node ../tools/check-bundle-size.mjs
+
+      # **The App Store target, which nothing here used to build.** Every check
+      # above and every screenshot in `EDIT_LOG.md` runs through the *web*
+      # bundle, and the two module graphs are not the same one: `.web.ts` files
+      # resolve to native siblings, `Platform.OS` branches fold the other way,
+      # and a web-only import in shared code is invisible until a phone runs
+      # it. Metro resolves the native graph and Hermes compiles it, so a
+      # missing native counterpart or a `document.` outside a guard fails here
+      # rather than on a device nobody in CI has.
+      #
+      # Not a substitute for running the app: it proves the bundle builds, not
+      # that it behaves. The native recorder and player still have never made
+      # a sound — see `mobile/README.md`.
+      - name: iOS bundle
+        run: npx expo export --platform ios --output-dir /tmp/ios-bundle
+
+  # **Two checks that had found real defects and ran only when someone
+  # remembered to run them.** `tools/audit-a11y.mjs` says so about itself: an
+  # earlier version "was run once against the legacy `frontend/` tree on
+  # 2026-08-20 and did not survive the rebuild into `mobile/`" — that tree was
+  # deleted on 2026-09-09 and the sentence is kept because the lesson is about
+  # the audit, not the tree. Leaving the replacement unwired repeats a failure
+  # this repository has already had.
+  #
+  # A separate job from `mobile-check` on purpose: these drive a real browser,
+  # so if one ever does go flaky it must not mask a genuine test or type error
+  # in the job beside it.
+  #
+  # CI has no `.env`, so `build:web` here is already a fixtures build — which is
+  # exactly what both tools need.
+  app-walk:
+    name: App walk + accessibility
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
-        working-directory: frontend
+        working-directory: mobile
     steps:
       - uses: actions/checkout@v4
 
@@ -119,10 +224,123 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: mobile/package-lock.json
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Build
-        run: npm run build
+      # `--no-save`, matching how both tools document being run locally: this
+      # is a check harness, not something the app depends on.
+      - name: Install Playwright
+        run: |
+          npm i -D playwright --no-save
+          npx playwright install --with-deps chromium
+
+      - name: Web build
+        run: npm run build:web
+
+      - name: Serve it
+        run: |
+          npx serve dist -l 4320 -s &
+          # Poll rather than sleep — the point is to start when it is ready.
+          for i in $(seq 30); do
+            if curl -sf -o /dev/null http://localhost:4320/; then exit 0; fi
+            sleep 1
+          done
+          echo "the built app never came up on :4320" >&2
+          exit 1
+
+      - name: Walk the app
+        run: node ../tools/walk-app.mjs 4320
+
+      # **The hardware edge, on devices Chromium invents.** Every other job
+      # here stops where the app asks the operating system for a microphone
+      # or a camera — which is the first thing a musician touches and the
+      # last thing anything checked. See `tools/device-check.mjs`.
+      - name: Devices
+        run: node ../tools/device-check.mjs 4320
+
+      - name: Accessibility audit
+        run: node ../tools/audit-a11y.mjs 4320
+
+      # **The state every musician meets first, and the only one no other
+      # build has.** Today, Library and Insights are otherwise always seen
+      # with a library, a take and thirty days of trend behind them. That gap
+      # cost a real bug on 2026-09-02 — Today saying "Nothing to practice yet"
+      # above a fully built daily warmup it was hiding — and it was found by
+      # hand, because reaching the state took five source edits and a revert.
+      #
+      # A second export is a minute of CI. Leaving it out means the flag that
+      # makes this reachable is a thing someone has to remember, which is the
+      # ritual it was added to replace.
+      - name: Web build, empty account
+        run: npm run build:web:empty
+
+      - name: Serve it
+        run: |
+          npx serve dist-empty -l 4323 -s &
+          for i in $(seq 30); do
+            if curl -sf -o /dev/null http://localhost:4323/; then exit 0; fi
+            sleep 1
+          done
+          echo "the empty-account build never came up on :4323" >&2
+          exit 1
+
+      # Named routes, because the rest of the list points at `fixture-…` ids
+      # an empty account does not have — sweeping them would measure a page of
+      # not-found states. `unvisitedRoutes` still runs against the whole list.
+      - name: Accessibility audit, empty account
+        run: node ../tools/audit-a11y.mjs 4323 Today Library Insights Profile
+
+  # **Nothing had ever checked that the migrations run.** They are applied by
+  # hand to a Supabase project, one at a time, and the only evidence any of
+  # them works is that somebody watched it. CLAUDE.md records what that costs:
+  # 013, 014 and 015 sat unapplied for weeks while a defect they fix looked
+  # parked, and the project named `intempo` is *still* four behind
+  # `intempo-dev` — so the day it is unpaused, four migrations run in a row
+  # against production with nobody having seen them run in sequence anywhere.
+  #
+  # This is the cheapest possible version of that day: apply all of them, in
+  # order, to an empty database. `auth` and `storage` are stubbed, so it proves
+  # the set is internally consistent rather than anything about Supabase's own
+  # semantics — which was never the half that broke.
+  migrations:
+    name: Migrations apply in order
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        # Without this the job races the container and fails on a connection
+        # refused that has nothing to do with the migrations.
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply every migration to an empty database
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+        run: python3 tools/check-migrations.py
+
+# **There is no `frontend-build` job any more, and no `frontend/` either.** The
+# job ran `vite build` over the legacy Vite tree: a sixth runner, an `npm ci` and
+# a full build on every push, to prove that something nothing ships still
+# compiles. It went on 2026-09-09, the day every job in this file was found
+# failing two seconds in with no logs — a blocked run, not a broken one.
+# Whatever the allowance is when it comes back, it should not be spent here
+# first.
+#
+# The tree itself was kept at the time, on the reasoning that
+# `docs/subsystems.md` documented its conventions and pointed at it. That
+# reasoning did not survive: the pointer was the *cost*, not the benefit — a
+# session had already read those conventions as binding for the shipping app,
+# which is the failure `CLAUDE.md` §5 was restructured to prevent. Tree and
+# section both went the same day. `git log -- frontend/` has all of it.

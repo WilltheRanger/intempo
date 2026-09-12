@@ -1,7 +1,8 @@
 import { useNavigation } from '@react-navigation/native';
+import * as ImagePicker from 'expo-image-picker';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
 
 import appConfig from '../../../app.json';
 import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
@@ -19,16 +20,23 @@ import {
 } from '../../components/primitives';
 import { signOut } from '../../data/auth/session';
 import { useMe } from '../../data/hooks/useMe';
+import { useUpdateProfile, useUploadAvatar } from '../../data/hooks/useProfile';
 import type { Musician } from '../../data/types';
 import { preferences, usePreferences } from '../../data/preferences';
 import type { Instrument, MetronomeMode } from '../../data/types';
 import { describeLoadError } from '../../data/api/describeError';
+import {
+  ProfilePhotoSaveError,
+  saveProfilePhoto,
+  type ProfilePhotoSelection,
+} from '../../data/profile/savePhoto';
 import { spacing } from '../../design';
 import { formatRole, formatTier } from '../../lib/format';
 import type { RootNavigation } from '../../navigation/types';
 import { AccountRow } from './AccountRow';
 import { LinkRow } from './LinkRow';
 import { ToggleRow } from './ToggleRow';
+import { loadStateFor } from '../../lib/loadState';
 
 /**
  * The account, and the settings that belong to this device.
@@ -42,16 +50,99 @@ import { ToggleRow } from './ToggleRow';
  * like a control and isn't one.
  */
 export function ProfileScreen() {
-  const { data: musician, isPending, isError, error } = useMe();
+  const { data: musician, isError, error, isFetching, refetch } = useMe();
+  const load = loadStateFor({ isError, hasData: musician !== undefined });
   const settings = usePreferences();
   const navigation = useNavigation<RootNavigation>();
   const queryClient = useQueryClient();
   const [confirmingSignOut, setConfirmingSignOut] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
-  // Tapping the photo is the affordance; the camera or pencil badge over it
-  // waits until there's an upload behind it to justify the decoration.
-  const [photoNote, setPhotoNote] = useState(false);
+  const saveProfile = useUpdateProfile();
+  const saveConsent = useUpdateProfile();
+  const uploadAvatar = useUploadAvatar();
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [pendingPhoto, setPendingPhoto] = useState<ProfilePhotoSelection | null>(null);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const [consentError, setConsentError] = useState<string | null>(null);
+  const photoBusy = saveProfile.isPending || uploadAvatar.isPending;
+
+  /**
+   * Finishes both halves of a photo replacement without repeating the first.
+   *
+   * The storage upload and the account save are two network calls. A dropped
+   * connection between them retains the returned key, and the retry button
+   * resumes at the save instead of uploading the same private object again.
+   */
+  async function persistPhoto(selection: ProfilePhotoSelection) {
+    if (photoBusy) {
+      return;
+    }
+    setPhotoError(null);
+    setPhotoPreview(selection.uri);
+
+    try {
+      await saveProfilePhoto(selection, {
+        upload: (photo) => uploadAvatar.mutateAsync(photo),
+        save: (input) => saveProfile.mutateAsync(input),
+      });
+      setPendingPhoto(null);
+      // The profile mutation waits for the refreshed account before it
+      // resolves, so the server-backed avatar is ready before this preview leaves.
+      setPhotoPreview(null);
+    } catch (cause) {
+      const resume =
+        cause instanceof ProfilePhotoSaveError ? cause.resume : selection;
+      setPendingPhoto(resume);
+      setPhotoError(
+        cause instanceof Error
+          ? cause.message
+          : 'That profile picture could not be saved. Try again.',
+      );
+    }
+  }
+
+  async function pickPhoto() {
+    if (photoBusy) {
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+    if (result.canceled || !result.assets?.length) {
+      // Keep an earlier failed selection and its visible retry action. Opening
+      // the picker and backing out must not turn a recoverable failure into a
+      // dead end.
+      return;
+    }
+
+    const asset = result.assets[0];
+    const selection: ProfilePhotoSelection = {
+      uri: asset.uri,
+      mimeType: asset.mimeType ?? 'image/jpeg',
+    };
+    setPendingPhoto(selection);
+    await persistPhoto(selection);
+  }
+
+  async function changeTrainingConsent(trainingConsent: boolean) {
+    if (saveConsent.isPending) {
+      return;
+    }
+    setConsentError(null);
+    try {
+      await saveConsent.mutateAsync({ training_consent: trainingConsent });
+    } catch (cause) {
+      setConsentError(
+        cause instanceof Error
+          ? cause.message
+          : 'That privacy setting could not be saved. Try again.',
+      );
+    }
+  }
 
   async function handleSignOut() {
     setConfirmingSignOut(false);
@@ -70,7 +161,7 @@ export function ProfileScreen() {
     }
   }
 
-  if (isPending) {
+  if (load === 'loading') {
     return (
       <ScreenContainer>
         <PageHeader title="Profile" />
@@ -81,13 +172,17 @@ export function ProfileScreen() {
 
   const usage = describeUsage(musician?.usage ?? null);
 
-  if (isError || !musician) {
+  if (load === 'unavailable' || !musician) {
     return (
       <ScreenContainer>
         <PageHeader title="Profile" />
         <EmptyState
+          fill
           title="Couldn't load your account"
           description={describeLoadError(error)}
+          actionLabel={isFetching ? 'Trying…' : 'Try again'}
+          onActionPress={() => void refetch()}
+          actionDisabled={isFetching}
         />
       </ScreenContainer>
     );
@@ -103,12 +198,15 @@ export function ProfileScreen() {
       */}
       <View style={styles.identity}>
         <Pressable
-          onPress={() => setPhotoNote(true)}
+          onPress={() => void pickPhoto()}
+          disabled={photoBusy}
           accessibilityRole="button"
-          accessibilityLabel="Edit photo"
+          accessibilityLabel={
+            photoBusy ? 'Changing profile picture' : 'Change profile picture'
+          }
           style={({ pressed }) => (pressed ? styles.pressed : undefined)}
         >
-          <Avatar source={musician.avatarUrl} size={AVATAR_SIZE} />
+          <Avatar source={photoPreview ?? musician.avatarUrl} size={AVATAR_SIZE} />
         </Pressable>
 
         <Text variant="body" style={styles.identityEmail} numberOfLines={2}>
@@ -116,14 +214,29 @@ export function ProfileScreen() {
         </Text>
       </View>
 
-      {photoNote ? (
-        <Text
-          variant="metadataSmall"
-          color="textTertiary"
-          style={styles.photoNote}
-        >
-          Changing your photo isn&apos;t available yet.
-        </Text>
+      <Text
+        variant="metadataSmall"
+        color={photoError ? 'textSecondary' : 'textTertiary'}
+        style={styles.photoNote}
+      >
+        {photoError
+          ? photoError
+          : photoBusy
+            ? 'Saving your profile picture…'
+            : 'Choose your profile picture to change it.'}
+      </Text>
+
+      {photoError && pendingPhoto ? (
+        <SecondaryButton
+          label={
+            pendingPhoto.avatarKey
+              ? 'Try saving profile picture again'
+              : 'Try sending profile picture again'
+          }
+          onPress={() => void persistPhoto(pendingPhoto)}
+          disabled={photoBusy}
+          style={styles.photoRetry}
+        />
       ) : null}
 
       <SectionHeader label="Account" style={styles.section} />
@@ -176,7 +289,7 @@ export function ProfileScreen() {
           color="textTertiary"
           style={styles.settingNote}
         >
-          Sets the clef and range of the daily excerpt on Today.
+          Sets the instrument sound for Listen and the daily excerpt on Today.
         </Text>
 
         <SegmentedControl
@@ -215,7 +328,8 @@ export function ProfileScreen() {
             style={styles.settingNote}
           >
             Use headphones — a metronome over the speaker ends up in the
-            recording and throws the analysis off.
+            recording and throws the analysis off. This is the take only; the
+            count-in always ticks, and is discarded before anything is sent.
           </Text>
         ) : null}
       </Card>
@@ -239,6 +353,39 @@ export function ProfileScreen() {
         </View>
       </Card>
 
+      <SectionHeader label="Data & privacy" style={styles.section} />
+      <Card padded={false}>
+        <View style={styles.rows}>
+          <ToggleRow
+            label="Help improve score reading"
+            description="Allow corrected bars and their sheet-music photos to be kept for improving the reader. Turning this off deletes what was kept."
+            value={musician.trainingConsent}
+            onChange={(value) => void changeTrainingConsent(value)}
+            divided={false}
+            disabled={saveConsent.isPending}
+          />
+          {consentError ? (
+            <Text
+              variant="metadataSmall"
+              color="textSecondary"
+              accessibilityLiveRegion="polite"
+              style={styles.consentError}
+            >
+              {consentError}
+            </Text>
+          ) : null}
+          <LinkRow
+            label="Download my data"
+            onPress={() => navigation.navigate('ExportData')}
+          />
+          <LinkRow
+            label="Delete account"
+            value="Permanent"
+            onPress={() => navigation.navigate('DeleteAccount')}
+          />
+        </View>
+      </Card>
+
       <SectionHeader label="About" style={styles.section} />
       <Card padded={false}>
         <View style={styles.rows}>
@@ -248,7 +395,19 @@ export function ProfileScreen() {
             divided={false}
           />
           <LinkRow
-            label="Acknowledgements"
+            label="Help & connection"
+            onPress={() => navigation.navigate('Help')}
+          />
+          <LinkRow
+            label="Privacy"
+            onPress={() => navigation.navigate('Legal', { document: 'privacy' })}
+          />
+          <LinkRow
+            label="Terms"
+            onPress={() => navigation.navigate('Legal', { document: 'terms' })}
+          />
+          <LinkRow
+            label="Open source"
             onPress={() => navigation.navigate('Acknowledgements')}
           />
         </View>
@@ -296,7 +455,12 @@ const AVATAR_SIZE = 76;
  *
  * "Bass" rather than "Double bass" in the control: four segments across a
  * phone leave no room for the longer word, and no one reading a string app
- * mistakes it for a bass guitar. The full name is used everywhere it fits.
+ * mistakes it for a bass guitar. The full name is used everywhere it fits —
+ * `INSTRUMENT_LABELS`, which Today and the Warmup screen render, and the
+ * roomier grid in `components/profile/InstrumentChoice`.
+ *
+ * This is the only shortening in the app, and
+ * `lib/instrumentLabels.test.ts` is what keeps it the only one.
  */
 const INSTRUMENT_OPTIONS = [
   { value: 'violin' as const, label: 'Violin' },
@@ -319,6 +483,9 @@ const styles = StyleSheet.create({
   photoNote: {
     marginTop: spacing.md,
   },
+  photoRetry: {
+    marginTop: spacing.md,
+  },
   identity: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -327,6 +494,22 @@ const styles = StyleSheet.create({
   },
   identityEmail: {
     flexShrink: 1,
+    /**
+     * **An email address has nowhere to break.**
+     *
+     * `flexShrink` cannot act while CSS `min-width` is `auto` — its content —
+     * so at 2x text "you@example.com" ran 11pt off a 390pt screen with two
+     * lines allowed and neither of them used. Zero lets it shrink; breaking
+     * mid-word lets it use the second line rather than be truncated, which
+     * matters here because this block exists to say *which account you are
+     * in* and "you@examp…" does not.
+     *
+     * Web only, and the same shape as the shims in `ToggleRow` and `Input`:
+     * React Native already breaks a word too long for its line, so on device
+     * this is a no-op.
+     */
+    minWidth: 0,
+    ...Platform.select({ web: { wordBreak: 'break-all' as const }, default: {} }),
   },
   settingCard: {
     marginBottom: spacing.md,
@@ -345,6 +528,9 @@ const styles = StyleSheet.create({
   },
   signOut: {
     marginTop: spacing['2xl'],
+  },
+  consentError: {
+    paddingBottom: spacing.md,
   },
   error: {
     marginTop: spacing.md,

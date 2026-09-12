@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from app.services.analysis import analyze
+from app.services.classification import Band, Direction, classify_band
 from app.services.score_schema import Measure, Note, ScoreJson
 from app.tests.audio_helpers import evenly_spaced, synth_click_track, write_wav
 
@@ -348,3 +349,258 @@ def test_a_take_too_short_to_compare_is_not_accused(tmp_path) -> None:
 
     assert not _take_is_much_longer_than_the_page(np.array([1.0]), np.arange(20.0))
     assert not _take_is_much_longer_than_the_page(np.arange(20.0), np.array([1.0]))
+
+
+def test_a_bars_average_leaves_out_the_notes_that_were_not_timed() -> None:
+    """One grace note used to move a whole bar's reading.
+
+    `compute_deltas` refuses to band four kinds of note — under a `rit.`, after
+    a fermata, an ornament, and the note an ornament decorates — because in
+    each the deviation is real and is not an error. `worst_band` was already
+    safe, since an untimed note's band is `on`. `avg_delta_pct` was not, and it
+    is the number the app draws as the bar's deviation bar.
+
+    An ornament is the sharpest case: its "expected" time is `ORNAMENT_SHARE`
+    splitting the difference between two readings an engraver may have meant —
+    a number this code invented — so a delta measured against it can move a bar
+    a musician played perfectly.
+    """
+    from app.services.analysis import _summarize_measures
+    from app.services.classification import Delta
+
+    def delta(pct: float, idx: int, timed: bool = True) -> Delta:
+        return Delta(
+            global_index=idx,
+            measure_number=1,
+            expected_ms=0.0,
+            actual_ms=0.0,
+            delta_ms=pct * 5.0,
+            delta_pct=pct,
+            band=classify_band(pct) if timed else Band.on,
+            direction=Direction.on,
+            is_slur_interior=False,
+            timed=timed,
+        )
+
+    steady = [delta(2.0, i) for i in range(3)]
+    ornament = delta(90.0, 3, timed=False)
+
+    (bar,) = _summarize_measures(steady + [ornament])
+
+    assert bar.note_count == 4
+    assert bar.timed_note_count == 3
+    # 2.0, not the 24.0 that averaging the ornament in gives.
+    assert bar.avg_delta_pct == 2.0
+
+
+def test_a_bar_with_nothing_timed_still_reports_a_number() -> None:
+    """A bar that is entirely a `rit.` has to say something.
+
+    Falling back to the whole bar keeps `avg_delta_pct` a number on every
+    measure — a field that is sometimes absent is worse than one that is
+    sometimes not a verdict. `timed_note_count == 0` is what says so, and the
+    app reads that rather than the average.
+    """
+    from app.services.analysis import _summarize_measures
+    from app.services.classification import Delta
+
+    rit = [
+        Delta(
+            global_index=i,
+            measure_number=1,
+            expected_ms=0.0,
+            actual_ms=0.0,
+            delta_ms=200.0,
+            delta_pct=40.0,
+            band=Band.on,
+            direction=Direction.on,
+            is_slur_interior=False,
+            under_tempo_change=True,
+            timed=False,
+        )
+        for i in range(3)
+    ]
+
+    (bar,) = _summarize_measures(rit)
+
+    assert bar.timed_note_count == 0
+    assert bar.avg_delta_pct == 40.0
+    assert bar.under_tempo_change is True
+
+
+def test_a_wholly_held_bar_reports_why_it_was_not_timed() -> None:
+    """**"Not timed" reads as the app failing; "held" reads as the page.**
+
+    A bar that is one held chord — the commonest last bar there is — went
+    unjudged for a reason the pipeline knew and dropped one field short of the
+    screen. The app then had a single sentence covering a fermata, an ornament
+    and a `rit.`, which are three different things and only one of them is a
+    limitation of this code.
+    """
+    from app.services.analysis import _summarize_measures
+    from app.services.classification import Delta
+
+    def held(idx: int, reason: str) -> Delta:
+        return Delta(
+            global_index=idx,
+            measure_number=1,
+            expected_ms=0.0,
+            actual_ms=0.0,
+            delta_ms=0.0,
+            delta_pct=40.0,
+            band=Band.on,
+            direction=Direction.on,
+            is_slur_interior=False,
+            timed=False,
+            untimed_reason=reason,  # type: ignore[arg-type]
+        )
+
+    (bar,) = _summarize_measures([held(0, "fermata"), held(1, "fermata")])
+
+    assert bar.timed_note_count == 0
+    assert bar.untimed_reason == "fermata"
+
+
+def test_a_bar_whose_untimed_notes_disagree_names_no_reason() -> None:
+    """A fermata *and* an ornament in one bar has no single answer, and
+    inventing a headline for it would be worse than the honest silence the app
+    already falls back to."""
+    from app.services.analysis import _summarize_measures
+    from app.services.classification import Delta
+
+    def untimed(idx: int, reason: str) -> Delta:
+        return Delta(
+            global_index=idx,
+            measure_number=1,
+            expected_ms=0.0,
+            actual_ms=0.0,
+            delta_ms=0.0,
+            delta_pct=10.0,
+            band=Band.on,
+            direction=Direction.on,
+            is_slur_interior=False,
+            timed=False,
+            untimed_reason=reason,  # type: ignore[arg-type]
+        )
+
+    (bar,) = _summarize_measures([untimed(0, "fermata"), untimed(1, "ornament")])
+
+    assert bar.untimed_reason is None
+
+
+def test_a_bar_with_any_timed_note_names_no_reason() -> None:
+    """The reason captions the whole row, so it may only be given when it
+    explains the whole row. A bar with measured notes in it has a verdict, and
+    that verdict is what the row should say."""
+    from app.services.analysis import _summarize_measures
+    from app.services.classification import Delta
+
+    def note(idx: int, timed: bool, reason: str | None = None) -> Delta:
+        return Delta(
+            global_index=idx,
+            measure_number=1,
+            expected_ms=0.0,
+            actual_ms=0.0,
+            delta_ms=0.0,
+            delta_pct=2.0,
+            band=Band.on,
+            direction=Direction.on,
+            is_slur_interior=False,
+            timed=timed,
+            untimed_reason=reason,  # type: ignore[arg-type]
+        )
+
+    (bar,) = _summarize_measures([note(0, True), note(1, False, "fermata")])
+
+    assert bar.timed_note_count == 1
+    assert bar.untimed_reason is None
+
+
+def test_a_silent_take_is_told_the_microphone_heard_nothing(tmp_path) -> None:
+    """Not "record louder" — that is the one thing that cannot help here.
+
+    A muted input produces the same zeros however hard the musician plays, so
+    the old advice sent them to repeat the take and get the identical file. See
+    `_why_nothing_to_compare` for the measurement.
+    """
+    import numpy as np
+
+    score = _eight_quarter_note_score()
+    path = write_wav(tmp_path / "silent.wav", np.zeros(SR * 2, dtype="float32"), sr=SR)
+
+    result = analyze(path, score, target_bpm=120.0)
+
+    assert result.status == "no_onsets"
+    assert "microphone" in result.verdict
+    assert "louder" not in result.verdict
+
+
+def test_an_empty_transcription_is_not_blamed_on_the_playing(tmp_path) -> None:
+    """A page with no notes read off it says so, and names where to look.
+
+    Both conditions are true when a silent take meets an empty score, and the
+    score is named first on purpose: no amount of re-recording makes a page
+    with nothing on it analysable, so pointing at the microphone would cost a
+    second take and change nothing.
+    """
+    empty = ScoreJson(
+        clef="treble",
+        time_signature="4/4",
+        ocr_confidence=0.9,
+        measures=[Measure(measure_number=1, notes=[])],
+    )
+    times = evenly_spaced(8, bpm=120.0)
+    path = write_wav(tmp_path / "played.wav", synth_click_track(times, sr=SR), sr=SR)
+
+    played = analyze(path, empty, target_bpm=120.0)
+    import numpy as np
+
+    silent = analyze(
+        write_wav(tmp_path / "silent.wav", np.zeros(SR * 2, dtype="float32"), sr=SR),
+        empty,
+        target_bpm=120.0,
+    )
+
+    for result in (played, silent):
+        assert result.status == "no_onsets"
+        assert "transcription" in result.verdict
+        assert "microphone" not in result.verdict
+
+
+def test_the_detector_hears_the_same_notes_however_quiet_the_take_is(tmp_path) -> None:
+    """The measurement behind "louder" being useless advice.
+
+    `onset_strength` differences a dB-scaled mel spectrogram, so scaling the
+    waveform shifts every frame by a constant that the differencing removes.
+    A take at the bottom of 16-bit resolution therefore analyses exactly as
+    well as a loud one — which is why the only recording that reaches
+    `no_onsets` is a digitally silent one, and why the advice for it has to
+    name the input rather than the playing.
+
+    This is the claim `_why_nothing_to_compare`'s docstring rests on. If it
+    ever stops holding, that docstring is wrong and so is the message.
+    """
+    import numpy as np
+
+    from app.services import audio as audio_svc
+    from app.services.audio_config import load_audio_config
+
+    cfg = load_audio_config()
+    times = evenly_spaced(8, bpm=120.0)
+    loud = synth_click_track(times, sr=SR)
+    loud = loud / float(np.max(np.abs(loud)))
+
+    counts = []
+    for dbfs in (0, -40, -80, -90):
+        # Requantised to 16 bit, because that is what the app uploads: a float
+        # scaled to -90 dBFS is not the same thing as one that survived a WAV.
+        scaled = loud * (10 ** (dbfs / 20))
+        pcm = np.clip(np.round(scaled * 32767.0), -32768, 32767).astype(np.int16)
+        y = pcm.astype(np.float32) / 32768.0
+        onsets = audio_svc.detect_onsets(
+            audio_svc.pre_emphasis(y, config=cfg), SR, config=cfg
+        )
+        counts.append(int(onsets.size))
+
+    assert counts[0] == 8, "the loud take is the control"
+    assert len(set(counts)) == 1, f"level changed the reading: {counts}"

@@ -10,16 +10,17 @@ turns into a toast, not a failure the client has to special-case.
 
 from __future__ import annotations
 
-from urllib.parse import urlparse
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.auth import current_user_id
+from app.config import settings
 from app.routers.upload import AUDIO_BUCKET
 from app.services import audio as audio_svc
 from app.services.calibration import calibrate
+from app.services.storage_origin import is_owned_storage_url, storage_origin
 from app.workers.analysis_runner import AudioFetchError, download_audio
 
 router = APIRouter(prefix="/calibration", tags=["calibration"])
@@ -41,15 +42,26 @@ class CalibrationResponse(BaseModel):
 
 
 def _assert_audio_url_owned_by(audio_url: str, user_id: UUID) -> None:
-    parsed = urlparse(audio_url)
-    if parsed.scheme not in {"https", "http"}:
-        raise HTTPException(status_code=400, detail="audio_url must be http(s)")
-    prefixes = (
-        f"/storage/v1/object/sign/{AUDIO_BUCKET}/{user_id}/",
-        f"/storage/v1/object/authenticated/{AUDIO_BUCKET}/{user_id}/",
-        f"/storage/v1/object/public/{AUDIO_BUCKET}/{user_id}/",
-    )
-    if not any(parsed.path.startswith(p) for p in prefixes):
+    """Refuse anything that is not this deployment's storage, in this bucket,
+    under this caller.
+
+    **This used to check the path and not the host**, which read as an
+    ownership check and was not one: anybody can serve
+    `/storage/v1/object/sign/audio-uploads/<your id>/take.wav`. Measured before
+    the fix, all three of these were accepted and then fetched by the server —
+    `https://evil.example.com/...`, `http://169.254.169.254/...` and
+    `http://127.0.0.1:8000/...` — and `download_audio` returned the upstream
+    status in its error, so it also answered what was listening where.
+
+    The rule and its tests are in `services/storage_origin`, shared with the
+    image path so the two cannot drift apart again.
+    """
+    if not is_owned_storage_url(
+        audio_url,
+        bucket=AUDIO_BUCKET,
+        user_id=user_id,
+        expected_origin=storage_origin(settings.SUPABASE_URL),
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="audio_url must be a Supabase audio-uploads URL under your user prefix",
@@ -63,7 +75,9 @@ def calibrate_tempo(
 ) -> CalibrationResponse:
     _assert_audio_url_owned_by(body.audio_url, user_id)
     try:
-        audio_bytes = download_audio(body.audio_url)
+        audio_bytes = download_audio(
+            body.audio_url, expected_origin=storage_origin(settings.SUPABASE_URL)
+        )
     except AudioFetchError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 

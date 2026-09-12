@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from app.services.ocr.meter import quarter_beats
 from app.services.score_schema import Measure, Note, ScoreJson
 from app.services.ocr.validate import (
     MIN_AGREEMENT,
@@ -19,7 +20,6 @@ from app.services.ocr.validate import (
     describe_repeats,
     numbering_gaps,
     repeated_runs,
-    beats_per_measure,
     describe_for_retry,
     infer_beats_per_measure,
     problems,
@@ -77,8 +77,8 @@ QUARTERS = ["quarter"] * 4
         ("0/4", None),
     ],
 )
-def test_beats_per_measure(signature, expected) -> None:
-    assert beats_per_measure(signature) == expected
+def test_quarter_beats(signature, expected) -> None:
+    assert quarter_beats(signature) == expected
 
 
 def test_a_correct_score_produces_no_problems() -> None:
@@ -524,3 +524,72 @@ def test_the_pickup_complement_rule_is_not_wired_to_anything() -> None:
     # A page that ends on a complete bar — the ordinary case — is flagged, and
     # the piece simply carries on over the page break.
     assert pickup_complement(page(4)) is not None
+
+
+def test_repeat_balance_is_not_wired_either_and_two_thirds_of_it_should_be() -> None:
+    """**The reason is not the same as `pickup_complement`'s, and that matters.**
+
+    `repeat_balance` was found dead by a scan for module-level functions
+    nothing anywhere references — not a screen, not a test, not a tool. Unlike
+    the pickup rule two functions above it in `validate.py`, nothing had ever
+    written down why it was unwired, so it read as an oversight. Measured, it
+    is two-thirds a real check and one-third the same page-versus-piece mistake:
+
+    * **A repeat that runs backwards**, and **a repeat naming a bar that is not
+      in the score**, are sound on a page as much as on a piece. Both matter:
+      `expand_repeats` selects a span only when its end appears after its
+      start, so a malformed repeat is *silently ignored* — and a musician who
+      plays the repeat printed on their page is then measured against a
+      timeline that does not have it, with every bar after it judged against
+      the wrong second.
+    * **"endings come in pairs" is unsound for a page**, exactly as
+      `pickup_complement` is. A page break can fall between the first and the
+      second ending, which is ordinary; the repeat that opens on one page and
+      closes on another is the case `ScoreJson.unclosed_repeat_starts` exists
+      for.
+
+    So wiring it as it stands would flag ordinary pages, and wiring the first
+    two rules alone is a sentence a musician reads — a §2 decision, not a
+    refactor. Recorded here rather than guessed at, and this test is what stops
+    the function being deleted as dead or wired as correct.
+    """
+    import app.routers.scores as scores_module
+    from app.services.ocr.validate import repeat_balance
+    from app.services.score_schema import Repeat
+
+    source = Path(scores_module.__file__).read_text()
+    assert "repeat_balance" not in source, (
+        "the repeat rule is now reachable from the router — see this test's "
+        "docstring: its ending-pair rule flags any page split between a first "
+        "and a second ending"
+    )
+
+    def score(repeats: list[Repeat]) -> ScoreJson:
+        return ScoreJson(
+            time_signature="4/4",
+            clef="treble",
+            ocr_confidence=1.0,
+            measures=[
+                Measure(
+                    measure_number=n,
+                    notes=[Note(pitch="A4", duration="quarter") for _ in range(4)],
+                )
+                for n in (1, 2, 3)
+            ],
+            repeats=repeats,
+        )
+
+    # Sound, and worth having: a span that runs backwards, and one naming a bar
+    # that was never read. `expand_repeats` drops both without a word.
+    assert repeat_balance(score([Repeat(start_measure=3, end_measure=1, type="repeat")]))
+    assert repeat_balance(score([Repeat(start_measure=1, end_measure=9, type="repeat")]))
+
+    # An ordinary, correct repeat says nothing.
+    assert repeat_balance(score([Repeat(start_measure=1, end_measure=3, type="repeat")])) == []
+
+    # Unsound on a page: a first ending whose second ending is printed overleaf.
+    # This is the complaint that stops the whole function being wired as it is.
+    overleaf = repeat_balance(
+        score([Repeat(start_measure=2, end_measure=3, type="first_ending")])
+    )
+    assert overleaf and "endings come in pairs" in overleaf[0]

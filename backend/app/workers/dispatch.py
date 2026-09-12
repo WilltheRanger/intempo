@@ -8,9 +8,14 @@ you end up unable to change them.
 **Why there is a choice at all.** The instance this deploys to has 512 MB for
 the *whole* application, and one analysis peaks near 460 — so two musicians
 finishing takes within a few seconds of each other is an out-of-memory kill,
-and `BackgroundTasks` runs in the web process, so it takes sign-in down with
-it rather than just the analysis. An OMR model alongside that does not fit at
-any size.
+and this work runs in the web process, so it takes sign-in down with it rather
+than just the analysis. An OMR model alongside that does not fit at any size.
+
+That paragraph stood here from the beginning and **nothing enforced it** until
+2026-09-10: analyses went to `BackgroundTasks`, which is Starlette's
+forty-thread pool with no count kept, so "two at once" was not the reachable
+state — forty was. `_WorkerPool` below is the enforcement, and it is the same
+one reading a page has had since it learned the same thing first.
 
 **What this host needs to use the remote runtime.** The `modal` client
 library, which is a dependency of the API for this reason alone — nothing
@@ -32,6 +37,7 @@ import logging
 import os
 import queue
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
 
@@ -229,68 +235,118 @@ def _spawn_transcription_on_modal(score_id: str) -> str | None:
     return getattr(call, "object_id", None) or ""
 
 
-#: Pages waiting to be read here, and the threads that read them.
-#:
-#: **Its own threads, not Starlette's.** Reading a page takes tens of seconds
-#: and a scan that arrives while the readers are busy waits by *blocking a
-#: thread* (`_scan_slots` in the runner). Starlette's threadpool is where every
-#: request handler in this API now runs, so borrowing threads from it to hold a
-#: queue would trade the event loop the handlers were just taken off for a pool
-#: they can be starved out of — the same outage with more steps. Waiting happens
-#: in `_pending`, which holds no thread at all.
-#:
-#: **Daemon threads, and that is the load-bearing word.** The obvious shape here
-#: is a `ThreadPoolExecutor`, and it is wrong for this: it registers an `atexit`
-#: hook that **joins its workers**, so a process asked to exit while a page is
-#: being read blocks until the read finishes. Measured: a task sleeping eight
-#: seconds delays `sys.exit(0)` by eight seconds. That is a deploy or a restart
-#: hanging for the length of a transcription — tens of seconds now, and up to
-#: the vision SDK's ten-minute default if that chain is ever turned back on.
-#: Introducing a stuck shutdown while removing stuck requests is not a trade.
-#:
-#: A process that goes down mid-read leaves the row `reading`, which
-#: `sweep_stuck_transcriptions` already understands and recovers. That is the
-#: same ending a crash has always had, and the same recovery.
-_pending: queue.Queue[str] = queue.Queue()
+class _WorkerPool:
+    """Work waiting to run here, and the fixed set of threads that run it.
 
-_readers_lock = threading.Lock()
-_readers_started = False
+    **Its own threads, not Starlette's.** Both kinds of work here take tens of
+    seconds, and one that arrives while the workers are busy has to wait
+    somewhere. Starlette's threadpool is where every request handler in this
+    API now runs, so borrowing threads from it to hold a queue would trade the
+    event loop the handlers were just taken off for a pool they can be starved
+    out of — the same outage with more steps. Waiting happens in the queue,
+    which holds no thread at all.
 
+    **Daemon threads, and that is the load-bearing word.** The obvious shape
+    here is a `ThreadPoolExecutor`, and it is wrong for this: it registers an
+    `atexit` hook that **joins its workers**, so a process asked to exit while
+    a job is running blocks until it finishes. Measured: a task sleeping eight
+    seconds delays `sys.exit(0)` by eight seconds. That is a deploy or a
+    restart hanging for the length of a transcription — tens of seconds now,
+    and up to the vision SDK's ten-minute default if that chain is ever turned
+    back on. Introducing a stuck shutdown while removing stuck requests is not
+    a trade.
 
-def _reader_loop() -> None:
-    """Take pages off the queue and read them, forever."""
-    while True:
-        score_id = _pending.get()
-        try:
-            _decide_and_read(score_id)
-        except Exception:  # noqa: BLE001 — a queued read must not die unrecorded
-            # Nothing holds a handle on this work, so an exception that escaped
-            # here would vanish in silence: the row would stay `queued` and the
-            # screen would go on polling a question already answered badly.
-            log.exception("score %s: reading it could not be started", score_id)
-        finally:
-            _pending.task_done()
+    A process that goes down mid-job leaves the row `reading` or `processing`,
+    which the sweepers already understand and recover. That is the same ending
+    a crash has always had, and the same recovery. **Queued work is lost the
+    same way and recovered the same way** — `sweep_stuck_analyses` matches
+    `queued` as well as `processing`, and `sweep_stuck_transcriptions` matches
+    `queued` as well as `reading`, so a job that never reached a thread is a
+    row that stops being `queued` on the same timer as one that did.
 
+    **One class, two pools, because this shape was written twice and applied
+    once.** Reading a page has been bounded since 2026-08; analysing a take —
+    heavier by a factor of five and on the same 40-thread pool — was still
+    going to `BackgroundTasks` unbounded. Two copies of a rule is how the
+    second one stops being updated, and this repository has already paid that
+    bill in a pair of fetch functions where only one of them checked a
+    redirect.
 
-def _ensure_readers() -> None:
-    """Start the reader threads, once, the first time a page needs one.
-
-    Lazily, not at import. `transcription_runner` imports this module and the
-    Modal container imports that, so threads created at import would be created
-    in a container that reads its one page on the main thread and exits.
-
-    Sized by the same memory ceiling `_scan_slots` enforces: reading a page
-    peaks around 81 MB on the vision path, on an instance with 512 MB.
+    Threads start lazily, not at import. `transcription_runner` imports this
+    module and the Modal container imports that, so threads created at import
+    would be created in a container that does its one job on the main thread
+    and exits.
     """
-    global _readers_started
-    with _readers_lock:
-        if _readers_started:
-            return
-        for index in range(max(1, settings.TRANSCRIPTION_MAX_CONCURRENT)):
-            threading.Thread(
-                target=_reader_loop, name=f"transcribe-{index}", daemon=True
-            ).start()
-        _readers_started = True
+
+    def __init__(
+        self,
+        name: str,
+        run: Callable[[str], None],
+        size: Callable[[], int],
+    ) -> None:
+        self._name = name
+        self._run = run
+        # A callable rather than an int, so a test that changes the setting
+        # gets the setting it changed. Read once, at the moment the threads are
+        # created, which is the only moment it can matter.
+        self._size = size
+        self._pending: queue.Queue[str] = queue.Queue()
+        self._lock = threading.Lock()
+        self._started = False
+
+    def submit(self, job_id: str) -> None:
+        self._ensure_started()
+        self._pending.put(job_id)
+
+    def _loop(self) -> None:
+        while True:
+            job_id = self._pending.get()
+            try:
+                self._run(job_id)
+            except Exception:  # noqa: BLE001 — queued work must not die unrecorded
+                # Nothing holds a handle on this work, so an exception that
+                # escaped here would vanish in silence: the row would stay
+                # `queued` and the screen would go on polling a question
+                # already answered badly.
+                log.exception("%s %s: could not be started", self._name, job_id)
+            finally:
+                self._pending.task_done()
+
+    def _ensure_started(self) -> None:
+        with self._lock:
+            if self._started:
+                return
+            for index in range(max(1, self._size())):
+                threading.Thread(
+                    target=self._loop, name=f"{self._name}-{index}", daemon=True
+                ).start()
+            self._started = True
+
+
+#: Pages waiting to be read here. Sized by the memory ceiling `_scan_slots`
+#: enforces in the runner: a read peaks around 81 MB on the vision path.
+_reading = _WorkerPool(
+    "transcribe",
+    lambda score_id: _decide_and_read(score_id),
+    lambda: settings.TRANSCRIPTION_MAX_CONCURRENT,
+)
+
+#: Takes waiting to be analysed here. **One at a time by default**, because
+#: `analyze()` peaks near 460 MB against this instance's 512 — see
+#: `ANALYSIS_MAX_CONCURRENT`, and the paragraph at the top of this file that
+#: has named the consequence since before anything enforced it.
+_analysing = _WorkerPool(
+    "analyse",
+    lambda analysis_id: _run_analysis_here(analysis_id),
+    lambda: settings.ANALYSIS_MAX_CONCURRENT,
+)
+
+
+def _run_analysis_here(analysis_id: str) -> None:
+    """Import at call time, for the reason `_ensure_started` is lazy."""
+    from app.workers.analysis_runner import run_analysis
+
+    run_analysis(analysis_id)
 
 
 def _decide_and_read(score_id: str) -> None:
@@ -365,11 +421,10 @@ def start_transcription(score_id: str) -> None:
     worse at reading and it is not nothing, and a musician who has just
     photographed a page should not lose it to a deployment setting.
     """
-    _ensure_readers()
-    _pending.put(score_id)
+    _reading.submit(score_id)
 
 
-def start_analysis(analysis_id: str, background_tasks) -> None:
+def start_analysis(analysis_id: str) -> None:
     """Start the work, wherever it runs.
 
     **Falls back to in-process if the remote runtime refuses.** A musician who
@@ -382,9 +437,16 @@ def start_analysis(analysis_id: str, background_tasks) -> None:
     202 with an id and nothing else, so it is already the cheapest request in
     the app, while `POST /v1/scores` answers with a row the musician is looking
     at.
-    """
-    from app.workers.analysis_runner import run_analysis
 
+    **It used to take a `BackgroundTasks` and hand the work to it, and that was
+    the unbounded half of a rule this file already stated.** Starlette runs a
+    background task on the same forty-thread pool every request handler uses,
+    with no ceiling on how many of them run at once, so forty simultaneous
+    takes was a reachable state rather than a hypothetical one — at ~460 MB
+    each against 512 MB total, so was two. The queue is what makes the
+    ceiling real, and it is the same queue reading has used since it learned
+    the same lesson.
+    """
     if ANALYSIS_RUNTIME == "modal" and _spawn_on_modal(analysis_id):
         log.info("analysis %s: started on Modal", analysis_id)
         return
@@ -392,7 +454,4 @@ def start_analysis(analysis_id: str, background_tasks) -> None:
     if ANALYSIS_RUNTIME == "modal":
         log.warning("analysis %s: falling back to in-process", analysis_id)
 
-    # Runs after the response is sent. `run_analysis` is sync, so FastAPI
-    # executes it in a worker thread and the CPU-bound `analyze()` never
-    # blocks the event loop.
-    background_tasks.add_task(run_analysis, analysis_id)
+    _analysing.submit(analysis_id)

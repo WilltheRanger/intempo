@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { captureSession, subscribeToCaptureSession } from './captureSession';
+import {
+  captureSession,
+  MAX_SCAN_PAGES,
+  subscribeToCaptureSession,
+} from './captureSession';
 
 /**
  * The scan between the shutter and the upload.
@@ -167,13 +171,247 @@ describe('importing pages', () => {
     expect(seen).toEqual([3]);
   });
 
-  it('clears the upload from the scan it replaces', () => {
-    // A signed URL from the previous scan would let the save go through
-    // against a page nobody chose.
+  it('clears the uploaded keys from the scan it replaces', () => {
+    // A key from the previous scan would let the save go through against a
+    // page nobody chose.
     scanOf(1);
-    captureSession.setUploadedImageUrl('https://example.test/signed');
+    captureSession.setUploadedImageKeys([
+      'user/page-1.jpg',
+      'user/page-2.jpg',
+    ]);
 
     captureSession.importAll([PAGE(5)]);
-    expect(captureSession.uploadedImageUrl()).toBeNull();
+    expect(captureSession.uploadedImageKeys()).toEqual([]);
+  });
+
+  it('preserves every uploaded object key in page order', () => {
+    const keys = [
+      'user/page-1.jpg',
+      'user/page-2.jpg',
+      'user/page-3.jpg',
+    ];
+
+    captureSession.setUploadedImageKeys(keys);
+
+    expect(captureSession.uploadedImageKeys()).toEqual(keys);
+  });
+
+  it('refuses an imported score beyond the server page limit', () => {
+    expect(() => scanOf(MAX_SCAN_PAGES + 1)).toThrow(
+      `at most ${MAX_SCAN_PAGES} pages`,
+    );
+    expect(captureSession.current()).toEqual([]);
+  });
+
+  it('does not append a camera page beyond the server page limit', () => {
+    scanOf(MAX_SCAN_PAGES);
+
+    expect(captureSession.capture(PAGE(MAX_SCAN_PAGES + 1))).toBe('full');
+    expect(captureSession.current()).toHaveLength(MAX_SCAN_PAGES);
+  });
+});
+
+describe('editing pages after they were uploaded', () => {
+  const KEYS = [
+    'user/page-1.jpg',
+    'user/page-2.jpg',
+    'user/page-3.jpg',
+  ];
+
+  function uploadedScan(): void {
+    scanOf(3);
+    captureSession.setUploadedImageKeys(KEYS);
+  }
+
+  it('invalidates the old order when pages are reordered', () => {
+    uploadedScan();
+    captureSession.move(captureSession.current()[0].id, 1);
+
+    expect(captureSession.uploadedImageKeys()).toEqual([]);
+    expect(sources()).toEqual([PAGE(2), PAGE(1), PAGE(3)]);
+  });
+
+  it('invalidates the old photograph when a page is retaken', () => {
+    uploadedScan();
+    const second = captureSession.current()[1];
+
+    captureSession.beginRetake(second.id);
+    captureSession.capture('file:///retaken.jpg');
+
+    expect(captureSession.uploadedImageKeys()).toEqual([]);
+    expect(sources()[1]).toBe('file:///retaken.jpg');
+  });
+
+  it('invalidates the uploaded set when a page is removed', () => {
+    uploadedScan();
+    captureSession.remove(captureSession.current()[1].id);
+
+    expect(captureSession.uploadedImageKeys()).toEqual([]);
+    expect(sources()).toEqual([PAGE(1), PAGE(3)]);
+  });
+
+  it('keeps the upload while a retake is only considered and cancelled', () => {
+    uploadedScan();
+    const second = captureSession.current()[1];
+
+    captureSession.beginRetake(second.id);
+    captureSession.cancelRetake();
+
+    expect(captureSession.uploadedImageKeys()).toEqual(KEYS);
+    expect(sources()).toEqual([PAGE(1), PAGE(2), PAGE(3)]);
+  });
+
+  it('keeps the upload after a no-op page command', () => {
+    uploadedScan();
+    captureSession.move(captureSession.current()[0].id, -1);
+    captureSession.remove('not-a-page');
+
+    expect(captureSession.uploadedImageKeys()).toEqual(KEYS);
+  });
+});
+
+describe('attaching pages to an existing piece', () => {
+  it('keeps the target through an imported scan', () => {
+    captureSession.importAll([PAGE(1), PAGE(2)], {
+      attachToPieceId: 'piece-manual',
+    });
+
+    expect(captureSession.attachmentPieceId()).toBe('piece-manual');
+  });
+
+  it('keeps the target through a camera scan', () => {
+    captureSession.reset({ attachToPieceId: 'piece-manual' });
+    captureSession.capture(PAGE(1));
+
+    expect(captureSession.attachmentPieceId()).toBe('piece-manual');
+  });
+
+  it('clears the target when an ordinary scan starts', () => {
+    captureSession.reset({ attachToPieceId: 'piece-manual' });
+    captureSession.reset();
+
+    expect(captureSession.attachmentPieceId()).toBeNull();
+  });
+});
+
+describe('an empty session', () => {
+  it('knows the difference between emptied and never filled', () => {
+    // The two look identical from `current()` — both are `[]` — and the review
+    // screen says different things about them. Telling someone they removed
+    // pages they never took is a small lie about their own actions.
+    captureSession.reset();
+    expect(captureSession.hasHeldPages()).toBe(false);
+
+    captureSession.capture(PAGE(1));
+    captureSession.remove(captureSession.current()[0].id);
+
+    expect(captureSession.current()).toHaveLength(0);
+    expect(captureSession.hasHeldPages()).toBe(true);
+  });
+
+  it('forgets once a new scan starts', () => {
+    captureSession.capture(PAGE(1));
+    captureSession.reset();
+
+    expect(captureSession.hasHeldPages()).toBe(false);
+  });
+
+  it('counts an import as having held pages', () => {
+    captureSession.reset();
+    captureSession.importAll([PAGE(1), PAGE(2)]);
+
+    expect(captureSession.hasHeldPages()).toBe(true);
+  });
+
+  it('does not carry the answer from the scan before it', () => {
+    // `importAll` replaces the session, so what the previous one held is not
+    // a fact about this one.
+    captureSession.capture(PAGE(1));
+    captureSession.importAll([]);
+
+    expect(captureSession.hasHeldPages()).toBe(false);
+  });
+});
+
+describe('adding library pages to a scan already in progress', () => {
+  /**
+   * **The bug this is for, in a sentence a musician would use:** "why can't I
+   * upload the 2nd page as an image?"
+   *
+   * `importAll` resets, because importing normally *starts* a piece — and
+   * that reset is load-bearing, since an abandoned scan and one being added to
+   * are the same array from inside this module. The consequence was that a
+   * photograph already on the phone could only join a scan in the single
+   * action that began it. Go back to add page two from the library and page
+   * one was gone.
+   */
+  it('keeps the pages already captured, and puts the new ones after them', () => {
+    captureSession.capture(PAGE(1));
+
+    expect(captureSession.appendAll([PAGE(2), PAGE(3)])).toBe(2);
+
+    expect(sources()).toEqual([PAGE(1), PAGE(2), PAGE(3)]);
+  });
+
+  it('still resets when the caller asked to import rather than to add', () => {
+    // The two live side by side on purpose. Losing this distinction is how an
+    // abandoned scan absorbs the first page of the next piece.
+    captureSession.capture(PAGE(1));
+
+    captureSession.importAll([PAGE(9)]);
+
+    expect(sources()).toEqual([PAGE(9)]);
+  });
+
+  it('takes what fits and reports the number, rather than dropping the tail', () => {
+    // The picker's own `selectionLimit` cannot know how many pages the scan
+    // already holds, so a selection can be partly refused — and the screen can
+    // only say so if it is told how many were taken.
+    scanOf(MAX_SCAN_PAGES - 2);
+
+    expect(captureSession.appendAll([PAGE(90), PAGE(91), PAGE(92)])).toBe(2);
+
+    expect(captureSession.current()).toHaveLength(MAX_SCAN_PAGES);
+    expect(sources().slice(-2)).toEqual([PAGE(90), PAGE(91)]);
+  });
+
+  it('refuses everything, and says so, when the scan is already full', () => {
+    scanOf(MAX_SCAN_PAGES);
+
+    expect(captureSession.appendAll([PAGE(99)])).toBe(0);
+
+    expect(captureSession.current()).toHaveLength(MAX_SCAN_PAGES);
+  });
+
+  it('gives every added page an id of its own, so reorder and delete still work', () => {
+    captureSession.capture(PAGE(1));
+    captureSession.appendAll([PAGE(2), PAGE(3)]);
+
+    const ids = captureSession.current().map((page) => page.id);
+
+    expect(new Set(ids).size).toBe(3);
+  });
+
+  it('leaves a pending retake armed, because appending does not answer it', () => {
+    // Clearing it here would silently cancel a retake the musician asked for,
+    // which is the shape of the bug `capture` exists to prevent.
+    captureSession.capture(PAGE(1));
+    captureSession.capture(PAGE(2));
+    captureSession.beginRetake(captureSession.current()[0].id);
+
+    captureSession.appendAll([PAGE(3)]);
+    expect(captureSession.capture(PAGE(8))).toBe('replaced');
+
+    expect(sources()).toEqual([PAGE(8), PAGE(2), PAGE(3)]);
+  });
+
+  it('tells the empty-state which of its two sentences to use', () => {
+    // `hasHeldPages` is what separates "you removed every page" from "no pages
+    // yet". Pages that arrived by import are pages that were held.
+    captureSession.reset();
+    captureSession.appendAll([PAGE(1)]);
+    captureSession.remove(captureSession.current()[0].id);
+
+    expect(captureSession.hasHeldPages()).toBe(true);
   });
 });

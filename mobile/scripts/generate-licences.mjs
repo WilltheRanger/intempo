@@ -13,7 +13,28 @@ import { dirname, join } from 'node:path';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 
-const names = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).sort();
+const names = Object.keys({
+  ...pkg.dependencies,
+  ...pkg.devDependencies,
+}).sort();
+
+/**
+ * Things the app ships that npm does not know about.
+ *
+ * Bravura is a font file checked into `assets/fonts`, subset in-repo by
+ * `tools/subset-bravura.py`. It is redistributed under the SIL Open Font
+ * License, which requires the notice — and a licence page that lists every
+ * MIT package while omitting the one file with an attribution requirement
+ * would be exactly backwards.
+ */
+const VENDORED = [
+  { name: 'Bravura (music font)', version: 'subset', licence: 'OFL-1.1' },
+  {
+    name: 'GeneralUser GS (string SoundFonts)',
+    version: '2.0.3 subset',
+    licence: 'GeneralUser GS License v2.0',
+  },
+];
 
 const entries = names.flatMap((name) => {
   let manifest;
@@ -21,17 +42,26 @@ const entries = names.flatMap((name) => {
     manifest = JSON.parse(
       readFileSync(join(root, 'node_modules', name, 'package.json'), 'utf8'),
     );
-  } catch {
-    return [];
+  } catch (error) {
+    // Loudly, because this file is a legal notice. Swallowing the read dropped
+    // the package from the page silently, so running the generator against a
+    // partial install *deleted* attributions and reported success — the same
+    // failure as never running it, with a commit behind it.
+    throw new Error(
+      `${name} is declared in package.json but not installed, so its licence ` +
+        `cannot be read. Run \`npm ci\` and try again.`,
+      { cause: error },
+    );
   }
   const licence =
     typeof manifest.license === 'string'
       ? manifest.license
-      : manifest.license?.type ?? 'See package';
+      : (manifest.license?.type ?? 'See package');
   return [{ name, version: manifest.version, licence }];
 });
 
-const body = entries
+const body = [...entries, ...VENDORED]
+  .sort((a, b) => a.name.localeCompare(b.name))
   .map(
     (e) =>
       `  { name: '${e.name}', version: '${e.version}', licence: '${e.licence}' },`,

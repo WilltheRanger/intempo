@@ -27,7 +27,20 @@ import type { manipulateAsync } from 'expo-image-manipulator';
  */
 
 export interface ShrinkAttempt {
-  /** Longest edge in pixels, or null to leave the size alone. */
+  /**
+   * Longest edge in pixels, or null to leave the size alone.
+   *
+   * **The longest edge, not the width, and that is a correction.** Until
+   * 2026-09-04 the number went straight into `resize: { width }`, which
+   * `expo-image-manipulator` documents as *"values correspond to the result
+   * image dimensions"* — it sets the width to exactly that and derives the
+   * height from the ratio, in either direction. Sheet music is photographed
+   * portrait, so the resulting long edge was the rung times the aspect ratio:
+   * a 4284x5712 page asked for 2400 came back 2400x3200. Every word in this
+   * file, `MIN_LONG_EDGE` included, described a bound that was not being
+   * applied, and the docstring below computed its own worked example from the
+   * long edge — the arithmetic was right and the code was not.
+   */
   maxEdge: number | null;
   /** JPEG quality, 0..1. */
   quality: number;
@@ -42,6 +55,13 @@ export interface ShrinkAttempt {
  * is deliberate: the server measures the staff spacing and says so in a
  * sentence about *this* page, which is a far better answer than refusing to
  * send anything at all.
+ *
+ * That 10.5 is what the bound now actually produces. While the rung was going
+ * into `resize: { width }` the same page came back at 3200 on its long edge
+ * and about 14 px of spacing — more generous than intended, and reached by
+ * accident, which is why it could not be relied on: on a *landscape* page the
+ * width is the long edge and the same code was as aggressive as it looks.
+ * Orientation decided how hard a page was shrunk, and nothing said so.
  */
 export const MIN_LONG_EDGE = 2400;
 
@@ -49,8 +69,14 @@ export const MIN_LONG_EDGE = 2400;
  * `SaveFormat.JPEG`, as its value.
  *
  * A PNG re-encoded as PNG saves almost nothing, and a 14 MB screenshot of a
- * page is the other way to arrive here. `shrink.test.ts` pins this against the
- * package's own enum so a rename cannot pass silently.
+ * page is the other way to arrive here.
+ *
+ * This used to claim `shrink.test.ts` pinned it "against the package's own
+ * enum", and that was not true: the test mocks `SaveFormat: { JPEG: 'jpeg' }`
+ * and compares against the mock, which agrees with itself whatever the package
+ * says. The check that actually asks the package is in
+ * `data/profile/avatarImage.test.ts`, which reads the declaration out of its
+ * `.d.ts` — and it covers this literal too, since they are the same string.
  */
 const JPEG = 'jpeg' as Parameters<typeof manipulateAsync>[2] extends
   | { format?: infer F }
@@ -78,6 +104,39 @@ export const SHRINK_LADDER: readonly ShrinkAttempt[] = [
 /** A page already small enough is never re-encoded — see `shrinkToFit`. */
 export function needsShrinking(size: number, limit: number): boolean {
   return size > limit;
+}
+
+/** What `manipulateAsync` reports back about the image it just wrote. */
+export interface PageSize {
+  width: number;
+  height: number;
+}
+
+/**
+ * The width to ask for so this page's *long* edge lands on `maxEdge`, or null.
+ *
+ * Null means do not resize at all, and it covers the two cases that must not
+ * turn into a resize call:
+ *
+ * - **The dimensions are unknown.** Without them there is no way to tell which
+ *   edge is long, and guessing is how the bound came to depend on orientation
+ *   in the first place.
+ * - **The page is already inside the rung.** `resize` sets the dimension it is
+ *   given, so a 2480-wide scan handed a rung of 4000 comes back *enlarged* to
+ *   4000 across — a bigger file, from a step whose entire purpose is a smaller
+ *   one, and then the same again at 3000. The page that reaches the pixel
+ *   rungs is by definition one that would not fit; sending it back up is the
+ *   worst available move.
+ */
+export function widthFor(page: PageSize | null, maxEdge: number): number | null {
+  if (!page || page.width <= 0 || page.height <= 0) {
+    return null;
+  }
+  const longEdge = Math.max(page.width, page.height);
+  if (longEdge <= maxEdge) {
+    return null;
+  }
+  return Math.max(1, Math.round((page.width * maxEdge) / longEdge));
 }
 
 export interface Shrunk {
@@ -113,16 +172,33 @@ export async function shrinkToFit(
     manipulate ?? (await import('expo-image-manipulator')).manipulateAsync;
 
   let best: Shrunk | null = null;
+  // The page's own dimensions, learned once from the first attempt that
+  // reports them — which is a full-size one, because the ladder opens with
+  // quality-only rungs and a pixel rung with nothing to scale from is skipped.
+  // Every rung re-encodes the *original* `uri`, so the page never changes
+  // underneath; reading the dimensions again off a resized result would only
+  // fold that result's rounding into every rung after it.
+  let page: PageSize | null = null;
+
   for (const attempt of SHRINK_LADDER) {
-    const actions = attempt.maxEdge
-      ? [{ resize: { width: attempt.maxEdge } }]
-      : [];
+    const width = attempt.maxEdge === null ? null : widthFor(page, attempt.maxEdge);
+    if (attempt.maxEdge !== null && width === null) {
+      // Nothing to scale from, or the page is already inside this rung.
+      // Skipping is the only safe answer: `resize` enlarges as readily as it
+      // shrinks, and a rung that made the file bigger would spend a full
+      // re-encode to move away from fitting.
+      continue;
+    }
+    const actions = width === null ? [] : [{ resize: { width } }];
     const result = await encode(uri, actions, {
       compress: attempt.quality,
       // The literal rather than `SaveFormat.JPEG`, which would need the module
       // at import time — see the note on the import above. Pinned by a test.
       format: JPEG,
     });
+    if (page === null && result.width > 0 && result.height > 0) {
+      page = { width: result.width, height: result.height };
+    }
     const shrunk = await measure(result.uri);
     best = { uri: result.uri, size: shrunk, changed: true };
     if (shrunk <= limit) {

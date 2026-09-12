@@ -107,14 +107,18 @@ def test_the_renumbering_sentence_does_not_displace_the_others() -> None:
     """A page can lose notes *and* be misnumbered, and the dropped-note
     sentence names the bar — by its new number, since it is read off the
     measures after they are renumbered."""
-    double_flat = (
-        "<note><pitch><step>E</step><alter>-2</alter><octave>3</octave></pitch>"
+    # A *triple* accidental. This used to be a double flat, which the pitch
+    # grammar has since learned to spell — so the note is no longer dropped and
+    # the sentence this test is about no longer appeared. The subject is the two
+    # sentences coexisting, not which note it is that goes missing.
+    unspellable = (
+        "<note><pitch><step>E</step><alter>3</alter><octave>3</octave></pitch>"
         "<duration>4</duration><type>quarter</type></note>"
     )
     bars = (
         f'<measure number="1">{_ATTRS}{_FOUR}</measure>'
         f'<measure number="1">{_FOUR}</measure>'
-        f'<measure number="1">{double_flat}{_FOUR}</measure>'
+        f'<measure number="1">{unspellable}{_FOUR}</measure>'
     )
     score = score_json_from_musicxml(
         "<?xml version='1.0'?><score-partwise version='4.0'>"

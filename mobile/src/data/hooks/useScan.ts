@@ -1,13 +1,14 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { pieceKeys } from './usePieces';
-import { createScore } from '../api/scores';
+import { attachScorePages, createScore } from '../api/scores';
 import { IS_LIVE_BACKEND } from '../environment';
 import type { Piece } from '../types';
+import { toPiece } from '../sources/api';
 
 export interface TranscribeInput {
-  /** The signed upload URL from `uploadPage`. Expires five minutes after issue. */
-  imageUrl: string;
+  /** Ordered owner-prefixed object keys from `uploadPage`. */
+  imageKeys: string[];
   title: string;
   composer: string | null;
   /** e.g. "I. Adagio". Null for music with no movements. */
@@ -15,11 +16,11 @@ export interface TranscribeInput {
 }
 
 /**
- * Creating a score from an uploaded page — the step that runs OCR.
+ * Creating a score from uploaded pages — the step that runs OCR.
  *
  * Not on `PieceSource` like the other writes, and deliberately so: there is no
  * fixture equivalent. Every other seam has two honest implementations, but
- * "read this photograph" cannot be faked without inventing notes that were
+ * "read these photographs" cannot be faked without inventing notes that were
  * never on the page, and a fabricated transcription is the single most
  * misleading thing this app could produce. A build with no backend refuses
  * instead — see below.
@@ -41,29 +42,50 @@ export function useTranscribePage() {
           'Transcription needs the backend. This build is running on sample data, so there is nothing to read the photograph. Add a piece manually instead.',
         );
       }
+      if (input.imageKeys.length === 0) {
+        throw new Error('At least one uploaded page is required.');
+      }
+      const images =
+        input.imageKeys.length === 1
+          ? { image_url: input.imageKeys[0] }
+          : { image_urls: input.imageKeys };
       const score = await createScore({
-        image_url: input.imageUrl,
+        ...images,
         title: input.title,
         composer: input.composer,
         movement: input.movement,
       });
-      return {
-        id: score.id,
-        title: score.title,
-        composer: score.composer,
-        movement: score.movement,
-        lastPracticedAt: null,
-        thumbnail: score.image_url,
-        markedBpm: score.score_json?.bpm_hint ?? null,
-        score: score.score_json ?? null,
-        transcriptionStatus: score.transcription_status ?? 'done',
-        transcriptionStage: score.transcription_stage ?? null,
-        transcriptionError: score.transcription_error ?? null,
-        transcriptionAccepted: Boolean(score.transcription_accepted_at),
-        pageImageDiscarded: Boolean(score.page_image_discarded_at),
-      };
+      return toPiece(score);
     },
     onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: pieceKeys.all });
+    },
+  });
+}
+
+/**
+ * Reads uploaded pages into an existing scoreless piece instead of duplicating
+ * it. This also repairs an initial transcription that failed before producing
+ * any notes; the backend protects usable notation from replacement.
+ */
+export function useAttachScorePages(pieceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation<Piece, Error, string[]>({
+    mutationFn: async (imageKeys) => {
+      if (!IS_LIVE_BACKEND) {
+        throw new Error('Attaching sheet music needs the backend.');
+      }
+      if (!pieceId || imageKeys.length === 0) {
+        throw new Error('Choose at least one page to attach.');
+      }
+      const images =
+        imageKeys.length === 1
+          ? { image_url: imageKeys[0] }
+          : { image_urls: imageKeys };
+      return toPiece(await attachScorePages(pieceId, images));
+    },
+    onSuccess: (piece) => {
+      queryClient.setQueryData(pieceKeys.detail(piece.id), piece);
       void queryClient.invalidateQueries({ queryKey: pieceKeys.all });
     },
   });

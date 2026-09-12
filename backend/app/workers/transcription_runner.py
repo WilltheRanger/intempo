@@ -50,9 +50,12 @@ log = logging.getLogger("intempo.transcription")
 
 #: How many pages may be read at once, process-wide.
 #:
-#: **A memory ceiling, not a throughput knob.** `BackgroundTasks` runs sync
-#: work in Starlette's threadpool, which holds 40 threads — so without this,
-#: forty people scanning at once means forty simultaneous transcriptions.
+#: **A memory ceiling, not a throughput knob.** This work reached here through
+#: `BackgroundTasks` when the limit was written — Starlette's threadpool, 40
+#: threads, no count kept — so without it, forty people scanning at once meant
+#: forty simultaneous transcriptions. `dispatch._reading` is the pool now and
+#: sizes itself from this same number; the ceiling is enforced twice, at the
+#: door and around the work.
 #: Measured at ~81 MB per in-flight scan on the vision path alone, mostly
 #: Pillow decode buffers: a 12 MP photograph is ~36 MB as RGB before anything
 #: copies it. Forty of those is 3.2 GB, on an instance that has 512 MB.
@@ -86,6 +89,25 @@ STAGE_READING_HUMAN = "Reading the notation"
 #: `reading:system 3 of 7`. Matched rather than string-compared because the two
 #: numbers are the point.
 _SYSTEM_COUNT = re.compile(rf"^{re.escape(STAGE_READING)}:system (\d+) of (\d+)$")
+
+
+def _reading_page(page_number: int, total: int) -> str:
+    """The words for the page a multi-page scan is on — `Reading page 2 of 3`.
+
+    **A count, in the words, because there is no other way to say it.** A scan
+    is every page of one part and they are read one after another, so a
+    seven-page part is seven times the wait a one-page part was. All of it used
+    to report "Reading the notation" — true from the first page to the last, and
+    a bar that did not move once across the whole of it. The comment in
+    `_read_one_page` called that "a limitation rather than a design" and named
+    this as the fix, waiting on the UI gate; the gate was given on 2026-08-29.
+
+    The app reads the count as pages *finished*, so this places the bar at
+    `(n - 1) / total` of the reading band — page 2 means page 1 is read and page
+    2 has not started. See `fixtures/stages/parity.json`, which both sides are
+    tested against.
+    """
+    return f"Reading page {page_number} of {total}"
 
 
 def _human_stage(stage: str) -> str:
@@ -124,6 +146,22 @@ def _human_stage(stage: str) -> str:
 #: So the reason is derived from what actually happened, and the photograph is
 #: only blamed when nothing more specific is known.
 _FAILURE_REASONS: tuple[tuple[str, str], ...] = (
+    (
+        # An imported file, not a photograph — so the default advice about a
+        # flatter, better-lit shot is not merely unhelpful here, it describes
+        # a step that does not exist in this flow. The refusal itself is
+        # deliberate: `score_json_from_musicxml` will not expand XML entities,
+        # because a small file defining nested ones expands to gigabytes and
+        # takes the API down. Re-exporting is the real way out, and every
+        # notation program writes entity-free MusicXML.
+        # Lowercase, because `_why_it_failed` lowercases the haystack and
+        # not the needle — a capitalised needle matches nothing, ever,
+        # which is the third time this table has been given one that
+        # could not fire.
+        "defines xml entities",
+        "This file defines XML entities, which InTempo does not read. Exporting "
+        "it again from your notation software produces one it can.",
+    ),
     (
         "cut off",
         "This page has more notes than one reading can hold. Photographing "
@@ -168,6 +206,44 @@ _FAILURE_REASONS: tuple[tuple[str, str], ...] = (
         "The transcription service is not configured correctly. This is a "
         "fault on our side — your page is fine, and re-photographing it will "
         "not help.",
+    ),
+    (
+        # The third member of that family, and it was missing while its two
+        # siblings above were here. `OCR_PROVIDER_CHAIN=gpt4v` on a deployment
+        # is a typo in an environment variable, and every scan on it told the
+        # musician their photograph was the problem.
+        "unknown provider",
+        "The transcription service is not configured correctly. This is a "
+        "fault on our side — your page is fine, and re-photographing it will "
+        "not help.",
+    ),
+    (
+        # **The predictable runtime failure of this reader.** homr peaks at
+        # 1350 MB, measured, which is why it runs on Modal and not on the API
+        # host. A container that runs out of memory arrives here as an
+        # exception name and text, through the `{type(exc).__name__}: {exc}`
+        # channel that can carry anything — so the specific one worth naming is
+        # the one the sizing note predicts.
+        "out of memory",
+        "The machine that reads pages ran out of room on this one. That is a "
+        "fault on our side, not with your photograph — the photograph is "
+        "still here, so try reading it again.",
+    ),
+    (
+        # Reached only through homr: `score_json_from_musicxml` is run on the
+        # reader's *own* output, so unparseable XML here is the reader
+        # misbehaving. The import route raises the same words at a musician's
+        # file, but that path answers with a 422 and never reaches this table.
+        "not parseable as xml",
+        "The reader produced notation this app could not read back. That is a "
+        "fault on our side, not with your photograph — try reading it again.",
+    ),
+    (
+        # `join_pages` with nothing to join. An internal invariant, and a
+        # musician cannot photograph their way out of one.
+        "nothing to join",
+        "Something went wrong assembling this scan. That is a fault on our "
+        "side, not with your photographs — try reading it again.",
     ),
     #: The two ways a page can be *found* and still not be readable. Both say
     #: so, because the default sends the musician back to re-photograph a page
@@ -356,16 +432,26 @@ def _read_pages(client, score_id: str, urls: list[str]) -> None:
         _fail(client, score_id, "Something went wrong assembling the pages.")
         return
 
+    from app.services.ocr.pipeline import configured_reader
+
+    finished = {
+        "score_json": score.model_dump(mode="json"),
+        "ocr_confidence": score.ocr_confidence,
+        "transcription_status": "done",
+        "transcription_stage": None,
+        "transcription_error": None,
+    }
+    # **Attempted with the reader's name, retried without it.** `_update`
+    # swallows a failed write so a lost stage update cannot end a run — which is
+    # right for a stage and catastrophic here, because this is the write that
+    # stores the transcription and moves the row off `reading`. A database
+    # without 013 rejects the whole statement over one unknown column, and the
+    # scan would sit reading forever until the sweeper gave up on it.
     _update(
         client,
         score_id,
-        {
-            "score_json": score.model_dump(mode="json"),
-            "ocr_confidence": score.ocr_confidence,
-            "transcription_status": "done",
-            "transcription_stage": None,
-            "transcription_error": None,
-        },
+        {**finished, "transcription_reader": configured_reader()},
+        fallback=finished,
     )
     log.info(
         "transcription %s: %d page(s), %d measures, confidence %.2f",
@@ -411,7 +497,16 @@ def _read_one_page(
             _update(client, score_id, {"transcription_stage": _human_stage(stage)})
 
     if not single:
-        _update(client, score_id, {"transcription_stage": STAGE_READING_HUMAN})
+        # The page counter, in place of the per-stave one. Suppressing the
+        # stave reports is what keeps the two from fighting over the bar: page
+        # 2 opening at "Reading stave 1 of 9" after page 1 finished at "9 of 9"
+        # walks it backwards, which is exactly what `transcriptionProgress.ts`
+        # exists to prevent.
+        _update(
+            client,
+            score_id,
+            {"transcription_stage": _reading_page(page_number, total)},
+        )
 
     try:
         fetch_url = readable_url(image_url)
@@ -520,20 +615,41 @@ def _fetch_score(client, score_id: str) -> dict | None:
     return None
 
 
-def _update(client, score_id: str, patch: dict) -> None:
+def _update(client, score_id: str, patch: dict, *, fallback: dict | None = None) -> None:
     """Write one patch, and never let a failed write end the run.
 
     A stage update is a courtesy to whoever is watching; losing one costs a
     line of text. Losing the transcription because storage hiccuped while
     reporting progress would be an absurd trade, so this swallows rather than
     raises — and the terminal writes are logged loudly enough to notice.
+
+    `fallback` is a second, narrower patch to try when the first is refused. It
+    exists for the deploy window in front of a migration: PostgREST rejects the
+    whole statement over one column the database has not got, and swallowing
+    that on the write which stores the transcription would leave the row
+    `reading` forever. Same reasoning as `score_pages.PAGE_COLUMNS`, at the one
+    other place a write names a new column.
     """
-    try:
-        client.table("scores").update({**patch, "updated_at": _now_iso()}).eq(
-            "id", score_id
-        ).execute()
-    except Exception:  # noqa: BLE001
-        log.warning("transcription %s: could not write %s", score_id, sorted(patch), exc_info=True)
+    for attempt in (patch, fallback):
+        if attempt is None:
+            continue
+        try:
+            client.table("scores").update({**attempt, "updated_at": _now_iso()}).eq(
+                "id", score_id
+            ).execute()
+            return
+        except Exception:  # noqa: BLE001
+            if attempt is patch and fallback is not None:
+                log.warning(
+                    "transcription %s: retrying without %s",
+                    score_id,
+                    sorted(set(patch) - set(fallback)),
+                )
+                continue
+            log.warning(
+                "transcription %s: could not write %s",
+                score_id, sorted(attempt), exc_info=True,
+            )
 
 
 def _fail(client, score_id: str, reason: str) -> None:
@@ -560,8 +676,8 @@ STUCK_AFTER = timedelta(minutes=10)
 #:
 #: **Because "nothing has happened yet" is not the same fact on both sides.**
 #: In-process, a row with no progress for ten minutes means the process that was
-#: reading it is gone — `BackgroundTasks` runs here, so there is nothing else it
-#: could be waiting for. On Modal the row sits `queued` for the whole of a cold
+#: reading it is gone — the reader threads are in this process, so there is
+#: nothing else it could be waiting for. On Modal the row sits `queued` for the whole of a cold
 #: start, and a cold start is not a hang: Modal builds an image lazily, on first
 #: invocation, and this one installs homr and 151 MB of ONNX weights. That is
 #: minutes.
@@ -666,8 +782,9 @@ def sweep_stuck_transcriptions(client=None, *, now: datetime | None = None) -> i
     progress bar part-filled — permanently. Nothing was reading it. Nothing was
     ever going to.
 
-    `run_transcription` runs in `BackgroundTasks`, which is to say *in the web
-    process*, so anything that ends the process ends the read: a deploy, the
+    `run_transcription` runs on one of `dispatch`'s reader threads, which is to
+    say *in the web process*, so anything that ends the process ends the read —
+    and so does anything that ends it while the id is still queued. A deploy, the
     OOM reaper, or — the one that actually happened — a free-tier instance
     spinning down after fifteen minutes idle, which is exactly what leaving the
     screen brings about, because the polling that was keeping it awake stops

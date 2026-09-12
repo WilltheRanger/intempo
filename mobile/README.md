@@ -13,6 +13,14 @@ npm start          # then press i for the iOS simulator
 npm run typecheck  # tsc --noEmit
 ```
 
+Before committing, run the checks from the repository root — `ci.yml` has been
+blocked since 2026-09-09 and this is what stands in for it:
+
+```bash
+python3 tools/preflight.py          # the gates that need no build
+python3 tools/preflight.py --full   # and the builds, the walk and the audits
+```
+
 Optional environment variables (all have working defaults):
 
 | Variable | Default | Purpose |
@@ -97,12 +105,95 @@ artwork is the repo's own public-domain set from `fixtures/scores/` — each
 thumbnail is genuinely the piece it claims to be. See
 `fixtures/scores/SOURCES.md` for provenance.
 
+### An account with nothing in it
+
+    npm run build:web:empty        # builds into dist-empty/
+    npx serve dist-empty -l 4323 -s
+    node ../tools/audit-a11y.mjs 4323 Today Library Insights Profile
+
+`EXPO_PUBLIC_FIXTURES=empty` makes `data/sources/fixtures.ts` describe an
+account with no pieces, no takes and no insights. It is the state **every
+musician meets first** and the one every other build lacks: Today, Library and
+Insights are otherwise only ever seen with a library, a take and thirty days of
+trend behind them.
+
+That gap has cost a real bug. On 2026-09-02 Today was found telling a new
+musician *"Nothing to practice yet"* directly above a fully built daily warmup
+it was hiding from them, and it was found by hand-editing five functions and
+remembering to revert them. The flag is those five edits with the remembering
+taken out.
+
+The audit takes route names after the port because most of the list points at
+`fixture-…` ids that an empty account does not have; sweeping all of them would
+measure a page of not-found states. The unvisited-route check still runs
+against the whole list, so a filtered run cannot claim full coverage.
+
+## Building for a device or the App Store
+
+`app.json` carries `ios.bundleIdentifier` and `android.package`
+(`com.intempo.app`) and `eas.json` carries the build profiles. Without those,
+`expo prebuild` and EAS cannot run at all, so there was no route onto a phone.
+
+**The bundle identifier is freely changeable right up until the first
+submission and permanent after it.** Change it in `app.json` if
+`com.intempo.app` is not the identity you want; nothing else in the repository
+depends on the value.
+
+Verified here: `expo prebuild --platform ios` completes, and the generated
+`Info.plist` carries the bundle identifier, all three permission strings from
+the config plugins, `ITSAppUsesNonExemptEncryption: false` (this app's only
+cryptography is the platform's TLS, which is exempt — the declaration saves an
+export-compliance question on every upload), and `RCTRootViewBackgroundColor`
+at the app's own paper colour.
+
+**The iOS bundle builds.** `ci.yml` has a step for it and **that step is not
+running**: since 2026-09-09 every job in the workflow fails two to three
+seconds in with no logs, which is a run blocked before a runner picks it up.
+What builds the bundle today is `tools/preflight.py --full`, on whatever
+machine a session is on. `expo export --platform ios` resolves the *native*
+module graph — a different graph from the
+web one this repository's screenshots and walk all run through — and Hermes
+compiles it. Measured on the resulting bytecode: `intempo-listen-`, the WAV
+filename the **native** score player writes, is present; `AudioContext` and
+`createMediaStreamDestination` from the Web Audio player are absent; and
+`beforeunload` is gone entirely, because Metro folds `Platform.OS` and strips
+the guarded web branch.
+
+That proves the bundle **builds**, not that it **behaves**. The native recorder
+and the native player have still never made a sound.
+
+**Not verified, and it cannot be here:** no build has ever been produced. There
+is no macOS, no Xcode, no Apple account and no EAS credentials in this
+container.
+
+**What still needs a person is a command, not a paragraph:**
+
+```bash
+python3 tools/check-store-readiness.py
+```
+
+This sentence used to be a numbered list of three, and it was wrong — it named
+the EAS and Apple items and omitted the brand assets, the publisher's own
+details in the privacy policy, and a hosted policy URL, all of which block a
+submission just as hard. A count in prose is a claim that goes stale the first
+time the world moves. The command reads `app.json`, `src/lib/legal.ts` and the
+brand-asset hashes live, so it cannot say anything that is not true today, and
+an item stops being listed the moment it is done with nobody editing anything.
+
+Two of them can only be stated, never measured from a checkout, and the command
+says so: an Apple Developer account with signing credentials
+(`eas credentials`), and an App Store Connect listing — name, screenshots,
+description, privacy answers, age rating.
+
+There is no `development` profile, deliberately: one requires the
+`expo-dev-client` package, which is not a dependency, so the profile would be
+config that fails on first use. Add both together or neither.
+
 ## Not built yet
 
-Library, Insights, Profile, and Practice are placeholders. They wait for the
-Today screen's visual system to be signed off so they inherit settled
-components rather than a second set that has to be reconciled later.
-
-`Input`, `SearchField`, `Modal`, and `BottomSheet` are specified in the brief
-but not built — nothing uses them yet, and a component with no caller tends to
-be wrong in ways you only discover on its second use.
+`Modal` is specified in the brief and not built. `Input` and `SearchField`
+were on this list until they had callers — `Input` across the auth and
+transcription screens, `SearchField` in the library — and `BottomSheet` is
+used by the add-piece sheet. Library, Insights and Profile were on it too, and
+are built. This section had said otherwise for long enough that it was
+describing a different app.

@@ -2,8 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // `expo-image-manipulator` reaches `react-native`, whose Flow syntax vitest
 // cannot parse — and `shrinkToFit` now imports it lazily when a page is too
-// large. `compressTo` is what each test says the re-encode achieves.
-const { compressTo } = vi.hoisted(() => ({ compressTo: { size: 0 } }));
+// large.
 vi.mock('expo-image-manipulator', () => ({
   manipulateAsync: vi.fn(async (uri: string) => ({
     uri: `${uri}#smaller`,
@@ -94,6 +93,7 @@ beforeEach(() => {
   vi.unstubAllGlobals();
   requestScoreImageUpload.mockImplementation(async (name: string) => ({
     upload_url: `https://storage.example/upload/${name}?token=abc`,
+    object_key: `user-1/${name}`,
   }));
   uploadToSignedUrl.mockResolvedValue(undefined);
 });
@@ -309,12 +309,13 @@ describe('when the page cannot be read', () => {
 });
 
 describe('what it returns', () => {
-  it('returns the upload URL, which is the only form the API accepts', async () => {
+  it('returns the durable object key rather than the expiring upload URL', async () => {
     respondWith(new Blob([new Uint8Array([1])], { type: 'image/jpeg' }));
 
-    const url = await uploadPage({ source: 'blob:x' } as never);
+    const reference = await uploadPage({ source: 'blob:x' } as never);
 
-    expect(url).toBe('https://storage.example/upload/page.jpg?token=abc');
+    expect(reference).toBe('user-1/page.jpg');
+    expect(reference).not.toContain('token=');
   });
 });
 

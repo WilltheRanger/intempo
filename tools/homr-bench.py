@@ -22,6 +22,14 @@ import sys
 import time
 from pathlib import Path
 
+# Started with the wrong interpreter, this dies on `import pydantic` before it
+# reads a fixture. `backend_python` re-execs under `backend/.venv` so the
+# command in the docstring above is one that works — see its own header.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from backend_python import use_backend_python  # noqa: E402
+
+use_backend_python()
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
 

@@ -17,6 +17,8 @@ would be more moving parts than the wart costs. The worker catches it and reads
 
 from __future__ import annotations
 
+from itertools import pairwise
+
 import io
 import logging
 from typing import NamedTuple
@@ -25,9 +27,9 @@ from urllib.parse import urlparse
 import httpx
 from fastapi import HTTPException, status
 
-from app.config import settings
 from app.db import get_service_client
 from app.services.buckets import SCORE_BUCKET
+from app.services.signed_urls import absolute, signed_url_in
 
 log = logging.getLogger("intempo.scores")
 
@@ -263,19 +265,8 @@ def readable_url(image_url: str) -> str:
     except Exception as exc:  # storage unreachable, key gone, permissions
         log.info("could not sign a download URL for %s, using it as given: %s", key, exc)
         return image_url
-    if isinstance(signed, dict):
-        fresh = (
-            signed.get("signedURL")
-            or signed.get("signedUrl")
-            or signed.get("signed_url")
-        )
-        if fresh:
-            # Supabase returns a path on some SDK versions and an absolute URL
-            # on others.
-            if fresh.startswith("http"):
-                return fresh
-            return f"{settings.SUPABASE_URL.rstrip('/')}/storage/v1{fresh}"
-    return image_url
+    fresh = signed_url_in(signed)
+    return absolute(fresh) if fresh else image_url
 
 
 # =============================================================
@@ -1172,7 +1163,7 @@ def _crop_boxes(image_bytes: bytes) -> list[tuple[int, int]]:
     edges = [0, *cuts, height]
     return [
         (max(0, top - (pad if top else 0)), min(height, bottom + (pad if bottom < height else 0)))
-        for top, bottom in zip(edges, edges[1:])
+        for top, bottom in pairwise(edges)
     ]
 
 

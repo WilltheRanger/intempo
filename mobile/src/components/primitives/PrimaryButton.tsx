@@ -1,7 +1,6 @@
-import type { LucideIcon } from 'lucide-react-native';
+import type { LucideIcon } from '../icons';
 import {
   ActivityIndicator,
-  Pressable,
   StyleSheet,
   View,
   type StyleProp,
@@ -10,6 +9,7 @@ import {
 
 import {
   CONTROL_HEIGHT,
+  CONTROL_PRESSED_SCALE,
   colors,
   disabledOpacity,
   ICON_SIZE,
@@ -19,6 +19,7 @@ import {
   spacing,
 } from '../../design';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
+import { PressableScale } from '../motion/PressableScale';
 import { Text } from './Text';
 
 export interface PrimaryButtonProps {
@@ -36,10 +37,17 @@ export interface PrimaryButtonProps {
    */
   size?: 'default' | 'compact';
   /**
-   * `light` inverts the fill for use on a dark ground — cream button, ink
-   * label. Not a second style so much as the same button seen against the
-   * opposite surface; both tones come from the `action*` pair, which the
-   * palette already describes as doubling for full-bleed dark surfaces.
+   * `light` is the ivory button with an ink label, for a ground that is dark
+   * in **both** appearances — the Today hero, the camera viewfinder.
+   *
+   * **It comes from `onDark`/`darkBg`, not from the `action*` pair**, and that
+   * distinction is the whole point of the prop. This used to read "both tones
+   * come from the `action*` pair, which the palette already describes as
+   * doubling for full-bleed dark surfaces" — true when it was written and
+   * false since those two jobs were split. `actionBg`/`actionText` invert with
+   * the appearance, so in dark mode `tone="light"` drew an **ink** button on
+   * an ink hero: the primary action, invisible, on the one screen it is the
+   * point of.
    */
   tone?: 'ink' | 'light';
   style?: StyleProp<ViewStyle>;
@@ -48,8 +56,10 @@ export interface PrimaryButtonProps {
 /**
  * The main action. Charcoal fill, warm-white label, full width.
  *
- * There is no scale animation on press — the fill darkens instead, which reads
- * as confirmation without the button appearing to move.
+ * It darkens and gives very slightly under the finger. The movement is kept
+ * smaller than a card's so the label remains visually steady, while the
+ * shared motion wrapper turns it off when the device or musician requests
+ * reduced motion.
  */
 export function PrimaryButton({
   label,
@@ -64,7 +74,8 @@ export function PrimaryButton({
 }: PrimaryButtonProps) {
   const inactive = disabled || loading;
   const light = tone === 'light';
-  const labelColor = light ? 'actionBg' : 'actionText';
+  const labelColor = light ? 'darkBg' : 'actionText';
+  const glyphColor = light ? colors.darkBg : colors.actionText;
 
   function handlePress() {
     if (haptic) {
@@ -74,12 +85,13 @@ export function PrimaryButton({
   }
 
   return (
-    <Pressable
+    <PressableScale
       onPress={handlePress}
       disabled={inactive}
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ disabled: inactive, busy: loading }}
+      activeScale={CONTROL_PRESSED_SCALE}
       style={({ pressed }) => [
         styles.button,
         light && styles.buttonLight,
@@ -90,14 +102,16 @@ export function PrimaryButton({
       ]}
     >
       {loading ? (
-        <ActivityIndicator color={light ? colors.actionBg : colors.actionText} />
+        <View style={styles.above}>
+          <ActivityIndicator color={glyphColor} />
+        </View>
       ) : (
         <View style={[styles.content, size === 'compact' && styles.contentCompact]}>
           {Icon ? (
             <Icon
               size={size === 'compact' ? ICON_SIZE.sm : ICON_SIZE.md}
               strokeWidth={ICON_STROKE_WIDTH}
-              color={light ? colors.actionBg : colors.actionText}
+              color={glyphColor}
             />
           ) : null}
           <Text variant="button" color={labelColor}>
@@ -105,25 +119,34 @@ export function PrimaryButton({
           </Text>
         </View>
       )}
-    </Pressable>
+    </PressableScale>
   );
 }
 
 const styles = StyleSheet.create({
   button: {
     height: CONTROL_HEIGHT,
-    borderRadius: radii.md,
+    // A capsule. Large continuous radii are the shape language of the control
+    // layer around it; `radii.md` was a rounded rectangle from the previous one.
+    borderRadius: radii.pill,
+    // **Solid ink, not tinted glass.** Glass was tried here and reverted: a
+    // translucent ground picks up whatever scrolls beneath it, so the app's
+    // single most important control was never quite the same colour twice.
+    // The primary action is the one thing on a screen that should not be
+    // negotiable, and the surrounding chrome being glass is what makes a solid
+    // button read as the thing sitting on top of it.
     backgroundColor: colors.actionBg,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing.lg,
   },
   buttonLight: {
-    backgroundColor: colors.actionText,
+    backgroundColor: colors.onDark,
   },
   compact: {
     // Exactly the minimum comfortable target — no smaller.
     height: MIN_TOUCH_TARGET,
+    borderRadius: radii.pill,
     alignSelf: 'flex-start',
     // Tighter gutters and a smaller glyph pull the width in, so the button
     // sits under the page title in the hierarchy instead of rivalling it.
@@ -133,12 +156,23 @@ const styles = StyleSheet.create({
     backgroundColor: colors.actionBgPressed,
   },
   pressedLight: {
-    backgroundColor: colors.surfacePressed,
+    // The ivory dimmed, not the page's pressed surface — which is a *light*
+    // grey in light mode and a dark one in dark mode, so it inverted along
+    // with everything else this tone had to stop inheriting.
+    backgroundColor: colors.onDarkMuted,
   },
   disabled: {
     opacity: disabledOpacity,
   },
+  /*
+    **Above the glass.** `GlassSurface` fills the control absolutely, and a
+    positioned element paints over its non-positioned siblings whatever the DOM
+    order — so without this the material covers the label instead of sitting
+    behind it. Measured: the header's "+" rendered pale grey rather than ink.
+  */
+  above: { zIndex: 1 },
   content: {
+    zIndex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,

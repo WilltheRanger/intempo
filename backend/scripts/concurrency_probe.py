@@ -85,10 +85,11 @@ class _SlowClient:
 
 def main() -> int:
     import app.auth as auth
-    import app.routers.scores as scores
+    import app.db as db
+    from app.services import display_urls
 
-    scores._service_client = lambda: _SlowClient()
-    scores._sign_downloads = lambda _keys: {}
+    db.get_service_client = lambda: _SlowClient()
+    display_urls.signed_display_urls = lambda _keys: {}
 
     from app.main import app
 

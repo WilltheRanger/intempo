@@ -75,6 +75,37 @@ class Settings:
     #: than spending the download and blaming the photograph.
     OCR_PROVIDER_CHAIN: str = os.getenv("OCR_PROVIDER_CHAIN", "homr")
 
+    #: Who re-reads the bars that do not add up. Empty means nobody.
+    #:
+    #: **The arithmetic retry has been dead since the chain became homr alone.**
+    #: `confirm.retry_with_arithmetic` names the broken bars, asks for those and
+    #: nothing else, and splices the answer back — but it can only ask a
+    #: provider that `takes_a_note`, and homr is deterministic with no prompt.
+    #: So the branch that runs it logs "cannot reconsider" and stops, on every
+    #: page that needs it.
+    #:
+    #: This names a *different* provider for that one job. It is not the vision
+    #: chain coming back: those read a blank page and returned notes nobody had
+    #: written, which is why they were turned off (2026-08-24, "run homr only,
+    #: no backup AI"). The job here is the opposite shape and is checkable —
+    #: the bars sent are ones arithmetic has already proved wrong, only those
+    #: bars can be replaced (`_splice`), and an answer that leaves more bars
+    #: broken than it found is discarded. A reading is never *originated* here.
+    #:
+    #: **On, by the owner's call on 2026-08-30** — *"Im fine with the api costs.
+    #: just have claude read the part where it has trouble with"*. It was empty
+    #: by default until then, because it costs a metered call per page that
+    #: needs one and that is a decision about a bill.
+    #:
+    #: It costs nothing on a page that reads cleanly: the retry runs only where
+    #: `validate.py` has already found bars that do not add up.
+    #:
+    #: Set it to the empty string to turn it off again. A build with no
+    #: `ANTHROPIC_API_KEY` behaves as though it were off — the provider refuses,
+    #: `retry_with_arithmetic` keeps the reading it has, and `/v1/ready` reports
+    #: `ocr_corrector` so that silence is visible rather than assumed.
+    OCR_CORRECTOR: str = os.getenv("OCR_CORRECTOR", "claude-sonnet-5")
+
 
 
     #: How many pages may be read at once.
@@ -91,6 +122,27 @@ class Settings:
     TRANSCRIPTION_MAX_CONCURRENT: int = int(
         os.getenv("TRANSCRIPTION_MAX_CONCURRENT", "2")
     )
+
+    #: How many takes may be analysed at once, in-process.
+    #:
+    #: **The same ceiling as above, and the arithmetic is worse.** Reading a
+    #: page peaks near 81 MB; `analyze()` peaks near **460** on an instance
+    #: with 512 MB total — `workers/dispatch` says so at the top of the file
+    #: and names the consequence: "two musicians finishing takes within a few
+    #: seconds of each other is an out-of-memory kill". An OOM takes the whole
+    #: process down, so it is not that one take fails, it is that everybody's
+    #: sign-in does.
+    #:
+    #: That was written down and only the scanning half was bounded. Analysis
+    #: went to `BackgroundTasks` unbounded, on the same 40-thread pool every
+    #: request handler runs on — so the reachable state was not two takes at
+    #: once, it was forty.
+    #:
+    #: **One, because 460 x 2 does not fit.** This is not a throughput knob and
+    #: there is no value above 1 that is safe on a 512 MB box. Raise it on a
+    #: bigger one, by the same arithmetic; the real answer to volume is
+    #: `ANALYSIS_RUNTIME=modal`, where each take gets its own container.
+    ANALYSIS_MAX_CONCURRENT: int = int(os.getenv("ANALYSIS_MAX_CONCURRENT", "1"))
 
 
     STRIPE_SECRET_KEY: str = os.getenv("STRIPE_SECRET_KEY", "")
