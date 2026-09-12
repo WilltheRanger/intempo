@@ -47,12 +47,15 @@ const CAUSES: ReadonlyArray<readonly [readonly string[], string]> = [
     // default sentence ("could not be started") actively unhelpful: it invites
     // the one move that cannot work.
     //
-    // Reloading is what resets a document. It is one tap in Safari's own
-    // chrome and it costs a musician nothing here, because a take that has not
-    // started is not a take yet.
+    // Reloading is what resets a document, and it costs a musician nothing
+    // here, because a take that has not started is not a take yet. This
+    // comment used to add "it is one tap in Safari's own chrome", which is the
+    // assumption that made the advice useless on 2026-09-12: in a home-screen
+    // app there is no chrome. `RELOAD_FIXES` below is the app offering it
+    // itself rather than describing where to find it.
     ['InvalidStateError'],
     'The page needs reloading before it can record — this is the page\'s '
-      + 'state, not your microphone. Pull down to refresh, then try again.',
+      + 'state, not your microphone.',
   ],
   [
     ['SecurityError'],
@@ -60,6 +63,33 @@ const CAUSES: ReadonlyArray<readonly [readonly string[], string]> = [
       + 'rather than inside another app, usually fixes it.',
   ],
 ];
+
+/**
+ * The failures a reload fixes, and the only ones.
+ *
+ * **Reported from a real iPhone on 2026-09-12, on the deployed build**, in a
+ * home-screen web app: the screen said "Pull down to refresh, then try again"
+ * and `RecordScreen` renders `<ScreenContainer scrollable={false}>`. There is
+ * no scroll view on it to pull. The advice named a gesture the screen does not
+ * have — the defect `cameraFallback.ts` was written about, in the one place
+ * that had already been fixed once for saying the wrong thing.
+ *
+ * It was worse than useless in exactly the context it was shown: a standalone
+ * home-screen app has no address bar either, so both ways a person would
+ * normally reload a page were absent while the sentence told them to reload it.
+ *
+ * `location.reload()` is the remedy that was always available and never
+ * offered. WebKit rejects `getUserMedia` with `InvalidStateError` when the
+ * document is not fully active — a document restored from the page cache after
+ * the app was backgrounded — and a fresh document is precisely what a reload
+ * produces. Tapping Record again cannot work, because nothing about the
+ * document changes between taps.
+ *
+ * Kept as a list rather than folded into `CAUSES` because it answers a
+ * different question: `CAUSES` says what happened, this says what the app can
+ * do about it, and only one cause so far has an answer the app can act on.
+ */
+const RELOAD_FIXES: readonly string[] = ['InvalidStateError'];
 
 /**
  * True when the page is running as a home-screen app rather than in a browser.
@@ -119,7 +149,10 @@ export function microphoneFailure(
       const advice = name.startsWith('NotFound') || name.startsWith('DevicesNotFound')
         ? ''
         : homeScreenAdvice(standalone);
-      return new MicrophoneUnavailableError(message + advice);
+      return new MicrophoneUnavailableError(
+        message + advice,
+        RELOAD_FIXES.includes(name) ? 'reload' : null,
+      );
     }
   }
 

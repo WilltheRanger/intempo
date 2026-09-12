@@ -164,6 +164,54 @@ describe('a document that cannot capture', () => {
     expect(failure.message).not.toMatch(/no microphone|is busy/i);
   });
 
+  /*
+   * **Reported from a real iPhone on 2026-09-12** — the deployed build, in a
+   * home-screen web app. The sentence was right and the advice was not: it
+   * said "Pull down to refresh, then try again" on a screen that renders
+   * `<ScreenContainer scrollable={false}>`, with no address bar behind it
+   * either. Every route it named was absent.
+   *
+   * So the failure now carries the remedy instead of describing where to find
+   * one, and the screen draws a control for it. These two cases are what stop
+   * the sentence and the button drifting apart again.
+   */
+  it('carries a reload the app can perform itself', () => {
+    const failure = microphoneFailure(
+      new DOMException('bad state', 'InvalidStateError'),
+      false,
+    );
+
+    expect(failure).toBeInstanceOf(MicrophoneUnavailableError);
+    expect((failure as MicrophoneUnavailableError).recovery).toBe('reload');
+  });
+
+  it('names no gesture the screen does not have', () => {
+    const failure = microphoneFailure(
+      new DOMException('bad state', 'InvalidStateError'),
+      true,
+    );
+
+    // Pulling down, swiping and the address bar are all things this screen or
+    // this context does not have. The button is the instruction now.
+    expect(failure.message).not.toMatch(/pull down|swipe|address bar/i);
+  });
+
+  it('offers no reload for a failure a reload cannot fix', () => {
+    for (const name of [
+      'NotFoundError',
+      'NotReadableError',
+      'SecurityError',
+      'WhateverElseError',
+    ]) {
+      const failure = microphoneFailure(new DOMException('no', name), false);
+
+      expect(
+        (failure as MicrophoneUnavailableError).recovery,
+        name,
+      ).toBeNull();
+    }
+  });
+
   it('is not a permission problem, so the screen must not offer settings', () => {
     // `MicrophonePermissionError` is what turns the screen into "open your
     // settings". Sending somebody to a permission they have already granted

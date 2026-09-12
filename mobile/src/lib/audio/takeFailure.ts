@@ -4,6 +4,7 @@ import {
   EmptyRecordingError,
   MicrophonePermissionError,
   MicrophoneUnavailableError,
+  type MicrophoneRecovery,
 } from './types';
 
 /**
@@ -49,6 +50,21 @@ export interface TakeFailure {
    * the WAV is still in hand.
    */
   retriable: boolean;
+  /**
+   * A remedy the app can carry out itself, or null.
+   *
+   * Separate from `retriable`, which is about the take: `retriable` asks
+   * whether *this* WAV is worth sending again, and this asks whether there is
+   * anything to do about the failure other than read it. A refused quota is
+   * neither. A document WebKit will not capture from is only the second —
+   * there is no take yet.
+   *
+   * It exists because the screen had no way to tell the difference and so
+   * offered nothing: the sentence named a reload and every control that could
+   * have performed one was in browser chrome the page cannot reach, or in a
+   * scroll gesture the screen does not have.
+   */
+  recovery: MicrophoneRecovery;
 }
 
 /** The generic case. Named so a test can assert *which* branch was taken. */
@@ -103,20 +119,27 @@ export function readTakeFailure(error: unknown, os: string): TakeFailure {
   const quota = describeTierLimit(error);
 
   if (error instanceof MicrophonePermissionError) {
-    return { message: microphonePermissionRecovery(os).message, retriable: true };
+    return {
+      message: microphonePermissionRecovery(os).message,
+      retriable: true,
+      // The permission's own recovery is `canOpenSettings`, which is a
+      // platform question rather than a page one and is read straight from
+      // `microphonePermissionRecovery` by the screen.
+      recovery: null,
+    };
   }
   if (error instanceof MicrophoneUnavailableError) {
     // `microphoneFailure` already turned the browser's own name for this into
     // a sentence written for a musician; passing it through keeps that work.
-    return { message: error.message, retriable: true };
+    return { message: error.message, retriable: true, recovery: error.recovery };
   }
   if (error instanceof EmptyRecordingError) {
-    return { message: SILENT_TAKE_FAILURE, retriable: true };
+    return { message: SILENT_TAKE_FAILURE, retriable: true, recovery: null };
   }
   if (quota) {
     // **Before the generic message**, which is neither a connection problem
     // nor something trying again will fix.
-    return { message: quota, retriable: false };
+    return { message: quota, retriable: false, recovery: null };
   }
   // The other answer a second attempt cannot change. After the quota, because
   // the quota is a 403 and this is a 404 — they cannot both match — but before
@@ -131,7 +154,7 @@ export function readTakeFailure(error: unknown, os: string): TakeFailure {
   // that carries a numeric `status`, and the same structural reading is what
   // `drainQueue` does with `resume`.
   if (statusOf(error) === 404) {
-    return { message: PIECE_GONE_FAILURE, retriable: false };
+    return { message: PIECE_GONE_FAILURE, retriable: false, recovery: null };
   }
-  return { message: GENERIC_TAKE_FAILURE, retriable: true };
+  return { message: GENERIC_TAKE_FAILURE, retriable: true, recovery: null };
 }

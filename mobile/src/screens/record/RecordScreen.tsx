@@ -28,6 +28,7 @@ import { forgetPendingAnalysis } from '../../data/practice/pendingAnalysis';
 import type { MetronomeMode } from '../../data/types';
 import { MicrophonePermissionError, type Recorder } from '../../lib/audio/types';
 import { readTakeFailure } from '../../lib/audio/takeFailure';
+import { canReloadPage, reloadPage } from '../../lib/platform/reloadPage';
 import {
   keepTakeForLater,
   restoreQueuedTake,
@@ -173,6 +174,14 @@ export function RecordScreen() {
   const lastFreeMessage = describeLastFreeAnalysis(musician?.usage);
   const visibleProblem = limitMessage ?? problem;
   const [microphoneBlocked, setMicrophoneBlocked] = useState(false);
+  /**
+   * Whether the failure on screen is one the page can fix by reloading itself.
+   *
+   * Held beside `problem` rather than derived from it, because by the time a
+   * message reaches this component it is prose — the `DOMException` that knew
+   * the answer is three layers back. `readTakeFailure` carries it out.
+   */
+  const [canReload, setCanReload] = useState(false);
   const [truncated, setTruncated] = useState(false);
   // How much was actually kept. The cap is bytes, not minutes — a device at
   // 44.1 kHz fits nearly a minute more music into the same file than one at 48
@@ -372,7 +381,9 @@ export function RecordScreen() {
     } catch (error) {
       if (!mounted.current) return;
       setMicrophoneBlocked(error instanceof MicrophonePermissionError);
-      setProblem(readTakeFailure(error, Platform.OS).message);
+      const failure = readTakeFailure(error, Platform.OS);
+      setProblem(failure.message);
+      setCanReload(failure.recovery === 'reload' && canReloadPage());
       return;
     } finally {
       starting.current = false;
@@ -426,7 +437,9 @@ export function RecordScreen() {
     try {
       recording = await active.stop();
     } catch (error) {
-      setProblem(readTakeFailure(error, Platform.OS).message);
+      const failure = readTakeFailure(error, Platform.OS);
+      setProblem(failure.message);
+      setCanReload(failure.recovery === 'reload' && canReloadPage());
       setElapsedMs(0);
       goPhase('ready');
       return;
@@ -521,6 +534,11 @@ export function RecordScreen() {
       // Back to the top of the screen with the tempo still set, so the reply
       // to a failed take is one tap rather than a re-setup.
       setProblem(failure.message);
+      // Always false on this path — a send failure is the network or the
+      // quota, and neither is fixed by a new document. Set rather than left
+      // alone so a reload offered for an earlier microphone failure cannot
+      // still be on screen under a sentence about uploading.
+      setCanReload(failure.recovery === 'reload' && canReloadPage());
       setElapsedMs(0);
       goPhase('ready');
     }
@@ -851,7 +869,21 @@ export function RecordScreen() {
 
   return (
     <ScreenContainer
-      scrollable={false}
+      // **Scrolls, because the footer can grow and this body cannot shrink.**
+      // The footer is a flex sibling of a `flex: 1` content view, so every
+      // line the problem message gains is a line taken off the body — whose
+      // rows have fixed heights and therefore clip rather than reflow. On
+      // 2026-09-12 a four-line microphone failure sliced "Recording tips" in
+      // half on a real phone.
+      //
+      // The two other states on this screen stay non-scrolling on purpose:
+      // they hold a title and a control, and nothing can push them over a
+      // viewport. This one holds a tempo stepper, four rows and a message
+      // whose length is decided by whatever the browser refused.
+      //
+      // The record button does not move: it is in the footer, which sits
+      // outside the scroll area and keeps the thumb zone `CLAUDE.md` §3 law 7
+      // asks for.
       contentStyle={styles.screen}
       footer={
         <View style={styles.footer}>
@@ -863,6 +895,25 @@ export function RecordScreen() {
             >
               {footerNote}
             </Text>
+          ) : null}
+          {/*
+            The page's own remedy, offered rather than described.
+
+            The sentence above says the document needs reloading; before this
+            the only reload it named was "pull down to refresh", on a screen
+            with `scrollable={false}`, inside a home-screen app with no address
+            bar. Both routes were absent. This one is the page reloading
+            itself, which has always been possible — see
+            `lib/platform/reloadPage.ts`.
+          */}
+          {canReload ? (
+            <SecondaryButton
+              label="Reload and try again"
+              onPress={() => {
+                reloadPage();
+              }}
+              style={styles.permissionAction}
+            />
           ) : null}
           {microphoneBlocked && Platform.OS !== 'web' ? (
             <SecondaryButton
@@ -1254,7 +1305,23 @@ const RECORD_SIZE = 88;
 
 const styles = StyleSheet.create({
   screen: {
-    flex: 1,
+    // **`flexGrow`, not `flex`.** This is a `contentContainerStyle` now, and
+    // `flex: 1` on one pins the content to exactly the viewport height: it
+    // cannot report being taller than the box that holds it, so the children
+    // spill out and are clipped while the ScrollView believes everything fits.
+    //
+    // Measured rather than reasoned about, after the fix for the clipping did
+    // not clip any less. `onContentSizeChange` reported **495 against a 495
+    // viewport** while the DOM's own `scrollHeight` was **518** — the
+    // ScrollView was being told its content was exactly as tall as itself.
+    // That is one cause for both halves of what shipped: nothing scrolled, and
+    // `measureOverflow` could never be true, so the hairline that marks
+    // content passing under the footer never appeared and the cut looked like
+    // breakage rather than like a fold.
+    //
+    // `flexGrow: 1` fills the screen when the content is short — which is what
+    // the old value was there for — and lets it grow past it when it is not.
+    flexGrow: 1,
     // The container's standard bottom padding is for content that ends above a
     // tab bar. Here the footer owns the bottom edge, so that padding only
     // shows up as extra air under the timer — which is exactly the gap that

@@ -107,10 +107,11 @@ function aTake(overrides: Partial<NewTake> = {}): NewTake {
 
 const CONNECTION_FAILED =
   'That take couldn\u2019t be sent. It is still here \u2014 check your connection and send it again.';
-const RETRIABLE: TakeFailure = { message: CONNECTION_FAILED, retriable: true };
+const RETRIABLE: TakeFailure = { message: CONNECTION_FAILED, retriable: true, recovery: null };
 const OUT_OF_ANALYSES: TakeFailure = {
   message: 'You have used all three analyses this month.',
   retriable: false,
+  recovery: null,
 };
 
 let store: ReturnType<typeof fakeStore>;

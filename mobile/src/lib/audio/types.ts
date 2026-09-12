@@ -102,11 +102,34 @@ export class MicrophonePermissionError extends Error {
   }
 }
 
+/**
+ * What the app can do about a failure, beyond saying it happened.
+ *
+ * `'reload'` is the only member because it is the only one earned: a document
+ * WebKit will not capture from is fixed by a fresh document, and a page can
+ * always reload itself. Everything else a musician can do about a microphone
+ * happens in chrome no page can reach, which is what `canOpenSettings` in
+ * `permission.ts` is for.
+ */
+export type MicrophoneRecovery = 'reload' | null;
+
 /** No microphone, or a browser without the APIs this needs. */
 export class MicrophoneUnavailableError extends Error {
-  constructor(message = 'No microphone is available on this device.') {
+  /**
+   * Set by `microphoneFailure`, which is the only place that still knows the
+   * browser's own name for what went wrong. By the time this reaches a screen
+   * the `DOMException` is gone and the message is prose, so the remedy has to
+   * travel with it or be guessed at from the sentence.
+   */
+  readonly recovery: MicrophoneRecovery;
+
+  constructor(
+    message = 'No microphone is available on this device.',
+    recovery: MicrophoneRecovery = null,
+  ) {
     super(message);
     this.name = 'MicrophoneUnavailableError';
+    this.recovery = recovery;
   }
 }
 
