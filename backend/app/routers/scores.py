@@ -62,6 +62,7 @@ from app.services.training import (
 # and a test or the concurrency probe swapping the signer out has one place to
 # do it rather than one per importer.
 from app.services import display_urls
+from app.services.page_image import display_key_for
 from app.services.page_image import object_key_from as _object_key_from
 
 router = APIRouter(prefix="/scores", tags=["scores"])
@@ -594,6 +595,23 @@ def _page_keys(row: dict[str, Any]) -> list[str]:
         if key is not None:
             keys.append(key)
     return keys
+
+
+def _display_keys(row: dict[str, Any]) -> list[str]:
+    """The display-size copies of this row's pages, for deletion only.
+
+    **Separate from `_page_keys` rather than folded into it**, and the reason is
+    that five callers read that list as "the pages": the first element is the
+    `page_image_key` a training correction is filed under, another compares it
+    against what a re-scan replaced. Returning photographs and derivatives
+    interleaved would have left every one of them subtly wrong while `keys[0]`
+    still happened to be a photograph — the worst kind of change, since nothing
+    would have failed.
+
+    Derived here rather than stored, so this cannot fall out of step with what
+    `store_display_copy` writes: both go through `display_key_for`.
+    """
+    return [display_key_for(key) for key in _page_keys(row)]
 
 
 def _consents_to_training(user_id: UUID) -> bool:
@@ -1442,6 +1460,13 @@ def accept_transcription(
     # naming them, no accept path and no delete path — the orphaned-upload hole
     # this file already documents, multiplied by the length of the part.
     keys = _page_keys(row)
+    # The display copies too, and their absence must not stop the discard —
+    # the same rule and the same reasoning as `discard_pages_of`, which is the
+    # other half of this decision. Attempted before the `all` below so a page
+    # whose photograph goes cannot leave its derivative behind on the one path
+    # that returns early.
+    for key in _display_keys(row):
+        _remove_object(client, key)
     if keys and all(_remove_object(client, key) for key in keys):
         # Nulled together with the discard timestamp, never apart. A row that
         # still names an object that has been deleted would sign download URLs
@@ -1529,6 +1554,23 @@ def discard_pages_of(client, score: dict[str, Any]) -> bool:
     keys = _page_keys(score)
     if keys and not all(_remove_object(client, key) for key in keys):
         return False
+
+    # **The display copies go too, and their absence must not stop this.**
+    #
+    # Every reason to delete a photograph is a reason to delete the smaller
+    # copy of it: a musician withdrawing training consent has not agreed to a
+    # 1568px version staying in the bucket.
+    #
+    # But the strictness above is about a row claiming a photograph is gone
+    # while it sits in storage, and a derivative that was never written is a
+    # different thing entirely — every page scanned before `store_display_copy`
+    # existed has none, and nothing backfills them. Failing the discard for
+    # that would leave `page_image_retained_at` set on a score whose
+    # photographs really did go, which is the false state this function exists
+    # to prevent, arrived at from the other side. So: attempted for all,
+    # logged by `_remove_object`, and never fatal.
+    for key in _display_keys(score):
+        _remove_object(client, key)
 
     patch: dict[str, Any] = {
         "source_image_url": None,

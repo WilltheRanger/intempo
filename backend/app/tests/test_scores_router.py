@@ -1119,7 +1119,12 @@ def test_accepting_discards_the_photograph(
 
     # The object actually removed, by key rather than by URL.
     sb.storage.from_.assert_called_with("score-images")
-    sb.storage.from_.return_value.remove.assert_called_once_with([f"{user_id}/abc.jpg"])
+    # Two objects, because a page that has been read is two: the photograph and
+    # the display copy written from the bytes the reader was given. Accepting
+    # without consent discards both.
+    assert sorted(
+        c.args[0][0] for c in sb.storage.from_.return_value.remove.call_args_list
+    ) == sorted([f"{user_id}/abc.jpg", f"{user_id}/abc.display.jpg"])
 
     patch = sb.table.return_value.update.call_args.args[0]
     assert patch["transcription_accepted_at"]
@@ -2373,7 +2378,15 @@ def test_only_the_missing_keys_are_signed(
 
     assert bucket.create_signed_urls.call_count == 1
     (signed_keys, _ttl) = bucket.create_signed_urls.call_args[0]
-    assert signed_keys == [f"{user_id}/second.jpg"]
+    # The new piece only — and both of its keys, since a page is a display copy
+    # and the photograph behind it, signed in the same batch so a page with no
+    # derivative costs no second round trip. The first piece contributes
+    # nothing: its photograph is memoised and its missing derivative is
+    # remembered as missing.
+    assert signed_keys == [
+        f"{user_id}/second.display.jpg",
+        f"{user_id}/second.jpg",
+    ]
 
 
 def test_a_request_mixing_a_memo_hit_and_a_miss_keeps_the_cached_url(

@@ -293,6 +293,98 @@ def readable_url(image_url: str) -> str:
 #     1568 px before it reaches the model, so the extra pixels buy no accuracy
 #     — they are paid for in upload time and in the size limit above.
 
+#: Suffix marking a page's display-size copy, before the extension.
+#:
+#: **The user id has to stay the first path segment**, which is what rules out
+#: the obvious `display/<key>`. Migration 016 gives `score-images` four
+#: owner-scoped policies of the form `foldername[1] = auth.uid()`, so a key
+#: that does not open with the owner's id is a key that account cannot read,
+#: write or delete. A suffix keeps the folder and changes only the leaf.
+DISPLAY_SUFFIX = ".display"
+
+
+def display_key_for(key: str) -> str:
+    """`<user>/<uuid>.heic` -> `<user>/<uuid>.display.jpg`.
+
+    **A pure function of the original key, deliberately, so nothing has to be
+    written down.** The alternative was a column holding the derivative's key,
+    and a column can disagree with the bucket: a row saying there is a display
+    copy when there is not is a broken image, and a row saying there is not
+    when there is is an orphaned photograph nobody can delete. Deriving it
+    means the pairing cannot drift, and `_page_keys` in `routers/scores.py` —
+    the one function that knows every object a score owns — can name the
+    derivative without being told about it.
+
+    Always `.jpg`, because `prepare_for_model` always emits JPEG on success and
+    the derivative is exactly what it emitted.
+    """
+    if is_display_key(key):
+        # Idempotent, so a caller that already holds a derivative cannot create
+        # `<uuid>.display.display.jpg` — a key nothing would ever look for and
+        # nothing would ever delete.
+        return key
+    stem = key.rsplit(".", 1)[0] if "." in key.rsplit("/", 1)[-1] else key
+    return f"{stem}{DISPLAY_SUFFIX}.jpg"
+
+
+def is_display_key(key: str) -> bool:
+    """Whether this key is a derivative rather than a photograph."""
+    return key.endswith(f"{DISPLAY_SUFFIX}.jpg")
+
+
+def store_display_copy(key: str, jpeg_bytes: bytes, original_bytes: bytes) -> bool:
+    """Write the display-size copy of a page. Returns whether it landed.
+
+    **The bytes are already in hand and already the right size.**
+    `prepare_for_model` decodes the photograph, applies its EXIF orientation,
+    converts to RGB and resizes the long edge to `MODEL_MAX_EDGE` — and the
+    result was handed to the reader and dropped. Keeping it costs one upload:
+    no second download, no second decode, no second resize.
+
+    What it saves is the difference between those two images on every view. A
+    phone photograph here is 5712x4284; the prepared copy is 1568 on the long
+    edge, which is 3.6x smaller on each axis. The app was downloading the
+    former to *look* at, on a screen about 390 points wide.
+
+    **Never raises, and failure is not the scan's problem.** A page with no
+    display copy still shows: `signed_display_urls` falls back to the
+    photograph, which is what every page scanned before this existed does
+    permanently. Losing a transcription over a cache-shaped optimisation would
+    be the wrong trade in the obvious direction.
+    """
+    # **Only when it is actually smaller, which is not a formality.**
+    #
+    # `prepare_for_model` resizes to `MODEL_MAX_EDGE` and re-encodes as JPEG —
+    # but a page already under that cap is not resized at all, only re-encoded,
+    # and re-encoding at quality 88 makes it *bigger*. Measured against this
+    # repository's own page fixtures, which are 1200px wide: every one came out
+    # 4-5% larger than the photograph it came from.
+    #
+    # Storing those would pay for storage in order to serve more bytes than
+    # before — the opposite of the point. The fallback in `signed_display_urls`
+    # already does the right thing with a page that has no derivative, so the
+    # honest answer for an image that is already small is simply not to make
+    # one. Real phone photographs are 5712x4284 and are where the saving is.
+    if len(jpeg_bytes) >= len(original_bytes):
+        return False
+
+    client = get_service_client()
+    if client is None:
+        return False
+    try:
+        client.storage.from_(SCORE_BUCKET).upload(
+            display_key_for(key),
+            jpeg_bytes,
+            # `upsert`, because a re-transcription re-prepares the same page and
+            # should replace the copy rather than fail on a key that exists.
+            {"content-type": "image/jpeg", "upsert": "true"},
+        )
+    except Exception:  # noqa: BLE001 — see the docstring: a page still shows
+        log.warning("could not store a display copy of %s", key, exc_info=True)
+        return False
+    return True
+
+
 #: Anthropic's own recommended maximum edge. Larger images are downsampled
 #: server-side before the model sees them, so sending more is spending more to
 #: deliver the same picture.

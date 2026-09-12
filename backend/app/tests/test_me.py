@@ -808,9 +808,16 @@ def test_account_deletion_removes_identity_then_owned_storage(
     assert [f"{user_id}/avatar.jpg"] in removed
     # The unclaimed page joins the claimed ones, and `page-1.jpg` — which is in
     # both `scores` and `pending_uploads` — is still asked for once.
+    #
+    # **Each claimed page brings its display copy**, because a page that has
+    # been read is two objects and deleting an account must not leave the
+    # smaller one behind. `abandoned.jpg` does not: it was signed for and never
+    # claimed, so nothing ever read it and no derivative was ever written.
     assert [
         f"{user_id}/page-1.jpg",
+        f"{user_id}/page-1.display.jpg",
         f"{user_id}/page-2.jpg",
+        f"{user_id}/page-2.display.jpg",
         f"{user_id}/abandoned.jpg",
     ] in removed
     assert [f"{user_id}/take.wav", f"{user_id}/unsent.wav"] in removed

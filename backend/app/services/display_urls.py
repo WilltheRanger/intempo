@@ -19,7 +19,11 @@ from datetime import datetime, timedelta, timezone
 
 from app import db
 from app.services.buckets import SCORE_BUCKET
-from app.services.page_image import SIGNED_DOWNLOAD_TTL_SECONDS
+from app.services.page_image import (
+    SIGNED_DOWNLOAD_TTL_SECONDS,
+    display_key_for,
+    is_display_key,
+)
 from app.services.signed_urls import absolute, signed_url_in
 
 #: A URL is only reused while at least this much of its life remains — a
@@ -32,6 +36,24 @@ CACHE_MAX = 4096
 
 #: Display URLs already signed, by object key, with their real expiry.
 _urls: dict[str, tuple[str, datetime]] = {}
+
+#: Keys storage did not return, and when to ask about them again.
+#:
+#: **Absence has to be remembered or it is asked about forever.** Every page
+#: scanned before `store_display_copy` existed has no display copy and nothing
+#: backfills them, so without this a library of old pages re-probes every
+#: derivative on every request — one extra signing call per page, permanently,
+#: which is the exact cost `signed_display_urls` was written to remove. Caught
+#: by `test_the_same_image_is_signed_once_and_the_url_is_stable`, which counted
+#: two signing calls where it demanded one.
+_absent: dict[str, datetime] = {}
+
+#: Short, because the absence is temporary for any page that gets re-read: a
+#: re-transcription writes the derivative and this is how long the old answer
+#: survives it. Ten minutes of one extra signing call per page is a cost worth
+#: paying to keep the negative answer from outliving the fact.
+ABSENT_TTL_SECONDS = 10 * 60
+
 _lock = threading.Lock()
 
 
@@ -39,9 +61,10 @@ def reset_cache() -> None:
     """For tests. The memo is process state, and tests must not share it."""
     with _lock:
         _urls.clear()
+        _absent.clear()
 
 
-def signed_display_urls(keys: list[str]) -> dict[str, tuple[str, datetime]]:
+def _signed_for_keys(keys: list[str]) -> dict[str, tuple[str, datetime]]:
     """Object key → (signed download URL, expiry), for as many as storage gives.
 
     Batched: a library of forty scores is one storage call, not forty. Missing
@@ -115,3 +138,58 @@ def signed_display_urls(keys: list[str]) -> dict[str, tuple[str, datetime]]:
         _urls.update(fresh)
 
     return {**cached, **fresh}
+
+
+def signed_display_urls(keys: list[str]) -> dict[str, tuple[str, datetime]]:
+    """Page object key -> (signed URL, expiry), preferring the display copy.
+
+    Callers pass the key of the photograph and get back whatever is cheapest to
+    look at: the display-size copy written during transcription when there is
+    one, the photograph itself when there is not. The result is keyed by the
+    photograph either way, so nothing upstream has to know this happened.
+
+    **Both keys go in one storage call, not the derivative first and the
+    photograph after it.** A batch of 2N keys is one round trip; probing and
+    falling back is two whenever a derivative is missing, which is every page
+    scanned before `store_display_copy` existed — permanently, since nothing
+    backfills them. Signing is a JWT operation on a key that need not exist, so
+    the waste is a few tokens; the round trip is the part that costs. Missing
+    objects come back as error entries, which `_signed_for_keys` already skips.
+
+    That also leaves the photograph's URL signed and memoised beside the
+    derivative's, so a page whose display copy is removed keeps working without
+    a second call.
+    """
+    if not keys:
+        return {}
+
+    display_of = {key: display_key_for(key) for key in keys}
+
+    now = datetime.now(tz=timezone.utc)
+    with _lock:
+        known_absent = {
+            key for key, until in _absent.items() if until > now
+        }
+    ask = sorted(
+        {*display_of.keys(), *(set(display_of.values()) - known_absent)}
+    )
+    signed = _signed_for_keys(ask)
+
+    # Anything asked for and not returned is not there. Remembered so the next
+    # request does not ask again; see `_absent`.
+    missing = [key for key in ask if key not in signed and is_display_key(key)]
+    if missing:
+        until = now + timedelta(seconds=ABSENT_TTL_SECONDS)
+        with _lock:
+            if len(_absent) + len(missing) > CACHE_MAX:
+                for key in [k for k, u in _absent.items() if u <= now]:
+                    del _absent[key]
+            if len(_absent) + len(missing) > CACHE_MAX:
+                _absent.clear()
+            _absent.update({key: until for key in missing})
+    out: dict[str, tuple[str, datetime]] = {}
+    for original, display in display_of.items():
+        found = signed.get(display) or signed.get(original)
+        if found is not None:
+            out[original] = found
+    return out

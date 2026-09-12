@@ -238,7 +238,13 @@ def test_accepting_a_three_page_scan_discards_all_three(
     response = api.post(f"/v1/scores/{score_id}/accept", headers=_auth(make_token, user_id))
 
     assert response.status_code == 200, response.text
-    assert len(removed) == 3, f"only {len(removed)} of 3 pages were removed"
+    # Six objects for three pages: each photograph and the display copy written
+    # from the bytes the reader was given. The property under test is unchanged
+    # — every page goes, not just the first — and it now covers the derivatives,
+    # which would otherwise be three orphans of a discarded scan.
+    assert sorted(removed) == sorted(
+        [f"{user_id}/p{i}{suffix}" for i in range(3) for suffix in (".jpg", ".display.jpg")]
+    ), removed
 
 
 def test_a_page_storage_refuses_leaves_the_row_naming_every_page(

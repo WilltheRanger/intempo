@@ -15,7 +15,7 @@ different claims.
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 from uuid import uuid4
 
 import pytest
@@ -25,6 +25,7 @@ from app import db as db_module
 from app.main import app
 from app.routers import scores as scores_module
 from app.services import display_urls
+from app.services.page_image import display_key_for
 from app.services.score_schema import Measure, Note, ScoreJson
 from app.services.training import (
     Correction,
@@ -374,7 +375,17 @@ def test_accepting_still_discards_the_photograph_without_consent(
     assert row["page_image_discarded_at"] is not None
     assert row["page_image_retained_at"] is None
     assert row["source_image_url"] is None
-    db.storage.from_.return_value.remove.assert_called_once_with([PAGE])
+    # Two calls, not one: the photograph, then its display copy. A musician
+    # withdrawing consent has not agreed to a 1568px version of the page
+    # staying in the bucket, and the derivative is deleted separately so a page
+    # that never had one (every scan before `store_display_copy`) cannot make
+    # the discard report failure.
+    # Both objects, in whichever order the path takes them: a page that has
+    # been read is two objects, and a musician who did not consent to their
+    # photograph being kept did not consent to a 1568px copy of it either.
+    assert sorted(
+        c.args[0][0] for c in db.storage.from_.return_value.remove.call_args_list
+    ) == sorted([PAGE, display_key_for(PAGE)])
 
 
 def test_accepting_keeps_the_photograph_when_the_musician_agreed(
@@ -469,7 +480,15 @@ def test_withdrawing_deletes_the_corrections_and_the_photographs(
     assert db.table("training_corrections").rows == []
 
     row = db.table("scores").rows[0]
-    db.storage.from_.return_value.remove.assert_called_once_with([PAGE])
+    # Two calls, not one: the photograph, then its display copy. A musician
+    # withdrawing consent has not agreed to a 1568px version of the page
+    # staying in the bucket, and the derivative is deleted separately so a page
+    # that never had one (every scan before `store_display_copy`) cannot make
+    # the discard report failure.
+    assert db.storage.from_.return_value.remove.call_args_list == [
+        call([PAGE]),
+        call([display_key_for(PAGE)]),
+    ]
     assert row["page_image_retained_at"] is None
     assert row["page_image_discarded_at"] is not None
     assert row["source_image_url"] is None

@@ -26,6 +26,7 @@ from app.models.user import (
     UserRole,
     UserTier,
 )
+from app.services.page_image import display_key_for
 from app.services.score_pages import pages_of
 from app.services.tier_limits import usage_for
 from app.services.training import may_keep_corrections
@@ -549,6 +550,14 @@ def _account_storage(client: Any, user_id: UUID) -> dict[str, list[str]]:
             key = _storage_key(url, SCORE_BUCKET)
             if key:
                 pages.append(key)
+                # **And its display copy**, for the same reason the take above
+                # collects both of its references: a page has two objects once
+                # it has been read, and collecting one of them would delete the
+                # account and leave the other in the bucket. Most pages have no
+                # display copy — every one scanned before `store_display_copy`
+                # existed — and by the note below, removing a key that is
+                # already gone is not an error.
+                pages.append(display_key_for(key))
 
     # **Both references, because a judged take has two.** The WAV is replaced
     # by an Opus once the analysis finishes and `playback_key` names it; only
