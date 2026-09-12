@@ -98,6 +98,13 @@ const EXCUSED: Record<string, string> = {
     'takes the session away, not because this one is missing.',
   'src/lib/audio/session.ts': 'The module itself.',
   'src/lib/audio/session.web.ts': 'The module itself, on web.',
+  'src/lib/audioRecorder.web.ts':
+    'The one caller that asks for the *other* category. A take needs '
+    + "`play-and-record`, because WebKit refuses capture outright while the "
+    + 'page is declared `playback` — which is what boot declares, and what '
+    + 'made every take on an iPhone fail. It makes no sound itself: it opens '
+    + 'a capture graph with no output, and hands `playback` back when the '
+    + 'take ends.',
 };
 
 /** Test files are not the app; a stub of a player is not a player. */

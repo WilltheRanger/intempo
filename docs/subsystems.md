@@ -696,6 +696,63 @@ nothing else covers `backend/`. Named here rather than left to be found.
 
 ## The recording path (2026-09-02) — level is not the signal you think it is
 
+- **The page's audio session category decides whether the microphone works at
+  all, and it is set at boot far away from the recorder (2026-09-12).** This
+  cost five wrong fixes over one day, so it is written out in full.
+
+  `App.tsx` calls `prepareForPlayback()` on mount, which sets
+  `navigator.audioSession.type = 'playback'` so the app is audible on a phone
+  whose ring switch is off. WebKit honours that literally. In
+  `MediaDevices::getUserMedia`:
+
+  ```cpp
+  auto categoryOverride = AudioSession::singleton().categoryOverride();
+  if (categoryOverride != AudioSessionCategory::None
+      && categoryOverride != AudioSessionCategory::PlayAndRecord)
+      promise.reject(Exception { ExceptionCode::InvalidStateError,
+          "AudioSession category is not compatible with audio capture."_s });
+  ```
+
+  Every audio capture on the page is refused, **before a constraint is read and
+  before a device is chosen**, for the life of the document. The remedy is one
+  line: declare `play-and-record` before capture and hand `playback` back after
+  the take — `lib/audio/session.web.ts`.
+
+- **Why it took five attempts, which is the part worth keeping.** The failure
+  surfaces as `InvalidStateError` on `getUserMedia`, and that name has an
+  obvious reading — "the document is not fully active" — which is the *other*
+  branch of the same WebKit function. Every fix was built on the obvious
+  reading plus whatever was nearest in our own code: a reload button, then the
+  order of the `AudioContext` against the microphone, then a second context,
+  then suspending the shared one, then the audio constraints. Each was
+  plausible, each shipped with tests, and **none of them could have worked**,
+  because the guard reads a process-level category that no `AudioContext`
+  operation writes and no constraint influences.
+
+  Three rules come out of it:
+
+  1. **When an error name has an obvious cause, find the code that raises it
+     before fixing the obvious cause.** WebKit is open source; the guard above
+     took one fetch. Four fixes were reasoned from the name alone.
+  2. **`microphoneFailure` threw away `error.message`, and the message was the
+     answer.** WebKit had been saying *"AudioSession category is not compatible
+     with audio capture."* since the first report. Keep the browser's own words
+     — the same lesson `score/listenFailure.ts` records, learned again and more
+     expensively.
+  3. **A comment that states a platform assumption is load-bearing.**
+     `session.web.ts` said *"this app records through a separate path with its
+     own session"* — true on native, false on web, and the entire bug. The
+     tests agreed with it, so nothing contradicted it.
+
+- **The one thing Chromium can never tell you about this app.**
+  `navigator.audioSession` does not exist there, so `prepareForPlayback` returns
+  early and the category is never set: the walk, the accessibility sweeps and
+  `device-check.mjs` all pass on a build that cannot record on any iPhone.
+  Playwright's **WebKit** is installed in the session container
+  (`/opt/pw-browsers/webkit-*`) and is the only engine here that shares the
+  failing code path — reach for it before concluding an iOS bug is
+  unreproducible.
+
 - **The onset detector is amplitude-invariant, and this is measured.**
   `onset_strength` differences a dB-scaled mel spectrogram, so scaling a
   waveform shifts every frame by a constant the differencing removes. All six

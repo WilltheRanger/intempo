@@ -21,6 +21,16 @@ const SAMPLE_RATE = 48000;
 let posted: Int16Array[];
 let node: StubWorkletNode;
 let tracksStopped: number;
+/**
+ * What the recorder asked the page for, in the order it asked.
+ *
+ * The category the page is declared under is not graph state and not a
+ * constraint, which is exactly why five fixes to this file went past it: the
+ * refusal it causes names neither. Recording the order is the only way an
+ * assertion here can see it.
+ */
+let steps: string[];
+let sessionType: string;
 
 class StubPort {
   onmessage: ((event: { data: unknown }) => void) | null = null;
@@ -68,14 +78,29 @@ class StubContext {
 beforeEach(() => {
   posted = [];
   tracksStopped = 0;
+  steps = [];
+  // What `App.tsx` leaves the page in: audible on a phone that is on silent,
+  // and refused by WebKit for capture. The starting value is the bug.
+  sessionType = 'playback';
   // **The recorder shares the app's one context now**, and that context is
   // module state which outlives a test. Without this, every case after the
   // first gets the previous case's stub — including its already-registered
   // worklet — and asserts against a graph it did not build.
   resetAudioContextForTests();
   vi.stubGlobal('navigator', {
+    audioSession: {
+      get type() {
+        return sessionType;
+      },
+      set type(value: string) {
+        sessionType = value;
+        steps.push(`session:${value}`);
+      },
+    },
     mediaDevices: {
-      getUserMedia: async () => ({
+      getUserMedia: async () => {
+        steps.push('permission');
+        return {
         getTracks: () => [
           {
             stop: () => {
@@ -83,7 +108,8 @@ beforeEach(() => {
             },
           },
         ],
-      }),
+        };
+      },
     },
   });
   vi.stubGlobal('window', { AudioContext: StubContext });
@@ -124,6 +150,69 @@ async function headerOf(audio: Blob) {
     dataBytes: view.getUint32(40, true),
   };
 }
+
+describe('the category the page records under', () => {
+  /*
+   * **The bug five fixes walked past, as a rule that fails without it.**
+   *
+   * `App.tsx` declares `navigator.audioSession.type = 'playback'` at boot so
+   * the app is audible on a phone whose ring switch is off. WebKit takes that
+   * literally: `MediaDevices::getUserMedia` rejects every audio request with
+   * `InvalidStateError` -- "AudioSession category is not compatible with audio
+   * capture." -- while a category override other than `PlayAndRecord` is in
+   * force, and it does so *before* reading a constraint or choosing a device.
+   *
+   * That is why #94, #95 and #97 (all `AudioContext` work) changed nothing:
+   * the guard reads a category override no `AudioContext` operation writes.
+   * And it is why #98's plain `{ audio: true }` retry produced the identical
+   * sentence: the guard never looks at the constraints, so both asks fail the
+   * same way. The one thing that was never done was telling the page the take
+   * was coming.
+   */
+  it('declares a capture category before it asks for the microphone', async () => {
+    const recorder = await startRecording();
+
+    expect(steps[0]).toBe('session:play-and-record');
+    expect(steps.indexOf('session:play-and-record')).toBeLessThan(
+      steps.indexOf('permission'),
+    );
+
+    await recorder.stop().catch(() => {});
+  });
+
+  it('hands the page back to playback when the take ends', async () => {
+    const recorder = await startRecording();
+    expect(sessionType).toBe('play-and-record');
+
+    await recorder.stop().catch(() => {});
+
+    // Listen on the verdict screen is usually the next sound this page makes,
+    // and `play-and-record` costs output volume.
+    expect(sessionType).toBe('playback');
+  });
+
+  it('hands it back when the microphone is refused, so the page still plays', async () => {
+    vi.stubGlobal('navigator', {
+      audioSession: {
+        get type() {
+          return sessionType;
+        },
+        set type(value: string) {
+          sessionType = value;
+        },
+      },
+      mediaDevices: {
+        getUserMedia: async () => {
+          throw new DOMException('denied', 'NotAllowedError');
+        },
+      },
+    });
+
+    await expect(startRecording()).rejects.toThrow();
+
+    expect(sessionType).toBe('playback');
+  });
+});
 
 describe('startRecording (web)', () => {
   it('reports actual signal and clears it when count-in audio is discarded', async () => {

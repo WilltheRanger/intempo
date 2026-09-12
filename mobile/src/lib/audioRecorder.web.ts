@@ -12,6 +12,7 @@ import {
   shouldRetryUnconstrained,
 } from './audio/microphoneFailure';
 import { audioContext, releaseAudioSession } from './audio/context.web';
+import { prepareForCapture, prepareForPlayback } from './audio/session.web';
 import { durationOf, encodeWav } from './audio/wav';
 import { resolveWorkletUrl, WORKLET_FILE as WORKLET } from './audio/workletUrl';
 
@@ -71,45 +72,55 @@ export async function startRecording(): Promise<Recorder> {
 
 
   /**
-   * **The microphone first, the audio graph second — and that order is the
-   * whole reason this function was rewritten.**
+   * **The microphone first, the audio graph second.**
    *
-   * It used to construct the `AudioContext` and `resume()` it before asking
-   * for the microphone, to unlock audio while the Record tap still owned the
-   * user gesture. On Chromium that is harmless and on WebKit it is fatal:
-   * resuming a context claims a *playback* audio session, and the capture
-   * request that follows has to take the session category away from it.
-   * WebKit rejects that `getUserMedia` with `InvalidStateError`.
+   * This order was arrived at as a fix for the `InvalidStateError` below and
+   * **it was not the cause** — see the note on `prepareForCapture` further
+   * down, and `audio/session.web.ts` for what was. It is kept because it is
+   * the better shape on its own merits: a refusal now happens before any graph
+   * exists, so there is nothing to tear down, and a successful `getUserMedia`
+   * is itself what unlocks audio on iOS, so a context created after it starts
+   * unlocked rather than needing the tap.
    *
-   * **Reported from a real iPhone on 2026-09-12 and narrowed by elimination**,
-   * because the first reading of it was wrong. The error says the document is
-   * not fully active, so the screen advised a reload; reloading changed
-   * nothing, which it could not, since the conflict is rebuilt on every tap.
-   * It failed in Safari as well as in the home-screen app, so the standalone
-   * context was not it either. It worked in Chromium on a desktop, and — the
-   * measurement that settled it — the stock WebRTC `getUserMedia` sample
-   * worked in Safari **on the same phone**. Plain capture is fine there. What
-   * is not fine is capture behind a running `AudioContext`, which is ours.
-   *
-   * The gesture argument the old order rested on does not apply once the
-   * microphone is granted: a successful `getUserMedia` is itself what unlocks
-   * audio on iOS, so a context created after it starts unlocked rather than
-   * needing the tap. The cost is that a refusal now happens before any graph
-   * exists, which is also the honest shape — there is nothing to tear down.
+   * **The paragraph that used to sit here claimed WebKit rejects capture made
+   * behind a running `AudioContext`.** It does not, and no measurement ever
+   * supported it: it was inferred from the error's name and shipped three
+   * times. `MediaDevices::getUserMedia` reads a process-level *audio session
+   * category*, which no `AudioContext` operation writes.
    */
-  // **Hand the audio session back before asking for capture.**
+  // **Suspend the shared context before capture.**
   //
-  // Listen leaves the shared context *running*, and WebKit will not take the
-  // session category away from a running playback context — it rejects the
-  // capture request with `InvalidStateError` instead. Taking the microphone
-  // first (the fix before this one) only helped when no context existed yet;
-  // pressing Listen and then Record walked straight back into it, which is
-  // what the owner kept seeing after both earlier fixes shipped.
+  // Also not the cause — the sentence that stood here, that WebKit will not
+  // take the session category away from a running playback context, was the
+  // third wrong reading of this bug. It is kept because suspending a playback
+  // graph the musician is not listening to, for the length of a take, costs
+  // nothing and is tidy.
   //
   // Suspended, not closed: `close()` on iOS does not reliably return the
   // slot, which is `lib/audio/context.web.ts`'s founding argument. The resume
   // below brings it back once the microphone is in hand.
+  //
+  // **Despite its name it does not touch `navigator.audioSession`**, and that
+  // gap is exactly how the fix before this one read as "handing the audio
+  // session back" while leaving the category that was refusing capture set.
   await releaseAudioSession();
+
+  // **Tell WebKit this page is about to record, because at boot it was told
+  // the opposite.**
+  //
+  // `App.tsx` declares `navigator.audioSession.type = 'playback'` so the app
+  // is audible on a phone whose ring switch is off, and WebKit honours that
+  // literally: `getUserMedia` rejects every audio request with
+  // `InvalidStateError` while a category override other than `PlayAndRecord`
+  // is in force, before it reads a single constraint. That is the whole bug,
+  // and `audio/session.web.ts` carries the guard's source and the reasoning.
+  //
+  // Ahead of both asks below, because the guard is what refuses them. The take
+  // hands the category back in `teardown` — and every path that makes a sound
+  // re-asserts `playback` before it plays anyway, which `session.reach.test.ts`
+  // enforces, so a take that dies before `teardown` exists cannot leave the
+  // page quiet.
+  await prepareForCapture();
 
   let media: MediaStream;
   {
@@ -134,12 +145,16 @@ export async function startRecording(): Promise<Recorder> {
         try {
           media = await navigator.mediaDevices.getUserMedia({ audio: true });
         } catch (retryError) {
+          // No take is starting, so the capture category has nothing to do:
+          // give the page back the one it is audible under.
+          void prepareForPlayback();
           throw microphoneFailure(retryError);
         }
       } else {
         // Every failure that was not a refusal used to become "No microphone is
         // available on this device.", on phones that plainly have one.
         // `microphoneFailure` names what actually happened.
+        void prepareForPlayback();
         throw microphoneFailure(error);
       }
     }
@@ -348,6 +363,11 @@ export async function startRecording(): Promise<Recorder> {
       } finally {
         node.port.onmessage = null;
         stopTracks();
+        // The take is over, so the recording category is too. `play-and-record`
+        // costs output volume — the one true half of the comment that caused
+        // this bug — and Listen on the verdict screen is usually the very next
+        // sound this page makes.
+        void prepareForPlayback();
         // A browser may have already shut down the graph on interruption.
         // Cleanup must not discard captured audio or leave an unhandled
         // rejection when cancel() is called during navigation.
