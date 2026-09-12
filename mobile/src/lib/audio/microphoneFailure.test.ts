@@ -113,14 +113,53 @@ describe('the home-screen app', () => {
 });
 
 describe('asking again without our preferences', () => {
-  it('retries only when the constraints were the thing refused', () => {
-    for (const name of ['OverconstrainedError', 'ConstraintNotSatisfiedError']) {
-      expect(shouldRetryUnconstrained(domException(name))).toBe(true);
+  /*
+   * **This test encoded the bug, and that is why it passed for months.**
+   *
+   * It asserted that only `OverconstrainedError` and
+   * `ConstraintNotSatisfiedError` earn a retry — which is what a browser is
+   * *supposed* to answer when it cannot meet a constraint, and is exactly the
+   * assumption the code made. WebKit answers `InvalidStateError` instead, so
+   * the fallback that exists for this never ran on the one engine that needed
+   * it, and the test agreed with the code all the way down.
+   *
+   * Reported from a real iPhone across 2026-09-12: the stock WebRTC sample,
+   * which asks for plain `{ audio: true }`, records on that phone; ours, with
+   * four constraints, does not. Three fixes to the surrounding `AudioContext`
+   * changed nothing, because the context was never what was being refused.
+   */
+  it('retries for anything a plainer request might survive', () => {
+    for (const name of [
+      'OverconstrainedError',
+      'ConstraintNotSatisfiedError',
+      // The one that took three wrong fixes to find.
+      'InvalidStateError',
+      'NotReadableError',
+      'AbortError',
+      'SecurityError',
+      'SomeErrorWebKitHasNotInventedYet',
+    ]) {
+      expect(shouldRetryUnconstrained(domException(name)), name).toBe(true);
     }
-    for (const name of ['NotAllowedError', 'NotFoundError', 'NotReadableError']) {
-      expect(shouldRetryUnconstrained(domException(name))).toBe(false);
+  });
+
+  it('does not retry the two answers a second attempt cannot change', () => {
+    // A refusal is a decision, and asking again asks the same question. No
+    // device is no device, and dropping a preference will not conjure one.
+    for (const name of [
+      'NotAllowedError',
+      'PermissionDeniedError',
+      'NotFoundError',
+      'DevicesNotFoundError',
+    ]) {
+      expect(shouldRetryUnconstrained(domException(name)), name).toBe(false);
     }
-    expect(shouldRetryUnconstrained(new Error('boom'))).toBe(false);
+  });
+
+  it('retries something that is not a DOMException at all', () => {
+    // A browser that rejects with a plain Error tells us nothing about why,
+    // and one more call is cheap on a path that has already failed.
+    expect(shouldRetryUnconstrained(new Error('boom'))).toBe(true);
   });
 });
 

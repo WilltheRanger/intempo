@@ -164,15 +164,54 @@ export function microphoneFailure(
   );
 }
 
-/** Whether asking again without our audio preferences is worth a try. */
+/**
+ * The two answers a second attempt cannot change.
+ *
+ * A refusal is a decision, and asking again with different constraints asks
+ * the same question. No device is no device, and dropping a preference will
+ * not conjure one.
+ */
+const FINAL = [
+  'NotAllowedError',
+  'PermissionDeniedError',
+  'NotFoundError',
+  'DevicesNotFoundError',
+];
+
+/**
+ * Whether asking again without our audio preferences is worth a try.
+ *
+ * We ask for raw, unprocessed mono audio because the analysis wants the
+ * attacks as played. **That is a preference, not a requirement** — and the
+ * rule has always said so: "a device that cannot give it should still get to
+ * record: a take with echo cancellation on beats no take at all."
+ *
+ * **The rule was right and its trigger was far too narrow**, which is the
+ * defect three fixes to `audioRecorder.web.ts` walked past. It retried only on
+ * `OverconstrainedError` and `ConstraintNotSatisfiedError`, which is what a
+ * browser is *supposed* to answer when it cannot meet a constraint. WebKit,
+ * reported from a real iPhone across 2026-09-12, answers `InvalidStateError`
+ * instead — so the fallback that exists precisely for this never ran, and the
+ * take died on a preference.
+ *
+ * The evidence it took to get here is worth keeping, because every earlier
+ * reading of it was wrong:
+ *
+ *   - the stock WebRTC `getUserMedia` sample, which asks for plain
+ *     `{ audio: true }`, **records on that same phone**;
+ *   - ours, asking for four constraints, does not — in Safari and in the
+ *     home-screen app alike;
+ *   - it works in Chromium, which satisfies them;
+ *   - and it is unmoved by three fixes to the `AudioContext` around it,
+ *     because the context was never what WebKit was objecting to.
+ *
+ * So the question this asks is inverted: not "is this the one error that means
+ * constraints", but "is there any reason a second, plainer attempt could not
+ * help". Two answers qualify, and both are in `FINAL`. Everything else is
+ * worth one more call — the cost of being wrong is a single extra
+ * `getUserMedia` on a path that was about to fail anyway.
+ */
 export function shouldRetryUnconstrained(error: unknown): boolean {
-  // We ask for raw, unprocessed mono audio because the analysis wants the
-  // attacks as played. That is a preference, and a device that cannot give it
-  // should still get to record: a take with echo cancellation on beats no take
-  // at all.
-  return (
-    error instanceof DOMException
-    && (error.name === 'OverconstrainedError'
-      || error.name === 'ConstraintNotSatisfiedError')
-  );
+  const name = error instanceof DOMException ? error.name : '';
+  return !FINAL.includes(name);
 }

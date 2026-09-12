@@ -291,6 +291,57 @@ describe('startRecording (web)', () => {
     recorder.cancel();
   });
 
+  /*
+   * **The whole bug, end to end, in the recorder rather than in the rule.**
+   *
+   * WebKit refuses our four audio constraints with `InvalidStateError` rather
+   * than the `OverconstrainedError` the retry was keyed on, so a take died on
+   * a *preference* the code explicitly calls "not a requirement". The stock
+   * WebRTC sample, asking for plain `{ audio: true }`, records on the same
+   * phone.
+   */
+  it('falls back to plain audio when the constraints are refused', async () => {
+    const asked: MediaStreamConstraints[] = [];
+    vi.stubGlobal('navigator', {
+      mediaDevices: {
+        getUserMedia: async (constraints: MediaStreamConstraints) => {
+          asked.push(constraints);
+          if (asked.length === 1) {
+            throw new DOMException('not allowed here', 'InvalidStateError');
+          }
+          return { getTracks: () => [{ stop: () => { tracksStopped += 1; } }] };
+        },
+      },
+    });
+
+    const recorder = await startRecording();
+
+    expect(asked).toHaveLength(2);
+    // The first asks for raw mono, because the analysis wants the attacks as
+    // played; the second gives that up rather than the take.
+    expect(asked[0].audio).toMatchObject({ echoCancellation: false });
+    expect(asked[1]).toEqual({ audio: true });
+    recorder.cancel();
+  });
+
+  it('does not ask twice when the musician said no', async () => {
+    const asked: MediaStreamConstraints[] = [];
+    vi.stubGlobal('navigator', {
+      mediaDevices: {
+        getUserMedia: async (constraints: MediaStreamConstraints) => {
+          asked.push(constraints);
+          throw new DOMException('denied', 'NotAllowedError');
+        },
+      },
+    });
+
+    await expect(startRecording()).rejects.toThrow();
+
+    // Dropping a preference does not change a decision, and a second prompt
+    // for the same permission is worse than none.
+    expect(asked).toHaveLength(1);
+  });
+
   it('records twice without re-registering the worklet', async () => {
     let modules = 0;
     class CountingContext extends StubContext {
@@ -493,9 +544,16 @@ describe('when the microphone will not start', () => {
   it('stops calling a phone with a microphone "no microphone"', async () => {
     // The bug this was reported as: on a real iPhone, every failure that was
     // not a refusal produced "No microphone is available on this device."
-    const asked = rejectWith(new DOMException('busy', 'NotReadableError'));
+    //
+    // **Both attempts fail here, and that is the change.** This used to reject
+    // after one call, because only `OverconstrainedError` earned a retry. A
+    // busy device now gets a second, plainer ask — the microphone may be held
+    // by something that only conflicts with our constraints — and the sentence
+    // under test is what it says once *that* has failed too.
+    const busy = new DOMException('busy', 'NotReadableError');
+    const asked = rejectWith(busy, busy);
 
     await expect(startRecording()).rejects.toThrow(/busy/);
-    expect(asked).toHaveLength(1);
+    expect(asked).toHaveLength(2);
   });
 });
