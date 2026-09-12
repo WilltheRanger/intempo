@@ -191,6 +191,7 @@ describe('a take whose piece is not there', () => {
     expect(readTakeFailure(new TypeError('Failed to fetch'), 'web')).toEqual({
       message: GENERIC_TAKE_FAILURE,
       retriable: true,
+      recovery: null,
     });
   });
 

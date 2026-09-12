@@ -289,6 +289,78 @@ async function checkCamera(browser) {
   await context.close();
 }
 
+/**
+ * A document WebKit will not capture from, and the way out of it.
+ *
+ * **Reported from a real iPhone on 2026-09-12**, on the deployed build, in a
+ * home-screen web app. `getUserMedia` rejected with `InvalidStateError` — the
+ * document was not fully active — and the screen said so correctly and then
+ * advised "Pull down to refresh, then try again" on a screen that renders
+ * `<ScreenContainer scrollable={false}>`, inside a context with no address bar.
+ * Every route the advice named was absent.
+ *
+ * So the assertion is not that a sentence appears. It is that the control
+ * exists and **actually reloads the page** — checked by planting a value on
+ * `window` and requiring it to be gone afterwards, because a button that looks
+ * right and does nothing is the failure this is about, one layer up.
+ */
+async function checkStaleDocument(browser) {
+  console.log('\nmicrophone, stale document');
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    permissions: ['microphone'],
+  });
+  const page = await context.newPage();
+  await page.addInitScript(() => {
+    const media = navigator.mediaDevices;
+    if (!media) return;
+    media.getUserMedia = () =>
+      Promise.reject(new DOMException('not fully active', 'InvalidStateError'));
+  });
+  await page.goto(`${BASE}/pieces/${PIECE}/record`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(1200);
+  await clearFirstTakeGate(page);
+  await page.click('[aria-label="Start recording"]').catch(() => {});
+  await page.waitForTimeout(2500);
+
+  const screen = await page.evaluate(() => document.body.innerText || '');
+  if (/reload/i.test(screen) && !/pull down|address bar/i.test(screen)) {
+    pass('says the page needs reloading, and names no gesture it lacks');
+  } else {
+    fail(
+      'says the page needs reloading, and names no gesture it lacks',
+      screen.slice(0, 160).replace(/\n/g, ' / '),
+    );
+  }
+
+  // Survives a re-render; does not survive a navigation. That asymmetry is the
+  // whole assertion.
+  await page.evaluate(() => {
+    window.__beforeReload = 'still here';
+  });
+
+  const button = page.locator('text=Reload and try again').first();
+  if (!(await button.count())) {
+    fail('offers a control that performs the reload', 'no reload control on screen');
+    await context.close();
+    return;
+  }
+
+  await button.click();
+  await page.waitForTimeout(2500);
+  const survived = await page.evaluate(() => window.__beforeReload ?? null);
+  if (survived === null) {
+    pass('offers a control that performs the reload');
+  } else {
+    fail(
+      'offers a control that performs the reload',
+      'the button is drawn but the document never reloaded',
+    );
+  }
+
+  await context.close();
+}
+
 async function checkCameraRefused(browser) {
   console.log('\ncamera, refused');
   const context = await browser.newContext({
@@ -399,6 +471,7 @@ async function main() {
     args: ['--use-fake-device-for-media-stream'],
   });
   await checkMicrophoneRefused(refused);
+  await checkStaleDocument(refused);
   await checkCameraRefused(refused);
   await refused.close();
 
