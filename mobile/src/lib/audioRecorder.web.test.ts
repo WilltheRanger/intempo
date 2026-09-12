@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { EmptyRecordingError } from './audio/types';
+import { resetAudioContextForTests } from './audio/context.web';
 import { startRecording } from './audioRecorder.web';
 
 /**
@@ -64,6 +65,11 @@ class StubContext {
 beforeEach(() => {
   posted = [];
   tracksStopped = 0;
+  // **The recorder shares the app's one context now**, and that context is
+  // module state which outlives a test. Without this, every case after the
+  // first gets the previous case's stub — including its already-registered
+  // worklet — and asserts against a graph it did not build.
+  resetAudioContextForTests();
   vi.stubGlobal('navigator', {
     mediaDevices: {
       getUserMedia: async () => ({
@@ -211,6 +217,51 @@ describe('startRecording (web)', () => {
     await recorder.stop().catch(() => {});
   });
 
+  /*
+   * **Both halves of sharing the app's one context**, and each was a way the
+   * second take of a session could break while the first worked.
+   */
+  it('records twice without re-registering the worklet', async () => {
+    let modules = 0;
+    class CountingContext extends StubContext {
+      audioWorklet = {
+        addModule: async () => {
+          modules += 1;
+          if (modules > 1) {
+            // What a browser actually does: the module calls
+            // `registerProcessor('pcm-recorder', ...)` and a second
+            // registration of the same name is refused.
+            throw new DOMException('already registered', 'NotSupportedError');
+          }
+        },
+      };
+    }
+    vi.stubGlobal('window', { AudioContext: CountingContext });
+
+    const first = await startRecording();
+    first.cancel();
+    const second = await startRecording();
+    second.cancel();
+
+    expect(modules).toBe(1);
+  });
+
+  it('leaves the shared context open for Listen after a take', async () => {
+    let closed = 0;
+    class WatchedContext extends StubContext {
+      async close() {
+        closed += 1;
+      }
+    }
+    vi.stubGlobal('window', { AudioContext: WatchedContext });
+
+    const recorder = await startRecording();
+    node.deliver(silenceWith(4096, 20000));
+    await recorder.stop();
+
+    expect(closed).toBe(0);
+  });
+
   it('releases the microphone after graph failure so a retry can record', async () => {
     let closed = 0;
     let attempts = 0;
@@ -227,7 +278,13 @@ describe('startRecording (web)', () => {
     vi.stubGlobal('window', { AudioContext: FailingContext });
     await expect(startRecording()).rejects.toThrow(/try Record again/);
     expect(tracksStopped).toBe(1);
-    expect(closed).toBe(1);
+    // **Not closed, and this assertion is the reversal.** It read `toBe(1)`
+    // while every take built its own context. The context is the app's one
+    // now — shared with Listen and the metronome — and closing it is the bug
+    // `lib/audio/context.web.ts` exists to prevent: on iOS the slot does not
+    // reliably come back, so the next Listen gets a context born suspended,
+    // or none at all.
+    expect(closed).toBe(0);
     const recorder = await startRecording();
     node.deliver(silenceWith(4096, 20000));
     expect((await recorder.stop()).seconds).toBeGreaterThan(0);
