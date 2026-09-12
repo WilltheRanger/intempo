@@ -191,13 +191,36 @@ async function checkMicrophone(browser) {
 
 async function checkMicrophoneRefused(browser) {
   console.log('\nmicrophone, refused');
-  // No permission, and no `--use-fake-ui-for-media-stream` on this browser, so
-  // `getUserMedia` rejects exactly as it does for somebody who pressed Block.
   const context = await browser.newContext({
     viewport: { width: 390, height: 844 },
     permissions: [],
   });
   const page = await context.newPage();
+  // **The denial is staged, not hoped for.** Withholding the permission and
+  // letting the browser reject looked equivalent and is not: on a headless
+  // runner with no audio subsystem the rejection is a *device* error, so the
+  // app correctly said "The microphone could not be started" and this check —
+  // which demanded the permission wording — failed on CI while passing on a
+  // laptop. That is the check being wrong about the app, which is the worst
+  // way for one to fail.
+  //
+  // `NotAllowedError` is what a browser throws for Block, so throwing it here
+  // asks the question the check means to ask: given a refusal, does the screen
+  // name the remedy. The device error has its own copy and its own path
+  // through `microphoneFailure.ts`; this is not it.
+  //
+  // **A real `DOMException`, not an `Error` wearing its name.**
+  // `microphoneFailure` opens with `error instanceof DOMException ? error.name
+  // : ''`, deliberately — a duck-typed name is not a browser's answer. The
+  // first attempt at this stub threw `Object.assign(new Error(...), { name })`
+  // and fell straight through to "could not be started", which is the app
+  // being right and the check being counterfeit.
+  await page.addInitScript(() => {
+    const media = navigator.mediaDevices;
+    if (!media) return;
+    media.getUserMedia = () =>
+      Promise.reject(new DOMException('Permission denied', 'NotAllowedError'));
+  });
   await page.goto(`${BASE}/pieces/${PIECE}/record`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(1200);
   await clearFirstTakeGate(page);
