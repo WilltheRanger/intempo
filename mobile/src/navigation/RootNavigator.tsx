@@ -38,6 +38,7 @@ import { TranscribeScreen } from '../screens/transcribe/TranscribeScreen';
 import { TranscriptionReviewScreen } from '../screens/transcriptionReview/TranscriptionReviewScreen';
 import { VerdictScreen } from '../screens/verdict/VerdictScreen';
 import { BottomTabBar } from './BottomTabBar';
+import { StackScene } from './StackScene';
 import type { RootStackParamList, TabParamList } from './types';
 
 const Tab = createBottomTabNavigator<TabParamList>();
@@ -298,7 +299,18 @@ function SignedInApp() {
   }
 
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Navigator
+      screenOptions={{ headerShown: false }}
+      /*
+        **Every pushed screen arrives, on the build that draws no transition
+        of its own.** `native-stack` is the platform's own navigation
+        controller on a phone and a `display: none` switch on the web, so this
+        wrapper is a no-op on native and the whole entrance on the web — see
+        `StackScene`. One `screenLayout` rather than nineteen wrapped
+        components: a screen added below would otherwise be the one that pops.
+      */
+      screenLayout={({ children }) => <StackScene>{children}</StackScene>}
+    >
       <Stack.Screen name="Tabs" component={TabNavigator} />
       <Stack.Screen name="AddPiece" component={AddPieceScreen} />
       {/* Full-bleed dark camera surface — presented over everything. */}

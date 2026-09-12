@@ -1,5 +1,195 @@
 # InTempo Decisions
 
+## 2026-09-12 — Today is one screen with one action, and the warmup moves rather than dies
+
+**Context.** The owner: *"there should be no scrollable thing under the today
+section, remove warmp, practice focus, and repertoire que."*
+
+Today was a full-viewport photograph with five blocks scrolling beneath it: a
+warmup panel, a "Practice focus" card, a "Repertoire queue" of two rows, a list
+of recent takes, and a one-line practice snapshot. Three were named.
+
+**Decision.** All five go; Today is the hero and nothing else, in a
+`ScreenContainer` with `scrollable={false}`.
+
+Removing only the three named blocks would have left roughly half a screen of
+content under a hero that is exactly one viewport tall — which *is* the
+scrolling being complained about. The other two were the ones easiest to
+justify removing anyway: "Recent practice" and "Practice snapshot" are both
+copies of the Insights tab, which renders the same takes under "Recent
+sessions" and the same thirty-day reading as its title. Nothing that was only
+on Today has been lost.
+
+The **pending-take card** is the one block that was genuinely only here — the
+hand-off for a recording this device sent before the app was closed, which is
+the only route back to a result the recording screen did not get to show. It
+becomes one line under the hero's button, still a control: it opens the result
+when there is one and asks the server again when the answer could not be
+fetched. The wording is `pendingLineFor` in `heroContent.ts`, with tests,
+because four states sharing one line is a rule about wording.
+
+**The warmup keeps its screen and gets a new door**, in Profile's Practice
+section beside the instrument that decides the exercise.
+
+**Alternatives considered.**
+
+- *Delete the warmup outright.* "Remove warmup" can be read that way, and it is
+  what removing its only entry point amounts to — `navigationReachability.test.ts`
+  would have failed, correctly, on a screen nothing can open. Rejected because
+  it is ~700 lines of working, tested feature (the generator, the engraved
+  exercise, `warmupFor`/`warmupScore`, and `INSTRUMENT_LABELS`, which
+  `ListenButton` also uses) and the request was made in a list of three
+  *layout* blocks. Moving the door is one row of UI and reversible either way;
+  deleting the feature is not.
+- *Keep "Recent practice" and let Today scroll a little.* Rejected: it is the
+  thing that was asked to stop, and the rows duplicate Insights.
+- *Keep the pending-take card and let it be the only scrolling block.* Rejected
+  for the same reason, and because a block that appears only sometimes is the
+  worst candidate for teaching a screen to scroll.
+- *Put the warmup on the Record screen instead.* A better fit — warming up
+  before a take is what a warmup is for — and it means new UI on a screen
+  nobody asked about. Profile is the low-risk door; Record is the right one if
+  the owner wants it later.
+
+**Trade-offs accepted.**
+
+- **No pull-to-refresh on Today.** There is no scroll view to pull. React Query
+  refetches on focus, and the one thing worth asking again for has its own
+  control.
+- **The warmup is now two taps further away** — Profile, then the row — from a
+  screen that is not where you would look for it.
+- **`useInsights` no longer runs on Today**, so the tab is one request lighter
+  and the Insights tab pays for its own data.
+- `screens/today/TodayRow.tsx` is left where it is, imported only by Insights.
+  Moving it is a rename across three files and no behaviour; it is a tidy-up,
+  not part of this.
+
+**Three-foot test**, run on the built screen rather than on the intention:
+title ("Sonata No. 1 in G minor, BWV 1001"), then the button ("Continue
+practice"), then the greeting. One dominant focal point, and the thumb zone
+belongs to the action.
+
+## 2026-09-12 — The Library identifies a piece by its name, not by a photograph of its first page
+
+**Context.** The owner: *"Instead of saving the imags and using them to show as
+identifiers in the library lets remove it and redesign it so it doesnt use so
+much egress. Just remove loading images of the picture because it makes it
+incredibly laggy."*
+
+Every Library row opened with a 52×38 crop of the piece's own first page,
+signed out of a private Supabase bucket — one HTTPS fetch of a
+full-resolution phone photograph per row, decoded and downsampled on the
+client, on the one screen built for scrolling past forty of them. The
+bandwidth is billed.
+
+**Decision.** `PieceRow` drops `ScoreThumbnail`. The row is an index entry: the
+title in the serif, the composer and the age in a quiet line under it, a
+chevron, a hairline, and 16pt of vertical padding rather than 12.
+
+It is not only a performance decision. A page crop is a weak identifier: every
+one of them is a band of staff lines on white paper, and at 52pt the title that
+distinguishes them is unreadable. The screen looked like a library and
+identified nothing. §3 law 8 — typography creates the hierarchy — is the
+replacement, and the padding is the part that matters, because the picture was
+setting the row's *rhythm* even though it never set its height.
+
+**Where the photograph stays.** `PieceDetailScreen` still opens with the page
+as a full-bleed band, `PieceScoreScreen` shows every page, and the scanner and
+the transcription review still show what was captured. All of those are one
+piece at a time, and on those screens the photograph is the content rather than
+a bullet point.
+
+**Alternatives considered.**
+
+- *Serve a real thumbnail — a 104px derivative generated on accept.* The
+  correct fix for the egress and the decode cost, and it keeps the cover art.
+  Rejected for now: it is a backend change (a derivative, a second bucket path,
+  a migration for the URL) for a picture that was not identifying anything, and
+  the owner asked for the pictures gone rather than for them to be cheaper.
+  Worth revisiting only if the covers come back for a reason other than habit.
+- *Keep the image and lazy-load it below the fold.* Rejected — it defers the
+  egress rather than removing it, and does nothing for a musician who scrolls.
+- *A typographic monogram or a coloured tile in its place.* Rejected: §3 law 3
+  and law 6. It would be a box doing the work the type scale is now doing.
+
+**Trade-offs accepted.**
+
+- **The Library is less distinctive.** Sheet music is this app's visual
+  identity and the list no longer carries any of it. The detail screen does.
+- **`Piece.thumbnail` is still signed and sent by the list endpoint**, so the
+  server-side cost of signing is unchanged; only the fetch is gone. Dropping it
+  from the payload would be the backend half of this, and `PieceDetailScreen`
+  reads the same field.
+- **Rows are 10pt taller** (77 against 67 for a one-line entry), so about one
+  fewer row per screen.
+
+**Three-foot test**: the group heading ("This week"), then the titles as a
+column, then the composer line. The chevrons do not register until you look for
+them, which is right for a mark that only says "this opens".
+
+## 2026-09-12 — The web build draws its own push transition, rather than changing navigator
+
+**Context.** The owner: *"when loading pages there should be animations when
+opening them… one example of the currently bad design is when I click add
+piece(+ button) it just pops up instead of having like an animation."*
+
+Both halves turned out to be true for different reasons, and neither was a
+missing animation.
+
+`@react-navigation/native-stack` hands a push to UINavigationController on a
+phone and gets a real platform transition. On the web `react-native-screens` is
+a stub — `ScreenStack` is a `View`, and `NativeStackView` gives the focused
+screen `display: 'flex'` and every other one `display: 'none'` — so a push is
+one frame, with no transition to configure. The `animation` option is inert
+there.
+
+The sheet *did* animate. It was the curve: `EASE_OUT` delivers 96% of its
+travel in half its duration, so 240ms produced a ~120ms movement, measured in
+Chromium at 97% of a 500pt journey inside 140ms.
+
+**Decision.** A `StackScene` wrapper, attached once as the navigator's
+`screenLayout`, that animates the entrance on web and renders its children
+untouched on native. The direction rule is `sceneMotion.ts`, with tests.
+`motion.sheet` is 440ms, and the curve's own docstring now carries the
+elapsed-versus-travelled table, because every duration in that file has to be
+read against it.
+
+**Alternatives considered.**
+
+- *Swap to `@react-navigation/stack` (the JS stack) on web.* It animates
+  properly and supports the iOS card preset, including the outgoing screen's
+  parallax — which this cannot draw at all, since the screen being left is
+  `display: none` on the first frame. Rejected: it requires
+  `react-native-gesture-handler` and `react-native-reanimated`, neither of
+  which this app has, and it means two navigators to keep in step. A large
+  dependency and a native rebuild for one platform's transition is the same
+  trade `BottomSheet` already declined for swipe-to-dismiss.
+- *Patch `react-native-screens`' web build to keep the outgoing screen
+  mounted.* Rejected: `patch-package` is already used here for other things, so
+  it is possible, but a patch to a navigation library's visibility model is the
+  kind that breaks silently on upgrade and takes a screen with it.
+- *Wrap each screen's component individually.* Rejected — nineteen call sites,
+  and the twentieth screen somebody adds is the one that pops. One
+  `screenLayout` cannot be forgotten, and the motion contract test holds it.
+- *A full-width slide, like iOS.* Rejected and the reason is in
+  `sceneMotion.ts`: with the previous screen already gone, a full-width slide
+  is the new screen sweeping across an empty page background. 32pt with a fade
+  keeps the blank behind type that is still nearly transparent.
+- *Make the sheet spring instead of lengthening it.* A spring is what iOS uses
+  and it overshoots; the sheet is anchored to the bottom edge, so an overshoot
+  lifts it off that edge and shows the scrim under it. Clamping the overshoot
+  away leaves a spring that is only a curve, which is what a timed curve
+  already is.
+
+**Trade-offs accepted.**
+
+- **The outgoing screen does not move on the web.** Half of an iOS push, and
+  the half that cannot be had without one of the rejected options.
+- **`motion.push` and `motion.spring` are both 320ms**, which is a collision
+  only for something selecting elements by transition duration.
+- **A ~35ms hold at the start state** before the transition begins — the two
+  animation frames plus React's commit. It reads as the tap's own latency.
+
 ## 2026-09-11 — Delete the four features no screen could reach, rather than find them homes
 
 **Context.** `check-dead-exports.py` has reported the same four for weeks:

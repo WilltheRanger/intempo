@@ -17,24 +17,39 @@
 
     <!--
       The page's own ground, which is not the same thing as the app's.
-      `ScreenContainer` paints ivory inside the React tree; anything outside it
-      — the strip behind the status bar, the overscroll region, the browser
-      chrome it tints — falls through to the document, and the document's
-      default is white. On a warm-ivory app that shows up as a white band above
-      the greeting.
+      `ScreenContainer` paints the page colour inside the React tree; anything
+      outside it — the strip behind the status bar, the overscroll region, the
+      browser chrome it tints — falls through to the document, and the
+      document's default is white. On a warm-ivory app that shows up as a white
+      band above the greeting.
 
-      `theme-color` is the same value for Android and for an installed PWA.
+      **Two values, because the app has two appearances.** There was one, and
+      it was the light one: installed to a home screen and opened on a phone in
+      dark mode, the strip behind the clock and the Dynamic Island came out
+      ivory above a near-black app. Reported as the status bar "showing the
+      light mode color instead of the grey". A `theme-color` carries a `media`
+      attribute for exactly this, and the browser picks the first one whose
+      query matches — so the dark rule goes first and the unqualified light one
+      stays last as the answer for everything that does not understand either.
 
-      This hex is the one place in the app allowed to repeat a design token, and
-      only because an HTML file cannot import one. It mirrors `colors.bg` in
-      `src/design/colors.ts`, and `scripts/flatten-vendor-assets.mjs` fails the
-      build if the two drift apart — drift here is invisible in code review and
-      obvious on a phone.
+      These hexes are the one place in the app allowed to repeat a design
+      token, and only because an HTML file cannot import one. They mirror
+      `bg` in the light and dark palettes of `src/design/colors.ts`, and
+      `scripts/flatten-vendor-assets.mjs` fails the build if any of the four
+      drift apart — drift here is invisible in code review and obvious on a
+      phone.
     -->
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#14110E" />
     <meta name="theme-color" content="#F7F2E9" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="InTempo" />
+    <!--
+      **`default`, which means "follow `theme-color`", not "be white".** The
+      other values are `black` and `black-translucent`; `black` would pin the
+      strip to black in *both* appearances, and `black-translucent` would put
+      the app's first pixel under the clock, which this layout does not expect.
+    -->
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/app-icon.png" />
@@ -46,11 +61,38 @@
       favicon link at export time.
     -->
     <style id="expo-reset">
+      /*
+       * **`color-scheme` first, and it is doing real work.** It tells the
+       * browser this document has a dark appearance, which is what makes the
+       * scrollbars, the form controls and — on iOS — the rubber-band
+       * overscroll behind the app come back dark instead of light. Without it
+       * the declaration below repaints the page and the platform furniture
+       * around it stays white.
+       */
+      html {
+        color-scheme: light dark;
+      }
+
       /* These styles make the body full-height */
       html,
       body {
         height: 100%;
         background-color: #F7F2E9;
+      }
+
+      /*
+       * The same ground the app resolves for itself at boot.
+       *
+       * `src/design/resolved.ts` reads the system setting and picks a palette;
+       * this is the half of it that lives outside React, and it has to agree
+       * or the strip behind the status bar and the overscroll region are the
+       * wrong appearance's page. Mirrors `darkColors.bg`.
+       */
+      @media (prefers-color-scheme: dark) {
+        html,
+        body {
+          background-color: #14110E;
+        }
       }
       /* These styles disable body scrolling if you are using <ScrollView> */
       body {

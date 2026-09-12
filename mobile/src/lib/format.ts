@@ -41,11 +41,13 @@ export function daysSincePracticed(
  * rather than rendering a placeholder.
  *
  * `now` is here so a caller that has already decided *which* piece against a
- * given instant can describe it against the same one. `today.suggestionsFor`
- * takes a `now` and did not pass it, so with an injected clock it chose the
- * piece against that instant and then labelled it off the wall clock — a
- * fortnight-old take reading "Practiced yesterday". Harmless in the app, where
- * both are the current time, and a trap for anything that ever isn't.
+ * given instant can describe it against the same one. The caller this was
+ * added for was Today's repertoire ranking, `lib/today.ts`: it took a `now`
+ * and did not pass it, so with an injected clock it chose the piece against
+ * that instant and then labelled it off the wall clock — a fortnight-old take
+ * reading "Practiced yesterday". That module is gone with the block it fed
+ * (see `TodayScreen`), and the parameter stays because the trap does: it is
+ * harmless only while the two clocks are the same.
  */
 export function formatLastPracticed(
   isoTimestamp: string | null,

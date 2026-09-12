@@ -51,6 +51,15 @@ export interface GlassSurfaceProps {
    * but only visits elements with text in them, and an icon is a stroke.
    */
   tone?: 'auto' | 'onDark';
+  /**
+   * What kind of surface this is.
+   *
+   * `control` is the default — a capsule you press, or a small floating panel.
+   * `bar` is the persistent bottom navigation, which drops the specular catch
+   * in every appearance and over every ground; `glassMaterial` holds that rule
+   * and the three times it was asked for.
+   */
+  variant?: 'control' | 'bar';
   style?: StyleProp<ViewStyle>;
 }
 
@@ -107,6 +116,7 @@ export function GlassSurface({
   children,
   radius,
   tone = 'auto',
+  variant = 'control',
   style,
 }: GlassSurfaceProps) {
   // Gradient ids are document-global, so two surfaces on one screen would
@@ -116,11 +126,10 @@ export function GlassSurface({
   // The tone says two things, and the second is easy to miss: which palette the
   // layers are mixed from, and that the ground behind them is a screen's own
   // content rather than the app's flat page — so the tint carries more of it.
-  const material = glassMaterial(
-    useReducedTransparency(),
-    palette,
-    tone === 'onDark',
-  );
+  const material = glassMaterial(useReducedTransparency(), palette, {
+    overContent: tone === 'onDark',
+    bar: variant === 'bar',
+  });
 
   return (
     <View style={[styles.container, { borderRadius: radius }, style]}>

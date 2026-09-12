@@ -88,8 +88,8 @@ export interface ScreenContainerProps {
    * a photograph, which is what it looked like on the Today hero.
    *
    * Only for a screen whose *content* owns the full width. Everything inside
-   * still has to put the gutter back for its own text; `TodayScreen` does that
-   * below the hero.
+   * still has to put the gutter back for its own text; `PracticeHero` does
+   * that for the type it writes across the photograph.
    */
   bleed?: boolean;
   /**
@@ -261,7 +261,20 @@ export function ScreenContainer({
       {children}
     </ScrollView>
   ) : (
-    <View style={[styles.flex, styles.content, bottomInset, contentStyle]}>
+    // **`bleed` counts here too.** It was only read on the scrolling branch,
+    // so a full-bleed screen that does not scroll — Today — kept the 20pt
+    // gutter and drew a stripe of page background down each side of a
+    // photograph. The scrollbar half of `bleed` has nothing to do here: there
+    // is no scroll view to reserve a gutter in.
+    <View
+      style={[
+        styles.flex,
+        styles.content,
+        bleed ? styles.contentBleed : null,
+        bottomInset,
+        contentStyle,
+      ]}
+    >
       {children}
     </View>
   );

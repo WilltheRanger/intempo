@@ -282,6 +282,24 @@ export function ProfileScreen() {
       </Card>
 
       <SectionHeader label="Practice" style={styles.section} />
+      {/*
+        **The way into the warmup, and the only one.** It was a panel on Today
+        until Today became one photograph with one action on it; a screen
+        nothing opens is dead code on a phone, where there is no address bar
+        (`navigationReachability.test.ts`). This section is where the
+        instrument that decides the exercise is already chosen, which makes it
+        the honest home for the exercise itself rather than a spare corner.
+      */}
+      <Card padded={false} style={styles.settingCard}>
+        <View style={styles.rows}>
+          <LinkRow
+            label="Daily warmup"
+            onPress={() => navigation.navigate('Warmup')}
+            divided={false}
+          />
+        </View>
+      </Card>
+
       <Card style={styles.settingCard}>
         <Text variant="button">Instrument</Text>
         <Text
@@ -289,7 +307,7 @@ export function ProfileScreen() {
           color="textTertiary"
           style={styles.settingNote}
         >
-          Sets the instrument sound for Listen and the daily excerpt on Today.
+          Sets the instrument sound for Listen, and the warmup above.
         </Text>
 
         <SegmentedControl

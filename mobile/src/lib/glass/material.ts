@@ -27,15 +27,26 @@ export interface GlassMaterial {
   /**
    * The specular catch. Light-play across a curved *transparent* surface.
    *
-   * Off in two cases, and they are the same case twice. Over an opaque fill
-   * the gradient reads as a smudge rather than as light, because there is no
-   * transparent surface for light to be crossing. Over a screen's own
-   * photograph it reads as a gradient laid on the picture, because the
-   * photograph already has lighting of its own and this one disagrees with it
-   * — a light source implied from above, over a scene lit from somewhere else.
+   * Off in three cases. Over an opaque fill the gradient reads as a smudge
+   * rather than as light, because there is no transparent surface for light to
+   * be crossing. Over a screen's own photograph it reads as a gradient laid on
+   * the picture, because the photograph already has lighting of its own and
+   * this one disagrees with it — a light source implied from above, over a
+   * scene lit from somewhere else.
    *
-   * It is only convincing over the app's flat page, which has no light of its
-   * own to contradict.
+   * **And off on the bottom bar, in every appearance and over every ground.**
+   * A catch across a 44pt capsule reads as light on a lozenge; across the full
+   * width of the persistent bar it is simply a pale band down the top of the
+   * furniture you navigate by — the one element on screen at all times, so the
+   * one place a decorative gradient is hardest to stop seeing. The owner has
+   * asked for it gone three times now: "I don't really want a gradient on the
+   * bottom bar", then again, then "I have told you this many times". The first
+   * two fixes each removed it from one *ground* — over content, then over the
+   * photograph — which left it on every other screen. The bar is the rule, not
+   * what happens to be behind it.
+   *
+   * It is only convincing on a small capsule over the app's flat page, which
+   * has no light of its own to contradict.
    */
   specular: boolean;
   /**
@@ -68,12 +79,15 @@ export interface GlassMaterial {
  *  - The **catch goes.** See `specular` above: it implies a light source over
  *    a curved transparent surface, and a photograph is already lit from
  *    somewhere that is not there.
+ *
+ * `bar` takes the catch away too, and for a reason that has nothing to do with
+ * the ground — see `specular`.
  */
-function regular(palette: Palette, overContent: boolean): GlassMaterial {
+function regular(palette: Palette, { overContent, bar }: MaterialContext): GlassMaterial {
   return {
     diffusion: true,
     refraction: true,
-    specular: !overContent,
+    specular: !overContent && !bar,
     separator: true,
     edge: true,
     fill: overContent ? palette.glassTintOverContent : palette.glassTint,
@@ -100,21 +114,36 @@ function opaque(palette: Palette): GlassMaterial {
   };
 }
 
+/** What kind of surface this is, and what it is floating over. */
+export interface MaterialContext {
+  /**
+   * True when the surface floats over a screen's own content — a photograph, a
+   * viewfinder — rather than over the app's page. Ignored once transparency is
+   * reduced, since an opaque fill lets nothing through either way.
+   */
+  overContent?: boolean;
+  /**
+   * True for the persistent bottom bar, as opposed to a control capsule.
+   *
+   * A property of the *surface*, not of what is behind it, which is the whole
+   * correction: the catch was taken off the bar twice by narrowing the ground
+   * it was drawn on, and both times it stayed everywhere else.
+   */
+  bar?: boolean;
+}
+
 /**
- * @param overContent true when the surface floats over a screen's own content
- * — a photograph, a viewfinder — rather than over the app's page. Ignored once
- * transparency is reduced, since an opaque fill lets nothing through either
- * way.
  * @param palette the palette this launch resolved. Passed in rather than
  * imported, for two reasons: this module stays free of `react-native` so its
  * test can load it, and the fill has to be the *running* theme's glass — dark
  * glass is a dark tint, not an inverted light one, so a hardcoded import would
  * have shipped a pale bar floating over a dark app.
+ * @param context which surface this is and what it floats over.
  */
 export function glassMaterial(
   reduceTransparency: boolean,
   palette: Palette,
-  overContent = false,
+  context: MaterialContext = {},
 ): GlassMaterial {
-  return reduceTransparency ? opaque(palette) : regular(palette, overContent);
+  return reduceTransparency ? opaque(palette) : regular(palette, context);
 }
