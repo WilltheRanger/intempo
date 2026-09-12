@@ -1,6 +1,7 @@
 import type { Instrument } from '../../data/types';
 import type { Schedule } from './schedule';
 import type { PlaybackHandle, PlayOptions } from './player.types';
+import { listenFailure } from './listenFailure';
 import type { RenderedInstrument } from './soundfontRender';
 
 /** Returns immediately so loading itself can be stopped or superseded. */
@@ -46,17 +47,11 @@ export function beginSampledPlayback(
       else options.onLoading?.(false);
     } catch (error) {
       if (!stopped) {
-        options.onError?.(
-          error instanceof Error &&
-            (error.message.includes('ten minutes') ||
-              error.message.includes('no playable'))
-            ? error.message
-            : stage === 'loading'
-              ? 'Couldn’t load the instrument sound. Check your connection and tap Listen to retry.'
-              : stage === 'rendering'
-                ? 'Couldn’t prepare the audio. Try a shorter passage and tap Listen to retry.'
-                : 'Audio couldn’t start. Tap Listen to retry.',
-        );
+        // The stage *and* what the browser called it — see `listenFailure`.
+        // Three stages behind three fixed sentences made a screenshot of this
+        // narrow the cause to one of three, which is where a real report from
+        // an iPhone left us on 2026-09-12.
+        options.onError?.(listenFailure(stage, error));
         finish();
       }
     }
