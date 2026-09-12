@@ -1,5 +1,4 @@
 export {
-  ContinueSkeleton,
   PieceListSkeleton,
   type PieceListSkeletonProps,
 } from './PieceSkeletons';

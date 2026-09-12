@@ -34,22 +34,50 @@ describe.each(palettes)('glassMaterial (%s palette)', (_name, palette) => {
     // The specular implies a light source above a curved transparent surface.
     // Over the flat page there is nothing to contradict it; over a photograph
     // there is — the picture is already lit, from somewhere else — and the
-    // gradient reads as something laid on top rather than as light. Reported
-    // as "I don't really want a gradient on the bottom bar", which is exactly
-    // what it had become.
-    expect(glassMaterial(false, palette, true).specular).toBe(false);
-    expect(glassMaterial(false, palette, false).specular).toBe(true);
+    // gradient reads as something laid on top rather than as light.
+    expect(glassMaterial(false, palette, { overContent: true }).specular).toBe(false);
+    expect(glassMaterial(false, palette, { overContent: false }).specular).toBe(true);
   });
 
-  it('keeps every other layer over that content', () => {
+  /**
+   * **The bottom bar never takes the catch, whatever is behind it.**
+   *
+   * Asked for three times — "I don't really want a gradient on the bottom
+   * bar", then again, then "I have told you this many times that there should
+   * not be gradience on the lower bar". The first two fixes each narrowed the
+   * *ground*: once for chrome over a screen's own content, once for the Today
+   * photograph. Both left the catch on the bar over the Library, Insights and
+   * Profile pages, which is three of the four tabs. So the rule is about the
+   * surface, and this is the assertion that says so.
+   */
+  it('never draws the catch on the bottom bar', () => {
+    expect(glassMaterial(false, palette, { bar: true }).specular).toBe(false);
+    expect(
+      glassMaterial(false, palette, { bar: true, overContent: true }).specular,
+    ).toBe(false);
+  });
+
+  it('keeps every other layer on the bar and over content', () => {
     // Only the catch goes. It is still glass: still blurring, still bending,
     // and still carrying both hairlines, which are the shape rather than an
     // effect.
-    const over = glassMaterial(false, palette, true);
-    expect(over.diffusion).toBe(true);
-    expect(over.refraction).toBe(true);
-    expect(over.separator).toBe(true);
-    expect(over.edge).toBe(true);
+    for (const context of [{ overContent: true }, { bar: true }]) {
+      const material = glassMaterial(false, palette, context);
+      expect(material.diffusion).toBe(true);
+      expect(material.refraction).toBe(true);
+      expect(material.separator).toBe(true);
+      expect(material.edge).toBe(true);
+    }
+  });
+
+  it('keeps the page tint on the bar — only the catch is a bar rule', () => {
+    // The bar over the app's own page is ordinary glass on an ordinary ground,
+    // so it keeps `glassTint`. Over a screen's own content it still takes the
+    // lighter tint, which is a fact about the ground and not about the bar.
+    expect(glassMaterial(false, palette, { bar: true }).fill).toBe(palette.glassTint);
+    expect(
+      glassMaterial(false, palette, { bar: true, overContent: true }).fill,
+    ).toBe(palette.glassTintOverContent);
   });
 
   it('drops every translucency effect when transparency is reduced', () => {
@@ -98,7 +126,7 @@ describe.each(palettes)('glassMaterial (%s palette)', (_name, palette) => {
     // afford to be lighter, and `glassTintOverContent` is. Which way round is
     // `colors.ts`'s to say — this only holds that the two are not the same
     // decision.
-    expect(glassMaterial(false, palette, true).fill).toBe(
+    expect(glassMaterial(false, palette, { overContent: true }).fill).toBe(
       palette.glassTintOverContent,
     );
     expect(glassMaterial(false, palette).fill).toBe(palette.glassTint);

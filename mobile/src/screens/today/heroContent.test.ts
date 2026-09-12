@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Piece, ScoreJson } from '../../data/types';
-import { heroContentFor } from './heroContent';
+import { heroContentFor, pendingLineFor, type PendingCheck } from './heroContent';
 
 /**
  * What the Today hero says.
@@ -143,5 +143,64 @@ describe('with nothing in the library', () => {
         lastTakeHeadline: 'You rushed across measures 5 to 8.',
       }).detail,
     ).not.toContain('rushed');
+  });
+});
+
+/**
+ * The last recording's hand-off, as the one line the hero has room for.
+ *
+ * Today does not scroll, so the card this replaced has nowhere to live. Four
+ * states, one line each, and the difference between them has to be legible
+ * without a second line to explain it.
+ */
+describe('the pending take line', () => {
+  const ALL: PendingCheck[] = ['checking', 'working', 'ready', 'unavailable'];
+
+  it('only opens the result when there is one', () => {
+    expect(pendingLineFor('ready', 'Caprice No. 24').ready).toBe(true);
+    for (const check of ['checking', 'working', 'unavailable'] as PendingCheck[]) {
+      expect(pendingLineFor(check, 'Caprice No. 24').ready).toBe(false);
+    }
+  });
+
+  it('names the piece when it knows it, and stays true when it does not', () => {
+    // A musician who recorded three pieces in a rehearsal needs to know which
+    // one came back; one who reinstalled the app has a stored analysis id and
+    // no library row for it yet, and the line still has to read as English.
+    expect(pendingLineFor('working', 'Caprice No. 24').label).toContain('Caprice No. 24');
+    const unnamed = pendingLineFor('working', null).label;
+    expect(unnamed).not.toContain('undefined');
+    expect(unnamed).not.toContain('null');
+    expect(unnamed.trim()).toBe(unnamed);
+  });
+
+  it('never says the recording failed, because it has not', () => {
+    // The server accepted the take and still holds it. Only the question
+    // failed, and a line that implied otherwise would have someone re-record
+    // something that is safe.
+    const label = pendingLineFor('unavailable', 'Caprice No. 24').label;
+    expect(label.toLowerCase()).not.toContain('fail');
+    expect(label.toLowerCase()).not.toContain('lost');
+    expect(label.toLowerCase()).toContain('retry');
+  });
+
+  it('says something different in every state', () => {
+    // Four states sharing a line would be a line that says nothing: the whole
+    // reason this is a control rather than a caption is that pressing it means
+    // different things.
+    const labels = ALL.map((check) => pendingLineFor(check, 'Caprice No. 24').label);
+    expect(new Set(labels).size).toBe(ALL.length);
+  });
+
+  it('fits on one line at phone width', () => {
+    // There is no layout under test here, so this is a proxy and named as one:
+    // 13pt Inter on a 390pt phone, inside a 20pt gutter each side, runs out at
+    // roughly 52 characters. The title is what can blow it, so it is measured
+    // with a long one — the line clamps to `numberOfLines={1}`, and a label
+    // that needs the clamp for the *fixed* half of its wording is one nobody
+    // can read.
+    for (const check of ALL) {
+      expect(pendingLineFor(check, null).label.length).toBeLessThanOrEqual(52);
+    }
   });
 });

@@ -124,3 +124,62 @@ export function heroContentFor({
 function hasNotation(piece: Piece): boolean {
   return (piece.score?.measures.length ?? 0) > 0;
 }
+
+/**
+ * How far along the take this device handed over is.
+ *
+ * Mirrors what `TodayScreen` can learn from one `GET /v1/analyses/:id`:
+ * the request is in flight, the analysis is still running, there is a result,
+ * or the question could not be asked.
+ */
+export type PendingCheck = 'checking' | 'working' | 'ready' | 'unavailable';
+
+/** The one line the hero gives a take that was handed over and not yet read. */
+export interface PendingLine {
+  /** What the line says. */
+  label: string;
+  /**
+   * Whether pressing it opens the result.
+   *
+   * When false the line is still a control — it asks again — which is the
+   * whole reason this is not a caption. A take recorded on a train finishes
+   * somewhere with no signal, and the only other way back to it was to
+   * remember which piece it was.
+   */
+  ready: boolean;
+}
+
+/**
+ * The last recording's hand-off, as one line under the hero's button.
+ *
+ * **It used to be a card below the hero, and the card is why this exists.**
+ * Today does not scroll any more — it is the photograph and nothing else — so
+ * a block that only appears sometimes cannot live under the fold, because
+ * there is no fold. One line is what fits, so the four states have to say
+ * themselves in one line each. That is a rule about wording, which is why it
+ * is here with tests rather than in the `.tsx`.
+ *
+ * The piece's title goes in when we know it: "your last take" is true of every
+ * take, and a musician who recorded three pieces in a rehearsal needs to know
+ * which one came back.
+ */
+export function pendingLineFor(
+  check: PendingCheck,
+  pieceTitle: string | null,
+): PendingLine {
+  const named = pieceTitle ? `\u2009\u2014\u2009${pieceTitle}` : '';
+  switch (check) {
+    case 'ready':
+      return { label: `Your result is ready${named}`, ready: true };
+    case 'checking':
+      return { label: 'Checking your last take\u2026', ready: false };
+    case 'unavailable':
+      // Not "failed": the server accepted the recording and still has it. The
+      // only thing that went wrong is this question, and the line says so
+      // because the alternative is a musician re-recording something that is
+      // safe.
+      return { label: 'Couldn\u2019t check your last take. Tap to retry', ready: false };
+    case 'working':
+      return { label: `Still listening to your last take${named}`, ready: false };
+  }
+}

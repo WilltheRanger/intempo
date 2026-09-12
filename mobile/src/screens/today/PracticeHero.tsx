@@ -2,14 +2,15 @@ import { Image } from 'expo-image';
 import { StyleSheet, View, useWindowDimensions } from 'react-native';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
-import { Plus } from '../../components/icons';
+import { ChevronRight, Plus } from '../../components/icons';
+import { PressableScale } from '../../components/motion';
 import { IconButton } from '../../components/primitives/IconButton';
 import { PrimaryButton } from '../../components/primitives/PrimaryButton';
 import { Text } from '../../components/primitives/Text';
 import { SCREEN_GUTTER } from '../../components/primitives/ScreenContainer';
 import { useTabBarHeight } from '../../navigation/tabBarMetrics';
-import { colors, radii, spacing } from '../../design';
-import type { HeroContent } from './heroContent';
+import { colors, ICON_SIZE, ICON_STROKE_WIDTH, radii, spacing } from '../../design';
+import type { HeroContent, PendingLine } from './heroContent';
 
 /**
  * Today, as one photograph with the next thing to practise written on it.
@@ -138,6 +139,16 @@ export interface PracticeHeroProps {
   name: string | null;
   onAction: () => void;
   onAdd: () => void;
+  /**
+   * The take this device handed over and nobody has read yet, if there is one.
+   *
+   * Sits under the button as a single line rather than beside it: the hero has
+   * one dominant action (§3 law 4) and this is the second thing, not a rival.
+   * `pendingLineFor` decides what it says; `onPending` is what a press does,
+   * which is open the result when there is one and ask again when there is not.
+   */
+  pending?: PendingLine | null;
+  onPending?: () => void;
 }
 
 /**
@@ -188,13 +199,16 @@ function HeroField() {
 }
 
 /**
- * How tall the hero is: one viewport, exactly.
+ * How much of Today is dark ground: all of it.
  *
- * Exported because `TodayScreen` has to hand the same number to
- * `ScreenContainer` as `darkGround` — the floating chrome is drawn in the dark
- * material only while it is still over this, and it stops being over it after
- * one viewport of scrolling. Two places needing one measurement is how they
- * drift; this is the measurement.
+ * The hero sizes itself with `flex: 1` now, so this is no longer the hero's
+ * height — it is the number `TodayScreen` hands `ScreenContainer` as
+ * `darkGround`, which is what tells the floating chrome to wear the dark
+ * material. That mechanism is written in content points against a scroll
+ * offset (`chromeTone.ts`), and a screen that does not scroll is simply the
+ * case where the offset stays at zero. One viewport is more than the capsule's
+ * midline in every orientation, so the bar is dark for as long as Today is on
+ * screen — which is the answer, since the photograph never leaves.
  */
 export function useHeroHeight(): number {
   return useWindowDimensions().height;
@@ -206,6 +220,8 @@ export function PracticeHero({
   name,
   onAction,
   onAdd,
+  pending = null,
+  onPending,
 }: PracticeHeroProps) {
   // **The tab bar floats over this, so the hero has to end above it.** Without
   // this the "Continue practice" button sat under the capsule: still tappable
@@ -215,20 +231,22 @@ export function PracticeHero({
   const tabBar = useTabBarHeight();
 
   /**
-   * The whole screen, exactly.
+   * The whole screen, and now literally so.
    *
-   * It used to stop 72pt short so the next section peeked through — a scroll
-   * affordance, and a good idea that did not survive contact: what showed was
-   * not the next section but 72pt of bare page background, because that
-   * section starts with padding. A white band under the photograph in light
-   * mode and a black one in dark, measured at 144 device pixels. The tab bar
-   * floats over the bottom of this anyway, so the hero fills the viewport and
-   * the scroll is discovered the way it is on every other screen.
+   * It used to stop 72pt short of the viewport so the next section peeked
+   * through — a scroll affordance, and a good idea that did not survive
+   * contact: what showed was not the next section but 72pt of bare page
+   * background, because that section starts with padding.
+   *
+   * Then it was exactly one viewport, with the rest of Today scrolling beneath
+   * it. There is no rest of Today any more, so it is `flex: 1` in a screen that
+   * does not scroll: the height the container has, whatever that is, with no
+   * measurement to keep in step. `useHeroHeight` survives for `darkGround`,
+   * which still has to be told in content points how tall the dark ground is.
    */
-  const heroHeight = useHeroHeight();
 
   return (
-    <View style={[styles.hero, { height: heroHeight }]}>
+    <View style={styles.hero}>
       <HeroField />
       <View style={[StyleSheet.absoluteFill, styles.wash]} />
       {/*
@@ -334,6 +352,35 @@ export function PracticeHero({
             onPress={onAction}
             style={styles.action}
           />
+          {/*
+            **The last recording, as one line rather than a card.**
+            It was a card under the hero until Today stopped scrolling. A
+            control, not a caption: it opens the result when there is one and
+            asks the server again when the answer could not be fetched — see
+            `pendingLineFor`.
+
+            `onDark` rather than `onDarkMuted`, even though this is secondary
+            copy: the muted token is only safe below 45% of the hero and this
+            line sits with the button. Size and the chevron do the receding.
+          */}
+          {pending && onPending ? (
+            <PressableScale
+              onPress={onPending}
+              accessibilityRole="button"
+              accessibilityLabel={pending.label}
+              activeScale={0.99}
+              style={({ pressed }) => [styles.pending, pressed && styles.pendingPressed]}
+            >
+              <Text variant="metadataSmall" color="onDark" numberOfLines={1} style={styles.pendingLabel}>
+                {pending.label}
+              </Text>
+              <ChevronRight
+                size={ICON_SIZE.sm}
+                strokeWidth={ICON_STROKE_WIDTH}
+                color={colors.onDark}
+              />
+            </PressableScale>
+          ) : null}
         </View>
         )}
         </View>
@@ -344,6 +391,8 @@ export function PracticeHero({
 
 const styles = StyleSheet.create({
   hero: {
+    // The whole of a screen that does not scroll — see the note in the body.
+    flex: 1,
     // Opaque, and underneath everything: it is what makes the ground
     // measurable when the photograph above it is not.
     backgroundColor: colors.darkBg,
@@ -394,4 +443,21 @@ const styles = StyleSheet.create({
   // Full width, so the thumb has the whole bottom of the screen to land on
   // (§3 law 7) rather than a pill it has to aim at.
   action: { alignSelf: 'stretch' },
+  /*
+    A row rather than a line of text: the chevron has to sit on the baseline of
+    the words, and the whole strip has to be the target. 44pt tall with the
+    padding, which is the platform minimum and not `hitSlop` — that does
+    nothing on the web build (`touchTargets.test.ts`).
+  */
+  pending: {
+    alignSelf: 'stretch',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    marginTop: spacing.md,
+    paddingVertical: spacing.md,
+  },
+  pendingPressed: { opacity: 0.6 },
+  pendingLabel: { flexShrink: 1 },
 });

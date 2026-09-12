@@ -1,22 +1,16 @@
 import { StyleSheet, View } from 'react-native';
 
-import {
-  BORDER_WIDTH,
-  CONTROL_HEIGHT,
-  colors,
-  radii,
-  spacing,
-} from '../../design';
+import { BORDER_WIDTH, colors, spacing } from '../../design';
 import { FadeIn } from '../motion';
 import { Skeleton, SkeletonText } from '../primitives/Skeleton';
 
 /**
  * Placeholders shaped like the components they stand in for.
  *
- * The measurements here are copied from the real components — a 56pt banner on
- * Today's card, a 52×38 thumbnail on a Library row — because a skeleton whose
- * proportions are a guess produces a jump at exactly the moment someone starts
- * reading, which is worse than a spinner.
+ * The measurements here are copied from the real component — a Library row's
+ * 16pt padding, its 19pt title and its 13pt metadata line — because a skeleton
+ * whose proportions are a guess produces a jump at exactly the moment someone
+ * starts reading, which is worse than a spinner.
  *
  * **They cannot match exactly, and pretending otherwise would be the bug.**
  * How many lines a title takes depends on the title: "Sonata No. 1 in G minor,
@@ -24,57 +18,24 @@ import { Skeleton, SkeletonText } from '../primitives/Skeleton';
  * are built for the common case in classical repertoire — long titles — and
  * measured against it, not asserted to be pixel-exact.
  *
- * When one of those components changes shape, its skeleton has to follow. The
- * constants are named after the component they mirror to make that obvious.
+ * When `PieceRow` changes shape, this has to follow.
+ *
+ * **`ContinueSkeleton` used to live here and is gone with its screen.** It
+ * stood in for Today's carded "Continue practice", which became a photograph
+ * with the title written across it — and the photograph needs no placeholder,
+ * because it is the same photograph whether or not the piece has arrived.
  */
-
-/** A sheet-music banner, on a library placeholder. */
-const BANNER_HEIGHT = 56;
-/** `PieceRow`'s thumbnail. */
-const THUMBNAIL = { width: 52, height: 38 };
 
 /**
- * Stands in for a piece that has not arrived yet, in a list.
+ * Stands in for one `PieceRow`.
  *
- * The label is drawn as a placeholder rather than as the real words: it is
- * "Recommended", which is only true once there is something to recommend, and
- * asserting it over an empty library would be the screen promising something
- * it has not yet checked.
+ * **No thumbnail block, because the row no longer has one** — see `PieceRow`
+ * for why the page crops went. The padding is that row's 16pt rather than the
+ * 12 a 38pt picture used to hold it open at.
  */
-export function ContinueSkeleton() {
-  return (
-    <View>
-      <Skeleton height={13} width={112} style={styles.label} />
-
-      <View style={styles.card}>
-        <Skeleton height={BANNER_HEIGHT} radius={0} />
-        <View style={styles.cardBody}>
-          {/* Title over two lines, composer, movement. */}
-          <Skeleton height={26} width="88%" />
-          <Skeleton height={26} width="52%" style={styles.gapXs} />
-          <Skeleton height={20} width="42%" style={styles.gapSm} />
-          <Skeleton height={16} width="30%" style={styles.gapXs} />
-
-          {/* Working tempo, then when it was last practiced. */}
-          <Skeleton height={18} width="26%" style={styles.gapMd} />
-          <Skeleton height={16} width="38%" style={styles.gapXs} />
-
-          <Skeleton
-            height={CONTROL_HEIGHT}
-            radius={radii.md}
-            style={styles.gapMd}
-          />
-        </View>
-      </View>
-    </View>
-  );
-}
-
-/** Stands in for one `PieceRow`. */
 function PieceRowSkeleton({ last = false }: { last?: boolean }) {
   return (
     <View style={[styles.row, !last && styles.ruled]}>
-      <Skeleton width={THUMBNAIL.width} height={THUMBNAIL.height} />
       <View style={styles.rowBody}>
         {/* Title, then the composer-and-age line. */}
         <Skeleton height={19} width="72%" />
@@ -104,25 +65,12 @@ export function PieceListSkeleton({ count = 5 }: PieceListSkeletonProps) {
 export { SkeletonText };
 
 const styles = StyleSheet.create({
-  label: {
-    marginBottom: spacing.md,
-  },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radii.lg,
-    borderWidth: BORDER_WIDTH,
-    borderColor: colors.border,
-    overflow: 'hidden',
-  },
-  cardBody: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.lg,
-    paddingVertical: spacing.md,
+    gap: spacing.md,
+    // `PieceRow`'s, not a guess — see the note at the top of this file.
+    paddingVertical: spacing.lg,
   },
   ruled: {
     borderBottomWidth: BORDER_WIDTH,
@@ -132,6 +80,4 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   gapXs: { marginTop: spacing.xs },
-  gapSm: { marginTop: spacing.sm },
-  gapMd: { marginTop: spacing.md },
 });

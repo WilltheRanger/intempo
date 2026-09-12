@@ -164,6 +164,8 @@ export function BottomTabBar({
     <GlassSurface
       radius={TAB_BAR_CAPSULE_HEIGHT / 2}
       tone={tone}
+      // No specular catch on the furniture — see `glassMaterial`'s `specular`.
+      variant="bar"
       style={[
         styles.bar,
         {

@@ -79,11 +79,26 @@ describe('the rule', () => {
 describe('the wiring', () => {
   it('has Today declare its hero as the dark ground', () => {
     expect(today).toMatch(/darkGround=\{heroHeight\}/);
-    // Every branch that draws the hero, not just the populated one: loading
-    // and the empty library draw it too, and a tab bar that is light on those
-    // is the same defect on a screen a new account sees first.
-    expect(today.match(/darkGround=\{heroHeight\}/g)).toHaveLength(3);
-    expect(today.match(/<ScreenContainer[^>]*bleed/g)).toHaveLength(3);
+    /*
+      **Every full-bleed container on this screen declares the ground** — a
+      rule, rather than the literal 3 this used to assert.
+
+      Three was the number of branches that drew the hero when the screen also
+      had a loading state and an empty-library state of its own; they are one
+      branch now, because `heroContentFor` decides what the photograph says in
+      all three cases and the container around it stopped differing. Asserting
+      the count made the check fail on a change it had no opinion about, which
+      is the same failure the sheet's curve test had and recorded.
+
+      What was actually meant is below: a full-bleed Today is a photograph, and
+      a photograph without `darkGround` is a light tab bar on it — the defect
+      this whole module exists for, and worst on the screen a new account sees
+      first.
+    */
+    const bleeding = today.match(/<ScreenContainer[^>]*\bbleed\b/g) ?? [];
+    const declaring = today.match(/darkGround=\{heroHeight\}/g) ?? [];
+    expect(bleeding.length).toBeGreaterThan(0);
+    expect(declaring).toHaveLength(bleeding.length);
   });
 
   it('takes the height from the hero rather than measuring it again', () => {

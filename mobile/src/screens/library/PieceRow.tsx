@@ -1,10 +1,10 @@
 import { StyleSheet, View } from 'react-native';
 
-import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
+import { ChevronRight } from '../../components/icons';
 import { PressableScale } from '../../components/motion';
 import { Text } from '../../components/primitives/Text';
 import type { Piece } from '../../data/types';
-import { BORDER_WIDTH, colors, radii, spacing } from '../../design';
+import { BORDER_WIDTH, colors, ICON_SIZE, ICON_STROKE_WIDTH, radii, spacing } from '../../design';
 import { formatLastPracticedShort, joinMetadata } from '../../lib/format';
 
 export interface PieceRowProps {
@@ -13,9 +13,6 @@ export interface PieceRowProps {
   /** The last row in a group draws no rule — the group heading below ends it. */
   last?: boolean;
 }
-
-const THUMBNAIL_WIDTH = 52;
-const THUMBNAIL_HEIGHT = 38;
 
 /**
  * One piece, as an index entry.
@@ -32,6 +29,29 @@ const THUMBNAIL_HEIGHT = 38;
  * every row grew to two lines to make room for a value the group heading above
  * it already tells you coarsely. The heading does the scanning; the row only
  * has to be exact.
+ *
+ * ## No picture of the page, and that is the point
+ *
+ * Every row used to open with a 52×38 crop of the piece's own first page,
+ * signed out of a private bucket. Sheet music is this app's visual identity and
+ * that was the argument for it; what it actually cost was one HTTPS fetch of a
+ * full-resolution phone photograph *per row*, decoded and downsampled on the
+ * client, on the one screen built for scrolling past forty of them. The owner
+ * reported the result as "incredibly laggy", and the bandwidth is billed.
+ *
+ * A thumbnail of a page is also a weak identifier. Every crop is the same
+ * thing — a band of staff lines across white paper — at 52pt wide, where the
+ * title that distinguishes them is unreadable. It looked like a library and
+ * identified nothing.
+ *
+ * So the row identifies a piece the way an index does: by its name, set in the
+ * serif, with the composer and the age in a quiet line under it (§3 law 8 —
+ * typography, not containers). The chevron is the one mark, and it does what it
+ * depicts: the row opens.
+ *
+ * The photograph has not gone anywhere. `PieceDetailScreen` still opens with
+ * the page as a full-bleed band, which is one image for the one piece you
+ * asked about, and `PieceScoreScreen` still shows every page.
  */
 export function PieceRow({ piece, onPress, last = false }: PieceRowProps) {
   const age = formatLastPracticedShort(piece.lastPracticedAt);
@@ -53,12 +73,6 @@ export function PieceRow({ piece, onPress, last = false }: PieceRowProps) {
         pressed && styles.pressed,
       ]}
     >
-      <ScoreThumbnail
-        source={piece.thumbnail}
-        composer={piece.composer}
-        style={styles.thumbnail}
-      />
-
       <View style={styles.details}>
         <Text variant="pieceTitle" numberOfLines={2}>
           {piece.title}
@@ -74,6 +88,17 @@ export function PieceRow({ piece, onPress, last = false }: PieceRowProps) {
           </Text>
         ) : null}
       </View>
+
+      {/*
+        **A real affordance** (§3): a chevron means it opens, and this row
+        opens. It is the only mark on the row, and it replaces the thumbnail as
+        the thing that tells the eye where one entry ends and the next begins.
+      */}
+      <ChevronRight
+        size={ICON_SIZE.md}
+        strokeWidth={ICON_STROKE_WIDTH}
+        color={colors.textTertiary}
+      />
     </PressableScale>
   );
 }
@@ -82,8 +107,18 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.lg,
-    paddingVertical: spacing.md,
+    gap: spacing.md,
+    /*
+      **A step looser than it was, and the thumbnail is why.** The picture was
+      38pt tall against 43pt of type, so it never set the height — what it set
+      was the *rhythm*: a block of ink on the left gave the eye a place to
+      start each row and a clear end to the one above. Take it away at the old
+      12pt and the rules are the only separation left, 12pt apart, which reads
+      as a dense list rather than an index. 16pt puts a one-line entry at 77pt
+      against the old 67 and gives the composer line room to sit under the
+      title rather than on it.
+    */
+    paddingVertical: spacing.lg,
     paddingHorizontal: spacing.sm,
     marginHorizontal: -spacing.sm,
     borderRadius: radii.sm,
@@ -95,14 +130,11 @@ const styles = StyleSheet.create({
   pressed: {
     backgroundColor: colors.surfacePressed,
   },
-  thumbnail: {
-    width: THUMBNAIL_WIDTH,
-    height: THUMBNAIL_HEIGHT,
-  },
   details: {
     flex: 1,
+    minWidth: 0,
   },
   meta: {
-    marginTop: 2,
+    marginTop: spacing.xs,
   },
 });
