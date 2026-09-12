@@ -42,6 +42,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # **`check-brand-assets.py` re-draws the art to compare it, so it needs
+      # Pillow.** This job had `python3` and nothing else, so the generator
+      # died on `from PIL import ...` and the check reported the art as wrong.
+      # Pinned to the version in `backend/pyproject.toml`, because the
+      # comparison is byte-for-byte: a different Pillow rasterises the Bravura
+      # glyph differently and the check would fail on art nobody had touched.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Pillow, for the brand generator
+        run: python3 -m pip install --quiet 'pillow==12.3.0'
+
       # It does not fail while the placeholders are listed — see the tool's own
       # docstring for why that is deliberate — so what it actually guards is a
       # *new* asset shipped as the starter's, and a listed one that has been

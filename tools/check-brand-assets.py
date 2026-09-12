@@ -130,9 +130,30 @@ def main() -> int:
         [sys.executable, str(generator), "--check"], capture_output=True, text=True
     )
     if result.returncode != 0:
+        # **"It differs" and "it could not run" are different findings, and this
+        # reported both as the first one.** The generator's disagreements go to
+        # stdout; a crash goes to stderr, and only stdout was read — so a
+        # missing Pillow produced the sentence "the shipped art is not what
+        # draw-brand-assets.py draws:" followed by nothing at all. That ran on
+        # CI for the first time on 2026-09-12 and accused the art of being
+        # wrong when the truth was that nothing had looked at it.
+        #
+        # A check that cannot say why it failed is worse than one that does not
+        # run, because the first is believed.
+        detail = result.stdout.strip() or result.stderr.strip()
+        crashed = result.stdout.strip() == "" and "Traceback" in result.stderr
+        headline = (
+            "tools/draw-brand-assets.py could not run, so whether the shipped"
+            " art matches it is unknown:"
+            if crashed
+            else "the shipped art is not what tools/draw-brand-assets.py draws:"
+        )
         problems.append(
-            "the shipped art is not what tools/draw-brand-assets.py draws:\n      "
-            + "\n      ".join(result.stdout.strip().splitlines())
+            headline
+            + "\n      "
+            + "\n      ".join(
+                (detail or "(the generator printed nothing at all)").splitlines()
+            )
         )
 
     if drawn:
