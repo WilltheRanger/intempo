@@ -187,6 +187,15 @@ the user's rules, not suggestions to weigh against convenience.
    floating glass capsules — `mobile/src/components/primitives/GlassSurface`.
    That list *is* the definition of chrome for this rule; content keeps the rule
    in full and may never use the material.
+   **The bottom bar is not covered by that exception and never carries a
+   gradient** (amended 2026-09-12, asked for three times). The glass material's
+   specular catch is light across a small curved capsule; across the full width
+   of the one element that is on screen at all times it is a pale band, and
+   "there should not be gradience on the lower bar" is the standing answer.
+   Twice it was removed by narrowing the *ground* it was drawn over — chrome
+   over content, then the Today photograph — and both times it stayed on three
+   of the four tabs. It is a property of the surface: `glassMaterial`'s `bar`
+   context, held by `material.test.ts` in both palettes.
 7. **Design around the thumb zone.** Primary actions sit comfortably reachable
    near the bottom; secondary actions can sit higher.
 8. **Use typography to create hierarchy instead of relying on containers.**
