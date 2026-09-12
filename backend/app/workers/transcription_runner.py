@@ -41,8 +41,10 @@ from app.services.ocr.pipeline import (
 )
 from app.services.page_image import (
     download_image,
+    object_key_from,
     prepare_for_model,
     readable_url,
+    store_display_copy,
     too_small_to_read,
 )
 
@@ -555,6 +557,20 @@ def _read_one_page(
             _failed(unreadable)
             return None
         page, media_type = prepare_for_model(image_bytes)
+        # **The display copy, written from bytes that already exist.**
+        #
+        # This is the same JPEG the reader is about to be given: decoded once,
+        # EXIF-rotated once, resized once to `MODEL_MAX_EDGE`. It used to be
+        # dropped on the floor after the read, and the app went on downloading
+        # the 5712x4284 photograph to show on a 390-point screen.
+        #
+        # Best effort by construction — `store_display_copy` never raises, and
+        # a page without one still displays, because `signed_display_urls`
+        # falls back to the photograph. Every page scanned before this existed
+        # takes that path permanently.
+        page_key = object_key_from(image_url)
+        if page_key:
+            store_display_copy(page_key, page, image_bytes)
         # The prepared page is what gets *read* whole and what the systems are
         # detected on; the crops are cut from the photograph itself, so each
         # system spends the whole size budget on its own long edge. See

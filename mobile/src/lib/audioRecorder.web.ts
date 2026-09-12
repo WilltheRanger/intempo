@@ -11,6 +11,7 @@ import {
   microphoneFailure,
   shouldRetryUnconstrained,
 } from './audio/microphoneFailure';
+import { audioContext } from './audio/context.web';
 import { durationOf, encodeWav } from './audio/wav';
 import { resolveWorkletUrl, WORKLET_FILE as WORKLET } from './audio/workletUrl';
 
@@ -52,6 +53,15 @@ export { WORKLET_FILE } from './audio/workletUrl';
  */
 const QUANTA_PER_MESSAGE = 32;
 
+/**
+ * Contexts that already have the recorder's processor registered.
+ *
+ * A `WeakSet` rather than a flag, because `audioContext()` replaces a context
+ * that has somehow been closed — and the replacement has no processor. A flag
+ * would say it did.
+ */
+const withWorklet = new WeakSet<BaseAudioContext>();
+
 export async function startRecording(): Promise<Recorder> {
   if (!navigator.mediaDevices?.getUserMedia) {
     throw new MicrophoneUnavailableError(
@@ -59,13 +69,6 @@ export async function startRecording(): Promise<Recorder> {
     );
   }
 
-  const AudioContextCtor =
-    window.AudioContext ??
-    (window as unknown as { webkitAudioContext?: typeof AudioContext })
-      .webkitAudioContext;
-  if (!AudioContextCtor) {
-    throw new MicrophoneUnavailableError('This browser has no Web Audio.');
-  }
 
   /**
    * **The microphone first, the audio graph second — and that order is the
@@ -132,10 +135,29 @@ export async function startRecording(): Promise<Recorder> {
   const releaseMicrophone = () =>
     media.getTracks().forEach((track) => track.stop());
 
-  let context: AudioContext;
-  try {
-    context = new AudioContextCtor();
-  } catch {
+  /**
+   * **The app's one context, not a second one of our own.**
+   *
+   * `lib/audio/context.web.ts` opens by calling itself "the one `AudioContext`
+   * this app ever creates in a browser", and explains why: iOS caps how many a
+   * page may hold and `close()` does not reliably give the slot back, so the
+   * next context is born suspended or never arrives — "the button works, the
+   * schedule is built, every oscillator is created, and nothing comes out."
+   *
+   * That sentence was false. This function built its own with `new
+   * AudioContext()`, so a musician who pressed Listen and then Record had two,
+   * and the recorder was the thing that module was written to prevent. Its own
+   * comment even lists "the microphone opening for a take" as something that
+   * interrupts the shared one.
+   *
+   * It is also the other half of the `InvalidStateError` this file was fixed
+   * for once already: a running playback context is what WebKit will not
+   * reassign the audio session away from, and taking the microphone first only
+   * helps when the running context is *ours*. Listen leaves the shared one
+   * running, and nothing here could see it.
+   */
+  const context = audioContext();
+  if (!context) {
     // The microphone is open by now, which it never was in the old order.
     // Leaving it open would light the recording indicator with nothing
     // recording, and leave the next attempt a busy device.
@@ -153,7 +175,7 @@ export async function startRecording(): Promise<Recorder> {
     }
   } catch {
     releaseMicrophone();
-    void context.close().catch(() => {});
+    // Not closed: it is the app's one context and Listen needs it after this.
     throw new MicrophoneUnavailableError(
       'Audio could not start. Try Record again.',
     );
@@ -203,8 +225,19 @@ export async function startRecording(): Promise<Recorder> {
     // error — only the sentence below, on the one screen whose job is to
     // record. The record screen is always nested under a piece, so this was
     // every take. See `audio/workletUrl.ts` for the measurements.
+    // **Once per context, and the context now outlives the take.**
+    //
+    // `addModule` evaluates the module, and the module calls
+    // `registerProcessor('pcm-recorder', ...)`. A second registration of the
+    // same name throws `NotSupportedError`. That was unreachable while every
+    // take built its own context and threw it away; sharing the app's one
+    // context makes the *second* recording the failing one, which is the worst
+    // shape a bug can have — the first take of a session works.
     try {
-      await context.audioWorklet.addModule(resolveWorkletUrl());
+      if (!withWorklet.has(context)) {
+        await context.audioWorklet.addModule(resolveWorkletUrl());
+        withWorklet.add(context);
+      }
     } catch {
       throw new MicrophoneUnavailableError(
         `The recording worklet (${WORKLET}) could not be loaded.`,
@@ -306,7 +339,12 @@ export async function startRecording(): Promise<Recorder> {
         // rejection when cancel() is called during navigation.
         try { source.disconnect(); } catch { /* Already disconnected. */ }
         try { node.disconnect(); } catch { /* Already disconnected. */ }
-        try { await context.close(); } catch { /* Already closed. */ }
+        // **The context is not closed.** It is shared with Listen and the
+        // metronome, and closing it is the bug `lib/audio/context.web.ts`
+        // exists to prevent — on iOS the slot does not reliably come back.
+        // Disconnecting the two nodes above is what ends this take; a context
+        // with nothing connected to its destination is silent and costs
+        // nothing.
       }
     }
 
@@ -370,7 +408,7 @@ export async function startRecording(): Promise<Recorder> {
     // Every setup failure must release the mic, including InvalidStateError
     // from graph creation. Otherwise the next attempt inherits a busy device.
     releaseMicrophone();
-    await context.close().catch(() => {});
+    // Not closed — shared. See the teardown above.
     if (error instanceof DOMException && error.name === 'InvalidStateError') {
       throw new MicrophoneUnavailableError(
         'Audio was interrupted before recording could start. Return to this screen and try Record again.',
