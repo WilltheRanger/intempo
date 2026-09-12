@@ -99,36 +99,81 @@ async function main() {
 }
 
 /**
- * The page background in `public/index.html` must equal `colors.bg`.
+ * The page background in `public/index.html` must equal `colors.bg` — in both
+ * appearances.
  *
- * That hex is the one duplicated design token in the app — an HTML file cannot
- * import a TypeScript module — and it paints the strip behind the status bar
- * and the overscroll region. If it drifts from the token, the app gets a band
- * of the wrong ivory at the top of every screen: invisible in a diff, obvious
- * on a phone, and impossible to attribute to the commit that caused it.
+ * Those two hexes are the only duplicated design tokens in the app — an HTML
+ * file cannot import a TypeScript module — and they paint the strip behind the
+ * status bar and the overscroll region, which is everything outside the React
+ * tree. If one drifts from its token the app gets a band of the wrong colour
+ * at the top of every screen: invisible in a diff, obvious on a phone, and
+ * impossible to attribute to the commit that caused it.
+ *
+ * **Both halves of both appearances, and that is what this check learned.** It
+ * used to count bare occurrences of one hex and demand at least two, on the
+ * reasoning that the stylesheet rule and the `theme-color` meta are the two
+ * places it appears. That held while the app had one appearance. It shipped
+ * with no dark `theme-color` at all, so an installed PWA on a phone in dark
+ * mode drew an ivory strip behind the Dynamic Island above a near-black app —
+ * a defect the old check could not have seen, because every hex it was
+ * counting was present and correct.
+ *
+ * Counting is also the wrong instrument now: `#14110E` is `darkColors.bg` and
+ * it is *also* the boot watchdog's text colour, so an occurrence count would
+ * be satisfied by the error screen. Each of the four is located instead.
  */
 async function checkPageBackground() {
   const tokens = await readFile(new URL('../src/design/colors.ts', import.meta.url), 'utf8');
-  const token = /\bbg:\s*'(#[0-9A-Fa-f]{3,8})'/.exec(tokens)?.[1];
-  if (!token) {
-    console.error('Could not find `colors.bg` in src/design/colors.ts.');
+  const paletteBg = (palette) => {
+    const block = new RegExp(`export const ${palette}[\\s\\S]*?\\n\\} as const;`).exec(tokens);
+    return block ? /\bbg:\s*'(#[0-9A-Fa-f]{3,8})'/.exec(block[0])?.[1] : undefined;
+  };
+
+  const light = paletteBg('lightColors');
+  const dark = paletteBg('darkColors');
+  if (!light || !dark) {
+    console.error('Could not find `bg` in both palettes of src/design/colors.ts.');
     process.exit(1);
   }
 
   const html = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
-  const used = [...html.matchAll(/#[0-9A-Fa-f]{6}\b/g)].map((m) => m[0]);
-  const background = used.filter((hex) => hex.toUpperCase() === token.toUpperCase());
 
-  // Two: the stylesheet rule and the theme-color meta. Fewer means one of them
-  // was edited on its own.
-  if (background.length < 2) {
-    console.error(
-      `public/index.html should use ${token} (colors.bg) for both the page ` +
-        `background and theme-color; found ${background.length} of 2.`,
-    );
+  /** The `content` of a `theme-color` meta, matched by its `media` or lack of one. */
+  const themeColor = (dark) =>
+    [...html.matchAll(/<meta\s+name="theme-color"([^>]*)>/g)]
+      .filter(([, attrs]) => /prefers-color-scheme:\s*dark/.test(attrs) === dark)
+      .map(([, attrs]) => /content="(#[0-9A-Fa-f]{3,8})"/.exec(attrs)?.[1]);
+
+  /** The `background-color` of the `html, body` rule, inside a media query or not. */
+  const darkBlock = /@media\s*\(prefers-color-scheme:\s*dark\)\s*\{[\s\S]*?\n {6}\}/.exec(html)?.[0];
+  const pageGround = (source) =>
+    source === undefined
+      ? []
+      : [...source.matchAll(/background-color:\s*(#[0-9A-Fa-f]{3,8});/g)].map((m) => m[1]);
+
+  const expected = [
+    ['light theme-color', themeColor(false), light],
+    ['dark theme-color', themeColor(true), dark],
+    ['light page background', pageGround(html.replace(darkBlock ?? '', '')), light],
+    ['dark page background', pageGround(darkBlock), dark],
+  ];
+
+  const wrong = expected.filter(
+    ([, found, want]) => !found.some((hex) => hex?.toUpperCase() === want.toUpperCase()),
+  );
+  if (wrong.length) {
+    for (const [what, found, want] of wrong) {
+      console.error(
+        `public/index.html: the ${what} should be ${want} ` +
+          `(colors.ts); found ${found.length ? found.join(', ') : 'nothing'}.`,
+      );
+    }
     process.exit(1);
   }
-  console.log(`flatten-vendor-assets: page background matches colors.bg (${token}).`);
+  console.log(
+    `flatten-vendor-assets: page background and theme-color match colors.ts ` +
+      `in both appearances (${light} / ${dark}).`,
+  );
 }
 
 /**

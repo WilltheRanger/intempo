@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Animated,
   Modal,
@@ -93,7 +93,9 @@ export function BottomSheet({
     drag.setValue(0);
     return Animated.timing(value, {
       toValue: 1,
-      duration: reduceMotion ? 0 : motion.base,
+      // `sheet`, not `base`: the largest surface the app moves, and the one
+      // whose old duration was measured reading as a pop. See `motion.sheet`.
+      duration: reduceMotion ? 0 : motion.sheet,
       easing: EASE_OUT,
       useNativeDriver: Platform.OS !== 'web',
     });
@@ -105,11 +107,38 @@ export function BottomSheet({
 
 
 
+  /**
+   * How tall the sheet is, measured once per opening.
+   *
+   * **The travel distance may not change while the sheet is travelling**, and
+   * it did. `sheetHeight` starts at 0, so the first frame interpolates against
+   * `ESTIMATED_HEIGHT` — 320 — and the add-piece sheet is around 460. Layout
+   * arrives a frame or two later, the output range widens under the running
+   * animation, and the sheet jumps *down* a hundred points before rising: a
+   * visible hitch at the start of every sheet in the app, which is most of
+   * what "it just pops up instead of having like an animation" describes.
+   *
+   * So the height is taken once and then left alone until the sheet closes,
+   * and the sheet is transparent until it has one — one frame of nothing
+   * rather than one frame of the wrong place. `visible` clears it, not
+   * `mounted`: `mounted` stays true through the exit, and clearing it there
+   * would take the sheet's height away mid-departure.
+   */
   function handleLayout(event: LayoutChangeEvent) {
     const next = event.nativeEvent.layout.height;
+    if (heightRef.current > 0 || next <= 0) {
+      return;
+    }
     heightRef.current = next;
     setSheetHeight(next);
   }
+
+  useEffect(() => {
+    if (!visible) {
+      heightRef.current = 0;
+      setSheetHeight(0);
+    }
+  }, [visible]);
 
   /**
    * Swipe down to dismiss — the gesture the grab handle has always promised.
@@ -224,6 +253,9 @@ export function BottomSheet({
             expand && [styles.expanded, { marginTop: insets.top + spacing.xl }],
             { paddingBottom: insets.bottom + spacing.lg },
             {
+              // Nothing to see until it is known where the sheet is — see
+              // `handleLayout`. One frame, and never more than a few.
+              opacity: sheetHeight > 0 ? 1 : 0,
               transform: [{ translateY: Animated.add(enterOffset, drag) }],
             },
           ]}

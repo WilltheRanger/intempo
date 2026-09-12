@@ -8,6 +8,9 @@ import confirmDialogSource from '../overlays/ConfirmDialog?raw';
 import pressableScaleSource from './PressableScale?raw';
 import reducedMotionSource from '../../lib/useReducedMotion?raw';
 import screenContainerSource from '../primitives/ScreenContainer?raw';
+import stackSceneSource from '../../navigation/StackScene?raw';
+import rootNavigatorSource from '../../navigation/RootNavigator?raw';
+import motionSource from '../../design/motion?raw';
 
 /**
  * Motion is a performance and interaction contract, not decoration.
@@ -101,5 +104,73 @@ describe('interaction motion', () => {
   it('leaves scroll gestures native and programmatic jumps immediate', () => {
     expect(screenContainerSource).toContain("scrollBehavior: 'auto'");
     expect(screenContainerSource).toContain('decelerationRate="normal"');
+  });
+
+  /**
+   * **Every screen the stack pushes is wrapped, not a list of them.**
+   *
+   * The web build draws no transition of its own — `react-native-screens` is a
+   * stub there and a push is a `display` swap — so a screen that is not
+   * wrapped is a screen that pops. Nineteen hand-wrapped components would put
+   * the twentieth one tap away from being the one nobody notices; one
+   * `screenLayout` on the navigator cannot be forgotten.
+   */
+  it('gives every pushed screen an entrance, from the navigator', () => {
+    expect(rootNavigatorSource).toContain('screenLayout=');
+    expect(rootNavigatorSource).toContain('<StackScene>{children}</StackScene>');
+    // And nothing wraps a screen individually, which is how the two would
+    // drift into disagreeing about which screens animate.
+    expect(rootNavigatorSource).not.toMatch(/component=\{\(\)\s*=>\s*<StackScene/);
+  });
+
+  /**
+   * The entrance paints its start state, rather than reaching it backwards.
+   *
+   * Measured on the built bundle: the first version held the arrived state in
+   * `useState(true)` and pushed it to false from an effect, and the scene was
+   * at full opacity and zero offset on the first frame it existed. An effect
+   * is a commit too late. The start has to be decided during render — the same
+   * reason `FadeIn` starts hidden on this platform — and the two animation
+   * frames after it are what let the browser paint it.
+   */
+  it('decides the pushed entrance during render, not in an effect', () => {
+    expect(stackSceneSource).toContain('if (seen !== index)');
+    expect(stackSceneSource).toContain('requestAnimationFrame');
+    expect(stackSceneSource).toContain("transitionProperty: 'opacity, transform'");
+    // The direction rule stays in a module with tests, not in the component.
+    expect(stackSceneSource).toContain("from './sceneMotion'");
+    expect(stackSceneSource).not.toMatch(/index\s*[<>]\s*\w/);
+  });
+
+  /**
+   * Native keeps its own transition.
+   *
+   * `native-stack` is UINavigationController on a phone: interruptible, with
+   * the back gesture attached to it. A second animation layered over that
+   * would fight it, so the wrapper has to be inert there.
+   */
+  it('leaves the native push to the platform', () => {
+    expect(stackSceneSource).toContain("Platform.OS !== 'web'");
+    expect(stackSceneSource).toContain('if (still)');
+  });
+
+  /**
+   * The sheet's duration is read against the curve, not chosen against a feel.
+   *
+   * `EASE_OUT` delivers 96% of its travel in half its duration, so a sheet at
+   * `motion.base` was measured arriving in about 140ms of a 240ms animation —
+   * reported as "it just pops up". The number is only meaningful beside that
+   * note, so this holds the two together: the sheet takes the token named for
+   * it, and the token carries the measurement.
+   */
+  it('gives the sheet its own duration, with the curve written down', () => {
+    expect(bottomSheetSource).toContain('duration: reduceMotion ? 0 : motion.sheet');
+    expect(motionSource).toMatch(/sheet:\s*(\d+)/);
+    const sheet = Number(/sheet:\s*(\d+)/.exec(motionSource)?.[1]);
+    const base = Number(/base:\s*(\d+)/.exec(motionSource)?.[1]);
+    expect(sheet).toBeGreaterThan(base);
+    // The curve's shape is the reason for the number, and a duration with no
+    // note of it is one somebody halves again next time.
+    expect(motionSource).toContain('96%');
   });
 });

@@ -226,11 +226,37 @@ await tab('Insights');
 await tapTo('Insights piece row', /Caprice No\. 24/, /^\/pieces\/[^/]+$/);
 await tab('Insights');
 await tapTo('Insights next focus', /60 Studies/, /\/record$/);
-await tab('Today');
-await page.getByRole('button', { name: /Sonata No\. 1/ }).last().click({ timeout: 10000 });
+
+/*
+  **A recorded take opens its verdict** — from Insights, which is where the
+  list of them lives.
+
+  It was checked on Today, which had a "Recent practice" card. Today is one
+  photograph with one action on it now, and the takes were only ever a copy of
+  Insights' own "Recent sessions". Same rule, one screen along; the assertion
+  that matters is that a row in that list reaches `/analyses/`, not which tab
+  it was tapped on.
+*/
+await tab('Insights');
+// The take rows carry their tempo in the accessible name; the "By piece"
+// rows below them do not. `.last()` alone reached the wrong one.
+await page
+  .getByRole('button', { name: /Sonata No\. 1.*\d+ BPM/ })
+  .first()
+  .click({ timeout: 10000 });
 await waitFor('the take row to open a verdict', async () => (await path()).startsWith('/analyses/'));
-if ((await path()).startsWith('/analyses/')) pass(`Today take row → ${await path()}`);
-else fail(`Today take row → ${await path()}, expected an analysis`);
+if ((await path()).startsWith('/analyses/')) pass(`Insights take row → ${await path()}`);
+else fail(`Insights take row → ${await path()}, expected an analysis`);
+
+/*
+  **Today's one action starts a take.** The screen has exactly one button
+  now — everything else that was on it either moved or was a copy of another
+  tab — so if that button does not reach the recorder, the tab does nothing at
+  all. Nothing checked it before, because there was a card doing the same job
+  further down.
+*/
+await tab('Today');
+await tapTo('Today hero action', /Continue practice/, /\/record$/);
 
 // A deep link has no history behind it; back must still reach the parent.
 await open('pieces/fixture-clef-change-study/bars/3');
@@ -320,15 +346,27 @@ if (cleared.some((line) => /^\d+ pieces$/.test(line)))
   pass('Clear search restores the whole library');
 else fail('Clear search left the library filtered');
 
-console.log('\n## Agreement between screens');
+console.log('\n## One reading of the window, and it is a habit only where it is one');
 
-// The window headline. Today's "Practice snapshot" and the Insights title are
-// the same claim about the same thirty days, from two components. They were
-// allowed to disagree once.
+/*
+ * **This was an agreement check between two screens, and there is one screen
+ * now.**
+ *
+ * Today carried a "Practice snapshot" row stating the thirty-day tendency, and
+ * Insights states it as its title. They were allowed to disagree once — a
+ * musician read "Your tempo wanders" on one tab and "You tend to rush" on the
+ * next, about the same thirty days — and this is the check that came out of
+ * it. Today is one photograph with one action on it now; the snapshot was a
+ * copy of the Insights tab and went with the rest of the dashboard, so
+ * `readTendency` has exactly one caller.
+ *
+ * What survives is the half that was never about two screens: the wording is a
+ * claim about a *habit*, and it must not appear on a row that describes one
+ * recording. That is the defect the agreement check was found by, one level
+ * down, and it is still reachable.
+ */
 await open('insights');
 const insightsText = await leaves();
-await open('');
-const todayText = await leaves();
 
 const HEADLINES = [
   'Your tempo wanders',
@@ -340,27 +378,21 @@ const HEADLINES = [
 ];
 const headlineIn = (lines) => HEADLINES.find((h) => lines.some((l) => l === h)) ?? null;
 const onInsights = headlineIn(insightsText);
-const onToday = headlineIn(todayText);
-if (onInsights === null || onToday === null) {
-  fail(`window headline missing (insights=${onInsights}, today=${onToday})`);
-} else if (onInsights === onToday) {
-  pass(`window headline agrees: "${onInsights}"`);
-} else {
-  fail(`window headline: Insights says "${onInsights}", Today says "${onToday}"`);
-}
+// Without this the row check below could pass over a screen that renders no
+// tendency at all, which is the vacuous version of the same test.
+if (onInsights === null) fail('no window headline on Insights at all');
+else pass(`Insights states the window as a habit: "${onInsights}"`);
 
 // A single take is not a habit. The tendency wording must not appear in a row
-// that describes one recording — that is the bug above, one level down.
+// that describes one recording.
 const takeRow = (lines) => lines.find((l) => /·\s*\d+\s*BPM\s*·/.test(l)) ?? null;
-for (const [screen, lines] of [['Insights', insightsText], ['Today', todayText]]) {
-  const row = takeRow(lines);
-  if (row === null) {
-    fail(`${screen}: no recent-take row found to check`);
-  } else if (HEADLINES.some((h) => row.includes(h))) {
-    fail(`${screen}: a single take is worded as a habit — "${row}"`);
-  } else {
-    pass(`${screen} take row states a verdict, not a habit: "${row}"`);
-  }
+const row = takeRow(insightsText);
+if (row === null) {
+  fail('Insights: no recent-take row found to check');
+} else if (HEADLINES.some((h) => row.includes(h))) {
+  fail(`Insights: a single take is worded as a habit — "${row}"`);
+} else {
+  pass(`Insights take row states a verdict, not a habit: "${row}"`);
 }
 
 console.log('\n## Reading a real notation file');
