@@ -11,7 +11,7 @@ import {
   microphoneFailure,
   shouldRetryUnconstrained,
 } from './audio/microphoneFailure';
-import { audioContext } from './audio/context.web';
+import { audioContext, releaseAudioSession } from './audio/context.web';
 import { durationOf, encodeWav } from './audio/wav';
 import { resolveWorkletUrl, WORKLET_FILE as WORKLET } from './audio/workletUrl';
 
@@ -97,6 +97,20 @@ export async function startRecording(): Promise<Recorder> {
    * needing the tap. The cost is that a refusal now happens before any graph
    * exists, which is also the honest shape — there is nothing to tear down.
    */
+  // **Hand the audio session back before asking for capture.**
+  //
+  // Listen leaves the shared context *running*, and WebKit will not take the
+  // session category away from a running playback context — it rejects the
+  // capture request with `InvalidStateError` instead. Taking the microphone
+  // first (the fix before this one) only helped when no context existed yet;
+  // pressing Listen and then Record walked straight back into it, which is
+  // what the owner kept seeing after both earlier fixes shipped.
+  //
+  // Suspended, not closed: `close()` on iOS does not reliably return the
+  // slot, which is `lib/audio/context.web.ts`'s founding argument. The resume
+  // below brings it back once the microphone is in hand.
+  await releaseAudioSession();
+
   let media: MediaStream;
   {
     // Raw and unprocessed, because the analysis measures attacks as played and
