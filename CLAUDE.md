@@ -55,24 +55,31 @@ fetches a URL — added 2026-09-09 after two twin functions drifted apart and on
 of them shipped an SSRF). `.github/workflows/ci.yml` is the list that cannot go
 stale.
 
-**Run `tools/preflight.py` before you commit — CI is not running.** Every job in
-`ci.yml` fails a few seconds in: the jobs are *created* and then refused before
-a runner picks one up. Diagnosed properly on 2026-09-09 rather than inferred —
-**0 billable milliseconds** on all five jobs, log download 404s because no log
-exists, and the check run's output is empty. That is an account being refused
-compute, not a broken workflow: bad YAML fails differently, and a failing step
-produces both logs and billable time.
+**Run `tools/preflight.py` before you commit** — faster than a push, and it
+catches most of what CI would. It is no longer the only gate: **CI runs again
+as of 2026-09-12**, after six days refusing every job.
 
-`intempo` is a **private repo on a personal account**, so Actions minutes are
-billed (public repos are unlimited and free). The two candidates are exhausted
-included minutes with no spending limit, or a payment failure; the API cannot
-see billing, and the reason is shown as a banner on the run page in the web UI.
+**The refusal signature, worth recognising if it returns:** jobs *created* and
+then refused before a runner picks one up — **0 billable milliseconds** on all
+five, a run about five seconds long, log downloads 404ing because no log
+exists, and an empty check-run output. That is an account being refused
+compute, not broken YAML, which fails differently and produces both logs and
+billable time. The cause was exhausted minutes: `intempo` is a **private repo
+on a personal account**, so Actions minutes are billed (public repos are free
+and unlimited), and Free's 2,000 a month had reached 2,032. The owner upgraded
+to Pro (3,000) and run 831 executed the same day — the first since 2026-09-06.
 
-**Broken since at least 2026-09-06** — run 748 that day failed the same way.
-This file previously said 2026-09-09, which was simply the day somebody looked.
-Do not re-date it without checking a run from before the date you are claiming.
-**Only the owner can fix it**, and until they do, the repository has the checks
-written down and none of them running.
+**Minutes are still finite**, and `app-walk` — two web builds, the walk, the
+devices and two accessibility sweeps — is most of the cost of a run. Preflight
+first; push when you believe it is green.
+
+**Its first working run failed two jobs, and both were defects in checks rather
+than in the app**: `check-brand-assets.py` could not tell "the art is wrong"
+from "I could not look at the art", because the job had no Pillow and the check
+read only stdout; and `device-check.mjs` demanded a permission error from a
+headless runner with no audio hardware to refuse. Neither is reachable on a
+machine that has Pillow installed and a sound card. **A check that has never
+run in CI is not a check yet** — if you add one, watch it run there.
 
     tools/preflight.py            # the gates that need no build
     tools/preflight.py --full     # and the builds, the walk and the audits
@@ -81,6 +88,14 @@ It runs what `ci.yml` runs, prints what it cannot run and why, and needs a
 `DATABASE_URL` for the migrations gate — any empty Postgres will do. It is not
 a substitute for CI: one machine, one Node, one Python, and the working tree
 rather than what was pushed.
+
+**Three of the four Cloudflare Pages checks on every PR are permanently red and
+are not yours.** `front`, `intempo` and `i` are abandoned projects still wired
+to this repo — `front` builds the `frontend/` tree deleted on 2026-09-09 — and
+they fail in zero seconds on every commit, including on `main`. The live site
+is the project named **`idk`** (`idk-41z.pages.dev`), and that is the only
+Pages check worth reading. Their build settings live in the Cloudflare
+dashboard, so no commit can repair them; deleting them is the owner's.
 
 **The session container runs a Postgres, and the migrations gate had been
 skipped for want of it.** Every session read "no `DATABASE_URL`" as "there is
@@ -266,9 +281,18 @@ was no longer true of all of it:
 - **The schema** — *not blocked.* See §1. `intempo-dev` is fully in step with
   the code as of 2026-09-09; every column and table `readiness.py` requires is
   present.
-- **upload→OCR→save** — blocked. `SUPABASE_SERVICE_ROLE_KEY`, `ANTHROPIC_API_KEY`
-  and `GEMINI_API_KEY` are all empty in `backend/.env`, so nothing can sign a
-  service-role write or call a reader. Owner's to provide.
+- **upload→OCR→save** — *not blocked on keys, and a session got this wrong on
+  2026-09-11.* `SUPABASE_SERVICE_ROLE_KEY`, `ANTHROPIC_API_KEY` and
+  `GEMINI_API_KEY` are empty in `backend/.env`, and that file is **this
+  container's scratch configuration, not the deployment's**. The backend runs
+  on Render, which holds its own environment; the owner set those keys there,
+  and `GET /v1/ready` on the deployed API answered `"ready": true` with an
+  empty `blocking` list. **Ask the running service, never the local `.env`** —
+  `readiness.py` exists to be asked, and the session container's proxy may
+  refuse `onrender.com`, in which case say you could not check rather than
+  reading the file and calling it an answer. Same shape as the two mistakes in
+  §1: before calling something unconfigured, check whether the thing that
+  actually runs it is configured.
 - **Live magic-link auth** — the anon key *is* set in both `.env` files. What is
   missing is a person clicking a link in an inbox, which no session can do.
 - **mic→analysis** — blocked on a real device with a microphone.
