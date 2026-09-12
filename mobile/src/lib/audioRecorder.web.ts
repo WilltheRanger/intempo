@@ -67,31 +67,35 @@ export async function startRecording(): Promise<Recorder> {
     throw new MicrophoneUnavailableError('This browser has no Web Audio.');
   }
 
-  // Create and unlock while the Record tap still owns the user gesture, not
-  // after the permission prompt and worklet download have finished.
-  let context: AudioContext;
-  try {
-    context = new AudioContextCtor();
-  } catch {
-    throw new MicrophoneUnavailableError(
-      'Audio could not start. Close other audio apps, return here, and try Record again.',
-    );
-  }
-  let resume: Promise<void> = Promise.resolve();
-  try {
-    if (context.state !== 'running') {
-      // Handle rejection immediately, while permission may still be pending.
-      resume = context.resume();
-      void resume.catch(() => {});
-    }
-  } catch {
-    void context.close().catch(() => {});
-    throw new MicrophoneUnavailableError(
-      'Audio could not start. Try Record again.',
-    );
-  }
-  let media: MediaStream | undefined;
-  try {
+  /**
+   * **The microphone first, the audio graph second — and that order is the
+   * whole reason this function was rewritten.**
+   *
+   * It used to construct the `AudioContext` and `resume()` it before asking
+   * for the microphone, to unlock audio while the Record tap still owned the
+   * user gesture. On Chromium that is harmless and on WebKit it is fatal:
+   * resuming a context claims a *playback* audio session, and the capture
+   * request that follows has to take the session category away from it.
+   * WebKit rejects that `getUserMedia` with `InvalidStateError`.
+   *
+   * **Reported from a real iPhone on 2026-09-12 and narrowed by elimination**,
+   * because the first reading of it was wrong. The error says the document is
+   * not fully active, so the screen advised a reload; reloading changed
+   * nothing, which it could not, since the conflict is rebuilt on every tap.
+   * It failed in Safari as well as in the home-screen app, so the standalone
+   * context was not it either. It worked in Chromium on a desktop, and — the
+   * measurement that settled it — the stock WebRTC `getUserMedia` sample
+   * worked in Safari **on the same phone**. Plain capture is fine there. What
+   * is not fine is capture behind a running `AudioContext`, which is ours.
+   *
+   * The gesture argument the old order rested on does not apply once the
+   * microphone is granted: a successful `getUserMedia` is itself what unlocks
+   * audio on iOS, so a context created after it starts unlocked rather than
+   * needing the tap. The cost is that a refusal now happens before any graph
+   * exists, which is also the honest shape — there is nothing to tear down.
+   */
+  let media: MediaStream;
+  {
     // Raw and unprocessed, because the analysis measures attacks as played and
     // every one of these processors moves them. A **preference**, not a
     // requirement — see the retry below.
@@ -122,15 +126,48 @@ export async function startRecording(): Promise<Recorder> {
         throw microphoneFailure(error);
       }
     }
+  }
 
+  /** Release the device. Every failure past this point owes the mic back. */
+  const releaseMicrophone = () =>
+    media.getTracks().forEach((track) => track.stop());
+
+  let context: AudioContext;
+  try {
+    context = new AudioContextCtor();
+  } catch {
+    // The microphone is open by now, which it never was in the old order.
+    // Leaving it open would light the recording indicator with nothing
+    // recording, and leave the next attempt a busy device.
+    releaseMicrophone();
+    throw new MicrophoneUnavailableError(
+      'Audio could not start. Close other audio apps, return here, and try Record again.',
+    );
+  }
+  let resume: Promise<void> = Promise.resolve();
+  try {
+    if (context.state !== 'running') {
+      // Handle rejection immediately, while the graph is still being built.
+      resume = context.resume();
+      void resume.catch(() => {});
+    }
+  } catch {
+    releaseMicrophone();
+    void context.close().catch(() => {});
+    throw new MicrophoneUnavailableError(
+      'Audio could not start. Try Record again.',
+    );
+  }
+
+  try {
     const chunks: Int16Array[] = [];
     const level = createPeakMeter();
     let truncated = false;
     let samples = 0;
     let finished = false;
 
-    const stopTracks = () =>
-      media?.getTracks().forEach((track) => track.stop());
+    // `releaseMicrophone` above, named for where it is now needed first.
+    const stopTracks = releaseMicrophone;
 
     if (!context.audioWorklet) {
       throw new MicrophoneUnavailableError(
@@ -332,7 +369,7 @@ export async function startRecording(): Promise<Recorder> {
   } catch (error) {
     // Every setup failure must release the mic, including InvalidStateError
     // from graph creation. Otherwise the next attempt inherits a busy device.
-    media?.getTracks().forEach((track) => track.stop());
+    releaseMicrophone();
     await context.close().catch(() => {});
     if (error instanceof DOMException && error.name === 'InvalidStateError') {
       throw new MicrophoneUnavailableError(

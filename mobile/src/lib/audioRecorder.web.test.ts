@@ -157,10 +157,38 @@ describe('startRecording (web)', () => {
     expect(tracksStopped).toBe(1);
   });
 
-  it('unlocks suspended audio before asking for microphone permission', async () => {
+  /*
+   * **This assertion used to be the other way round, and the reversal is the
+   * fix for a real phone.**
+   *
+   * It read `['resume', 'permission']`: unlock the audio graph first, so the
+   * Record tap still owned the user gesture when the context was resumed. That
+   * is sound on Chromium and fatal on WebKit — resuming claims a *playback*
+   * audio session, and the capture request behind it has to take the session
+   * category away, which WebKit refuses with `InvalidStateError`.
+   *
+   * Narrowed by elimination on 2026-09-12, because the first reading was
+   * wrong: the error names an inactive document, so the screen advised a
+   * reload, and reloading changed nothing — the conflict is rebuilt on every
+   * tap. It failed in Safari as well as the home-screen app, so the standalone
+   * context was not it. It worked in Chromium on a desktop. The measurement
+   * that settled it: the stock WebRTC `getUserMedia` sample recorded happily
+   * in Safari **on the same phone**. Plain capture is fine there; capture
+   * behind a running `AudioContext` is not, and that part is ours.
+   *
+   * The gesture this test was protecting is not needed once the microphone is
+   * granted — a successful `getUserMedia` is itself what unlocks audio on iOS.
+   * So the order inverts and the reason the old order existed goes away with
+   * it.
+   */
+  it('takes the microphone before it builds the audio graph', async () => {
     const order: string[] = [];
     class SuspendedContext extends StubContext {
       state: 'running' | 'suspended' = 'suspended';
+      constructor() {
+        super();
+        order.push('context');
+      }
       async resume() {
         order.push('resume');
         this.state = 'running';
@@ -176,7 +204,10 @@ describe('startRecording (web)', () => {
       },
     });
     const recorder = await startRecording();
-    expect(order).toEqual(['resume', 'permission']);
+    // Not merely "permission is in there somewhere": the context must not even
+    // be *constructed* before the microphone is in hand, since constructing one
+    // is what starts the session WebKit then refuses to reassign.
+    expect(order).toEqual(['permission', 'context', 'resume']);
     await recorder.stop().catch(() => {});
   });
 
