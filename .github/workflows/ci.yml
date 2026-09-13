@@ -195,6 +195,40 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # **The guard for `tools/subset-text-fonts.py`.** Subsetting cut the four
+      # text faces from 899 KB to 327 KB — 212 KB over the wire, a quarter of
+      # the whole boot and the largest saving available short of restructuring
+      # the app, since Inter ships 2,849
+      # glyphs and the subset keeps 335 of them — and what it can break is
+      # silent. A character the subset dropped
+      # still renders: in the system font, one weight off and a different
+      # shape, beside the text it belongs to. On a screenshot that reads as a
+      # rendering quirk, which is the class of defect this repository keeps
+      # paying for.
+      #
+      # In this job rather than `repo-checks` because of the question it asks.
+      # "Is every character in all four subsets" is unanswerable — ♭, ♯ and ♩
+      # are in no text face upstream and never have been, so it would fail on
+      # the day it was written for something no commit here can fix. "Did the
+      # subset drop something upstream had" is the real risk and the real
+      # question, and upstream is `node_modules`, which only this job has.
+      #
+      # It found one the moment it could see JSX text: a `•` on two account
+      # screens, drawn as a bare child rather than a string literal.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Pinned for reproducibility rather than necessity — unlike the Pillow
+      # pin above, which is load-bearing because that check rasterises and
+      # compares bytes. This one reads `cmap` tables, which do not move.
+      - name: fontTools, for the font subset guard
+        run: python3 -m pip install --quiet 'fonttools==4.64.0'
+
+      - name: Subset fonts still cover the app's own text
+        working-directory: .
+        run: python3 tools/check-font-coverage.py
+
       # The last two steps on purpose: a type error should be reported as a
       # type error, not as a bundler failure thirty seconds later.
       - name: Web build

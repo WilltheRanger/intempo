@@ -64,6 +64,7 @@ FAST: list[tuple[str, list[str], Path]] = [
     ("backend lint", ["uv", "run", "ruff", "check", "app/", "scripts/", "modal_app.py"], BACKEND),
     ("mobile typecheck", ["npm", "run", "typecheck"], MOBILE),
     ("mobile lint", ["npm", "run", "lint"], MOBILE),
+    ("font coverage", ["python3", "tools/check-font-coverage.py"], ROOT),
     ("mobile tests", ["npm", "test"], MOBILE),
     ("backend tests", ["uv", "run", "pytest", "-q"], BACKEND),
 ]
