@@ -44,10 +44,27 @@ recordings, the URL is only ever handed to that musician's session, and the
 alternative is re-downloading the library on every view. `private` rather than
 `public` so only the asking browser may store it, never a shared proxy.
 
-**What this does not fix.** The 34 objects already in the bucket keep the
-`no-cache` they were written with — this changes what *new* uploads say about
-themselves. Existing objects need their stored metadata rewritten to benefit,
-which is a separate, owner-facing operation on live data.
+**The 34 existing objects were backfilled the same day**, at the owner's
+request, by rewriting `storage.objects.metadata->>'cacheControl'` on
+`intempo-dev` — every one of them was uniformly `no-cache`, so the rollback is
+a single statement back to that value. The code change above governs new
+uploads; this covered everything already stored.
+
+**What is still not fixed, measured at the same time.** There are **zero**
+display derivatives in the bucket: all 25 score images are full-size
+photographs averaging 2.4 MB, because `store_display_copy` only runs during
+transcription and every page predates it. Caching makes each one cost its bytes
+once per device rather than once per view, which is the bulk of the win, but the
+first load is still a phone photograph. A backfill needs to download, resize and
+re-upload each page, which needs storage credentials no session container has —
+the proxy refuses `supabase.co` and `SUPABASE_SERVICE_ROLE_KEY` is empty here.
+Re-transcribing a score writes its derivative as a side effect, which is the
+cheap route for the pages that matter most.
+
+Also found: **4 stray `.wav` files, 5.7 MB**, sitting in `audio-uploads`
+alongside 2 `.opus`. The WAV is meant to be deleted once analysis has an Opus
+for playback; it was not. Little egress, since playback uses the Opus, but the
+cleanup path is evidently not firing.
 
 ## 2026-09-12 — Today is one screen with one action, and the warmup moves rather than dies
 
