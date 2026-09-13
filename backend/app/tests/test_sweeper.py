@@ -86,12 +86,16 @@ def test_the_loop_keeps_sweeping_and_stops_when_cancelled(
     # each one reaches for a real Supabase client and a real network call, and
     # this test then fails on a proxy 403 rather than on anything about
     # sweeping. That has now happened twice — once when the transcription
-    # sweeper joined the loop, once when the unclaimed-upload sweeper did — so
-    # if you are reading this because the test is failing that way again, the
-    # answer is a line below rather than anything wrong with the loop.
+    # sweeper joined the loop, once when the unclaimed-upload sweeper did, and
+    # once when the unjudged-take reclaim did — so if you are reading this
+    # because the test is failing that way again, the answer is a line below
+    # rather than anything wrong with the loop.
     monkeypatch.setattr(main_module, "sweep_stuck_transcriptions", lambda: 0)
     monkeypatch.setattr(
         main_module.pending_uploads, "sweep_unclaimed", lambda: 0
+    )
+    monkeypatch.setattr(
+        main_module.take_archive, "sweep_unjudged_takes", lambda: 0
     )
 
     async def drive() -> bool:

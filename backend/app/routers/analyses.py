@@ -450,7 +450,7 @@ def get_analysis_recording(
     client = require_service_client()
     rows = (
         client.table("analyses")
-        .select("audio_url, playback_key")
+        .select("audio_url, playback_key, audio_reclaimed_at")
         .eq("id", str(analysis_id))
         .eq("user_id", str(user_id))
         .limit(1)
@@ -466,6 +466,20 @@ def get_analysis_recording(
     # is not a degraded path — it is the only path those rows ever had.
     row = rows[0] if rows else {}
     reference = row.get("playback_key") or row.get("audio_url")
+    # **A reclaimed take has an `audio_url` and no object behind it.** The
+    # column keeps naming the upload the row was created from (018 says why),
+    # so falling through here would sign a key that is gone — and
+    # `create_signed_url` failing is an `AudioStorageError`, which this reports
+    # as 503 *temporarily* unavailable. It is not temporary; the WAV was
+    # deleted on purpose a day after the take failed
+    # (`take_archive.sweep_unjudged_takes`). 404 is the answer 018 already
+    # names for a take whose audio is gone, and `TakePlayback` reads an error
+    # as "unavailable" and stops drawing a player.
+    if row.get("audio_reclaimed_at") and not row.get("playback_key"):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="recording not found",
+        )
     if not reference:
         # One answer for an unknown take, somebody else's take, and an old row
         # whose audio is absent. Do not reveal which IDs belong to whom.

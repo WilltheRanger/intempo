@@ -2,11 +2,11 @@
 -- 019_take_audio_reclaim — the WAV a take never earned a verdict for
 -- =============================================================
 --
--- **Recovered from the live project, not written here.** This column exists on
--- `intempo-dev` and was applied on 2026-09-13 as
--- `20260913024401 019_take_audio_reclaim`; no file in this repository created
--- it and nothing in the tree referenced it. The statements below are the ones
--- the project actually ran, read back out of
+-- **Recovered from the live project, and then caught up with.** This column
+-- exists on `intempo-dev` and was applied on 2026-09-13 as
+-- `20260913024401 019_take_audio_reclaim`; for three days no file in this
+-- repository created it and nothing in the tree referenced it. The statements
+-- below are the ones the project actually ran, read back out of
 -- `supabase_migrations.schema_migrations`, so the file matches what is
 -- deployed rather than what someone would write today.
 --
@@ -18,28 +18,69 @@
 -- Supabase. A restore, a second environment, or a fresh project built from
 -- this repository would have come up without the column.
 --
--- Nothing in the application reads or writes `audio_reclaimed_at` yet. That is
--- the other half of the same drift — the schema moved and the code did not —
--- and it is left exactly as found. This file changes no database; it only
--- makes the repository able to rebuild the one that exists.
+-- **The sentence that used to be here said no code reads this column.** That
+-- was the other half of the same drift, and it was true only because the
+-- branch that needed the column was open and unmerged: `take_archive.py`'s
+-- sweep, written in the same session that applied this migration by hand,
+-- landed three days later. The two halves are together now, and the rest of
+-- this header is that branch's reasoning, which is the reasoning for the
+-- column.
 --
--- ## What it is for
+-- 018 replaced a judged take's WAV with an Opus and deleted the original.
+-- Measured on `intempo-dev` on 2026-09-13, that half works: both analyses that
+-- have run since it shipped carry a `playback_key`, and neither of their WAVs
+-- is in the bucket.
 --
--- 018 added `playback_key`: the compressed copy kept once a take has been
--- judged, after which the original WAV can go. A take that is *never* judged
--- has no such copy, and its WAV is still 96 KB a second. Deleting it needs
--- somewhere to say so, because `audio_url` cannot: it is also the retry key
--- for `POST /v1/analyses`, so it has to keep naming the upload the row was
--- created from even once the object behind it is gone.
+-- **It is the takes that never reach a verdict that keep theirs forever.**
+-- `keep_playback_copy` runs on exactly one path — `run_analysis` after the row
+-- is written `done`. Every other way an analysis can end leaves the WAV where
+-- it is:
 --
--- Null is the ordinary state and means the WAV was not reclaimed — the take
--- was judged (see `playback_key`), or it is still running, or the grace period
--- has not passed. Set once and never cleared.
-
+--   * `failed` — the audio could not be fetched, or the pipeline threw
+--   * `failed_recoverable` — the row was swept up as stuck, which is also
+--     where a take whose worker never ran ends up after ten minutes
+--
+-- and nothing else will ever remove it. `pending_uploads` is the sweeper for
+-- objects nothing claimed, and `POST /v1/analyses` **claims** the object the
+-- moment it writes the row — correctly, because a row now points at it — which
+-- takes it out of that sweeper's scope for good. So the object is claimed by a
+-- row that is finished with it, and reachable by no cleanup at all: an
+-- unbounded pile of ~3 MB files, one per failed take, growing for as long as
+-- takes fail.
+--
+-- ## Why a column rather than deleting on the spot
+--
+-- The verdict screen draws a player under a *failed* take. It says the
+-- analysis failed and the musician's playing was not the problem, and the
+-- recording is the one thing on that screen worth having. Deleting the WAV as
+-- the row turns `failed` would take it away in the minutes they are most
+-- likely to want it, so the reclaim waits a day (`take_archive.RECLAIM_AFTER`)
+-- and runs off the sweeper that is already in the loop.
+--
+-- A sweep needs to know what it has already done. Without a mark, every pass
+-- re-issues a delete for every take it has ever reclaimed: harmless per
+-- request, and at any real number of failed takes the `limit` fills with
+-- already-reclaimed rows and the newest ones are never reached. That is a
+-- sweeper that silently stops sweeping, which is the failure this column
+-- exists to make impossible.
+--
+-- ## Why not `playback_key`, and why not `audio_url`
+--
+-- `playback_key` means "where the audio is now" and must name an object that
+-- exists — `GET /v1/analyses/{id}/recording` signs it. `audio_url` is the
+-- retry key `POST /v1/analyses` dedupes on, and 018 says at length why it
+-- keeps meaning "the upload this row was created from" even once the object
+-- behind it is gone. Neither can carry this without becoming a lie.
+--
+-- So: a third value that says only what happened. Null on every row that has
+-- one — the overwhelming majority — and set once, never cleared.
+--
+-- Nothing here backfills, and nothing here deletes: applying this changes no
+-- object in storage. The sweep does that, on rows this column marks
+-- afterwards.
 -- `IF NOT EXISTS` because nothing here is applied by a deploy: someone runs it,
 -- and whoever that is must be free to run it again without remembering whether
--- they already did. `test_readiness.py` enforces it. The live project already
--- has this column, so this is a no-op there and is meant to be.
+-- they already did. `test_readiness.py` enforces it.
 ALTER TABLE analyses ADD COLUMN IF NOT EXISTS audio_reclaimed_at timestamptz;
 
 COMMENT ON COLUMN analyses.audio_reclaimed_at IS

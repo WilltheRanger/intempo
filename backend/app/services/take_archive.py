@@ -36,16 +36,35 @@ having worked. The failure modes that leaves are all the *safe* direction:
 
 The one arrangement that would lose a recording — delete first, then write —
 is the one this cannot do.
+
+**The other half is the takes that never get a verdict**, and for three days
+there was nothing at all. `keep_playback_copy` runs on one path: `run_analysis`,
+after the row is written `done`. A take that ends `failed` or
+`failed_recoverable` keeps its WAV, and nothing else will ever remove it —
+`pending_uploads` sweeps objects *nothing claimed*, and `POST /v1/analyses`
+claims the object as it writes the row, correctly and permanently. So the
+object ends up claimed by a row that is finished with it and reachable by no
+cleanup at all: ~3 MB per failed take, for as long as takes fail.
+`sweep_unjudged_takes` is that path, on a day's delay and off the sweeper loop
+in `main`.
+
+Measured on `intempo-dev` on 2026-09-13 before writing any of it, because the
+report this answers said the opposite: both analyses that have ever run under
+018 carry a `playback_key` and neither WAV is in the bucket — the judged path
+works. The four stray `.wav` there have no `analyses` row at all and predate
+018 by a fortnight.
 """
 
 from __future__ import annotations
 
 import io
 import logging
+from datetime import datetime, timedelta, timezone
 
 import numpy as np
 import soundfile as sf
 
+from app.db import get_service_client
 from app.services.audio_storage import object_key_from
 from app.services.buckets import AUDIO_BUCKET
 from app.services.cache_headers import CACHE_FOREVER
@@ -184,3 +203,121 @@ def keep_playback_copy(client, analysis_id: str, reference: str, wav_bytes: byte
         analysis_id, key, len(opus) // 1024, len(wav_bytes) // 1024,
     )
     return key
+
+
+#: How long a take that will never be judged keeps its recording.
+#:
+#: **The audio outlives the verdict here deliberately.** A failed take is the
+#: one case where the original is the whole of what is left: the verdict screen
+#: says the analysis failed and the musician's playing was not the problem, and
+#: draws a player underneath it. Deleting the WAV as the row turns `failed`
+#: would take that away in the minutes they are most likely to use it.
+#:
+#: Nothing comes back to it afterwards. Both buttons that screen offers — "Try
+#: again" and "Record again" — open the recorder and make a new object, and the
+#: only other route back to a submitted take, `rememberPendingAnalysis`, polls
+#: the row rather than resubmitting the audio. So there is no retry to break;
+#: there is a musician who may still want to listen.
+#:
+#: A day, the same as `pending_uploads.UNCLAIMED_TTL_HOURS` and for the same
+#: reason it gives: sweeping too early costs somebody a recording they are
+#: still using, and sweeping too late costs a few megabytes for a few hours.
+RECLAIM_AFTER = timedelta(hours=24)
+
+#: How many takes one pass will reclaim.
+#:
+#: The sweep runs every five minutes for the life of the process, so a backlog
+#: drains at 200 takes a pass rather than needing one big query — and a limit
+#: is only safe because `audio_reclaimed_at` means a reclaimed row is never
+#: selected again. Without that mark the batch would fill with work already
+#: done and the newest takes would never be reached.
+RECLAIM_BATCH = 200
+
+#: The states a take ends in without ever having been judged.
+#:
+#: `failed_recoverable` is where the stuck-row sweeper puts a row that was
+#: still `queued` or `processing` after ten minutes, so a take whose worker
+#: never ran arrives here too — which is what makes this the whole set rather
+#: than two thirds of it. `done` is deliberately absent even when
+#: `playback_key` is null: there the transcode failed and the WAV is the only
+#: copy of a take that *does* have a verdict, so it is the live recording.
+UNJUDGED = ("failed", "failed_recoverable")
+
+
+def sweep_unjudged_takes(client=None, *, now: datetime | None = None) -> int:
+    """Delete the recordings of takes that ended without a verdict. Returns how many.
+
+    **The object first, then the mark**, which is the same ordering rule as
+    `pending_uploads.sweep_unclaimed` and for the same reason: a row marked
+    before its object is deleted leaks the object permanently and silently,
+    which is precisely the bug this exists to fix, reintroduced one level down.
+    A mark that never lands costs one repeated delete on the next pass, and a
+    delete of an object that is already gone succeeds.
+
+    A row whose `audio_url` yields no key is marked without anything being
+    removed: there is no object here to reclaim — the reference names storage
+    this service does not own, which `durable_audio_reference` has made
+    impossible for new rows — and leaving it unmarked would hand it to every
+    future pass forever, which is the starvation `RECLAIM_BATCH` describes.
+
+    Nothing raises. This runs on a timer beside three other sweeps, and one bad
+    pass has to cost one pass.
+    """
+    client = client or get_service_client()
+    if client is None:
+        return 0
+
+    cutoff = ((now or datetime.now(tz=timezone.utc)) - RECLAIM_AFTER).isoformat()
+    try:
+        rows = (
+            client.table("analyses")
+            .select("id,audio_url")
+            .in_("status", list(UNJUDGED))
+            # Not `playback_key is null` as a nicety: a row that has one has
+            # had its WAV deleted already, by `keep_playback_copy`, and the
+            # only thing left at that key is the Opus playback depends on.
+            .is_("playback_key", "null")
+            .is_("audio_reclaimed_at", "null")
+            .lt("updated_at", cutoff)
+            .limit(RECLAIM_BATCH)
+            .execute()
+        ).data or []
+    except Exception:  # noqa: BLE001 — the loop outlives any one failure
+        log.warning("could not list takes to reclaim", exc_info=True)
+        return 0
+
+    reclaimed = 0
+    for row in rows:
+        analysis_id = row.get("id")
+        key = object_key_from(str(row.get("audio_url") or ""))
+        if not analysis_id:
+            continue
+        if key:
+            try:
+                client.storage.from_(AUDIO_BUCKET).remove([key])
+            except Exception:  # noqa: BLE001
+                # Left unmarked on purpose: the next pass tries again. An
+                # object that no longer exists removes cleanly, so a repeated
+                # failure here means storage is unreachable, not a bad key.
+                log.warning(
+                    "analysis %s: could not reclaim %s", analysis_id, key, exc_info=True
+                )
+                continue
+        try:
+            client.table("analyses").update(
+                {"audio_reclaimed_at": _now_iso()}
+            ).eq("id", analysis_id).execute()
+        except Exception:  # noqa: BLE001
+            log.warning(
+                "analysis %s: reclaimed %s but could not mark the row",
+                analysis_id, key, exc_info=True,
+            )
+        reclaimed += 1
+
+    if reclaimed:
+        log.info("reclaimed the audio of %d unjudged take(s)", reclaimed)
+    return reclaimed
+
+
+def _now_iso() -> str:
+    return datetime.now(tz=timezone.utc).isoformat()

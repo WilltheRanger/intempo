@@ -369,6 +369,78 @@ alongside 2 `.opus`. The WAV is meant to be deleted once analysis has an Opus
 for playback; it was not. Little egress, since playback uses the Opus, but the
 cleanup path is evidently not firing.
 
+> **Corrected 2026-09-13, from the `analyses` table rather than the bucket
+> listing.** *"The cleanup path is evidently not firing"* was inferred from the
+> objects alone and is wrong. `analyses` holds exactly two rows; both are
+> `done`, both carry a `playback_key`, and **neither of their WAVs is in the
+> bucket** — the judged path works end to end, delete included. The four strays
+> are from 23 August to 1 September, predate migration 018 by a fortnight, and
+> have no `analyses` row at all, so no `.wav` there has an `.opus` sibling.
+> What the measurement actually found is the entry below: the WAV of a take
+> that never *gets* a verdict was reclaimed by nothing.
+
+## 2026-09-13 — A take that never gets a verdict has its audio reclaimed a day later
+
+**Context.** `keep_playback_copy` runs on exactly one path — `run_analysis`,
+after the row is written `done`. Every other ending keeps its WAV: `failed`
+when the audio could not be fetched or the pipeline threw, and
+`failed_recoverable` when the stuck-row sweeper gave up on a take whose worker
+never ran. Nothing else would ever remove those. `pending_uploads` sweeps
+objects *nothing claimed*, and `POST /v1/analyses` claims the object as it
+writes the row — correctly, a row does now point at it — which takes it out of
+that sweeper's scope permanently. So the object ends up claimed by a row that is
+finished with it and reachable by no cleanup at all: ~3 MB per failed take,
+growing for as long as takes fail, on a tier where 1 GB is about four people.
+
+**Decision.** A fourth sweep on the loop that already runs every five minutes:
+`take_archive.sweep_unjudged_takes` deletes the recording of any take in those
+two states whose row has been untouched for **24 hours**, and marks it with a
+new column, `analyses.audio_reclaimed_at` (migration 019).
+
+**A day, not immediately, because the failure screen draws a player.** It tells
+the musician the analysis failed and their playing was not the problem, and the
+recording is the one thing on that screen worth having. Deleting it as the row
+turns `failed` would take it away in the minutes they are most likely to use
+it. Nothing comes back to it afterwards — both buttons that screen offers open
+the recorder and make a *new* object, and the only other route back to a
+submitted take polls the row rather than resubmitting the audio — so there is no
+retry to break, only a musician who may still want to listen. The number
+matches `pending_uploads.UNCLAIMED_TTL_HOURS` and rests on its reasoning:
+sweeping too early costs somebody a recording they are still using, sweeping too
+late costs a few megabytes for a few hours.
+
+**Alternatives considered.**
+
+- *Delete in `_finish_failed`, no column and no sweep.* The smallest change by
+  far, and it takes the recording away while the musician is looking at it.
+- *A sweep with no mark, driven by the query alone.* Every pass would re-issue
+  a delete for every take it had ever reclaimed. Harmless per request — a
+  delete of an absent object succeeds — but the batch limit then fills with
+  work already done and the newest takes are never reached: a sweeper that
+  stops sweeping without ever failing. That is what the column buys.
+- *Reconcile the bucket against the rows*, which would also catch the four
+  strays above. Rejected: listing a private bucket is per-prefix, so it is a
+  request per account and worsens with every musician, and a reconciler deletes
+  objects on the strength of a query returning *nothing* — so a partial read
+  costs live recordings. A row-driven sweep only ever deletes an object a row
+  says it is finished with, which is the direction this module fails in
+  everywhere else.
+- *Reuse `playback_key` or `audio_url` as the mark.* Neither can carry it
+  without becoming a lie. `playback_key` must name an object that exists —
+  `GET /v1/analyses/{id}/recording` signs it — and `audio_url` is the retry key
+  `POST /v1/analyses` dedupes on, which 018 explains at length must keep meaning
+  "the upload this row was created from" even once the object behind it is gone.
+
+**Trade-offs accepted.** A nineteenth hand-applied migration, and one more
+blocking row on `/v1/ready`; the column was applied to `intempo-dev` the same
+day. The recording endpoint's projection now names it, so a deployment that has
+the code and not the column answers 400 on playback rather than degrading —
+which is why it is on the readiness list rather than left to be noticed. And a
+failed take's recording is now genuinely finite: a musician who comes back to
+one after a day finds no player where there used to be one. That is the cost
+being bought, and 018 already names 404 as the right answer for a take whose
+audio is gone.
+
 ## 2026-09-12 — Today is one screen with one action, and the warmup moves rather than dies
 
 **Context.** The owner: *"there should be no scrollable thing under the today

@@ -9,11 +9,18 @@ These tests are about the two things that make replacing it safe rather than
 clever: that the *order* of operations can never leave a musician with no
 audio, and that both copies are found again when the piece or the account is
 deleted.
+
+**And, from the bottom of the file down, the takes that never got a verdict.**
+That replacement runs on one path — after a row is written `done` — so a take
+that ended `failed` kept its WAV, claimed by a row finished with it and swept
+by nothing. `sweep_unjudged_takes` is that path; the cases below are about it
+taking the right recordings and, twice over, about it not taking the wrong ones.
 """
 
 from __future__ import annotations
 
 import io
+from datetime import datetime, timezone
 
 import numpy as np
 import pytest
@@ -21,6 +28,7 @@ import soundfile as sf
 
 from app.services import take_archive
 from app.services.take_archive import keep_playback_copy, playback_key_for, to_opus
+from app.tests.fake_supabase import FakeSupabase
 
 
 def _wav(seconds: float = 1.0, rate: int = 48_000) -> bytes:
@@ -242,4 +250,214 @@ def test_it_is_reachable_from_the_runner() -> None:
     )
     assert "keep_playback_copy(client, analysis_id" in source, (
         "imported but never called — the copy would never be made"
+    )
+
+
+# ---- the takes that never got a verdict ------------------------------------
+#
+# `keep_playback_copy` above runs on one path: `run_analysis`, after the row is
+# written `done`. Everything below is about the other endings, which kept their
+# WAV forever — claimed by a row that is finished with it, so `pending_uploads`
+# will not sweep it, and never reaching the one thing that deletes one.
+
+
+def _failed_take(
+    *,
+    key: str = "user-1/take.wav",
+    status: str = "failed",
+    updated: str = "2026-09-01T00:00:00+00:00",
+    **extra,
+) -> dict:
+    return {
+        "id": "a1",
+        "status": status,
+        "audio_url": f"audio-uploads/{key}",
+        "updated_at": updated,
+        **extra,
+    }
+
+
+def _seeded(rows: list[dict], objects: list[str]) -> FakeSupabase:
+    fake = FakeSupabase()
+    fake.seed("analyses", rows)
+    for key in objects:
+        fake.put_object(take_archive.AUDIO_BUCKET, key, b"a take")
+    return fake
+
+
+#: Comfortably past `RECLAIM_AFTER` from the timestamps above.
+NOW = datetime(2026, 9, 30, tzinfo=timezone.utc)
+
+
+def test_a_failed_take_loses_the_recording_nothing_will_ever_read_again() -> None:
+    """The whole point: ~3 MB per failed take, reclaimed by something.
+
+    Before this, the only path that deleted a WAV ran after a verdict was
+    written, and a take that never got one was swept by nothing at all.
+    """
+    fake = _seeded([_failed_take()], ["user-1/take.wav"])
+
+    assert take_archive.sweep_unjudged_takes(fake, now=NOW) == 1
+    assert fake.object_keys(take_archive.AUDIO_BUCKET) == set()
+    assert fake.table("analyses").rows[0]["audio_reclaimed_at"] is not None
+
+
+def test_a_take_swept_up_as_stuck_is_reclaimed_too() -> None:
+    """`failed_recoverable` is where a take whose worker never ran ends up.
+
+    `sweep_stuck_analyses` moves a row that is still `queued` or `processing`
+    after ten minutes into this state, so covering it is what makes "never
+    analysed" part of this sweep rather than a third case with no owner.
+    """
+    fake = _seeded([_failed_take(status="failed_recoverable")], ["user-1/take.wav"])
+
+    assert take_archive.sweep_unjudged_takes(fake, now=NOW) == 1
+    assert fake.object_keys(take_archive.AUDIO_BUCKET) == set()
+
+
+def test_a_take_keeps_its_recording_while_the_grace_period_runs() -> None:
+    """The failure screen draws a player under a failed take.
+
+    It says the analysis failed and the musician's playing was not the problem,
+    and the recording is the only thing on that screen worth having. Deleting
+    it as the row turns `failed` would take it away in the minutes they are
+    most likely to use it — so this waits a day, and this is the assertion that
+    the waiting is real rather than a constant nothing reads.
+    """
+    recent = (NOW - take_archive.RECLAIM_AFTER / 2).isoformat()
+    fake = _seeded([_failed_take(updated=recent)], ["user-1/take.wav"])
+
+    assert take_archive.sweep_unjudged_takes(fake, now=NOW) == 0
+    assert fake.object_keys(take_archive.AUDIO_BUCKET) == {"user-1/take.wav"}
+
+
+def test_a_judged_take_is_never_touched() -> None:
+    """Its key holds the Opus by now, and playback is the only thing left.
+
+    Deleting here would take the audio of a take that *has* a verdict, which is
+    the one direction this module is written never to fail in.
+    """
+    fake = _seeded(
+        [_failed_take(status="done", playback_key="user-1/take.opus")],
+        ["user-1/take.opus"],
+    )
+
+    assert take_archive.sweep_unjudged_takes(fake, now=NOW) == 0
+    assert fake.object_keys(take_archive.AUDIO_BUCKET) == {"user-1/take.opus"}
+
+
+def test_a_judged_take_whose_transcode_failed_keeps_its_wav() -> None:
+    """`done` with no `playback_key` is the third of 018's three nulls.
+
+    The encode failed, so the WAV is not a leftover — it is the recording the
+    verdict screen falls back to, for a take with a verdict. The filter is on
+    the status, not on the absence of an Opus, and this is why.
+    """
+    fake = _seeded([_failed_take(status="done")], ["user-1/take.wav"])
+
+    assert take_archive.sweep_unjudged_takes(fake, now=NOW) == 0
+    assert fake.object_keys(take_archive.AUDIO_BUCKET) == {"user-1/take.wav"}
+
+
+def test_a_take_with_an_opus_is_left_alone_whatever_its_status_says() -> None:
+    """Defensive, and deliberately so — no path writes this row today.
+
+    `keep_playback_copy` runs only after a row is written `done`, and nothing
+    moves a `done` row back, so a `failed` take with a `playback_key` cannot
+    currently exist. The filter is there because of what it would cost if one
+    ever could: `audio_url` and `playback_key` differ only in their extension,
+    and the key this sweep deletes is built from the former. A status this set
+    happens to name would take the Opus of a take that has a verdict — the one
+    direction this module is written never to fail in.
+    """
+    fake = _seeded(
+        [_failed_take(status="failed", playback_key="user-1/take.opus")],
+        ["user-1/take.opus"],
+    )
+
+    assert take_archive.sweep_unjudged_takes(fake, now=NOW) == 0
+    assert fake.object_keys(take_archive.AUDIO_BUCKET) == {"user-1/take.opus"}
+
+
+def test_a_take_still_being_analysed_is_left_alone() -> None:
+    """`run_analysis` is about to download this. Ten minutes from now the
+    stuck-row sweeper may call it failed, and then it is this sweep's."""
+    fake = _seeded([_failed_take(status="processing")], ["user-1/take.wav"])
+
+    assert take_archive.sweep_unjudged_takes(fake, now=NOW) == 0
+    assert fake.object_keys(take_archive.AUDIO_BUCKET) == {"user-1/take.wav"}
+
+
+def test_a_reclaimed_take_is_not_offered_to_the_next_pass() -> None:
+    """The reason `audio_reclaimed_at` exists rather than nothing.
+
+    A sweep with a `limit` and no memory fills its batch with takes it has
+    already reclaimed, and the newest ones are never reached — a sweeper that
+    stops sweeping without ever failing. One pass, then a second that finds
+    nothing to do.
+    """
+    fake = _seeded([_failed_take()], ["user-1/take.wav"])
+
+    assert take_archive.sweep_unjudged_takes(fake, now=NOW) == 1
+    assert take_archive.sweep_unjudged_takes(fake, now=NOW) == 0
+
+
+def test_a_reference_with_no_key_is_marked_rather_than_retried_forever() -> None:
+    """Nothing to delete, and it must not be looked at again.
+
+    A row whose `audio_url` names storage this service does not own has no
+    object to reclaim — `durable_audio_reference` makes that impossible for new
+    rows, so this is history — and leaving it unmarked hands it to every future
+    pass, which is the same starvation as the case above.
+    """
+    fake = FakeSupabase()
+    fake.seed("analyses", [dict(_failed_take(), audio_url="https://elsewhere.test/x.wav")])
+
+    assert take_archive.sweep_unjudged_takes(fake, now=NOW) == 1
+    assert fake.table("analyses").rows[0]["audio_reclaimed_at"] is not None
+
+
+def test_a_storage_failure_leaves_the_row_for_the_next_pass() -> None:
+    """The object first, then the mark — the same ordering rule as
+    `pending_uploads.sweep_unclaimed`, and for the same reason. A row marked
+    before its object is deleted leaks the object permanently and silently,
+    which is the bug this exists to fix reintroduced one level down."""
+    fake = _seeded([_failed_take()], ["user-1/take.wav"])
+
+    def _refuse(_keys):
+        raise RuntimeError("storage said no")
+
+    fake.storage.from_(take_archive.AUDIO_BUCKET).remove = _refuse
+
+    assert take_archive.sweep_unjudged_takes(fake, now=NOW) == 0
+    assert fake.table("analyses").rows[0].get("audio_reclaimed_at") is None
+
+
+def test_a_broken_query_costs_one_pass_and_not_the_loop() -> None:
+    """It runs every five minutes for the life of the process, beside three
+    other sweeps. One bad pass has to cost one pass."""
+    class _Broken:
+        storage = None
+
+        def table(self, _name):
+            raise RuntimeError("supabase said no")
+
+    assert take_archive.sweep_unjudged_takes(_Broken(), now=NOW) == 0
+
+
+def test_it_is_reachable_from_the_sweeper_loop() -> None:
+    """The defect this repository keeps finding: written, tested, never called.
+
+    `check-dead-exports` cannot see it — `main` imports the module, so the
+    export is referenced whether or not the loop ever invokes it. That is
+    exactly how `ReadingRate.forget_expired` went eleven days without a caller.
+    """
+    from pathlib import Path
+
+    from app import main
+
+    assert main.take_archive.sweep_unjudged_takes is take_archive.sweep_unjudged_takes
+    source = Path(main.__file__).read_text(encoding="utf-8")
+    assert "take_archive.sweep_unjudged_takes" in source, (
+        "imported but never swept — every failed take would keep its WAV"
     )

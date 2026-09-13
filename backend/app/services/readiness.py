@@ -153,6 +153,14 @@ REQUIRED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     # read as a half-applied schema rather than a broken scanner.
     ("scores", "transcription_runs", "017"),
     ("analyses", "playback_key", "018"),
+    # 019. The mark that a take which never got a verdict has had its WAV
+    # reclaimed. A deployment missing it degrades quietly and in the expensive
+    # direction: `sweep_unjudged_takes` contains its own failure, so the sweep
+    # does nothing at all and every failed take keeps ~3 MB forever, which
+    # looks exactly like a deployment where no take has ever failed. Nothing
+    # else reads it, so nothing else breaks — which is the whole reason it is
+    # worth a row here rather than being noticed by a storage bill.
+    ("analyses", "audio_reclaimed_at", "019"),
 )
 
 #: Tables added after the initial schema that production behavior depends on.
