@@ -699,6 +699,8 @@ nothing else covers `backend/`. Named here rather than left to be found.
 - **The page's audio session category decides whether the microphone works at
   all, and it is set at boot far away from the recorder (2026-09-12).** This
   cost five wrong fixes over one day, so it is written out in full.
+  **Confirmed on the owner's iPhone on 2026-09-13**: with the change below a
+  take records; it was the sixth diagnosis and the first correct one.
 
   `App.tsx` calls `prepareForPlayback()` on mount, which sets
   `navigator.audioSession.type = 'playback'` so the app is audible on a phone

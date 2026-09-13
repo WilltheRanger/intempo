@@ -15,9 +15,15 @@
  * Safari 16.4 and later; absent everywhere else, where there is nothing to
  * override and the guard below does the right thing by doing nothing.
  *
- * **Unverified on hardware**, like its native counterpart. There is no iPhone
- * in this environment. What can be checked here is that it is called on every
- * path that makes a sound, and that it cannot throw.
+ * **The capture half is confirmed on hardware (2026-09-13)**; the playback
+ * half is not. There is no iPhone in this environment, so what can be checked
+ * here is that the session is asked for on every path that makes a sound, that
+ * a take asks for a category it can record under, and that neither can throw.
+ *
+ * What the owner's iPhone confirmed is the half that was *wrong*: with
+ * `prepareForCapture` in place a take records, and without it every take on
+ * that phone was refused. Whether `playback` actually beats the ring/silent
+ * switch is still taken on the API's word.
  */
 
 interface AudioSession {
