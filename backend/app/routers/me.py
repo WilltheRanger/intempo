@@ -31,6 +31,7 @@ from app.services.score_pages import pages_of
 from app.services.tier_limits import usage_for
 from app.services.training import may_keep_corrections
 from app.routers.upload import AUDIO_BUCKET, SCORE_BUCKET
+from app.services.avatar_urls import signed_avatar_url
 
 router = APIRouter(tags=["me"])
 log = logging.getLogger("intempo.me")
@@ -235,28 +236,20 @@ def export_me(
 
 
 def _avatar_url(client: Any, key: str | None) -> str | None:
-    """Sign a fresh URL for the profile picture.
+    """The profile picture's URL, reused rather than re-signed every response.
 
-    The stored value is an object key. Signing per response rather than storing
-    a URL is the lesson `scores.source_image_url` taught: a signed URL expires,
-    so a stored one is a value that stops working, and nothing notices until
-    someone's picture quietly stops loading.
+    **This signed a fresh URL on every `/v1/me`**, and the app asks for
+    `/v1/me` on every launch, profile view and session refresh. A signed URL's
+    token is part of the browser's cache key, so every answer was a URL the
+    browser had never seen and re-downloaded: measured on `intempo-dev`,
+    **51 downloads of one 176 kB picture in 24 hours**, the most re-fetched
+    object in the project.
 
-    Never raises. A profile picture is decoration; storage being unreachable
-    must not fail the call that also provisions the account.
+    Its old reasoning was right and its conclusion was not — see
+    `services/avatar_urls.py`, which keeps the URL *with its expiry* instead of
+    choosing between a stale stored one and a fresh one every time.
     """
-    if not key:
-        return None
-    try:
-        signed = client.storage.from_(AVATAR_BUCKET).create_signed_url(
-            key, AVATAR_URL_TTL_SECONDS
-        )
-    except Exception as exc:  # noqa: BLE001 — storage down, key gone, permissions
-        log.warning("could not sign avatar %s: %s", key, exc)
-        return None
-    if isinstance(signed, dict):
-        return signed.get("signedURL") or signed.get("signedUrl")
-    return None
+    return signed_avatar_url(client, key)
 
 
 def _to_response(
