@@ -31,6 +31,13 @@ export interface MetronomeOutputs {
   click: boolean;
   /** A tap you feel. */
   haptic: boolean;
+  /**
+   * This pulse should be felt and seen more strongly than an ordinary one.
+   *
+   * True through a written rest, where there is no sound of your own to count
+   * against and the beat is the only thing holding the place.
+   */
+  emphasis: boolean;
 }
 
 /**
@@ -41,14 +48,34 @@ export interface MetronomeOutputs {
  * screen, so nothing is lost that they did not choose to lose.
  */
 export function countInOutputs(haptics: boolean): MetronomeOutputs {
-  return { click: true, haptic: haptics };
+  return { click: true, haptic: haptics, emphasis: true };
 }
 
-/** What the metronome may do once the microphone's output is the take. */
-export function takeOutputs(mode: MetronomeMode, haptics: boolean): MetronomeOutputs {
+/**
+ * What the metronome may do once the microphone's output is the take.
+ *
+ * **A written rest taps even when the mode does not**, added 2026-09-13. A
+ * rest is where the count is easiest to lose — there is no sound of your own
+ * to hold the place against — and a tap is the one output that costs nothing,
+ * because haptics are not recorded. The profile switch still wins: a musician
+ * who turned taps off across the app meant it here too.
+ *
+ * `click` is deliberately **not** widened by a rest, however tempting. The
+ * docstring above is the reason and it applies inside a rest as much as
+ * outside it: the speaker is open to the microphone, and a click landing in a
+ * bar the score says is silent is read as a note played during a rest. That
+ * needs `alignment.py` to know the metronome was audible before it can be
+ * safe, and it does not yet.
+ */
+export function takeOutputs(
+  mode: MetronomeMode,
+  haptics: boolean,
+  { resting = false }: { resting?: boolean } = {},
+): MetronomeOutputs {
   return {
     click: mode === 'audio_with_headphones',
-    haptic: mode === 'haptic' && haptics,
+    haptic: haptics && (mode === 'haptic' || resting),
+    emphasis: resting,
   };
 }
 

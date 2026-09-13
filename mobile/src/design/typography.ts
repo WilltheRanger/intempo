@@ -1,12 +1,17 @@
 import type { TextStyle } from 'react-native';
 
-// Imported per weight, not from the package root: the root index re-exports
-// every weight and italic, and Metro bundles all of them (~4 MB of unused
-// TTFs). These four subpaths pull exactly the four files we load.
-import { Newsreader_400Regular } from '@expo-google-fonts/newsreader/400Regular';
-import { Newsreader_500Medium } from '@expo-google-fonts/newsreader/500Medium';
-import { Inter_400Regular } from '@expo-google-fonts/inter/400Regular';
-import { Inter_500Medium } from '@expo-google-fonts/inter/500Medium';
+// **Files in this repository, not the packages.** The packages' TTFs were
+// 899 KB — 345 KB over the wire, 40% of the whole boot and second only to the
+// JavaScript — and Inter ships 2,849 glyphs against the 335 the subset keeps.
+// 88% of it was alphabets nothing renders.
+// `tools/subset-text-fonts.py` cuts the four to 327 KB, which is 133 KB over
+// the wire against 345 KB, and is how they are regenerated after a font bump.
+// Measured on the whole boot set — the document, its scripts and these five
+// files — that is 860 KB down to 648 KB.
+//
+// The packages stay in `package.json` because the script reads its input from
+// them, and their OFL attribution in `data/licences.ts` stays because a subset
+// is still the font. Nothing imports them at runtime any more.
 
 /**
  * React Native resolves fonts by file, not by numeric weight — `fontWeight`
@@ -41,13 +46,23 @@ export const fontFamily = {
 /** One em of a SMuFL font is four staff spaces. */
 export const MUSIC_EM_IN_SPACES = 4;
 
-/** Passed to `useFonts` at app start. */
+/**
+ * Passed to `useFonts` at app start.
+ *
+ * All five are files in this repository and all five are subset — the text
+ * faces by `tools/subset-text-fonts.py`, Bravura by `tools/subset-bravura.py`.
+ *
+ * **TTF rather than WOFF2, measured.** Subset WOFF2 is 30.1 KB against subset
+ * TTF's 38.1 KB over the wire, because Cloudflare already brotli-compresses
+ * TTF and WOFF2 is brotli internally. Eight kilobytes a file does not buy a
+ * second font pipeline: WOFF2 works on neither iOS nor Android, so it would
+ * mean platform-split loading for a web-only gain.
+ */
 export const fontsToLoad = {
-  Newsreader_400Regular,
-  Newsreader_500Medium,
-  Inter_400Regular,
-  Inter_500Medium,
-  // A file rather than a package: this one is subset in-repo.
+  Newsreader_400Regular: require('../../assets/fonts/Newsreader_400Regular.ttf'),
+  Newsreader_500Medium: require('../../assets/fonts/Newsreader_500Medium.ttf'),
+  Inter_400Regular: require('../../assets/fonts/Inter_400Regular.ttf'),
+  Inter_500Medium: require('../../assets/fonts/Inter_500Medium.ttf'),
   Bravura: require('../../assets/fonts/Bravura.otf'),
 };
 

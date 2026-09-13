@@ -1,5 +1,71 @@
 # InTempo Decisions
 
+## 2026-09-13 — The text fonts ship subset, in TTF, and a check guards what they dropped
+
+**Context.** Asked to make the app load as fast as possible. Measured the boot
+set on the shipped build before touching anything: **860 KB over the wire**, of
+which **345 KB was four font files** — 40% of the whole boot, second only to
+the JavaScript at 481 KB and the largest thing that could be cut without
+restructuring the app. Inter ships 2,849 glyphs; this app's own copy
+uses 112 distinct characters. Most of what a musician waits for on first paint
+was alphabets the app never renders.
+
+**Decision.** `tools/subset-text-fonts.py` rebuilds Inter 400/500 and Newsreader
+400/500 from the `@expo-google-fonts` packages, keeping ASCII, Latin-1
+Supplement, Latin Extended-A, the superscripts and a short list of marks. The
+four go from **899 KB to 327 KB raw, 345 KB to 133 KB over the wire**, and the
+boot set from 860 KB to **648 KB — a quarter of it gone**. `typography.ts` loads
+the results out of `mobile/assets/fonts`.
+
+**Why the range is that wide.** Latin Extended-A is not decoration: composer
+names are the most multilingual text the app has, and they are European. Dvořák
+needs `ř`, Fauré needs `é`, and neither is in a bare ASCII subset. Two hundred
+codepoints for the one category of text that would visibly break is the right
+trade; the same reasoning added the whole superscript block rather than the two
+codepoints in use, after `³` (Latin-1, kept by accident) survived the first pass
+while `⁵` and `⁷` (Superscripts block) were dropped.
+
+**TTF over WOFF2, and that is a measurement.** Subset WOFF2 is 30.1 KB against
+subset TTF's 38.1 KB over the wire — eight kilobytes a file, because Cloudflare
+already brotli-compresses TTF and WOFF2 is brotli internally. WOFF2 works on
+neither iOS nor Android, so taking those eight kilobytes means a platform-split
+font pipeline for a web-only gain. One format, both platforms, ~90% of the win.
+
+**Alternatives considered.**
+- *A narrower subset (ASCII only).* 40 KB smaller and breaks every accented
+  composer name. Rejected on the first name tried.
+- *Variable fonts.* One file instead of two per family, but the variable Inter
+  is larger than two subset statics and would still need subsetting.
+- *Leave the fonts and lazy-load screens instead.* Not either/or; this was the
+  larger and lower-risk half, and screen splitting still needs per-screen
+  measurement. The 75-second Render cold start dominates both and is the
+  owner's to fix.
+
+**Trade-offs accepted, and the guard for the one that matters.** A subset can
+silently lose a character: browsers and both mobile platforms fall back per
+character, so the glyph still appears — in the system font, one weight off,
+beside the text it belongs to. On a screenshot that reads as a rendering quirk.
+`tools/check-font-coverage.py` is therefore a gate, in `mobile-check` (the only
+job with `node_modules`) and in `preflight.py`.
+
+It asks **"did the subset drop something upstream had"**, not "is every
+character in all four subsets" — the second question is unanswerable, because
+`♭`, `♯` and `♩` are in no text face here and never have been, so it would have
+failed on the day it was written for something no commit can fix. Those are
+reported, not failed. It earned its place immediately: reading JSX children as
+well as string literals, it found a `•` on two account screens that the subset
+had dropped.
+
+**The packages stay in `package.json`** though nothing imports them: they are
+the subsetter's input and the check's comparison. Their OFL attribution in
+`data/licences.ts` stays either way — a subset is still the font.
+
+**Reversibility.** Delete the four files from `mobile/assets/fonts`, restore the
+four per-weight package imports in `typography.ts`, and drop the check from
+`ci.yml` and `preflight.py`. Nothing else reads them. Roughly ten minutes.
+
+---
+
 ## 2026-09-13 — Stored objects cache for a year, and their signed URLs live a week
 
 **Context.** The owner asked to bring egress down by 4 GB. Measured on

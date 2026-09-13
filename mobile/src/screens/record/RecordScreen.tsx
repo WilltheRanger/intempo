@@ -59,6 +59,7 @@ import { buildMetronomePlan } from '../../lib/metronome/plan';
 import {
   longRestCues,
   restCueAt,
+  restPulseDots,
   type RestCueState,
 } from '../../lib/practiceCues';
 import { shortenLongRests, skippableBars } from '../../lib/notation/longRests';
@@ -657,6 +658,14 @@ export function RecordScreen() {
     [takeScore, skipRests],
   );
 
+  // **Above the metronome, because the metronome now depends on it.** A rest
+  // changes what the same clock produces — it taps when the mode would not,
+  // and taps harder — so the cue has to be known before the hook is called.
+  // Every input here is already settled by this point.
+  const activeRest = recording
+    ? restCueAt(restCues, elapsedMs, targetBpm)
+    : null;
+
   // **The count-in is not the metronome setting.** It ticks, taps and counts
   // on screen whatever the take is set to, the way a conductor counts you in —
   // you cannot start together with something that has not given you the beat.
@@ -669,6 +678,10 @@ export function RecordScreen() {
     beatPlan: metronomePlan.beats,
     running: capturing,
     countingIn,
+    // A rest taps even when the mode would not, and taps harder — see
+    // `takeOutputs`. Read from the cue the screen is already showing, so the
+    // hand and the eye are given the same beat by the same source.
+    resting: activeRest !== null,
   });
 
   // Hoisted out of the effect so the dependency below is the value the effect
@@ -725,10 +738,6 @@ export function RecordScreen() {
     setElapsedMs(0);
     goPhase('recording');
   }, [countInBeats, countingIn, beatIndex]);
-
-  const activeRest = recording
-    ? restCueAt(restCues, elapsedMs, targetBpm)
-    : null;
 
   if (loadStateFor({ isError, hasData: piece !== undefined }) === 'loading') {
     return (
@@ -1173,7 +1182,7 @@ export function RecordScreen() {
         </View>
 
         {activeRest ? (
-          <RestCountdown state={activeRest} />
+          <RestCue state={activeRest} />
         ) : (
           <Text
             variant="screenTitle"
@@ -1227,31 +1236,48 @@ export function RecordScreen() {
   );
 }
 
-function RestCountdown({ state }: { state: RestCueState }) {
-  const finalBar = state.barsRemaining === 1;
-  const value = finalBar
-    ? state.beatsRemainingInBar
-    : state.barsRemaining;
-  const unit = finalBar
-    ? value === 1
-      ? 'beat to entry'
-      : 'beats to entry'
-    : 'bars to entry';
+/**
+ * What the screen says while the score is silent.
+ *
+ * **A word and a beat, not a timer.** This counted down — bars, then beats,
+ * in hero type — and a counting number is the wrong instrument for the job:
+ * it makes the rest into a wait, it competes with the record button for the
+ * one focal point `CLAUDE.md` §3 law 4 allows, and it tells a musician the
+ * one thing they can already work out while leaving out the one they cannot,
+ * which is where the beat is right now.
+ *
+ * So the word **Rest** is the focal point, the pulse is a row of dots that
+ * fills across the bar, and the re-entry measure recedes to a line underneath.
+ * The dots are the felt pulse of *this* bar, which is what a musician counts —
+ * so a meter change inside a rest changes the row, as it should.
+ */
+function RestCue({ state }: { state: RestCueState }) {
+  const inBar = restPulseDots(state);
+  const bars = state.barsRemaining;
 
   return (
     <Card emphasis style={styles.restCue}>
-      <Text variant="sectionLabel" color="textSecondary">
-        Rest · come in at measure {state.cue.resumeMeasure}
+      <Text variant="heroTitle" accessibilityLiveRegion="polite">
+        Rest
       </Text>
-      <Text
-        variant="heroTitle"
-        style={styles.restCueNumber}
-        accessibilityLiveRegion="polite"
+      <View
+        style={styles.restPulseRow}
+        // One label for the row: a screen reader announcing eight dots
+        // individually, every beat, would bury the screen it is on.
+        accessible
+        accessibilityRole="progressbar"
+        accessibilityLabel={`Beat ${inBar.current + 1} of ${inBar.total}`}
       >
-        {value}
-      </Text>
-      <Text variant="body" color="textSecondary">
-        {unit}
+        {inBar.dots.map((filled, index) => (
+          <View
+            key={index}
+            style={[styles.restDot, filled ? styles.restDotOn : null]}
+          />
+        ))}
+      </View>
+      <Text variant="body" color="textSecondary" style={styles.restEntry}>
+        {bars > 1 ? `${bars} bars · ` : ''}
+        come in at measure {state.cue.resumeMeasure}
       </Text>
     </Card>
   );
@@ -1392,9 +1418,29 @@ const styles = StyleSheet.create({
     width: '100%',
     alignItems: 'center',
   },
-  restCueNumber: {
+  restPulseRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
     marginTop: spacing.md,
-    fontVariant: ['tabular-nums'],
+    marginBottom: spacing.sm,
+    // A long bar of many pulses wraps rather than squeezing the dots into a
+    // line too fine to read at a music stand.
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+  },
+  restDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: colors.border,
+  },
+  restDotOn: {
+    backgroundColor: colors.textPrimary,
+    // The beat you are on, at the size a glance can find from a stand.
+    transform: [{ scale: 1.4 }],
+  },
+  restEntry: {
+    textAlign: 'center',
   },
   bassNote: {
     maxWidth: 320,
