@@ -6,13 +6,52 @@ describe('countInOutputs', () => {
   it('ticks and taps even when the metronome is off', () => {
     // **The whole point.** A count-in is not the metronome feature; it is how
     // a take starts, and starting without one means guessing the downbeat.
-    expect(countInOutputs(true)).toEqual({ click: true, haptic: true });
+    expect(countInOutputs(true)).toEqual({ click: true, haptic: true, emphasis: true });
   });
 
   it('respects the profile switch for haptics, and only that', () => {
     // Taps off across the app means off here. The count is still audible and
     // still on the screen, so nothing is lost that was not chosen.
-    expect(countInOutputs(false)).toEqual({ click: true, haptic: false });
+    expect(countInOutputs(false)).toEqual({ click: true, haptic: false, emphasis: true });
+  });
+});
+
+describe('takeOutputs inside a written rest', () => {
+  /*
+   * **A rest is where the count is easiest to lose**, because there is no
+   * sound of your own to hold the place against. A tap is the one output that
+   * can help there for free: haptics are not recorded, so nothing about the
+   * take changes.
+   */
+  it('taps through a rest even when the mode would not', () => {
+    expect(takeOutputs('visual', true, { resting: true })).toEqual({
+      click: false,
+      haptic: true,
+      emphasis: true,
+    });
+  });
+
+  it('still obeys the profile switch, which is the musician saying no', () => {
+    expect(takeOutputs('visual', false, { resting: true }).haptic).toBe(false);
+  });
+
+  /*
+   * **The one output a rest must not widen.** The module docstring above is
+   * the reason and it holds inside a rest as much as outside: the speaker is
+   * open to the microphone, and a click in a bar the score says is silent
+   * reads as a note played during a rest. `alignment.py` has to know the
+   * metronome was audible before that can be safe, and it does not yet.
+   */
+  it('does not start clicking out loud just because the bar is silent', () => {
+    expect(takeOutputs('visual', true, { resting: true }).click).toBe(false);
+    expect(takeOutputs('haptic', true, { resting: true }).click).toBe(false);
+    expect(takeOutputs('off', true, { resting: true }).click).toBe(false);
+  });
+
+  it('marks the pulse for emphasis only while resting', () => {
+    expect(takeOutputs('haptic', true).emphasis).toBe(false);
+    expect(takeOutputs('haptic', true, { resting: false }).emphasis).toBe(false);
+    expect(takeOutputs('haptic', true, { resting: true }).emphasis).toBe(true);
   });
 });
 

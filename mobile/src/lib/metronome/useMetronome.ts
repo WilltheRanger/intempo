@@ -54,6 +54,15 @@ export interface MetronomeOptions {
    * only does what the microphone can survive. See `countIn.ts`.
    */
   countingIn: boolean;
+  /**
+   * True while the take is inside a written rest.
+   *
+   * Changes what the same clock produces — see `takeOutputs`. Held in a ref
+   * below like `mode`, because a rest beginning must not restart the
+   * metronome: the pulse a musician is counting has to survive the bar line
+   * that starts the silence.
+   */
+  resting?: boolean;
 }
 
 export function useMetronome({
@@ -63,6 +72,7 @@ export function useMetronome({
   running,
   countingIn,
   beatPlan,
+  resting = false,
 }: MetronomeOptions): MetronomeState {
   const [beat, setBeat] = useState<Beat | null>(null);
   const { haptics } = usePreferences();
@@ -73,6 +83,8 @@ export function useMetronome({
   modeRef.current = mode;
   const hapticsRef = useRef(haptics);
   hapticsRef.current = haptics;
+  const restingRef = useRef(resting);
+  restingRef.current = resting;
   const countingInRef = useRef(countingIn);
   countingInRef.current = countingIn;
   /** The running click track, so the boundary effect can silence it. */
@@ -109,12 +121,26 @@ export function useMetronome({
       setBeat(next);
       const outputs = countingInRef.current
         ? countInOutputs(hapticsRef.current)
-        : takeOutputs(modeRef.current, hapticsRef.current);
+        : takeOutputs(modeRef.current, hapticsRef.current, {
+            resting: restingRef.current,
+          });
       if (outputs.haptic) {
         // Weight distinguishes the downbeat, the way the accent pitch does
         // for the ear. It is the only cue a hand has.
+        //
+        // **A rest lifts every pulse by one step**, downbeats included: with
+        // no sound of your own to count against, the hand is doing the whole
+        // job. The downbeat stays the stronger of the two so the bar is still
+        // legible through the silence.
+        const strong = next.downbeat;
         impact(
-          next.downbeat ? ImpactFeedbackStyle.Medium : ImpactFeedbackStyle.Light,
+          outputs.emphasis
+            ? strong
+              ? ImpactFeedbackStyle.Heavy
+              : ImpactFeedbackStyle.Medium
+            : strong
+              ? ImpactFeedbackStyle.Medium
+              : ImpactFeedbackStyle.Light,
         );
       }
     };
