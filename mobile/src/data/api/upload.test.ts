@@ -101,6 +101,24 @@ describe('the request itself', () => {
     expect(FakeXHR.last.method).toBe('PUT');
     expect(FakeXHR.last.url).toBe('https://storage.example/put?token=x');
     expect(FakeXHR.last.headers['Content-Type']).toBe('image/png');
+    /*
+     * **The header that decides whether this object is ever downloaded twice.**
+     *
+     * Supabase stores whatever `Cache-Control` an upload carries and serves it
+     * on every download; with none set it defaults to `no-cache`. Measured on
+     * the live project 2026-09-13: all 34 objects across all three buckets were
+     * `no-cache`, so a 71 MB corpus was re-fetched on every screen that drew it
+     * — the Library draws one image per row — and the egress was in gigabytes.
+     *
+     * Asserted here because nothing else can see it: the PUT goes straight from
+     * the device to storage, so no backend test and no route test is on this
+     * path. The value is checked in full rather than for a substring, because
+     * `private` and `immutable` each carry their own argument — see
+     * `CACHE_FOREVER`.
+     */
+    expect(FakeXHR.last.headers['Cache-Control']).toBe(
+      'private, max-age=31536000, immutable',
+    );
     expect(FakeXHR.last.sent).toBeInstanceOf(Blob);
   });
 

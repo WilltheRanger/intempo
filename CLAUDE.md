@@ -269,7 +269,7 @@ open. `git log -- frontend/` is where the old tree went.
 - Batch 4 — Async analysis API + calibration ✅ (BackgroundTasks; Celery migration deferred to spec §11 triggers)
 - Batch 5 — Frontend foundation ⏳ (shell done in `mobile/`: design tokens locked, primitives, routing, auth/data plumbing; build + lint green. Live magic-link auth + E2E test pending Supabase keys — see `EDIT_LOG.md`. Not tagged `batch-5-done` yet.)
 - Batch 6 — Score capture flow ⏳ (capture + OCR-review editor + save built in `mobile/`, **rebuilt to the locked design system** 2026-07-28; build + lint green. Live upload→OCR→save + iPhone camera pending Supabase keys/device — see `EDIT_LOG.md`. Not tagged `batch-6-done`.)
-- Batch 7 — Recording + analysis/verdict flow ⏳ (tempo/calibration/metronome, MediaRecorder panel, polling result screen with verdict/annotated-score/trend/per-note built, **rebuilt to the locked design system** 2026-07-28; build + lint green. Live mic→analysis loop pending mic/Supabase/backend + device — see `EDIT_LOG.md`. Not tagged `batch-7-done`.)
+- Batch 7 — Recording + analysis/verdict flow ⏳ (tempo/calibration/metronome, MediaRecorder panel, polling result screen with verdict/annotated-score/trend/per-note built, **rebuilt to the locked design system** 2026-07-28; build + lint green. Live mic→analysis loop pending backend — **the microphone itself now records on a real iPhone**, confirmed 2026-09-13; see §4 and the recording path in `docs/subsystems.md`. Not tagged `batch-7-done`.)
 - Batch 8+ — mostly UI/UX → see the §2 gate and the §3 design laws. **Build to
   the tokens and never re-type hexes** — `mobile/src/design/`, which is now the
   only answer. For a long time this line named only the legacy tree's
@@ -304,7 +304,16 @@ was no longer true of all of it:
   actually runs it is configured.
 - **Live magic-link auth** — the anon key *is* set in both `.env` files. What is
   missing is a person clicking a link in an inbox, which no session can do.
-- **mic→analysis** — blocked on a real device with a microphone.
+- **mic→analysis** — *the microphone half is no longer blocked, and was never
+  only a hardware problem.* Confirmed recording on the owner's iPhone on
+  2026-09-13, after six attempts: the page declared
+  `navigator.audioSession.type = 'playback'` at boot and WebKit refuses all
+  capture under that category. Five fixes went at the `AudioContext` and the
+  constraints because the error name reads as something else — see the
+  recording path in `docs/subsystems.md`. **No gate in this repository could
+  have caught it**: `navigator.audioSession` does not exist in Chromium and
+  every check here is Chromium. What remains is the rest of the loop —
+  upload → analysis → verdict against the live backend.
 
 ## 5. Before you work on a subsystem, read its section
 

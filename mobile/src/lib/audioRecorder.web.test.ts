@@ -21,6 +21,16 @@ const SAMPLE_RATE = 48000;
 let posted: Int16Array[];
 let node: StubWorkletNode;
 let tracksStopped: number;
+/**
+ * What the recorder asked the page for, in the order it asked.
+ *
+ * The category the page is declared under is not graph state and not a
+ * constraint, which is exactly why five fixes to this file went past it: the
+ * refusal it causes names neither. Recording the order is the only way an
+ * assertion here can see it.
+ */
+let steps: string[];
+let sessionType: string;
 
 class StubPort {
   onmessage: ((event: { data: unknown }) => void) | null = null;
@@ -68,14 +78,29 @@ class StubContext {
 beforeEach(() => {
   posted = [];
   tracksStopped = 0;
+  steps = [];
+  // What `App.tsx` leaves the page in: audible on a phone that is on silent,
+  // and refused by WebKit for capture. The starting value is the bug.
+  sessionType = 'playback';
   // **The recorder shares the app's one context now**, and that context is
   // module state which outlives a test. Without this, every case after the
   // first gets the previous case's stub — including its already-registered
   // worklet — and asserts against a graph it did not build.
   resetAudioContextForTests();
   vi.stubGlobal('navigator', {
+    audioSession: {
+      get type() {
+        return sessionType;
+      },
+      set type(value: string) {
+        sessionType = value;
+        steps.push(`session:${value}`);
+      },
+    },
     mediaDevices: {
-      getUserMedia: async () => ({
+      getUserMedia: async () => {
+        steps.push('permission');
+        return {
         getTracks: () => [
           {
             stop: () => {
@@ -83,7 +108,8 @@ beforeEach(() => {
             },
           },
         ],
-      }),
+        };
+      },
     },
   });
   vi.stubGlobal('window', { AudioContext: StubContext });
@@ -124,6 +150,69 @@ async function headerOf(audio: Blob) {
     dataBytes: view.getUint32(40, true),
   };
 }
+
+describe('the category the page records under', () => {
+  /*
+   * **The bug five fixes walked past, as a rule that fails without it.**
+   *
+   * `App.tsx` declares `navigator.audioSession.type = 'playback'` at boot so
+   * the app is audible on a phone whose ring switch is off. WebKit takes that
+   * literally: `MediaDevices::getUserMedia` rejects every audio request with
+   * `InvalidStateError` -- "AudioSession category is not compatible with audio
+   * capture." -- while a category override other than `PlayAndRecord` is in
+   * force, and it does so *before* reading a constraint or choosing a device.
+   *
+   * That is why #94, #95 and #97 (all `AudioContext` work) changed nothing:
+   * the guard reads a category override no `AudioContext` operation writes.
+   * And it is why #98's plain `{ audio: true }` retry produced the identical
+   * sentence: the guard never looks at the constraints, so both asks fail the
+   * same way. The one thing that was never done was telling the page the take
+   * was coming.
+   */
+  it('declares a capture category before it asks for the microphone', async () => {
+    const recorder = await startRecording();
+
+    expect(steps[0]).toBe('session:play-and-record');
+    expect(steps.indexOf('session:play-and-record')).toBeLessThan(
+      steps.indexOf('permission'),
+    );
+
+    await recorder.stop().catch(() => {});
+  });
+
+  it('hands the page back to playback when the take ends', async () => {
+    const recorder = await startRecording();
+    expect(sessionType).toBe('play-and-record');
+
+    await recorder.stop().catch(() => {});
+
+    // Listen on the verdict screen is usually the next sound this page makes,
+    // and `play-and-record` costs output volume.
+    expect(sessionType).toBe('playback');
+  });
+
+  it('hands it back when the microphone is refused, so the page still plays', async () => {
+    vi.stubGlobal('navigator', {
+      audioSession: {
+        get type() {
+          return sessionType;
+        },
+        set type(value: string) {
+          sessionType = value;
+        },
+      },
+      mediaDevices: {
+        getUserMedia: async () => {
+          throw new DOMException('denied', 'NotAllowedError');
+        },
+      },
+    });
+
+    await expect(startRecording()).rejects.toThrow();
+
+    expect(sessionType).toBe('playback');
+  });
+});
 
 describe('startRecording (web)', () => {
   it('reports actual signal and clears it when count-in audio is discarded', async () => {
@@ -289,6 +378,57 @@ describe('startRecording (web)', () => {
     // have done.
     expect(order).toEqual([]);
     recorder.cancel();
+  });
+
+  /*
+   * **The whole bug, end to end, in the recorder rather than in the rule.**
+   *
+   * WebKit refuses our four audio constraints with `InvalidStateError` rather
+   * than the `OverconstrainedError` the retry was keyed on, so a take died on
+   * a *preference* the code explicitly calls "not a requirement". The stock
+   * WebRTC sample, asking for plain `{ audio: true }`, records on the same
+   * phone.
+   */
+  it('falls back to plain audio when the constraints are refused', async () => {
+    const asked: MediaStreamConstraints[] = [];
+    vi.stubGlobal('navigator', {
+      mediaDevices: {
+        getUserMedia: async (constraints: MediaStreamConstraints) => {
+          asked.push(constraints);
+          if (asked.length === 1) {
+            throw new DOMException('not allowed here', 'InvalidStateError');
+          }
+          return { getTracks: () => [{ stop: () => { tracksStopped += 1; } }] };
+        },
+      },
+    });
+
+    const recorder = await startRecording();
+
+    expect(asked).toHaveLength(2);
+    // The first asks for raw mono, because the analysis wants the attacks as
+    // played; the second gives that up rather than the take.
+    expect(asked[0].audio).toMatchObject({ echoCancellation: false });
+    expect(asked[1]).toEqual({ audio: true });
+    recorder.cancel();
+  });
+
+  it('does not ask twice when the musician said no', async () => {
+    const asked: MediaStreamConstraints[] = [];
+    vi.stubGlobal('navigator', {
+      mediaDevices: {
+        getUserMedia: async (constraints: MediaStreamConstraints) => {
+          asked.push(constraints);
+          throw new DOMException('denied', 'NotAllowedError');
+        },
+      },
+    });
+
+    await expect(startRecording()).rejects.toThrow();
+
+    // Dropping a preference does not change a decision, and a second prompt
+    // for the same permission is worse than none.
+    expect(asked).toHaveLength(1);
   });
 
   it('records twice without re-registering the worklet', async () => {
@@ -493,9 +633,16 @@ describe('when the microphone will not start', () => {
   it('stops calling a phone with a microphone "no microphone"', async () => {
     // The bug this was reported as: on a real iPhone, every failure that was
     // not a refusal produced "No microphone is available on this device."
-    const asked = rejectWith(new DOMException('busy', 'NotReadableError'));
+    //
+    // **Both attempts fail here, and that is the change.** This used to reject
+    // after one call, because only `OverconstrainedError` earned a retry. A
+    // busy device now gets a second, plainer ask — the microphone may be held
+    // by something that only conflicts with our constraints — and the sentence
+    // under test is what it says once *that* has failed too.
+    const busy = new DOMException('busy', 'NotReadableError');
+    const asked = rejectWith(busy, busy);
 
     await expect(startRecording()).rejects.toThrow(/busy/);
-    expect(asked).toHaveLength(1);
+    expect(asked).toHaveLength(2);
   });
 });

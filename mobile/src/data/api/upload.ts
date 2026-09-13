@@ -134,6 +134,14 @@ export interface UploadOptions {
  * the backend, not OCR, but the upload before either of them, reporting itself
  * in a string that names no cause and suggests no remedy.
  */
+/**
+ * What every uploaded object says about its own cacheability.
+ *
+ * A year, and `immutable`, because the key is a fresh UUID per upload — see
+ * the note at the `Cache-Control` header below.
+ */
+export const CACHE_FOREVER = 'private, max-age=31536000, immutable';
+
 export function uploadToSignedUrl(
   uploadUrl: string,
   file: Blob,
@@ -161,6 +169,25 @@ export function uploadToSignedUrl(
     const request = new XMLHttpRequest();
     request.open('PUT', uploadUrl);
     request.setRequestHeader('Content-Type', contentType);
+    // **How long this object may be cached, decided once, here.**
+    //
+    // Supabase stores whatever `Cache-Control` the upload carries and serves it
+    // back on every download. With none set it defaults to `no-cache`, which is
+    // what every object in every bucket had: measured 2026-09-13, all 34 of
+    // them. A score photograph was therefore re-downloaded in full every time a
+    // screen drew it — the Library draws one per row — so a 71 MB corpus was
+    // generating egress in gigabytes.
+    //
+    // Safe at a year because these keys are never reused: `_build_object_key`
+    // mints `<user>/<uuid4>.<ext>` per upload, so a new avatar or a re-shot
+    // page is a new object at a new key and nothing behind a cached URL ever
+    // changes. `immutable` says exactly that, and stops a revalidation request
+    // on every view even when the cache is warm.
+    //
+    // `private` rather than `public`: the URL carries a token and the bytes are
+    // one musician's sheet music. This is for the browser that asked, not for
+    // any proxy in between.
+    request.setRequestHeader('Cache-Control', CACHE_FOREVER);
     request.timeout = UPLOAD_TIMEOUT_MS;
 
     const stop = () => request.abort();

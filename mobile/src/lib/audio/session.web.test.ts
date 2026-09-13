@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { prepareForPlayback } from './session.web';
+import { prepareForCapture, prepareForPlayback } from './session.web';
 
 /**
  * Making the browser audible on a phone that is on silent.
@@ -24,11 +24,45 @@ afterEach(() => {
 
 describe('what it asks the browser for', () => {
   it("declares this page's audio to be the point, not an incidental noise", async () => {
-    // 'playback' and not 'play-and-record': the recorder owns its own session,
-    // and the recording category drops output to receiver volume for no gain.
     const session = { type: 'auto' };
     vi.stubGlobal('navigator', { audioSession: session });
 
+    await prepareForPlayback();
+
+    expect(session.type).toBe('playback');
+  });
+
+  /*
+   * **The assertion this pair exists for, and the comment that used to sit
+   * where it does.**
+   *
+   * The test above once carried: *"'playback' and not 'play-and-record': the
+   * recorder owns its own session, and the recording category drops output to
+   * receiver volume for no gain."* On iOS native that is true. On web it is
+   * not — `navigator.audioSession` belongs to the page, the recorder has none
+   * of its own, and WebKit refuses `getUserMedia` outright while the page is
+   * declared `playback`. Five fixes to the recorder went past it because the
+   * refusal names neither this API nor this module.
+   *
+   * So the category a take runs under is now a rule with a test, and the two
+   * values are asserted apart. `play-and-record` and not `auto`: both satisfy
+   * WebKit's guard, and only one keeps the ring/silent override the metronome
+   * needs while the take is running.
+   */
+  it('asks for a category a take can actually record under', async () => {
+    const session = { type: 'playback' };
+    vi.stubGlobal('navigator', { audioSession: session });
+
+    await prepareForCapture();
+
+    expect(session.type).toBe('play-and-record');
+  });
+
+  it('hands the page back to playback when the take is over', async () => {
+    const session = { type: 'auto' };
+    vi.stubGlobal('navigator', { audioSession: session });
+
+    await prepareForCapture();
     await prepareForPlayback();
 
     expect(session.type).toBe('playback');
@@ -43,6 +77,7 @@ describe('what it does where there is nothing to ask', () => {
     vi.stubGlobal('navigator', navigator);
 
     await expect(prepareForPlayback()).resolves.toBeUndefined();
+    await expect(prepareForCapture()).resolves.toBeUndefined();
     expect(navigator).toEqual({});
   });
 
@@ -72,5 +107,8 @@ describe('what it does when the browser refuses', () => {
     });
 
     await expect(prepareForPlayback()).resolves.toBeUndefined();
+    // Capture too: a throw here would take down the Record press, which is
+    // the failure this whole change is about, arrived at from the other side.
+    await expect(prepareForCapture()).resolves.toBeUndefined();
   });
 });

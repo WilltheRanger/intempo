@@ -187,11 +187,17 @@ def test_a_fresh_url_is_reused_rather_than_signed_again(
 @pytest.mark.parametrize(
     "remaining, resigns",
     [
-        # Five minutes left. The URL still works, so nothing *fails* if it is
+        # Six hours left. The URL still works, so nothing *fails* if it is
         # handed out — which is exactly why the floor has to be a deliberate
         # number and not "has it expired yet".
-        (5 * 60, True),
-        (50 * 60, False),
+        #
+        # These bracketed a ten-minute floor until 2026-09-13, when the floor
+        # became a day and the TTL a week: the signed URL is the browser's
+        # cache key, so rotating it hourly threw away a cached image that was
+        # still good. Both literals moved with it, and both still straddle the
+        # floor rather than being derived from it.
+        (6 * 60 * 60, True),
+        (5 * 24 * 60 * 60, False),
     ],
 )
 def test_reuse_stops_while_the_url_still_comfortably_works(
@@ -265,7 +271,7 @@ def test_the_memo_drops_the_stale_entries_and_keeps_the_live_ones(
     for every URL still on someone's screen.
 
     So the cap is reached with a *mixture*: two entries past their usefulness
-    and one with most of its hour left. Dropping the eviction loop entirely
+    and one with most of its week left. Dropping the eviction loop entirely
     passes a test where everything is stale, because the clear below it
     produces the same three keys."""
     # Eight, not four: every page memoises its display copy beside its
@@ -276,7 +282,7 @@ def test_the_memo_drops_the_stale_entries_and_keeps_the_live_ones(
     display_urls.signed_display_urls(["u/stale-0.jpg", "u/stale-1.jpg", "u/live.jpg"])
     _age("u/stale-0.jpg", seconds=-1)
     _age("u/stale-1.jpg", seconds=-1)
-    _age("u/live.jpg", seconds=50 * 60)
+    _age("u/live.jpg", seconds=5 * 24 * 60 * 60)
 
     # 6 + 4 is past the cap; 2 + 4 is not, once the stale pair is gone.
     display_urls.signed_display_urls(["u/new-0.jpg", "u/new-1.jpg"])

@@ -1,5 +1,71 @@
 # InTempo Decisions
 
+## 2026-09-13 — Stored objects cache for a year, and their signed URLs live a week
+
+**Context.** The owner asked to bring egress down by 4 GB. Measured on
+`intempo-dev` before changing anything: the whole corpus is **71 MB** — 25
+score images (59 MB), 3 avatars, 6 takes. Four gigabytes out of seventy-one
+megabytes is not a file-size problem, it is the same bytes leaving repeatedly.
+
+The reason was one column: **every object in every bucket was `no-cache`**, all
+34 of them. Supabase stores whatever `Cache-Control` an upload carries and
+serves it on every download; none of the four upload paths sent one, and the
+default is `no-cache`. So nothing the app displayed was ever cached by a
+browser — and the Library draws one image per row, so a single visit
+re-downloaded every page in the library.
+
+**Decision.** Uploads send `private, max-age=31536000, immutable`, and the
+signed download URL's TTL goes from **1 hour to 7 days** with the reuse floor
+from 10 minutes to 24 hours.
+
+**Why both halves are required.** `Cache-Control` alone would have bought
+almost nothing: a signed URL's query string is part of the browser's cache key,
+and at an hour's TTL with a ten-minute floor the app re-signed roughly every
+fifty minutes, so every cached copy was thrown away before it could be used
+twice. Conversely a stable URL over a `no-cache` object caches nothing. The
+egress only falls if the object is cacheable *and* its URL holds still.
+
+**Why a year and `immutable` are safe.** `routers/upload.py::_build_object_key`
+mints `<user_id>/<uuid4>.<ext>` for every upload, so a re-shot page or a new
+avatar is a new object at a new key — nothing behind a cached URL can change
+under it. The single key written twice is the display derivative, upserted on
+re-transcription, and that is a deterministic resize of the same photograph.
+
+**Alternatives considered.** A short `max-age` with revalidation (`no-cache` +
+ETag) would keep the freshness guarantee, but these objects have no freshness
+problem to solve and it spends a round trip per image per view to prove it.
+Serving images through the backend so it could set headers itself would put
+every byte through Render as well, which trades one bill for two.
+
+**Trade-off accepted.** A signed URL is a bearer capability for one object, and
+seven days is a longer window in which a leaked one still works than one hour.
+Accepted deliberately: the objects are a musician's own sheet music and
+recordings, the URL is only ever handed to that musician's session, and the
+alternative is re-downloading the library on every view. `private` rather than
+`public` so only the asking browser may store it, never a shared proxy.
+
+**The 34 existing objects were backfilled the same day**, at the owner's
+request, by rewriting `storage.objects.metadata->>'cacheControl'` on
+`intempo-dev` — every one of them was uniformly `no-cache`, so the rollback is
+a single statement back to that value. The code change above governs new
+uploads; this covered everything already stored.
+
+**What is still not fixed, measured at the same time.** There are **zero**
+display derivatives in the bucket: all 25 score images are full-size
+photographs averaging 2.4 MB, because `store_display_copy` only runs during
+transcription and every page predates it. Caching makes each one cost its bytes
+once per device rather than once per view, which is the bulk of the win, but the
+first load is still a phone photograph. A backfill needs to download, resize and
+re-upload each page, which needs storage credentials no session container has —
+the proxy refuses `supabase.co` and `SUPABASE_SERVICE_ROLE_KEY` is empty here.
+Re-transcribing a score writes its derivative as a side effect, which is the
+cheap route for the pages that matter most.
+
+Also found: **4 stray `.wav` files, 5.7 MB**, sitting in `audio-uploads`
+alongside 2 `.opus`. The WAV is meant to be deleted once analysis has an Opus
+for playback; it was not. Little egress, since playback uses the Opus, but the
+cleanup path is evidently not firing.
+
 ## 2026-09-12 — Today is one screen with one action, and the warmup moves rather than dies
 
 **Context.** The owner: *"there should be no scrollable thing under the today

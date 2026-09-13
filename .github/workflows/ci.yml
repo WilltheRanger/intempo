@@ -4,6 +4,26 @@ on:
   pull_request:
   push:
     branches: [main]
+  # **Runnable on demand, for a commit that never got a run.** The two triggers
+  # above cover everything that happens normally; what neither covers is a run
+  # that was never created at all.
+  #
+  # **The episode that prompted this, and the wrong diagnosis it was added
+  # under.** On 2026-09-12 pull request #98 sat with no CI run, and this said
+  # Actions had stopped firing. It had not. The branch still carried the
+  # pre-squash version of a commit that `main` already held, so the pull
+  # request was un-mergeable — and GitHub builds no merge ref, and therefore no
+  # `pull_request` run, for a conflicted branch. Rebasing the branch onto `main`
+  # produced a run within seconds. **This button would not have helped**, and
+  # it is only dispatchable once the workflow file is on the default branch,
+  # which it was not.
+  #
+  # Kept anyway, narrowly: re-running after an infrastructure flake, and asking
+  # for a check without putting an empty commit in the history to do it — which
+  # is a habit this repository refuses for good reasons. The lesson worth more
+  # than the button is the one above: **a missing run is a question about the
+  # pull request's state before it is a question about Actions.**
+  workflow_dispatch:
 
 # **Only the newest commit on a ref is worth checking, and this repository
 # learned that the expensive way.** Actions minutes are billed on a private
