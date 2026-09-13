@@ -1,3 +1,4 @@
+import { causeOf } from '../causeOf';
 import { MicrophonePermissionError, MicrophoneUnavailableError } from './types';
 
 /**
@@ -130,6 +131,25 @@ export function homeScreenAdvice(standalone: boolean): string {
  * `NotAllowedError` is its own type because the musician's next step is
  * different in kind — it is a decision they can revisit, not a fault.
  */
+/**
+ * The browser's own words, parenthesised, or '' when it said nothing.
+ *
+ * **Every branch carries this now, not only the unrecognised one**, and that
+ * is the whole lesson of 2026-09-12–13. The table matched `InvalidStateError`
+ * and printed a confident, human sentence about the document needing a reload
+ * — while WebKit was saying, in the message this code discarded:
+ *
+ *     AudioSession category is not compatible with audio capture.
+ *
+ * Five fixes were built on the obvious reading of the *name*. The *message*
+ * named the cause from the first screenshot. A recognised error is exactly
+ * where this is most dangerous, because a matched row reads as a diagnosis.
+ */
+function said(error: unknown): string {
+  const cause = causeOf(error);
+  return cause ? ` (${cause})` : '';
+}
+
 export function microphoneFailure(
   error: unknown,
   standalone: boolean = isHomeScreenApp(),
@@ -137,6 +157,9 @@ export function microphoneFailure(
   const name = error instanceof DOMException ? error.name : '';
 
   // A refusal, or a policy that blocks the prompt. Same next step either way.
+  // The one case with no cause appended: the musician made a decision, there
+  // is no fault to name, and `MicrophonePermissionError` carries its own
+  // route into the site controls.
   if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
     return new MicrophonePermissionError();
   }
@@ -150,7 +173,7 @@ export function microphoneFailure(
         ? ''
         : homeScreenAdvice(standalone);
       return new MicrophoneUnavailableError(
-        message + advice,
+        message + advice + said(error),
         RELOAD_FIXES.includes(name) ? 'reload' : null,
       );
     }
@@ -158,9 +181,9 @@ export function microphoneFailure(
 
   // Unrecognised. Say so, and say which — a report of this is the only way the
   // list above grows.
-  const named = name ? ` (${name})` : '';
   return new MicrophoneUnavailableError(
-    `The microphone could not be started${named}.` + homeScreenAdvice(standalone),
+    `The microphone could not be started.${said(error)}`.trim()
+      + homeScreenAdvice(standalone),
   );
 }
 

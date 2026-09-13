@@ -187,7 +187,11 @@
               lines.push('  ' + resourceFailures[i]);
             }
           }
-          var tag = document.querySelector('script[src*="_expo"]');
+          // `/index-`, not `_expo`: the export emits three hashed files under
+          // that path and `__common-`/`__expo-metro-runtime-` sort first, so
+          // this reported the runtime's hash as the bundle. See
+          // `lib/platform/buildMarker.ts`, which has a test for it.
+          var tag = document.querySelector('script[src*="/index-"]');
           lines.push('', 'bundle: ' + (tag ? tag.src : '(none in page)'));
           lines.push('origin: ' + location.origin);
           lines.push('secure context: ' + (window.isSecureContext ? 'yes' : 'NO'));
@@ -306,7 +310,11 @@
           var root = document.getElementById('root');
           if (!root || root.childElementCount > 0 || reported) return;
 
-          var tag = document.querySelector('script[src*="_expo"]');
+          // `/index-`, not `_expo`: the export emits three hashed files under
+          // that path and `__common-`/`__expo-metro-runtime-` sort first, so
+          // this reported the runtime's hash as the bundle. See
+          // `lib/platform/buildMarker.ts`, which has a test for it.
+          var tag = document.querySelector('script[src*="/index-"]');
           var src = tag ? tag.src : '(no bundle script in the page)';
           if (resourceFailures.length) {
             // Nothing threw and nothing mounted, but things failed to load.

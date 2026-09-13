@@ -28,6 +28,8 @@ import { forgetPendingAnalysis } from '../../data/practice/pendingAnalysis';
 import type { MetronomeMode } from '../../data/types';
 import { MicrophonePermissionError, type Recorder } from '../../lib/audio/types';
 import { readTakeFailure } from '../../lib/audio/takeFailure';
+import { buildMarker } from '../../lib/platform/buildMarker';
+import { isHomeScreenApp } from '../../lib/audio/microphoneFailure';
 import { canReloadPage, reloadPage } from '../../lib/platform/reloadPage';
 import {
   keepTakeForLater,
@@ -171,6 +173,9 @@ export function RecordScreen() {
     return () => clearInterval(timer);
   }, [phase]);
   const [problem, setProblem] = useState<string | null>(null);
+  // A constant for the life of the document — the bundle cannot change under a
+  // running page — so it is read once rather than on every render.
+  const marker = useMemo(() => buildMarker(isHomeScreenApp()), []);
   const lastFreeMessage = describeLastFreeAnalysis(musician?.usage);
   const visibleProblem = limitMessage ?? problem;
   const [microphoneBlocked, setMicrophoneBlocked] = useState(false);
@@ -897,6 +902,32 @@ export function RecordScreen() {
             </Text>
           ) : null}
           {/*
+            Which build is saying this, and from where.
+
+            **Shown only beside a failure**, never as furniture — `CLAUDE.md`
+            §3 law 10. On a working screen it is noise; on a failing one it is
+            the difference between a report worth acting on and another round
+            of guessing.
+
+            2026-09-13 is what it cost to not have it: the microphone fix
+            shipped, the phone still failed, and nobody could say whether it
+            was running the new bundle. A stale cache, a home-screen app
+            resumed rather than relaunched, and a test taken before the deploy
+            are three different answers that look identical from here. The
+            host is the other half — the owner had been comparing a branch
+            preview against production without either of us realising the two
+            were different origins carrying different code.
+          */}
+          {footerNote && marker ? (
+            <Text
+              variant="metadataSmall"
+              color="textTertiary"
+              style={styles.marker}
+            >
+              {marker}
+            </Text>
+          ) : null}
+          {/*
             The page's own remedy, offered rather than described.
 
             The sentence above says the document needs reloading; before this
@@ -1399,6 +1430,13 @@ const styles = StyleSheet.create({
   },
   problem: {
     textAlign: 'center',
+    marginBottom: spacing.xl,
+  },
+  // Tucked under the message it belongs to, not spaced as a sibling: it is a
+  // footnote on the failure above, and reads as one.
+  marker: {
+    textAlign: 'center',
+    marginTop: -spacing.lg,
     marginBottom: spacing.xl,
   },
   note: {

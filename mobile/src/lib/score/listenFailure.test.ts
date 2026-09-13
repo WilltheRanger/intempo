@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { causeOf, listenFailure } from './listenFailure';
+import { listenFailure } from './listenFailure';
 
 /**
  * The rule that turns the next Listen report into something worth having.
@@ -78,22 +78,3 @@ describe('what a bug report gets', () => {
   });
 });
 
-describe('causeOf', () => {
-  it('drops the useless generic name', () => {
-    // `new Error('...')` has name 'Error', which identifies nothing.
-    expect(causeOf(new Error('the thing broke'))).toBe('the thing broke');
-  });
-
-  it('keeps a name with no message', () => {
-    expect(causeOf(new DOMException('', 'AbortError'))).toBe('AbortError');
-  });
-
-  it('takes a thrown string, since JavaScript allows one', () => {
-    expect(causeOf('out of memory')).toBe('out of memory');
-  });
-
-  it('has nothing to say about a thrown object', () => {
-    expect(causeOf({ nope: true })).toBe('');
-    expect(causeOf(null)).toBe('');
-  });
-});

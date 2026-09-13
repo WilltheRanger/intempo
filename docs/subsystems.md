@@ -740,7 +740,20 @@ nothing else covers `backend/`. Named here rather than left to be found.
      answer.** WebKit had been saying *"AudioSession category is not compatible
      with audio capture."* since the first report. Keep the browser's own words
      — the same lesson `score/listenFailure.ts` records, learned again and more
-     expensively.
+     expensively. **Fixed 2026-09-13**: `lib/causeOf.ts` is
+     shared by both paths now, and every branch of `microphoneFailure` carries
+     the cause — including the *recognised* ones, which is where it matters
+     most, because a matched row reads as a diagnosis.
+
+  4. **Nothing said which build was running, and that cost a further day.**
+     The fix shipped, the phone still failed, and "stale cache", "home-screen
+     app resumed rather than relaunched" and "tested before the deploy landed"
+     are three different answers that look identical from a screenshot. The
+     owner had also been comparing a branch preview against production without
+     either side realising they were different origins carrying different code.
+     `lib/platform/buildMarker.ts` now prints eight characters of the bundle
+     hash, the host, and whether this is the installed app — **beside a failure
+     only**, never as furniture.
   3. **A comment that states a platform assumption is load-bearing.**
      `session.web.ts` said *"this app records through a separate path with its
      own session"* — true on native, false on web, and the entire bug. The

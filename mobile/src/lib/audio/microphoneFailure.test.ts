@@ -33,7 +33,10 @@ describe('what the app says when the microphone will not start', () => {
     for (const name of ['NotFoundError', 'DevicesNotFoundError']) {
       const failure = microphoneFailure(domException(name), false);
       expect(failure).toBeInstanceOf(MicrophoneUnavailableError);
-      expect(failure.message).toBe('No microphone is available on this device.');
+      // `startsWith`, not equality: every sentence now carries the browser's
+      // own words after it (see `causeOf`). What this test is about is which
+      // errors earn *this* sentence, and that is unchanged.
+      expect(failure.message.startsWith('No microphone is available on this device.')).toBe(true);
     }
   });
 
@@ -106,7 +109,8 @@ describe('the home-screen app', () => {
     // …but never onto "no microphone". If the device really has none, Safari
     // will not find one either, and sending someone to try is a wasted trip.
     const none = microphoneFailure(domException('NotFoundError'), true).message;
-    expect(none).toBe('No microphone is available on this device.');
+    expect(none).toContain('No microphone is available on this device.');
+    expect(none).not.toContain('home screen');
 
     expect(homeScreenAdvice(false)).toBe('');
   });
@@ -165,19 +169,38 @@ describe('asking again without our preferences', () => {
 
 describe('a document that cannot capture', () => {
   /*
-   * **Reported from a real iPhone on 2026-09-04** — Safari, the deployed
-   * build, "The microphone could not be started (InvalidStateError)." That
-   * sentence is the table's unrecognised branch working as designed: its
-   * comment says naming the error is "the only way the next report is worth
-   * more than the first", and this is the next report.
+   * **This assertion was reversed on 2026-09-13, and the reason is the whole
+   * point of the change.**
+   *
+   * It demanded that a *recognised* error never show its DOM name: the table
+   * had a human sentence for `InvalidStateError`, so the code was considered
+   * an implementation detail. That was right about the sentence and wrong
+   * about the cause, and it cost five fixes.
+   *
+   * WebKit's message for this error is "AudioSession category is not
+   * compatible with audio capture." — which names the real fault outright.
+   * The app kept `error.name`, threw `error.message` away, and printed a
+   * confident sentence about the document needing a reload. Four fixes were
+   * built on that reading; the answer was in the string being discarded.
+   *
+   * A matched row is exactly where this is most dangerous, because it reads
+   * as a diagnosis. So the cause travels with every branch now, and this test
+   * holds it there.
    */
-  it('is named, rather than left as a DOM error code', () => {
+  it('carries what the browser actually said, even when the table knows the error', () => {
     const failure = microphoneFailure(
-      new DOMException('bad state', 'InvalidStateError'),
+      new DOMException(
+        'AudioSession category is not compatible with audio capture.',
+        'InvalidStateError',
+      ),
       false,
     );
 
-    expect(failure.message).not.toContain('InvalidStateError');
+    // The advice a musician can act on comes first and is unchanged.
+    expect(failure.message.startsWith('The page needs reloading')).toBe(true);
+    // The engine's own words come last, in parentheses, for the next report.
+    expect(failure.message).toContain('InvalidStateError');
+    expect(failure.message).toContain('AudioSession category is not compatible');
   });
 
   it('asks for the one thing that can clear it', () => {

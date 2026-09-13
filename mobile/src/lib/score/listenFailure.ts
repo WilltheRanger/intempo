@@ -21,6 +21,8 @@
  * inside the playback closure is a rule nothing checks.
  */
 
+import { causeOf } from '../causeOf';
+
 /** Where playback got to before it failed. */
 export type ListenStage = 'loading' | 'rendering' | 'starting';
 
@@ -41,25 +43,6 @@ const ADVICE: Record<ListenStage, string> = {
     'Couldn’t prepare the audio. Try a shorter passage and tap Listen to retry.',
   starting: 'Audio couldn’t start. Tap Listen to retry.',
 };
-
-/**
- * What a browser called the failure, short enough to sit in a sentence.
- *
- * The name for a `DOMException` or an `Error` subclass, since that is the part
- * that identifies the fault — `RangeError` for an allocation this device
- * cannot make, `NotSupportedError` for a decode it will not do. The message
- * too when there is one, trimmed: a WebKit allocation failure carries text
- * worth seeing, and a 200-character stack fragment is not.
- */
-export function causeOf(error: unknown): string {
-  if (!(error instanceof Error)) {
-    return typeof error === 'string' && error.trim() ? error.trim().slice(0, 80) : '';
-  }
-  const name = error.name && error.name !== 'Error' ? error.name : '';
-  const message = error.message?.trim().slice(0, 80) ?? '';
-  if (name && message) return `${name}: ${message}`;
-  return name || message;
-}
 
 /**
  * The sentence to show when Listen fails.
