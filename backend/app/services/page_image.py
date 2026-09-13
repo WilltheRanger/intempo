@@ -29,6 +29,7 @@ from fastapi import HTTPException, status
 
 from app.db import get_service_client
 from app.services.buckets import SCORE_BUCKET
+from app.services.cache_headers import CACHE_FOREVER
 from app.services.signed_urls import absolute, signed_url_in
 
 log = logging.getLogger("intempo.scores")
@@ -230,7 +231,19 @@ def download_image(image_url: str, *, expected_origin: str | None = None) -> byt
 #: for a while doesn't start showing broken images, short enough that a leaked
 #: URL stops working the same session. `image_url_expires_at` is returned so a
 #: client can re-fetch rather than guess.
-SIGNED_DOWNLOAD_TTL_SECONDS = 60 * 60
+#: **Long, because the URL is the browser's cache key.**
+#:
+#: An hour meant a fresh signature roughly every fifty minutes (see
+#: `REUSE_FLOOR_SECONDS`), and a new query string is a new cache key however
+#: cacheable the object says it is — so a year of `Cache-Control` bought at
+#: most fifty minutes of reuse. A week of stability is what makes the caching
+#: above worth anything.
+#:
+#: The trade is that a signed URL is a bearer capability for one object, and
+#: this lengthens the window in which a leaked one works. Accepted for a
+#: musician's own page images against re-downloading the whole library on
+#: every view; `DECISIONS.md`, 2026-09-13.
+SIGNED_DOWNLOAD_TTL_SECONDS = 7 * 24 * 60 * 60
 
 
 
@@ -377,7 +390,17 @@ def store_display_copy(key: str, jpeg_bytes: bytes, original_bytes: bytes) -> bo
             jpeg_bytes,
             # `upsert`, because a re-transcription re-prepares the same page and
             # should replace the copy rather than fail on a key that exists.
-            {"content-type": "image/jpeg", "upsert": "true"},
+            # `cache-control`, because Supabase stores what an upload sends
+            # and serves it forever after; with none it defaults to `no-cache`
+            # and the app re-downloads this derivative on every single view.
+            # The key is stable but its content is not variable: the derivative
+            # is a deterministic resize of the same photograph, so a
+            # re-transcription writes identical bytes.
+            {
+                "content-type": "image/jpeg",
+                "upsert": "true",
+                "cache-control": CACHE_FOREVER,
+            },
         )
     except Exception:  # noqa: BLE001 — see the docstring: a page still shows
         log.warning("could not store a display copy of %s", key, exc_info=True)

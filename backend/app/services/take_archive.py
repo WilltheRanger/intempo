@@ -48,6 +48,7 @@ import soundfile as sf
 
 from app.services.audio_storage import object_key_from
 from app.services.buckets import AUDIO_BUCKET
+from app.services.cache_headers import CACHE_FOREVER
 
 log = logging.getLogger("intempo.analysis")
 
@@ -137,7 +138,18 @@ def keep_playback_copy(client, analysis_id: str, reference: str, wav_bytes: byte
 
     bucket = client.storage.from_(AUDIO_BUCKET)
     try:
-        bucket.upload(key, opus, {"content-type": "audio/ogg", "upsert": "true"})
+        bucket.upload(
+            key,
+            opus,
+            # See `cache_headers.CACHE_FOREVER`: without this Supabase serves
+            # the take `no-cache` and the verdict screen re-downloads it on
+            # every visit.
+            {
+                "content-type": "audio/ogg",
+                "upsert": "true",
+                "cache-control": CACHE_FOREVER,
+            },
+        )
     except Exception:  # noqa: BLE001
         log.warning("analysis %s: could not upload %s", analysis_id, key, exc_info=True)
         return None

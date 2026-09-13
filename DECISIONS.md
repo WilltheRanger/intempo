@@ -1,5 +1,54 @@
 # InTempo Decisions
 
+## 2026-09-13 — Stored objects cache for a year, and their signed URLs live a week
+
+**Context.** The owner asked to bring egress down by 4 GB. Measured on
+`intempo-dev` before changing anything: the whole corpus is **71 MB** — 25
+score images (59 MB), 3 avatars, 6 takes. Four gigabytes out of seventy-one
+megabytes is not a file-size problem, it is the same bytes leaving repeatedly.
+
+The reason was one column: **every object in every bucket was `no-cache`**, all
+34 of them. Supabase stores whatever `Cache-Control` an upload carries and
+serves it on every download; none of the four upload paths sent one, and the
+default is `no-cache`. So nothing the app displayed was ever cached by a
+browser — and the Library draws one image per row, so a single visit
+re-downloaded every page in the library.
+
+**Decision.** Uploads send `private, max-age=31536000, immutable`, and the
+signed download URL's TTL goes from **1 hour to 7 days** with the reuse floor
+from 10 minutes to 24 hours.
+
+**Why both halves are required.** `Cache-Control` alone would have bought
+almost nothing: a signed URL's query string is part of the browser's cache key,
+and at an hour's TTL with a ten-minute floor the app re-signed roughly every
+fifty minutes, so every cached copy was thrown away before it could be used
+twice. Conversely a stable URL over a `no-cache` object caches nothing. The
+egress only falls if the object is cacheable *and* its URL holds still.
+
+**Why a year and `immutable` are safe.** `routers/upload.py::_build_object_key`
+mints `<user_id>/<uuid4>.<ext>` for every upload, so a re-shot page or a new
+avatar is a new object at a new key — nothing behind a cached URL can change
+under it. The single key written twice is the display derivative, upserted on
+re-transcription, and that is a deterministic resize of the same photograph.
+
+**Alternatives considered.** A short `max-age` with revalidation (`no-cache` +
+ETag) would keep the freshness guarantee, but these objects have no freshness
+problem to solve and it spends a round trip per image per view to prove it.
+Serving images through the backend so it could set headers itself would put
+every byte through Render as well, which trades one bill for two.
+
+**Trade-off accepted.** A signed URL is a bearer capability for one object, and
+seven days is a longer window in which a leaked one still works than one hour.
+Accepted deliberately: the objects are a musician's own sheet music and
+recordings, the URL is only ever handed to that musician's session, and the
+alternative is re-downloading the library on every view. `private` rather than
+`public` so only the asking browser may store it, never a shared proxy.
+
+**What this does not fix.** The 34 objects already in the bucket keep the
+`no-cache` they were written with — this changes what *new* uploads say about
+themselves. Existing objects need their stored metadata rewritten to benefit,
+which is a separate, owner-facing operation on live data.
+
 ## 2026-09-12 — Today is one screen with one action, and the warmup moves rather than dies
 
 **Context.** The owner: *"there should be no scrollable thing under the today

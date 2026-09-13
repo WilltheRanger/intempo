@@ -28,7 +28,11 @@ from app.services.signed_urls import absolute, signed_url_in
 
 #: A URL is only reused while at least this much of its life remains — a
 #: screen that fetched a list and then sat is still holding URLs that work.
-REUSE_FLOOR_SECONDS = 10 * 60
+#:
+#: A day against a week's TTL, so a given image keeps one URL for about six
+#: days. That stability is the point: the URL is the browser's cache key, and
+#: rotating it throws away a cached copy that was still perfectly good.
+REUSE_FLOOR_SECONDS = 24 * 60 * 60
 
 #: Bounded, because an unbounded memo is a slow leak on a host that stays up
 #: for weeks. At roughly 200 bytes a URL this is well under a megabyte.
