@@ -39,6 +39,16 @@ export interface SearchFieldProps {
   onChangeText: (value: string) => void;
   placeholder?: string;
   style?: StyleProp<ViewStyle>;
+  /**
+   * Take the keyboard as soon as this mounts.
+   *
+   * For a field that appears because somebody asked for it. Library's search
+   * lives behind a magnifier, and a field that arrives without the caret makes
+   * the tap cost two: one to reveal, one to focus. `CLAUDE.md` §3 — a tap gets
+   * an immediate response, and revealing an input the user then has to go and
+   * poke is not one.
+   */
+  autoFocus?: boolean;
 }
 
 /**
@@ -53,6 +63,7 @@ export function SearchField({
   onChangeText,
   placeholder = 'Search',
   style,
+  autoFocus = false,
 }: SearchFieldProps) {
   const [focused, setFocused] = useState(false);
 
@@ -67,6 +78,7 @@ export function SearchField({
       <TextInput
         value={value}
         onChangeText={onChangeText}
+        autoFocus={autoFocus}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         placeholder={placeholder}
