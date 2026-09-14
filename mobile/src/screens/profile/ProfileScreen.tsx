@@ -8,7 +8,6 @@ import appConfig from '../../../app.json';
 import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
 import {
   Avatar,
-  Card,
   EmptyState,
   LoadingState,
   PageHeader,
@@ -30,7 +29,15 @@ import {
   saveProfilePhoto,
   type ProfilePhotoSelection,
 } from '../../data/profile/savePhoto';
-import { spacing } from '../../design';
+import { Camera } from '../../components/icons';
+import { SCREEN_GUTTER } from '../../components/primitives/ScreenContainer';
+import {
+  BORDER_WIDTH,
+  colors,
+  ICON_SIZE,
+  ICON_STROKE_WIDTH,
+  spacing,
+} from '../../design';
 import { formatRole, formatTier } from '../../lib/format';
 import type { RootNavigation } from '../../navigation/types';
 import { AccountRow } from './AccountRow';
@@ -207,6 +214,21 @@ export function ProfileScreen() {
           style={({ pressed }) => (pressed ? styles.pressed : undefined)}
         >
           <Avatar source={photoPreview ?? musician.avatarUrl} size={AVATAR_SIZE} />
+          {/*
+            **The affordance, instead of a sentence explaining it.** This block
+            used to carry "Choose your profile picture to change it." under the
+            avatar — a caption doing the job a control should do, which §3 calls
+            out by name: a drawn affordance must do the thing it depicts, and
+            the corollary is that a thing which does something should look like
+            it. A camera badge is the convention every phone already teaches.
+          */}
+          <View style={styles.avatarBadge}>
+            <Camera
+              size={ICON_SIZE.sm}
+              strokeWidth={ICON_STROKE_WIDTH}
+              color={colors.actionText}
+            />
+          </View>
         </Pressable>
 
         <Text variant="body" style={styles.identityEmail} numberOfLines={2}>
@@ -214,17 +236,17 @@ export function ProfileScreen() {
         </Text>
       </View>
 
-      <Text
-        variant="metadataSmall"
-        color={photoError ? 'textSecondary' : 'textTertiary'}
-        style={styles.photoNote}
-      >
-        {photoError
-          ? photoError
-          : photoBusy
-            ? 'Saving your profile picture…'
-            : 'Choose your profile picture to change it.'}
-      </Text>
+      {/* Only when there is something to say. Idle, the badge says it. */}
+      {photoError || photoBusy ? (
+        <Text
+          variant="metadataSmall"
+          color={photoError ? 'textSecondary' : 'textTertiary'}
+          accessibilityLiveRegion="polite"
+          style={styles.photoNote}
+        >
+          {photoError ?? 'Saving your profile picture…'}
+        </Text>
+      ) : null}
 
       {photoError && pendingPhoto ? (
         <SecondaryButton
@@ -240,8 +262,19 @@ export function ProfileScreen() {
       ) : null}
 
       <SectionHeader label="Account" style={styles.section} />
-      <Card padded={false}>
-        <View style={styles.rows}>
+      {/*
+        **A band, not a floating card, and the alignment is why.** Keeping one
+        surface for Account was the right call — it groups a set of related
+        facts, which is what §3 law 3 reserves a container for. But a card sits
+        *inside* the screen gutter and then insets its own content, so its rows
+        started 16pt right of the bare rows below and the eye had two left edges
+        to track down one screen. That shipped in PR #103 and this fixes it.
+
+        Full-bleed with its content at the gutter, the grouping survives and
+        every row on the screen shares one vertical. Square, because a rounded
+        corner touching the screen edge reads as a mistake.
+      */}
+      <View style={styles.band}>
           <AccountRow
             label="Plan"
             value={formatTier(musician.tier)}
@@ -269,17 +302,20 @@ export function ProfileScreen() {
           {musician.studioId ? (
             <AccountRow label="Studio" value="Connected" />
           ) : null}
+          {/*
+            No value: the address is already beside the avatar at the top of
+            this screen, and printing it twice on one page is the kind of
+            duplication §3 law 10 asks you to remove.
+          */}
           <LinkRow
             label="Email"
-            value={musician.email}
             onPress={() => navigation.navigate('ChangeEmail')}
           />
           <LinkRow
             label="Password"
             onPress={() => navigation.navigate('ChangePassword')}
           />
-        </View>
-      </Card>
+      </View>
 
       <SectionHeader label="Practice" style={styles.section} />
       {/*
@@ -290,17 +326,13 @@ export function ProfileScreen() {
         instrument that decides the exercise is already chosen, which makes it
         the honest home for the exercise itself rather than a spare corner.
       */}
-      <Card padded={false} style={styles.settingCard}>
-        <View style={styles.rows}>
-          <LinkRow
-            label="Daily warmup"
-            onPress={() => navigation.navigate('Warmup')}
-            divided={false}
-          />
-        </View>
-      </Card>
+      <LinkRow
+        label="Daily warmup"
+        onPress={() => navigation.navigate('Warmup')}
+        divided={false}
+      />
 
-      <Card style={styles.settingCard}>
+      <View style={styles.setting}>
         <Text variant="button">Instrument</Text>
         <Text
           variant="metadataSmall"
@@ -319,9 +351,9 @@ export function ProfileScreen() {
           }
           style={styles.control}
         />
-      </Card>
+      </View>
 
-      <Card>
+      <View style={styles.setting}>
         <Text variant="button">Metronome</Text>
         <Text
           variant="metadataSmall"
@@ -350,30 +382,25 @@ export function ProfileScreen() {
             count-in always ticks, and is discarded before anything is sent.
           </Text>
         ) : null}
-      </Card>
+      </View>
 
       <SectionHeader label="Preferences" style={styles.section} />
-      <Card padded={false}>
-        <View style={styles.rows}>
-          <ToggleRow
-            label="Haptic feedback"
-            description="A short tap when a button or the shutter responds."
-            value={settings.haptics}
-            onChange={preferences.setHaptics}
-            divided={false}
-          />
-          <ToggleRow
-            label="Reduce motion"
-            description="Hold back animation. Already on if your device asks for it."
-            value={settings.reduceMotion}
-            onChange={preferences.setReduceMotion}
-          />
-        </View>
-      </Card>
+      <ToggleRow
+        label="Haptic feedback"
+        description="A short tap when a button or the shutter responds."
+        value={settings.haptics}
+        onChange={preferences.setHaptics}
+        divided={false}
+      />
+      <ToggleRow
+        label="Reduce motion"
+        description="Hold back animation. Already on if your device asks for it."
+        value={settings.reduceMotion}
+        onChange={preferences.setReduceMotion}
+      />
 
       <SectionHeader label="Data & privacy" style={styles.section} />
-      <Card padded={false}>
-        <View style={styles.rows}>
+      <View>
           <ToggleRow
             label="Help improve score reading"
             description="Allow corrected bars and their sheet-music photos to be kept for improving the reader. Turning this off deletes what was kept."
@@ -401,12 +428,10 @@ export function ProfileScreen() {
             value="Permanent"
             onPress={() => navigation.navigate('DeleteAccount')}
           />
-        </View>
-      </Card>
+      </View>
 
       <SectionHeader label="About" style={styles.section} />
-      <Card padded={false}>
-        <View style={styles.rows}>
+      <View>
           <AccountRow
             label="Version"
             value={appConfig.expo.version}
@@ -428,8 +453,7 @@ export function ProfileScreen() {
             label="Open source"
             onPress={() => navigation.navigate('Acknowledgements')}
           />
-        </View>
-      </Card>
+      </View>
 
       <SecondaryButton
         label={signingOut ? 'Signing out…' : 'Sign out'}
@@ -462,6 +486,9 @@ export function ProfileScreen() {
 
 /** Large enough to carry a face, short of a hero portrait. */
 const AVATAR_SIZE = 76;
+
+/** The camera badge's diameter. Large enough to read, small enough to sit on the rim. */
+const BADGE_SIZE = 26;
 
 /**
  * The `metronome_mode` enum, in a musician's words. "Audio" carries the
@@ -529,14 +556,55 @@ const styles = StyleSheet.create({
     minWidth: 0,
     ...Platform.select({ web: { wordBreak: 'break-all' as const }, default: {} }),
   },
-  settingCard: {
-    marginBottom: spacing.md,
+  /**
+   * A settings block standing on the page instead of on a card.
+   *
+   * §3 law 3 — the background is a compositional surface, and Profile was the
+   * one screen in the app that had turned every section into a card (seven of
+   * them). The account block keeps its card because it genuinely groups a set
+   * of related facts; a lone control with a note above it does not.
+   */
+  setting: {
+    marginTop: spacing.xl,
+  },
+  /**
+   * The camera badge on the avatar.
+   *
+   * Sits on the circle's lower-right, where every phone puts it. Ringed in the
+   * page background so it reads as attached to the avatar rather than floating
+   * over whatever is behind it.
+   */
+  avatarBadge: {
+    position: 'absolute',
+    right: -2,
+    bottom: -2,
+    width: BADGE_SIZE,
+    height: BADGE_SIZE,
+    borderRadius: BADGE_SIZE / 2,
+    backgroundColor: colors.actionBg,
+    borderWidth: 2,
+    borderColor: colors.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   section: {
     marginTop: spacing['2xl'],
   },
-  rows: {
-    paddingHorizontal: spacing.lg,
+  /**
+   * The Account group's surface, run to both screen edges.
+   *
+   * `marginHorizontal` cancels the screen gutter and `paddingHorizontal` puts
+   * it back on the content, so a row inside this band starts on exactly the
+   * same vertical as a bare row below it. Top and bottom hairlines close the
+   * group; there are no side borders, because the sides are the screen.
+   */
+  band: {
+    backgroundColor: colors.surface,
+    marginHorizontal: -SCREEN_GUTTER,
+    paddingHorizontal: SCREEN_GUTTER,
+    borderTopWidth: BORDER_WIDTH,
+    borderBottomWidth: BORDER_WIDTH,
+    borderColor: colors.border,
   },
   settingNote: {
     marginTop: spacing.xs,

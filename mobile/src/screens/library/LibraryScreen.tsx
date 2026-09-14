@@ -1,5 +1,5 @@
 import { useNavigation } from '@react-navigation/native';
-import { Library, Plus, Search } from '../../components/icons';
+import { Library, Plus, Search, X } from '../../components/icons';
 import { useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
@@ -7,8 +7,8 @@ import { FadeIn } from '../../components/motion';
 import { PieceListSkeleton } from '../../components/skeletons';
 import {
   EmptyState,
+  IconButton,
   PageHeader,
-  PrimaryButton,
   ScreenContainer,
   SearchField,
   SectionHeader,
@@ -25,6 +25,7 @@ import { AddPieceSheet } from '../../components/pieces/AddPieceSheet';
 import { PieceRow } from './PieceRow';
 import { useAddPieceOption } from '../../navigation/useAddPieceOption';
 import { loadStateFor, type LoadState } from '../../lib/loadState';
+import { rowDivided } from '../../components/rowMetrics';
 
 export function LibraryScreen() {
   const navigation = useNavigation<TabScreenNavigation<'Library'>>();
@@ -43,6 +44,18 @@ export function LibraryScreen() {
 
   const [addSheetVisible, setAddSheetVisible] = useState(false);
 
+  /**
+   * Whether the search field is on screen.
+   *
+   * **Collapsed by default, which is a hierarchy decision.** A full-width
+   * field and a solid ink button sat between the title and the first piece,
+   * and the button — the highest-contrast object on the screen — took the eye
+   * before the title did. §3 law 4 allows one dominant focal point and this
+   * screen is a list of pieces, so the pieces get it; both controls are now
+   * chrome-weight circles and two more rows clear the fold.
+   */
+  const [searchOpen, setSearchOpen] = useState(false);
+
   const handleSelectOption = useAddPieceOption(() =>
     setAddSheetVisible(false),
   );
@@ -56,22 +69,38 @@ export function LibraryScreen() {
         eyebrow={pieces.length > 0 ? countLabel(results.length, Boolean(query.trim())) : null}
         title="Library"
         action={
-          <PrimaryButton
-            label="Add piece"
-            icon={Plus}
-            onPress={() => setAddSheetVisible(true)}
-            haptic={false}
-            size="compact"
-          />
+          <View style={styles.actions}>
+            {/* Nothing to search through until there's a repertoire. */}
+            {pieces.length > 0 ? (
+              <IconButton
+                icon={searchOpen ? X : Search}
+                label={searchOpen ? 'Close search' : 'Search your library'}
+                onPress={() => {
+                  // Closing clears the query: leaving a filter applied behind a
+                  // control you just dismissed is how a library looks empty for
+                  // no visible reason.
+                  setSearchOpen((open) => {
+                    if (open) setQuery('');
+                    return !open;
+                  });
+                }}
+              />
+            ) : null}
+            <IconButton
+              icon={Plus}
+              label="Add piece"
+              onPress={() => setAddSheetVisible(true)}
+            />
+          </View>
         }
       />
 
-      {/* Nothing to search through until there's a repertoire. */}
-      {pieces.length > 0 ? (
+      {searchOpen && pieces.length > 0 ? (
         <SearchField
           value={query}
           onChangeText={setQuery}
           placeholder="Search your library"
+          autoFocus
         />
       ) : null}
 
@@ -185,7 +214,7 @@ function LibraryContent({
           <FadeIn key={piece.id} index={index}>
             <PieceRow
               piece={piece}
-              last={index === results.length - 1}
+              divided={rowDivided(index)}
               onPress={() => onOpenPiece(piece)}
             />
           </FadeIn>
@@ -208,7 +237,7 @@ function LibraryContent({
             <FadeIn key={piece.id} index={row++}>
               <PieceRow
                 piece={piece}
-                last={index === group.pieces.length - 1}
+                divided={rowDivided(index)}
                 onPress={() => onOpenPiece(piece)}
               />
             </FadeIn>
@@ -225,6 +254,10 @@ function countLabel(count: number, searching: boolean): string {
 }
 
 const styles = StyleSheet.create({
+  actions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
   section: {
     marginTop: spacing['2xl'],
   },

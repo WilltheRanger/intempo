@@ -3,6 +3,7 @@ import { Camera, FileMusic, Images, PencilLine } from '../icons';
 import { BottomSheet } from '../overlays/BottomSheet';
 import { SheetOptionRow } from '../overlays/SheetOptionRow';
 import type { AddPieceOption } from '../../navigation/types';
+import { rowDivided } from '../rowMetrics';
 
 export interface AddPieceSheetProps {
   visible: boolean;
@@ -63,7 +64,7 @@ export function AddPieceSheet({
           icon={entry.icon}
           label={entry.label}
           description={entry.description}
-          divided={index > 0}
+          divided={rowDivided(index)}
           onPress={() => onSelect(entry.option)}
         />
       ))}

@@ -57,9 +57,9 @@ import type { HeroContent, PendingLine } from './heroContent';
  * `WASH`, then whatever `GRADIENT` has reached at that height.
  *
  *     band      photo     ground    onDark   onDarkMuted
- *     0-20%     #4E4E4E   #393028    12.4        4.9      greeting
- *     20-40%    #BFBFBF   #615952     6.6        3.3      the sheet, mid-ramp
- *     40-100%   #BBBBBB   #3B3631    11.4        4.7      title and below
+ *     0-20%     #4E4E4E   #242424    14.8        5.5      greeting
+ *     20-40%    #BFBFBF   #595858     6.8        3.3      the sheet, mid-ramp
+ *     40-100%   #BBBBBB   #353432    12.0        4.8      title and below
  *
  * **`onDarkMuted` does not clear AA in the 20-40% band**, where the gradient
  * is still ramping and the photographed sheet music is at its brightest. So
@@ -85,31 +85,46 @@ import type { HeroContent, PendingLine } from './heroContent';
  * **Measured against the type, not chosen by eye.** An early attempt on the
  * previous ground was 0.45 behind a 0.68 wash, which cleared every threshold
  * comfortably and rendered the screen as a brown smudge — legible type on a
- * photograph nobody could see was a photograph. This is the brightest the
- * ground can be while the greeting at the top, which the bottom gradient does
- * not reach, still clears AA at 16pt.
+ * photograph nobody could see was a photograph.
+ *
+ * **Raised from 0.80 on 2026-09-14, together with the wash going neutral.**
+ * The two had to move together: a neutral wash is darker than a warm one at
+ * the same alpha, and that extra darkness is exactly what pays for the extra
+ * photograph. The table above is the check, and it came out better on both
+ * bands that carry muted type, not merely no worse.
  */
-const IMAGE_OPACITY = 0.8;
+const IMAGE_OPACITY = 0.96;
 
 /**
- * Flat warm ink over the whole field. See the arithmetic above.
+ * Flat ink over the whole field. See the arithmetic above.
  *
- * **Warm, and that is the photograph's fault rather than a preference.** The
- * ground this replaced was a scan of warm paper and carried the app's sepia by
- * itself. A black-and-white photograph carries none, so Today rendered neutral
- * grey beside a warm app — the one screen out of family.
+ * **Neutral, and it used to be warm.** The argument for warming it was that
+ * this photograph is black-and-white and carries none of the app's sepia by
+ * itself, so Today rendered as the one screen out of family. What that argument
+ * left out is what it cost: `rgba(46, 30, 14, 0.50)` laid a brown cast over
+ * the whole frame, and the piano keys — the picture's subject, and already its
+ * darkest region — read as fog rather than as keys.
  *
- * The colour and the alpha moved together, which is the whole trick: warming a
- * wash lightens it, and lighter ground costs the muted lines their headroom.
- * At 0.45 the warmest wash that still cleared AA left `onDarkMuted` at 4.51:1
- * against a 4.5 floor, which is not a margin. Raising the alpha to 0.50 buys
- * the luminance back and lands it at **4.70:1** — the same headroom the
- * neutral wash had — for a warmth of R/B **1.20** in the band the type sits
- * in, against 1.10 before and 1.30 for `darkBg` itself.
+ * **The owner asked for the cast gone on 2026-09-14, and it turns out to pay
+ * for itself**, because a neutral wash is darker than a warm one at the same
+ * alpha and darker ground is what muted type needs:
  *
- * What it costs is five points of photograph.
+ *     warmth (R/B) in the type band     1.22  ->  1.07
+ *     photograph surviving, type band   0.180 ->  0.207    (+15%)
+ *     photograph surviving, top band    0.400 ->  0.461    (+15%)
+ *     onDarkMuted, top band              4.90 ->   5.48
+ *     onDarkMuted, type band             4.68 ->   4.82
+ *
+ * So the type is *more* legible than it was, not less. The alpha went to 0.52
+ * to buy that margin and `IMAGE_OPACITY` to 0.96 to spend it back on the
+ * picture. The rule about where muted type may live is unchanged: the 20-40%
+ * band still does not clear AA, and still holds none.
+ *
+ * The out-of-family point is now a trade somebody made rather than one nobody
+ * noticed — this hero's ground is cooler than `darkBg`, and the photograph is
+ * what the screen is for.
  */
-const WASH = 'rgba(46, 30, 14, 0.50)';
+const WASH = 'rgba(0, 0, 0, 0.52)';
 
 /**
  * How dark the bottom of the hero settles to, under the flat wash.

@@ -1,5 +1,72 @@
 # InTempo Decisions
 
+## 2026-09-14 — Rows rule their top edge, and the rule lives in a tested module
+
+**Context.** A survey of `mobile/src` found **seventeen row implementations carrying
+two divider conventions**. Eight rule their *top* edge behind a `divided` prop that
+the first row turns off — `AccountRow`, `LinkRow`, `ToggleRow`, `SheetOptionRow`,
+Help's `Tip`, `Acknowledgements`, `ImportFile`'s part chooser, `MeasureRow`. Seven
+rule their *bottom* edge behind a `last` prop that the last row turns off —
+`PieceRow`, `TodayRow`, `PieceInsightRow`, `ComposerField`'s suggestion,
+`MeasureEdit`'s `keyChoice`, `PieceScore`'s `measureRow` and `clefRow`.
+
+**Both draw n−1 rules**, which is why nothing ever noticed. A list of either kind
+looks correct on its own; they diverge only at a group boundary. Put one of each in
+a single list and you get a doubled rule between them or none at all — and the app
+had carried both for months with nothing in the repository saying so.
+
+**Decision.** Top-ruled, with a `divided` prop. `components/rowMetrics.ts` owns the
+decision and `rowDivided(index)` is the whole rule in one function:
+`index > 0`. The module also fixes the vertical rhythm at `spacing.lg`, which was
+16 in most rows, 12 in `MeasureRow` and `ComposerField`, and 8 in four more — so
+`VerdictScreen` and `PieceScoreScreen` each showed two rhythms on one screen.
+
+**Why the top edge.**
+
+- A `SectionHeader` sits directly above the first row nearly everywhere in this app.
+  A rule between a heading and the thing it heads separates a label from its own
+  content, and top-ruling makes that case free rather than something each caller
+  has to remember to switch off.
+- `AccountRow` had already documented converging on this grammar earlier the same
+  week, and Profile was rebuilt around it.
+- It was the majority where it counts: 13 call sites against 6.
+
+**Alternatives considered.**
+
+- *Bottom-ruled with `last`.* The near-mirror, and the one iOS and Material lists
+  reach for. Rejected on the section-header case above, and because it was the
+  minority at the call sites — converting the other way was a wider diff for the
+  same result.
+- *Leave both and document the boundary hazard.* Rejected: the hazard is invisible
+  by construction, so a note is a note nobody reads at the moment they need it. The
+  whole failure mode is that the two look identical until they are adjacent.
+- *A shared `<Row>` component instead of a convention.* Rejected as too big a
+  change for what this fixes. The rows differ legitimately in content — a piece, a
+  toggle, a measure, a captured page — and collapsing them into one component would
+  trade a settled convention for a props explosion.
+
+**Trade-offs accepted.**
+
+- **The hairline's colour stays with the components, and the module owns only the
+  decision (`ROW_DIVIDER_EDGE`).** A style object would need `colors.border`, which
+  comes from `design/resolved.ts`, which reads `Appearance.getColorScheme()` at
+  import — and importing `react-native` into a test pulls its Flow source, which the
+  runner cannot parse. So `rowMetrics.ts` imports `design/spacing` and nothing else.
+  The split is the price of the rule being checkable at all, and checkable is the
+  point: there is no React Native testing library here (`DECISIONS.md`, 2026-08-24),
+  so a rule written inside a `.tsx` is a rule nothing checks.
+- **Deviations are allowed but must say why.** `ComposerField`'s suggestions keep
+  12pt: they sit under a field somebody is typing into, above a keyboard, where
+  every point of row height is a suggestion that does not fit on screen.
+- **The prop rename touched fifteen files** with no behaviour change, which is a
+  diff that reads as noise. Accepted once, to stop paying for it forever.
+
+**Reversibility.** Flip `ROW_DIVIDER_EDGE`, update its assertion in
+`rowMetrics.test.ts`, and the failing test names every row that has to change with
+it. That is the reason the edge is a constant with a test rather than a habit.
+
+---
+
 ## 2026-09-13 — The text fonts ship subset, in TTF, and a check guards what they dropped
 
 **Context.** Asked to make the app load as fast as possible. Measured the boot

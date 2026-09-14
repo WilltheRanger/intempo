@@ -4,14 +4,29 @@ import { ChevronRight } from '../../components/icons';
 import { PressableScale } from '../../components/motion';
 import { Text } from '../../components/primitives/Text';
 import type { Piece } from '../../data/types';
-import { BORDER_WIDTH, colors, ICON_SIZE, ICON_STROKE_WIDTH, radii, spacing } from '../../design';
+import {
+  BORDER_WIDTH,
+  colors,
+  ICON_SIZE,
+  ICON_STROKE_WIDTH,
+  MIN_TOUCH_TARGET,
+  radii,
+  spacing,
+} from '../../design';
+import { ROW_PADDING_VERTICAL } from '../../components/rowMetrics';
 import { formatLastPracticedShort, joinMetadata } from '../../lib/format';
 
 export interface PieceRowProps {
   piece: Piece;
   onPress: () => void;
-  /** The last row in a group draws no rule — the group heading below ends it. */
-  last?: boolean;
+  /**
+   * Hairline above the row. Off on the first of a group — see `rowMetrics`.
+   *
+   * This used to be `last`, ruling the bottom edge. Both conventions draw n−1
+   * rules and look identical in isolation, which is how the app came to carry
+   * both; they only disagree at a group boundary.
+   */
+  divided?: boolean;
 }
 
 /**
@@ -53,7 +68,7 @@ export interface PieceRowProps {
  * the page as a full-bleed band, which is one image for the one piece you
  * asked about, and `PieceScoreScreen` still shows every page.
  */
-export function PieceRow({ piece, onPress, last = false }: PieceRowProps) {
+export function PieceRow({ piece, onPress, divided = false }: PieceRowProps) {
   const age = formatLastPracticedShort(piece.lastPracticedAt);
   const meta = joinMetadata([piece.composer, age]);
 
@@ -69,7 +84,7 @@ export function PieceRow({ piece, onPress, last = false }: PieceRowProps) {
       activeScale={0.99}
       style={({ pressed }) => [
         styles.row,
-        !last && styles.ruled,
+        divided && styles.ruled,
         pressed && styles.pressed,
       ]}
     >
@@ -118,14 +133,15 @@ const styles = StyleSheet.create({
       against the old 67 and gives the composer line room to sit under the
       title rather than on it.
     */
-    paddingVertical: spacing.lg,
+    paddingVertical: ROW_PADDING_VERTICAL,
     paddingHorizontal: spacing.sm,
     marginHorizontal: -spacing.sm,
     borderRadius: radii.sm,
+    minHeight: MIN_TOUCH_TARGET,
   },
   ruled: {
-    borderBottomWidth: BORDER_WIDTH,
-    borderBottomColor: colors.border,
+    borderTopWidth: BORDER_WIDTH,
+    borderTopColor: colors.border,
   },
   pressed: {
     backgroundColor: colors.surfacePressed,
