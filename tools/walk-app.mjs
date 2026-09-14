@@ -825,8 +825,13 @@ const VERDICT_STATES = [
   },
   {
     id: 'fixture-take-unmatched',
-    what: 'a take that could not be matched to its score',
-    says: /matching your recording to the score/i,
+    what: 'a take the pipeline could not find enough of',
+    // The pipeline's own sentence again, and it changed on 2026-09-14: this
+    // read "matching your recording to the score — check you're on the right
+    // piece", which is what every early take was told while being the right
+    // piece. The counts are the point of the new one, so the needle keeps them
+    // while staying off the exact figures.
+    says: /only picked out \d+ notes/i,
     offers: /^Record again$/i,
   },
 ];
