@@ -32,6 +32,7 @@
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { VERDICT_STATES } from './verdict-states.mjs';
 
 // Resolved from `mobile/`, where playwright is installed with `--no-save` — a
 // bare import would resolve against this directory instead. See the same note
@@ -801,35 +802,6 @@ console.log('\n## A take that did not come back with a verdict');
  * every screen still looks right on its own; a musician whose take failed for
  * good is told to try again, and tries again, and it fails again.
  */
-const VERDICT_STATES = [
-  {
-    id: 'fixture-take-failed',
-    what: 'a failure worth retrying',
-    says: /on our side, not with your playing/i,
-    offers: /^Try again$/i,
-  },
-  {
-    id: 'fixture-take-unrecoverable',
-    what: 'a failure that will not come back',
-    says: /couldn.t process this recording/i,
-    offers: /^Record again$/i,
-  },
-  {
-    id: 'fixture-take-silent',
-    what: 'a silent recording',
-    // The pipeline's own sentence, verbatim — `diagnostics.py` distinguishes a
-    // silent take from a page with no notes read off it, and the screen must
-    // not paraphrase either into the other.
-    says: /completely silent/i,
-    offers: /^Record again$/i,
-  },
-  {
-    id: 'fixture-take-unmatched',
-    what: 'a take that could not be matched to its score',
-    says: /matching your recording to the score/i,
-    offers: /^Record again$/i,
-  },
-];
 
 const said = new Map();
 for (const state of VERDICT_STATES) {

@@ -1165,8 +1165,9 @@ const FIXTURE_TAKE_STATES: Record<string, Partial<TakeResult>> = {
   'fixture-take-unmatched': {
     status: 'alignment_failed',
     headline:
-      "We had trouble matching your recording to the score — check you're on " +
-      'the right piece and re-record.',
+      'We only picked out 18 notes where this page writes 76, so there ' +
+      "wasn't enough to compare. Move the microphone closer and check the " +
+      'piece was read correctly, then record again.',
   },
 };
 

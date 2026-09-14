@@ -696,6 +696,54 @@ nothing else covers `backend/`. Named here rather than left to be found.
 
 ## The recording path (2026-09-02) — level is not the signal you think it is
 
+- **A take is compared against the whole page, and for a long time that meant a
+  practice take could not pass (2026-09-14).** The first eight analyses this app
+  ever ran were all refused with "check you're on the right piece", all at
+  `quality` exactly `0.000`. None of them was on the wrong piece.
+
+  `quality` is `timing_quality * coverage`, and `coverage` divided by every
+  required note on the page. So `coverage <= n_detected / n_expected` is a
+  **ceiling that applies before a single note is compared**. Those takes ran 2 to
+  56 seconds against parts spanning 74 to 82, and five of the eight had a ceiling
+  under `broken_quality` (0.4) — 0.081, 0.149, 0.307, 0.387, 0.387. However well
+  they were played, they could not have passed.
+
+  Compounding it, `librosa.sequence.dtw` was called with `subseq` at its default
+  `False`, which anchors the warping path corner to corner: the first detection
+  onto the first written note, the last onto the *last*. A fragment was
+  therefore stretched across the whole page and every residual was enormous.
+
+  Both are repaired in `align_dtw` — see `DECISIONS.md`, 2026-09-14. Two things
+  learned that outlive the fix:
+
+  - **A ceiling is not a threshold, and the difference is invisible in the
+    reading.** Every one of those rows said `quality 0.000`, which looks like a
+    tuning problem and is not one. `TUNING_LOG.md` had already recorded the same
+    shape for `04_slurred` in 2026-08-27 and called it "a design question rather
+    than a threshold" — and the note sat there while eight takes failed of it.
+    When a metric is a product of factors, log the factors: `AlignmentResult`
+    now carries `timing_quality` and `coverage` separately, and `analyze()`
+    logs both on refusal, because the product alone cannot say which half said
+    no.
+  - **Span, not count, is what tells a fragment from a performance.** The first
+    attempt at the fix triggered on `detected.size < expected.size`, which is
+    also true of a page with printed ornaments played straight — eight
+    detections against ten written onsets, and a complete performance. Missing
+    attacks do not move the first and last onset; recording part of a page does.
+
+- **Nothing in this repository has ever run the pipeline against a real
+  instrument (2026-09-14).** `fixtures/audio/README.md` opens by saying the six
+  corpus clips were never recorded, and `make_synthetic.py` stands in for them
+  while its own header says a synthesised click "cannot tell you whether a
+  threshold is right". Every threshold in `config.toml` was therefore set against
+  click tracks, and the failure above lived in the gap for as long as it existed.
+
+  Capturing one after the fact is harder than it sounds: `keep_playback_copy`
+  re-encodes a take to Opus and **deletes the WAV** once the analysis succeeds,
+  so the eight real takes survive only as lossy copies. If you want a real-audio
+  fixture, arrange to keep the WAV *before* the take is recorded.
+
+
 - **The page's audio session category decides whether the microphone works at
   all, and it is set at boot far away from the recorder (2026-09-12).** This
   cost five wrong fixes over one day, so it is written out in full.

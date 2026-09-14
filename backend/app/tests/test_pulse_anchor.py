@@ -202,14 +202,22 @@ class TestConfidenceAsksTheSameQuestionAsTheVerdict:
         assert self._quality(rushed) > 0.9
 
     def test_half_a_take_is_reported_with_a_caveat_not_refused(self) -> None:
-        """The documented contract, and it did not move.
+        """The documented contract, and it got *stronger* on 2026-09-14.
 
         A take of the first twenty notes maps to written notes 0–19 — the right
-        ones — and scores 0.500: under `warn_quality` so the screen says the
-        numbers may be inaccurate, over `broken_quality` so what *was* played
-        is still analysed. Both are correct and this test exists because an
-        earlier draft of it asserted the take should be refused, which would
-        have thrown away a real practice session.
+        ones. It used to score 0.500, over `broken_quality` but under
+        `warn_quality`, and the caveat was the honest thing to show because the
+        take was being stretched across all forty notes and the deltas were
+        only roughly the right ones.
+
+        It now scores 1.000, because it is matched against the twenty notes it
+        actually covers rather than the forty on the page. There is nothing
+        left to caveat: the passage was played in time.
+
+        The test exists because an earlier draft asserted the take should be
+        *refused*, which would have thrown away a real practice session — and
+        that draft's instinct is what shipped in the coverage denominator and
+        refused every early take. See `DECISIONS.md`, 2026-09-14.
         """
         expected = self._expected()
         detected = expected[: expected.size // 2]
@@ -219,13 +227,23 @@ class TestConfidenceAsksTheSameQuestionAsTheVerdict:
         result = align_dtw(detected - detected[0], expected, target_bpm=self.BPM)
 
         assert max(e for _, e in result.mapping) <= 21
-        assert 0.4 < result.quality < 0.7
+        assert result.quality > 0.9
 
     @pytest.mark.parametrize(
         "name",
-        ["every other note", "last third", "a rhythm of its own"],
+        ["every other note", "a rhythm of its own"],
     )
     def test_the_takes_that_must_be_refused_still_are(self, name: str) -> None:
+        """Both of these span the whole page and neither is the music on it.
+
+        **"last third" used to be here and was deliberately taken out**
+        (2026-09-14, `DECISIONS.md`). It is a fragment, and refusing fragments
+        is the defect that made every one of the first eight real takes fail —
+        the same reason the test above gives for not refusing a first half.
+        What is left here are the two takes that are *not* passages: one plays
+        every other note of the page, the other a rhythm the page never wrote,
+        and both still score under `broken_quality`.
+        """
         expected = self._expected()
         detected = {
             "first half": expected[: expected.size // 2],

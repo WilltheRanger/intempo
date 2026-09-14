@@ -505,6 +505,15 @@ class AlignmentResult:
     quality: float  # 0..1; higher = better fit
     n_detected: int
     n_expected: int
+    #: `quality` is `timing_quality * coverage`, and the product cannot say
+    #: which half refused a take. Both were computed and discarded, so the only
+    #: way to tell "the shape disagrees" from "we heard a third of the notes"
+    #: was to re-run the pipeline by hand against a copy of the row. Carried so
+    #: one log line can answer it.
+    timing_quality: float = 0.0
+    coverage: float = 0.0
+    #: Whether the match was allowed to start and end mid-page.
+    subsequence: bool = False
 
 
 @dataclass
@@ -1139,15 +1148,60 @@ def align_dtw(
             POSITION_WEIGHT * np.minimum(position, POSITION_CAP_GAPS * gap)
         )
 
+    #: Whether the take can only be *part* of the page, so the match must be
+    #: allowed to start and end mid-page.
+    #:
+    #: **The failure this repairs.** `librosa.sequence.dtw` anchors the warping
+    #: path corner to corner: detection 0 is forced onto expected 0 and the last
+    #: detection onto the *last* written note. A musician who records four bars
+    #: of a fifty-seven-bar orchestral part therefore has those four bars
+    #: stretched across the whole page, and every residual is enormous. Measured
+    #: on a real 25-bar part, a take of the page's first half scored **0.000 —
+    #: `alignment_failed`, "check you're on the right piece"** — and 0.487, a
+    #: reported verdict, with the anchoring released. Every one of the first
+    #: eight takes this app ever analysed failed this way.
+    #:
+    #: **Only when the take provably cannot be the whole page.** The test is
+    #: the one the matcher already believes elsewhere: `MAX_TEMPO_RATIO` bounds
+    #: how much faster than the marked pace a performance may be read as, so a
+    #: take whose span, played at that fastest believable tempo, still does not
+    #: reach the end of the page is not a performance of the page.
+    #:
+    #: Counting onsets instead is wrong twice over. A page of eight notes with
+    #: two printed ornaments expects ten onsets and a musician who plays it
+    #: perfectly, straight, produces eight — fewer detections than written
+    #: notes, and a complete performance. Released from its anchors that take
+    #: drifts and is refused; it is `test_ornaments_the_musician_did_not_play_
+    #: are_not_missed_notes`, and it caught this. Spans are also what a missed
+    #: attack does not change: losing notes in the middle leaves the first and
+    #: last where they were.
+    #:
+    #: Subsequence matching is strictly more freedom than the banded path, so
+    #: it is taken only where the banded path is provably wrong. It also needs
+    #: the detections to be the shorter sequence — it asks where a query sits
+    #: inside a longer reference, and with more detections than written notes
+    #: there is no such question; librosa walks off the end of the cost matrix.
+    #: Over-detection is a different fault with a different repair.
+    take_span = float(detected[-1] - detected[0]) if detected.size >= 2 else 0.0
+    page_span = float(expected[-1] - expected[0]) if expected.size >= 2 else 0.0
+    subsequence = (
+        detected.size < expected.size
+        and take_span > 0.0
+        and take_span * MAX_TEMPO_RATIO < page_span
+    )
+
     def _match(ratio: float) -> list[tuple[int, int]]:
         """Run DTW at one scale and return one written note per detection."""
         cost = _cost_matrix(ratio)
         try:
-            _, wp = librosa.sequence.dtw(
-                C=cost,
-                global_constraints=True,
-                band_rad=cfg.alignment.sakoe_chiba_band,
-            )
+            if subsequence:
+                _, wp = librosa.sequence.dtw(C=cost, subseq=True)
+            else:
+                _, wp = librosa.sequence.dtw(
+                    C=cost,
+                    global_constraints=True,
+                    band_rad=cfg.alignment.sakoe_chiba_band,
+                )
         except Exception:  # noqa: BLE001 — band too tight for the size ratio, etc.
             _, wp = librosa.sequence.dtw(C=cost)
 
@@ -1160,6 +1214,10 @@ def align_dtw(
         best: dict[int, tuple[int, float]] = {}
         for det_i, exp_i in wp[::-1]:
             det_i, exp_i = int(det_i), int(exp_i)
+            # A subsequence path can report the column one past the last, which
+            # is the "matched nothing further" sentinel rather than a note.
+            if not (0 <= det_i < cost.shape[0] and 0 <= exp_i < cost.shape[1]):
+                continue
             err = float(cost[det_i, exp_i])
             prev = best.get(det_i)
             if prev is None or err < prev[1]:
@@ -1247,9 +1305,44 @@ def align_dtw(
         if optional is None
         else ~np.asarray(optional, dtype=bool)
     )
-    denominator = int(required.sum())
+    # **Over the passage the take covers, not over the page.**
+    #
+    # Coverage asks "of the notes this take was supposed to contain, how many
+    # were heard". With the whole page as the denominator it silently asks
+    # something else — "how much of the page did you record" — and answers a
+    # musician practising four bars of a long part with 0.07 however well they
+    # played them. Every early take of this app was refused that way: the
+    # ceiling `n_detected / n_expected` sat under `broken_quality` before a
+    # single note was compared, so no performance could have passed.
+    #
+    # The passage is the written span the match actually lands in, first
+    # matched note to last — and **only when the take cannot be the whole
+    # page**, which is the same test `subsequence` is taken on. Two reasons,
+    # and the second is not obvious:
+    #
+    #  - Where the take does cover the page, the page *is* the passage, so the
+    #    two denominators agree and the narrower one only adds risk.
+    #  - `align_take` competes trim candidates on quality. A denominator that
+    #    shrinks with the span is one a trim can never lose by: cutting a real
+    #    note off either end removes it from the numerator and the denominator
+    #    together, so coverage holds while the take gets shorter. Applied
+    #    unconditionally this quietly taught the trim search to eat the last
+    #    note of every take — `test_ornaments_the_musician_did_not_play_are_not
+    #    _missed_notes` reported one missed note against a complete
+    #    performance, which is how it was found.
+    #
+    # And only once there are enough matches to believe the span at all: below
+    # `MIN_ONSETS_TO_ESTIMATE_TEMPO` a handful of stray detections could
+    # nominate any two notes as the ends and score themselves against those
+    # two — the same crossover, and the same reason, as the tempo estimate.
+    in_span = required.copy()
+    if subsequence and len(covered_all) >= MIN_ONSETS_TO_ESTIMATE_TEMPO:
+        first, last = min(covered_all), max(covered_all)
+        in_span[:first] = False
+        in_span[last + 1 :] = False
+    denominator = int(in_span.sum())
     if denominator:
-        covered = sum(1 for e in covered_all if required[e])
+        covered = sum(1 for e in covered_all if in_span[e])
     else:
         # Every expected onset is optional — vanishingly unlikely, and the old
         # fraction is a better answer than dividing by zero.
@@ -1262,6 +1355,9 @@ def align_dtw(
         quality=quality,
         n_detected=int(detected.size),
         n_expected=int(expected.size),
+        timing_quality=timing_quality,
+        coverage=coverage,
+        subsequence=subsequence,
     )
 
 

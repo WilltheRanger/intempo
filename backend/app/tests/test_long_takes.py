@@ -145,7 +145,17 @@ class TestTheTempoClampStillRefusesWhatItRefused:
 
     def test_half_a_take_still_maps_to_half_the_score(self) -> None:
         """The failure the bound exists for: a take of the first twenty notes
-        smeared across all forty, every delta measured against the wrong bar."""
+        smeared across all forty, every delta measured against the wrong bar.
+
+        **The mapping is the assertion.** This also carried
+        `quality < 0.7, "half a take must not read as confident"`, which was a
+        proxy for the smearing rather than a claim about it — and once
+        `align_dtw` matched a passage against the passage it covers
+        (2026-09-14, `DECISIONS.md`) the smearing stopped and the proxy started
+        failing a take that is now correctly measured. What the bound is
+        actually for is the line below it: the first half must reach written
+        note 21 and no further. That still holds, and it is checked directly.
+        """
         expected = self._expected()
         detected = expected[:20]
 
@@ -153,7 +163,6 @@ class TestTheTempoClampStillRefusesWhatItRefused:
 
         matched = [e for _, e in result.mapping]
         assert max(matched) <= 21, f"first half reached written note {max(matched)}"
-        assert result.quality < 0.7, "half a take must not read as confident"
 
     def test_every_other_note_is_not_read_as_a_slow_complete_take(self) -> None:
         expected = self._expected()

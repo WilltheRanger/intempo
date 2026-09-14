@@ -33,6 +33,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { VERDICT_STATES } from './verdict-states.mjs';
 
 /**
  * Resolved from `mobile/`, not from here.
@@ -108,26 +109,16 @@ const ROUTES = [
   // different sentences and different buttons — and again on a status that is
   // not `ok`, before it draws a verdict at all. One route, four screens; the
   // path comparison in `unvisitedRoutes` sees one of them.
-  [
-    'Verdict — failed, recoverable',
-    'analyses/fixture-take-failed',
-    { expect: 'Try again' },
-  ],
-  [
-    'Verdict — failed for good',
-    'analyses/fixture-take-unrecoverable',
-    { expect: "We couldn't process this recording" },
-  ],
-  [
-    'Verdict — nothing heard',
-    'analyses/fixture-take-silent',
-    { expect: 'Nothing to measure' },
-  ],
-  [
-    'Verdict — could not be matched to the score',
-    'analyses/fixture-take-unmatched',
-    { expect: 'matching your recording to the score' },
-  ],
+  // **From `verdict-states.mjs`, not written out here.** These four used to be
+  // spelled out with their own copies of the sentences, and one of them went
+  // stale the moment the pipeline's wording changed — the walk was updated and
+  // this list was not, so this audit failed with `WRONG STATE` on a screen that
+  // was perfectly fine. The needles now come from the same place the walk's do.
+  ...VERDICT_STATES.map(({ label, id, needle }) => [
+    label,
+    `analyses/${id}`,
+    { expect: needle },
+  ]),
   ['Warmup', 'warmup'],
   ['Help', 'help'],
   ['Legal', 'legal/privacy'],
