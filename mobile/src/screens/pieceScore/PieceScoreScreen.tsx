@@ -1109,9 +1109,24 @@ const styles = StyleSheet.create({
   recoverySecondary: {
     marginTop: spacing.sm,
   },
+  /**
+   * The two quiet sheet-openers: "Correct another bar" and "Change the clef".
+   *
+   * **Left-aligned, and that is the whole change.** They were `alignSelf:
+   * 'center'`, the only centred controls in an app where every other line
+   * starts at the gutter — so they read as floating rather than as part of the
+   * column (§3 law 5).
+   *
+   * They stay quiet, deliberately. A design review proposed promoting them to
+   * `LinkRow`s with chevrons; that was wrong twice over. Neither opens a
+   * screen — both set local state that raises a `BottomSheet` — so a chevron
+   * would be an affordance that does not do what it depicts. And their
+   * quietness is a decision with its own reasons written above each of them:
+   * the flagged bars are what usually needs attention, and a clef that was
+   * read is usually right.
+   */
   secondaryRow: {
-    alignSelf: 'center',
-    minHeight: 44,
+    minHeight: MIN_TOUCH_TARGET,
     justifyContent: 'center',
     marginTop: spacing.md,
   },

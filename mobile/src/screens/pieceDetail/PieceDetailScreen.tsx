@@ -212,7 +212,21 @@ export function PieceDetailScreen() {
         ) : undefined
       }
     >
+      {/*
+        **The composer sits above the title, as it does everywhere else.**
+        This screen used to put it underneath, in its own `Text` block, while
+        `PieceScoreScreen` and `RecordScreen` both pass it as the eyebrow — so
+        opening a piece and then its score flipped the composer from under the
+        title to over it, on the same piece. `PageHeader` always draws the
+        eyebrow above (there is no option to invert it), so the majority wins
+        and this screen joins them.
+
+        The movement went with it, into the facts row below the score band:
+        it is a fact about the piece like the tempo and the measure count, and
+        it was the second of two stray lines between the header and the image.
+      */}
       <PageHeader
+        eyebrow={piece.composer}
         title={piece.title}
         onBack={goBack}
         backLabel="Back to library"
@@ -224,21 +238,6 @@ export function PieceDetailScreen() {
           />
         }
       />
-
-      {piece.composer ? (
-        <Text variant="composer" color="textSecondary">
-          {piece.composer}
-        </Text>
-      ) : null}
-      {piece.movement ? (
-        <Text
-          variant="metadataSmall"
-          color="textTertiary"
-          style={styles.movement}
-        >
-          {piece.movement}
-        </Text>
-      ) : null}
 
       {/*
         Correcting the name in place, the same shape `TranscriptionReviewScreen`
@@ -325,6 +324,11 @@ export function PieceDetailScreen() {
       <MetadataRow
         style={styles.facts}
         items={[
+          // First, because it names *which* piece this is — a movement is
+          // closer to the title than to the tempo. It had its own line under
+          // the header until 2026-09-14; `MetadataRow` drops a null, so a piece
+          // without one reads exactly as it did.
+          piece.movement,
           played ? formatLastPracticed(piece.lastPracticedAt) : null,
           measureCount === 0
             ? null
@@ -527,9 +531,6 @@ export function PieceDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  movement: {
-    marginTop: spacing.xs,
-  },
   editCard: {
     marginTop: spacing.lg,
   },
