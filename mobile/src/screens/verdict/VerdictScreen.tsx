@@ -36,6 +36,7 @@ import { MEASURE_COLUMNS, MeasureRow } from './MeasureRow';
 import { TrendLine } from './TrendLine';
 import { TakePlayback } from './TakePlayback';
 import { loadStateFor } from '../../lib/loadState';
+import { rowDivided } from '../../components/rowMetrics';
 
 /**
  * What one take came back as.
@@ -363,7 +364,7 @@ export function VerdictScreen() {
                   current === measure.measure ? null : measure.measure,
                 )
               }
-              divided={index > 0}
+              divided={rowDivided(index)}
               revealedExtra={
                 /*
                   Only where the app made a claim about the playing. A bar

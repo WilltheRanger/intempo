@@ -8,7 +8,6 @@ import appConfig from '../../../app.json';
 import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
 import {
   Avatar,
-  Card,
   EmptyState,
   LoadingState,
   PageHeader,
@@ -31,7 +30,14 @@ import {
   type ProfilePhotoSelection,
 } from '../../data/profile/savePhoto';
 import { Camera } from '../../components/icons';
-import { colors, ICON_SIZE, ICON_STROKE_WIDTH, spacing } from '../../design';
+import { SCREEN_GUTTER } from '../../components/primitives/ScreenContainer';
+import {
+  BORDER_WIDTH,
+  colors,
+  ICON_SIZE,
+  ICON_STROKE_WIDTH,
+  spacing,
+} from '../../design';
 import { formatRole, formatTier } from '../../lib/format';
 import type { RootNavigation } from '../../navigation/types';
 import { AccountRow } from './AccountRow';
@@ -256,8 +262,19 @@ export function ProfileScreen() {
       ) : null}
 
       <SectionHeader label="Account" style={styles.section} />
-      <Card padded={false}>
-        <View style={styles.rows}>
+      {/*
+        **A band, not a floating card, and the alignment is why.** Keeping one
+        surface for Account was the right call — it groups a set of related
+        facts, which is what §3 law 3 reserves a container for. But a card sits
+        *inside* the screen gutter and then insets its own content, so its rows
+        started 16pt right of the bare rows below and the eye had two left edges
+        to track down one screen. That shipped in PR #103 and this fixes it.
+
+        Full-bleed with its content at the gutter, the grouping survives and
+        every row on the screen shares one vertical. Square, because a rounded
+        corner touching the screen edge reads as a mistake.
+      */}
+      <View style={styles.band}>
           <AccountRow
             label="Plan"
             value={formatTier(musician.tier)}
@@ -298,8 +315,7 @@ export function ProfileScreen() {
             label="Password"
             onPress={() => navigation.navigate('ChangePassword')}
           />
-        </View>
-      </Card>
+      </View>
 
       <SectionHeader label="Practice" style={styles.section} />
       {/*
@@ -574,8 +590,21 @@ const styles = StyleSheet.create({
   section: {
     marginTop: spacing['2xl'],
   },
-  rows: {
-    paddingHorizontal: spacing.lg,
+  /**
+   * The Account group's surface, run to both screen edges.
+   *
+   * `marginHorizontal` cancels the screen gutter and `paddingHorizontal` puts
+   * it back on the content, so a row inside this band starts on exactly the
+   * same vertical as a bare row below it. Top and bottom hairlines close the
+   * group; there are no side borders, because the sides are the screen.
+   */
+  band: {
+    backgroundColor: colors.surface,
+    marginHorizontal: -SCREEN_GUTTER,
+    paddingHorizontal: SCREEN_GUTTER,
+    borderTopWidth: BORDER_WIDTH,
+    borderBottomWidth: BORDER_WIDTH,
+    borderColor: colors.border,
   },
   settingNote: {
     marginTop: spacing.xs,

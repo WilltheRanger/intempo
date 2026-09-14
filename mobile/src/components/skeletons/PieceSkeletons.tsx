@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { BORDER_WIDTH, colors, spacing } from '../../design';
 import { FadeIn } from '../motion';
 import { Skeleton, SkeletonText } from '../primitives/Skeleton';
+import { rowDivided } from '../rowMetrics';
 
 /**
  * Placeholders shaped like the components they stand in for.
@@ -33,9 +34,9 @@ import { Skeleton, SkeletonText } from '../primitives/Skeleton';
  * for why the page crops went. The padding is that row's 16pt rather than the
  * 12 a 38pt picture used to hold it open at.
  */
-function PieceRowSkeleton({ last = false }: { last?: boolean }) {
+function PieceRowSkeleton({ divided = false }: { divided?: boolean }) {
   return (
-    <View style={[styles.row, !last && styles.ruled]}>
+    <View style={[styles.row, divided && styles.ruled]}>
       <View style={styles.rowBody}>
         {/* Title, then the composer-and-age line. */}
         <Skeleton height={19} width="72%" />
@@ -55,7 +56,7 @@ export function PieceListSkeleton({ count = 5 }: PieceListSkeletonProps) {
     <View>
       {Array.from({ length: count }, (_, index) => (
         <FadeIn key={index} index={index}>
-          <PieceRowSkeleton last={index === count - 1} />
+          <PieceRowSkeleton divided={rowDivided(index)} />
         </FadeIn>
       ))}
     </View>
@@ -73,8 +74,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.lg,
   },
   ruled: {
-    borderBottomWidth: BORDER_WIDTH,
-    borderBottomColor: colors.border,
+    borderTopWidth: BORDER_WIDTH,
+    borderTopColor: colors.border,
   },
   rowBody: {
     flex: 1,

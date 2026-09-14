@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { PressableScale } from '../../components/motion';
 import { MetadataRow } from '../../components/primitives/MetadataRow';
 import { Text } from '../../components/primitives/Text';
+import { ROW_PADDING_VERTICAL } from '../../components/rowMetrics';
 import type { PieceInsight } from '../../data/types';
 import { BORDER_WIDTH, colors, spacing } from '../../design';
 import { readPieceWord, tempoWanders } from '../../lib/insights/tendency';
@@ -13,8 +14,8 @@ export interface PieceInsightRowProps {
   insight: PieceInsight;
   /** Opens the piece. A list of your own pieces that does not open them is a table. */
   onPress: () => void;
-  /** The last row in a group draws no rule. */
-  last?: boolean;
+  /** Hairline above the row. Off on the first of a group — see `rowMetrics`. */
+  divided?: boolean;
 }
 
 /**
@@ -30,7 +31,7 @@ export interface PieceInsightRowProps {
  * then does not open them is a report rather than an app — and it is the one
  * place a musician has just been told which piece needs work.
  */
-export function PieceInsightRow({ insight, onPress, last = false }: PieceInsightRowProps) {
+export function PieceInsightRow({ insight, onPress, divided = false }: PieceInsightRowProps) {
   // "Uneven" where a direction would be false — see `readPieceWord`. Without
   // it a piece a musician plays a long way off the beat on both sides reads
   // "On tempo" in the row they tap to go and practise it.
@@ -44,7 +45,7 @@ export function PieceInsightRow({ insight, onPress, last = false }: PieceInsight
       accessibilityLabel={`${insight.title}. ${verdict} across ${sessionLabel(insight.sessions)}.`}
       activeScale={0.99}
     >
-      <View style={[styles.row, !last && styles.ruled]}>
+      <View style={[styles.row, divided && styles.ruled]}>
         <Text variant="pieceTitle" numberOfLines={2}>
           {insight.title}
         </Text>
@@ -75,11 +76,11 @@ export function PieceInsightRow({ insight, onPress, last = false }: PieceInsight
 
 const styles = StyleSheet.create({
   row: {
-    paddingVertical: spacing.lg,
+    paddingVertical: ROW_PADDING_VERTICAL,
   },
   ruled: {
-    borderBottomWidth: BORDER_WIDTH,
-    borderBottomColor: colors.border,
+    borderTopWidth: BORDER_WIDTH,
+    borderTopColor: colors.border,
   },
   composer: {
     marginTop: 2,

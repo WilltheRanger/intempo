@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { PressableScale } from '../../components/motion';
 import { Text } from '../../components/primitives/Text';
+import { ROW_PADDING_VERTICAL } from '../../components/rowMetrics';
 import {
   BORDER_WIDTH,
   colors,
@@ -26,8 +27,8 @@ export interface TodayRowProps {
    * must not be truncated into a different claim; two everywhere else.
    */
   detailLines?: number;
-  /** The last row in a group draws no rule. */
-  last?: boolean;
+  /** Hairline above the row. Off on the first of a group — see `rowMetrics`. */
+  divided?: boolean;
 }
 
 /**
@@ -47,7 +48,7 @@ export function TodayRow({
   detail,
   onPress,
   detailLines = 2,
-  last = false,
+  divided = false,
 }: TodayRowProps) {
   return (
     <PressableScale
@@ -57,7 +58,7 @@ export function TodayRow({
       activeScale={0.99}
       style={({ pressed }) => [
         styles.row,
-        !last && styles.ruled,
+        divided && styles.ruled,
         pressed && styles.pressed,
       ]}
     >
@@ -92,14 +93,14 @@ const styles = StyleSheet.create({
     // A native list row, not a paragraph with a chevron: 44pt is the minimum
     // a target may be, and a row you tap all day should clear it comfortably.
     minHeight: MIN_TOUCH_TARGET + spacing.lg,
-    paddingVertical: spacing.lg,
+    paddingVertical: ROW_PADDING_VERTICAL,
     paddingHorizontal: spacing.sm,
     marginHorizontal: -spacing.sm,
     borderRadius: radii.sm,
   },
   ruled: {
-    borderBottomWidth: BORDER_WIDTH,
-    borderBottomColor: colors.border,
+    borderTopWidth: BORDER_WIDTH,
+    borderTopColor: colors.border,
   },
   pressed: {
     backgroundColor: colors.surfacePressed,

@@ -25,6 +25,7 @@ import { AddPieceSheet } from '../../components/pieces/AddPieceSheet';
 import { PieceRow } from './PieceRow';
 import { useAddPieceOption } from '../../navigation/useAddPieceOption';
 import { loadStateFor, type LoadState } from '../../lib/loadState';
+import { rowDivided } from '../../components/rowMetrics';
 
 export function LibraryScreen() {
   const navigation = useNavigation<TabScreenNavigation<'Library'>>();
@@ -213,7 +214,7 @@ function LibraryContent({
           <FadeIn key={piece.id} index={index}>
             <PieceRow
               piece={piece}
-              last={index === results.length - 1}
+              divided={rowDivided(index)}
               onPress={() => onOpenPiece(piece)}
             />
           </FadeIn>
@@ -236,7 +237,7 @@ function LibraryContent({
             <FadeIn key={piece.id} index={row++}>
               <PieceRow
                 piece={piece}
-                last={index === group.pieces.length - 1}
+                divided={rowDivided(index)}
                 onPress={() => onOpenPiece(piece)}
               />
             </FadeIn>

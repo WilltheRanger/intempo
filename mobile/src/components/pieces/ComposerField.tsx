@@ -5,6 +5,7 @@ import { BORDER_WIDTH, colors, radii, spacing } from '../../design';
 import { canonical, searchComposers, type Composer } from '../../lib/composers';
 import { Input } from '../primitives/Input';
 import { Text } from '../primitives/Text';
+import { rowDivided } from '../rowMetrics';
 
 export interface ComposerFieldProps {
   value: string;
@@ -100,7 +101,7 @@ export function ComposerField({
             <Suggestion
               key={composer.name}
               composer={composer}
-              last={index === suggestions.length - 1}
+              divided={rowDivided(index)}
               onPress={() => {
                 onChangeText(composer.name);
                 setOpen(false);
@@ -116,11 +117,11 @@ export function ComposerField({
 function Suggestion({
   composer,
   onPress,
-  last,
+  divided,
 }: {
   composer: Composer;
   onPress: () => void;
-  last: boolean;
+  divided: boolean;
 }) {
   return (
     <Pressable
@@ -129,7 +130,7 @@ function Suggestion({
       accessibilityLabel={`${composer.name}, ${composer.dates}`}
       style={({ pressed }) => [
         styles.row,
-        !last && styles.ruled,
+        divided && styles.ruled,
         pressed && styles.pressed,
       ]}
     >
@@ -162,12 +163,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.md,
+    /*
+      **Denser than `ROW_PADDING_VERTICAL`, deliberately.** This list appears
+      under a field somebody is typing into, above a keyboard, and every point
+      of row height is a suggestion that does not fit on screen. A settings row
+      is read; these are scanned and dismissed in a second.
+    */
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.md,
   },
   ruled: {
-    borderBottomWidth: BORDER_WIDTH,
-    borderBottomColor: colors.border,
+    borderTopWidth: BORDER_WIDTH,
+    borderTopColor: colors.border,
   },
   pressed: {
     backgroundColor: colors.surfacePressed,

@@ -34,6 +34,7 @@ import { PieceInsightRow } from './PieceInsightRow';
 import { firstStep, focusReason, windowLabel } from './copy';
 import { useAddPieceOption } from '../../navigation/useAddPieceOption';
 import { loadStateFor } from '../../lib/loadState';
+import { rowDivided } from '../../components/rowMetrics';
 
 /**
  * Practice history that explains the pattern and makes it useful.
@@ -185,7 +186,6 @@ export function InsightsScreen() {
               onPress={() =>
                 navigation.navigate('Record', { pieceId: focus.pieceId })
               }
-              last
             />
           </View>
         </FadeIn>
@@ -256,7 +256,7 @@ export function InsightsScreen() {
                 onPress={() =>
                   navigation.navigate('Verdict', { analysisId: take.id })
                 }
-                last={index === takes.length - 1}
+                divided={rowDivided(index)}
               />
             ))}
             {history.length > 5 ? (
@@ -283,7 +283,7 @@ export function InsightsScreen() {
           <FadeIn key={piece.pieceId} index={index + 2}>
             <PieceInsightRow
               insight={piece}
-              last={index === insights.pieces.length - 1}
+              divided={rowDivided(index)}
               onPress={() =>
                 navigation.navigate('PieceDetail', { pieceId: piece.pieceId })
               }
