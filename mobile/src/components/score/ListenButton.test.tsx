@@ -26,11 +26,16 @@ vi.mock('react-native', () => ({
 // parse, and which fails as a collection error rather than a test failure.
 vi.mock('../icons', () => ({ Pause: 'pause', Play: 'play' }));
 vi.mock('../primitives/Text', () => ({ Text: 'text' }));
+// Every token the component reads at module scope, because `StyleSheet.create`
+// runs while this file imports it — a token missing here fails as a collection
+// error, not as a test failure, which reads as the whole suite being broken.
 vi.mock('../../design', () => ({
   BORDER_WIDTH: 1,
   ICON_SIZE: { sm: 16 },
   ICON_STROKE_WIDTH: 1,
+  MIN_TOUCH_TARGET: 44,
   colors: {},
+  disabledOpacity: 0.4,
   radii: {},
   spacing: {},
 }));

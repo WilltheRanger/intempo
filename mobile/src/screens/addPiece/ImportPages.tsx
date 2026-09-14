@@ -143,7 +143,49 @@ export function ImportPagesScreen({
   }
 
   return (
-    <ScreenContainer>
+    /*
+      **The actions are the footer, not the middle of the page.** This screen
+      holds three short paragraphs and does not scroll, so an inline button sat
+      at about a third of the way down — the furthest thing from a thumb in the
+      app, with the bottom two-thirds empty beneath it. §3 law 7 puts the
+      primary action where a thumb reaches, and `PieceDetailScreen` had already
+      made exactly this move for exactly this reason.
+
+      Both buttons go, not just the first: separating them would leave "Use the
+      camera instead" stranded mid-page as the only control up there, which is
+      the problem rather than half of the fix.
+    */
+    <ScreenContainer
+      footer={
+        <>
+          <PrimaryButton
+            label="Choose images"
+            icon={Images}
+            onPress={() => void pick()}
+            loading={busy}
+            disabled={busy}
+          />
+
+          {/*
+            **Not offered on a desktop.** A laptop webcam cannot resolve the gap
+            between staff lines — measured on a real page, 25 px at full
+            resolution against 4 px at 1280x960, where the server's floor is 8 —
+            so the button led to a refusal every time. The refusal's own advice
+            was "with a phone rather than a webcam", pointing away from a button
+            this screen had just shown. A phone *browser* keeps it: its rear
+            camera is the best camera in this product. See
+            `cameraCanPhotographAPage`.
+          */}
+          {hasUsableCamera ? (
+            <SecondaryButton
+              label="Use the camera instead"
+              onPress={() => navigation.replace('Scanner')}
+              style={styles.secondary}
+            />
+          ) : null}
+        </>
+      }
+    >
       <PageHeader
         title="Import score"
         onBack={goBack}
@@ -155,42 +197,20 @@ export function ImportPagesScreen({
         several at once, and reorder them before saving.
       </Text>
 
+      {/*
+        Kept with the copy rather than pushed down with the buttons: it is what
+        the lede does not have room to say, and a footer is for controls.
+      */}
+      <Text variant="metadataSmall" color="textTertiary" style={styles.caveat}>
+        Choose up to {MAX_SCAN_PAGES} pages. InTempo keeps their order and reads
+        all of them.
+      </Text>
+
       {error ? (
         <Text variant="metadataSmall" color="textSecondary" style={styles.error}>
           {error}
         </Text>
       ) : null}
-
-      <PrimaryButton
-        label="Choose images"
-        icon={Images}
-        onPress={() => void pick()}
-        loading={busy}
-        disabled={busy}
-        style={styles.action}
-      />
-
-      {/*
-        **Not offered on a desktop.** A laptop webcam cannot resolve the gap
-        between staff lines — measured on a real page, 25 px at full resolution
-        against 4 px at 1280x960, where the server's floor is 8 — so the button
-        led to a refusal every time. The refusal's own advice was "with a phone
-        rather than a webcam", pointing away from a button this screen had just
-        shown. A phone *browser* keeps it: its rear camera is the best camera in
-        this product. See `cameraCanPhotographAPage`.
-      */}
-      {hasUsableCamera ? (
-        <SecondaryButton
-          label="Use the camera instead"
-          onPress={() => navigation.replace('Scanner')}
-          style={styles.secondary}
-        />
-      ) : null}
-
-      <Text variant="metadataSmall" color="textTertiary" style={styles.caveat}>
-        Choose up to {MAX_SCAN_PAGES} pages. InTempo keeps their order and reads
-        all of them.
-      </Text>
     </ScreenContainer>
   );
 }
@@ -202,13 +222,12 @@ const styles = StyleSheet.create({
   error: {
     marginTop: spacing.lg,
   },
-  action: {
-    marginTop: spacing['2xl'],
-  },
+  // The gap between the two footer buttons. `action`'s old `2xl` top margin
+  // went with the move: the footer sets its own distance from the content.
   secondary: {
     marginTop: spacing.md,
   },
   caveat: {
-    marginTop: spacing.xl,
+    marginTop: spacing.lg,
   },
 });

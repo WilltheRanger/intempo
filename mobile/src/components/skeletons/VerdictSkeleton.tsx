@@ -2,6 +2,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { BORDER_WIDTH, colors, radii, spacing } from '../../design';
 import { FadeIn } from '../motion';
+import { rowDivided } from '../rowMetrics';
 import { Skeleton } from '../primitives/Skeleton';
 
 /** Matches `MeasureRow`'s columns so the list doesn't reflow on arrival. */
@@ -38,25 +39,23 @@ export function VerdictSkeleton() {
 
       <FadeIn index={1} style={styles.section}>
         <Skeleton height={13} width={96} style={styles.heading} />
-        <View style={styles.card}>
-          <View style={styles.chartRow}>
-            <View style={styles.chartGutter}>
-              <Skeleton height={12} width={34} />
-              <Skeleton height={12} width={34} />
-              <Skeleton height={12} width={34} />
-            </View>
-            <Skeleton height={CHART_HEIGHT} style={styles.chart} />
+        <View style={styles.chartRow}>
+          <View style={styles.chartGutter}>
+            <Skeleton height={12} width={34} />
+            <Skeleton height={12} width={34} />
+            <Skeleton height={12} width={34} />
           </View>
+          <Skeleton height={CHART_HEIGHT} style={styles.chart} />
         </View>
       </FadeIn>
 
       <FadeIn index={2} style={styles.section}>
         <Skeleton height={13} width={128} style={styles.heading} />
-        <View style={styles.rowsCard}>
+        <View>
           {Array.from({ length: 12 }, (_, index) => (
             <View
               key={index}
-              style={[styles.row, index > 0 && styles.rowDivided]}
+              style={[styles.row, rowDivided(index) && styles.rowDivided]}
             >
               <Skeleton width={NUMBER_COLUMN} height={14} />
               <Skeleton height={4} radius={radii.pill} style={styles.bar} />
@@ -76,13 +75,6 @@ const styles = StyleSheet.create({
   heading: {
     marginBottom: spacing.md,
   },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radii.md,
-    borderWidth: BORDER_WIDTH,
-    borderColor: colors.border,
-    padding: spacing.lg,
-  },
   chartRow: {
     flexDirection: 'row',
     alignItems: 'stretch',
@@ -94,13 +86,6 @@ const styles = StyleSheet.create({
   },
   chart: {
     flex: 1,
-  },
-  rowsCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radii.md,
-    borderWidth: BORDER_WIDTH,
-    borderColor: colors.border,
-    overflow: 'hidden',
   },
   row: {
     flexDirection: 'row',

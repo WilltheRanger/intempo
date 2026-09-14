@@ -1,13 +1,16 @@
 import { StyleSheet, View } from 'react-native';
 
 import {
-  Card,
   PageHeader,
   PrimaryButton,
   ScreenContainer,
   Text,
 } from '../../components/primitives';
-import { colors, spacing } from '../../design';
+import { ROW_PADDING_VERTICAL, rowDivided } from '../../components/rowMetrics';
+import { BORDER_WIDTH, colors, spacing } from '../../design';
+
+/** The numeral's circle. Named because the row's rule no longer clears it. */
+const NUMBER_SIZE = 32;
 
 interface PracticeSetupProps {
   title: string;
@@ -67,25 +70,28 @@ export function PracticeSetup({
         Three details make the timing feedback much more reliable.
       </Text>
 
-      <Card emphasis style={styles.card}>
-        <SetupStep
-          number="1"
-          title="Give the microphone a clear listen"
-          body="Place your device nearby with its microphone uncovered. Keep it away from the music stand and anything that rattles."
-        />
-        <View style={styles.divider} />
-        <SetupStep
-          number="2"
-          title="Keep speaker sound out of the take"
-          body="The count-in always ticks out loud, and those seconds are thrown away before anything is sent. After it, use headphones if you want the metronome audible — the microphone would hear the room."
-        />
-        <View style={styles.divider} />
-        <SetupStep
-          number="3"
-          title="Enter on the next downbeat"
-          body="Start counts you in for one full bar, out loud and in your hand. During a long written rest, the screen counts down to the exact measure where you return."
-        />
-      </Card>
+      {/*
+        **Three steps on the page, not in a box.** §3 law 3 — the background is
+        a compositional surface and a card around a plain list is the case that
+        law names. The numerals stay: unlike most numbering, these are a real
+        sequence, and they are what tells you there are exactly three things to
+        read before you start.
+
+        Rules are now the app's own convention (`rowMetrics`), top-ruled and
+        running the full width from the gutter, in place of three hand-built
+        `<View>` dividers inset to clear the numeral.
+      */}
+      <View style={styles.steps}>
+        {SETUP_STEPS.map((step, index) => (
+          <SetupStep
+            key={step.number}
+            number={step.number}
+            title={step.title}
+            body={step.body}
+            divided={rowDivided(index)}
+          />
+        ))}
+      </View>
 
       <Text variant="metadataSmall" color="textTertiary" style={styles.permission}>
         Your device will ask for microphone access when you press Start. InTempo
@@ -95,17 +101,44 @@ export function PracticeSetup({
   );
 }
 
+/**
+ * The three things to get right before a first take, in order.
+ *
+ * Hoisted out of the JSX so the list can be mapped — which is what lets
+ * `rowDivided(index)` decide the rules instead of hand-placed dividers between
+ * hand-written siblings.
+ */
+const SETUP_STEPS = [
+  {
+    number: '1',
+    title: 'Give the microphone a clear listen',
+    body: 'Place your device nearby with its microphone uncovered. Keep it away from the music stand and anything that rattles.',
+  },
+  {
+    number: '2',
+    title: 'Keep speaker sound out of the take',
+    body: 'The count-in always ticks out loud, and those seconds are thrown away before anything is sent. After it, use headphones if you want the metronome audible — the microphone would hear the room.',
+  },
+  {
+    number: '3',
+    title: 'Enter on the next downbeat',
+    body: 'Start counts you in for one full bar, out loud and in your hand. During a long written rest, the screen counts down to the exact measure where you return.',
+  },
+] as const;
+
 function SetupStep({
   number,
   title,
   body,
+  divided,
 }: {
   number: string;
   title: string;
   body: string;
+  divided: boolean;
 }) {
   return (
-    <View style={styles.step}>
+    <View style={[styles.step, divided && styles.ruled]}>
       <View style={styles.number} accessibilityElementsHidden>
         <Text variant="sectionLabel">{number}</Text>
       </View>
@@ -123,33 +156,39 @@ const styles = StyleSheet.create({
   lede: {
     marginTop: spacing.sm,
   },
-  card: {
+  steps: {
     marginTop: spacing['2xl'],
   },
   step: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: spacing.md,
+    paddingVertical: ROW_PADDING_VERTICAL,
+  },
+  ruled: {
+    borderTopWidth: BORDER_WIDTH,
+    borderTopColor: colors.border,
   },
   number: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: NUMBER_SIZE,
+    height: NUMBER_SIZE,
+    borderRadius: NUMBER_SIZE / 2,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.bg,
+    /*
+      **`surface`, not `bg`, and the card leaving is why.** This was `bg` —
+      cream — which read only because the card behind it was white. On the page
+      ground, cream on cream is an invisible circle with a numeral floating in
+      it, and the same inversion holds in the dark palette (#14110E on #221E19).
+      The fill and the container moved together or neither worked.
+    */
+    backgroundColor: colors.surface,
   },
   stepCopy: {
     flex: 1,
   },
   stepBody: {
     marginTop: spacing.xs,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: colors.border,
-    marginVertical: spacing.lg,
-    marginLeft: 32 + spacing.md,
   },
   permission: {
     marginTop: spacing.lg,
