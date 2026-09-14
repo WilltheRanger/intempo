@@ -1,5 +1,104 @@
 # InTempo Decisions
 
+## 2026-09-14 — An alignment measures the passage that was played, not the page it was played from
+
+**Context.** Every take InTempo had ever analysed was refused. All eight rows in
+`analyses` — 2026-09-12 to 2026-09-14 — finished `done` with
+`result_json.status = alignment_failed`, `quality` **exactly 0.000**, and the
+same sentence: *"We had trouble matching your recording to the score — check
+you're on the right piece and re-record."* They were the right piece. They were a
+musician recording 2 to 56 seconds of a part that runs 74 to 82.
+
+Two independent mechanisms refused them, and a take had to survive both.
+
+**`librosa.sequence.dtw` anchors its warping path corner to corner.** `subseq`
+was left at its default `False`, so detection 0 was forced onto the first written
+note and the last detection onto the *last* one. Four bars of a fifty-seven-bar
+part were therefore stretched across the whole page and every residual was
+enormous. Measured on a real 25-bar part: a take of the page's first half scored
+**0.000**; the same take with the anchoring released scored 0.487.
+
+**`coverage` divided by every note on the page.** `quality` is
+`timing_quality * coverage`, so `coverage <= n_detected / n_expected` is a
+ceiling that applies before a single note is compared. Five of the eight takes
+had a ceiling under `broken_quality` (0.4) on the onset counts alone — 0.081,
+0.149, 0.307, 0.387, 0.387. **No performance of those recordings could have
+passed**, however well it was played. `TUNING_LOG.md` had already recorded this
+shape for `04_slurred` and called it "a design question rather than a threshold".
+
+**Decision.** Both, in `align_dtw`:
+
+1. Match a **subsequence** of the page when the take provably cannot be the whole
+   of it — `take_span * MAX_TEMPO_RATIO < page_span`, i.e. the take does not
+   reach the end of the page even read at the fastest tempo the matcher will
+   believe.
+2. Measure **coverage over the passage the match lands in**, first matched note
+   to last, under that same condition.
+
+**Why spans rather than onset counts.** The first attempt triggered on
+`detected.size < expected.size`. A page of eight notes with two printed
+ornaments expects ten onsets, and a musician who plays it perfectly and straight
+produces eight — fewer detections than written notes, and a *complete*
+performance. Released from its anchors that take drifted and was refused.
+`test_ornaments_the_musician_did_not_play_are_not_missed_notes` caught it. Spans
+are also what a missed attack does not change: losing notes in the middle leaves
+the first and last where they were.
+
+**Why coverage is scoped to the same condition.** Applied unconditionally it
+taught `align_take`'s trim search to eat notes. That search competes trim
+candidates on quality, and a denominator that shrinks with the span is one a trim
+can never lose by — cutting a real note off either end removes it from numerator
+and denominator together, so coverage holds while the take gets shorter. The
+ornament test reported one missed note against a complete performance, which is
+how it was found.
+
+**Trade-offs accepted.**
+
+- **A take is now scored on what it contains.** Someone who plays two bars and
+  stops is told those two bars were on tempo, rather than that they should check
+  the piece. That is the truthful answer, but it is a different product promise
+  from "we grade your performance of this page", and it is the one worth making:
+  practice is passages.
+- **Subsequence matching is strictly more freedom than the banded path**, so it
+  is taken only where the banded path is provably wrong. Over-detection — a bow
+  producing more attacks than the page writes — keeps the banded path and is
+  still refused. It is a different fault and it is not fixed here.
+- **The `MIN_ONSETS_TO_ESTIMATE_TEMPO` floor (7) guards the span.** Below it a
+  handful of stray detections could nominate any two notes as the ends and score
+  themselves against those two, so the page stays the denominator.
+- **A fragment of a metrically uniform page cannot be located, and is now
+  reported as though it were.** This is the real cost and it is worth stating
+  plainly. Given forty evenly spaced written notes and a take of the last
+  fourteen, the matcher places them at notes 0–13 and scores 1.000 — because on
+  a uniform page any contiguous run of fourteen fits any other equally well, and
+  `align_dtw` is deliberately offset-invariant so that a lead-in cannot sink a
+  take. The **timing** verdict is right either way; the **bar numbers** may name
+  bars the musician did not play. `test_pulse_anchor.py` had this case in its
+  must-be-refused list and it is how the hazard was found.
+
+  What makes it acceptable rather than merely accepted: the worker trims the
+  score to `from_measure` before the take is compared
+  (`analysis_runner.py`), and `from_measure` was set on seven of the eight real
+  takes. So in production a take starts where the page starts and a fragment is
+  a **prefix**, which is the one span there is no ambiguity about. Ties go to
+  the earliest position, which is the same assumption. A musician who sets bar 7
+  and then plays bar 40 is still mis-reported, and pitch is what would settle
+  it — the pipeline does not use pitch, and that is a larger change than this.
+
+**Alternatives considered.**
+
+- *Move `broken_quality` down from 0.4.* Rejected: it treats a ceiling as a
+  threshold. Five takes had a coverage ceiling of 0.387 or less, so the cutoff
+  would have had to go below 0.08 to admit them — which would admit everything
+  else too, including the genuinely unmatched takes the cutoff exists for.
+- *Make the app send the last bar played as well as the first.* A real
+  improvement and not a substitute: `from_measure` already exists and was set to
+  7 on seven of the eight takes, and they still failed. The pipeline should not
+  need to be told where a musician stopped in order to measure where they were.
+- *Default `skip_long_rests` on.* It was `false` on all eight, and the parts
+  carry 11-bar rests. Worth revisiting, but it repairs one cause of a long page
+  rather than the general case of a short take.
+
 ## 2026-09-14 — Rows rule their top edge, and the rule lives in a tested module
 
 **Context.** A survey of `mobile/src` found **seventeen row implementations carrying

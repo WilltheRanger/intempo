@@ -12,6 +12,7 @@ Flow (spec §4 pseudocode):
 
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -41,6 +42,8 @@ from app.services.classification import (
     rolling_trend,
 )
 from app.services.score_schema import ScoreJson, tempo_change_spans
+
+log = logging.getLogger("intempo.analysis")
 
 Status = Literal["ok", "alignment_failed", "no_onsets"]
 
@@ -287,10 +290,39 @@ def _why_alignment_failed(
             "transcription."
         )
 
+    # Far fewer attacks than the page writes. A take that is simply *short* no
+    # longer arrives here — `align_dtw` matches a passage against the passage
+    # it covers — so what is left is a take that spanned the page and was half
+    # heard. Nothing in that says the musician was on the wrong piece, and the
+    # two things that do explain it are both worth naming: a microphone that
+    # could not hear the attacks, and a transcription that does not match what
+    # is on the stand.
+    if raw.coverage < _SPARSE_COVERAGE and raw.n_detected < raw.n_expected:
+        return (
+            f"We only picked out {raw.n_detected} notes where this page writes "
+            f"{raw.n_expected}, so there wasn't enough to compare. Move the "
+            "microphone closer and check the piece was read correctly, then "
+            "record again."
+        )
+
+    # **Everything the page writes was heard, and none of it where the page
+    # puts it.** That really is the wrong-piece signature, and the advice is
+    # earned here in a way it was not above: the counts agree, so quoting them
+    # would tell the musician nothing, and what is left is that these notes are
+    # not this music.
     return (
-        "We had trouble matching your recording to the score — "
-        "check you're on the right piece and re-record."
+        "We heard about as many notes as this page writes, but not at the "
+        "times it writes them — check you're on the right piece, and that the "
+        "tempo you set is the one you played."
     )
+
+
+#: Below this share of the page's notes, there is not enough of a take to
+#: compare and the reason is worth naming rather than guessing at. Set at the
+#: refusal threshold's own neighbourhood: `broken_quality` is 0.4 and quality is
+#: `timing_quality * coverage`, so a take under this could not have passed on
+#: coverage alone however well it was played.
+_SPARSE_COVERAGE = 0.5
 
 
 #: How much longer a take has to run than its page before the page is the suspect.
@@ -514,6 +546,30 @@ def analyze(
     onsets = anchored.onsets
     raw = anchored.alignment
     if is_alignment_broken(raw.quality, config=cfg):
+        # **The one line that says which half refused the take.**
+        #
+        # `quality` is `timing_quality * coverage`, and a refusal reported only
+        # the product — so "the shape disagrees with the page" and "we heard a
+        # third of the notes" arrived as the same number, and the same sentence.
+        # The first eight takes this app analysed all read `quality 0.000`, and
+        # separating the two required re-running the pipeline by hand against a
+        # copy of the row.
+        #
+        # The spans matter as much as the counts: a take far shorter than the
+        # page is a musician practising a passage, which is a different fault
+        # from one that ran the length of the page and was half heard.
+        log.warning(
+            "analysis: refused, quality=%.3f (timing=%.3f coverage=%.3f) "
+            "onsets=%d/%d take_span=%.1fs page_span=%.1fs subsequence=%s",
+            raw.quality,
+            raw.timing_quality,
+            raw.coverage,
+            onsets.size,
+            expected.size,
+            float(onsets[-1] - onsets[0]) if onsets.size >= 2 else 0.0,
+            float(expected[-1] - expected[0]) if expected.size >= 2 else 0.0,
+            raw.subsequence,
+        )
         return AnalysisResult(
             status="alignment_failed",
             quality=round(raw.quality, 3),

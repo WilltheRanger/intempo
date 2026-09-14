@@ -6,6 +6,73 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-09-14 — Every take the app had ever analysed was refused, and no threshold was wrong
+
+**No value changed.** Nothing in `config.toml` moved. What changed is what
+`align_dtw` compares a take against, and the reason is that the thresholds were
+never the problem — they had simply never been asked a question they could
+answer.
+
+**The readings.** All eight rows in `analyses` on the live project, 2026-09-12 to
+2026-09-14, finished `done` with `result_json.status = alignment_failed` and
+`quality` **exactly 0.000**:
+
+| analysis | detected | expected | coverage ceiling | quality |
+|---|---|---|---|---|
+| `a967f5ee` | 6 | 74 | 0.081 | 0.000 |
+| `d578857b` | 11 | 74 | 0.149 | 0.000 |
+| `3bc2e100` | 23 | 76 | 0.307 | 0.000 |
+| `2aac1ba8` | 29 | 76 | 0.387 | 0.000 |
+| `b83e75e4` | 29 | 76 | 0.387 | 0.000 |
+| `44975f56` | 34 | 76 | 0.453 | 0.000 |
+| `5d6011ba` | 39 | 76 | 0.520 | 0.000 |
+| `8c4e2c8a` | 52 | 75 | 0.693 | 0.000 |
+
+`quality` is `timing_quality * coverage` and `coverage <= n_detected /
+n_expected`, so the fourth column is a ceiling that applies before a note is
+compared. **Five of the eight sat under `broken_quality` (0.4) on the onset
+counts alone** — no performance of those recordings could have passed, and
+lowering the cutoff to admit them would have had to reach below 0.08.
+
+**Why no threshold could have been read off these.** The takes ran 2 to 56
+seconds against pages spanning 74 to 82. `librosa.sequence.dtw` was called with
+`subseq` at its default `False`, which anchors the path corner to corner, so each
+take was stretched across the whole page. A tuning pass against these readings
+would have been measuring the stretch.
+
+**Measured, on a reconstruction of the real 25-bar part** (`Elijiah`, the score
+pulled from the live DB, rendered as a click track at its own `target_bpm` of 80,
+so the grid matches what was played):
+
+| take | before | after |
+|---|---|---|
+| the whole page, perfectly in time | 0.984 `ok` | 0.984 `ok` |
+| the whole page, ±40 ms human jitter | 0.914 `ok` | 0.914 `ok` |
+| the page's first 75% | 0.725 `ok` | 0.725 `ok` |
+| the page's first 50% | **0.000 `alignment_failed`** | **0.487 `ok`** |
+| the page's first 25% | **0.000 `alignment_failed`** | **0.984 `ok`** |
+| the middle 40% | **0.000 `alignment_failed`** | **0.985 `ok`** |
+
+**What is still refused, and is a separate fault.** Over-detection — more attacks
+heard than the page writes — is untouched, because a subsequence match is not
+defined when the query is the longer sequence. Rendered with a 120 ms bowed
+attack the detector reports 114 onsets for 95 notes and the take still scores
+0.000; at 60 ms, 0.239. That is the next thing to measure and it wants real
+audio, not a synthesised attack envelope.
+
+**On the regression this entry does not claim.** CLAUDE.md asks for a clip-by-clip
+run across all six fixtures. `fixtures/audio/README.md` says in its first
+paragraph that **none of the six were ever recorded**; `make_synthetic.py` stands
+in for them and its own header says a synthesised click "cannot tell you whether
+a threshold is right". The six are exercised by `test_corpus_regression.py` and
+pass, and that is worth exactly what it is worth. The readings above are from
+click tracks too. **The pipeline has still never been run against a real
+instrument in a test**, which is the condition this failure was hiding in.
+
+The four real takes are also unavailable for one: `keep_playback_copy`
+re-encodes to Opus and deletes the WAV after a successful run, and
+`storage.objects` now holds only `.opus` for all eight.
+
 ## 2026-09-08 — The tuning dashboard was detecting twice the onsets the pipeline does
 
 **No value changed.** `analyze()` is untouched; every threshold in
