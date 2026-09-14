@@ -696,6 +696,37 @@ nothing else covers `backend/`. Named here rather than left to be found.
 
 ## The recording path (2026-09-02) — level is not the signal you think it is
 
+- **A synthetic instrument can give you the exact opposite answer, confidently
+  (2026-09-14).** Chasing "the detector over-fires on bowed attacks", a bowed
+  note was modelled as a squared ramp on a pure sine. Against it, raising
+  `[onset] delta` from 0.07 to 0.12 was a clear win: struck takes untouched, a
+  120 ms attack going 0.000 → 0.789, the dynamics sweep survived, the six
+  corpus clips byte-identical.
+
+  The repository already had `audio_helpers.synth_bowed_note` — a Helmholtz
+  sawtooth under a raised-cosine rise, in a room with a mode and a mic floor,
+  written for exactly this. Against *that*, the same change reads 0.984 → 0.393
+  on a bowed violin and loses 15 notes of 95. A pure sine has one partial and
+  almost no flux at onset; a bowed string has a harmonic series and plenty. The
+  threshold was reverted before it left the working tree.
+
+  Two things to carry: **look for the model before building one** — the same
+  lesson as the Postgres and the Supabase MCP in `CLAUDE.md` §1 — and treat a
+  corpus of click tracks as unable to veto a detection change rather than as
+  agreement. `delta` does not reach a click track at all, so six green clips
+  meant nothing.
+
+- **"Over-detection" was the wrong name for it (2026-09-14).** On a 95-note
+  page at a 120 ms bass rise no note fires twice: the closest two detections
+  sit 279 ms apart against a closest written gap of 375 ms, because
+  `pre_max`/`post_max` are derived per take from that gap and already exclude a
+  re-trigger. What actually happens is that **every onset lands late by an
+  amount that moves** — +61 ms after a long note, +123 ms inside a run of
+  eighths. A constant lag is free, since `_residuals` fits offset and rate
+  before quality is measured; only the variation survives, and it is what costs
+  the take. `test_bowed_attacks.py` pins it.
+
+
 - **A take is compared against the whole page, and for a long time that meant a
   practice take could not pass (2026-09-14).** The first eight analyses this app
   ever ran were all refused with "check you're on the right piece", all at

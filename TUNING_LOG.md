@@ -6,6 +6,91 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-09-14 — Bowed attacks measured, and a threshold change written and thrown away
+
+**No value changed**, and the first draft of this entry changed one. Recorded
+in full because the wrong answer was *convincing*, and the thing that caught it
+is the reason this file's own README says a synthesised clip cannot settle a
+threshold.
+
+### The wrong answer
+
+A bowed attack was modelled as a squared ramp on a **pure sine**, and against
+that model raising `[onset] delta` from 0.07 to 0.12 looked excellent — every
+struck take bit-identical, and a 120 ms attack going 0.000 → 0.789. It survived
+a dynamics sweep (0.20 went deaf, 76 detections for 95 notes; 0.12 did not) and
+the six corpus clips were byte-identical at both values, because they are click
+tracks and `delta` does not reach them.
+
+The repository already had a far better model — `audio_helpers.synth_bowed_note`,
+a Helmholtz sawtooth under a raised-cosine rise, in a room with one mode and a
+mic floor, written precisely to test low-register detection. Re-run against it,
+the answer **inverts**:
+
+| take (repo bowed model) | delta 0.07 | delta 0.12 | delta 0.20 |
+|---|---|---|---|
+| violin, 35 ms rise | **0.984 / 95** | 0.919 / 93 | 0.286 / 78 |
+| violin, 80 ms rise | **0.984 / 95** | 0.393 / 81 | 0.380 / 78 |
+| violin, 120 ms rise | **0.872 / 97** | 0.233 / 80 | 0.370 / 78 |
+
+A pure sine carries one partial and almost no flux at onset; a bowed string
+carries a full harmonic series and plenty. The detector was never the problem
+for bowed **violin** — 0.07 reads it correctly — and the "fix" would have cost
+15 of 95 notes on a real one. Reverted before it left the working tree.
+
+### What is actually true, on the good model
+
+`double_bass`, five attack times, `double_bass_delta` on the left as it ships:
+
+| rise | δ 0.05 (ships) | δ 0.08 | δ 0.12 | δ 0.18 |
+|---|---|---|---|---|
+| 35 ms *(the model's own default)* | **0.976 / 95** | 0.932 / 94 | 0.524 / 73 | 0.524 / 73 |
+| 60 ms | 0.806 / 97 | **0.926 / 94** | 0.000 / 78 | 0.603 / 73 |
+| 90 ms | 0.641 / 101 | **0.895 / 94** | 0.538 / 76 | 0.755 / 73 |
+| 120 ms | **0.000 / 104** | 0.658 / 91 | 0.603 / 73 | 0.603 / 73 |
+| 160 ms | 0.230 / 104 | 0.578 / 93 | 0.602 / 73 | 0.602 / 73 |
+
+δ 0.08 wins four rows of five and turns a refusal into a reading at 120 ms.
+**It was still not taken.** The one row it loses is the rise the model's author
+chose as typical, and `[onset.double_bass]` already documents the opposite
+reasoning — "slow attack envelopes, broad onset peaks… *lower* delta" — for
+catching soft attacks. Moving a threshold against a documented decision, on
+evidence from a synthesiser, in the direction that makes a detector deafer, is
+the move this project has twice written down as wrong. It wants one real bass
+recording, which is what `fixtures/audio/README.md` has been asking for since
+Batch 3.
+
+### The mechanism, which is not what "over-detection" suggests
+
+Measured on a 95-note page at a 120 ms bass rise:
+
+- **No note is double-triggered.** The closest two detections sit **279 ms**
+  apart against a closest written gap of 375 ms. `pre_max`/`post_max`, derived
+  per take from that gap, already exclude a re-trigger. The extra 9 detections
+  over 95 notes come from elsewhere in the take, not from notes firing twice.
+- **Every onset lands late, and the lateness moves**: +61 ms after a long note,
+  +123 ms inside a run of eighths. A *constant* lag is free — `_residuals` fits
+  offset and rate before quality is measured — so it is the variation that
+  survives and costs the take.
+
+`test_bowed_attacks.py` pins all three findings.
+
+### One knob found inert
+
+`[onset] wait_ms` is passed to librosa as `wait` and changes nothing: swept
+60 → 100 → 150 → 200 ms across five attack times, every reading
+byte-identical. Peak-picking already requires each onset to be the maximum over
+±`peak_window_frames` (16 frames, 372 ms, on a page of eighths at 80 BPM)
+against this value's 3. Documented in `config.toml` beside `post_max`, which
+was found the same way.
+
+### What this entry cannot claim
+
+Every number above comes from a synthesiser. The six corpus clips are click
+tracks and were byte-identical before and after everything tried here, so they
+vetoed nothing and validated nothing. **The pipeline has still never been run
+against a real instrument.**
+
 ## 2026-09-14 — Every take the app had ever analysed was refused, and no threshold was wrong
 
 **No value changed.** Nothing in `config.toml` moved. What changed is what
