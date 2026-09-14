@@ -9,7 +9,9 @@ import {
   BORDER_WIDTH,
   ICON_SIZE,
   ICON_STROKE_WIDTH,
+  MIN_TOUCH_TARGET,
   colors,
+  disabledOpacity,
   radii,
   spacing,
 } from '../../design';
@@ -232,8 +234,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.sm,
-    // A 44pt row: this is a real target, not a caption.
-    minHeight: 44,
+    /*
+      **A real target, not a caption** — and deliberately not `SecondaryButton`,
+      which a design review once proposed swapping this for. That control is
+      `CONTROL_HEIGHT` (52), pill-radius, glass-filled, and sets its label in
+      `button`. This one is quieter on purpose, and it has to host the progress
+      track below *inside* its own border, which needs a clipped rectangle
+      rather than a glass pill. Two controls that look adjacent are not one
+      control.
+    */
+    minHeight: MIN_TOUCH_TARGET,
     paddingHorizontal: spacing.lg,
     borderRadius: radii.md,
     borderWidth: BORDER_WIDTH,
@@ -244,7 +254,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfacePressed,
   },
   disabled: {
-    opacity: 0.4,
+    opacity: disabledOpacity,
   },
   track: {
     position: 'absolute',

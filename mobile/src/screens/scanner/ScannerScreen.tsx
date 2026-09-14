@@ -397,7 +397,7 @@ export function ScannerScreen() {
           onPress={handleClose}
           accessibilityRole="button"
           accessibilityLabel="Close scanner"
-          style={styles.iconButton}
+          style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
         >
           <X
             size={ICON_SIZE.lg}
@@ -427,7 +427,7 @@ export function ScannerScreen() {
             accessibilityLabel={flashOn ? 'Turn flash off' : 'Turn flash on'}
             accessibilityState={{ selected: flashOn }}
             aria-pressed={flashOn}
-            style={styles.iconButton}
+            style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
           >
             <FlashIcon
               size={ICON_SIZE.lg}
@@ -532,7 +532,7 @@ export function ScannerScreen() {
               onPress={handleDone}
               accessibilityRole="button"
               accessibilityLabel={`Review ${pageCountLabel(pages.length)}`}
-              style={styles.lastCapture}
+              style={({ pressed }) => [styles.lastCapture, pressed && styles.pressed]}
             >
               <ScoreThumbnail
                 source={lastPage.source}
@@ -544,7 +544,7 @@ export function ScannerScreen() {
               onPress={() => navigation.navigate('AddPiece', { option: 'import' })}
               accessibilityRole="button"
               accessibilityLabel="Import images instead"
-              style={styles.iconButton}
+              style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
             >
               <Images
                 size={ICON_SIZE.lg}
@@ -569,7 +569,7 @@ export function ScannerScreen() {
           accessibilityState={{ disabled: !canCapture || busy }}
           style={({ pressed }) => [
             styles.captureRing,
-            pressed && styles.capturePressed,
+            pressed && styles.pressed,
             (!canCapture || busy) && styles.captureDisabled,
           ]}
         >
@@ -583,7 +583,7 @@ export function ScannerScreen() {
             accessibilityRole="button"
             accessibilityLabel="Done capturing"
             accessibilityState={{ disabled: pages.length === 0 }}
-            style={styles.doneButton}
+            style={({ pressed }) => [styles.doneButton, pressed && styles.pressed]}
           >
             <Text
               variant="button"
@@ -727,7 +727,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  capturePressed: {
+  /**
+   * Every control on this screen answers a press the same way.
+   *
+   * **An opacity dip rather than a tint, because there is no surface to
+   * tint** — these sit on a live viewfinder, and `colors.surfacePressed` is a
+   * light-ground token that would be invisible over a photograph. 0.7 is what
+   * the shutter already used; the other five had no feedback at all until
+   * 2026-09-14, including **Done**, which ends the whole scan.
+   */
+  pressed: {
     opacity: 0.7,
   },
   captureCore: {
