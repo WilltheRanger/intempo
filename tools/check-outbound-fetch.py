@@ -22,14 +22,23 @@ try to prove a fetch is safe — a static check cannot. It fails when the set of
 places this service reaches the network **changes**, so that adding a third one
 is a decision somebody makes on purpose rather than by copying the wrong twin.
 
-Two ways to fail it, and both are the point:
+Three ways to fail it, and all three are the point:
 
 - **A fetch site appeared that is not listed below.** Add it, and while you are
   writing the entry, answer the question the entry asks: can a caller influence
   the URL? If yes, `expected_origin` is not optional.
-- **A site listed as caller-influenced stopped passing `expected_origin`.**
+- **A site listed as caller-influenced stopped mentioning `expected_origin`.**
   That is the protection being removed, which is how it was missing in the first
   place.
+- **A caller of one of those sites passes no `expected_origin`.** Added after
+  the second bullet turned out to be a claim this file did not keep: it said
+  "stopped passing" and only checked *mentioning*, which a fetch function
+  always does — the parameter is in its own signature. `download_image`
+  mentioned it, defaulted it to None, and no caller in the application handed
+  it one, so the final-origin check it grew after a review had never run in
+  production while this file reported it `ok`. A deliberate omission goes in
+  `PASSES_NO_ORIGIN` with the reason, so it is written down rather than
+  implied.
 """
 
 from __future__ import annotations
@@ -80,9 +89,35 @@ KNOWN: dict[tuple[str, str], dict] = {
 }
 
 #: `expected_origin` is the parameter that carries the answer. A site marked
-#: caller-influenced has to mention it; that is a weak check on purpose, since
-#: proving it is *used* correctly is what the tests are for.
+#: caller-influenced has to mention it, **and every caller has to pass it** —
+#: see `PASSES_NO_ORIGIN` for why the second half had to be added.
 ORIGIN_PARAM = "expected_origin"
+
+
+#: Call sites that hand a caller-influenced fetch no origin, and the reason.
+#:
+#: **This exists because the docstring above promised a check that was not
+#: here.** Its second failure mode reads "a site listed as caller-influenced
+#: stopped *passing* `expected_origin`" — and the code only asked whether the
+#: fetch function *mentions* the parameter, which it always does, because it is
+#: in its own signature. `download_image` mentioned it, defaulted it to None,
+#: and **no caller in the application passed one**, so the final-origin check it
+#: grew after a review had never executed in production. This file reported
+#: "all origin-checked" throughout.
+#:
+#: So the call sites are checked now, and the one deliberate omission is written
+#: down rather than left to a docstring. An entry here is a claim that a
+#: stranger cannot steer that particular URL — not that the fetch is harmless.
+PASSES_NO_ORIGIN: dict[tuple[str, str], str] = {
+    ("workers/analysis_runner.py", "download_audio"): (
+        "The analysis worker signs its own URL from a stored object key, and "
+        "`readable_audio_url` falls back to the reference already on the row "
+        "for historical takes. Pinning an origin here would refuse exactly the "
+        "rows that fallback exists to keep working through a rolling deploy. "
+        "`POST /v1/calibration`, which takes a URL from a request body, is the "
+        "caller that must pass one — and does."
+    ),
+}
 
 
 def _dotted(node: ast.AST) -> str | None:
@@ -160,6 +195,47 @@ def main() -> int:
                     f"`{ORIGIN_PARAM}`. Validating the URL does not bound where "
                     f"a redirect ends up; that is the 2026-09-09 SSRF."
                 )
+
+    # **Every caller of a caller-influenced fetch, not just the fetch itself.**
+    # The loop above asks whether the function mentions `expected_origin`, which
+    # it always does — it is its own parameter. What was never asked is whether
+    # anybody hands it one, and that is where the protection actually lives.
+    guarded = {name for (_, name), entry in KNOWN.items() if entry["caller_influenced"]}
+    for path in sorted(BACKEND.rglob("*.py")):
+        if "/tests/" in path.as_posix():
+            continue
+        rel = path.relative_to(BACKEND).as_posix()
+        try:
+            tree = ast.parse(path.read_text())
+        except SyntaxError:
+            continue  # already reported above
+        for call in (n for n in ast.walk(tree) if isinstance(n, ast.Call)):
+            callee = getattr(call.func, "id", None) or getattr(call.func, "attr", None)
+            if callee not in guarded:
+                continue
+            # The definition is not a call site; skip the file that owns it only
+            # when this really is the definition rather than a recursive call.
+            if any(kw.arg == ORIGIN_PARAM for kw in call.keywords):
+                continue
+            excuse = PASSES_NO_ORIGIN.get((rel, callee))
+            if excuse is None:
+                problems.append(
+                    f"{rel}:{call.lineno} — calls `{callee}` without "
+                    f"`{ORIGIN_PARAM}`, so the final-origin check does not run "
+                    f"for this fetch. Pass one, or record the site in "
+                    f"PASSES_NO_ORIGIN with the reason a stranger cannot steer "
+                    f"that URL."
+                )
+
+    for key, entry in sorted(PASSES_NO_ORIGIN.items()):
+        rel, callee = key
+        source = (BACKEND / rel).read_text() if (BACKEND / rel).exists() else ""
+        if f"{callee}(" not in source:
+            problems.append(
+                f"{rel} — PASSES_NO_ORIGIN excuses `{callee}` here and there is "
+                f"no such call. Remove the entry so the exception list stays as "
+                f"short as it claims to be."
+            )
 
     for key, entry in sorted(KNOWN.items()):
         if key not in found:
