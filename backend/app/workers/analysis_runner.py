@@ -30,6 +30,7 @@ from app.services import audio as audio_svc
 from app.services.audio_storage import AudioStorageError, readable_audio_url
 from app.services.take_archive import keep_playback_copy
 from app.services.analysis import analyze
+from app.services.storage_origin import origin_of
 from app.services.take_comparison import comparison_key
 from app.services.long_rests import shorten_long_rests
 from app.services.start_at import start_from_measure
@@ -133,7 +134,24 @@ def download_audio(url: str, *, expected_origin: str | None = None) -> bytes:
                         f"download returned status {response.status_code}"
                     )
                 final = response.url
-                final_origin = f"{final.host}:{final.port}"
+                # **`origin_of`, not an f-string.** `httpx.URL.port` is `None`
+                # when the port is the scheme's default, so
+                # `f"{final.host}:{final.port}"` renders a real
+                # `https://x.supabase.co/...` as `x.supabase.co:None` — while
+                # the caller's `expected_origin` comes from `storage_origin()`,
+                # which fills the default in and says `x.supabase.co:443`. The
+                # two never match, so the comparison below fired on every
+                # legitimate fetch against real storage.
+                #
+                # Invisible to the suite because every test here serves from a
+                # local port, which is explicit and therefore not None. The one
+                # shape that is never exercised is the only shape production
+                # has.
+                #
+                # This is the drift `services/storage_origin` was extracted to
+                # stop, recurring in the same two functions: both had a private
+                # copy of what `origin_of` already does. Now neither does.
+                final_origin = origin_of(str(final)) or f"{final.host}"
                 if expected_origin and final_origin != expected_origin:
                     raise AudioFetchError(
                         "audio download redirected off the storage host "

@@ -31,6 +31,7 @@ from app.db import get_service_client
 from app.services.buckets import SCORE_BUCKET
 from app.services.cache_headers import CACHE_FOREVER
 from app.services.signed_urls import absolute, signed_url_in
+from app.services.storage_origin import origin_of
 
 log = logging.getLogger("intempo.scores")
 
@@ -180,7 +181,24 @@ def download_image(image_url: str, *, expected_origin: str | None = None) -> byt
                         detail=f"image download returned status {response.status_code}",
                     )
                 final = response.url
-                final_origin = f"{final.host}:{final.port}"
+                # **`origin_of`, not an f-string.** `httpx.URL.port` is `None`
+                # when the port is the scheme's default, so
+                # `f"{final.host}:{final.port}"` renders a real
+                # `https://x.supabase.co/...` as `x.supabase.co:None` — while
+                # the caller's `expected_origin` comes from `storage_origin()`,
+                # which fills the default in and says `x.supabase.co:443`. The
+                # two never match, so the comparison below fired on every
+                # legitimate fetch against real storage.
+                #
+                # Invisible to the suite because every test here serves from a
+                # local port, which is explicit and therefore not None. The one
+                # shape that is never exercised is the only shape production
+                # has.
+                #
+                # This is the drift `services/storage_origin` was extracted to
+                # stop, recurring in the same two functions: both had a private
+                # copy of what `origin_of` already does. Now neither does.
+                final_origin = origin_of(str(final)) or f"{final.host}"
                 if expected_origin and final_origin != expected_origin:
                     # Names both ends. Supabase serves signed object URLs from
                     # the project host and is not expected to redirect off it —
