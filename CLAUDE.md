@@ -149,7 +149,7 @@ ref; it is deliberately not written down here. The project literally named
    (`frontend/`) that CI also ignored; it was deleted on 2026-09-09 and
    `mobile/` is now the only JavaScript in the repository.
 5. **Smoke-test the happy path manually** after each batch, not just automated tests.
-6. **Tag the end of every batch**: when the DoD is met, `git tag batch-N-done` and push the tag. These are the known-good rollback anchors.
+6. **Tag the end of every batch**: when the DoD is met, `git tag batch-N-done` and push the tag. These are the known-good rollback anchors — so check `git ls-remote --tags origin` before writing one, because a shallow session clone shows none of them and re-tagging moves an anchor (see §4).
 7. **Externalize magic numbers to config** (see `backend/config.toml`) so tuning never requires a code edit.
 8. **Be honest about DoD status.** If part of a Definition of Done can't be met in-session (e.g. it needs a human ear or real recordings), say so plainly in `EDIT_LOG.md` and the PR — never claim it's done.
 
@@ -278,10 +278,25 @@ open. `git log -- frontend/` is where the old tree went.
   built a screen in the wrong palette. Deleting that tree is what finally made
   the instruction unambiguous.
 
-**Honest DoD status.** `git tag` is the answer. Batches **0, 1 and 2 are tagged
-and pushed**; **3 and 4 are marked ✅ and are not tagged**, so by this file's own
-Definition of Done they are not done; 5 onward are ⏳. The screens are verified
-*visually*, not end-to-end.
+**Honest DoD status.** `git tag` is the answer — **but fetch the tags first, or
+it answers with the opposite of the truth.** The session container's clone is
+shallow and carries no tags, so a bare `git tag` prints **nothing**, which reads
+as "no batch has ever been tagged, so by this file's own Definition of Done
+nothing is done". Three are:
+
+    git fetch --tags origin && git tag
+
+That is the same mistake as the three in §1, and here it is this file that
+causes it: **before reporting a batch untagged, check whether the tag is on the
+remote.** `git ls-remote --tags origin` answers without touching the working
+copy. Rule 6's `git tag batch-N-done` also succeeds locally against a name that
+already exists on the remote, and the push is then rejected — recoverable, but
+the way to not spend a session on it is to look first.
+
+Batches **0, 1 and 2 are tagged and pushed** (`batch-0-done`, `batch-1-done`,
+`batch-2-done`, alongside `spec-v1`); **3 and 4 are marked ✅ and are not
+tagged**, so by this file's own Definition of Done they are not done; 5 onward
+are ⏳. The screens are verified *visually*, not end-to-end.
 
 What each remaining gate is actually waiting on, measured 2026-09-09 rather than
 repeated — because "blocked on Supabase keys" had become a blanket claim that
