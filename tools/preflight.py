@@ -128,6 +128,15 @@ FONT_TOOLS = Prereq(
     fix="python3 -m pip install 'fonttools==4.64.0'",
     present=_font_tools,
 )
+#: `migrations_gate` decides for itself whether to run — it has a server to ask
+#: about as well as an environment variable — so this is never checked with
+#: `satisfied()`. It exists so that skip can be recorded in `SKIPPED` and
+#: counted like the others, with the same wording.
+DATABASE = Prereq(
+    missing="DATABASE_URL",
+    fix="DATABASE_URL=postgresql://…/scratch tools/preflight.py",
+    present=lambda: bool(os.getenv("DATABASE_URL", "")),
+)
 
 
 #: `(label, command, working directory, what it needs first)`, in the order CI
@@ -205,6 +214,13 @@ def migrations_gate() -> tuple[str, bool, float] | None:
                 "DATABASE_URL=… (as above)",
             ]
         print("\n".join(lines))
+        # **Counted, not just printed.** This skip predates `SKIPPED` and was
+        # the one left out of it, so a run with no `DATABASE_URL` still closed
+        # with a bare `10/10` over a gate that had not run — the exact reading
+        # the tally was changed to stop giving. Recorded here with the same
+        # advice the block above prints, so the summary and the end-of-run list
+        # cover every gate that did not run rather than all but this one.
+        SKIPPED.append(("migrations", (DATABASE,)))
         return None
     return run("migrations", ["python3", "tools/check-migrations.py"], ROOT)
 
