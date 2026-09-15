@@ -316,6 +316,19 @@ What each remaining gate is actually waiting on, measured 2026-09-09 rather than
 repeated — because "blocked on Supabase keys" had become a blanket claim that
 was no longer true of all of it:
 
+**First, about the two `.env` files the entries below describe: in a session
+container there are none.** `.env` and `.env.*` are gitignored, so a fresh
+clone has `backend/.env.example` and nothing else — no `backend/.env`, no
+`mobile/.env`, anywhere in the tree. What those entries say about their
+contents is true of the owner's machine, not of the one you are on, and going
+to look costs a search that ends in nothing. Two things follow and both are
+fine: a web build made here is a **fixtures build by construction**, because
+`environment.ts` switches on the presence of all three `EXPO_PUBLIC_*` values
+and absence is the safe direction; and `preflight.py --full`'s
+`env_moved_aside` has nothing to move, which it handles. Nothing here is
+broken — but "the anon key is set in both `.env` files" reads like a file you
+can open, and you cannot.
+
 - **The schema** — *not blocked.* See §1. `intempo-dev` is fully in step with
   the code as of 2026-09-09; every column and table `readiness.py` requires is
   present.
