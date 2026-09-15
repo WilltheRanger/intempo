@@ -136,7 +136,21 @@ ref; it is deliberately not written down here. The project literally named
    gold-plate: "best" means the best version *of what was asked for*, not more
    than was asked for. Speed is the one thing still worth leaving alone until
    something is measurably slow — measure, then optimise.
-4. **No `print`/`console.log` debug shipped.** Real logger from day one (`loguru` for Python, `pino` for JS).
+4. **No `print`/`console.log` debug shipped.** Real logger from day one —
+   **which here means stdlib `logging` in the backend and nothing at all in
+   `mobile/`.** The rule used to name `loguru` for Python and `pino` for JS, and
+   **neither is in this repository**: not in `pyproject.toml`, not in `uv.lock`,
+   not in `package.json`, not in a single source file, and neither appears in
+   any manifest or source file across the 98 commits a session's shallow clone
+   can see — only in this sentence's own predecessor. Reaching for either on the
+   instruction's word costs a dependency the project does not want, and `pino`
+   is a server-side logger that does not belong in a React Native app at all.
+   What the backend actually does is
+   `logging.getLogger("intempo.<area>")` — `intempo.analysis`, `intempo.ocr`,
+   `intempo.scores`, `intempo.me`, `intempo.transcription`, `intempo.training`
+   — so a new log line joins that hierarchy rather than starting a second one.
+   `mobile/` has no logging facility and the two `console` calls below are the
+   whole of it, which is deliberate rather than a gap.
    Enforced in `mobile/` since 2026-09-03 (`no-console`, error). Two lines are
    exempt with a written reason: `App.tsx`'s boot line naming whether the build
    is on fixtures, and `ErrorBoundary.componentDidCatch` — the only record a
