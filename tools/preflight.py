@@ -47,26 +47,118 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Callable
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 MOBILE = ROOT / "mobile"
 BACKEND = ROOT / "backend"
 
-#: `(label, command, working directory)`, in the order CI runs them — cheapest
-#: first, so a broken lint answers in a second rather than after the suite.
-FAST: list[tuple[str, list[str], Path]] = [
-    ("brand assets", ["python3", "tools/check-brand-assets.py"], ROOT),
-    ("dead exports", ["python3", "tools/check-dead-exports.py"], ROOT),
-    ("dependencies", ["python3", "tools/check-dependencies.py"], ROOT),
-    ("outbound fetch", ["python3", "tools/check-outbound-fetch.py"], ROOT),
-    ("backend lint", ["uv", "run", "ruff", "check", "app/", "scripts/", "modal_app.py"], BACKEND),
-    ("mobile typecheck", ["npm", "run", "typecheck"], MOBILE),
-    ("mobile lint", ["npm", "run", "lint"], MOBILE),
-    ("font coverage", ["python3", "tools/check-font-coverage.py"], ROOT),
-    ("mobile tests", ["npm", "test"], MOBILE),
-    ("backend tests", ["uv", "run", "pytest", "-q"], BACKEND),
+@dataclass(frozen=True)
+class Prereq:
+    """Something a gate needs installed, and the one command that installs it.
+
+    **"I could not look" is not "it is wrong", and this printed them the
+    same.** In a fresh checkout — or this project's session container, which
+    has no `mobile/node_modules` — four of the ten gates below failed for want
+    of an install and were reported exactly like a defect: `FAIL  mobile
+    typecheck` under fourteen `TS17004: Cannot use JSX unless the '--jsx' flag
+    is provided`, which is what `tsc` says when `expo/tsconfig.base` is not on
+    disk. Nothing there is about the code, and working that out costs a
+    session the same attention a real failure would.
+
+    That is the mistake `check-brand-assets.py` was rewritten to stop making
+    after CI hit it on 2026-09-12 — *"a check that cannot say why it failed is
+    worse than one that does not run, because the first is believed"* — and
+    this file was making it four times over, one level up.
+
+    `migrations_gate` already had the shape: say it was skipped, say what is
+    missing, and print the one command that fixes it.
+    """
+
+    #: What is missing, named the way the reader would search for it.
+    missing: str
+    #: The command that installs it, runnable from the repository root.
+    fix: str
+    #: Cheap enough to ask before every gate — a `stat`, or one interpreter
+    #: start. Never the gate's own work.
+    present: Callable[[], bool]
+
+    def satisfied(self) -> bool:
+        return self.present()
+
+
+def _node_modules() -> bool:
+    """Whether `npm` can resolve anything in `mobile/`.
+
+    A directory test rather than a probe command: `npm ls` on a tree this size
+    is seconds, and every `npm` gate here fails identically without it.
+    """
+    return (MOBILE / "node_modules").is_dir()
+
+
+def _font_tools() -> bool:
+    """Whether the interpreter that will run the check can import fontTools.
+
+    Asked of `python3` in a subprocess rather than of *this* process, because
+    that is the interpreter the command below uses and the two need not be the
+    same one.
+    """
+    return (
+        subprocess.run(
+            ["python3", "-c", "import fontTools"],
+            capture_output=True,
+            check=False,
+        ).returncode
+        == 0
+    )
+
+
+#: `mobile/node_modules` and the fontTools pin, which is the one `ci.yml`
+#: installs by hand — see its "fontTools, for the font subset guard" step.
+NODE_MODULES = Prereq(
+    missing="mobile/node_modules",
+    fix="npm --prefix mobile ci",
+    present=_node_modules,
+)
+FONT_TOOLS = Prereq(
+    missing="fontTools",
+    fix="python3 -m pip install 'fonttools==4.64.0'",
+    present=_font_tools,
+)
+
+
+#: `(label, command, working directory, what it needs first)`, in the order CI
+#: runs them — cheapest first, so a broken lint answers in a second rather than
+#: after the suite. An empty tuple for a gate that needs nothing installed.
+#:
+#: **`font coverage` needs both**, which is why this is a tuple rather than one
+#: prerequisite: it reads `cmap` tables with fontTools, and it reads them out of
+#: `@expo-google-fonts` in `mobile/node_modules` — what the subsetter rebuilds
+#: from, and the only thing it can compare the shipped subsets against.
+FAST: list[tuple[str, list[str], Path, tuple[Prereq, ...]]] = [
+    ("brand assets", ["python3", "tools/check-brand-assets.py"], ROOT, ()),
+    ("dead exports", ["python3", "tools/check-dead-exports.py"], ROOT, ()),
+    ("dependencies", ["python3", "tools/check-dependencies.py"], ROOT, ()),
+    ("outbound fetch", ["python3", "tools/check-outbound-fetch.py"], ROOT, ()),
+    (
+        "backend lint",
+        ["uv", "run", "ruff", "check", "app/", "scripts/", "modal_app.py"],
+        BACKEND,
+        (),
+    ),
+    ("mobile typecheck", ["npm", "run", "typecheck"], MOBILE, (NODE_MODULES,)),
+    ("mobile lint", ["npm", "run", "lint"], MOBILE, (NODE_MODULES,)),
+    (
+        "font coverage",
+        ["python3", "tools/check-font-coverage.py"],
+        ROOT,
+        (FONT_TOOLS, NODE_MODULES),
+    ),
+    ("mobile tests", ["npm", "test"], MOBILE, (NODE_MODULES,)),
+    ("backend tests", ["uv", "run", "pytest", "-q"], BACKEND, ()),
 ]
 
 
@@ -180,6 +272,37 @@ def run(label: str, command: list[str], cwd: Path) -> tuple[str, bool, float]:
         for line in tail:
             print(f"        {line}")
     return label, ok, took
+
+
+#: Every gate that did not run, and what was missing. Reprinted at the end and
+#: counted in the summary line: a skip that scrolls off the top of a ten-minute
+#: run is a skip nobody sees, and `10/10` over a gate that never ran is the
+#: green light this script's own docstring argues against.
+SKIPPED: list[tuple[str, tuple[Prereq, ...]]] = []
+
+
+def run_or_skip(
+    label: str, command: list[str], cwd: Path, needs: tuple[Prereq, ...]
+) -> tuple[str, bool, float] | None:
+    """The gate, unless what it needs is not installed — then say so instead.
+
+    Returns `None` for a skip, which keeps it out of the pass/fail tally the
+    way `migrations_gate` already does. It goes into `SKIPPED` instead, so the
+    summary can count it rather than quietly rounding it down to nothing.
+
+    **Every missing prerequisite, not the first.** Installing what one line
+    named and running again to be told about the next one is the same waste in
+    slow motion.
+    """
+    absent = [need for need in needs if not need.satisfied()]
+    if absent:
+        gone = ", no ".join(need.missing for need in absent)
+        print(f"  ....  {label}  (skipped: no {gone})")
+        for need in absent:
+            print(f"        {need.fix}")
+        SKIPPED.append((label, tuple(absent)))
+        return None
+    return run(label, command, cwd)
 
 
 #: Not 4320. CI has the port to itself; a laptop may well have something on it,
@@ -322,12 +445,21 @@ def main() -> int:
     args = parser.parse_args()
 
     print("preflight: the checks CI would run, if CI were running\n")
-    results = [run(*check) for check in FAST]
+    results = [done for check in FAST if (done := run_or_skip(*check)) is not None]
     migrations = migrations_gate()
     if migrations is not None:
         results.append(migrations)
 
-    if args.full:
+    if args.full and not NODE_MODULES.satisfied():
+        # **One line rather than eight failures.** Everything under `--full`
+        # is `npm`, `npx` or a server serving what they built, so without the
+        # install they all fail at once and none of it is about the code —
+        # the same confusion the fast gates above now avoid, at eight times
+        # the volume and after a `.env` has been moved aside to get there.
+        print(f"\n  ....  builds + walk + a11y  (skipped: no {NODE_MODULES.missing})")
+        print(f"        {NODE_MODULES.fix}")
+        SKIPPED.append(("builds + walk + a11y", (NODE_MODULES,)))
+    elif args.full:
         print("\n  building the fixtures bundles (mobile/.env moved aside)")
         with env_moved_aside():
             results.append(run("web build", ["npm", "run", "build:web"], MOBILE))
@@ -363,9 +495,23 @@ def main() -> int:
         for label, why in NOT_COVERED:
             print(f"    {label} — {why}")
 
+    if SKIPPED:
+        # Reprinted rather than left where it scrolled past. On a `--full` run
+        # the skip is minutes above this line, and the number beside it is the
+        # only place the reader is still looking.
+        print("\n  did not run here:")
+        for label, needs in SKIPPED:
+            missing = ", ".join(need.missing for need in needs)
+            fixes = ";  ".join(dict.fromkeys(need.fix for need in needs))
+            print(f"    {label} — no {missing};  {fixes}")
+
     failed = [label for label, ok, _ in results if not ok]
     total = sum(took for _, _, took in results)
-    print(f"\npreflight: {len(results) - len(failed)}/{len(results)} in {total:.0f}s")
+    ran = len(results)
+    tally = f"\npreflight: {ran - len(failed)}/{ran} in {total:.0f}s"
+    if SKIPPED:
+        tally += f", {len(SKIPPED)} skipped"
+    print(tally)
     if failed:
         print("failed: " + ", ".join(failed), file=sys.stderr)
         return 1
