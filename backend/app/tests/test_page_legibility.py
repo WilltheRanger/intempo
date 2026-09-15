@@ -346,7 +346,7 @@ def test_the_runner_refuses_before_it_spends_a_provider_call(monkeypatch) -> Non
     asked = []
     monkeypatch.setattr(runner, "get_service_client", lambda: fake)
     monkeypatch.setattr(runner, "readable_url", lambda url: url)
-    monkeypatch.setattr(runner, "download_image", lambda url: _scaled(READABLE, 0.2))
+    monkeypatch.setattr(runner, "download_image", lambda url, **_kw: _scaled(READABLE, 0.2))
     monkeypatch.setattr(
         runner,
         "parse_sheet_music",

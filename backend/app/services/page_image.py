@@ -127,8 +127,11 @@ def object_key_from(image_url: str, bucket: str = SCORE_BUCKET) -> str | None:
 
     Storing the key on the row would be tidier than re-deriving it, and is the
     right follow-up. It needs a migration and a backfill, and the derivation is
-    safe today because `_assert_image_url_owned_by` has already refused any URL
-    that isn't one of these shapes.
+    safe today because `scores._owned_image_key` has already refused any
+    reference that is not one of these shapes — it requires the key's first
+    segment to equal the caller's id, forbids `/` or `\\` inside the filename
+    and rejects a filename of `.` or `..`, and `_durable_image_url` then
+    rebuilds the URL from that validated key rather than keeping what was sent.
     """
     path = urlparse(image_url).path
     for prefix in STORAGE_PREFIXES:
@@ -158,11 +161,15 @@ def download_image(image_url: str, *, expected_origin: str | None = None) -> byt
     this ever holds is one chunk past the limit.
 
     **Redirects may not leave the endpoint the caller was authorised for.**
-    `_assert_image_url_owned_by` checks the URL is a Supabase score-images URL
-    under this user's prefix, and its docstring says "we never download
-    arbitrary internet URLs" — which was true of the URL given and not of where
-    following redirects could end up. A 302 to a link-local address would have
-    been followed.
+    `scores._owned_image_key` establishes that the reference names a
+    score-images object under this caller's prefix, and that was true of the
+    URL given and not of where following redirects could end up. A 302 to a
+    link-local address would have been followed.
+
+    **`expected_origin` is what turns that paragraph into a running check, and
+    it has to be passed.** It defaults to None, which disables the comparison
+    entirely, and `transcription_runner` — the only caller in the application —
+    passed nothing, so none of this executed in production. It passes one now.
 
     The comparison is host *and* port, not host alone: a redirect to another
     port on the same host reaches a different service, which is most of what
@@ -275,9 +282,9 @@ def readable_url(image_url: str) -> str:
     `POST /v1/scores` as `image_url`, and this fetched it as given.
 
     Signing a fresh download URL from the object key fixes it and is better
-    regardless: `_assert_image_url_owned_by` has already established which
-    object the caller is allowed to read, so the key is the trustworthy part of
-    what was sent, and the URL around it is not.
+    regardless: `scores._owned_image_key` has already established which object
+    the caller is allowed to read, so the key is the trustworthy part of what
+    was sent, and the URL around it is not.
 
     Falls back to the URL as given when a key cannot be extracted or nothing
     can sign one — a `/object/sign/` or `/object/public/` URL is already
