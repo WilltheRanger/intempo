@@ -72,6 +72,28 @@ def calibrate(
         )
 
     iois = np.diff(onsets)
+    # **Two attacks is arithmetic, not policy.** `min_onsets` lives in
+    # `config.toml` because §1.7 puts tuning there, and it is the one value in
+    # this block that can be lowered past what the maths allows: at 1 a single
+    # onset leaves `np.diff` empty, `np.mean` of that is `nan` with a
+    # RuntimeWarning, and every test below it compares false — `nan <= 0`,
+    # `nan > ioi_cv_max`, `nan < bpm_min` — so the clip walks the whole
+    # function and returns `ok=True` with `bpm=nan` and the message
+    # "Detected ♩=nan. Use this?". That number is also not JSON: serialising
+    # the response raises `Out of range float values are not JSON compliant`.
+    #
+    # This module's own docstring is the rule being broken — *"We never
+    # surface a garbage number; when we can't tell, we say so and the UI falls
+    # back to manual tap-tempo."* So the floor is enforced here rather than
+    # trusted to the setting: an interval needs two onsets, whatever the
+    # config says, and one onset is `too_few_onsets` for the same reason zero
+    # is.
+    if iois.size == 0:
+        return CalibrationResult(
+            ok=False, code="too_few_onsets", n_onsets=n,
+            message="We didn't hear at least 2 notes — try 3 or 4 quarter notes at your tempo.",
+        )
+
     mean_ioi = float(np.mean(iois))
     if mean_ioi <= 0:
         return CalibrationResult(
@@ -86,7 +108,13 @@ def calibrate(
         )
 
     bpm = round(60.0 / float(np.median(iois)), 1)
-    if bpm < cal.bpm_min or bpm > cal.bpm_max:
+    # **The range test cannot catch a non-finite tempo**, because every
+    # comparison against `nan` is false and `inf` only fails one side. Both are
+    # reachable from arithmetic rather than from a setting — a median interval
+    # of exactly zero divides to `inf` — and the promise in this module's
+    # docstring is about the number that leaves here, so it is checked on the
+    # number that leaves here.
+    if not np.isfinite(bpm) or bpm < cal.bpm_min or bpm > cal.bpm_max:
         return CalibrationResult(
             ok=False, code="out_of_range", n_onsets=n,
             message="That tempo seems out of normal range; try again or enter it manually.",
