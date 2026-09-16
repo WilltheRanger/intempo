@@ -25,6 +25,7 @@ import {
   readMeasure,
   timedMeasureRange,
 } from '../../lib/verdict/measureReading';
+import { passageLabel } from '../../lib/verdict/passage';
 import {
   appVerdictFor,
   canCorrect,
@@ -296,7 +297,12 @@ export function VerdictScreen() {
         variant="metadataSmall"
         items={[
           `Target ${formatTempo(take.targetBpm, take.tempoBeatUnit)}`,
-          measureLabel(take.measures.length),
+          // **Which bars, when the take did not open the page.** Practising a
+          // passage is the ordinary case — the pipeline matches a take against
+          // the passage it covers — and this said "4 measures", which is true
+          // and answers a question nobody asked: four measures of what, and
+          // why does the list below start at bar 9? See `passage.ts`.
+          passageLabel(take.measures),
           take.missedNotes > 0 ? noteLabel(take.missedNotes) : null,
         ]}
         style={styles.meta}
@@ -399,10 +405,6 @@ export function VerdictScreen() {
       ) : null}
     </ScreenContainer>
   );
-}
-
-function measureLabel(count: number): string {
-  return count === 1 ? '1 measure' : `${count} measures`;
 }
 
 function noteLabel(count: number): string {

@@ -111,6 +111,12 @@ const ROUTES = [
   ],
   // The payoff of the whole app, and the route the first sweep missed.
   ['Verdict', 'analyses/fixture-take-1', { expect: 'rushed' }],
+  // **A take of a passage rather than a whole page**, which is what practice
+  // looks like and what the pipeline has measured since `align_dtw` learned
+  // subsequence matching. The screen names the bars for a take that did not
+  // open the page, and every other fixture starts at bar 1 — so that branch
+  // was unreachable in the build this audit runs against.
+  ['Verdict — a passage', 'analyses/fixture-take-passage', { expect: 'Bars 9 to 21' }],
   // **Its other three states, none of which had ever been on a screen.**
   // `VerdictScreen` branches twice on `failure` — recoverable and not are
   // different sentences and different buttons — and again on a status that is

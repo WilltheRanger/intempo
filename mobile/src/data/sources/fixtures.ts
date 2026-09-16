@@ -1254,6 +1254,22 @@ const FIXTURE_TAKE_STATES: Record<string, Partial<TakeResult>> = {
       'at all. Check which input your device is recording from, and that ' +
       'nothing is muting it, then record again.',
   },
+  /**
+   * **A passage, not a whole page** — which is what practice looks like and
+   * what the pipeline has measured since `align_dtw` learned subsequence
+   * matching (`test_fragment_alignment.py`). The verdict screen names the bars
+   * for a take that did not open the page, and with every fixture starting at
+   * bar 1 that branch was unreachable in the build the screens are looked at
+   * in.
+   *
+   * Not a failure, unlike the four below it — it is in this table because the
+   * table is what `getTake` can reach by id. The measures are the successful
+   * take's, renumbered to start at nine.
+   */
+  'fixture-take-passage': {
+    headline:
+      'You held the tempo through this passage, with a little push at the end.',
+  },
   'fixture-take-unmatched': {
     status: 'alignment_failed',
     headline:
@@ -1268,7 +1284,12 @@ export const fixtureTakeSource: TakeSource = {
     const state = FIXTURE_TAKE_STATES[analysisId];
     if (state) {
       const take = buildFixtureTake();
-      return take ? { ...take, id: analysisId, ...state } : null;
+      if (!take) {
+        return null;
+      }
+      const base =
+        analysisId === 'fixture-take-passage' ? asPassageFrom(take, 9) : take;
+      return { ...base, id: analysisId, ...state };
     }
     if (analysisId !== FIXTURE_TAKE_ID) {
       return null;
@@ -1320,6 +1341,26 @@ export const fixtureTakeSource: TakeSource = {
     return null;
   },
 };
+
+/**
+ * The sample take, renumbered to start partway into the page.
+ *
+ * A passage take differs from a whole-page one in exactly one way the screen
+ * can see: its first measure is not bar 1. Shifting the numbers is therefore
+ * the whole of it, and it keeps the deviations, the bands and the trend that
+ * every other check on this screen reads — a hand-written second take would be
+ * a second set of numbers to keep in step with the first.
+ */
+function asPassageFrom(take: TakeResult, first: number): TakeResult {
+  const shift = first - (take.measures[0]?.measure ?? 1);
+  return {
+    ...take,
+    measures: take.measures.map((measure) => ({
+      ...measure,
+      measure: measure.measure + shift,
+    })),
+  };
+}
 
 /** The sample take, built fresh so `recordedAt` is always recent. */
 function buildFixtureTake(): TakeResult | null {
