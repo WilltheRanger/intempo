@@ -33,6 +33,7 @@ import {
   type Recorder,
 } from '../../lib/audio/types';
 import { readTakeFailure } from '../../lib/audio/takeFailure';
+import { microphonePermissionRecovery } from '../../lib/audio/permission';
 import { buildMarker } from '../../lib/platform/buildMarker';
 import { isHomeScreenApp } from '../../lib/audio/microphoneFailure';
 import { canReloadPage, reloadPage } from '../../lib/platform/reloadPage';
@@ -188,6 +189,12 @@ export function RecordScreen() {
   const lastFreeMessage = describeLastFreeAnalysis(musician?.usage);
   const visibleProblem = limitMessage ?? problem;
   const [microphoneBlocked, setMicrophoneBlocked] = useState(false);
+  // The platform's own directions, read once — see `permission.ts`. Cheap and
+  // pure, and `Platform.OS` cannot change under a running app.
+  const microphoneRecovery = useMemo(
+    () => microphonePermissionRecovery(Platform.OS),
+    [],
+  );
   /**
    * Whether the failure on screen is one the page can fix by reloading itself.
    *
@@ -1076,7 +1083,48 @@ export function RecordScreen() {
           contentContainerStyle={styles.settingsBody}
           showsVerticalScrollIndicator={false}
         >
-          {footerNote ? (
+          {/*
+            **The one failure the app cannot fix gets directions, not a
+            sentence.** A refused microphone is followed on a phone with a
+            permissions panel open on top of the app, a line at a time — so it
+            is the one place in this product where a numbered list earns its
+            keep (§3 law 6 otherwise rules them out as furniture). Every other
+            note here stays one line, because every other note is a statement
+            rather than a sequence.
+
+            The same instructions as one sentence are what a screen reader
+            hears: `microphonePermissionRecovery` builds both from one set of
+            words, so the list and the spoken line cannot drift.
+          */}
+          {microphoneBlocked && visibleProblem ? (
+            <View
+              accessible
+              accessibilityLabel={microphoneRecovery.message}
+              style={styles.problem}
+            >
+              <Text variant="metadataSmall" color="textSecondary">
+                {microphoneRecovery.headline}
+              </Text>
+              {microphoneRecovery.steps.map((step, index) => (
+                <View key={step} style={styles.step}>
+                  <Text
+                    variant="metadataSmall"
+                    color="textTertiary"
+                    style={styles.stepNumber}
+                  >
+                    {index + 1}
+                  </Text>
+                  <Text
+                    variant="metadataSmall"
+                    color="textSecondary"
+                    style={styles.stepText}
+                  >
+                    {step}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : footerNote ? (
             <Text
               variant="metadataSmall"
               color="textSecondary"
@@ -1663,6 +1711,22 @@ const styles = StyleSheet.create({
   },
   permissionAction: {
     marginBottom: spacing.md,
+  },
+  step: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  stepNumber: {
+    // A fixed column so the three steps' text lines up rather than stepping in
+    // and out with the width of the numeral.
+    width: spacing.md,
+    textAlign: 'right',
+    fontVariant: ['tabular-nums'],
+  },
+  stepText: {
+    flex: 1,
   },
   problem: {
     textAlign: 'center',

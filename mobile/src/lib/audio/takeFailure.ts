@@ -67,9 +67,23 @@ export interface TakeFailure {
   recovery: MicrophoneRecovery;
 }
 
-/** The generic case. Named so a test can assert *which* branch was taken. */
+/**
+ * The generic case. Named so a test can assert *which* branch was taken.
+ *
+ * **The reassurance leads.** It read "That take couldn't be sent. It is still
+ * here — check your connection…", which opens on the failure and puts the one
+ * thing a musician is actually afraid of — that the playing is gone — in the
+ * second clause, after a sentence that sounds like it might be. The playing is
+ * the expensive thing here; a failed upload costs a tap.
+ *
+ * "On this device" rather than "still here", because it is durable: the take
+ * goes into the queue `drainQueue` retries on every foreground, so it survives
+ * closing the app. `PIECE_GONE_FAILURE` below is the case where that claim
+ * would be false, and it exists because making it there was worse than losing
+ * the take.
+ */
 export const GENERIC_TAKE_FAILURE =
-  'That take couldn’t be sent. It is still here — check your connection and send it again.';
+  'Your take is safe on this device. Check your connection and send it again.';
 
 /**
  * The piece is gone, so there is nothing to attach the take to.
