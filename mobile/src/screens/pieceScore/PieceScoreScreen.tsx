@@ -19,7 +19,6 @@ import { TranscribingPanel } from '../../components/score/TranscribingPanel';
 import {
   EmptyState,
   LoadingState,
-  MetadataRow,
   PageHeader,
   ScreenContainer,
   SecondaryButton,
@@ -53,7 +52,7 @@ import {
   staveScoreFor,
 } from '../../lib/notation/fromScore';
 import { shortenLongRests, skippableBars } from '../../lib/notation/longRests';
-import { CLEF_LABELS, clefSummary, meterSummary } from '../../lib/notation/scoreSummary';
+import { CLEF_LABELS } from '../../lib/notation/clefLabels';
 import {
   scheduleScore,
   soundingMeasureAt,
@@ -62,7 +61,6 @@ import {
 } from '../../lib/score';
 import { practiceTempo, usePracticeTempos } from '../../data/practiceTempo';
 import { bpmForMarking } from '../../lib/tempoMarking';
-import { formatTempo } from '../../lib/tempo';
 import {
   describeConfidence,
   describeProblemMeasures,
@@ -78,7 +76,6 @@ import { loadStateFor } from '../../lib/loadState';
 import { barCells, barGridSummary } from '../../lib/notation/barGrid';
 import { proposalsFor, proposalsSummary } from '../../lib/notation/proposals';
 import { usePreferences } from '../../data/preferences';
-import { barCountLabel } from '../../lib/format';
 
 /** Read from a stand, not glanced at — the same size the warmup page uses. */
 const STAVE_SCALE = 1.25;
@@ -577,43 +574,21 @@ export function PieceScoreScreen() {
       ) : null}
 
       {/*
-        **What the page states, under the page.** This row used to sit in the
-        header, between the title and the toggle, where it was about 48pt of
-        the roughly 280 a musician scrolled past before reaching a note. The
-        screen is for reading music; the facts about the music follow it, the
-        way a caption follows a plate.
+        **The affordance said out loud**, because nothing on a stave depicts a
+        tap. A drawn control that does nothing is worse than none at all (§3),
+        and the inverse is nearly as bad: a gesture that works and is invisible
+        is a gesture nobody uses. Left-aligned like every other line on the
+        screen — it was centred, which is the inconsistency §3 law 5 is about.
 
-        It still earns its place beside the drawing. The stave draws the clef
-        and the metre, so what this adds is the **length** of the part, the
-        marked tempo, and whether the clef or the metre *lasts* — which the
-        stave can only show by being scrolled through. `scoreSummary` holds
-        those rules, where they are tested.
-
-        **The affordance said out loud, on the same line**, because nothing on
-        a stave depicts a tap. A drawn control that does nothing is worse than
-        none at all (§3), and the inverse is nearly as bad: a gesture that
-        works and is invisible is a gesture nobody uses. It was centred while
-        every other line on the screen was left-aligned, which is the
-        inconsistency §3 law 5 is about.
+        It is the only thing under the page now. A row of facts used to sit
+        here — length, clef, metre, the marked tempo — and was removed on
+        2026-09-16: the piece detail screen already states the length and the
+        tempo, and the two things this row could say that a stave cannot, that
+        a clef or a metre *changes* partway down, were not worth a line of
+        small print under every score that has neither.
       */}
-      {showing === 'notation' && hasNotation ? (
-        <MetadataRow
-          variant="metadataSmall"
-          items={[
-            barCountLabel(piece.score?.measures.length ?? 0),
-            ...clefSummary(piece.score),
-            ...meterSummary(piece.score),
-            piece.score?.tempo_marking,
-            piece.markedBpm
-              ? formatTempo(piece.markedBpm, piece.score?.tempo_beat_unit)
-              : null,
-          ]}
-          style={styles.tapHint}
-        />
-      ) : null}
-
       {showing === 'notation' && hasNotation && stave ? (
-        <Text variant="metadataSmall" color="textTertiary" style={styles.scoreMeta}>
+        <Text variant="metadataSmall" color="textTertiary" style={styles.tapHint}>
           Tap a bar to correct it
         </Text>
       ) : null}
@@ -1215,9 +1190,6 @@ const styles = StyleSheet.create({
   */
   pressed: {
     opacity: pressedOpacity,
-  },
-  scoreMeta: {
-    marginTop: spacing.sm,
   },
   /**
    * The paper.
