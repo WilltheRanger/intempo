@@ -136,7 +136,21 @@ ref; it is deliberately not written down here. The project literally named
    gold-plate: "best" means the best version *of what was asked for*, not more
    than was asked for. Speed is the one thing still worth leaving alone until
    something is measurably slow — measure, then optimise.
-4. **No `print`/`console.log` debug shipped.** Real logger from day one (`loguru` for Python, `pino` for JS).
+4. **No `print`/`console.log` debug shipped.** Real logger from day one —
+   **which here means stdlib `logging` in the backend and nothing at all in
+   `mobile/`.** The rule used to name `loguru` for Python and `pino` for JS, and
+   **neither is in this repository**: not in `pyproject.toml`, not in `uv.lock`,
+   not in `package.json`, not in a single source file, and neither appears in
+   any manifest or source file across the 98 commits a session's shallow clone
+   can see — only in this sentence's own predecessor. Reaching for either on the
+   instruction's word costs a dependency the project does not want, and `pino`
+   is a server-side logger that does not belong in a React Native app at all.
+   What the backend actually does is
+   `logging.getLogger("intempo.<area>")` — `intempo.analysis`, `intempo.ocr`,
+   `intempo.scores`, `intempo.me`, `intempo.transcription`, `intempo.training`
+   — so a new log line joins that hierarchy rather than starting a second one.
+   `mobile/` has no logging facility and the two `console` calls below are the
+   whole of it, which is deliberate rather than a gap.
    Enforced in `mobile/` since 2026-09-03 (`no-console`, error). Two lines are
    exempt with a written reason: `App.tsx`'s boot line naming whether the build
    is on fixtures, and `ErrorBoundary.componentDidCatch` — the only record a
@@ -149,7 +163,7 @@ ref; it is deliberately not written down here. The project literally named
    (`frontend/`) that CI also ignored; it was deleted on 2026-09-09 and
    `mobile/` is now the only JavaScript in the repository.
 5. **Smoke-test the happy path manually** after each batch, not just automated tests.
-6. **Tag the end of every batch**: when the DoD is met, `git tag batch-N-done` and push the tag. These are the known-good rollback anchors.
+6. **Tag the end of every batch**: when the DoD is met, `git tag batch-N-done` and push the tag. These are the known-good rollback anchors — so check `git ls-remote --tags origin` before writing one, because a shallow session clone shows none of them and re-tagging moves an anchor (see §4).
 7. **Externalize magic numbers to config** (see `backend/config.toml`) so tuning never requires a code edit.
 8. **Be honest about DoD status.** If part of a Definition of Done can't be met in-session (e.g. it needs a human ear or real recordings), say so plainly in `EDIT_LOG.md` and the PR — never claim it's done.
 
@@ -278,14 +292,42 @@ open. `git log -- frontend/` is where the old tree went.
   built a screen in the wrong palette. Deleting that tree is what finally made
   the instruction unambiguous.
 
-**Honest DoD status.** `git tag` is the answer. Batches **0, 1 and 2 are tagged
-and pushed**; **3 and 4 are marked ✅ and are not tagged**, so by this file's own
-Definition of Done they are not done; 5 onward are ⏳. The screens are verified
-*visually*, not end-to-end.
+**Honest DoD status.** `git tag` is the answer — **but fetch the tags first, or
+it answers with the opposite of the truth.** The session container's clone is
+shallow and carries no tags, so a bare `git tag` prints **nothing**, which reads
+as "no batch has ever been tagged, so by this file's own Definition of Done
+nothing is done". Three are:
+
+    git fetch --tags origin && git tag
+
+That is the same mistake as the three in §1, and here it is this file that
+causes it: **before reporting a batch untagged, check whether the tag is on the
+remote.** `git ls-remote --tags origin` answers without touching the working
+copy. Rule 6's `git tag batch-N-done` also succeeds locally against a name that
+already exists on the remote, and the push is then rejected — recoverable, but
+the way to not spend a session on it is to look first.
+
+Batches **0, 1 and 2 are tagged and pushed** (`batch-0-done`, `batch-1-done`,
+`batch-2-done`, alongside `spec-v1`); **3 and 4 are marked ✅ and are not
+tagged**, so by this file's own Definition of Done they are not done; 5 onward
+are ⏳. The screens are verified *visually*, not end-to-end.
 
 What each remaining gate is actually waiting on, measured 2026-09-09 rather than
 repeated — because "blocked on Supabase keys" had become a blanket claim that
 was no longer true of all of it:
+
+**First, about the two `.env` files the entries below describe: in a session
+container there are none.** `.env` and `.env.*` are gitignored, so a fresh
+clone has `backend/.env.example` and nothing else — no `backend/.env`, no
+`mobile/.env`, anywhere in the tree. What those entries say about their
+contents is true of the owner's machine, not of the one you are on, and going
+to look costs a search that ends in nothing. Two things follow and both are
+fine: a web build made here is a **fixtures build by construction**, because
+`environment.ts` switches on the presence of all three `EXPO_PUBLIC_*` values
+and absence is the safe direction; and `preflight.py --full`'s
+`env_moved_aside` has nothing to move, which it handles. Nothing here is
+broken — but "the anon key is set in both `.env` files" reads like a file you
+can open, and you cannot.
 
 - **The schema** — *not blocked.* See §1. `intempo-dev` is fully in step with
   the code as of 2026-09-09; every column and table `readiness.py` requires is

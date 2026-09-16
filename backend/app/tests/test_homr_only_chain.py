@@ -170,7 +170,7 @@ def test_it_refuses_before_the_page_is_downloaded(monkeypatch) -> None:
     )
     monkeypatch.setattr(runner, "readable_url", lambda url: fetched.append(url) or url)
     monkeypatch.setattr(
-        runner, "download_image", lambda url: fetched.append("downloaded") or b""
+        runner, "download_image", lambda url, **_kw: fetched.append("downloaded") or b""
     )
 
     fake = FakeSupabase()

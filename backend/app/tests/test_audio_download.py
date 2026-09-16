@@ -22,8 +22,10 @@ import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Callable, Iterator
 
+import httpx
 import pytest
 
+from app.services.storage_origin import storage_origin
 from app.workers.analysis_runner import (
     MAX_AUDIO_BYTES,
     AudioFetchError,
@@ -107,6 +109,49 @@ def test_a_redirect_off_the_expected_origin_is_refused(serve) -> None:
 
     with pytest.raises(AudioFetchError, match="redirected off the storage host"):
         download_audio(f"{base}/take.wav", expected_origin=_origin(base))
+
+
+def test_a_fetch_from_real_storage_is_not_refused_as_a_redirect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """**The shape production has, and the one no server here can serve.**
+
+    Every other test in this file listens on an ephemeral port, so
+    `response.url` carries an explicit one and `httpx.URL.port` is an integer.
+    Real storage is `https://<project>.supabase.co` on the scheme *default*,
+    where `httpx.URL.port` is **None** — so the old
+    `f"{final.host}:{final.port}"` rendered it `…supabase.co:None`, while the
+    `expected_origin` the route passes comes from `storage_origin()` and says
+    `…supabase.co:443`. The two never matched, so the redirect guard refused
+    every legitimate fetch and `POST /v1/calibration` answered 502 against real
+    storage.
+
+    Nothing caught it: this file cannot bind port 443, and the route tests
+    monkeypatch `download_audio` out entirely.
+
+    A `MockTransport` rather than a socket, because the thing under test is how
+    httpx reports `response.url` for a default port — real URL semantics,
+    no listener.
+    """
+    supabase_url = "https://abcdefgh.supabase.co"
+    signed = f"{supabase_url}/storage/v1/object/sign/audio-uploads/uid/take.wav"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.port is None, "the point of this test"
+        return httpx.Response(200, content=b"RIFFwave-bytes")
+
+    real_client = httpx.Client
+
+    def _client(**kwargs):
+        kwargs.pop("transport", None)
+        return real_client(transport=httpx.MockTransport(handler), **kwargs)
+
+    monkeypatch.setattr(httpx, "Client", _client)
+
+    # Exactly what routers/calibration.py passes.
+    assert download_audio(signed, expected_origin=storage_origin(supabase_url)) == (
+        b"RIFFwave-bytes"
+    )
 
 
 def test_a_redirect_that_stays_on_the_origin_is_followed(serve) -> None:
