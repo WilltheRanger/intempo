@@ -24,6 +24,33 @@ const UNREAD_CLEF_PLACEMENT = 'treble' as const;
 
 export interface ScoreBandProps {
   score: ScoreJson;
+  /**
+   * How large to engrave, as a multiple of the staff's own unit.
+   *
+   * The default is a band under a title. A library tile is a fifth of the
+   * width and wants the same first line at a size that fits it — at which
+   * point `maxWidth` breaks the music after a bar or two, and the first
+   * system is the clef, the key, the metre and an opening figure, which is
+   * exactly what a spine on a shelf should carry.
+   */
+  scale?: number;
+  /**
+   * Omit the paper ground and the rule under it.
+   *
+   * For a caller that draws its own — a tile is already a page-shaped card,
+   * and a second ground inside it is a border inside a border.
+   */
+  plain?: boolean;
+  /**
+   * How much height the music may use, in points.
+   *
+   * The default of one point means "the first system and no more", because
+   * `paginateSystems` will not cut a system in half and every system is taller
+   * than a point. A caller with a real box to fill — a library tile is a page
+   * shape, four units tall for every three across — passes its own height and
+   * gets as many whole systems as fit in it.
+   */
+  viewport?: number;
 }
 
 /**
@@ -51,7 +78,12 @@ export interface ScoreBandProps {
  * Nothing is drawn until the width is measured. A stave engraved at zero width
  * is a stave with one bar per system.
  */
-export function ScoreBand({ score }: ScoreBandProps) {
+export function ScoreBand({
+  score,
+  scale = SCALE,
+  plain = false,
+  viewport = 1,
+}: ScoreBandProps) {
   const [width, setWidth] = useState(0);
 
   function measure(event: LayoutChangeEvent) {
@@ -78,7 +110,7 @@ export function ScoreBand({ score }: ScoreBandProps) {
             clef,
             maxWidth: width,
             fitWidth: width,
-            scale: SCALE,
+            scale,
             justify: true,
             beatQuarters: stave.beatQuarters,
             closesWithRepeat: stave.closesWithRepeat,
@@ -87,18 +119,22 @@ export function ScoreBand({ score }: ScoreBandProps) {
             nameRow: false,
           })
         : null,
-    [clef, head, stave, width],
+    [clef, head, scale, stave, width],
   );
 
-  // A viewport of one point: every system is taller than that, and a system is
-  // never split, so each page holds exactly one. The first is the opening line.
+  // The first page of the engraving at the height it was given. At the default
+  // of one point every system is taller than the viewport, and a system is
+  // never split, so each page holds exactly one and the first is the opening
+  // line. Given a real box, the page holds as many whole systems as fit.
   const first = useMemo(() => {
-    const pages = engraved ? paginateSystems(engraved.layout.systems, 1) : [];
+    const pages = engraved
+      ? paginateSystems(engraved.layout.systems, Math.max(1, viewport))
+      : [];
     return pages.length > 0 ? pages[0] : null;
-  }, [engraved]);
+  }, [engraved, viewport]);
 
   return (
-    <View style={styles.band}>
+    <View style={plain ? undefined : styles.band}>
       {/*
         **Measured inside the margins, not outside them.** `onLayout` reports a
         view's border box, so measuring the padded view hands the stave the
@@ -106,7 +142,7 @@ export function ScoreBand({ score }: ScoreBandProps) {
         edge. `PieceScoreScreen` has the same inner view for the same reason
         and says so; this repeated the mistake and the screenshot showed it.
       */}
-      <View style={styles.inner}>
+      <View style={plain ? undefined : styles.inner}>
         <View onLayout={measure}>
         {engraved && first && stave ? (
           <View style={{ height: first.height }}>
@@ -115,7 +151,7 @@ export function ScoreBand({ score }: ScoreBandProps) {
               clef={clef}
               maxWidth={width}
               fitWidth={width}
-              scale={SCALE}
+              scale={scale}
               justify
               beatQuarters={stave.beatQuarters}
               closesWithRepeat={stave.closesWithRepeat}

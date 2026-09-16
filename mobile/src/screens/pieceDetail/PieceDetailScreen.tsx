@@ -18,6 +18,8 @@ import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
 import { SheetOptionRow } from '../../components/overlays/SheetOptionRow';
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
 import { ScoreBand } from '../../components/score/ScoreBand';
+import { PracticeHistory } from './PracticeHistory';
+import { usePieceHistory } from '../../data/hooks/useLatestTake';
 import {
   Card,
   EmptyState,
@@ -76,6 +78,10 @@ export function PieceDetailScreen() {
   const goBack = useGoBack({ tab: 'Library' });
   const { params } = useRoute<RouteProp<RootStackParamList, 'PieceDetail'>>();
   const { data: piece, isError } = usePiece(params.pieceId);
+  // **Not part of `load`.** A piece whose history fails to arrive is still a
+  // piece worth opening, and blocking the whole screen on it would trade a
+  // card for the music.
+  const history = usePieceHistory(params.pieceId);
   const load = loadStateFor({ isError, hasData: piece !== undefined });
 
   // Null when nothing is sounding, so the readout can say how long the piece
@@ -384,6 +390,16 @@ export function PieceDetailScreen() {
           />
         </View>
       ) : null}
+
+      {/*
+        **What happened last time, and how it has gone.** This screen knew
+        nothing about the piece's own past — Today answers that across the
+        library, Insights across thirty days, and the screen a musician opens
+        *because* they are about to play this piece answered neither about it.
+        See `PracticeHistory`, which draws nothing at all for a piece nobody
+        has recorded.
+      */}
+      {history.data ? <PracticeHistory history={history.data} /> : null}
 
       {needsNotation ? (
         <Card style={styles.notationCard}>

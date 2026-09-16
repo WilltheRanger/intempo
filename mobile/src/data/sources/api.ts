@@ -136,13 +136,31 @@ async function listAllScores(): Promise<ScoreResponse[]> {
     const batch = await listScores({
       limit: SCORES_PAGE,
       offset: page * SCORES_PAGE,
-      // **The one place this mattered most.** This walks the whole library, so
-      // the notation it was carrying was every piece's, every time the tab was
-      // opened past `STALE_TIME_MS` — measured at 111 to 130 bytes a note, and
-      // nothing downstream draws a note from it. `usePiece` refetches the piece
-      // being opened, and `pieceFromCaches` already documents that a listed
-      // piece's `score` may be absent.
-      includeScore: false,
+      /*
+        **On again, and the cost is the point of the feature.**
+
+        This was turned off because it walks the whole library, so the notation
+        it carried was every piece's, every time the tab was opened past
+        `STALE_TIME_MS` — measured at 111 to 130 bytes a note — and *nothing
+        downstream drew a note from it*. That last clause is what changed:
+        the library is a shelf now, and every tile engraves the opening of its
+        piece from this field. See `PieceTile`.
+
+        The trade, stated rather than assumed. A forty-piece library of
+        hundred-note openings is on the order of half a megabyte uncompressed,
+        in **one request per page of fifty** — against the alternative that was
+        rejected, one signed-URL image fetch per row of a full-resolution phone
+        photograph, which the owner reported as "incredibly laggy". It is also
+        cached: React Query holds the listing for `STALE_TIME_MS`, so browsing
+        back to the tab does not re-ask.
+
+        Two cheaper shapes exist and neither is available here. Asking for the
+        first two bars would need a backend parameter and a deploy before the
+        app could rely on it; fetching per visible tile would be forty requests
+        where this is one. If the payload becomes a problem, the first of those
+        is the fix.
+      */
+      includeScore: true,
     });
     all.push(...batch);
     // A short page is the last page. An exactly-full final page costs one more
@@ -599,6 +617,15 @@ function donePage(
 }
 
 
+/**
+ * How far back the count on a piece's history looks.
+ *
+ * The endpoint's own ceiling is 200. A full page means "at least this many",
+ * and `getPieceHistory` stops claiming a start date at that point rather than
+ * naming the oldest row it happened to see.
+ */
+const HISTORY_PAGE = 200;
+
 export const apiTakeSource: TakeSource = {
   async getTake(analysisId) {
     const analysis = await getAnalysis(analysisId);
@@ -667,6 +694,57 @@ export const apiTakeSource: TakeSource = {
     return recent.map(({ row, result }) =>
       toTake(row, result, scoresById.get(row.score_id) ?? null),
     );
+  },
+
+  /**
+   * How much practice this piece has behind it.
+   *
+   * **Two calls, because the two questions cost differently.** The count and
+   * the date are answered by the rows alone, and `include_result=false`
+   * narrows the SQL projection rather than hiding a field Postgres has already
+   * read — `result_json` is 214 bytes a note, so a page of forty takes is
+   * megabytes for two columns' worth of answer. What the last few takes
+   * *sounded like* does need the results, so only `window` of them are asked
+   * for.
+   *
+   * In parallel: neither answer depends on the other, and this runs while a
+   * musician is looking at the piece they are about to play.
+   */
+  async getPieceHistory(pieceId, window = 6) {
+    const [rows, detailed] = await Promise.all([
+      listAnalyses({
+        scoreId: pieceId,
+        status: 'done',
+        includeResult: false,
+        limit: HISTORY_PAGE,
+      }).catch(() => []),
+      listAnalyses({
+        scoreId: pieceId,
+        status: 'done',
+        includeResult: true,
+        limit: Math.max(1, window),
+      }).catch(() => []),
+    ]);
+
+    // Newest first is what the endpoint orders by, so the oldest in the page
+    // is the last row. **`since` is only honest while the page is not full** —
+    // beyond `HISTORY_PAGE` takes the oldest one here is not the oldest there
+    // is, and a card reading "since March" about a piece played since January
+    // is a wrong fact rather than a missing one.
+    const oldest = rows.length < HISTORY_PAGE ? rows[rows.length - 1] : undefined;
+
+    const recent = detailed
+      .map((analysis) => {
+        const result = asResult(analysis);
+        return result ? toTake(analysis, result, null) : null;
+      })
+      .filter((take): take is TakeResult => take !== null);
+
+    return {
+      takes: rows.length,
+      since: oldest?.created_at ?? null,
+      recent,
+    };
   },
 
   async getRecordingUrl(analysisId) {

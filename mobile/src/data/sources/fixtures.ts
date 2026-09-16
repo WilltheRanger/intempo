@@ -1335,6 +1335,30 @@ export const fixtureTakeSource: TakeSource = {
     }));
   },
 
+  /**
+   * The sample piece's practice behind it.
+   *
+   * Built from `getRecentTakes`, which already shapes a plausible run of
+   * sessions — drift shrinking week by week with one bad night — so the card
+   * and the Insights chart are drawing the same history rather than two that
+   * disagree. Only the piece this fixture take belongs to has any: every other
+   * piece in the sample library returns nothing, which is also what the card
+   * has to handle for a piece nobody has recorded yet.
+   */
+  async getPieceHistory(pieceId, window = 6) {
+    const recent = (await fixtureTakeSource.getRecentTakes(12)).filter(
+      (take) => take.pieceId === pieceId,
+    );
+    if (recent.length === 0) {
+      return { takes: 0, since: null, recent: [] };
+    }
+    return {
+      takes: recent.length,
+      since: recent[recent.length - 1].recordedAt,
+      recent: recent.slice(0, Math.max(1, window)),
+    };
+  },
+
   // The sample result was never recorded or uploaded. Hiding playback is more
   // honest than playing a canned clip and calling it the musician's take.
   async getRecordingUrl() {
