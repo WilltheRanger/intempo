@@ -263,12 +263,38 @@ async function checkCamera(browser) {
     fail('a live viewfinder is running', JSON.stringify(video));
   }
 
+  /*
+    **Counted in the strip, not in a sentence.** This read `body.innerText` for
+    the words "1 page" until 2026-09-16, and then failed for a day on a shutter
+    that works: the counter it was reading was replaced by the filmstrip, and
+    what the screen says after a shot is now the verdict on that shot — "The
+    notes are clear". The check was pinned to copy, the copy was deliberately
+    changed, and the report said the camera was broken.
+
+    So it asserts the outcome instead. `Page 1 of 1` is the filmstrip's own
+    accessible name — what a screen reader says about the page that was just
+    taken — which is the thing "captured and counted" was always trying to
+    mean, and it does not move when the words beside it do. The panel is
+    checked separately, because "the shutter worked" and "the app said
+    something about the shot" are two claims and one of them failing should not
+    be reported as the other.
+  */
   try {
     await page.click('[aria-label="Capture page"]', { timeout: 8000 });
     await page.waitForTimeout(2500);
-    const screen = await page.evaluate(() => document.body.innerText || '');
-    if (/1 page/.test(screen)) pass('a page is captured and counted');
-    else fail('a page is captured and counted', screen.slice(0, 120).replace(/\n/g, ' / '));
+    const counted = await page.locator('[aria-label^="Page 1 of 1"]').count();
+    if (counted > 0) pass('a page is captured and counted');
+    else {
+      const screen = await page.evaluate(() => document.body.innerText || '');
+      fail('a page is captured and counted', screen.slice(0, 120).replace(/\n/g, ' / '));
+    }
+
+    const verdict = await page.evaluate(() => document.body.innerText || '');
+    if (/keep it/i.test(verdict) && /take it again/i.test(verdict)) {
+      pass('the shot is judged before it is kept');
+    } else {
+      fail('the shot is judged before it is kept', verdict.slice(0, 120).replace(/\n/g, ' / '));
+    }
   } catch {
     fail('a page is captured and counted', 'no "Capture page" control responded');
   }
