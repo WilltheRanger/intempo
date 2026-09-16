@@ -1181,7 +1181,16 @@ export function RecordScreen() {
             preview against production without either of us realising the two
             were different origins carrying different code.
           */}
-          {footerNote && marker ? (
+          {/*
+            **`visibleProblem`, not `footerNote`.** The comment above says
+            "shown only beside a failure, never as furniture" and the condition
+            said otherwise: `footerNote` falls back to the last-free-analysis
+            advisory, so a musician who had never seen a failure got a bundle
+            hash under a line telling them how many analyses they had left. It
+            is a diagnostic for a report, and beside good news it is noise
+            (§3 law 10).
+          */}
+          {visibleProblem && marker ? (
             <Text
               variant="metadataSmall"
               color="textTertiary"
