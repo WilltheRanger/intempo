@@ -114,6 +114,111 @@ def test_a_deployment_with_no_storage_configured_refuses_everything() -> None:
     assert storage_origin("") is None
 
 
+# ---- traversal: the path checked must be the path fetched -----------------
+
+
+def test_a_dotdot_out_of_my_own_folder_is_refused() -> None:
+    """`..` walked straight through the prefix test, which is a string compare.
+
+    `urlparse` does not normalise a path, so this starts with the required
+    prefix and was accepted — and `httpx` normalises it away before the request
+    leaves, so the path *checked* and the path *fetched* were different:
+
+        checked:  /storage/v1/object/sign/audio-uploads/<me>/../<other>/take.wav
+        fetched:  /storage/v1/object/sign/audio-uploads/<other>/take.wav
+    """
+    me, other = uuid4(), uuid4()
+    url = (
+        f"https://proj.supabase.co/storage/v1/object/sign/"
+        f"{BUCKET}/{me}/../{other}/take.wav"
+    )
+    assert not is_owned_storage_url(
+        url, bucket=BUCKET, user_id=me, expected_origin=OURS
+    )
+
+
+def test_a_dotdot_out_of_the_bucket_is_refused() -> None:
+    """Two of them leave the bucket as well as the user.
+
+    `/storage/v1/object/public/audio-uploads/<me>/../../other/s.wav` is sent by
+    httpx as `/storage/v1/object/public/other/s.wav` — a different bucket
+    entirely, under a prefix that needs no signature.
+    """
+    me = uuid4()
+    url = (
+        f"https://proj.supabase.co/storage/v1/object/public/"
+        f"{BUCKET}/{me}/../../score-images/{me}/page.jpg"
+    )
+    assert not is_owned_storage_url(
+        url, bucket=BUCKET, user_id=me, expected_origin=OURS
+    )
+
+
+@pytest.mark.parametrize("dots", ["%2e%2e", "%2E%2E", ".."])
+def test_an_encoded_dotdot_is_refused_too(dots: str) -> None:
+    """Encoded and raw fail differently, so both are refused.
+
+    A raw `..` is resolved by the client before it sends; `%2e%2e` is sent
+    encoded for the *server* to resolve. The two disagree about who normalises,
+    and neither of them is this deployment — so the only safe answer is that a
+    storage URL contains no traversal at all.
+    """
+    me, other = uuid4(), uuid4()
+    url = (
+        f"https://proj.supabase.co/storage/v1/object/sign/"
+        f"{BUCKET}/{me}/{dots}/{other}/take.wav"
+    )
+    assert not is_owned_storage_url(
+        url, bucket=BUCKET, user_id=me, expected_origin=OURS
+    )
+
+
+@pytest.mark.parametrize("sep", ["%2f", "%2F", "%5c"])
+def test_an_encoded_separator_is_refused(sep: str) -> None:
+    """An encoded separator makes the server split the path differently.
+
+    The comparison here is against one string; the server resolves another. The
+    same class as `..`, and a real storage URL never needs it.
+    """
+    me, other = uuid4(), uuid4()
+    url = (
+        f"https://proj.supabase.co/storage/v1/object/sign/"
+        f"{BUCKET}/{me}{sep}..{sep}{other}/take.wav"
+    )
+    assert not is_owned_storage_url(
+        url, bucket=BUCKET, user_id=me, expected_origin=OURS
+    )
+
+
+def test_a_single_dot_segment_is_refused() -> None:
+    """`/./` does not escape, but it still makes the two paths differ."""
+    me = uuid4()
+    url = (
+        f"https://proj.supabase.co/storage/v1/object/sign/"
+        f"{BUCKET}/{me}/./take.wav"
+    )
+    assert not is_owned_storage_url(
+        url, bucket=BUCKET, user_id=me, expected_origin=OURS
+    )
+
+
+def test_a_dot_inside_a_filename_is_still_allowed() -> None:
+    """The guard rejects `.` and `..` *segments*, not dots.
+
+    Every real object here has an extension, and a name may carry more than
+    one. Rejecting the character rather than the segment would refuse the
+    ordinary case, which is how a security fix becomes an outage.
+    """
+    me = uuid4()
+    url = (
+        f"https://proj.supabase.co/storage/v1/object/sign/"
+        f"{BUCKET}/{me}/my..take.final.v2.wav"
+    )
+    assert is_owned_storage_url(
+        url, bucket=BUCKET, user_id=me, expected_origin=OURS
+    )
+
+
 def test_a_path_that_only_looks_like_a_prefix_is_refused() -> None:
     """`/storage/v1/object/sign/audio-uploads-evil/<id>/` shares a prefix with
     the bucket name and is not the bucket."""

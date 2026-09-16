@@ -101,7 +101,7 @@ def table(monkeypatch: pytest.MonkeyPatch) -> _Table:
     t = _Table({"id": SCORE_ID, "user_id": "u", "source_image_url": IMAGE_URL})
     monkeypatch.setattr(runner, "get_service_client", lambda: _Client(t))
     monkeypatch.setattr(runner, "readable_url", lambda url: url)
-    monkeypatch.setattr(runner, "download_image", lambda url: b"\x89PNG\r\n\x1a\n")
+    monkeypatch.setattr(runner, "download_image", lambda url, **_kw: b"\x89PNG\r\n\x1a\n")
     return t
 
 
@@ -200,7 +200,9 @@ def test_a_failed_download_says_so_rather_than_blaming_the_notation(table, monke
     monkeypatch.setattr(
         runner,
         "download_image",
-        lambda url: (_ for _ in ()).throw(HTTPException(status_code=502, detail="nope")),
+        lambda url, **_kw: (_ for _ in ()).throw(
+            HTTPException(status_code=502, detail="nope")
+        ),
     )
     runner.run_transcription(SCORE_ID)
 

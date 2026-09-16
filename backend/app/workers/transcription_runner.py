@@ -34,6 +34,7 @@ from app.db import get_service_client
 from app.services.ocr import OCRError, parse_sheet_music
 from app.services.ocr.pages import join_pages
 from app.services.score_pages import PAGE_COLUMNS, pages_of
+from app.services.storage_origin import storage_origin
 from app.services.ocr.pipeline import (
     STAGE_CONFIRMING,
     STAGE_READING,
@@ -512,7 +513,21 @@ def _read_one_page(
 
     try:
         fetch_url = readable_url(image_url)
-        image_bytes = download_image(fetch_url)
+        # **The origin check `download_image` documents only runs if a caller
+        # passes one**, and this — the only caller in the application — passed
+        # nothing, so the redirect guard it grew after a review has never
+        # executed in production. Both shapes `readable_url` can return are on
+        # the storage host: a URL it freshly signed, or the stored
+        # `_durable_image_url`, which `scores._durable_image_url` builds from a
+        # validated key against `SUPABASE_URL`. So the approved origin is that
+        # one, and a 302 away from it is the thing being refused.
+        #
+        # `storage_origin` answers None when the deployment has no
+        # `SUPABASE_URL`, which disables the comparison — the behaviour this
+        # line replaces, so a Modal container without it is no worse off.
+        image_bytes = download_image(
+            fetch_url, expected_origin=storage_origin(settings.SUPABASE_URL)
+        )
         # **Nothing is rotated here, and that is a correction.**
         #
         # A previous version turned pages it judged sideways. It judged wrongly

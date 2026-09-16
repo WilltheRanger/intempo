@@ -264,6 +264,30 @@ def test_every_column_migration_has_a_readiness_check() -> None:
     # `database` check long before any column is looked for.
     missing = [name for name in missing if not name.startswith("001")]
 
+    #: Migrations whose column the code does **not** write yet, named here for
+    #: the same reason 004 is named above: absent by argument rather than by
+    #: oversight.
+    #:
+    #: `REQUIRED_COLUMNS` says what it is for in its own first line — "columns
+    #: this build writes to". A column the build does not touch cannot belong
+    #: there, because `/v1/ready` would then answer "not ready" for a
+    #: deployment able to do everything the code actually does. That is the
+    #: false alarm this whole module exists to avoid, pointed the other way.
+    #:
+    #: **Each entry is a debt, not a dispensation.** The moment any code reads
+    #: or writes the column, it moves into `REQUIRED_COLUMNS` and leaves this
+    #: set — and a deployment without it goes back to being a real fault.
+    AHEAD_OF_THE_CODE = {
+        # `analyses.audio_reclaimed_at`. Recovered from the live project rather
+        # than written: it was applied to `intempo-dev` on 2026-09-13 and no
+        # file here created it, so `check-migrations.py` was building a schema
+        # two days behind Supabase and agreeing with itself. The file exists now
+        # so the repository can rebuild what is deployed; the reclaim code that
+        # would write the column does not exist in this tree at all.
+        "019_take_audio_reclaim.sql",
+    }
+    missing = [name for name in missing if name not in AHEAD_OF_THE_CODE]
+
     assert missing == [], (
         f"{missing} add columns with no entry in REQUIRED_COLUMNS — a "
         f"deployment missing them would 500 while /v1/ready reported ready"

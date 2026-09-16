@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import dataclasses
+import json
+import math
+import warnings
 from typing import Callable
 from uuid import UUID, uuid4
 
@@ -11,6 +15,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.routers import calibration as calibration_module
+from app.services.audio_config import load_audio_config
 from app.services.calibration import calibrate
 from app.tests.audio_helpers import evenly_spaced, synth_click_track
 
@@ -40,6 +45,56 @@ def test_too_few_onsets() -> None:
     # One note in a 2s clip.
     y = synth_click_track([0.5], sr=SR, tail_s=1.5)
     assert calibrate(y, SR).code == "too_few_onsets"
+
+
+def test_one_onset_is_too_few_however_low_min_onsets_is_set() -> None:
+    """`min_onsets = 1` in config must not produce a NaN tempo.
+
+    Every threshold here is tunable from `config.toml` on purpose (CLAUDE.md
+    §1.7), and this is the one that can be lowered past what the arithmetic
+    allows. At 1, a single onset left `np.diff` empty: `mean` of that is `nan`,
+    every later comparison against `nan` is false, and the clip walked the
+    whole function to `ok=True` with `bpm=nan` and the toast "Detected ♩=nan.
+    Use this?" — which is also not JSON-serialisable, so the response raised
+    rather than answered.
+
+    One onset is `too_few_onsets` for the same reason zero is: you cannot
+    measure an interval without two of them.
+    """
+    cfg = load_audio_config()
+    lowered = dataclasses.replace(
+        cfg, calibration=dataclasses.replace(cfg.calibration, min_onsets=1)
+    )
+    y = synth_click_track([0.5], sr=SR, tail_s=1.5)
+
+    with warnings.catch_warnings():
+        # A RuntimeWarning here would be the old behaviour computing on empty.
+        warnings.simplefilter("error", RuntimeWarning)
+        result = calibrate(y, SR, config=lowered)
+
+    assert result.ok is False
+    assert result.code == "too_few_onsets"
+    assert result.bpm is None
+
+
+def test_a_reported_bpm_is_always_a_real_number() -> None:
+    """The docstring's promise — "we never surface a garbage number" — pinned.
+
+    `nan` fails every comparison and `inf` fails only one side, so the
+    `bpm_min`/`bpm_max` range test cannot catch either on its own. Whatever
+    else changes in here, an `ok` result carries a tempo that is finite, inside
+    the configured range, and survives `json.dumps(..., allow_nan=False)`.
+    """
+    cfg = load_audio_config()
+    y = synth_click_track(evenly_spaced(4, 96.0), sr=SR)
+    result = calibrate(y, SR)
+
+    assert result.ok is True
+    assert result.bpm is not None
+    assert math.isfinite(result.bpm)
+    assert cfg.calibration.bpm_min <= result.bpm <= cfg.calibration.bpm_max
+    # The router returns this as JSON; NaN and inf are not JSON.
+    json.dumps({"bpm": result.bpm}, allow_nan=False)
 
 
 def test_good_clip_returns_bpm() -> None:

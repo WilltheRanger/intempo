@@ -178,7 +178,7 @@ def one_page(monkeypatch):
     def _install(*, fails: bool = False):
         stages: list[str | None] = []
         monkeypatch.setattr(runner, "readable_url", lambda url: url)
-        monkeypatch.setattr(runner, "download_image", lambda url: b"<page>")
+        monkeypatch.setattr(runner, "download_image", lambda url, **_kw: b"<page>")
         monkeypatch.setattr(runner, "too_small_to_read", lambda _b: None)
         monkeypatch.setattr(
             runner, "prepare_for_model", lambda _b: (b"<page>", "image/jpeg")

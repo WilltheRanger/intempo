@@ -31,6 +31,7 @@ from app.db import get_service_client
 from app.services.buckets import SCORE_BUCKET
 from app.services.cache_headers import CACHE_FOREVER
 from app.services.signed_urls import absolute, signed_url_in
+from app.services.storage_origin import origin_of
 
 log = logging.getLogger("intempo.scores")
 
@@ -126,8 +127,11 @@ def object_key_from(image_url: str, bucket: str = SCORE_BUCKET) -> str | None:
 
     Storing the key on the row would be tidier than re-deriving it, and is the
     right follow-up. It needs a migration and a backfill, and the derivation is
-    safe today because `_assert_image_url_owned_by` has already refused any URL
-    that isn't one of these shapes.
+    safe today because `scores._owned_image_key` has already refused any
+    reference that is not one of these shapes — it requires the key's first
+    segment to equal the caller's id, forbids `/` or `\\` inside the filename
+    and rejects a filename of `.` or `..`, and `_durable_image_url` then
+    rebuilds the URL from that validated key rather than keeping what was sent.
     """
     path = urlparse(image_url).path
     for prefix in STORAGE_PREFIXES:
@@ -157,11 +161,15 @@ def download_image(image_url: str, *, expected_origin: str | None = None) -> byt
     this ever holds is one chunk past the limit.
 
     **Redirects may not leave the endpoint the caller was authorised for.**
-    `_assert_image_url_owned_by` checks the URL is a Supabase score-images URL
-    under this user's prefix, and its docstring says "we never download
-    arbitrary internet URLs" — which was true of the URL given and not of where
-    following redirects could end up. A 302 to a link-local address would have
-    been followed.
+    `scores._owned_image_key` establishes that the reference names a
+    score-images object under this caller's prefix, and that was true of the
+    URL given and not of where following redirects could end up. A 302 to a
+    link-local address would have been followed.
+
+    **`expected_origin` is what turns that paragraph into a running check, and
+    it has to be passed.** It defaults to None, which disables the comparison
+    entirely, and `transcription_runner` — the only caller in the application —
+    passed nothing, so none of this executed in production. It passes one now.
 
     The comparison is host *and* port, not host alone: a redirect to another
     port on the same host reaches a different service, which is most of what
@@ -180,7 +188,24 @@ def download_image(image_url: str, *, expected_origin: str | None = None) -> byt
                         detail=f"image download returned status {response.status_code}",
                     )
                 final = response.url
-                final_origin = f"{final.host}:{final.port}"
+                # **`origin_of`, not an f-string.** `httpx.URL.port` is `None`
+                # when the port is the scheme's default, so
+                # `f"{final.host}:{final.port}"` renders a real
+                # `https://x.supabase.co/...` as `x.supabase.co:None` — while
+                # the caller's `expected_origin` comes from `storage_origin()`,
+                # which fills the default in and says `x.supabase.co:443`. The
+                # two never match, so the comparison below fired on every
+                # legitimate fetch against real storage.
+                #
+                # Invisible to the suite because every test here serves from a
+                # local port, which is explicit and therefore not None. The one
+                # shape that is never exercised is the only shape production
+                # has.
+                #
+                # This is the drift `services/storage_origin` was extracted to
+                # stop, recurring in the same two functions: both had a private
+                # copy of what `origin_of` already does. Now neither does.
+                final_origin = origin_of(str(final)) or f"{final.host}"
                 if expected_origin and final_origin != expected_origin:
                     # Names both ends. Supabase serves signed object URLs from
                     # the project host and is not expected to redirect off it —
@@ -257,9 +282,9 @@ def readable_url(image_url: str) -> str:
     `POST /v1/scores` as `image_url`, and this fetched it as given.
 
     Signing a fresh download URL from the object key fixes it and is better
-    regardless: `_assert_image_url_owned_by` has already established which
-    object the caller is allowed to read, so the key is the trustworthy part of
-    what was sent, and the URL around it is not.
+    regardless: `scores._owned_image_key` has already established which object
+    the caller is allowed to read, so the key is the trustworthy part of what
+    was sent, and the URL around it is not.
 
     Falls back to the URL as given when a key cannot be extracted or nothing
     can sign one — a `/object/sign/` or `/object/public/` URL is already

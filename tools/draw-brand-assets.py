@@ -42,7 +42,25 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+# **Pillow is a backend dependency, and this is the only tool outside
+# `backend/` that needs it.** `backend/pyproject.toml` asks for it; nothing
+# installs it into the system interpreter, so `python3 tools/draw-brand-
+# assets.py` died on the import below — and `check-brand-assets.py` runs this
+# with `sys.executable`, so `tools/preflight.py` reported the brand gate as
+# FAIL on every machine whose `python3` is not the backend's. The art was
+# never wrong; nothing had looked at it, which is the failure that check's own
+# docstring was written about. Same re-exec the benches use, for the same
+# reason: make the documented command true rather than document a longer one.
+#
+# Silent on CI, where there is no `backend/.venv` and the workflow installs
+# the pinned Pillow into the interpreter itself — so the byte-for-byte
+# comparison still runs under the version `ci.yml` names.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from backend_python import use_backend_python  # noqa: E402
+
+use_backend_python()
+
+from PIL import Image, ImageDraw, ImageFont  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 MOBILE = ROOT / "mobile"
@@ -216,7 +234,17 @@ def main() -> int:
             print("Brand assets no longer match what this script draws:")
             for one in drifted:
                 print(f"  {one}")
-            print("\nRe-run tools/draw-brand-assets.py, or update the script first.")
+            # **Which Pillow drew it, because that is the other way this
+            # fails.** The comparison is byte-for-byte and Pillow rasterises
+            # the Bravura glyph, so a different version disagrees about art
+            # nobody has touched — `ci.yml` pins 12.3.0 for exactly that
+            # reason while `backend/pyproject.toml` only asks for `>=`. Named
+            # here so version skew reads as version skew instead of sending
+            # someone to look at the icon.
+            import PIL
+
+            print(f"\nDrawn here by Pillow {PIL.__version__}; CI pins 12.3.0.")
+            print("Re-run tools/draw-brand-assets.py, or update the script first.")
             return 1
         print("Brand assets match the script that draws them.")
     return 0
