@@ -1,5 +1,76 @@
 # InTempo Decisions
 
+## 2026-09-16 — The record screen is the music, and the controls are a sheet over it
+
+**Context.** Record had the shape every settings screen has: a title, a column
+of controls, one action in the footer. The piece a musician was about to play
+was not on it. Nine other screens in this app show the score; the one where the
+instrument is actually up did not.
+
+That is not an oversight, it is a genuine conflict — this is the one screen
+where the content and the chrome both have a real claim on the display. The
+tempo, the metronome mode and the entry bar have to be set. The music has to be
+read. A phone has room for one of them at a time.
+
+**Decision.** Give the display to the music and put the controls on a glass
+sheet the musician can drag down. Neither is chosen for them.
+
+What stays when the sheet is lowered is the take itself — the elapsed time, the
+record button, and what the microphone is hearing. Those three are the peek, so
+lowering the sheet never moves the one control a musician reaches for without
+looking. Everything below them is setup, and setup is what you put away once it
+is set.
+
+**Alternatives considered.** A tab or a segmented control between "music" and
+"settings" — rejected because it makes a mode out of something that wants to be
+a glance, and because the state would then have to be remembered or not, and
+either answer is wrong for somebody. A score strip above the controls —
+rejected after measuring: three systems of a seventy-four bar part in a third
+of a phone is a strip you scroll rather than a page you read, and the top and
+bottom lines are cut through wherever the scroll stops. That is the same
+finding the bar picker recorded when it stopped being a scroll.
+
+**Trade accepted.** With the sheet raised, the lower half of the music is
+behind it. That is the cost of not choosing for the musician, and it is paid
+back by one drag.
+
+**The handle drags, which is a condition of drawing one.** §3 of `CLAUDE.md`
+says a drawn affordance must do the thing it depicts, because this app shipped
+a grab handle that dragged nothing. The settle rule is in `lib/record/sheet.ts`
+with tests, not in the component, and it earned that on the first run: the
+first version compared no distance at all, so a two-point twitch would have
+dropped the sheet. `COMMIT_FRACTION` was declared and never read.
+
+## 2026-09-16 — A tappable bar is a control over the drawing, not a rect inside it
+
+**Context.** `Stave` made bars tappable with `<Rect onPress>` inside its SVG.
+On the web build those rendered as `<rect x y width height fill>` and **nothing
+else** — no handler, no role, no name. A plain `<div>` sat over them besides.
+
+So "tap a bar to start there" had never worked in a browser. Not in the bar
+picker, which is the only way to set where a take begins, and not anywhere
+else. The stave is `accessible={false}` on purpose — a screen reader spelling
+out fifteen note letters is noise — which left the bars with no name of their
+own either, so a keyboard could not reach them and a screen reader could not
+announce them. A drawn affordance that did not do the thing it depicts, on the
+one gesture the picker exists for.
+
+**Decision.** Lay real `Pressable`s over the drawing, positioned from the same
+`measureSpans` the wash is drawn from, as siblings of the `<Svg>` inside a view
+sized to it. They carry `accessibilityRole="radio"` and `aria-checked`, because
+exactly one bar is the entry bar and choosing another unchooses this one —
+which is what a radio means and what a musician needs announced.
+
+**Alternatives considered.** Patching `react-native-svg` so `onPress` maps to a
+DOM handler on web — rejected: it would still leave the targets nameless and
+roleless, which is half the bug. Wrapping each `Rect` in a `G` with
+accessibility props — same objection, and `G` has the same type limits.
+
+**Trade accepted.** The targets have no minimum size. A bar of sixteenths is
+narrow, and widening its target would put it over its neighbour — the wrong bar
+chosen silently, which is worse than a small target. Precision is the stepper's
+job, and the stepper says so in its own comment.
+
 ## 2026-09-14 — An alignment measures the passage that was played, not the page it was played from
 
 **Context.** Every take InTempo had ever analysed was refused. All eight rows in

@@ -1,3 +1,4 @@
+import { Pressable, View } from 'react-native';
 import Svg, { Circle, G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 
 import type { Articulation, Clef } from '../../data/types';
@@ -409,7 +410,39 @@ export function Stave({
   const beamNode = lineGap * BEAM_THICKNESS_FACTOR;
   const stroke = STROKE * fitted;
 
-  return (
+  /**
+   * Where a tappable bar actually is, in the drawing's own coordinates.
+   *
+   * **These used to be `<Rect onPress>` inside the SVG, and on the web build
+   * that produced no handler at all** — the rendered element carried `x`, `y`,
+   * `width`, `height`, `fill` and nothing else, and a plain `<div>` sat over it
+   * besides. So "tap a bar to start there" had never worked in a browser, in
+   * the bar picker or anywhere else: a drawn affordance that did not do the
+   * thing it depicts, which is the failure `CLAUDE.md` §3 names.
+   *
+   * Real `Pressable`s over the drawing work on both platforms, and they carry a
+   * role and a name, which an SVG `Rect` cannot.
+   */
+  const targets =
+    onMeasurePress
+      ? drawn.flatMap((system, drawnIndex) =>
+          system.measureSpans
+            .filter(
+              (span) =>
+                !pressableMeasures || pressableMeasures.includes(span.measureNumber),
+            )
+            .map((span) => ({
+              key: `target-${firstDrawn + drawnIndex}-${span.measureNumber}`,
+              measureNumber: span.measureNumber,
+              left: span.from,
+              top: system.staffLines[0] - lineGap - lift,
+              width: span.to - span.from,
+              height: lineGap * 6,
+            })),
+        )
+      : [];
+
+  const drawing = (
     <Svg
       width={engraving.width}
       height={page ? page.height : engraving.height}
@@ -1088,33 +1121,55 @@ export function Stave({
             />
           ))}
 
-          {/* Last, so they are on top of every mark and receive the tap.
-              `transparent` rather than `none`: SVG hit-tests painted area, and
-              a fill of `none` is not painted, so it would draw nothing *and*
-              catch nothing. */}
-          {onMeasurePress
-            ? system.measureSpans
-                .filter(
-                  (span) =>
-                    !pressableMeasures ||
-                    pressableMeasures.includes(span.measureNumber),
-                )
-                .map((span) => (
-                  <Rect
-                    key={`target-${span.measureNumber}`}
-                    x={span.from}
-                    y={system.staffLines[0] - lineGap}
-                    width={span.to - span.from}
-                    height={lineGap * 6}
-                    fill="transparent"
-                    onPress={() => onMeasurePress(span.measureNumber)}
-                  />
-                ))
-            : null}
         </G>
         );
       })}
     </Svg>
+  );
+
+  if (targets.length === 0) {
+    return drawing;
+  }
+
+  return (
+    <View style={{ width: engraving.width, height: page ? page.height : engraving.height }}>
+      {drawing}
+      {targets.map((target) => (
+        <Pressable
+          key={target.key}
+          onPress={() => onMeasurePress?.(target.measureNumber)}
+          /*
+            A radio, not a button: exactly one bar is the entry bar, and
+            choosing another unchooses this one. That is what a radio means,
+            and it is what a screen reader should say — "Bar 3, not checked"
+            rather than "Bar 3, button", which tells a musician nothing about
+            where the take will start.
+
+            The ARIA spelling as well as the React Native one, because
+            react-native-web drops `accessibilityState` and the web build is
+            where this is read. `ariaState.test.ts` holds the pairing.
+          */
+          accessibilityRole="radio"
+          accessibilityLabel={`Bar ${target.measureNumber}`}
+          accessibilityState={{ checked: highlightMeasure === target.measureNumber }}
+          aria-checked={highlightMeasure === target.measureNumber}
+          /*
+            No minimum size, deliberately. A bar of sixteenths is narrow and
+            widening its target would put it over its neighbour, which is a
+            worse failure than a small one: the wrong bar chosen silently.
+            Precision is the stepper's job — `StartBarPicker` says so in its
+            own comment — and this is the gesture for the bar you can see.
+          */
+          style={{
+            position: 'absolute',
+            left: target.left,
+            top: target.top,
+            width: target.width,
+            height: target.height,
+          }}
+        />
+      ))}
+    </View>
   );
 }
 

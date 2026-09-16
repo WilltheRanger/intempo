@@ -1,4 +1,4 @@
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import {
   PageHeader,
@@ -8,28 +8,47 @@ import {
 } from '../../components/primitives';
 import { ROW_PADDING_VERTICAL, rowDivided } from '../../components/rowMetrics';
 import { BORDER_WIDTH, colors, spacing } from '../../design';
-
-/** The numeral's circle. Named because the row's rule no longer clears it. */
-const NUMBER_SIZE = 32;
+import type { PreflightCheck } from '../../lib/record/preflight';
 
 interface PracticeSetupProps {
   title: string;
+  /** What the app can actually tell about this take, warnings first. */
+  checks: PreflightCheck[];
   onBack: () => void;
   onContinue: () => void;
+  /** Resolve a check from here — the entry bar, or the metronome mode. */
+  onResolve: (to: 'startBar' | 'metronome') => void;
 }
 
 /**
- * A short, one-time orientation before a device records its first take.
+ * What is true about this take, before it is recorded.
  *
- * It stays about actions that change the result: microphone placement,
- * speaker bleed, and where the count-in ends. Permission is deliberately not
- * requested here — the system prompt belongs to Start, after the musician has
- * been told why the microphone is needed.
+ * **This was three static tips**, shown once, about microphone placement and
+ * speaker bleed and where the count-in ends. They were good advice and they
+ * were the same advice every time, on every piece, whether or not any of it
+ * applied — so the screen taught a musician that it had nothing to say, which
+ * is how a warning stops being read.
+ *
+ * The Pre-flight frame's argument is that the app already knows most of this.
+ * It knows the metronome will play out loud, because it is the thing playing
+ * it. It knows the first six bars of this part are rest and the take is set to
+ * start at bar 1. It knows the last take on this device came back silent. None
+ * of that needed a new signal; it needed asking.
+ *
+ * **What is still a tip, because it cannot be a check**: microphone placement,
+ * which no browser will tell us about, and which is one line at the foot rather
+ * than a third of the screen.
+ *
+ * The rules are in `lib/record/preflight.ts` with tests. `CLAUDE.md` §3: a rule
+ * inside a `.tsx` is a rule nothing checks, and "does this warn when it should"
+ * is the kind that stays wrong quietly.
  */
 export function PracticeSetup({
   title,
+  checks,
   onBack,
   onContinue,
+  onResolve,
 }: PracticeSetupProps) {
   return (
     <ScreenContainer
@@ -41,125 +60,109 @@ export function PracticeSetup({
             color="textTertiary"
             style={styles.footerNote}
           >
-            You can reopen these tips from the recording screen.
+            You can reopen this from the recording screen.
           </Text>
         </View>
       }
     >
       {/*
-        **The tips are the subject; the piece is the context.**
+        **The checks are the subject; the piece is the context.**
 
-        This had the piece as the screen title *and* "Before your first take"
-        as a second heading of the same weight, one under the other — two
-        competing focal points (§3 law 4). At 320pt with a real repertoire
-        title it was four lines of serif followed by two more, and the actual
-        subject of the screen was below the fold.
-
-        The piece moves to the eyebrow, where a one-time interstitial about
-        microphone technique should carry it. The composer goes: on a screen
-        that is not about the music, it is one more thing to read.
+        This had the piece as the screen title *and* a second heading of the
+        same weight under it — two competing focal points (§3 law 4). At 320pt
+        with a real repertoire title that was four lines of serif before the
+        actual subject of the screen.
       */}
       <PageHeader
         eyebrow={title}
-        title="Before your first take"
+        title="Ready when you are"
         onBack={onBack}
         backLabel="Back to the piece"
       />
 
-      <Text variant="body" color="textSecondary" style={styles.lede}>
-        Three details make the timing feedback much more reliable.
-      </Text>
-
-      {/*
-        **Three steps on the page, not in a box.** §3 law 3 — the background is
-        a compositional surface and a card around a plain list is the case that
-        law names. The numerals stay: unlike most numbering, these are a real
-        sequence, and they are what tells you there are exactly three things to
-        read before you start.
-
-        Rules are now the app's own convention (`rowMetrics`), top-ruled and
-        running the full width from the gutter, in place of three hand-built
-        `<View>` dividers inset to clear the numeral.
-      */}
-      <View style={styles.steps}>
-        {SETUP_STEPS.map((step, index) => (
-          <SetupStep
-            key={step.number}
-            number={step.number}
-            title={step.title}
-            body={step.body}
+      <View style={styles.checks}>
+        {checks.map((check, index) => (
+          <CheckRow
+            key={check.id}
+            check={check}
             divided={rowDivided(index)}
+            onResolve={onResolve}
           />
         ))}
       </View>
 
+      {/*
+        The one thing here that is advice rather than a reading, kept as
+        advice. No browser reports where a phone is sitting.
+      */}
       <Text variant="metadataSmall" color="textTertiary" style={styles.permission}>
-        Your device will ask for microphone access when you press Start. InTempo
-        records only until you press Stop or leave this screen.
+        Place your device nearby with its microphone uncovered, away from the
+        stand and anything that rattles. Your device will ask for microphone
+        access when you press Start, and InTempo records only until you press
+        Stop or leave this screen.
       </Text>
     </ScreenContainer>
   );
 }
 
 /**
- * The three things to get right before a first take, in order.
+ * One reading, with its remedy where it has one.
  *
- * Hoisted out of the JSX so the list can be mapped — which is what lets
- * `rowDivided(index)` decide the rules instead of hand-placed dividers between
- * hand-written siblings.
+ * **No verdict colour.** `colors.ts` quarantines that trio to the screen that
+ * reports how a take went, and this screen reports how a take is *set up* —
+ * a different thing, before a note has been played. So the state is carried by
+ * the glyph and by weight: what is wrong is ink and what is fine recedes to
+ * secondary, which is the hierarchy §3 law 8 asks for anyway.
  */
-const SETUP_STEPS = [
-  {
-    number: '1',
-    title: 'Give the microphone a clear listen',
-    body: 'Place your device nearby with its microphone uncovered. Keep it away from the music stand and anything that rattles.',
-  },
-  {
-    number: '2',
-    title: 'Keep speaker sound out of the take',
-    body: 'The count-in always ticks out loud, and those seconds are thrown away before anything is sent. After it, use headphones if you want the metronome audible — the microphone would hear the room.',
-  },
-  {
-    number: '3',
-    title: 'Enter on the next downbeat',
-    body: 'Start counts you in for one full bar, out loud and in your hand. During a long written rest, the screen counts down to the exact measure where you return.',
-  },
-] as const;
-
-function SetupStep({
-  number,
-  title,
-  body,
+function CheckRow({
+  check,
   divided,
+  onResolve,
 }: {
-  number: string;
-  title: string;
-  body: string;
+  check: PreflightCheck;
   divided: boolean;
+  onResolve: (to: 'startBar' | 'metronome') => void;
 }) {
+  const warn = check.tone === 'warn';
   return (
-    <View style={[styles.step, divided && styles.ruled]}>
-      <View style={styles.number} accessibilityElementsHidden>
-        <Text variant="sectionLabel">{number}</Text>
-      </View>
-      <View style={styles.stepCopy}>
-        <Text variant="button">{title}</Text>
-        <Text variant="metadata" color="textSecondary" style={styles.stepBody}>
-          {body}
+    <View style={[styles.check, divided && styles.ruled]}>
+      <Text
+        variant="button"
+        color={warn ? 'textPrimary' : 'textTertiary'}
+        style={styles.mark}
+        accessibilityElementsHidden
+      >
+        {warn ? '!' : '✓'}
+      </Text>
+      <View style={styles.checkCopy}>
+        <Text variant="button" color={warn ? 'textPrimary' : 'textSecondary'}>
+          {check.title}
         </Text>
+        <Text variant="metadata" color="textSecondary" style={styles.checkBody}>
+          {check.detail}
+        </Text>
+        {check.action ? (
+          <Pressable
+            onPress={() => onResolve(check.action!.to)}
+            accessibilityRole="button"
+            accessibilityLabel={check.action.label}
+            style={({ pressed }) => [styles.resolve, pressed && styles.resolvePressed]}
+          >
+            <Text variant="metadata" color="textPrimary">
+              {check.action.label} ›
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  lede: {
-    marginTop: spacing.sm,
-  },
-  steps: {
+  checks: {
     marginTop: spacing['2xl'],
   },
-  step: {
+  check: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: spacing.md,
@@ -169,29 +172,29 @@ const styles = StyleSheet.create({
     borderTopWidth: BORDER_WIDTH,
     borderTopColor: colors.border,
   },
-  number: {
-    width: NUMBER_SIZE,
-    height: NUMBER_SIZE,
-    borderRadius: NUMBER_SIZE / 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    /*
-      **`surface`, not `bg`, and the card leaving is why.** This was `bg` —
-      cream — which read only because the card behind it was white. On the page
-      ground, cream on cream is an invisible circle with a numeral floating in
-      it, and the same inversion holds in the dark palette (#14110E on #221E19).
-      The fill and the container moved together or neither worked.
-    */
-    backgroundColor: colors.surface,
+  mark: {
+    width: spacing.lg,
+    textAlign: 'center',
   },
-  stepCopy: {
+  checkCopy: {
     flex: 1,
   },
-  stepBody: {
+  checkBody: {
     marginTop: spacing.xs,
   },
+  resolve: {
+    // A 44pt row rather than a line of text, negative-margined back so the
+    // extra height does not open a gap under the detail it belongs to.
+    minHeight: 44,
+    justifyContent: 'center',
+    marginTop: spacing.xs,
+    marginBottom: -spacing.sm,
+  },
+  resolvePressed: {
+    opacity: 0.6,
+  },
   permission: {
-    marginTop: spacing.lg,
+    marginTop: spacing.xl,
   },
   footerNote: {
     marginTop: spacing.md,

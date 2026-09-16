@@ -81,6 +81,7 @@ describe('defaults', () => {
       haptics: true,
       reduceMotion: false,
       practiceSetupSeen: false,
+      lastTakeHadSound: null,
     });
   });
 });
@@ -124,6 +125,7 @@ describe('reading storage it does not trust', () => {
       haptics: true,
       reduceMotion: false,
       practiceSetupSeen: false,
+      lastTakeHadSound: null,
     });
   });
 
@@ -188,6 +190,7 @@ describe('setting one preference', () => {
       haptics: false,
       reduceMotion: false,
       practiceSetupSeen: false,
+      lastTakeHadSound: null,
     });
   });
 });
