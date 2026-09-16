@@ -136,3 +136,83 @@ function withinReading(fraction: number): number {
   const [start, end] = READING_BAND;
   return start + (end - start) * fraction;
 }
+
+/** What has happened to one page of a multi-page scan. */
+export type PageState = 'read' | 'reading' | 'waiting';
+
+export interface PageProgress {
+  /** 1-based, as the musician counts them. */
+  page: number;
+  state: PageState;
+  /** What to say about it, in one or three words. */
+  note: string;
+}
+
+/**
+ * Where each page of a scan stands, or null when there is nothing to say.
+ *
+ * **The fact this exists to state is "waiting for page 2".** A scan's pages are
+ * read one after another, and for most of a four-page wait the screen said
+ * `Reading page 2 of 4` and nothing else — true, and no help at all to someone
+ * wondering whether pages three and four were lost, queued, or never uploaded.
+ * The bar has always measured the whole job; this says what the job is made of.
+ *
+ * **Nothing is inferred from silence.** A stage this build cannot place leaves
+ * the list where it was (`held`), the same rule `progressFor` follows and for
+ * the same reason: a screen that redraws the queue from a step it does not
+ * recognise is a screen that tells the musician their scan restarted. The one
+ * stage that *does* move it without naming a page is a step past reading —
+ * once the worker is checking bar counts, every page has been read, and
+ * leaving page three saying "waiting" would be the panel contradicting itself.
+ *
+ * A single-page scan gets null. "Page 1: reading now" is the title again, one
+ * line lower, which is the element §3 law 10 asks to remove.
+ */
+export function pageStates(
+  stage: string | null | undefined,
+  total: number,
+  held: PageProgress[] | null,
+): PageProgress[] | null {
+  if (total < 2) {
+    return null;
+  }
+
+  const known = stage ? STAGE_PROGRESS[stage] : undefined;
+  if (known !== undefined && known > READING_BAND[1]) {
+    return Array.from({ length: total }, (_, index) => ({
+      page: index + 1,
+      state: 'read' as const,
+      note: 'Read',
+    }));
+  }
+
+  const match = stage ? PAGE_COUNT.exec(stage) : null;
+  if (!match) {
+    return held;
+  }
+
+  const reading = Number(match[1]);
+  // A worker counting to a different total than the piece has is a bug
+  // somewhere else, and holding is the harmless answer to it — drawing a
+  // four-row queue for a three-page piece is not.
+  if (Number(match[2]) !== total || reading < 1 || reading > total) {
+    return held;
+  }
+
+  return Array.from({ length: total }, (_, index) => {
+    const page = index + 1;
+    if (page < reading) {
+      return { page, state: 'read' as const, note: 'Read' };
+    }
+    if (page === reading) {
+      return { page, state: 'reading' as const, note: 'Reading now' };
+    }
+    return {
+      page,
+      state: 'waiting' as const,
+      // Named after the page it is actually behind, not "queued". A musician
+      // who can see what the wait is for has a reason to believe it will end.
+      note: `Waiting for page ${page - 1}`,
+    };
+  });
+}

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   QUEUED_PROGRESS,
   STAGE_PROGRESS,
+  pageStates,
   progressFor,
 } from './transcriptionProgress';
 // Imported rather than read off disk, the way `meters.parity.test.ts` does it:
@@ -138,5 +139,70 @@ describe('progressFor', () => {
         expect(progressFor(impossible, 0.7), impossible).toBe(0.7);
       }
     });
+  });
+});
+
+/**
+ * The queue behind the page being read.
+ *
+ * Every case here is one where the panel would otherwise say something it does
+ * not know: that a page is waiting when it has been read, that a scan
+ * restarted, or that there are four pages when there are three.
+ */
+describe('pageStates', () => {
+  const states = (list: ReturnType<typeof pageStates>) =>
+    list?.map((entry) => entry.state);
+
+  it('reads behind, now, and waiting from the worker’s own count', () => {
+    const list = pageStates('Reading page 2 of 3', 3, null);
+    expect(states(list)).toEqual(['read', 'reading', 'waiting']);
+    expect(list?.[2].note).toBe('Waiting for page 2');
+    expect(list?.[0].note).toBe('Read');
+  });
+
+  it('says nothing about a single-page scan', () => {
+    // "Page 1: reading now" is the title again, one line lower.
+    expect(pageStates('Reading page 1 of 1', 1, null)).toBeNull();
+  });
+
+  /**
+   * The same rule `progressFor` follows: a stage this build cannot place holds
+   * what is on screen. Redrawing the queue from an unrecognised step is how a
+   * scan that is working comes to look like one that restarted.
+   */
+  it('holds the queue through a stage that names no page', () => {
+    const held = pageStates('Reading page 2 of 3', 3, null);
+    expect(pageStates('Finding the staves', 3, held)).toBe(held);
+    expect(pageStates(null, 3, held)).toBe(held);
+    expect(pageStates('Something this build has never heard of', 3, held)).toBe(held);
+  });
+
+  /**
+   * The one stage that moves the queue without naming a page. Checking bar
+   * counts happens after every page is read, so leaving page three saying
+   * "waiting" would have the panel contradicting itself.
+   */
+  it('marks everything read once the worker is past reading', () => {
+    const held = pageStates('Reading page 1 of 3', 3, null);
+    expect(states(pageStates('Checking the bar counts', 3, held))).toEqual([
+      'read',
+      'read',
+      'read',
+    ]);
+  });
+
+  it('holds when the worker counts to a different total than the piece has', () => {
+    const held = pageStates('Reading page 1 of 3', 3, null);
+    expect(pageStates('Reading page 2 of 4', 3, held)).toBe(held);
+  });
+
+  it('holds on a page number the scan cannot contain', () => {
+    const held = pageStates('Reading page 1 of 3', 3, null);
+    expect(pageStates('Reading page 0 of 3', 3, held)).toBe(held);
+    expect(pageStates('Reading page 4 of 3', 3, held)).toBe(held);
+  });
+
+  it('starts empty rather than guessing, before the worker has said anything', () => {
+    expect(pageStates(null, 3, null)).toBeNull();
   });
 });

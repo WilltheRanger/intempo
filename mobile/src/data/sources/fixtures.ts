@@ -680,6 +680,39 @@ const FIXTURE_PIECES: FixturePiece[] = [
   },
   {
     /**
+     * **A three-page scan, mid-read**, which is the state the queue under the
+     * bar exists for and which no fixture could produce.
+     *
+     * `Reading page 2 of 3` is a stage the worker really writes
+     * (`fixtures/stages/parity.json` is the contract) and it is the only one
+     * that says which page is in hand — so it is the only one that can put
+     * "Waiting for page 2" on screen. Every other reading fixture is one page
+     * long, and `pageStates` returns null for those by design, which means the
+     * whole block was unreachable in the build this project actually looks at.
+     *
+     * Three pages rather than two: two makes "read / reading" and never shows a
+     * page waiting behind another, which is the fact the queue was added to
+     * state.
+     */
+    id: 'fixture-reading-multipage',
+    title: 'Partita No. 2 in D minor, BWV 1004',
+    composer: 'J. S. Bach',
+    movement: 'Allemanda',
+    practicedDaysAgo: null,
+    thumbnail: require('../../../assets/fixtures/01_simple_printed.jpg'),
+    morePages: [
+      require('../../../assets/fixtures/02_medium_printed.jpg'),
+      require('../../../assets/fixtures/03_complex_printed.jpg'),
+    ],
+    markedBpm: null,
+    score: null,
+    reading: {
+      transcriptionStatus: 'reading',
+      transcriptionStage: 'Reading page 2 of 3',
+    },
+  },
+  {
+    /**
      * **A page accepted and not yet started**, which is every second page of
      * every multi-page scan: the server reads a bounded number at once, so a
      * three-page part spends most of its wait here.
