@@ -335,6 +335,7 @@ export function PieceScoreScreen() {
         <PageHeader
           eyebrow={piece.composer}
           title={piece.title}
+          titleSize="hero"
           onBack={goBack}
           backLabel="Back to piece"
         />
@@ -352,6 +353,7 @@ export function PieceScoreScreen() {
         <PageHeader
           eyebrow={piece.composer}
           title={piece.title}
+          titleSize="hero"
           onBack={goBack}
           backLabel="Back to piece"
         />
@@ -475,6 +477,7 @@ export function PieceScoreScreen() {
       <PageHeader
         eyebrow={piece.composer}
         title={piece.title}
+        titleSize="hero"
         onBack={goBack}
         backLabel="Back to piece"
       />
