@@ -17,6 +17,7 @@ import { BottomSheet } from '../../components/overlays/BottomSheet';
 import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
 import { SheetOptionRow } from '../../components/overlays/SheetOptionRow';
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
+import { ScoreBand } from '../../components/score/ScoreBand';
 import {
   Card,
   EmptyState,
@@ -295,17 +296,33 @@ export function PieceDetailScreen() {
 
       {/*
         **A band, not a thumbnail in a box.** Sheet music is this app's visual
-        identity, and the page it was read from is the truest picture of a
-        piece there is. Inside a bordered card it read as an attachment to the
-        piece; edge to edge under the title it reads as the piece. The gutter
-        is cancelled rather than the screen re-laid out, which is what
-        `SCREEN_GUTTER` is exported for.
+        identity, and the opening of the piece is the truest picture of it there
+        is. Inside a bordered card it read as an attachment to the piece; edge
+        to edge under the title it reads as the piece. The gutter is cancelled
+        rather than the screen re-laid out, which is what `SCREEN_GUTTER` is
+        exported for.
 
-        A hairline underneath and nothing else: a page crop is nearly white and
-        the page it sits on is ivory, so without an edge the band dissolves into
-        the background (§3 law 6 — structure from hairlines, not elevation).
+        **The digitised page, not the photograph of it.** This was a crop of
+        what the camera saw — a phone photograph of paper, signed out of a
+        private bucket — and what it showed was a desk, a shadow and whatever
+        the lighting did, which is a picture of the photography rather than of
+        the music. The reading draws, and what it draws is the same music
+        printed rather than photographed. It is also the version everything
+        downstream is measured against, so a glance at it is a glance at what
+        the app will judge the take by.
+
+        The photograph is still one tap away and still every page of it: the
+        score screen's Original view, which is the place to go when the
+        question is "did it read this right".
       */}
-      {hasPages ? (
+      {hasNotation && piece.score ? (
+        <View style={styles.engravedBand}>
+          <ScoreBand score={piece.score} />
+        </View>
+      ) : hasPages ? (
+        // Nothing has been read yet — a scan still in the worker, or a reading
+        // that failed. The photograph is what the app has of this piece, so it
+        // is what the band shows rather than a blank.
         <ScoreThumbnail
           source={piece.thumbnail}
           composer={piece.composer}
@@ -565,6 +582,23 @@ const styles = StyleSheet.create({
     borderTopWidth: BORDER_WIDTH,
     borderBottomWidth: BORDER_WIDTH,
     borderColor: colors.border,
+  },
+  /**
+   * The engraved band takes its height from the music rather than from a
+   * constant.
+   *
+   * A photograph is a rectangle and `BANNER_HEIGHT` crops it to one; a system
+   * is as tall as its notes reach, and forcing it into a fixed band would
+   * either clip a ledger line or leave a strip of empty paper under a sparse
+   * one. The top rule is here because `ScoreBand` draws the paper and the
+   * bottom rule and cannot know it is against a gutter.
+   */
+  engravedBand: {
+    marginTop: spacing.xl,
+    marginHorizontal: -SCREEN_GUTTER,
+    alignSelf: 'stretch',
+    borderTopWidth: BORDER_WIDTH,
+    borderTopColor: colors.border,
   },
   facts: {
     marginTop: spacing.lg,
