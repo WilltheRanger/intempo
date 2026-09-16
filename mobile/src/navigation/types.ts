@@ -66,6 +66,14 @@ export type RootStackParamList = {
    * survives a re-read that changes how many measures there are.
    */
   MeasureEdit: { pieceId: string; measureNumber: number };
+  /**
+   * Checking a reading against what the app thinks is wrong with it.
+   *
+   * A piece rather than a bar: the whole point is to walk the proposals in one
+   * pass, and a route per proposal would put the musician back on the page
+   * they came to stop re-reading.
+   */
+  ProofRead: { pieceId: string };
   ChangeEmail: undefined;
   ChangePassword: undefined;
   DeleteAccount: undefined;

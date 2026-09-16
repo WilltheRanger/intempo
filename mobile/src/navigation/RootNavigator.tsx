@@ -28,6 +28,7 @@ import { WarmupScreen } from '../screens/warmup/WarmupScreen';
 import { LibraryScreen } from '../screens/library/LibraryScreen';
 import { PieceDetailScreen } from '../screens/pieceDetail/PieceDetailScreen';
 import { MeasureEditScreen } from '../screens/measureEdit/MeasureEditScreen';
+import { ProofReadScreen } from '../screens/proofRead/ProofReadScreen';
 import { OnboardingScreen } from '../screens/onboarding/OnboardingScreen';
 import { PieceScoreScreen } from '../screens/pieceScore/PieceScoreScreen';
 import { RecordScreen } from '../screens/record/RecordScreen';
@@ -328,6 +329,7 @@ function SignedInApp() {
       <Stack.Screen name="PieceDetail" component={PieceDetailScreen} />
       <Stack.Screen name="PieceScore" component={PieceScoreScreen} />
       <Stack.Screen name="MeasureEdit" component={MeasureEditScreen} />
+      <Stack.Screen name="ProofRead" component={ProofReadScreen} />
       <Stack.Screen name="ChangeEmail" component={ChangeEmailScreen} />
       <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
       <Stack.Screen name="DeleteAccount" component={DeleteAccountScreen} />

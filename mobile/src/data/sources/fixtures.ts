@@ -195,6 +195,48 @@ const DEMO_SCORE: ScoreJson = {
 };
 
 /**
+ * A reading that is internally consistent and wrong, which is the pair of
+ * failures `proposals.ts` exists for.
+ *
+ * **Neither is visible to any other check on the score screen.** Bar 1 carries
+ * C3 — a whole tone below the violin's open G, a note the part cannot play —
+ * and the bar still sums to four beats, so the beat check is happy and the
+ * engraver draws it without complaint. Bar 2 reads the same A twice and comes
+ * out at five, which the beat check *does* catch, and which nothing could
+ * previously offer a correction for.
+ *
+ * Both shapes are taken from what OCR actually does rather than invented: a
+ * notehead placed a line too low or under a misread clef, and a notehead read
+ * twice. The measured case behind the first is on the live project — a real
+ * 25-bar part that came back at exactly 4.00 beats a bar with C3 on a violin.
+ *
+ * A fixture for the same reason the four above it exist: a state with no
+ * fixture is a state nobody looks at, and this build is the one the screens
+ * are checked in.
+ */
+const MISREAD_SCORE: ScoreJson = {
+  ...DEMO_SCORE,
+  measures: [
+    {
+      measure_number: 1,
+      notes: ['C3', 'E4', 'F#4', 'G4'].map(quarter),
+      slurs: [],
+    },
+    {
+      measure_number: 2,
+      notes: ['A4', 'A4', 'G4', 'F#4', 'E4'].map(quarter),
+      slurs: [],
+    },
+    {
+      measure_number: 3,
+      notes: [{ pitch: 'D4', duration: 'whole', tied_to_next: false }],
+      slurs: [],
+    },
+  ],
+  notes_to_human: 'Fixture score. Not OCR output.',
+};
+
+/**
  * The same music with the dynamic its page actually prints.
  *
  * **Dynamics are drawn, so one has to be here.** `musicxml.py` has pulled them
@@ -585,6 +627,23 @@ const FIXTURE_PIECES: FixturePiece[] = [
     markedBpm: 66,
     // The one piece whose clef changes — see `CLEF_CHANGE_SCORE`.
     score: CLEF_CHANGE_SCORE,
+  },
+  {
+    /**
+     * The piece the proof-reading screen has something to say about.
+     *
+     * See `MISREAD_SCORE`: a note the violin cannot play in a bar that adds up,
+     * and a bar that reads a note twice. Without it the check ships with only
+     * its empty state reachable in the build the screens are looked at in.
+     */
+    id: 'fixture-misread-reading',
+    title: 'Sonata in G minor, HWV 364a',
+    composer: 'G. F. Handel',
+    movement: 'I. Larghetto',
+    practicedDaysAgo: null,
+    thumbnail: require('../../../assets/fixtures/02_medium_printed.jpg'),
+    markedBpm: MARKED_BPM,
+    score: MISREAD_SCORE,
   },
   {
     id: 'fixture-mozart-k216',

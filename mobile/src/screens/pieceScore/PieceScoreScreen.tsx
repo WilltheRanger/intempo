@@ -72,6 +72,8 @@ import {
 } from '../../lib/notation/keySignature';
 import { loadStateFor } from '../../lib/loadState';
 import { barCells, barGridSummary } from '../../lib/notation/barGrid';
+import { proposalsFor, proposalsSummary } from '../../lib/notation/proposals';
+import { usePreferences } from '../../data/preferences';
 import { barCountLabel } from '../../lib/format';
 
 /** Read from a stand, not glanced at — the same size the warmup page uses. */
@@ -172,6 +174,7 @@ export function PieceScoreScreen() {
     params: { pieceId: params.pieceId },
   });
   const { data: piece, isError } = usePiece(params.pieceId);
+  const { instrument } = usePreferences();
   const load = loadStateFor({ isError, hasData: piece !== undefined });
 
   const accept = useAcceptTranscription(params.pieceId);
@@ -459,6 +462,10 @@ export function PieceScoreScreen() {
   // would be the emptiest control in the app (§3 law 10).
   // Every bar as a cell, for the picker. Cheap and pure — see `barGrid.ts`.
   const cells = barCells(piece.score, reading?.problemMeasures ?? []);
+  // What the app is willing to say is wrong with the reading, which is the
+  // half the beat check cannot reach. The instrument is this device's, because
+  // a score does not carry one — see `proposals.ts`.
+  const proposals = proposalsFor(piece.score, instrument);
   const showToggle = hasNotation && hasPages;
   const showing: ScoreView = showToggle ? view : hasNotation ? 'notation' : 'original';
 
@@ -722,6 +729,34 @@ export function PieceScoreScreen() {
               </Text>
               <Text variant="metadataSmall" color="accentText" style={styles.fixCue}>
                 Fix bar {reading.problemMeasures[0]}
+              </Text>
+            </Pressable>
+          ) : null}
+
+          {/*
+            **What the arithmetic cannot see.** Every other caveat on this
+            screen comes from a sum: do the durations add up, could the engraver
+            draw it. A part that reads back at exactly four beats in every bar
+            passes all of them and can still carry a note the instrument cannot
+            play — measured on the live project, and nothing here said so.
+
+            Only when there is something to check. A row that is always present
+            and usually says "nothing found" is the row a musician stops
+            reading, which is the failure the pre-flight screen's three static
+            tips had.
+          */}
+          {proposals.length > 0 ? (
+            <Pressable
+              onPress={() => navigation.navigate('ProofRead', { pieceId: piece.id })}
+              accessibilityRole="button"
+              accessibilityLabel="Check the reading"
+              style={({ pressed }) => [styles.fixRow, pressed && styles.pressed]}
+            >
+              <Text variant="metadataSmall" color="textSecondary">
+                {proposalsSummary(proposals.length)}
+              </Text>
+              <Text variant="metadataSmall" color="accentText" style={styles.fixCue}>
+                Check the reading
               </Text>
             </Pressable>
           ) : null}
@@ -1158,6 +1193,13 @@ const styles = StyleSheet.create({
   },
   fixRow: {
     marginTop: spacing.lg,
+    // **A latent miss in a shared style.** Every row that used this happened to
+    // carry two lines of text, so it cleared the floor by accident; the first
+    // one-line message on it measured 40pt. Justified rather than centred, so
+    // the extra height falls below the text instead of pushing the cue away
+    // from the message it belongs to.
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: 'center',
   },
   measureList: {
     maxHeight: 380,

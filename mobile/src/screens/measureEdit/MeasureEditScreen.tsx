@@ -304,8 +304,20 @@ export function MeasureEditScreen() {
       {/*
         The focal point. It is the only thing on screen that answers "am I
         done", so it is the only thing set in the display face — and it turns
-        from a warning colour to ordinary ink the moment the bar balances,
-        which is feedback that needs no label.
+        from the accent to ordinary ink the moment the bar balances, which is
+        feedback that needs no label.
+
+        **It used to turn from `verdictBad`, which is a token this screen may
+        not use.** `colors.ts` quarantines that trio to surfaces reporting how
+        a *take* went, in as many words, and tells everything else to reach for
+        the accent — and a bar whose durations do not sum is not a performance,
+        it is arithmetic about a photograph. The distinction matters beyond
+        tidiness: red here and red on a verdict would teach a musician that the
+        colour means one thing when it means two.
+
+        Nothing is lost by the swap, because the colour was never carrying the
+        meaning. The headline reads "3 of 4 beats" and the line under it says
+        what to do; the colour only says which of the two states you are in.
       */}
       <Text
         variant="heroTitle"
@@ -736,7 +748,9 @@ const styles = StyleSheet.create({
     marginTop: spacing.xl,
   },
   beatsOff: {
-    color: colors.verdictBad,
+    // `accentText`, not `accent`: this is type on the ivory ground, where the
+    // plain accent measures 3.26:1 and fails. See `colors.accentText`.
+    color: colors.accentText,
   },
   keyLabel: {
     marginTop: spacing['2xl'],

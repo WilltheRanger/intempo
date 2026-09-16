@@ -80,6 +80,12 @@ const ROUTES = [
   ['Score that could not be read', 'pieces/fixture-reading-failed/score'],
   ['Score', 'pieces/fixture-clef-change-study/score'],
   ['Bar editor', 'pieces/fixture-clef-change-study/bars/3'],
+  // The proof-reading screen, on the one fixture that gives it anything to
+  // say: a note the violin cannot play in a bar that adds up, and a bar that
+  // reads a note twice. Pointing this at a clean piece would audit the empty
+  // state and leave the rows themselves unlooked at, which is the thing this
+  // list exists to stop.
+  ['Check the reading', 'pieces/fixture-misread-reading/check'],
   // The photographs, paged. `fixture-wohlfahrt-01` is the one multi-page part
   // in the library, so this is where the page caption and the pager exist at
   // all — the other pieces render a single image and no control.

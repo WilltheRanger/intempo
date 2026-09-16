@@ -71,6 +71,7 @@ export const screenConfig: LinkingOptions<RootStackParamList>['config'] = {
         parse: { measureNumber: (value: string) => Number(value) },
         stringify: { measureNumber: (value: number) => String(value) },
       },
+      ProofRead: 'pieces/:pieceId/check',
       Record: 'pieces/:pieceId/record',
       Verdict: 'analyses/:analysisId',
       Warmup: 'warmup',
