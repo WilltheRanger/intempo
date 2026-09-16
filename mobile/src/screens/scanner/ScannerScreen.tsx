@@ -7,7 +7,6 @@ import { useEffect, useRef, useState } from 'react';
 import { Linking, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
 import { Text } from '../../components/primitives/Text';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import { legibilityOf } from '../../lib/scan/legibility';
@@ -29,7 +28,6 @@ import {
   useCapturedPages,
 } from '../../data/captureSession';
 import {
-  BORDER_WIDTH,
   colors,
   ICON_SIZE,
   ICON_STROKE_WIDTH,
@@ -38,6 +36,7 @@ import {
   spacing,
 } from '../../design';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
+import { PageStrip, STRIP_HEIGHT } from './PageStrip';
 import { ViewfinderPage } from './ViewfinderPage';
 import { cropToViewfinder, PAGE_ASPECT, visibleRegion } from '../../lib/scan/framing';
 import { pageCountLabel } from '../../lib/format';
@@ -157,7 +156,6 @@ export function ScannerScreen() {
     // going stale if that ever changes.
   }, [cameraGranted, canAskForCamera, requestPermission]);
 
-  const lastPage = pages[pages.length - 1];
   const FlashIcon = flashOn ? Zap : ZapOff;
   const ready = permission?.granted === true;
   // What to say, and offer, when there is no viewfinder. Null while there is
@@ -273,6 +271,10 @@ export function ScannerScreen() {
    */
   async function checkItReads(id: string, uri: string, pageRows?: number) {
     const verdict = shotVerdict(legibilityOf(await pageSamples(uri)), pageRows);
+    // On the page, not only in this screen's state. The panel below shows it
+    // once; the strip and the review list read it back off the session for as
+    // long as the page is in the scan — see `CapturedPage.reading`.
+    captureSession.noteReading(id, verdict);
     setShot({ id, verdict });
     setLastVerdict(verdict);
   }
@@ -421,12 +423,22 @@ export function ScannerScreen() {
           />
         </Pressable>
 
-        <Text
-          variant="metadataSmall"
-          color={pages.length > 0 ? 'onDark' : 'onDarkMuted'}
-        >
-          {pageCountLabel(pages.length)}
-        </Text>
+        {/*
+          **The strip stands where "3 pages" stood.** It says the count and two
+          things the count could not: which pages, and in what order — the order
+          being the one promise this flow makes and the one it never showed. The
+          slot keeps its height either way so the first photograph does not push
+          the viewfinder down the screen.
+        */}
+        <View style={styles.count}>
+          {pages.length > 0 ? (
+            <PageStrip pages={pages} onOpen={handleDone} />
+          ) : (
+            <Text variant="metadataSmall" color="onDarkMuted">
+              {pageCountLabel(0)}
+            </Text>
+          )}
+        </View>
 
         {/*
           **Gone when there is no camera**, rather than dimmed. It is a torch on
@@ -535,33 +547,38 @@ export function ScannerScreen() {
           { paddingBottom: insets.bottom + spacing.lg },
         ]}
       >
+        {/*
+          **The thumbnail of the last page used to live here**, and the strip
+          above says everything it said and more — every page, in order, with a
+          mark on the doubtful one. Two pictures of the same scan on one screen
+          is the element §3 law 10 asks to remove.
+
+          What the slot carries instead is the route that had nowhere else to
+          be: photographs already on the phone. It was offered only before the
+          first shot, so a musician who photographed page one and then realised
+          page two was already in their camera roll had to abandon the scan to
+          reach it.
+        */}
         <View style={styles.bottomSlot}>
-          {lastPage ? (
-            <Pressable
-              onPress={handleDone}
-              accessibilityRole="button"
-              accessibilityLabel={`Review ${pageCountLabel(pages.length)}`}
-              style={({ pressed }) => [styles.lastCapture, pressed && styles.pressed]}
-            >
-              <ScoreThumbnail
-                source={lastPage.source}
-                style={styles.lastCaptureImage}
-              />
-            </Pressable>
-          ) : (
-            <Pressable
-              onPress={() => navigation.navigate('AddPiece', { option: 'import' })}
-              accessibilityRole="button"
-              accessibilityLabel="Import images instead"
-              style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
-            >
-              <Images
-                size={ICON_SIZE.lg}
-                strokeWidth={ICON_STROKE_WIDTH}
-                color={colors.onDark}
-              />
-            </Pressable>
-          )}
+          <Pressable
+            onPress={() =>
+              navigation.navigate('AddPiece', {
+                option: 'import',
+                adding: pages.length > 0,
+              })
+            }
+            accessibilityRole="button"
+            accessibilityLabel={
+              pages.length > 0 ? 'Add photos from this device' : 'Import images instead'
+            }
+            style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
+          >
+            <Images
+              size={ICON_SIZE.lg}
+              strokeWidth={ICON_STROKE_WIDTH}
+              color={colors.onDark}
+            />
+          </Pressable>
         </View>
 
         <Pressable
@@ -819,6 +836,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.md,
   },
+  count: {
+    // Fixed height, so an empty scan and a scan with pages put the frame in
+    // the same place; `flex` so the strip scrolls in whatever the two icon
+    // buttons leave rather than widening the bar.
+    flex: 1,
+    height: STRIP_HEIGHT,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   iconButton: {
     width: MIN_TOUCH_TARGET,
     height: MIN_TOUCH_TARGET,
@@ -845,16 +871,6 @@ const styles = StyleSheet.create({
   },
   doneSlot: {
     alignItems: 'flex-end',
-  },
-  lastCapture: {
-    borderRadius: radii.sm,
-    borderWidth: BORDER_WIDTH,
-    borderColor: colors.onDarkMuted,
-    overflow: 'hidden',
-  },
-  lastCaptureImage: {
-    width: 44,
-    height: 58,
   },
   captureRing: {
     width: CAPTURE_BUTTON_SIZE,

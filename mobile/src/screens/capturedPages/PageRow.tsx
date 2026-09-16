@@ -5,6 +5,7 @@ import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
 import { Card } from '../../components/primitives/Card';
 import { Text } from '../../components/primitives/Text';
 import type { CapturedPage } from '../../data/captureSession';
+import { pageNote } from '../../lib/scan/pageQueue';
 import {
   colors,
   ICON_SIZE,
@@ -47,12 +48,15 @@ export function PageRow({
   onMoveUp,
   onMoveDown,
 }: PageRowProps) {
+  const note = pageNote(page);
   return (
     <Card style={dragging ? styles.lifted : undefined} padded={false}>
       <View
         style={styles.row}
         accessible
-        accessibilityLabel={`Page ${position} of ${total}`}
+        accessibilityLabel={
+          note ? `Page ${position} of ${total}. ${note}` : `Page ${position} of ${total}`
+        }
         accessibilityActions={[
           { name: 'moveUp', label: 'Move up' },
           { name: 'moveDown', label: 'Move down' },
@@ -81,9 +85,22 @@ export function PageRow({
           <ScoreThumbnail source={page.source} style={styles.thumbnail} />
         </Pressable>
 
-        <Text variant="button" style={styles.position}>
-          Page {position}
-        </Text>
+        {/*
+          **The condition, where the page is, before anything is sent.** The
+          scanner measures every photograph it takes and the finding used to
+          live and die on that screen, so a page the app had already decided it
+          could not read queued up looking like every other one. Only a page
+          worth another look says anything — see `pageQueue.ts`, which owns the
+          rule and the wording.
+        */}
+        <View style={styles.position}>
+          <Text variant="button">Page {position}</Text>
+          {note ? (
+            <Text variant="metadataSmall" color="accentText" style={styles.note}>
+              {note}
+            </Text>
+          ) : null}
+        </View>
 
         <PageAction
           icon={RotateCcw}
@@ -164,6 +181,9 @@ const styles = StyleSheet.create({
   position: {
     flex: 1,
     marginLeft: spacing.xs,
+  },
+  note: {
+    marginTop: 2,
   },
   action: {
     width: MIN_TOUCH_TARGET,

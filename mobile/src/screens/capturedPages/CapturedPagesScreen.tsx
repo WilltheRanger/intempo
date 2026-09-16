@@ -25,6 +25,7 @@ import type { RootNavigation } from '../../navigation/types';
 import { DraggablePageList } from './DraggablePageList';
 import { PagePreview } from './PagePreview';
 import { pageCountLabel } from '../../lib/format';
+import { queueSummary } from '../../lib/scan/pageQueue';
 
 /**
  * Review of the pages just captured, before transcription.
@@ -210,10 +211,13 @@ export function CapturedPagesScreen() {
         backLabel={scannerBelow ? 'Back to the scanner' : 'Back'}
       />
 
+      {/*
+        The order, and the caveat when there is one. Both live in
+        `pageQueue.ts` — a rule in a `.tsx` is a rule nothing checks, and
+        "does this warn when it should" is the kind that stays wrong quietly.
+      */}
       <Text variant="metadataSmall" color="textTertiary" style={styles.hint}>
-        {pages.length === 1
-          ? 'This is the page InTempo will read.'
-          : 'InTempo uploads and reads every page in this order.'}
+        {queueSummary(pages)}
       </Text>
 
       <DraggablePageList
