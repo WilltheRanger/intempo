@@ -1,5 +1,5 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
-import { Camera, Images } from '../../components/icons';
+import { Camera, ChevronRight, Images } from '../../components/icons';
 import { useGoBack } from '../../navigation/useGoBack';
 import { useMemo, useState } from 'react';
 import {
@@ -38,11 +38,15 @@ import {
 import {
   BORDER_WIDTH,
   colors,
+  ICON_SIZE,
+  ICON_STROKE_WIDTH,
   MIN_TOUCH_TARGET,
   pressedOpacity,
   radii,
   spacing,
 } from '../../design';
+import { SCREEN_GUTTER } from '../../components/primitives/ScreenContainer';
+import { ROW_PADDING_VERTICAL } from '../../components/rowMetrics';
 import {
   describeOmissions,
   describeUndrawnScore,
@@ -478,35 +482,6 @@ export function PieceScoreScreen() {
         backLabel="Back to piece"
       />
 
-      {/*
-        What a printed part states in its top-left corner.
-
-        The stave draws the clef now, and draws it again wherever the page
-        changes it — so this line is no longer the only thing standing between
-        a reader and the wrong pitch. It still earns its place: it names the
-        metre and the marked tempo, and it says **whether the clef or the metre
-        lasts**, which the stave can only show by being scrolled through.
-        `scoreSummary` holds those rules, where they are tested.
-      */}
-      {showing === 'notation' && hasNotation ? (
-        <MetadataRow
-          variant="metadataSmall"
-          items={[
-            // How long the piece is, which is the first thing a musician wants
-            // from a part they have not read and the one fact this row could
-            // state and did not.
-            barCountLabel(piece.score?.measures.length ?? 0),
-            ...clefSummary(piece.score),
-            ...meterSummary(piece.score),
-            piece.score?.tempo_marking,
-            piece.markedBpm
-              ? formatTempo(piece.markedBpm, piece.score?.tempo_beat_unit)
-              : null,
-          ]}
-          style={styles.scoreMeta}
-        />
-      ) : null}
-
       {showToggle ? (
         <SegmentedControl
           label="Score view"
@@ -602,14 +577,43 @@ export function PieceScoreScreen() {
       ) : null}
 
       {/*
-        **The affordance said out loud, because nothing on a stave depicts it.**
-        A drawn control that does nothing is worse than none at all (§3), and
-        the inverse is nearly as bad: a gesture that works and is invisible is
-        a gesture nobody uses. One quiet line, under the music, in the register
-        of a caption rather than an instruction.
+        **What the page states, under the page.** This row used to sit in the
+        header, between the title and the toggle, where it was about 48pt of
+        the roughly 280 a musician scrolled past before reaching a note. The
+        screen is for reading music; the facts about the music follow it, the
+        way a caption follows a plate.
+
+        It still earns its place beside the drawing. The stave draws the clef
+        and the metre, so what this adds is the **length** of the part, the
+        marked tempo, and whether the clef or the metre *lasts* — which the
+        stave can only show by being scrolled through. `scoreSummary` holds
+        those rules, where they are tested.
+
+        **The affordance said out loud, on the same line**, because nothing on
+        a stave depicts a tap. A drawn control that does nothing is worse than
+        none at all (§3), and the inverse is nearly as bad: a gesture that
+        works and is invisible is a gesture nobody uses. It was centred while
+        every other line on the screen was left-aligned, which is the
+        inconsistency §3 law 5 is about.
       */}
+      {showing === 'notation' && hasNotation ? (
+        <MetadataRow
+          variant="metadataSmall"
+          items={[
+            barCountLabel(piece.score?.measures.length ?? 0),
+            ...clefSummary(piece.score),
+            ...meterSummary(piece.score),
+            piece.score?.tempo_marking,
+            piece.markedBpm
+              ? formatTempo(piece.markedBpm, piece.score?.tempo_beat_unit)
+              : null,
+          ]}
+          style={styles.tapHint}
+        />
+      ) : null}
+
       {showing === 'notation' && hasNotation && stave ? (
-        <Text variant="metadataSmall" color="textTertiary" style={styles.tapHint}>
+        <Text variant="metadataSmall" color="textTertiary" style={styles.scoreMeta}>
           Tap a bar to correct it
         </Text>
       ) : null}
@@ -634,51 +638,60 @@ export function PieceScoreScreen() {
                 setElapsedS(total > 0 ? elapsed : null)
               }
             />
-            <PlaybackSettings
-              score={heard}
-              bars={startable}
-              fromMeasure={listenFrom}
-              onFromMeasureChange={setFromMeasure}
-              bpm={listenBpm}
-              beatUnit={piece.score?.tempo_beat_unit}
-              onBpmChange={(next) => practiceTempo.set(params.pieceId, next)}
-            />
-            {/*
+          </View>
+
+          {/*
+            **Outside the button's block, because the two want opposite
+            widths.** `styles.listen` is `alignSelf: 'flex-start'` so the
+            Listen button hugs its label rather than spanning the screen; the
+            settings under it are rows, and a row that inherits that is one the
+            width of its own text.
+          */}
+          <PlaybackSettings
+            score={heard}
+            bars={startable}
+            fromMeasure={listenFrom}
+            onFromMeasureChange={setFromMeasure}
+            bpm={listenBpm}
+            beatUnit={piece.score?.tempo_beat_unit}
+            onBpmChange={(next) => practiceTempo.set(params.pieceId, next)}
+          />
+
+          {/*
               Only where there is something to skip. A control that is always
               there and does nothing on most pieces teaches a musician to stop
               reading the controls — and it says how many bars, because "skip
               long rests" on a page you have not read yet is not a question
               anybody can answer.
             */}
-            {skippable > 0 ? (
-              <Pressable
-                accessibilityRole="switch"
-                // The ARIA props, not `accessibilityState`: react-native-web
-                // drops `checked` entirely, so the web build would announce a
-                // switch with no on or off. Same reasoning as the metronome
-                // toggle on the record screen.
-                aria-checked={skipRests}
-                accessibilityLabel="Skip long rests"
-                onPress={() => setSkipRests((on) => !on)}
-                style={({ pressed }) => [styles.skipToggle, pressed && styles.pressed]}
+          {skippable > 0 ? (
+            <Pressable
+              accessibilityRole="switch"
+              // The ARIA props, not `accessibilityState`: react-native-web
+              // drops `checked` entirely, so the web build would announce a
+              // switch with no on or off. Same reasoning as the metronome
+              // toggle on the record screen.
+              aria-checked={skipRests}
+              accessibilityLabel="Skip long rests"
+              onPress={() => setSkipRests((on) => !on)}
+              style={({ pressed }) => [styles.skipToggle, pressed && styles.pressed]}
+            >
+              {/*
+                Not gold when on. At 13px the accent is 3.54:1, under the
+                4.5:1 floor — the record screen learned this and `audit-a11y`
+                holds the line. The words carry the state; the weight of the
+                colour says whether the line does anything.
+              */}
+              <Text
+                variant="metadataSmall"
+                color={skipRests ? 'textPrimary' : 'textTertiary'}
               >
-                {/*
-                  Not gold when on. At 13px the accent is 3.54:1, under the
-                  4.5:1 floor — the record screen learned this and `audit-a11y`
-                  holds the line. The words carry the state; the weight of the
-                  colour says whether the line does anything.
-                */}
-                <Text
-                  variant="metadataSmall"
-                  color={skipRests ? 'textPrimary' : 'textTertiary'}
-                >
-                  {skipRests
-                    ? `Skipping ${skippable} bars of rest`
-                    : `Skip ${skippable} bars of rest`}
-                </Text>
-              </Pressable>
-            ) : null}
-          </View>
+                {skipRests
+                  ? `Skipping ${skippable} bars of rest`
+                  : `Skip ${skippable} bars of rest`}
+              </Text>
+            </Pressable>
+          ) : null}
         </>
       ) : null}
 
@@ -820,24 +833,26 @@ export function PieceScoreScreen() {
             A quiet row, not a second call to action: it is for the rarer case,
             and the flagged bars are what usually needs attention.
           */}
-          {piece.score && piece.score.measures.length > 0 ? (
-            <Pressable
-              onPress={() => setPickingMeasure(true)}
-              accessibilityRole="button"
-              style={({ pressed }) => [styles.secondaryRow, pressed && styles.pressed]}
-            >
-              <Text variant="metadataSmall" color="accentText">
-                {/*
-                  **Renamed with the grid.** It said "Correct another bar",
-                  which read as a second way to do the thing the line above it
-                  already offers. What it opens is the overview: every bar at
-                  once, with the notes read in each, which is how a bar the
-                  arithmetic is happy with gets found.
-                */}
-                See every bar
-              </Text>
-            </Pressable>
-          ) : null}
+          {/*
+            **The screen's actions, as a list instead of a pile.** These were
+            three left-aligned accent lines with different margins, stacked
+            under three quiet prose lines of the same size — nothing said which
+            were statements and which were things you could press, and §3 law 5
+            asks for a deliberate vertical system rather than a per-item guess.
+
+            Ruled rows with a chevron each: the same shape the piece screen
+            uses for its destinations, and a chevron means it opens, which
+            these do (§3 — a drawn affordance does the thing it depicts).
+          */}
+          <View style={styles.actions}>
+            {piece.score && piece.score.measures.length > 0 ? (
+              <ScoreAction
+                label="See every bar"
+                detail="With the notes read in each, so an odd one shows."
+                divided={false}
+                onPress={() => setPickingMeasure(true)}
+              />
+            ) : null}
 
           {/*
             Only once something has read one — an unread clef has its own line
@@ -849,17 +864,14 @@ export function PieceScoreScreen() {
             treble, and a bass or cello part goes into tenor for a high
             passage.
           */}
-          {piece.score?.clef ? (
-            <Pressable
-              onPress={() => setPickingClef(true)}
-              accessibilityRole="button"
-              style={({ pressed }) => [styles.secondaryRow, pressed && styles.pressed]}
-            >
-              <Text variant="metadataSmall" color="accentText">
-                Change the clef
-              </Text>
-            </Pressable>
-          ) : null}
+            {piece.score?.clef ? (
+              <ScoreAction
+                label="Change the clef"
+                detail="A part can be written in one your instrument does not read."
+                onPress={() => setPickingClef(true)}
+              />
+            ) : null}
+          </View>
 
           {/*
             The sheet closes on the tap, so this is the only thing that says
@@ -1142,6 +1154,57 @@ export function PieceScoreScreen() {
   );
 }
 
+/**
+ * One thing this screen can do, as a row.
+ *
+ * **Not a card and not a bare accent line.** The three actions here used to be
+ * left-aligned accent text with per-item margins, sitting among prose caveats
+ * of the same size — so nothing distinguished a statement from a control, and
+ * the block read as leftovers rather than a list (§3 laws 5 and 8). A rule and
+ * a chevron do that work for a pixel each, which is the same call the library's
+ * own rows and the piece screen's destinations make.
+ *
+ * The detail line is what the label cannot say in three words. It is the reason
+ * a musician would press it, which is the part that was missing entirely.
+ */
+function ScoreAction({
+  label,
+  detail,
+  divided = true,
+  onPress,
+}: {
+  label: string;
+  detail: string;
+  divided?: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${label}. ${detail}`}
+      style={({ pressed }) => [
+        styles.action,
+        divided && styles.actionRuled,
+        pressed && styles.pressed,
+      ]}
+    >
+      <View style={styles.actionCopy}>
+        <Text variant="button">{label}</Text>
+        <Text variant="metadataSmall" color="textTertiary" style={styles.actionDetail}>
+          {detail}
+        </Text>
+      </View>
+      {/* A chevron means it opens, and each of these opens something. */}
+      <ChevronRight
+        size={ICON_SIZE.md}
+        strokeWidth={ICON_STROKE_WIDTH}
+        color={colors.textTertiary}
+      />
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   /*
     Every tappable thing on this screen acknowledges the touch. These were bare
@@ -1176,17 +1239,32 @@ const styles = StyleSheet.create({
   plate: {
     marginTop: spacing.xl,
     backgroundColor: colors.surface,
-    borderWidth: BORDER_WIDTH,
-    borderColor: colors.border,
     paddingVertical: spacing.xl,
     paddingHorizontal: spacing.lg,
-    // Full-bleed to the screen edges: a page with the app's own margin either
-    // side of it reads as a card in a list. Sheet music fills the paper.
-    marginHorizontal: -spacing.lg,
+    /*
+      **It said "full-bleed to the screen edges" and was eight points short on
+      each side.** `ScreenContainer`'s gutter is `SCREEN_GUTTER`, which is
+      `spacing.xl`; this cancelled `spacing.lg`. The result was a bordered
+      white rectangle inset from both edges — which is a card in a list, the
+      exact thing the comment was written to prevent, and what the screen
+      actually looked like.
+
+      Cancelling the real gutter is what `SCREEN_GUTTER` is exported for, and
+      it is how `PieceDetailScreen`'s band has always done it.
+    */
+    marginHorizontal: -SCREEN_GUTTER,
+    /*
+      **Two edges, not four.** A border all the way round a full-bleed element
+      draws two vertical hairlines down the screen edges, which reads as a
+      frame rather than as paper. The sheet's top and bottom edges are the only
+      ones a page on a stand actually has.
+    */
+    borderTopWidth: BORDER_WIDTH,
+    borderBottomWidth: BORDER_WIDTH,
+    borderColor: colors.border,
   },
   tapHint: {
-    marginTop: spacing.sm,
-    textAlign: 'center',
+    marginTop: spacing.md,
   },
   caveat: {
     marginTop: spacing.lg,
@@ -1265,10 +1343,26 @@ const styles = StyleSheet.create({
    * the flagged bars are what usually needs attention, and a clef that was
    * read is usually right.
    */
-  secondaryRow: {
+  actions: {
+    marginTop: spacing.xl,
+  },
+  action: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: ROW_PADDING_VERTICAL,
     minHeight: MIN_TOUCH_TARGET,
-    justifyContent: 'center',
-    marginTop: spacing.md,
+  },
+  actionRuled: {
+    borderTopWidth: BORDER_WIDTH,
+    borderTopColor: colors.border,
+  },
+  actionCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  actionDetail: {
+    marginTop: 2,
   },
   fixCue: {
     marginTop: spacing.xs,
