@@ -36,6 +36,16 @@ export interface Preferences {
    * hardware, not to a score or an account.
    */
   practiceSetupSeen: boolean;
+  /**
+   * Whether the last take recorded on this device had any sound in it.
+   *
+   * `null` until one has been recorded, which is not the same as `false`: the
+   * pre-flight says nothing at all before a first take, and warns after a
+   * silent one. `lib/audio/level.ts` already refuses an all-zero take before it
+   * is uploaded; this remembers that it did, so the next take can be warned
+   * rather than the musician discovering it twice.
+   */
+  lastTakeHadSound: boolean | null;
 }
 
 const DEFAULTS: Preferences = {
@@ -44,6 +54,7 @@ const DEFAULTS: Preferences = {
   haptics: true,
   reduceMotion: false,
   practiceSetupSeen: false,
+  lastTakeHadSound: null,
 };
 
 const STORAGE_KEY = 'intempo.preferences.v1';
@@ -128,6 +139,10 @@ export async function hydratePreferences(): Promise<void> {
         typeof saved.practiceSetupSeen === 'boolean'
           ? saved.practiceSetupSeen
           : DEFAULTS.practiceSetupSeen,
+      lastTakeHadSound:
+        typeof saved.lastTakeHadSound === 'boolean'
+          ? saved.lastTakeHadSound
+          : DEFAULTS.lastTakeHadSound,
     };
     listeners.forEach((listener) => listener());
   } catch {
@@ -205,6 +220,9 @@ export const preferences = {
     commit({ ...current, reduceMotion });
   },
 
+  setLastTakeHadSound(lastTakeHadSound: boolean): void {
+    commit({ ...current, lastTakeHadSound });
+  },
   setPracticeSetupSeen(practiceSetupSeen: boolean): void {
     commit({ ...current, practiceSetupSeen });
   },

@@ -23,6 +23,7 @@ import type {
 } from '../../navigation/types';
 import { AddPieceSheet } from '../../components/pieces/AddPieceSheet';
 import { PieceRow } from './PieceRow';
+import { PieceTile } from './PieceTile';
 import { useAddPieceOption } from '../../navigation/useAddPieceOption';
 import { loadStateFor, type LoadState } from '../../lib/loadState';
 import { rowDivided } from '../../components/rowMetrics';
@@ -209,6 +210,13 @@ function LibraryContent({
   const searching = Boolean(query.trim());
   if (searching) {
     return (
+      /*
+        **Rows while searching, tiles while browsing.** A shelf is for
+        recognising a piece you would know by sight; a search result is
+        something you have already named, and the answer to "Kreutzer" is the
+        matches in one list, densest first. The two gestures want different
+        shapes, which is why the frame's grid did not simply replace the row.
+      */
       <View style={styles.section}>
         {results.map((piece, index) => (
           <FadeIn key={piece.id} index={index}>
@@ -231,17 +239,30 @@ function LibraryContent({
       {groups.map((group) => (
         <View key={group.key} style={styles.group}>
           <SectionHeader label={group.label} />
-          {group.pieces.map((piece, index) => (
-            // The stagger runs across the whole screen rather than restarting
-            // per group, so the rows arrive as one sweep instead of four.
-            <FadeIn key={piece.id} index={row++}>
-              <PieceRow
-                piece={piece}
-                divided={rowDivided(index)}
-                onPress={() => onOpenPiece(piece)}
-              />
-            </FadeIn>
-          ))}
+          {/*
+            **A shelf, two across.** The rows identified a piece by its name
+            alone, which is correct for an index and wrong for the thing a
+            musician is doing here: looking for the piece they would know if
+            they saw it. See `PieceTile` — the picture is the engraving, so the
+            recognition costs no image fetch and no decode, which is what made
+            the old photographic thumbnail untenable.
+
+            An odd count leaves a gap rather than stretching the last tile
+            across the row: a shelf with one book on the end still has
+            book-shaped books on it.
+          */}
+          <View style={styles.shelf}>
+            {group.pieces.map((piece) => (
+              // The stagger runs across the whole screen rather than restarting
+              // per group, so the tiles arrive as one sweep instead of four.
+              <FadeIn key={piece.id} index={row++} style={styles.slot}>
+                <PieceTile piece={piece} onPress={() => onOpenPiece(piece)} />
+              </FadeIn>
+            ))}
+            {group.pieces.length % 2 === 1 ? (
+              <View style={styles.slot} accessibilityElementsHidden />
+            ) : null}
+          </View>
         </View>
       ))}
     </View>
@@ -265,5 +286,22 @@ const styles = StyleSheet.create({
     // The gap between groups is what a heading needs to belong to the rows
     // below it rather than float between two blocks.
     marginBottom: spacing['2xl'],
+  },
+  shelf: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: spacing.md,
+    // Row gap larger than column gap: two tiles side by side are one shelf and
+    // the rows above and below are different ones, so the vertical rhythm has
+    // to be the louder of the two.
+    rowGap: spacing.xl,
+    columnGap: spacing.md,
+  },
+  slot: {
+    // Two across, with the column gap taken out of the pair rather than out of
+    // each tile — `flexBasis` of exactly half would overflow by the gap.
+    flexBasis: '48%',
+    flexGrow: 0,
+    minWidth: 0,
   },
 });

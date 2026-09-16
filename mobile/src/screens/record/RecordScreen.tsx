@@ -2,10 +2,11 @@ import { useNavigation, useRoute, type RouteProp } from '@react-navigation/nativ
 import { useQueryClient } from '@tanstack/react-query';
 import { Mic, Square } from '../../components/icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Linking, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Linking, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import {
   Card,
+  DragSheet,
   EmptyState,
   LoadingState,
   PageHeader,
@@ -26,8 +27,15 @@ import {
 } from '../../data/practice/submitTake';
 import { forgetPendingAnalysis } from '../../data/practice/pendingAnalysis';
 import type { MetronomeMode } from '../../data/types';
-import { MicrophonePermissionError, type Recorder } from '../../lib/audio/types';
+import {
+  EmptyRecordingError,
+  MicrophonePermissionError,
+  type Recorder,
+} from '../../lib/audio/types';
 import { readTakeFailure } from '../../lib/audio/takeFailure';
+import { heldTakeUrl, releaseHeldTake } from '../../lib/audio/heldTake';
+import { HeldTakePlayer } from './HeldTakePlayer';
+import { microphonePermissionRecovery } from '../../lib/audio/permission';
 import { buildMarker } from '../../lib/platform/buildMarker';
 import { isHomeScreenApp } from '../../lib/audio/microphoneFailure';
 import { canReloadPage, reloadPage } from '../../lib/platform/reloadPage';
@@ -73,8 +81,10 @@ import { BeatIndicator } from './BeatIndicator';
 import { PracticeSetup } from './PracticeSetup';
 import { ListenButton } from '../../components/score/ListenButton';
 import { PlaybackSettings } from '../../components/score/PlaybackSettings';
+import { ScoreBackdrop } from '../../components/score/ScoreBackdrop';
 import { scheduleScore, startableMeasures } from '../../lib/score';
 import { startFromMeasure } from '../../lib/score/startFrom';
+import { preflight } from '../../lib/record/preflight';
 import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
 import {
   leavingRecord,
@@ -130,7 +140,8 @@ export function RecordScreen() {
   // musician plays it rather than after the WAV has already been uploaded.
   const { data: musician } = useMe();
   const limitMessage = describeReachedAnalysisLimit(musician?.usage);
-  const { instrument, metronomeMode, practiceSetupSeen } = usePreferences();
+  const { instrument, metronomeMode, practiceSetupSeen, lastTakeHadSound } =
+    usePreferences();
 
   // Read through the store so the piece's own marking seeds it and yesterday's
   // choice survives. Subscribing keeps this in step if the tempo is changed
@@ -180,6 +191,12 @@ export function RecordScreen() {
   const lastFreeMessage = describeLastFreeAnalysis(musician?.usage);
   const visibleProblem = limitMessage ?? problem;
   const [microphoneBlocked, setMicrophoneBlocked] = useState(false);
+  // The platform's own directions, read once — see `permission.ts`. Cheap and
+  // pure, and `Platform.OS` cannot change under a running app.
+  const microphoneRecovery = useMemo(
+    () => microphonePermissionRecovery(Platform.OS),
+    [],
+  );
   /**
    * Whether the failure on screen is one the page can fix by reloading itself.
    *
@@ -221,10 +238,35 @@ export function RecordScreen() {
     resume?: TakeSubmissionState;
   } | null>(null);
   const [pendingTake, setPendingTake] = useState(false);
+  /**
+   * A URL for the take being held, so it can be heard before it is sent.
+   *
+   * **The screen says the take is safe and had no way to show it.** "Your take
+   * is safe on this device" is the sentence a musician most needs to believe
+   * after a failed upload, and it was an assertion. Null where no URL can be
+   * made — see `heldTakeUrl` — in which case no control is drawn at all rather
+   * than one that does nothing.
+   */
+  const [heldUrl, setHeldUrl] = useState<string | null>(null);
   /** The open "you are about to lose this" dialog, or null. */
   const [leavePrompt, setLeavePrompt] = useState<
     Extract<ReturnType<typeof leavingRecord>, { kind: 'confirm' }> | null
   >(null);
+
+  /**
+   * Point the "hear it" control at a held take, or at nothing.
+   *
+   * **Revoking matters.** An object URL pins the whole blob for the life of the
+   * document and a take is minutes of audio, so every path that stops holding a
+   * take passes null through here — sent, discarded, or replaced by a new
+   * recording.
+   */
+  function holdForListening(audio: Blob | null): void {
+    setHeldUrl((current) => {
+      releaseHeldTake(current);
+      return audio ? heldTakeUrl(audio) : null;
+    });
+  }
 
   // Leaving mid-take — back gesture, a deep link, anything — has to release
   // the microphone. Nothing else will.
@@ -374,6 +416,7 @@ export function RecordScreen() {
     // pointing the other way.
     unsent.current = null;
     setPendingTake(false);
+    holdForListening(null);
 
     try {
       const started = await startRecording();
@@ -447,9 +490,24 @@ export function RecordScreen() {
       setProblem(failure.message);
       setCanReload(failure.recovery === 'reload' && canReloadPage());
       setElapsedMs(0);
+      /*
+        Remember that this one had nothing in it, so the next take can be
+        warned before it is played rather than after.
+
+        `lib/audio/level.ts` refuses an all-zero take here — a muted input, a
+        revoked permission, a device recording from an unrouted source — and
+        that refusal used to be the end of it: the musician saw one message,
+        fixed nothing, and recorded the same silence again. The pre-flight is
+        where that becomes useful, and it needs this to have been written down.
+      */
+      if (error instanceof EmptyRecordingError) {
+        preferences.setLastTakeHadSound(false);
+      }
       goPhase('ready');
       return;
     }
+
+    preferences.setLastTakeHadSound(true);
 
     setTruncated(recording.truncated);
     setKeptSeconds(recording.seconds);
@@ -493,6 +551,7 @@ export function RecordScreen() {
       });
       unsent.current = null;
       setPendingTake(false);
+      holdForListening(null);
       // The server has it; the device copy is now the only one that could go
       // stale. Not awaited — the verdict is what the musician is waiting for.
       void takeWasAccepted(recording.filename);
@@ -521,6 +580,7 @@ export function RecordScreen() {
           : recording;
       unsent.current = failure.retriable ? resumable : null;
       setPendingTake(failure.retriable);
+      holdForListening(failure.retriable ? resumable.audio : null);
       if (failure.retriable) {
         // **The ref survives a retry and not a restart.** A musician who
         // records with no signal and backgrounds the app used to lose the
@@ -611,6 +671,14 @@ export function RecordScreen() {
    * `skip_long_rests` has, and for the same reason.
    */
   const [chosenStartFrom, setChosenStartFrom] = useState<number | null>(null);
+  /**
+   * How much of the display the header takes.
+   *
+   * Measured rather than assumed: "Sonata No. 1 in G minor, BWV 1001" wraps to
+   * two lines and "Caprice No. 24" does not, so any constant here would cut
+   * the music short on one of them or leave a band of nothing on the other.
+   */
+  const [headerHeight, setHeaderHeight] = useState(0);
   const listenSchedule = useMemo(
     () => (heard ? scheduleScore(heard, targetBpm) : null),
     [heard, targetBpm],
@@ -624,6 +692,22 @@ export function RecordScreen() {
       ? chosenStartFrom
       : (startable[0] ?? 1);
   const setStartFrom = setChosenStartFrom;
+
+  /** The first bar with a note in it, which is what the pre-flight compares to. */
+  const firstSoundingBar = startable[0] ?? null;
+
+  /**
+   * What the app can actually tell about this take before it is played.
+   *
+   * Recomputed every render rather than memoised: it is three comparisons over
+   * values already in hand, and a stale warning is worse than a cheap one.
+   */
+  const checks = preflight({
+    metronomeMode,
+    startFrom,
+    firstSoundingBar: firstSoundingBar ?? startFrom,
+    lastTakeHeardSound: lastTakeHadSound,
+  });
 
   /**
    * The piece as the take will actually be played: from the entry bar on.
@@ -712,6 +796,7 @@ export function RecordScreen() {
         resume: restored.resume,
       };
       setPendingTake(true);
+      holdForListening(restored.audio);
       if (restored.lastError) {
         setProblem(restored.lastError);
       }
@@ -786,6 +871,20 @@ export function RecordScreen() {
     return (
       <PracticeSetup
         title={piece.title}
+        checks={checks}
+        onResolve={(to) => {
+          // Both remedies live on the recording screen, so the way to offer
+          // them is to go there — with the metronome already switched, since
+          // that one has a single sensible answer and making a musician hunt
+          // for it is the reason nobody reads a warning twice.
+          if (to === 'metronome') {
+            preferences.setMetronomeMode('visual');
+          } else if (firstSoundingBar !== null) {
+            setStartFrom(firstSoundingBar);
+          }
+          preferences.setPracticeSetupSeen(true);
+          setShowSetup(false);
+        }}
         onBack={() => {
           if (practiceSetupSeen) {
             setShowSetup(false);
@@ -821,28 +920,30 @@ export function RecordScreen() {
     return (
       <ScreenContainer
         scrollable={false}
-        contentStyle={styles.screen}
-        footer={
-          <RecordButton
-            active
-            countingIn
-            onPress={cancelCountIn}
-          />
-        }
+        bleed
+        contentStyle={styles.countInScreen}
       >
-        <PageHeader
-          eyebrow={piece.composer}
-          title={piece.title}
-          onBack={goBack}
-          // **The same words as every other phase of this screen.** It said
-          // "Cancel count-in" — which the record button below it also says, so
-          // a screen reader announced one label for two controls, and the
-          // chevron did something no other chevron in the app does.
-          backLabel="Back to the piece"
-        />
+        {/*
+          **Inverted, and the only phase of this screen that is.**
 
+          The Counting In frame's argument: this is the one moment the screen
+          has to be read from across a room, by someone with an instrument
+          already up who is not going to look twice. So it takes the whole
+          display, drops everything that is not the count, and inverts — which
+          is also what stops a lit phone on a stand being a distraction in a
+          dark practice room.
+
+          `darkBg` and `onDark` rather than the appearance's own ink: this is
+          dark in *both* palettes, the same way the Today hero and the camera
+          viewfinder are, because what makes it dark is the moment and not the
+          setting.
+        */}
         <View style={styles.countIn}>
-          <Text variant="sectionLabel" color="textSecondary">
+          <Text
+            variant="sectionLabel"
+            style={styles.countInLabel}
+            accessibilityElementsHidden
+          >
             {perBar === null ? 'Four-beat count-in' : 'One-bar count-in'}
           </Text>
           <Text
@@ -852,15 +953,28 @@ export function RecordScreen() {
           >
             {counted}
           </Text>
-          <Text variant="body" color="textSecondary" style={styles.countInCopy}>
+          <BeatIndicator beat={metronome.beat} perBar={perBar} onDark />
+          <Text variant="body" style={styles.countInCopy}>
             {perBar === null ? 'Start after the count' : 'Start on the next downbeat'}
           </Text>
-          <BeatIndicator beat={metronome.beat} perBar={perBar} />
           {metronome.silent ? (
-            <Text variant="metadataSmall" color="textTertiary" style={styles.note}>
+            <Text variant="metadataSmall" style={styles.countInNote}>
               Haptics are off. Follow the visual count.
             </Text>
           ) : null}
+        </View>
+
+        {/*
+          One way out, and it is the only control on the screen. The header
+          goes: a back chevron and a cancel button are two ways to do the same
+          thing, and this is not a screen to read twice.
+        */}
+        <View style={styles.countInFooter}>
+          <SecondaryButton
+            label="Cancel count-in"
+            onPress={cancelCountIn}
+            onDark
+          />
         </View>
       </ScreenContainer>
     );
@@ -881,27 +995,167 @@ export function RecordScreen() {
     );
   }
 
+  /**
+   * The music, and the controls on a sheet over it.
+   *
+   * **The Sheet Up frame.** This screen is the one place in the app where the
+   * content and the chrome genuinely compete: the page a musician is about to
+   * play is what they want to see, and the tempo, the metronome and the entry
+   * bar are what they came to set. Every other arrangement of this screen picks
+   * a winner. This one hands the choice to the musician — the score fills the
+   * display, and the settings live on a glass sheet they can drag down.
+   *
+   * **What stays when the sheet is down** is the take itself: the timer, the
+   * record button and what the microphone is hearing. Those are the three
+   * things a musician needs with an instrument up, and they are in the peek so
+   * that lowering the sheet never moves them. Everything below them is setup,
+   * and setup is what you put away once it is set.
+   */
   return (
-    <ScreenContainer
-      // **Scrolls, because the footer can grow and this body cannot shrink.**
-      // The footer is a flex sibling of a `flex: 1` content view, so every
-      // line the problem message gains is a line taken off the body — whose
-      // rows have fixed heights and therefore clip rather than reflow. On
-      // 2026-09-12 a four-line microphone failure sliced "Recording tips" in
-      // half on a real phone.
-      //
-      // The two other states on this screen stay non-scrolling on purpose:
-      // they hold a title and a control, and nothing can push them over a
-      // viewport. This one holds a tempo stepper, four rows and a message
-      // whose length is decided by whatever the browser refused.
-      //
-      // The record button does not move: it is in the footer, which sits
-      // outside the scroll area and keeps the thumb zone `CLAUDE.md` §3 law 7
-      // asks for.
-      contentStyle={styles.screen}
-      footer={
-        <View style={styles.footer}>
-          {footerNote ? (
+    <ScreenContainer bleed scrollable={false} contentStyle={styles.stage}>
+      {heard ? (
+        <ScoreBackdrop
+          score={heard}
+          bars={startable}
+          startFrom={startFrom}
+          onStartFromChange={setStartFrom}
+          insetBottom={SHEET_PEEK}
+          insetTop={headerHeight}
+          // The entry bar is written onto the take, so it locks with the
+          // tempo and the mode the moment recording starts.
+          disabled={recording || isStarting}
+        />
+      ) : null}
+
+      {/*
+        Over the music rather than above it: the header is chrome, and giving
+        it a band of its own would take a system of music off every page for a
+        title the musician already knows they tapped.
+      */}
+      <View
+        style={styles.header}
+        pointerEvents="box-none"
+        onLayout={(event) => {
+          const measured = event.nativeEvent.layout.height;
+          setHeaderHeight((current) => (current === measured ? current : measured));
+        }}
+      >
+        <PageHeader
+          eyebrow={piece.composer}
+          title={piece.title}
+          onBack={goBack}
+          backLabel="Back to the piece"
+        />
+      </View>
+
+      <DragSheet
+        label="Practice controls"
+        reveals="the music"
+        peek={SHEET_PEEK}
+        // Something a musician has to read has just appeared inside the sheet.
+        // If the sheet is down it is hiding it, and a message nobody can see is
+        // the same bug as no message.
+        raiseSignal={footerNote}
+      >
+        <View style={styles.take}>
+        {activeRest ? (
+          <RestCue state={activeRest} />
+        ) : (
+          <Text
+            variant="screenTitle"
+            /*
+             * **Ink while it is counting, quiet while it reads 00:00.**
+             *
+             * Before a take the screen had two things set in its largest type
+             * — the tempo and a timer showing zero — plus the record button, so
+             * the eye had three places to land and design law 4 asks for one.
+             * The timer is the one carrying no information yet.
+             *
+             * Dimmed rather than removed, and that is the whole point. `body`
+             * distributes with `space-evenly` and this node reserves the height
+             * the running timer needs; taking it out redistributes the screen
+             * and everything above it moves **at the instant the count-in
+             * starts** — when a musician has an instrument up and is watching
+             * for the downbeat. Measured: removing it leaves a visible void
+             * between the settings and the button, which is a worse trade than
+             * the numeral it removes.
+             */
+            color={elapsedMs > 0 || recording || countingIn ? 'textPrimary' : 'textTertiary'}
+            style={styles.timer}
+          >
+            {formatElapsed(elapsedMs)}
+          </Text>
+        )}
+        {capturing ? (
+          <Text variant="metadataSmall" color="textSecondary">
+            {hasInputSignal
+              ? 'Microphone: audio received'
+              : 'Microphone: waiting for sound'}
+          </Text>
+        ) : null}
+          <RecordButton
+            active={recording}
+            countingIn={false}
+            busy={isStarting}
+            disabled={!recording && Boolean(limitMessage)}
+            onPress={() => void (recording ? stop() : start())}
+          />
+        </View>
+
+        {/*
+          Scrolls, for the reason the whole screen used to: a microphone
+          failure's length is decided by whatever the browser refused, and the
+          rows below it have fixed heights and would clip rather than reflow.
+          On 2026-09-12 a four-line failure sliced "Recording tips" in half on
+          a real phone.
+        */}
+        <ScrollView
+          style={styles.settings}
+          contentContainerStyle={styles.settingsBody}
+          showsVerticalScrollIndicator={false}
+        >
+          {/*
+            **The one failure the app cannot fix gets directions, not a
+            sentence.** A refused microphone is followed on a phone with a
+            permissions panel open on top of the app, a line at a time — so it
+            is the one place in this product where a numbered list earns its
+            keep (§3 law 6 otherwise rules them out as furniture). Every other
+            note here stays one line, because every other note is a statement
+            rather than a sequence.
+
+            The same instructions as one sentence are what a screen reader
+            hears: `microphonePermissionRecovery` builds both from one set of
+            words, so the list and the spoken line cannot drift.
+          */}
+          {microphoneBlocked && visibleProblem ? (
+            <View
+              accessible
+              accessibilityLabel={microphoneRecovery.message}
+              style={styles.problem}
+            >
+              <Text variant="metadataSmall" color="textSecondary">
+                {microphoneRecovery.headline}
+              </Text>
+              {microphoneRecovery.steps.map((step, index) => (
+                <View key={step} style={styles.step}>
+                  <Text
+                    variant="metadataSmall"
+                    color="textTertiary"
+                    style={styles.stepNumber}
+                  >
+                    {index + 1}
+                  </Text>
+                  <Text
+                    variant="metadataSmall"
+                    color="textSecondary"
+                    style={styles.stepText}
+                  >
+                    {step}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : footerNote ? (
             <Text
               variant="metadataSmall"
               color="textSecondary"
@@ -927,7 +1181,16 @@ export function RecordScreen() {
             preview against production without either of us realising the two
             were different origins carrying different code.
           */}
-          {footerNote && marker ? (
+          {/*
+            **`visibleProblem`, not `footerNote`.** The comment above says
+            "shown only beside a failure, never as furniture" and the condition
+            said otherwise: `footerNote` falls back to the last-free-analysis
+            advisory, so a musician who had never seen a failure got a bundle
+            hash under a line telling them how many analyses they had left. It
+            is a diagnostic for a report, and beside good news it is noise
+            (§3 law 10).
+          */}
+          {visibleProblem && marker ? (
             <Text
               variant="metadataSmall"
               color="textTertiary"
@@ -968,6 +1231,25 @@ export function RecordScreen() {
             still here. A quota refusal keeps no take and shows no button —
             there is nothing a retry would do but fetch the same refusal.
           */}
+          {/*
+            **Proof, not a claim.** The sentence above says the take is safe on
+            this device; a take you can play is the same thing demonstrated, and
+            it is the one thing a musician is actually afraid of losing.
+
+            Drawn only where a URL could be made — `heldTakeUrl` answers null on
+            a platform without `createObjectURL`, and a control that appears and
+            does nothing is the affordance §3 rules out drawing at all.
+
+            The audio session is the hazard here and it is already handled:
+            `heldTakePlayer` declares `playback` before it sounds, and
+            `audioRecorder.web.ts` declares `play-and-record` before every
+            capture — so hearing a take cannot leave the microphone refused, the
+            failure that cost this project six diagnoses. See the recording path
+            in `docs/subsystems.md`.
+          */}
+          {pendingTake && heldUrl ? (
+            <HeldTakePlayer url={heldUrl} style={styles.permissionAction} />
+          ) : null}
           {pendingTake ? (
             <SecondaryButton
               label="Send it again"
@@ -980,32 +1262,11 @@ export function RecordScreen() {
               style={styles.retry}
             />
           ) : null}
-          <RecordButton
-            active={recording}
-            countingIn={false}
-            busy={isStarting}
-            disabled={!recording && Boolean(limitMessage)}
-            onPress={() => void (recording ? stop() : start())}
-          />
-        </View>
-      }
-    >
-      <PageHeader
-        eyebrow={piece.composer}
-        title={piece.title}
-        onBack={goBack}
-        backLabel="Back to the piece"
-      />
-
-      <View style={styles.body}>
-        {/*
-          The tempo is locked once recording starts: the analysis compares the
-          take against this number, so changing it mid-take would invalidate
-          everything already played.
-        */}
         <View style={styles.tempo}>
           <TempoStepper
             label="Target tempo"
+            // On the practice sheet, which is itself glass.
+            surface="plain"
             bpm={displayedBpm}
             unitLabel={tempoUnitLabel(tempoBeatUnit)}
             minBpm={displayedRange.min}
@@ -1168,55 +1429,20 @@ export function RecordScreen() {
             <Pressable
               onPress={() => setShowSetup(true)}
               accessibilityRole="button"
-              accessibilityLabel="Open recording tips"
+              accessibilityLabel="Before you record"
               style={({ pressed }) => [
                 styles.metronome,
                 pressed && styles.metronomePressed,
               ]}
             >
               <Text variant="metadataSmall" color="textPrimary">
-                Recording tips
+                Before you record
               </Text>
             </Pressable>
           ) : null}
-        </View>
-
-        {activeRest ? (
-          <RestCue state={activeRest} />
-        ) : (
-          <Text
-            variant="screenTitle"
-            /*
-             * **Ink while it is counting, quiet while it reads 00:00.**
-             *
-             * Before a take the screen had two things set in its largest type
-             * — the tempo and a timer showing zero — plus the record button, so
-             * the eye had three places to land and design law 4 asks for one.
-             * The timer is the one carrying no information yet.
-             *
-             * Dimmed rather than removed, and that is the whole point. `body`
-             * distributes with `space-evenly` and this node reserves the height
-             * the running timer needs; taking it out redistributes the screen
-             * and everything above it moves **at the instant the count-in
-             * starts** — when a musician has an instrument up and is watching
-             * for the downbeat. Measured: removing it leaves a visible void
-             * between the settings and the button, which is a worse trade than
-             * the numeral it removes.
-             */
-            color={elapsedMs > 0 || recording || countingIn ? 'textPrimary' : 'textTertiary'}
-            style={styles.timer}
-          >
-            {formatElapsed(elapsedMs)}
-          </Text>
-        )}
-        {capturing ? (
-          <Text variant="metadataSmall" color="textSecondary">
-            {hasInputSignal
-              ? 'Microphone: audio received'
-              : 'Microphone: waiting for sound'}
-          </Text>
-        ) : null}
-      </View>
+          </View>
+        </ScrollView>
+      </DragSheet>
 
       {/*
         Only this view can raise it: the count-in leaves outright, and by
@@ -1360,7 +1586,49 @@ function RecordButton({
 
 const RECORD_SIZE = 88;
 
+/**
+ * What stays on screen when the practice sheet is lowered.
+ *
+ * The handle, the elapsed time, the record button and what the microphone is
+ * hearing — the four things a musician needs with an instrument already up.
+ * Measured from those, not chosen: the handle's target is 44, the button and
+ * its label 116, and the timer and microphone lines about 60 between them.
+ */
+const SHEET_PEEK = 232;
+
 const styles = StyleSheet.create({
+  /** Full bleed: the music is the ground, and it owns the whole display. */
+  stage: {
+    flex: 1,
+  },
+  /**
+   * Chrome over the music rather than a band above it.
+   *
+   * `box-none` so the header's own back button still takes a press while the
+   * music underneath keeps every tap that is not on it — which is what makes
+   * a bar tappable right up to the title.
+   */
+  header: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: spacing.xl,
+  },
+  /** Always visible: the take, whether the sheet is up or down. */
+  take: {
+    alignItems: 'center',
+    paddingTop: spacing.xs,
+  },
+  settings: {
+    // Capped so the sheet cannot grow past about half the display and leave
+    // the music a strip. Past this it scrolls, which is what the cap is for.
+    maxHeight: 360,
+  },
+  settingsBody: {
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.lg,
+  },
   screen: {
     // **`flexGrow`, not `flex`.** This is a `contentContainerStyle` now, and
     // `flex: 1` on one pins the content to exactly the viewport height: it
@@ -1401,18 +1669,47 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.md,
   },
+  /**
+   * The count-in's ground: dark in both appearances, like the Today hero and
+   * the camera viewfinder, because what makes it dark is the moment and not
+   * the setting.
+   */
+  countInScreen: {
+    flex: 1,
+    backgroundColor: colors.darkBg,
+  },
   countIn: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: spacing.xl,
+  },
+  countInLabel: {
+    color: colors.onDarkMuted,
   },
   countInNumber: {
-    marginTop: spacing.xl,
+    marginTop: spacing.md,
+    marginBottom: spacing['3xl'],
+    color: colors.onDark,
+    // Half the display, per the frame: this is read from a music stand, and
+    // `heroTitle` at its own size is a number you have to look for.
+    fontSize: 148,
+    lineHeight: 148,
     fontVariant: ['tabular-nums'],
   },
   countInCopy: {
-    marginTop: spacing.sm,
-    marginBottom: spacing.xl,
+    marginTop: spacing['2xl'],
+    color: colors.onDarkMuted,
+    textAlign: 'center',
+  },
+  countInNote: {
+    marginTop: spacing.md,
+    color: colors.onDarkMuted,
+    textAlign: 'center',
+  },
+  countInFooter: {
+    paddingHorizontal: spacing.xl,
+    paddingBottom: spacing['3xl'],
   },
   restCue: {
     width: '100%',
@@ -1473,6 +1770,22 @@ const styles = StyleSheet.create({
   },
   permissionAction: {
     marginBottom: spacing.md,
+  },
+  step: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  stepNumber: {
+    // A fixed column so the three steps' text lines up rather than stepping in
+    // and out with the width of the numeral.
+    width: spacing.md,
+    textAlign: 'right',
+    fontVariant: ['tabular-nums'],
+  },
+  stepText: {
+    flex: 1,
   },
   problem: {
     textAlign: 'center',

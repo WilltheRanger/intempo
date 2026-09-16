@@ -13,7 +13,7 @@ import {
 } from '../../lib/tempo';
 import {
   entryAccessibilityLabel,
-  entryLabel,
+  entryRowLabel,
   entrySheetTitle,
   type EntryScope,
 } from '../../lib/score/entryCopy';
@@ -131,15 +131,39 @@ export function PlaybackSettings({
     </BottomSheet>
   );
 
-  // **A setting gets a row; a playback tweak gets a line.** Where the bar
-  // decides what the take is — and so what the analysis judges — it is a real
-  // setting and looks like one: a labelled row with its value and a chevron,
-  // the same furniture as every other setting in the app. Accent-coloured
-  // text saying "Start at bar 1" did not read as a control at all, and the
-  // owner said so.
-  if (entry === 'take' && canPickBar) {
-    return (
-      <>
+  /*
+    **Both of these are rows, and both used to be a line.**
+
+    The comment this replaces read: *"A setting gets a row; a playback tweak
+    gets a line. Where the bar decides what the take is — and so what the
+    analysis judges — it is a real setting and looks like one... Accent-coloured
+    text saying 'Start at bar 1' did not read as a control at all, and the owner
+    said so."* The Record screen was given the row; the score screen kept the
+    line on the strength of that distinction.
+
+    The owner has now reported the same thing about the score screen. The
+    distinction was a reasonable call when everything around it was accent
+    text; the composition underneath it has changed, and the rest of that
+    screen is ruled rows with chevrons — so the line is the one orphan on it,
+    and the same words that did not read as a control there do not read as one
+    here either.
+
+    It also fixes a duplicate. The line rendered "Listen from bar 1 · 92 BPM"
+    four lines under a metadata row already saying "92 BPM", with nothing to
+    say the second one was a control and the first was a fact. Labelled rows
+    say which is which.
+  */
+  return (
+    /*
+      **`stretch`, because the rows below say `stretch` and that is not
+      enough.** `alignSelf` resolves against the *parent*, and this wrapper is
+      the parent now — so a row that stretches to a wrapper which has itself
+      shrunk to its content is a row the width of its own text, with the label
+      and the value touching. Measured: "Listen fromBar 1" on a 290pt row
+      inside a 390pt screen.
+    */
+    <View style={styles.settings}>
+      {canPickBar ? (
         <Pressable
           onPress={() => setPickingBar(true)}
           disabled={disabled}
@@ -147,8 +171,9 @@ export function PlaybackSettings({
           accessibilityLabel={entryAccessibilityLabel(entry, fromMeasure)}
           style={({ pressed }) => [styles.settingRow, pressed && styles.pressed]}
         >
+          {/* The words depend on what the bar governs — see `entryCopy`. */}
           <Text variant="body" color={disabled ? 'textTertiary' : 'textSecondary'}>
-            Start at
+            {entryRowLabel(entry)}
           </Text>
           <View style={styles.settingValue}>
             <Text variant="body" color={disabled ? 'textTertiary' : 'textPrimary'}>
@@ -161,35 +186,6 @@ export function PlaybackSettings({
             />
           </View>
         </Pressable>
-        {barSheet}
-      </>
-    );
-  }
-
-  return (
-    <View style={styles.row}>
-      {canPickBar ? (
-        <Pressable
-          onPress={() => setPickingBar(true)}
-          disabled={disabled}
-          accessibilityRole="button"
-          accessibilityLabel={entryAccessibilityLabel(entry, fromMeasure)}
-          style={({ pressed }) => [styles.target, pressed && styles.pressed]}
-        >
-          {/* The words depend on what the bar governs — see `entryCopy`. This
-              used to say "Listen from" on both screens, with a comment saying
-              a bare "From bar 1" on the Record screen "reads as where the take
-              starts, which it is not". It is now, so it says so. */}
-          <Text variant="metadataSmall" color={disabled ? 'textTertiary' : 'accentText'}>
-            {entryLabel(entry, fromMeasure)}
-          </Text>
-        </Pressable>
-      ) : null}
-
-      {canPickBar && onBpmChange ? (
-        <Text variant="metadataSmall" color="textTertiary">
-          ·
-        </Text>
       ) : null}
 
       {onBpmChange ? (
@@ -198,11 +194,27 @@ export function PlaybackSettings({
           disabled={disabled}
           accessibilityRole="button"
           accessibilityLabel={`Playback tempo ${formatTempo(bpm, beatUnit)}. Change.`}
-          style={({ pressed }) => [styles.target, pressed && styles.pressed]}
+          style={({ pressed }) => [styles.settingRow, pressed && styles.pressed]}
         >
-          <Text variant="metadataSmall" color={disabled ? 'textTertiary' : 'accentText'}>
-            {formatTempo(bpm, beatUnit)}
+          {/*
+            "Listen at", not "Tempo". The number beside it is the *playback*
+            tempo and the page's own marked tempo sits under the music a few
+            lines up; two rows both called tempo, with different numbers, is
+            the confusion `tempoBeatUnit` already exists to prevent.
+          */}
+          <Text variant="body" color={disabled ? 'textTertiary' : 'textSecondary'}>
+            Listen at
           </Text>
+          <View style={styles.settingValue}>
+            <Text variant="body" color={disabled ? 'textTertiary' : 'textPrimary'}>
+              {formatTempo(bpm, beatUnit)}
+            </Text>
+            <ChevronRight
+              size={ICON_SIZE.sm}
+              strokeWidth={ICON_STROKE_WIDTH}
+              color={disabled ? colors.textTertiary : colors.textSecondary}
+            />
+          </View>
         </Pressable>
       ) : null}
 
@@ -242,31 +254,29 @@ export function PlaybackSettings({
 }
 
 const styles = StyleSheet.create({
-  /**
-   * Padded to a real touch target.
-   *
-   * These are one line of `metadataSmall`, which measured **18pt tall** — a
-   * control at less than half the platform minimum, on the two settings this
-   * panel exists for. Padding rather than `hitSlop` because padding is in the
-   * layout and can be measured; a hit area nothing can see is a hit area
-   * nothing checks.
-   */
-  target: {
-    minHeight: MIN_TOUCH_TARGET,
-    justifyContent: 'center',
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    // Close to the button it belongs to. On the Record screen the next control
-    // is "Recording tips", and even spacing would make three unrelated things
-    // read as one list.
-    marginTop: spacing.sm,
-  },
+  /*
+    `target` and `row` are gone with the line form they dressed. `target`
+    padded an 18pt line of `metadataSmall` out to a real touch target — a note
+    worth keeping because it is why the rows below carry `MIN_TOUCH_TARGET`
+    rather than trusting their text to be tall enough, and because padding is
+    in the layout and can be measured where `hitSlop` cannot.
+  */
   pressed: {
     opacity: 0.6,
+  },
+  settings: {
+    alignSelf: 'stretch',
+    /*
+      **The group is bounded, not each row.** Every row carrying a rule top and
+      bottom drew two hairlines with a gap between them wherever two rows
+      stacked — visible the moment the score screen gained a second setting.
+      A top rule per row and one bottom rule on the group is the same shape the
+      screen's action rows use, and it reads as a list rather than as two
+      separate boxes.
+    */
+    marginTop: spacing.lg,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
   },
   settingRow: {
     // **Full width, whatever the parent centres.** The Record screen's control
@@ -278,11 +288,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: spacing.lg,
     paddingVertical: spacing.sm,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
+    borderTopColor: colors.border,
   },
   settingValue: {
     flexDirection: 'row',

@@ -22,6 +22,16 @@ pre_max = 20               # CAP on the peak-pick window, not the window itself
 # because whether an asymmetric window is right is a tuning question with an
 # ear, not an edit here. Held by `app/tests/test_tuning_knobs.py`.
 post_max = 20
+# **Inert on any ordinary page, like `post_max` above.** It is passed to
+# librosa as `wait`, but peak-picking already requires each onset to be the
+# maximum over ±`peak_window_frames`, derived from the closest gap the score
+# writes — 16 frames (372 ms) on a page of eighths at 80 BPM against this
+# value's 3. Swept 60 → 100 → 150 → 200 ms on bowed takes at five attack
+# times, 2026-09-14: byte-identical readings at every value. It bites only
+# where the written gap falls below it, which is a passage faster than any
+# this app has been shown. Left alone rather than removed — a deployment's
+# remote-config row may still send it, and whether the floor should be a
+# constant at all is a question for an ear. See TUNING_LOG.md, 2026-09-14.
 wait_ms = 60               # minimum inter-onset gap; suppresses pizzicato string ring (§7)
 pre_emphasis_coef = 0.97   # librosa.effects.preemphasis coefficient
 

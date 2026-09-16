@@ -88,6 +88,22 @@ export interface InsightsSource {
   getInsights(): Promise<PracticeInsights | null>;
 }
 
+/**
+ * One piece's practice behind it, for the piece screen.
+ *
+ * `recent` carries results and `takes` does not, which is why the two are not
+ * `recent.length` — a piece with forty takes reports forty and hands back the
+ * newest few.
+ */
+export interface PieceHistory {
+  /** Every finished take of this piece. */
+  takes: number;
+  /** When the oldest of them was, ISO. Null when there are none. */
+  since: string | null;
+  /** The newest few, newest first, with their per-note results. */
+  recent: TakeResult[];
+}
+
 /** One analysed take, for the verdict screen. */
 export interface TakeSource {
   /** Null when the id doesn't exist or isn't the caller's. */
@@ -102,6 +118,19 @@ export interface TakeSource {
   getLatestTake(): Promise<TakeResult | null>;
   /** Finished, readable takes, newest first. */
   getRecentTakes(limit?: number): Promise<TakeResult[]>;
+  /**
+   * How much practice one piece has behind it.
+   *
+   * **Two questions with very different costs, so two calls.** How many takes
+   * and since when is answered by the rows alone — `include_result=false`
+   * narrows the SQL projection, and `result_json` is 214 bytes a note. What
+   * each of the last few takes *sounded like* needs the results, so only a
+   * handful are asked for.
+   *
+   * `GET /v1/analyses` takes a `score_id` and is indexed on
+   * `(user_id, created_at DESC)`, so neither call is a scan.
+   */
+  getPieceHistory(pieceId: string, window?: number): Promise<PieceHistory>;
   /**
    * A fresh private URL for hearing one saved recording. Null only in the
    * fixture build, where no recording was ever uploaded.

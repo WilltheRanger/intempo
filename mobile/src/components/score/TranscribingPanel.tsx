@@ -4,7 +4,12 @@ import { Animated, StyleSheet, View } from 'react-native';
 import { Text } from '../primitives/Text';
 import type { Piece } from '../../data/types';
 import { colors, spacing } from '../../design';
-import { QUEUED_PROGRESS, progressFor } from '../../lib/transcriptionProgress';
+import {
+  QUEUED_PROGRESS,
+  pageStates,
+  progressFor,
+  type PageProgress,
+} from '../../lib/transcriptionProgress';
 import { useReducedMotion } from '../../lib/useReducedMotion';
 
 
@@ -22,8 +27,15 @@ export interface TranscribingPanelProps {
  * that was working looked exactly like one that had died. Naming the step is
  * the whole point; the bar is a secondary read of the same fact.
  *
- * One focal point: the step. The bar is a hairline under it and the caption
- * below is smaller still (§3 laws 4 and 8).
+ * One focal point: the step. The bar is a hairline under it, the queue under
+ * that is smaller again, and the caption smaller still (§3 laws 4 and 8).
+ *
+ * **The queue is the fact this screen most often failed to explain.** A scan's
+ * pages are read one after another, and for most of a four-page wait the panel
+ * said `Reading page 2 of 4` and nothing else — true, and no help to someone
+ * wondering whether pages three and four were lost, queued, or never uploaded.
+ * The rules are in `transcriptionProgress.ts`, with the bar's, because a rule
+ * inside a `.tsx` is a rule nothing checks (`CLAUDE.md` §3).
  */
 export function TranscribingPanel({ piece }: TranscribingPanelProps) {
   const reducedMotion = useReducedMotion();
@@ -32,6 +44,18 @@ export function TranscribingPanel({ piece }: TranscribingPanelProps) {
   const held = useRef(QUEUED_PROGRESS);
   const target = progressFor(piece.transcriptionStage, held.current);
   held.current = target;
+
+  // Same hold as the bar's, and for the same reason: a stage this build cannot
+  // place leaves the queue where it was rather than redrawing it, which would
+  // read as the scan starting over. `piece.pages` is the total because it is
+  // the piece's own count — the stage string's is checked against it.
+  const heldPages = useRef<PageProgress[] | null>(null);
+  const queue = pageStates(
+    piece.transcriptionStage,
+    piece.pages.length,
+    heldPages.current,
+  );
+  heldPages.current = queue;
 
   // Held in a ref so a re-render for any other reason doesn't restart the
   // animation from zero, which would read as the job starting over.
@@ -76,6 +100,33 @@ export function TranscribingPanel({ piece }: TranscribingPanelProps) {
         <Animated.View style={[styles.fill, { width }]} />
       </View>
 
+      {queue ? (
+        <View style={styles.queue}>
+          {queue.map((entry) => (
+            <View key={entry.page} style={styles.queueRow}>
+              {/*
+                No rules, no chips, no dots. Two columns of type, and the page
+                being read is the only one at full strength — the hierarchy §3
+                law 8 asks for, in a block that has to stay quieter than the
+                step above it.
+              */}
+              <Text
+                variant="metadataSmall"
+                color={entry.state === 'reading' ? 'textSecondary' : 'textTertiary'}
+              >
+                Page {entry.page}
+              </Text>
+              <Text
+                variant="metadataSmall"
+                color={entry.state === 'reading' ? 'textPrimary' : 'textTertiary'}
+              >
+                {entry.note}
+              </Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
       {/*
         "Under a minute" was true when a page was one model call. It is read a
         stave at a time now — four at once, but a dense page is still three
@@ -104,6 +155,15 @@ const styles = StyleSheet.create({
   fill: {
     height: 2,
     backgroundColor: colors.accent,
+  },
+  queue: {
+    marginTop: spacing.lg,
+  },
+  queueRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    paddingVertical: spacing.xs,
   },
   caption: {
     marginTop: spacing.md,

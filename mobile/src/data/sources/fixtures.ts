@@ -195,6 +195,48 @@ const DEMO_SCORE: ScoreJson = {
 };
 
 /**
+ * A reading that is internally consistent and wrong, which is the pair of
+ * failures `proposals.ts` exists for.
+ *
+ * **Neither is visible to any other check on the score screen.** Bar 1 carries
+ * C3 — a whole tone below the violin's open G, a note the part cannot play —
+ * and the bar still sums to four beats, so the beat check is happy and the
+ * engraver draws it without complaint. Bar 2 reads the same A twice and comes
+ * out at five, which the beat check *does* catch, and which nothing could
+ * previously offer a correction for.
+ *
+ * Both shapes are taken from what OCR actually does rather than invented: a
+ * notehead placed a line too low or under a misread clef, and a notehead read
+ * twice. The measured case behind the first is on the live project — a real
+ * 25-bar part that came back at exactly 4.00 beats a bar with C3 on a violin.
+ *
+ * A fixture for the same reason the four above it exist: a state with no
+ * fixture is a state nobody looks at, and this build is the one the screens
+ * are checked in.
+ */
+const MISREAD_SCORE: ScoreJson = {
+  ...DEMO_SCORE,
+  measures: [
+    {
+      measure_number: 1,
+      notes: ['C3', 'E4', 'F#4', 'G4'].map(quarter),
+      slurs: [],
+    },
+    {
+      measure_number: 2,
+      notes: ['A4', 'A4', 'G4', 'F#4', 'E4'].map(quarter),
+      slurs: [],
+    },
+    {
+      measure_number: 3,
+      notes: [{ pitch: 'D4', duration: 'whole', tied_to_next: false }],
+      slurs: [],
+    },
+  ],
+  notes_to_human: 'Fixture score. Not OCR output.',
+};
+
+/**
  * The same music with the dynamic its page actually prints.
  *
  * **Dynamics are drawn, so one has to be here.** `musicxml.py` has pulled them
@@ -587,6 +629,23 @@ const FIXTURE_PIECES: FixturePiece[] = [
     score: CLEF_CHANGE_SCORE,
   },
   {
+    /**
+     * The piece the proof-reading screen has something to say about.
+     *
+     * See `MISREAD_SCORE`: a note the violin cannot play in a bar that adds up,
+     * and a bar that reads a note twice. Without it the check ships with only
+     * its empty state reachable in the build the screens are looked at in.
+     */
+    id: 'fixture-misread-reading',
+    title: 'Sonata in G minor, HWV 364a',
+    composer: 'G. F. Handel',
+    movement: 'I. Larghetto',
+    practicedDaysAgo: null,
+    thumbnail: require('../../../assets/fixtures/02_medium_printed.jpg'),
+    markedBpm: MARKED_BPM,
+    score: MISREAD_SCORE,
+  },
+  {
     id: 'fixture-mozart-k216',
     title: 'Violin Concerto No. 3 in G major, K. 216',
     composer: 'W. A. Mozart',
@@ -676,6 +735,39 @@ const FIXTURE_PIECES: FixturePiece[] = [
     reading: {
       transcriptionStatus: 'reading',
       transcriptionStage: 'Reading stave 3 of 7',
+    },
+  },
+  {
+    /**
+     * **A three-page scan, mid-read**, which is the state the queue under the
+     * bar exists for and which no fixture could produce.
+     *
+     * `Reading page 2 of 3` is a stage the worker really writes
+     * (`fixtures/stages/parity.json` is the contract) and it is the only one
+     * that says which page is in hand — so it is the only one that can put
+     * "Waiting for page 2" on screen. Every other reading fixture is one page
+     * long, and `pageStates` returns null for those by design, which means the
+     * whole block was unreachable in the build this project actually looks at.
+     *
+     * Three pages rather than two: two makes "read / reading" and never shows a
+     * page waiting behind another, which is the fact the queue was added to
+     * state.
+     */
+    id: 'fixture-reading-multipage',
+    title: 'Partita No. 2 in D minor, BWV 1004',
+    composer: 'J. S. Bach',
+    movement: 'Allemanda',
+    practicedDaysAgo: null,
+    thumbnail: require('../../../assets/fixtures/01_simple_printed.jpg'),
+    morePages: [
+      require('../../../assets/fixtures/02_medium_printed.jpg'),
+      require('../../../assets/fixtures/03_complex_printed.jpg'),
+    ],
+    markedBpm: null,
+    score: null,
+    reading: {
+      transcriptionStatus: 'reading',
+      transcriptionStage: 'Reading page 2 of 3',
     },
   },
   {
@@ -1162,6 +1254,22 @@ const FIXTURE_TAKE_STATES: Record<string, Partial<TakeResult>> = {
       'at all. Check which input your device is recording from, and that ' +
       'nothing is muting it, then record again.',
   },
+  /**
+   * **A passage, not a whole page** — which is what practice looks like and
+   * what the pipeline has measured since `align_dtw` learned subsequence
+   * matching (`test_fragment_alignment.py`). The verdict screen names the bars
+   * for a take that did not open the page, and with every fixture starting at
+   * bar 1 that branch was unreachable in the build the screens are looked at
+   * in.
+   *
+   * Not a failure, unlike the four below it — it is in this table because the
+   * table is what `getTake` can reach by id. The measures are the successful
+   * take's, renumbered to start at nine.
+   */
+  'fixture-take-passage': {
+    headline:
+      'You held the tempo through this passage, with a little push at the end.',
+  },
   'fixture-take-unmatched': {
     status: 'alignment_failed',
     headline:
@@ -1176,7 +1284,12 @@ export const fixtureTakeSource: TakeSource = {
     const state = FIXTURE_TAKE_STATES[analysisId];
     if (state) {
       const take = buildFixtureTake();
-      return take ? { ...take, id: analysisId, ...state } : null;
+      if (!take) {
+        return null;
+      }
+      const base =
+        analysisId === 'fixture-take-passage' ? asPassageFrom(take, 9) : take;
+      return { ...base, id: analysisId, ...state };
     }
     if (analysisId !== FIXTURE_TAKE_ID) {
       return null;
@@ -1222,12 +1335,56 @@ export const fixtureTakeSource: TakeSource = {
     }));
   },
 
+  /**
+   * The sample piece's practice behind it.
+   *
+   * Built from `getRecentTakes`, which already shapes a plausible run of
+   * sessions — drift shrinking week by week with one bad night — so the card
+   * and the Insights chart are drawing the same history rather than two that
+   * disagree. Only the piece this fixture take belongs to has any: every other
+   * piece in the sample library returns nothing, which is also what the card
+   * has to handle for a piece nobody has recorded yet.
+   */
+  async getPieceHistory(pieceId, window = 6) {
+    const recent = (await fixtureTakeSource.getRecentTakes(12)).filter(
+      (take) => take.pieceId === pieceId,
+    );
+    if (recent.length === 0) {
+      return { takes: 0, since: null, recent: [] };
+    }
+    return {
+      takes: recent.length,
+      since: recent[recent.length - 1].recordedAt,
+      recent: recent.slice(0, Math.max(1, window)),
+    };
+  },
+
   // The sample result was never recorded or uploaded. Hiding playback is more
   // honest than playing a canned clip and calling it the musician's take.
   async getRecordingUrl() {
     return null;
   },
 };
+
+/**
+ * The sample take, renumbered to start partway into the page.
+ *
+ * A passage take differs from a whole-page one in exactly one way the screen
+ * can see: its first measure is not bar 1. Shifting the numbers is therefore
+ * the whole of it, and it keeps the deviations, the bands and the trend that
+ * every other check on this screen reads — a hand-written second take would be
+ * a second set of numbers to keep in step with the first.
+ */
+function asPassageFrom(take: TakeResult, first: number): TakeResult {
+  const shift = first - (take.measures[0]?.measure ?? 1);
+  return {
+    ...take,
+    measures: take.measures.map((measure) => ({
+      ...measure,
+      measure: measure.measure + shift,
+    })),
+  };
+}
 
 /** The sample take, built fresh so `recordedAt` is always recent. */
 function buildFixtureTake(): TakeResult | null {

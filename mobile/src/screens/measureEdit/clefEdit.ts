@@ -1,5 +1,5 @@
 import type { Clef, ScoreJson } from '../../data/types';
-import { CLEF_LABELS } from '../../lib/notation/scoreSummary';
+import { CLEF_LABELS } from '../../lib/notation/clefLabels';
 
 export interface ClefChoice {
   value: Clef;

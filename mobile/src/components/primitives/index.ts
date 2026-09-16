@@ -8,6 +8,7 @@ export {
 export { PageHeader, type PageHeaderProps } from './PageHeader';
 export { SectionHeader, type SectionHeaderProps } from './SectionHeader';
 export { Card, type CardProps } from './Card';
+export { DragSheet, type DragSheetProps } from './DragSheet';
 export { Avatar, type AvatarProps } from './Avatar';
 export { PrimaryButton, type PrimaryButtonProps } from './PrimaryButton';
 export { SecondaryButton, type SecondaryButtonProps } from './SecondaryButton';

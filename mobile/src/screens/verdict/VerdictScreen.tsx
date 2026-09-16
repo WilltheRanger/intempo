@@ -25,6 +25,8 @@ import {
   readMeasure,
   timedMeasureRange,
 } from '../../lib/verdict/measureReading';
+import { passageLabel } from '../../lib/verdict/passage';
+import { failureTitle, nothingUsableTitle } from '../../lib/verdict/failureTitle';
 import {
   appVerdictFor,
   canCorrect,
@@ -205,11 +207,29 @@ export function VerdictScreen() {
         />
         <EmptyState
           fill
-          title="This take didn't get analysed"
+          // **The finding, not the app's process.** The heading is the one
+          // thing on a centred empty state set in the display face, so it is
+          // what is read first and sometimes only — and "this take didn't get
+          // analysed" is the least useful true thing available. See
+          // `failureTitle`, which also decides that the recoverable one owns
+          // it rather than leaving ownership to the third line.
+          title={failureTitle(take.failure)}
+          /*
+            **The heading owns it now, so the body stops repeating it.** Both
+            of these opened by restating the heading — "Something went wrong on
+            our end" over "Something went wrong on our side" — which spent the
+            first line of the explanation saying nothing new. What is left is
+            the two things a musician actually wants: it was not their playing,
+            and whether trying again is worth the time.
+
+            `tools/verdict-states.mjs` holds the sentences these two checks
+            match on, and it is one file because the last time they were two
+            the walk and the audit went out of step for a push.
+          */
           description={
             take.failure.recoverable
-              ? 'Something went wrong on our side, not with your playing. Recording it again usually works.'
-              : "We couldn't process this recording. Your playing wasn't the problem — record it again when you have a moment."
+              ? "Your playing wasn't the problem. Recording it again usually works."
+              : "Your playing wasn't the problem. Record it again when you have a moment."
           }
         />
         {take.recordingAvailable ? (
@@ -240,7 +260,19 @@ export function VerdictScreen() {
           backLabel="Back to the piece"
         />
         {/* The pipeline's own sentence, shown verbatim. */}
-        <EmptyState fill title="Nothing to measure" description={take.headline} />
+        {/*
+          **Three outcomes shared this heading.** A completely silent take, one
+          the pipeline could not line up against the page and one that turned
+          out to be a different piece all read "Nothing to measure" — three
+          findings with three next moves under a sentence naming none of them.
+          The pipeline's own explanation underneath does distinguish them, and a
+          musician who reads the heading and stops was told nothing.
+        */}
+        <EmptyState
+          fill
+          title={nothingUsableTitle(take.status)}
+          description={take.headline}
+        />
         {take.recordingAvailable ? (
           <TakePlayback analysisId={take.id} />
         ) : null}
@@ -296,7 +328,12 @@ export function VerdictScreen() {
         variant="metadataSmall"
         items={[
           `Target ${formatTempo(take.targetBpm, take.tempoBeatUnit)}`,
-          measureLabel(take.measures.length),
+          // **Which bars, when the take did not open the page.** Practising a
+          // passage is the ordinary case — the pipeline matches a take against
+          // the passage it covers — and this said "4 measures", which is true
+          // and answers a question nobody asked: four measures of what, and
+          // why does the list below start at bar 9? See `passage.ts`.
+          passageLabel(take.measures),
           take.missedNotes > 0 ? noteLabel(take.missedNotes) : null,
         ]}
         style={styles.meta}
@@ -394,15 +431,11 @@ export function VerdictScreen() {
       */}
       {take.measures.some((m) => readMeasure(m).revealsFigure) ? (
         <Text variant="metadataSmall" color="textTertiary" style={styles.tip}>
-          Tap a measure for its timing.
+          Tap a measure for how far off the beat it was.
         </Text>
       ) : null}
     </ScreenContainer>
   );
-}
-
-function measureLabel(count: number): string {
-  return count === 1 ? '1 measure' : `${count} measures`;
 }
 
 function noteLabel(count: number): string {

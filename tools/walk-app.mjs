@@ -33,6 +33,7 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { VERDICT_STATES } from './verdict-states.mjs';
+import { PRACTICE_SETUP_HEADING, PRACTICE_SETUP_REOPEN } from './screen-copy.mjs';
 
 // Resolved from `mobile/`, where playwright is installed with `--no-save` — a
 // bare import would resolve against this directory instead. See the same note
@@ -883,8 +884,8 @@ console.log('\n## Setting up a take');
  * they did not choose, with nothing on screen disagreeing.
  */
 await open('pieces/fixture-bach-bwv1001/record');
-if (!(await leaves()).some((l) => /Before your first take/i.test(l)))
-  fail('the record route did not open on the first-take tips');
+if (!(await leaves()).some((l) => l.includes(PRACTICE_SETUP_HEADING)))
+  fail('the record route did not open on the pre-flight checks');
 else pass('a first take opens on the tips, not on the controls');
 
 await page.getByRole('button', { name: /Set tempo & record/i }).first().click();
@@ -943,8 +944,8 @@ await page.waitForTimeout(400);
  * that backwards drops a musician out of the flow for reading the tips.
  */
 await open('pieces/fixture-bach-bwv1001/record');
-await page.getByRole('button', { name: /Open recording tips/i }).first().click();
-await waitForText('the tips to reopen', (l) => /Before your first take/i.test(l));
+await page.getByRole('button', { name: PRACTICE_SETUP_REOPEN }).first().click();
+await waitForText('the pre-flight to reopen', (l) => l.includes(PRACTICE_SETUP_HEADING));
 await page.getByRole('button', { name: /Back to the piece/i }).first().click();
 await waitForText('the controls to come back', (l) => /Target tempo/i.test(l));
 if ((await path()).endsWith('/record'))

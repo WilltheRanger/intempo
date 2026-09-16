@@ -25,6 +25,7 @@ import type { RootNavigation } from '../../navigation/types';
 import { DraggablePageList } from './DraggablePageList';
 import { PagePreview } from './PagePreview';
 import { pageCountLabel } from '../../lib/format';
+import { queueSummary } from '../../lib/scan/pageQueue';
 
 /**
  * Review of the pages just captured, before transcription.
@@ -136,11 +137,15 @@ export function CapturedPagesScreen() {
     const everHeld = captureSession.hasHeldPages();
     return (
       <ScreenContainer>
-        <PageHeader
-          title="Review pages"
-          onBack={goBack}
-          backLabel={scannerBelow ? 'Back to the scanner' : 'Back'}
-        />
+        {/*
+          **No heading here, and one on the populated screen.** "Review pages"
+          in full serif above "No pages yet" in serif is two headings, and the
+          larger of them is about something that is not on the screen — two
+          competing focal points, which §3 law 4 calls a hierarchy that is
+          wrong. The empty state is the whole screen, so it is the title too.
+          The back row stays, for the touch-target reason `PageHeader` gives.
+        */}
+        <PageHeader onBack={goBack} backLabel={scannerBelow ? 'Back to the scanner' : 'Back'} />
         {/*
           **Two empty states, because empty means two things.** A scan whose
           pages were all removed, and one that never had any — which is what a
@@ -151,6 +156,7 @@ export function CapturedPagesScreen() {
           is a small lie about their own actions.
         */}
         <EmptyState
+          fill
           icon={Layers}
           title={everHeld ? 'No pages left' : 'No pages yet'}
           description={
@@ -158,8 +164,19 @@ export function CapturedPagesScreen() {
               ? "You've removed every page. Capture at least one to continue."
               : 'Photograph a page of sheet music to start a scan.'
           }
+          // **The cheapest place in the product to improve reading accuracy.**
+          // Everything downstream of this screen is decided by how the page
+          // was photographed, and this is the one moment the app has a
+          // musician's attention before they take the first one. One sentence,
+          // and it is the one most likely to save a failed transcription.
+          hint="Flat on a table, in daylight, with the whole page in frame reads best."
           actionLabel={everHeld ? 'Add page' : 'Photograph a page'}
+          actionTone="primary"
           onActionPress={addPage}
+          // The second route, which was behind the button above: both ways of
+          // getting a page in are named, on the screen that has neither.
+          secondaryLabel="Choose existing images"
+          onSecondaryPress={addFromLibrary}
         />
 
       <BottomSheet
@@ -210,10 +227,13 @@ export function CapturedPagesScreen() {
         backLabel={scannerBelow ? 'Back to the scanner' : 'Back'}
       />
 
+      {/*
+        The order, and the caveat when there is one. Both live in
+        `pageQueue.ts` — a rule in a `.tsx` is a rule nothing checks, and
+        "does this warn when it should" is the kind that stays wrong quietly.
+      */}
       <Text variant="metadataSmall" color="textTertiary" style={styles.hint}>
-        {pages.length === 1
-          ? 'This is the page InTempo will read.'
-          : 'InTempo uploads and reads every page in this order.'}
+        {queueSummary(pages)}
       </Text>
 
       <DraggablePageList

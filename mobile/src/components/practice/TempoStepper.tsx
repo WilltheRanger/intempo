@@ -19,6 +19,12 @@ export interface TempoStepperProps {
   maxBpm?: number;
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
+  /**
+   * Forwarded to the two buttons: `plain` when this stepper is itself on a
+   * glass surface. Glass inside glass has no ground to refract, and the sweep
+   * calls it GLASS ON GLASS.
+   */
+  surface?: 'glass' | 'plain';
 }
 
 /**
@@ -38,6 +44,7 @@ export function TempoStepper({
   maxBpm = MAX_BPM,
   disabled = false,
   style,
+  surface = 'glass',
 }: TempoStepperProps) {
   return (
     <View style={[styles.tempo, style]}>
@@ -51,6 +58,7 @@ export function TempoStepper({
           label="Slower"
           onPress={() => onChange(bpm - BPM_STEP)}
           disabled={disabled || bpm <= minBpm}
+          surface={surface}
         />
         <View style={styles.reading}>
           <Text variant="screenTitle" style={styles.bpm}>
@@ -65,6 +73,7 @@ export function TempoStepper({
           label="Faster"
           onPress={() => onChange(bpm + BPM_STEP)}
           disabled={disabled || bpm >= maxBpm}
+          surface={surface}
         />
       </View>
     </View>

@@ -7,11 +7,19 @@ import { useEffect, useRef, useState } from 'react';
 import { Linking, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
+import { EmptyState } from '../../components/primitives/EmptyState';
+import { PageHeader } from '../../components/primitives/PageHeader';
+import { ScreenContainer } from '../../components/primitives/ScreenContainer';
 import { Text } from '../../components/primitives/Text';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
-import { adviceFor, legibilityOf, type Advice } from '../../lib/scan/legibility';
+import { legibilityOf } from '../../lib/scan/legibility';
+import {
+  shotVerdict,
+  viewfinderGuide,
+  type ShotVerdict,
+} from '../../lib/scan/shotVerdict';
 import { photographWithSystemCamera } from '../../lib/scan/systemCamera';
+import { captureFailure, type CaptureFailure } from '../../lib/scan/captureFailure';
 import {
   cameraFallback,
   type CameraAction,
@@ -24,7 +32,6 @@ import {
   useCapturedPages,
 } from '../../data/captureSession';
 import {
-  BORDER_WIDTH,
   colors,
   ICON_SIZE,
   ICON_STROKE_WIDTH,
@@ -33,6 +40,7 @@ import {
   spacing,
 } from '../../design';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
+import { PageStrip, STRIP_HEIGHT } from './PageStrip';
 import { ViewfinderPage } from './ViewfinderPage';
 import { cropToViewfinder, PAGE_ASPECT, visibleRegion } from '../../lib/scan/framing';
 import { pageCountLabel } from '../../lib/format';
@@ -77,9 +85,30 @@ export function ScannerScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * The shutter itself failing, which is a screen rather than a line.
+   *
+   * Separate from `error`, which carries the notices that belong *under* a
+   * working viewfinder — the page ceiling, a settings screen that would not
+   * open. This one means the button the musician just pressed did nothing, and
+   * offering them the same button again with a sentence above it is the dead
+   * end `captureFailure.ts` was written about.
+   */
+  const [failure, setFailure] = useState<CaptureFailure | null>(null);
   //: The page just taken that will not read, and why. Null when the last shot
   //: was fine, could not be measured, or has been retaken.
-  const [doubt, setDoubt] = useState<{ id: string; advice: Advice } | null>(null);
+  /**
+   * The page just taken, and what the app makes of it.
+   *
+   * **Every shot now gets one**, where only a doubtful one used to. The
+   * measurement was always there — `legibilityOf` counts staff spacing in the
+   * real pixels — and spending it on silence for a good page means silence and
+   * approval look identical, which is how a page nobody checked reaches the
+   * reader.
+   */
+  const [shot, setShot] = useState<{ id: string; verdict: ShotVerdict } | null>(null);
+  /** What the last measured page turned out to be, for the viewfinder's guide. */
+  const [lastVerdict, setLastVerdict] = useState<ShotVerdict | null>(null);
   /**
    * Whether the retake in flight was started *here*, at the viewfinder.
    *
@@ -141,7 +170,6 @@ export function ScannerScreen() {
     // going stale if that ever changes.
   }, [cameraGranted, canAskForCamera, requestPermission]);
 
-  const lastPage = pages[pages.length - 1];
   const FlashIcon = flashOn ? Zap : ZapOff;
   const ready = permission?.granted === true;
   // What to say, and offer, when there is no viewfinder. Null while there is
@@ -236,10 +264,14 @@ export function ScannerScreen() {
         const region = visibleRegion(photo.width, photo.height, PAGE_ASPECT);
         void checkItReads(taken.id, framed, region?.height ?? photo.height);
       }
-    } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : 'That photo could not be taken.',
-      );
+    } catch {
+      // **The cause is deliberately not shown.** Everything reaching here is
+      // either this screen's own sentence or a platform message written for
+      // whoever fixes it, and `TranscribeScreen` has the scar: iOS Safari's
+      // "Load failed" once stood on screen as the app's explanation of a
+      // failed scan. `captureFailure` says the same thing every time, in
+      // words meant for a musician.
+      setFailure(captureFailure());
     } finally {
       setBusy(false);
     }
@@ -256,21 +288,24 @@ export function ScannerScreen() {
    * out of a photograph that would have read.
    */
   async function checkItReads(id: string, uri: string, pageRows?: number) {
-    const advice = adviceFor(legibilityOf(await pageSamples(uri)), pageRows);
-    if (advice) {
-      setDoubt({ id, advice });
-    }
+    const verdict = shotVerdict(legibilityOf(await pageSamples(uri)), pageRows);
+    // On the page, not only in this screen's state. The panel below shows it
+    // once; the strip and the review list read it back off the session for as
+    // long as the page is in the scan — see `CapturedPage.reading`.
+    captureSession.noteReading(id, verdict);
+    setShot({ id, verdict });
+    setLastVerdict(verdict);
   }
 
   function retakeDoubtful() {
-    if (!doubt) {
+    if (!shot) {
       return;
     }
     // The existing retake path, unchanged: the page stays until a photograph
     // replaces it, and `capture` swaps the new one in where the old one sits.
-    captureSession.beginRetake(doubt.id);
+    captureSession.beginRetake(shot.id);
     retakingHere.current = true;
-    setDoubt(null);
+    setShot(null);
   }
 
   /**
@@ -283,12 +318,12 @@ export function ScannerScreen() {
    * `captureSession` was written around and it must not grow an exception here.
    */
   async function retakeWithSystemCamera() {
-    if (!doubt || busy) {
+    if (!shot || busy) {
       return;
     }
     setBusy(true);
     setError(null);
-    const id = doubt.id;
+    const id = shot.id;
     try {
       captureSession.beginRetake(id);
       const uri = await photographWithSystemCamera();
@@ -303,7 +338,7 @@ export function ScannerScreen() {
       // nothing it promised to crop to. The whole photograph is the page.
       captureSession.capture(uri);
       impact(ImpactFeedbackStyle.Medium);
-      setDoubt(null);
+      setShot(null);
       // Checked again, with the size left unstated: nothing here measured the
       // camera app's output, and a page that is still too small after using it
       // needs "move in", not the same suggestion a second time.
@@ -311,11 +346,9 @@ export function ScannerScreen() {
       if (taken) {
         void checkItReads(taken.id, uri);
       }
-    } catch (cause) {
+    } catch {
       captureSession.cancelRetake();
-      setError(
-        cause instanceof Error ? cause.message : 'That photo could not be taken.',
-      );
+      setFailure(captureFailure());
     } finally {
       setBusy(false);
     }
@@ -387,6 +420,45 @@ export function ScannerScreen() {
     goBack();
   }
 
+  /**
+   * The shutter failed, so this screen stops being a viewfinder.
+   *
+   * In the app's own palette rather than the scanner's ink, like every other
+   * failure it has: the camera is not the subject any more, and a dark screen
+   * with no picture on it reads as the camera still trying.
+   */
+  if (failure) {
+    return (
+      <ScreenContainer>
+        {/*
+          No heading: the finding is centred below, which is the case
+          `PageHeader.title` is documented optional for. The back row still
+          belongs here, because the negative offset that makes it a 44pt
+          target lives in that component.
+        */}
+        <PageHeader onBack={() => setFailure(null)} backLabel="Back to the scanner" />
+        <EmptyState
+          fill
+          title={failure.headline}
+          description={failure.body}
+          hint={failure.hint}
+          actionLabel={failure.retakeLabel}
+          actionTone="primary"
+          onActionPress={() => setFailure(null)}
+          // The way *round* the failure rather than back into it. The camera
+          // app needs no stream from this page, so it is a genuinely different
+          // route — see `captureFailure.ts`.
+          secondaryLabel={failure.cameraAppLabel}
+          // `takeFallbackRoute`, not `retakeWithSystemCamera`: nothing was
+          // taken, so there is no page to replace, and that function returns
+          // early without a `shot`. A control that looks live and does nothing
+          // is the affordance §3 rules out drawing at all.
+          onSecondaryPress={() => void takeFallbackRoute('systemCamera')}
+        />
+      </ScreenContainer>
+    );
+  }
+
   return (
     <View style={styles.screen}>
       {/* Light status bar content over the dark viewport. */}
@@ -406,12 +478,22 @@ export function ScannerScreen() {
           />
         </Pressable>
 
-        <Text
-          variant="metadataSmall"
-          color={pages.length > 0 ? 'onDark' : 'onDarkMuted'}
-        >
-          {pageCountLabel(pages.length)}
-        </Text>
+        {/*
+          **The strip stands where "3 pages" stood.** It says the count and two
+          things the count could not: which pages, and in what order — the order
+          being the one promise this flow makes and the one it never showed. The
+          slot keeps its height either way so the first photograph does not push
+          the viewfinder down the screen.
+        */}
+        <View style={styles.count}>
+          {pages.length > 0 ? (
+            <PageStrip pages={pages} onOpen={handleDone} />
+          ) : (
+            <Text variant="metadataSmall" color="onDarkMuted">
+              {pageCountLabel(0)}
+            </Text>
+          )}
+        </View>
 
         {/*
           **Gone when there is no camera**, rather than dimmed. It is a torch on
@@ -468,50 +550,44 @@ export function ScannerScreen() {
           )}
         </ViewfinderPage>
 
-        {ready ? (
-          <Text variant="metadataSmall" color="onDarkMuted" style={styles.guide}>
-            Fill the frame · keep the page flat · avoid shadows
-          </Text>
-        ) : null}
-
         {/*
-          One line, in the only accent on this screen, and only when there is
-          something to say. Not a card and not a badge: the page in the frame is
-          the subject and the shutter is the action, so this has to be third
-          (§3 laws 3, 4 and 5).
+          **One slot under the frame, and two things that could fill it.**
+          The guide is advice about the shot you are *about* to take; the
+          verdict is the finding on the one you just took. They are never both
+          the answer at the same moment, and drawing them together would put
+          two pieces of advice under one page and leave the musician to work
+          out which is current (§3 law 4).
+
+          **The slot is reserved rather than sized to its contents.** Both live
+          under a frame that the viewfinder centres, so a one-line guide
+          becoming a three-line verdict pushed the page itself up 90pt at the
+          moment of the shutter — the one moment a musician is looking at the
+          frame to see what they got. The empty space below is space this
+          screen has anyway.
         */}
-        {doubt && !error ? (
-          <View style={styles.doubt}>
-            {/* **`accent`, not `accentText`.** This screen's ground is ink, and
-                the plain accent measures 4.52:1 against it — the darker text
-                token would fall to 3.26 and fail. Which ground the text sits on
-                decides; see `colors.accentText`. */}
-            <Text variant="metadataSmall" color="accent" style={styles.doubtText}>
-              {doubt.advice.message}
-            </Text>
-            {/*
-              One way out, and which one depends on what went wrong. Offering
-              both would put the musician in front of a choice they have no way
-              to make: only the app knows whether this camera could have done
-              better.
-            */}
-            <Text
-              variant="metadataSmall"
-              color="onDark"
-              onPress={
-                doubt.advice.route === 'cameraApp'
+        <View style={styles.readout}>
+          {ready && shot && !error ? (
+            <ShotPanel
+              verdict={shot.verdict}
+              onKeep={() => setShot(null)}
+              onRetake={
+                shot.verdict.retake === 'cameraApp'
                   ? () => void retakeWithSystemCamera()
                   : retakeDoubtful
               }
-              accessibilityRole="button"
-              style={styles.doubtAction}
-            >
-              {doubt.advice.route === 'cameraApp'
-                ? 'Open the camera app'
-                : 'Take this page again'}
+            />
+          ) : ready ? (
+            <Text variant="metadataSmall" color="onDarkMuted" style={styles.guide}>
+              {/*
+                Measured, not generic. The static line said the same three
+                things to a musician whose last four pages read perfectly and
+                to one who has just had two come back too small — see
+                `viewfinderGuide`.
+              */}
+              {viewfinderGuide(lastVerdict)}
             </Text>
-          </View>
-        ) : null}
+          ) : null}
+        </View>
 
         {error || (!retaking && pages.length >= MAX_SCAN_PAGES) ? (
           <Text variant="metadataSmall" color="onDarkMuted" style={styles.error}>
@@ -526,33 +602,38 @@ export function ScannerScreen() {
           { paddingBottom: insets.bottom + spacing.lg },
         ]}
       >
+        {/*
+          **The thumbnail of the last page used to live here**, and the strip
+          above says everything it said and more — every page, in order, with a
+          mark on the doubtful one. Two pictures of the same scan on one screen
+          is the element §3 law 10 asks to remove.
+
+          What the slot carries instead is the route that had nowhere else to
+          be: photographs already on the phone. It was offered only before the
+          first shot, so a musician who photographed page one and then realised
+          page two was already in their camera roll had to abandon the scan to
+          reach it.
+        */}
         <View style={styles.bottomSlot}>
-          {lastPage ? (
-            <Pressable
-              onPress={handleDone}
-              accessibilityRole="button"
-              accessibilityLabel={`Review ${pageCountLabel(pages.length)}`}
-              style={({ pressed }) => [styles.lastCapture, pressed && styles.pressed]}
-            >
-              <ScoreThumbnail
-                source={lastPage.source}
-                style={styles.lastCaptureImage}
-              />
-            </Pressable>
-          ) : (
-            <Pressable
-              onPress={() => navigation.navigate('AddPiece', { option: 'import' })}
-              accessibilityRole="button"
-              accessibilityLabel="Import images instead"
-              style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
-            >
-              <Images
-                size={ICON_SIZE.lg}
-                strokeWidth={ICON_STROKE_WIDTH}
-                color={colors.onDark}
-              />
-            </Pressable>
-          )}
+          <Pressable
+            onPress={() =>
+              navigation.navigate('AddPiece', {
+                option: 'import',
+                adding: pages.length > 0,
+              })
+            }
+            accessibilityRole="button"
+            accessibilityLabel={
+              pages.length > 0 ? 'Add photos from this device' : 'Import images instead'
+            }
+            style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
+          >
+            <Images
+              size={ICON_SIZE.lg}
+              strokeWidth={ICON_STROKE_WIDTH}
+              color={colors.onDark}
+            />
+          </Pressable>
         </View>
 
         <Pressable
@@ -626,6 +707,104 @@ function FallbackAction({
   );
 }
 
+/**
+ * What the app makes of the page just taken, and the two ways on from it.
+ *
+ * **The measurement was always here and was spent on silence.** Only a page
+ * too small to read said anything; everything else got nothing, so a page
+ * nobody had checked and a page that had passed looked identical. This says
+ * both, which is the whole argument of the frame: a wrong photograph costs one
+ * tap here and a failed transcription several screens and several minutes
+ * later, with the music already back in its case.
+ *
+ * **Not a card** (§3 law 3). It is type on the screen's own ground — headline,
+ * then why, then the pair of controls — and the only filled thing on it is the
+ * one control the verdict actually recommends. Which one that is flips with
+ * the verdict and is decided in `lib/scan/shotVerdict.ts`, where a test can see
+ * it; a screen that filled "Keep it" unconditionally would put its weight
+ * behind keeping the one page the app has just said it cannot read.
+ */
+function ShotPanel({
+  verdict,
+  onKeep,
+  onRetake,
+}: {
+  verdict: ShotVerdict;
+  onKeep: () => void;
+  onRetake: () => void;
+}) {
+  const keepFirst = verdict.primary === 'keep';
+  const keep = (
+    <PanelAction
+      key="keep"
+      label={verdict.keepLabel}
+      filled={keepFirst}
+      onPress={onKeep}
+    />
+  );
+  const retake = (
+    <PanelAction
+      key="retake"
+      label={verdict.retakeLabel}
+      filled={!keepFirst}
+      onPress={onRetake}
+    />
+  );
+  return (
+    <View style={styles.shot}>
+      {/*
+        **`accent`, not `accentText`.** This screen's ground is ink, and the
+        plain accent measures 4.52:1 against it — the darker text token would
+        fall to 3.26 and fail. Which ground the text sits on decides; see
+        `colors.accentText`.
+
+        And not a verdict colour: `colors.ts` quarantines that trio to the
+        screen that reports how a take went. A photograph is not a performance.
+      */}
+      <Text
+        variant="button"
+        color={verdict.tone === 'doubtful' ? 'accent' : 'onDark'}
+        style={styles.shotHeadline}
+      >
+        {verdict.headline}
+      </Text>
+      <Text variant="metadataSmall" color="onDarkMuted" style={styles.shotBody}>
+        {verdict.body}
+      </Text>
+      {/* Recommended one first, so reading order and weight agree. */}
+      <View style={styles.shotActions}>{keepFirst ? [keep, retake] : [retake, keep]}</View>
+    </View>
+  );
+}
+
+/** One of the pair under a verdict. */
+function PanelAction({
+  label,
+  filled,
+  onPress,
+}: {
+  label: string;
+  filled: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={({ pressed }) => [
+        styles.shotAction,
+        filled && styles.shotActionFilled,
+        pressed && styles.pressed,
+      ]}
+    >
+      <Text variant="metadata" color={filled ? 'darkBg' : 'onDark'}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   camera: {
     flex: 1,
@@ -645,8 +824,17 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     textDecorationLine: 'underline',
   },
-  guide: {
+  readout: {
+    // The verdict's own height, measured at 390pt with the longest of the four
+    // bodies: headline, three lines of reason, and the pair of controls.
+    // `minHeight`, so a longer body grows the slot rather than being clipped —
+    // it is the *shrinking* that moved the frame.
+    minHeight: 148,
+    alignSelf: 'stretch',
+    alignItems: 'center',
     marginTop: spacing.lg,
+  },
+  guide: {
     textAlign: 'center',
     paddingHorizontal: spacing.xl,
   },
@@ -655,17 +843,39 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingHorizontal: spacing.xl,
   },
-  doubt: {
-    marginTop: spacing.lg,
+  shot: {
     paddingHorizontal: spacing.xl,
+    alignItems: 'center',
   },
-  doubtText: {
+  shotHeadline: {
     textAlign: 'center',
   },
-  doubtAction: {
-    marginTop: spacing.sm,
+  shotBody: {
+    marginTop: spacing.xs,
     textAlign: 'center',
-    textDecorationLine: 'underline',
+    // The body is the reason, and a reason that runs the full width of a phone
+    // reads as a paragraph rather than as a caption on the page above it.
+    maxWidth: 300,
+  },
+  shotActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  shotAction: {
+    // Both axes, like Done below: "Keep it" measures under 44pt wide.
+    minHeight: MIN_TOUCH_TARGET,
+    minWidth: MIN_TOUCH_TARGET,
+    paddingHorizontal: spacing.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    // `md`, not `pill`. `radii.ts` reserves the pill for shapes that carry
+    // meaning and says in as many words that it is not a default for buttons.
+    borderRadius: radii.md,
+  },
+  shotActionFilled: {
+    backgroundColor: colors.onDark,
   },
   captureDisabled: {
     opacity: 0.4,
@@ -680,6 +890,15 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.md,
+  },
+  count: {
+    // Fixed height, so an empty scan and a scan with pages put the frame in
+    // the same place; `flex` so the strip scrolls in whatever the two icon
+    // buttons leave rather than widening the bar.
+    flex: 1,
+    height: STRIP_HEIGHT,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   iconButton: {
     width: MIN_TOUCH_TARGET,
@@ -707,16 +926,6 @@ const styles = StyleSheet.create({
   },
   doneSlot: {
     alignItems: 'flex-end',
-  },
-  lastCapture: {
-    borderRadius: radii.sm,
-    borderWidth: BORDER_WIDTH,
-    borderColor: colors.onDarkMuted,
-    overflow: 'hidden',
-  },
-  lastCaptureImage: {
-    width: 44,
-    height: 58,
   },
   captureRing: {
     width: CAPTURE_BUTTON_SIZE,

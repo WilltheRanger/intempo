@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 
-
+import type { ShotVerdict } from '../lib/scan/shotVerdict';
 
 /**
  * Where a captured page's pixels live: a local file/blob URI, or a bundled
@@ -13,6 +13,20 @@ export type CapturedSource = string | number;
 export interface CapturedPage {
   id: string;
   source: CapturedSource;
+  /**
+   * What the legibility check made of this page, once it has looked.
+   *
+   * **Held here rather than on the screen that measured it**, because three
+   * screens want it and only one is in a position to take it: the viewfinder
+   * measures the photograph the moment it is taken, the strip under the
+   * viewfinder marks the page that came back doubtful, and the review list
+   * states each page's condition before anything is uploaded. A verdict kept
+   * in the scanner's own state is a verdict that dies when the musician taps
+   * Done, which is the screen before the one that most needs it.
+   *
+   * Absent until measured, and absent again after a retake — see `capture`.
+   */
+  reading?: ShotVerdict;
 }
 
 /** What became of an image the session was handed. */
@@ -154,7 +168,17 @@ export const captureSession = {
 
     if (target !== null && pages.some((page) => page.id === target)) {
       everHeldPages = true;
-      commit(pages.map((page) => (page.id === target ? { ...page, source } : page)));
+      commit(
+        pages.map((page) =>
+          // **The reading goes with the pixels.** A retake replaces the
+          // photograph, so the finding about the one it replaced is about an
+          // image that no longer exists — and the page it is attached to is
+          // the one the musician re-shot *because* of it. Carrying it over
+          // would mark a corrected page as still doubtful, on the strip and in
+          // the review list, until the new measurement happened to land.
+          page.id === target ? { id: page.id, source } : page,
+        ),
+      );
       return 'replaced';
     }
 
@@ -287,6 +311,32 @@ export const captureSession = {
 
   current(): CapturedPage[] {
     return pages;
+  },
+
+  /**
+   * Records what the legibility check made of a page.
+   *
+   * **Not through `commit`, on purpose.** `commit` throws away
+   * `uploadedImageKeys` whenever the pages change, because a reorder or a
+   * retake makes that snapshot describe pixels or an order that no longer
+   * exist. A reading changes neither: the same bytes in the same order, with
+   * something now written down about them. Routing it through `commit` would
+   * silently discard a completed upload the moment a measurement came back —
+   * and the measurement is deliberately not awaited, so it lands late.
+   *
+   * Ignores a page that has gone. The check is fired and forgotten while the
+   * musician carries on, so the page it is about can be deleted or retaken
+   * before it answers.
+   */
+  noteReading(id: string, reading: ShotVerdict): void {
+    const index = pages.findIndex((page) => page.id === id);
+    if (index === -1 || pages[index].reading === reading) {
+      return;
+    }
+    const next = [...pages];
+    next[index] = { ...next[index], reading };
+    pages = next;
+    notify();
   },
 
   /**

@@ -1,6 +1,7 @@
 import type { Duration, ScoreJson } from '../../data/types';
 import { flattenNotes, readTies } from '../notation/ties';
 import { measuresInPlayOrder } from './playOrder';
+import { midiOf } from '../notation/pitch';
 
 /**
  * A score and a tempo, turned into notes with times and pitches.
@@ -90,19 +91,6 @@ const UNKNOWN_DURATION_BEATS = 1;
  */
 export const FALLBACK_BPM = 80;
 
-/** Semitones above C for each letter, before any accidental. */
-const SEMITONES: Record<string, number> = {
-  C: 0,
-  D: 2,
-  E: 4,
-  F: 5,
-  G: 7,
-  A: 9,
-  B: 11,
-};
-
-const PITCH = /^([A-G])(#|b)?(-?\d+)$/;
-
 /**
  * Scientific pitch to frequency in hertz. Null for a rest or anything
  * unparseable — a score from OCR can contain surprises, and a wrong note is
@@ -113,15 +101,13 @@ const PITCH = /^([A-G])(#|b)?(-?\d+)$/;
  * disagreed with their tuner would be a bug report.
  */
 export function frequencyOf(pitch: string): number | null {
-  const match = PITCH.exec(pitch);
-  if (!match) {
+  // The table and the arithmetic live in `notation/pitch.ts` now, because the
+  // proposal checker needs the same number and a second copy of a semitone
+  // table is how two parts of an app come to disagree about what B flat is.
+  const midi = midiOf(pitch);
+  if (midi === null) {
     return null;
   }
-  const [, letter, accidental, octave] = match;
-  const semitone =
-    SEMITONES[letter] + (accidental === '#' ? 1 : accidental === 'b' ? -1 : 0);
-  // MIDI 69 is A4. Octave 4 starts at MIDI 60.
-  const midi = (Number(octave) + 1) * 12 + semitone;
   return 440 * Math.pow(2, (midi - 69) / 12);
 }
 

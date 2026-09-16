@@ -86,6 +86,14 @@ EXTRA: set[int] = {
     0x266D, 0x266F, 0x266E,  # ♭ ♯ ♮ — keys and accidentals named in prose
     0x2192, 0x2190,  # → ←
     0x00D7,          # ×
+    # **Added 2026-09-16 with the pre-flight screen, which shipped them a
+    # commit before they were in here** — `check-font-coverage.py` caught it,
+    # which is what it is for. The single angle quote is the "opens something"
+    # mark on a row's remedy, and the check mark is a settled pre-flight
+    # reading. Both are set in Inter; `›` is in Newsreader too because the
+    # coverage check tests every face a string could land in.
+    0x203A, 0x2039,  # › ‹
+    0x2713,          # ✓
 }
 
 FACES = [

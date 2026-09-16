@@ -48,6 +48,25 @@ export interface EmptyStateProps {
    * actions while "Continue practice" beside it is solid ink.
    */
   actionTone?: 'primary' | 'secondary';
+  /**
+   * A quieter line under the description.
+   *
+   * For the sentence that is worth saying and is not the point: the technique
+   * that makes a page read well, what to do if a failure keeps happening. It
+   * recedes to `textTertiary` so it cannot compete with the description above
+   * it or the action below it (§3 laws 4 and 8).
+   */
+  hint?: string;
+  /**
+   * A second, quieter route out.
+   *
+   * Only where there genuinely are two — photograph a page or choose one
+   * already on the phone, take it again or use the camera app. A screen with
+   * one thing to do keeps one button; two identical-looking buttons is the
+   * choice §3 law 10 asks to remove.
+   */
+  secondaryLabel?: string;
+  onSecondaryPress?: () => void;
 }
 
 /** Shown when a screen has nothing to display. Plain and unapologetic. */
@@ -60,6 +79,9 @@ export function EmptyState({
   actionDisabled = false,
   fill = false,
   actionTone = 'secondary',
+  hint,
+  secondaryLabel,
+  onSecondaryPress,
 }: EmptyStateProps) {
   const Action = actionTone === 'primary' ? PrimaryButton : SecondaryButton;
   return (
@@ -83,12 +105,26 @@ export function EmptyState({
         </Text>
       ) : null}
 
+      {hint ? (
+        <Text variant="metadataSmall" color="textTertiary" style={styles.hint}>
+          {hint}
+        </Text>
+      ) : null}
+
       {actionLabel && onActionPress ? (
         <Action
           label={actionLabel}
           onPress={onActionPress}
           disabled={actionDisabled}
           style={styles.action}
+        />
+      ) : null}
+
+      {secondaryLabel && onSecondaryPress ? (
+        <SecondaryButton
+          label={secondaryLabel}
+          onPress={onSecondaryPress}
+          style={styles.secondary}
         />
       ) : null}
     </View>
@@ -117,8 +153,16 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     textAlign: 'center',
   },
+  hint: {
+    marginTop: spacing.lg,
+    textAlign: 'center',
+  },
   action: {
     marginTop: spacing.xl,
+    alignSelf: 'stretch',
+  },
+  secondary: {
+    marginTop: spacing.md,
     alignSelf: 'stretch',
   },
 });

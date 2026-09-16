@@ -34,6 +34,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { VERDICT_STATES } from './verdict-states.mjs';
+import { PRACTICE_SETUP_HEADING } from './screen-copy.mjs';
 
 /**
  * Resolved from `mobile/`, not from here.
@@ -79,6 +80,12 @@ const ROUTES = [
   ['Score that could not be read', 'pieces/fixture-reading-failed/score'],
   ['Score', 'pieces/fixture-clef-change-study/score'],
   ['Bar editor', 'pieces/fixture-clef-change-study/bars/3'],
+  // The proof-reading screen, on the one fixture that gives it anything to
+  // say: a note the violin cannot play in a bar that adds up, and a bar that
+  // reads a note twice. Pointing this at a clean piece would audit the empty
+  // state and leave the rows themselves unlooked at, which is the thing this
+  // list exists to stop.
+  ['Check the reading', 'pieces/fixture-misread-reading/check'],
   // The photographs, paged. `fixture-wohlfahrt-01` is the one multi-page part
   // in the library, so this is where the page caption and the pager exist at
   // all — the other pieces render a single image and no control.
@@ -88,7 +95,7 @@ const ROUTES = [
   // has said "Record" since the first sweep — has never once audited the
   // screen with the recording controls on it.
   ['Record — first-take tips', 'pieces/fixture-bach-bwv1001/record', {
-    expect: 'Before your first take',
+    expect: PRACTICE_SETUP_HEADING,
   }],
   // The screen behind it: target tempo with its steppers, the metronome
   // control, Listen, the start-at picker, the timer and Start recording. Eight
@@ -104,6 +111,12 @@ const ROUTES = [
   ],
   // The payoff of the whole app, and the route the first sweep missed.
   ['Verdict', 'analyses/fixture-take-1', { expect: 'rushed' }],
+  // **A take of a passage rather than a whole page**, which is what practice
+  // looks like and what the pipeline has measured since `align_dtw` learned
+  // subsequence matching. The screen names the bars for a take that did not
+  // open the page, and every other fixture starts at bar 1 — so that branch
+  // was unreachable in the build this audit runs against.
+  ['Verdict — a passage', 'analyses/fixture-take-passage', { expect: 'Bars 9 to 21' }],
   // **Its other three states, none of which had ever been on a screen.**
   // `VerdictScreen` branches twice on `failure` — recoverable and not are
   // different sentences and different buttons — and again on a status that is
@@ -357,7 +370,27 @@ const audit = () => {
     // Only the innermost interactive element is the target; a wrapper that
     // merely contains one is not itself undersized.
     if (!el.querySelector(INTERACTIVE)) {
-      if (r.width < 44 || r.height < 44) {
+      /*
+        **A bar on an engraved stave is as wide as the bar.** These are
+        transparent targets laid over the engraving so a musician can touch the
+        bar they are looking at, and their width is set by the music: a bar of
+        sixteenths is narrow, and padding its target out to 44pt would put it
+        over its neighbour. That is the worse failure — the wrong bar chosen,
+        silently, with no way to tell it happened.
+
+        So they are held to the floor on **height**, where nothing constrains
+        them, and to a lower one on width. Not exempt: a 12pt strip is still a
+        target nobody can hit, and this still says so. Both screens that use
+        them offer a route with full-size targets beside the stave — the score
+        reader's bar grid at 64pt a cell, and the record screen's bar stepper.
+        `Stave.tsx` marks them and says the same thing from its side.
+      */
+      const barTarget = el.getAttribute('data-testid') === 'bar-target';
+      // 44 written out, not `MIN_TARGET`: this runs inside `page.evaluate`,
+      // where nothing from this module's scope exists. The line above it used
+      // the literal for the same reason.
+      const floorW = barTarget ? 24 : 44;
+      if (r.width < floorW || r.height < 44) {
         small.push(`${describe(el)} — ${Math.round(r.width)}x${Math.round(r.height)}`);
       }
     }

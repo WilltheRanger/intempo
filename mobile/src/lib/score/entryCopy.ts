@@ -24,6 +24,25 @@ export function entryLabel(scope: EntryScope, bar: number): string {
   return scope === 'take' ? `Start at bar ${bar}` : `Listen from bar ${bar}`;
 }
 
+/**
+ * The left-hand label when the picker is a settings row.
+ *
+ * **Both scopes are rows now.** The line form — accent-coloured text reading
+ * "Listen from bar 1" — did not read as a control, which the owner reported
+ * about the Record screen; that screen was given a row and the score screen
+ * was left with the line on the reasoning that "a setting gets a row; a
+ * playback tweak gets a line". The owner has now reported the same thing about
+ * the score screen, and the surrounding composition has changed underneath it:
+ * everything else down there is a ruled row, so the line is the one orphan.
+ *
+ * The value beside it is the bar itself, so this is the half that does not
+ * repeat it — `entryLabel` above stays for anywhere the whole sentence is
+ * wanted, and for the spoken label.
+ */
+export function entryRowLabel(scope: EntryScope): string {
+  return scope === 'take' ? 'Start at' : 'Listen from';
+}
+
 /** Read out instead of the line, so it says what tapping does. */
 export function entryAccessibilityLabel(scope: EntryScope, bar: number): string {
   return scope === 'take'

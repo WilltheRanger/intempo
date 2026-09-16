@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { Text } from '../../components/primitives/Text';
 import type { MeasureVerdict, Tolerance } from '../../data/types';
 import { BORDER_WIDTH, colors, spacing } from '../../design';
+import { deviationWords } from '../../lib/verdict/deviationWords';
 import { readMeasure } from '../../lib/verdict/measureReading';
 import { DeviationBar } from '../insights/DeviationBar';
 
@@ -40,10 +41,21 @@ export interface MeasureRowProps {
  * One measure of the take: its number, how far it sat from the beat, and the
  * word for it.
  *
- * Words by default, every row the same. Tapping selects a row — it warms, its
- * number firms up, and the word gives way to the figure behind it. The spec
- * keeps timing numbers out of the interface by default and allows exactly
- * this: one row at a time, asked for, never the thing you land on.
+ * Words by default, every row the same. Tapping selects a row: its number firms
+ * up and a sentence opens under it saying how far off the beat it was.
+ *
+ * **That sentence used to be `+18%`.** A percentage of one beat is what the
+ * pipeline computes and it is not a thing anyone has felt while playing —
+ * nobody comes off a take thinking they were eighteen percent early. It was
+ * precise, honest and useless at the moment it was read, which is the moment a
+ * musician decides whether to play the passage again. `deviationWords` says the
+ * same fact in shares of a beat, which is the currency the figure was already
+ * in.
+ *
+ * **It opens under the row rather than replacing the word.** The verdict column
+ * is 78pt — wide enough for "+18%" and for nothing that reads as English — and
+ * swapping the word out meant the row changed what it said on a tap. Now it
+ * says more.
  */
 export function MeasureRow({
   measure,
@@ -58,6 +70,11 @@ export function MeasureRow({
   const reading = readMeasure(measure);
   const tone = reading.tone;
   const showFigure = revealed && reading.revealsFigure;
+  // Null for a bar that landed on the beat, which the row's own word already
+  // says — see `deviationWords`.
+  const detail = showFigure
+    ? deviationWords(measure.deviationPct, measure.direction)
+    : null;
 
   return (
     /*
@@ -70,8 +87,8 @@ export function MeasureRow({
     <Pressable
       // **Not a button when there is nothing behind it.** These rows have no
       // figure to reveal — the bar was not timed — so a tap highlighted them
-      // and did nothing, under a line that says "Tap a measure for its
-      // timing." A control that answers nothing is worse than no control
+      // and did nothing, under a line inviting a tap on any of them. A
+      // control that answers nothing is worse than no control
       // (§3 law 10). The explanation is still in the label, read as text.
       onPress={reading.revealsFigure ? onToggle : undefined}
       accessibilityRole={reading.revealsFigure ? 'button' : 'text'}
@@ -79,10 +96,18 @@ export function MeasureRow({
         reading.revealsFigure ? { selected: revealed } : undefined
       }
       aria-pressed={reading.revealsFigure ? revealed : undefined}
-      accessibilityLabel={reading.accessibilityLabel}
+      // The sentence is read out with the row rather than left to be found by
+      // exploring what opened under it. `measureReading.ts` owns the label for
+      // every other case; this is the one thing that is only true once a row
+      // has been asked.
+      accessibilityLabel={
+        detail
+          ? `${reading.accessibilityLabel}. ${detail}`
+          : reading.accessibilityLabel
+      }
       accessibilityHint={
         reading.revealsFigure
-          ? 'Shows the timing figure for this measure.'
+          ? 'Says how far off the beat this measure was.'
           : undefined
       }
       // The selected tint runs the full width of the card; the hairline inside
@@ -118,26 +143,29 @@ export function MeasureRow({
         />
 
         {/*
-          The word carries the verdict; the colour repeats it. Revealing the
-          figure keeps the colour, so the row doesn't change meaning on tap.
+          The word carries the verdict; the colour repeats it. It stays put
+          through a reveal, so the row never changes what it said on a tap —
+          the detail arrives underneath instead.
         */}
         <Text variant="metadataSmall" color={tone} style={styles.verdict}>
-          {showFigure ? formatOffset(measure.deviationPct) : reading.label}
+          {reading.label}
         </Text>
       </View>
     </Pressable>
+
+      {showFigure && detail ? (
+        <View style={styles.extra}>
+          <Text variant="metadataSmall" color="textSecondary" style={styles.detail}>
+            {detail}
+          </Text>
+        </View>
+      ) : null}
 
       {showFigure && revealedExtra ? (
         <View style={styles.extra}>{revealedExtra}</View>
       ) : null}
     </View>
   );
-}
-
-/** `+12%` ahead, `-8%` behind. Only ever shown on demand. */
-function formatOffset(deviationPct: number): string {
-  const rounded = Math.round(deviationPct);
-  return `${rounded > 0 ? '+' : ''}${rounded}%`;
 }
 
 const styles = StyleSheet.create({
@@ -153,12 +181,15 @@ const styles = StyleSheet.create({
     rule painted the page colour onto the page.
 
     Not replaced with a colour that *would* show. The reveal is already
-    unmistakable — the number firms to ink, the word gives way to the figure,
-    and the prompt opens underneath — so a band as well would be a fourth
+    unmistakable — the number firms to ink, the sentence opens under the row
+    and the prompt opens under that — so a band as well would be a fourth
     signal for one state (§3 law 10). The group survives because the prompt
     has to be a sibling of the row's `Pressable` rather than a child of it.
   */
   revealedGroup: {},
+  detail: {
+    paddingBottom: spacing.sm,
+  },
   extra: {
     // Aligned with the bar, not the card edge, so the question hangs off the
     // measure number's column rather than starting a new one.

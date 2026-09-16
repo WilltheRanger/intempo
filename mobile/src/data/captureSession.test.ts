@@ -270,6 +270,106 @@ describe('editing pages after they were uploaded', () => {
   });
 });
 
+/**
+ * What the legibility check found, once it lands.
+ *
+ * It is fired and forgotten while the musician carries on shooting, so it
+ * arrives late, about a page that may have moved, been deleted or been
+ * retaken in the meantime. Every case below is one where getting that wrong
+ * marks the wrong page.
+ */
+describe('a page\u2019s legibility reading', () => {
+  const DOUBTFUL = {
+    tone: 'doubtful',
+    headline: 'Too far away to read the notes',
+    body: 'Move in until one page fills the frame, then take it again.',
+    keepLabel: 'Use it anyway',
+    retakeLabel: 'Take this page again',
+    primary: 'retake',
+    retake: 'retake',
+  } as const;
+
+  it('attaches to the page it was measured from', () => {
+    scanOf(2);
+    const [first, second] = captureSession.current();
+
+    captureSession.noteReading(second.id, DOUBTFUL);
+
+    expect(captureSession.current()[0].reading).toBeUndefined();
+    expect(captureSession.current()[1].reading).toBe(DOUBTFUL);
+    expect(first.id).not.toBe(second.id);
+  });
+
+  it('follows its page through a reorder', () => {
+    scanOf(3);
+    const third = captureSession.current()[2];
+    captureSession.noteReading(third.id, DOUBTFUL);
+
+    captureSession.moveTo(third.id, 0);
+
+    expect(captureSession.current()[0].reading).toBe(DOUBTFUL);
+  });
+
+  /**
+   * **The reading goes with the pixels.** The page that gets retaken is
+   * usually the page that was marked, and carrying the old finding over would
+   * leave a corrected page still flagged — in the strip and in the review
+   * list — until a new measurement happened to land.
+   */
+  it('does not survive the retake it prompted', () => {
+    scanOf(2);
+    const second = captureSession.current()[1];
+    captureSession.noteReading(second.id, DOUBTFUL);
+
+    captureSession.beginRetake(second.id);
+    captureSession.capture('file:///retaken.jpg');
+
+    expect(captureSession.current()[1].reading).toBeUndefined();
+  });
+
+  /**
+   * A measurement is not an edit. `commit` drops the uploaded keys whenever
+   * the pages change, and routing this through it would throw away a finished
+   * upload the moment a late verdict came back.
+   */
+  it('leaves a completed upload alone', () => {
+    scanOf(2);
+    captureSession.setUploadedImageKeys(['user/a.jpg', 'user/b.jpg']);
+
+    captureSession.noteReading(captureSession.current()[0].id, DOUBTFUL);
+
+    expect(captureSession.uploadedImageKeys()).toEqual(['user/a.jpg', 'user/b.jpg']);
+  });
+
+  it('publishes it, so a strip already on screen redraws', () => {
+    scanOf(1);
+    let notifications = 0;
+    const stop = subscribeToCaptureSession(() => {
+      notifications += 1;
+    });
+
+    captureSession.noteReading(captureSession.current()[0].id, DOUBTFUL);
+    expect(notifications).toBe(1);
+
+    // Idempotent: the same verdict object twice is not a change, and a store
+    // that republished on every late arrival would rerender the viewfinder
+    // once per page for nothing.
+    captureSession.noteReading(captureSession.current()[0].id, DOUBTFUL);
+    expect(notifications).toBe(1);
+
+    stop();
+  });
+
+  it('ignores a page that has gone', () => {
+    scanOf(1);
+    const only = captureSession.current()[0];
+    captureSession.remove(only.id);
+
+    expect(() => captureSession.noteReading(only.id, DOUBTFUL)).not.toThrow();
+    expect(captureSession.current()).toEqual([]);
+  });
+});
+
 describe('attaching pages to an existing piece', () => {
   it('keeps the target through an imported scan', () => {
     captureSession.importAll([PAGE(1), PAGE(2)], {
