@@ -287,6 +287,30 @@ export interface StaveProps {
    */
   pressableMeasures?: number[];
   /**
+   * What tapping a bar *means*, which decides how it is announced.
+   *
+   * `select` — one bar among several and exactly one is chosen, which is a
+   * radio: "Bar 3, not checked" tells a musician where the take will start.
+   * The record screen's entry bar.
+   *
+   * `open` — every bar opens something of its own, which is a button and has
+   * no checked state to announce. The score reader, where a tap is the way
+   * into correcting that bar.
+   *
+   * Getting this wrong is as silent as omitting it: a radio that is never
+   * checked reads as a broken choice, and `aria-checked` on a plain button is
+   * ignored outright. See `ariaState.test.ts`.
+   */
+  measurePressRole?: 'select' | 'open';
+  /**
+   * How a tappable bar is named to a screen reader. Defaults to `Bar N`.
+   *
+   * The label has to say what the tap does, and only the caller knows: the
+   * same gesture chooses an entry bar on one screen and opens an editor on
+   * another.
+   */
+  measurePressLabel?: (measureNumber: number) => string;
+  /**
    * Draw one page of the engraving instead of all of it.
    *
    * From `paginateSystems`: the systems it names are drawn, translated so the
@@ -371,6 +395,8 @@ export function Stave({
   highlightMeasure = null,
   onMeasurePress,
   pressableMeasures,
+  measurePressRole = 'select',
+  measurePressLabel,
   page,
   layout: precomputed,
 }: StaveProps) {
@@ -1139,20 +1165,53 @@ export function Stave({
           key={target.key}
           onPress={() => onMeasurePress?.(target.measureNumber)}
           /*
-            A radio, not a button: exactly one bar is the entry bar, and
-            choosing another unchooses this one. That is what a radio means,
-            and it is what a screen reader should say — "Bar 3, not checked"
-            rather than "Bar 3, button", which tells a musician nothing about
-            where the take will start.
+            A radio where the tap *chooses* — exactly one bar is the entry bar,
+            and choosing another unchooses this one. That is what a radio
+            means, and it is what a screen reader should say: "Bar 3, not
+            checked" rather than "Bar 3, button", which tells a musician
+            nothing about where the take will start.
+
+            A plain button where the tap *opens* something instead, with no
+            checked state to announce, because there is nothing being chosen
+            among. See `measurePressRole`.
 
             The ARIA spelling as well as the React Native one, because
             react-native-web drops `accessibilityState` and the web build is
             where this is read. `ariaState.test.ts` holds the pairing.
           */
-          accessibilityRole="radio"
-          accessibilityLabel={`Bar ${target.measureNumber}`}
-          accessibilityState={{ checked: highlightMeasure === target.measureNumber }}
-          aria-checked={highlightMeasure === target.measureNumber}
+          /*
+            Named for the audit, which cannot infer what this is.
+            `audit-a11y.mjs` measures every interactive element against a 44pt
+            floor in both axes, and a bar target is as wide as its bar: a bar
+            of sixteenths is narrow, and widening its target would put it over
+            its neighbour, which is the worse failure — the wrong bar chosen
+            silently. The audit checks these against the floor on height and a
+            lower one on width, and says so where it does it.
+          */
+          testID="bar-target"
+          accessibilityRole={measurePressRole === 'open' ? 'button' : 'radio'}
+          accessibilityLabel={
+            measurePressLabel
+              ? measurePressLabel(target.measureNumber)
+              : `Bar ${target.measureNumber}`
+          }
+          /*
+            Written out rather than spread, so `ariaState.test.ts` can still
+            see them. That test reads source text and looks for the literal
+            `accessibilityState=`; a conditional spread hides the pair from it
+            and the element quietly leaves the check it was added to satisfy.
+            Undefined on a button, which has nothing to announce.
+          */
+          accessibilityState={
+            measurePressRole === 'open'
+              ? undefined
+              : { checked: highlightMeasure === target.measureNumber }
+          }
+          aria-checked={
+            measurePressRole === 'open'
+              ? undefined
+              : highlightMeasure === target.measureNumber
+          }
           /*
             No minimum size, deliberately. A bar of sixteenths is narrow and
             widening its target would put it over its neighbour, which is a

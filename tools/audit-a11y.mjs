@@ -358,7 +358,27 @@ const audit = () => {
     // Only the innermost interactive element is the target; a wrapper that
     // merely contains one is not itself undersized.
     if (!el.querySelector(INTERACTIVE)) {
-      if (r.width < 44 || r.height < 44) {
+      /*
+        **A bar on an engraved stave is as wide as the bar.** These are
+        transparent targets laid over the engraving so a musician can touch the
+        bar they are looking at, and their width is set by the music: a bar of
+        sixteenths is narrow, and padding its target out to 44pt would put it
+        over its neighbour. That is the worse failure — the wrong bar chosen,
+        silently, with no way to tell it happened.
+
+        So they are held to the floor on **height**, where nothing constrains
+        them, and to a lower one on width. Not exempt: a 12pt strip is still a
+        target nobody can hit, and this still says so. Both screens that use
+        them offer a route with full-size targets beside the stave — the score
+        reader's bar grid at 64pt a cell, and the record screen's bar stepper.
+        `Stave.tsx` marks them and says the same thing from its side.
+      */
+      const barTarget = el.getAttribute('data-testid') === 'bar-target';
+      // 44 written out, not `MIN_TARGET`: this runs inside `page.evaluate`,
+      // where nothing from this module's scope exists. The line above it used
+      // the literal for the same reason.
+      const floorW = barTarget ? 24 : 44;
+      if (r.width < floorW || r.height < 44) {
         small.push(`${describe(el)} — ${Math.round(r.width)}x${Math.round(r.height)}`);
       }
     }

@@ -40,6 +40,7 @@ import {
   colors,
   MIN_TOUCH_TARGET,
   pressedOpacity,
+  radii,
   spacing,
 } from '../../design';
 import {
@@ -70,6 +71,8 @@ import {
   timeSignatureDigits,
 } from '../../lib/notation/keySignature';
 import { loadStateFor } from '../../lib/loadState';
+import { barCells, barGridSummary } from '../../lib/notation/barGrid';
+import { barCountLabel } from '../../lib/format';
 
 /** Read from a stand, not glanced at — the same size the warmup page uses. */
 const STAVE_SCALE = 1.25;
@@ -454,6 +457,8 @@ export function PieceScoreScreen() {
   // Both halves exist only when the piece was photographed *and* transcribed.
   // A piece entered by hand has neither, and a toggle between two absences
   // would be the emptiest control in the app (§3 law 10).
+  // Every bar as a cell, for the picker. Cheap and pure — see `barGrid.ts`.
+  const cells = barCells(piece.score, reading?.problemMeasures ?? []);
   const showToggle = hasNotation && hasPages;
   const showing: ScoreView = showToggle ? view : hasNotation ? 'notation' : 'original';
 
@@ -480,6 +485,10 @@ export function PieceScoreScreen() {
         <MetadataRow
           variant="metadataSmall"
           items={[
+            // How long the piece is, which is the first thing a musician wants
+            // from a part they have not read and the one fact this row could
+            // state and did not.
+            barCountLabel(piece.score?.measures.length ?? 0),
             ...clefSummary(piece.score),
             ...meterSummary(piece.score),
             piece.score?.tempo_marking,
@@ -559,10 +568,43 @@ export function PieceScoreScreen() {
               // instead — which is where a clef belongs on a screen for reading
               // music, and is the obligation `showNoteNames={false}` carries.
               showNoteNames={false}
+              /*
+                **The engraving is the bar picker.** Correcting a bar meant
+                opening a sheet and finding its number in a list of seventy —
+                on a screen already showing every bar, drawn, in order. A
+                musician proofreading a page looks at the bar that is wrong;
+                the way to act on it should be to touch it.
+
+                `open`, not `select`: each bar opens an editor of its own, so
+                it is a button with nothing checked rather than a radio. The
+                record screen's stave is the other case, and the two are
+                announced differently on purpose — see `measurePressRole`.
+              */
+              onMeasurePress={(measureNumber) =>
+                navigation.navigate('MeasureEdit', {
+                  pieceId: piece.id,
+                  measureNumber,
+                })
+              }
+              measurePressRole="open"
+              measurePressLabel={(measureNumber) => `Correct bar ${measureNumber}`}
             />
           )}
           </View>
         </View>
+      ) : null}
+
+      {/*
+        **The affordance said out loud, because nothing on a stave depicts it.**
+        A drawn control that does nothing is worse than none at all (§3), and
+        the inverse is nearly as bad: a gesture that works and is invisible is
+        a gesture nobody uses. One quiet line, under the music, in the register
+        of a caption rather than an instruction.
+      */}
+      {showing === 'notation' && hasNotation && stave ? (
+        <Text variant="metadataSmall" color="textTertiary" style={styles.tapHint}>
+          Tap a bar to correct it
+        </Text>
       ) : null}
 
       {showing === 'notation' && hasNotation && stave ? (
@@ -750,7 +792,14 @@ export function PieceScoreScreen() {
               style={({ pressed }) => [styles.secondaryRow, pressed && styles.pressed]}
             >
               <Text variant="metadataSmall" color="accentText">
-                Correct another bar
+                {/*
+                  **Renamed with the grid.** It said "Correct another bar",
+                  which read as a second way to do the thing the line above it
+                  already offers. What it opens is the overview: every bar at
+                  once, with the notes read in each, which is how a bar the
+                  arithmetic is happy with gets found.
+                */}
+                See every bar
               </Text>
             </Pressable>
           ) : null}
@@ -915,40 +964,62 @@ export function PieceScoreScreen() {
       ) : null}
 
       {/*
-        A plain list, because a bar is found by its number and nothing else.
-        Bars that do not add up are marked, so the sheet doubles as the whole
-        picture of what the reading is unsure about.
+        **A grid, because a bar is found by its number and a *wrong* bar is
+        not.** This was a list of one row per bar, and on a seventy-bar study
+        that meant finding the misread bar required already knowing which one
+        it was. Sixteen cells fit on a screen, and a bar holding two notes
+        where its neighbours hold eight is then visible as a shape, before any
+        check has run on it — which matters because the beat check is blind to
+        two compensating errors and to a bar the reader skipped half of.
+
+        **No verdict colour.** `colors.ts` quarantines that trio to the screen
+        that reports how a take went, and a bar that does not add up is not a
+        performance. The border firms up and the ink goes to full strength,
+        which is the same distinction `PracticeSetup` draws and is legible in
+        both appearances.
+
+        `barGrid.ts` holds the cells and the summary, with tests.
       */}
       <BottomSheet
         visible={pickingMeasure}
         onClose={() => setPickingMeasure(false)}
         title="Which bar?"
       >
+        <Text variant="metadataSmall" color="textTertiary" style={styles.gridNote}>
+          {barGridSummary(cells)}
+        </Text>
         <ScrollView style={styles.measureList}>
-          {(piece.score?.measures ?? []).map((measure) => {
-            const flagged = reading?.problemMeasures.includes(measure.measure_number);
-            return (
+          <View style={styles.grid}>
+            {cells.map((cell) => (
               <Pressable
-                key={measure.measure_number}
+                key={cell.number}
                 onPress={() => {
                   setPickingMeasure(false);
                   navigation.navigate('MeasureEdit', {
                     pieceId: piece.id,
-                    measureNumber: measure.measure_number,
+                    measureNumber: cell.number,
                   });
                 }}
                 accessibilityRole="button"
-                style={({ pressed }) => [styles.measureRow, pressed && styles.pressed]}
+                accessibilityLabel={cell.label}
+                style={({ pressed }) => [
+                  styles.gridCell,
+                  cell.flagged && styles.gridCellFlagged,
+                  pressed && styles.pressed,
+                ]}
               >
-                <Text variant="body">Bar {measure.measure_number}</Text>
-                <Text variant="metadataSmall" color={flagged ? 'textSecondary' : 'textTertiary'}>
-                  {measure.notes.length}{' '}
-                  {measure.notes.length === 1 ? 'note' : 'notes'}
-                  {flagged ? " · doesn't add up" : ''}
+                <Text variant="button" color={cell.flagged ? 'textPrimary' : 'textSecondary'}>
+                  {cell.number}
+                </Text>
+                <Text
+                  variant="metadataSmall"
+                  color={cell.flagged ? 'textSecondary' : 'textTertiary'}
+                >
+                  {cell.notes}
                 </Text>
               </Pressable>
-            );
-          })}
+            ))}
+          </View>
         </ScrollView>
       </BottomSheet>
 
@@ -1078,6 +1149,10 @@ const styles = StyleSheet.create({
     // side of it reads as a card in a list. Sheet music fills the paper.
     marginHorizontal: -spacing.lg,
   },
+  tapHint: {
+    marginTop: spacing.sm,
+    textAlign: 'center',
+  },
   caveat: {
     marginTop: spacing.lg,
   },
@@ -1086,6 +1161,29 @@ const styles = StyleSheet.create({
   },
   measureList: {
     maxHeight: 380,
+  },
+  gridNote: {
+    marginBottom: spacing.md,
+  },
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  gridCell: {
+    // Four to a row at 390pt inside the sheet's own padding, and a square, so
+    // the grid reads as a page of bars rather than a table.
+    width: 64,
+    height: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radii.sm,
+    borderWidth: BORDER_WIDTH,
+    borderColor: colors.border,
+  },
+  gridCellFlagged: {
+    borderColor: colors.textPrimary,
+    backgroundColor: colors.surfacePressed,
   },
   measureRow: {
     minHeight: 56,

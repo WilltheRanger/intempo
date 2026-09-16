@@ -171,6 +171,20 @@ export function pageCountLabel(count: number): string {
  * it was retyped. The screen's copy was the untested one, which is the wrong
  * way round for the copy a musician actually reads off the row.
  */
+/**
+ * How many bars a reading came out to.
+ *
+ * Null at zero rather than "0 bars", because a score with no measures is a
+ * score nothing has read yet and the row it sits in drops null items — saying
+ * "0 bars" about a piece still being transcribed states a finding as a fact.
+ */
+export function barCountLabel(count: number): string | null {
+  if (count <= 0) {
+    return null;
+  }
+  return count === 1 ? '1 bar' : `${count} bars`;
+}
+
 export function sessionLabel(sessions: number): string {
   return sessions === 1 ? '1 session' : `${sessions} sessions`;
 }
