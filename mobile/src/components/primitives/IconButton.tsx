@@ -2,6 +2,7 @@ import type { LucideIcon } from '../icons';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import {
+  BORDER_WIDTH,
   colors,
   disabledOpacity,
   ICON_SIZE,
@@ -32,6 +33,19 @@ export interface IconButtonProps {
    * is how the second one stops being updated.
    */
   tone?: 'auto' | 'onDark';
+  /**
+   * What this control is drawn on.
+   *
+   * **Glass is chrome over content. Chrome over chrome is plain.** A glass
+   * capsule inside a glass sheet has no ground to refract: the two materials
+   * stack, the blur compounds, and the result is a pale lozenge on a pale
+   * panel. `audit-a11y.mjs` calls that GLASS ON GLASS and it found this one on
+   * the record screen's practice sheet the day the sheet arrived.
+   *
+   * So a control that sits *on* a glass surface asks for `plain`, and gets a
+   * bordered fill with a defined ground instead.
+   */
+  surface?: 'glass' | 'plain';
   style?: StyleProp<ViewStyle>;
 }
 
@@ -51,6 +65,7 @@ export function IconButton({
   onPress,
   disabled = false,
   tone = 'auto',
+  surface = 'glass',
   style,
 }: IconButtonProps) {
   const glyph =
@@ -86,7 +101,11 @@ export function IconButton({
         The sweep cannot see it — it composites glass correctly but only visits
         elements with text in them, and an icon is a stroke.
       */}
-      <GlassSurface radius={MIN_TOUCH_TARGET / 2} tone={tone} style={styles.fill} />
+      {surface === 'glass' ? (
+        <GlassSurface radius={MIN_TOUCH_TARGET / 2} tone={tone} style={styles.fill} />
+      ) : (
+        <View style={[styles.fill, styles.plain]} />
+      )}
       <View style={styles.glyph}>
         <Icon
           size={ICON_SIZE.md}
@@ -100,6 +119,12 @@ export function IconButton({
 
 const styles = StyleSheet.create({
   fill: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
+  /** The same edge the glass draws, without the material behind it. */
+  plain: {
+    borderRadius: MIN_TOUCH_TARGET / 2,
+    borderWidth: BORDER_WIDTH,
+    borderColor: colors.borderStrong,
+  },
   /*
     **Above the glass.** `GlassSurface` fills the control absolutely, and a
     positioned element paints over its non-positioned siblings whatever the DOM

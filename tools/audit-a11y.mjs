@@ -34,6 +34,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { VERDICT_STATES } from './verdict-states.mjs';
+import { PRACTICE_SETUP_HEADING } from './screen-copy.mjs';
 
 /**
  * Resolved from `mobile/`, not from here.
@@ -88,7 +89,7 @@ const ROUTES = [
   // has said "Record" since the first sweep — has never once audited the
   // screen with the recording controls on it.
   ['Record — first-take tips', 'pieces/fixture-bach-bwv1001/record', {
-    expect: 'Before your first take',
+    expect: PRACTICE_SETUP_HEADING,
   }],
   // The screen behind it: target tempo with its steppers, the metronome
   // control, Listen, the start-at picker, the timer and Start recording. Eight

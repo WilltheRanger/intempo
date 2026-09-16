@@ -26,6 +26,15 @@ export interface SecondaryButtonProps {
   icon?: LucideIcon;
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
+  /**
+   * On a ground that is dark in both appearances.
+   *
+   * The same reason `GlassSurface` has a `tone`: this button's label is ink in
+   * the light palette, and ink on `darkBg` is unreadable. The material has to
+   * be pinned to the dark palette and the label turned over with it, or the
+   * two disagree — which is the ivory-on-ivory failure `GlassSurface` records.
+   */
+  onDark?: boolean;
 }
 
 /** The quieter action. Bordered, transparent fill, charcoal label. */
@@ -35,7 +44,9 @@ export function SecondaryButton({
   icon: Icon,
   disabled = false,
   style,
+  onDark = false,
 }: SecondaryButtonProps) {
+  const ink = onDark ? colors.onDark : colors.textPrimary;
   return (
     <PressableScale
       onPress={onPress}
@@ -53,16 +64,22 @@ export function SecondaryButton({
     >
       {/* Neutral glass: colourless, so whatever it floats over decides how it
           looks. Tint is reserved for the primary action beside it. */}
-      <GlassSurface radius={CONTROL_HEIGHT / 2} style={styles.fill} />
+      <GlassSurface
+        radius={CONTROL_HEIGHT / 2}
+        tone={onDark ? 'onDark' : 'auto'}
+        style={styles.fill}
+      />
       <View style={styles.content}>
         {Icon ? (
           <Icon
             size={ICON_SIZE.md}
             strokeWidth={ICON_STROKE_WIDTH}
-            color={colors.textPrimary}
+            color={ink}
           />
         ) : null}
-        <Text variant="button">{label}</Text>
+        <Text variant="button" style={{ color: ink }}>
+          {label}
+        </Text>
       </View>
     </PressableScale>
   );

@@ -882,28 +882,30 @@ export function RecordScreen() {
     return (
       <ScreenContainer
         scrollable={false}
-        contentStyle={styles.screen}
-        footer={
-          <RecordButton
-            active
-            countingIn
-            onPress={cancelCountIn}
-          />
-        }
+        bleed
+        contentStyle={styles.countInScreen}
       >
-        <PageHeader
-          eyebrow={piece.composer}
-          title={piece.title}
-          onBack={goBack}
-          // **The same words as every other phase of this screen.** It said
-          // "Cancel count-in" — which the record button below it also says, so
-          // a screen reader announced one label for two controls, and the
-          // chevron did something no other chevron in the app does.
-          backLabel="Back to the piece"
-        />
+        {/*
+          **Inverted, and the only phase of this screen that is.**
 
+          The Counting In frame's argument: this is the one moment the screen
+          has to be read from across a room, by someone with an instrument
+          already up who is not going to look twice. So it takes the whole
+          display, drops everything that is not the count, and inverts — which
+          is also what stops a lit phone on a stand being a distraction in a
+          dark practice room.
+
+          `darkBg` and `onDark` rather than the appearance's own ink: this is
+          dark in *both* palettes, the same way the Today hero and the camera
+          viewfinder are, because what makes it dark is the moment and not the
+          setting.
+        */}
         <View style={styles.countIn}>
-          <Text variant="sectionLabel" color="textSecondary">
+          <Text
+            variant="sectionLabel"
+            style={styles.countInLabel}
+            accessibilityElementsHidden
+          >
             {perBar === null ? 'Four-beat count-in' : 'One-bar count-in'}
           </Text>
           <Text
@@ -913,15 +915,28 @@ export function RecordScreen() {
           >
             {counted}
           </Text>
-          <Text variant="body" color="textSecondary" style={styles.countInCopy}>
+          <BeatIndicator beat={metronome.beat} perBar={perBar} onDark />
+          <Text variant="body" style={styles.countInCopy}>
             {perBar === null ? 'Start after the count' : 'Start on the next downbeat'}
           </Text>
-          <BeatIndicator beat={metronome.beat} perBar={perBar} />
           {metronome.silent ? (
-            <Text variant="metadataSmall" color="textTertiary" style={styles.note}>
+            <Text variant="metadataSmall" style={styles.countInNote}>
               Haptics are off. Follow the visual count.
             </Text>
           ) : null}
+        </View>
+
+        {/*
+          One way out, and it is the only control on the screen. The header
+          goes: a back chevron and a cancel button are two ways to do the same
+          thing, and this is not a screen to read twice.
+        */}
+        <View style={styles.countInFooter}>
+          <SecondaryButton
+            label="Cancel count-in"
+            onPress={cancelCountIn}
+            onDark
+          />
         </View>
       </ScreenContainer>
     );
@@ -1143,6 +1158,8 @@ export function RecordScreen() {
         <View style={styles.tempo}>
           <TempoStepper
             label="Target tempo"
+            // On the practice sheet, which is itself glass.
+            surface="plain"
             bpm={displayedBpm}
             unitLabel={tempoUnitLabel(tempoBeatUnit)}
             minBpm={displayedRange.min}
@@ -1305,14 +1322,14 @@ export function RecordScreen() {
             <Pressable
               onPress={() => setShowSetup(true)}
               accessibilityRole="button"
-              accessibilityLabel="Open recording tips"
+              accessibilityLabel="Before you record"
               style={({ pressed }) => [
                 styles.metronome,
                 pressed && styles.metronomePressed,
               ]}
             >
               <Text variant="metadataSmall" color="textPrimary">
-                Recording tips
+                Before you record
               </Text>
             </Pressable>
           ) : null}
@@ -1545,18 +1562,47 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.md,
   },
+  /**
+   * The count-in's ground: dark in both appearances, like the Today hero and
+   * the camera viewfinder, because what makes it dark is the moment and not
+   * the setting.
+   */
+  countInScreen: {
+    flex: 1,
+    backgroundColor: colors.darkBg,
+  },
   countIn: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: spacing.xl,
+  },
+  countInLabel: {
+    color: colors.onDarkMuted,
   },
   countInNumber: {
-    marginTop: spacing.xl,
+    marginTop: spacing.md,
+    marginBottom: spacing['3xl'],
+    color: colors.onDark,
+    // Half the display, per the frame: this is read from a music stand, and
+    // `heroTitle` at its own size is a number you have to look for.
+    fontSize: 148,
+    lineHeight: 148,
     fontVariant: ['tabular-nums'],
   },
   countInCopy: {
-    marginTop: spacing.sm,
-    marginBottom: spacing.xl,
+    marginTop: spacing['2xl'],
+    color: colors.onDarkMuted,
+    textAlign: 'center',
+  },
+  countInNote: {
+    marginTop: spacing.md,
+    color: colors.onDarkMuted,
+    textAlign: 'center',
+  },
+  countInFooter: {
+    paddingHorizontal: spacing.xl,
+    paddingBottom: spacing['3xl'],
   },
   restCue: {
     width: '100%',

@@ -7,6 +7,14 @@ export interface BeatIndicatorProps {
   beat: Beat | null;
   /** From `beatsPerBar`. Null when the time signature gave us nothing usable. */
   perBar: number | null;
+  /**
+   * Drawn on a ground that is dark in both appearances.
+   *
+   * The count-in inverts, and the marks have to invert with it: `borderStrong`
+   * on `darkBg` is a hairline nobody can see from a music stand, which is the
+   * one place this is read from.
+   */
+  onDark?: boolean;
 }
 
 /**
@@ -25,7 +33,7 @@ export interface BeatIndicatorProps {
  * Nothing animates. The beat is a discrete event and a transition would put
  * the visible change *after* it, which is precisely the error being measured.
  */
-export function BeatIndicator({ beat, perBar }: BeatIndicatorProps) {
+export function BeatIndicator({ beat, perBar, onDark = false }: BeatIndicatorProps) {
   // A planned beat names the shape of its own bar, so the row can change from
   // four marks to two at a 4/4 → 6/8 boundary without restarting the clock.
   // Explicit null means this bar's meter is unreadable; do not fall back to the
@@ -54,7 +62,13 @@ export function BeatIndicator({ beat, perBar }: BeatIndicatorProps) {
             key={index}
             style={[
               styles.mark,
-              on && (index === 0 && currentPerBar !== null ? styles.downbeat : styles.onbeat),
+              onDark && styles.markOnDark,
+              on &&
+                (index === 0 && currentPerBar !== null
+                  ? onDark
+                    ? styles.downbeatOnDark
+                    : styles.downbeat
+                  : styles.onbeat),
             ]}
           />
         );
@@ -89,5 +103,17 @@ const styles = StyleSheet.create({
   downbeat: {
     backgroundColor: colors.textPrimary,
     borderColor: colors.textPrimary,
+  },
+  markOnDark: {
+    borderColor: colors.onDarkFill,
+  },
+  /**
+   * Ivory, because on a dark ground ivory is what ink is on a light one: the
+   * strongest value the palette has. The gold on-beat needs no inversion — it
+   * is the same accent against either ground and reads on both.
+   */
+  downbeatOnDark: {
+    backgroundColor: colors.onDark,
+    borderColor: colors.onDark,
   },
 });
