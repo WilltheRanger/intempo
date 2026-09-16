@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { listenFailure } from './listenFailure';
+import { listenFailure, startTimeout } from './listenFailure';
 
 /**
  * The rule that turns the next Listen report into something worth having.
@@ -78,3 +78,59 @@ describe('what a bug report gets', () => {
   });
 });
 
+/**
+ * The timeout half, which is the half a real report arrived from.
+ *
+ * On 2026-09-16 an iPhone showed "Audio couldn't start. Tap Listen to try
+ * again." — a sentence typed into the player rather than taken from here, so
+ * `listenFailure` never saw it and no cause was appended. The screenshot
+ * narrowed the cause to nothing at all, which is the exact outcome the header
+ * of the module under test predicts.
+ */
+describe('startTimeout', () => {
+  it('names the state the clock was stuck in', () => {
+    const message = listenFailure('starting', startTimeout('suspended', 2000));
+
+    // The advice a musician acts on comes first and is the shared sentence,
+    // not a second copy of it.
+    expect(message).toContain('Audio couldn’t start. Tap Listen to retry.');
+    // And the half that separates a refused resume from an iOS interruption,
+    // which look identical on a screen and have different fixes.
+    expect(message).toContain('suspended');
+  });
+
+  it('separates the three states that look identical on a screen', () => {
+    const said = ['suspended', 'interrupted', 'running'].map((state) =>
+      listenFailure('starting', startTimeout(state, 2000)),
+    );
+
+    expect(new Set(said).size).toBe(3);
+  });
+
+  it('says so rather than going quiet when the state is unreadable', () => {
+    // A player with no context to ask still failed, and "unknown" is a fact
+    // about the report. An empty cause would read as no cause at all.
+    expect(listenFailure('starting', startTimeout(undefined, 2000))).toContain(
+      'unknown',
+    );
+  });
+
+  it('reports how long it waited, rounded and never negative', () => {
+    expect(startTimeout('suspended', 2000.4).message).toContain('2000ms');
+    // Clocks that go backwards are a thing on a phone that slept; a negative
+    // wait in a bug report is worse than no number.
+    expect(startTimeout('suspended', -5).message).toContain('0ms');
+  });
+
+  it('is a timeout, not something the engine objected to', () => {
+    // `causeOf` keeps the name, and the name is what tells the next reader
+    // that nothing threw — the clock simply never moved.
+    expect(startTimeout('suspended', 2000).name).toBe('AudioStartTimeout');
+  });
+
+  it('stays short enough to read on a phone', () => {
+    expect(
+      listenFailure('starting', startTimeout('interrupted', 2000)).length,
+    ).toBeLessThan(200);
+  });
+});

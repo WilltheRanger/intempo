@@ -2,6 +2,7 @@ import { AudioModule } from 'expo-audio';
 import { File, Paths } from 'expo-file-system';
 
 import { prepareForPlayback } from './audio/session';
+import { listenFailure, startTimeout } from './score/listenFailure';
 import { encodeWavBytes } from './audio/wav';
 import type { Schedule } from './score/schedule';
 import {
@@ -159,7 +160,18 @@ export function playSchedule(
               return;
             }
             if (elapsed === 0 && Date.now() - started > 10000) {
-              onError?.('Audio couldn’t start. Tap Listen to try again.');
+              // The native player has no `AudioContext`, so what it can name
+              // is whether the file it was handed ever loaded — the same
+              // question, asked of the only clock this path has.
+              onError?.(
+                listenFailure(
+                  'starting',
+                  startTimeout(
+                    created?.isLoaded ? 'player loaded' : 'player not loaded',
+                    Date.now() - started,
+                  ),
+                ),
+              );
               finish();
               return;
             }
