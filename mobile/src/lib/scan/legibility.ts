@@ -318,8 +318,20 @@ export const MIN_PAGE_ROWS = Math.ceil(SERVER_FLOOR / SPACING_PER_PAGE_ROW);
 export type AdviceRoute = 'retake' | 'cameraApp';
 
 export interface Advice {
-  /** One line, in a musician's terms. */
-  message: string;
+  /**
+   * The finding, in one clause and in a musician's terms.
+   *
+   * **Split from the remedy on 2026-09-16**, when the scanner started drawing
+   * a verdict on every shot rather than a single line on a bad one. The screen
+   * wants the finding large and the remedy under it, and it was deriving the
+   * finding by paraphrasing this string — so the page said "Too far away to
+   * read the notes" and then, in smaller type underneath, "Too far away to
+   * read the notes. Move in until…". One sentence in two places is how that
+   * happens; the split makes the pair a single piece of copy again.
+   */
+  headline: string;
+  /** What to change, and what to do next. */
+  body: string;
   route: AdviceRoute;
 }
 
@@ -350,17 +362,19 @@ export function adviceFor(
   }
   if (typeof pageRows === 'number' && pageRows > 0 && pageRows < MIN_PAGE_ROWS) {
     return {
-      // Two clauses and no more. It has to say *the camera*, not you — and it
-      // has to head off the thing a musician would otherwise try next, which is
-      // the advice the other branch gives.
-      message:
-        "This camera can't see the notes clearly enough, however close you get. Your phone's camera app can.",
+      // It has to say *the camera*, not you — and the body has to head off the
+      // thing a musician would otherwise try next, which is the advice the
+      // other branch gives.
+      headline: 'This camera cannot see the notes',
+      body:
+        "However close you get, this camera can't resolve the staff lines. "
+        + "Your phone's camera app can.",
       route: 'cameraApp',
     };
   }
   return {
-    message:
-      'Too far away to read the notes. Move in until one page fills the frame, then take it again.',
+    headline: 'Too far away to read the notes',
+    body: 'Move in until one page fills the frame, then take it again.',
     route: 'retake',
   };
 }
