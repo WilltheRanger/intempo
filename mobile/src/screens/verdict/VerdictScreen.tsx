@@ -394,7 +394,7 @@ export function VerdictScreen() {
       */}
       {take.measures.some((m) => readMeasure(m).revealsFigure) ? (
         <Text variant="metadataSmall" color="textTertiary" style={styles.tip}>
-          Tap a measure for its timing.
+          Tap a measure for how far off the beat it was.
         </Text>
       ) : null}
     </ScreenContainer>

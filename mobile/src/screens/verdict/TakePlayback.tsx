@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { Pause, Play } from '../../components/icons';
 import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import { StyleSheet, View } from 'react-native';
+import { PanResponder, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 
 import {
   LoadingState,
@@ -15,6 +15,12 @@ import { takeSource } from '../../data/sources';
 import { BORDER_WIDTH, colors, radii, spacing } from '../../design';
 import { prepareForPlayback } from '../../lib/audio/session';
 import { formatPlaybackTime } from './playbackTime';
+import {
+  SCRUB_STEP_S,
+  scrubFraction,
+  scrubSeconds,
+  scrubStep,
+} from '../../lib/verdict/scrub';
 
 interface TakePlaybackProps {
   analysisId: string;
@@ -27,6 +33,24 @@ interface TakePlaybackProps {
  * it closes. It is a one-hour read permission for one private object, never the
  * permanent upload reference stored by the backend. `useAudioPlayer` owns the
  * player lifetime, so leaving the screen also stops and releases the sound.
+ *
+ * **The track moves now.** It was drawn as a scrubber — a rounded rail with a
+ * filled portion and a time at either end — and the only control under it was
+ * play and pause, so a musician checking bar seven against the row that names
+ * it had to listen to the six before it every time. §3 is explicit that a drawn
+ * affordance must do the thing it depicts. `lib/verdict/scrub.ts` has the
+ * arithmetic and the tests.
+ *
+ * **What is deliberately not drawn on it is the take's own shape.** The survey
+ * frame this comes from puts a pill per bar along the track, its height the
+ * deviation and its colour the band, so reading the take and hearing it become
+ * one control. The analysis does not say where each bar *falls in the
+ * recording* — `MeasureVerdict` carries a number, a band and a deviation, and
+ * no time — so every pill would be placed by dividing the duration evenly
+ * between the bars. On a take that rushed, which is the take this screen exists
+ * for, that placement is wrong by construction, and a pill you can touch that
+ * seeks to the wrong bar is worse than no pill. It needs onset times from the
+ * pipeline, which it already has and does not send.
  */
 export function TakePlayback({ analysisId }: TakePlaybackProps) {
   const [playError, setPlayError] = useState<string | null>(null);
@@ -52,7 +76,17 @@ export function TakePlayback({ analysisId }: TakePlaybackProps) {
     try { player.pause(); } catch { /* Player already released. */ }
   }, [player]));
 
+  // Both read inside the pan responder, which is created once — a value
+  // captured in its closure would be the duration and the width as they were
+  // before the recording loaded and before the track was measured.
+  const trackWidth = useRef(0);
+  const durationRef = useRef(0);
+  const measureTrack = useCallback((event: LayoutChangeEvent) => {
+    trackWidth.current = event.nativeEvent.layout.width;
+  }, []);
+
   const duration = Math.max(0, status.duration || 0);
+  durationRef.current = duration;
   const current = Math.min(duration || Infinity, Math.max(0, status.currentTime || 0));
   const finished =
     duration > 0 && current >= Math.max(0, duration - 0.05) && !status.playing;
@@ -84,6 +118,55 @@ export function TakePlayback({ analysisId }: TakePlaybackProps) {
     }
   }
 
+  /** Move the recording, ignoring a position it could not work out. */
+  const seekTo = useCallback(
+    async (seconds: number | null) => {
+      if (seconds === null) {
+        return;
+      }
+      try {
+        await player.seekTo(seconds);
+      } catch {
+        // A player released underneath us, which leaving the screen does. The
+        // position is not worth an error message.
+      }
+    },
+    [player],
+  );
+
+  /**
+   * The finger on the rail.
+   *
+   * Claims the gesture on the way down rather than on movement, so a tap moves
+   * the position too — a scrubber that only answers a drag is one a musician
+   * taps at, watches do nothing, and stops using. The whole track is inside a
+   * `ScrollView`, so the responder has to be taken deliberately.
+   */
+  const scrubber = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderGrant: (event) => {
+          void seekTo(
+            scrubSeconds(
+              scrubFraction(event.nativeEvent.locationX, trackWidth.current),
+              durationRef.current,
+            ),
+          );
+        },
+        onPanResponderMove: (event) => {
+          void seekTo(
+            scrubSeconds(
+              scrubFraction(event.nativeEvent.locationX, trackWidth.current),
+              durationRef.current,
+            ),
+          );
+        },
+      }),
+    [seekTo],
+  );
+
   async function retry() {
     setPlayError(null);
     await recording.refetch();
@@ -109,17 +192,42 @@ export function TakePlayback({ analysisId }: TakePlaybackProps) {
       ) : recording.data ? (
         <View style={styles.player}>
           <View
-            accessibilityRole="progressbar"
+            {...scrubber.panHandlers}
+            onLayout={measureTrack}
+            /*
+              `adjustable`, not `progressbar`: it reports a position *and*
+              takes one. The increment and decrement actions are the route for
+              anyone not dragging a finger along a 6pt rail, which is why the
+              gesture cannot be the only way in.
+            */
+            accessibilityRole="adjustable"
             accessibilityLabel="Recording playback position"
+            accessibilityHint={`Drag to move through the recording, or step by ${SCRUB_STEP_S} seconds.`}
             accessibilityValue={{
               min: 0,
               max: Math.max(1, Math.round(duration)),
               now: Math.round(current),
               text: `${formatPlaybackTime(current)} of ${formatPlaybackTime(duration)}`,
             }}
-            style={styles.track}
+            accessibilityActions={[
+              { name: 'increment', label: 'Forward' },
+              { name: 'decrement', label: 'Back' },
+            ]}
+            onAccessibilityAction={(event) => {
+              const direction = event.nativeEvent.actionName === 'increment' ? 1 : -1;
+              void seekTo(scrubStep(current, duration, direction));
+            }}
+            /*
+              The rail is 6pt and a finger is not. The padding is on this view
+              so the *target* clears the platform minimum while the drawn rail
+              stays a hairline — `hitSlop` does nothing on the web build, which
+              `touchTargets.test.ts` holds the whole app to.
+            */
+            style={styles.trackTarget}
           >
-            <View style={[styles.fill, { width: `${progress * 100}%` }]} />
+            <View style={styles.track}>
+              <View style={[styles.fill, { width: `${progress * 100}%` }]} />
+            </View>
           </View>
           <View style={styles.timeRow}>
             <Text variant="metadataSmall" color="textTertiary">
@@ -151,6 +259,10 @@ const styles = StyleSheet.create({
   },
   player: {
     marginTop: spacing.md,
+  },
+  trackTarget: {
+    // 44pt of target around a 6pt rail: (44 - 6) / 2 = 19 each side.
+    paddingVertical: 19,
   },
   track: {
     height: 6,
