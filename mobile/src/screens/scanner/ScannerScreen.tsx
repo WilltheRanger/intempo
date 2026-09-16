@@ -7,6 +7,9 @@ import { useEffect, useRef, useState } from 'react';
 import { Linking, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { EmptyState } from '../../components/primitives/EmptyState';
+import { PageHeader } from '../../components/primitives/PageHeader';
+import { ScreenContainer } from '../../components/primitives/ScreenContainer';
 import { Text } from '../../components/primitives/Text';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import { legibilityOf } from '../../lib/scan/legibility';
@@ -16,6 +19,7 @@ import {
   type ShotVerdict,
 } from '../../lib/scan/shotVerdict';
 import { photographWithSystemCamera } from '../../lib/scan/systemCamera';
+import { captureFailure, type CaptureFailure } from '../../lib/scan/captureFailure';
 import {
   cameraFallback,
   type CameraAction,
@@ -81,6 +85,16 @@ export function ScannerScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * The shutter itself failing, which is a screen rather than a line.
+   *
+   * Separate from `error`, which carries the notices that belong *under* a
+   * working viewfinder — the page ceiling, a settings screen that would not
+   * open. This one means the button the musician just pressed did nothing, and
+   * offering them the same button again with a sentence above it is the dead
+   * end `captureFailure.ts` was written about.
+   */
+  const [failure, setFailure] = useState<CaptureFailure | null>(null);
   //: The page just taken that will not read, and why. Null when the last shot
   //: was fine, could not be measured, or has been retaken.
   /**
@@ -250,10 +264,14 @@ export function ScannerScreen() {
         const region = visibleRegion(photo.width, photo.height, PAGE_ASPECT);
         void checkItReads(taken.id, framed, region?.height ?? photo.height);
       }
-    } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : 'That photo could not be taken.',
-      );
+    } catch {
+      // **The cause is deliberately not shown.** Everything reaching here is
+      // either this screen's own sentence or a platform message written for
+      // whoever fixes it, and `TranscribeScreen` has the scar: iOS Safari's
+      // "Load failed" once stood on screen as the app's explanation of a
+      // failed scan. `captureFailure` says the same thing every time, in
+      // words meant for a musician.
+      setFailure(captureFailure());
     } finally {
       setBusy(false);
     }
@@ -328,11 +346,9 @@ export function ScannerScreen() {
       if (taken) {
         void checkItReads(taken.id, uri);
       }
-    } catch (cause) {
+    } catch {
       captureSession.cancelRetake();
-      setError(
-        cause instanceof Error ? cause.message : 'That photo could not be taken.',
-      );
+      setFailure(captureFailure());
     } finally {
       setBusy(false);
     }
@@ -402,6 +418,45 @@ export function ScannerScreen() {
       return;
     }
     goBack();
+  }
+
+  /**
+   * The shutter failed, so this screen stops being a viewfinder.
+   *
+   * In the app's own palette rather than the scanner's ink, like every other
+   * failure it has: the camera is not the subject any more, and a dark screen
+   * with no picture on it reads as the camera still trying.
+   */
+  if (failure) {
+    return (
+      <ScreenContainer>
+        {/*
+          No heading: the finding is centred below, which is the case
+          `PageHeader.title` is documented optional for. The back row still
+          belongs here, because the negative offset that makes it a 44pt
+          target lives in that component.
+        */}
+        <PageHeader onBack={() => setFailure(null)} backLabel="Back to the scanner" />
+        <EmptyState
+          fill
+          title={failure.headline}
+          description={failure.body}
+          hint={failure.hint}
+          actionLabel={failure.retakeLabel}
+          actionTone="primary"
+          onActionPress={() => setFailure(null)}
+          // The way *round* the failure rather than back into it. The camera
+          // app needs no stream from this page, so it is a genuinely different
+          // route — see `captureFailure.ts`.
+          secondaryLabel={failure.cameraAppLabel}
+          // `takeFallbackRoute`, not `retakeWithSystemCamera`: nothing was
+          // taken, so there is no page to replace, and that function returns
+          // early without a `shot`. A control that looks live and does nothing
+          // is the affordance §3 rules out drawing at all.
+          onSecondaryPress={() => void takeFallbackRoute('systemCamera')}
+        />
+      </ScreenContainer>
+    );
   }
 
   return (
