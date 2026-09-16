@@ -107,17 +107,32 @@ const EXCUSED: Record<string, string> = {
     + 'take ends.',
 };
 
+/**
+ * Comments out, before anything is matched.
+ *
+ * **A source-text check that reads its own documentation as evidence proves
+ * nothing** — `ariaState.test.ts` learned this the expensive way, passing while
+ * the thing it checked was broken because the comment explaining a prop
+ * outlived the prop. Here it fails the other way round: `heldTake.web.ts`
+ * explains, in prose, which player it deliberately does *not* use, and was
+ * reported as a sound path that forgets the session.
+ */
+function withoutComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
+}
+
 /** Test files are not the app; a stub of a player is not a player. */
 function isSource(path: string): boolean {
   return !/\.test\.tsx?$/.test(path) && !path.endsWith('.d.ts');
 }
 
 function makesSound(source: string): boolean {
-  return SOUND_SOURCES.some((marker) => source.includes(marker));
+  const code = withoutComments(source);
+  return SOUND_SOURCES.some((marker) => code.includes(marker));
 }
 
 function asksForTheSession(source: string): boolean {
-  return source.includes(ASKS_FOR_THE_SESSION);
+  return withoutComments(source).includes(ASKS_FOR_THE_SESSION);
 }
 
 const sources = Object.entries(files).filter(([path]) => isSource(path));
@@ -130,11 +145,19 @@ describe('the corpus this reads', () => {
   });
 
   it('found the sound paths there are', () => {
-    // Five, today: the two players, the two metronomes, and the take playback
-    // on the verdict screen. Named rather than counted, so a path that
-    // *disappears* is as loud as one that appears — a player deleted in a
-    // refactor and rebuilt somewhere else is exactly how this check would come
-    // to be guarding nothing.
+    // Six, today: the two players, the two metronomes, the take playback on
+    // the verdict screen, and the held-take playback on the record screen.
+    // Named rather than counted, so a path that *disappears* is as loud as one
+    // that appears — a player deleted in a refactor and rebuilt somewhere else
+    // is exactly how this check would come to be guarding nothing.
+    //
+    // **`HeldTakePlayer` is the one that matters most here**, and this test is
+    // what caught it arriving. It is the only sound path that sits on a screen
+    // which also *captures*, so it is the only one where forgetting the
+    // session leaves the microphone refused rather than merely leaving a phone
+    // silent — the failure that cost six diagnoses. See the recording path in
+    // `docs/subsystems.md`, and `session.capture.test.ts` for the invariant
+    // that makes it safe.
     const playing = sources.filter(([, source]) => makesSound(source)).map(([p]) => p);
 
     expect(playing.sort()).toEqual([
@@ -142,6 +165,7 @@ describe('the corpus this reads', () => {
       'src/lib/metronome/click.web.ts',
       'src/lib/scorePlayer.ts',
       'src/lib/scorePlayer.web.ts',
+      'src/screens/record/HeldTakePlayer.web.tsx',
       'src/screens/verdict/TakePlayback.tsx',
     ]);
   });

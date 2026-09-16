@@ -842,10 +842,21 @@ nothing else covers `backend/`. Named here rather than left to be found.
   `navigator.audioSession` does not exist there, so `prepareForPlayback` returns
   early and the category is never set: the walk, the accessibility sweeps and
   `device-check.mjs` all pass on a build that cannot record on any iPhone.
-  Playwright's **WebKit** is installed in the session container
-  (`/opt/pw-browsers/webkit-*`) and is the only engine here that shares the
-  failing code path — reach for it before concluding an iOS bug is
-  unreproducible.
+  **That WebKit is not here, and this line said it was (corrected
+  2026-09-16).** `/opt/pw-browsers` holds Chromium, a headless shell and
+  ffmpeg; `webkit.launch()` fails on a missing `webkit-2359/pw_run.sh`, and
+  the environment ships `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`. A documented
+  tool that is not installed is worse than none — it reads as a check somebody
+  could have run.
+
+  What is left is a source check, which is this project's usual answer for a
+  thing no browser here can see. **`session.capture.test.ts` holds the
+  invariant that actually protects the microphone**: every path that opens a
+  capture declares `play-and-record` immediately before it. That is what makes
+  playback harmless — the metronome, the score player and the held-take
+  control on the record screen all leave `playback` behind, and the next take
+  replaces it — and it is the rule that breaks the day somebody adds a second
+  `getUserMedia` for a tuner or a level meter.
 
 - **The onset detector is amplitude-invariant, and this is measured.**
   `onset_strength` differences a dB-scaled mel spectrogram, so scaling a

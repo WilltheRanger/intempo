@@ -33,6 +33,8 @@ import {
   type Recorder,
 } from '../../lib/audio/types';
 import { readTakeFailure } from '../../lib/audio/takeFailure';
+import { heldTakeUrl, releaseHeldTake } from '../../lib/audio/heldTake';
+import { HeldTakePlayer } from './HeldTakePlayer';
 import { microphonePermissionRecovery } from '../../lib/audio/permission';
 import { buildMarker } from '../../lib/platform/buildMarker';
 import { isHomeScreenApp } from '../../lib/audio/microphoneFailure';
@@ -236,10 +238,35 @@ export function RecordScreen() {
     resume?: TakeSubmissionState;
   } | null>(null);
   const [pendingTake, setPendingTake] = useState(false);
+  /**
+   * A URL for the take being held, so it can be heard before it is sent.
+   *
+   * **The screen says the take is safe and had no way to show it.** "Your take
+   * is safe on this device" is the sentence a musician most needs to believe
+   * after a failed upload, and it was an assertion. Null where no URL can be
+   * made — see `heldTakeUrl` — in which case no control is drawn at all rather
+   * than one that does nothing.
+   */
+  const [heldUrl, setHeldUrl] = useState<string | null>(null);
   /** The open "you are about to lose this" dialog, or null. */
   const [leavePrompt, setLeavePrompt] = useState<
     Extract<ReturnType<typeof leavingRecord>, { kind: 'confirm' }> | null
   >(null);
+
+  /**
+   * Point the "hear it" control at a held take, or at nothing.
+   *
+   * **Revoking matters.** An object URL pins the whole blob for the life of the
+   * document and a take is minutes of audio, so every path that stops holding a
+   * take passes null through here — sent, discarded, or replaced by a new
+   * recording.
+   */
+  function holdForListening(audio: Blob | null): void {
+    setHeldUrl((current) => {
+      releaseHeldTake(current);
+      return audio ? heldTakeUrl(audio) : null;
+    });
+  }
 
   // Leaving mid-take — back gesture, a deep link, anything — has to release
   // the microphone. Nothing else will.
@@ -389,6 +416,7 @@ export function RecordScreen() {
     // pointing the other way.
     unsent.current = null;
     setPendingTake(false);
+    holdForListening(null);
 
     try {
       const started = await startRecording();
@@ -523,6 +551,7 @@ export function RecordScreen() {
       });
       unsent.current = null;
       setPendingTake(false);
+      holdForListening(null);
       // The server has it; the device copy is now the only one that could go
       // stale. Not awaited — the verdict is what the musician is waiting for.
       void takeWasAccepted(recording.filename);
@@ -551,6 +580,7 @@ export function RecordScreen() {
           : recording;
       unsent.current = failure.retriable ? resumable : null;
       setPendingTake(failure.retriable);
+      holdForListening(failure.retriable ? resumable.audio : null);
       if (failure.retriable) {
         // **The ref survives a retry and not a restart.** A musician who
         // records with no signal and backgrounds the app used to lose the
@@ -766,6 +796,7 @@ export function RecordScreen() {
         resume: restored.resume,
       };
       setPendingTake(true);
+      holdForListening(restored.audio);
       if (restored.lastError) {
         setProblem(restored.lastError);
       }
@@ -1191,6 +1222,25 @@ export function RecordScreen() {
             still here. A quota refusal keeps no take and shows no button —
             there is nothing a retry would do but fetch the same refusal.
           */}
+          {/*
+            **Proof, not a claim.** The sentence above says the take is safe on
+            this device; a take you can play is the same thing demonstrated, and
+            it is the one thing a musician is actually afraid of losing.
+
+            Drawn only where a URL could be made — `heldTakeUrl` answers null on
+            a platform without `createObjectURL`, and a control that appears and
+            does nothing is the affordance §3 rules out drawing at all.
+
+            The audio session is the hazard here and it is already handled:
+            `heldTakePlayer` declares `playback` before it sounds, and
+            `audioRecorder.web.ts` declares `play-and-record` before every
+            capture — so hearing a take cannot leave the microphone refused, the
+            failure that cost this project six diagnoses. See the recording path
+            in `docs/subsystems.md`.
+          */}
+          {pendingTake && heldUrl ? (
+            <HeldTakePlayer url={heldUrl} style={styles.permissionAction} />
+          ) : null}
           {pendingTake ? (
             <SecondaryButton
               label="Send it again"
