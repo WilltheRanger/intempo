@@ -6,6 +6,17 @@ model badly. This fake implements just the query surface those paths use
 — `table().insert()/select()/update()` with
 `.eq()/.in_()/.lt()/.gte()/.limit()/.execute()`, plus `select(count="exact")`
 — over real dict rows, so tests assert on actual state transitions.
+
+**It models storage too, since 2026-09-13, and the omission had cost
+something.** `keep_playback_copy` is the last thing `run_analysis` does and
+`test_full_flow_queued_to_done` is the only test that runs the worker end to
+end — so that call raised `AttributeError: 'FakeSupabase' object has no
+attribute 'storage'` on every run, was swallowed by the worker pool's
+catch-all, and the test passed. The path that replaces a take's WAV with an
+Opus had never once executed under test; only `test_take_archive.py`'s own
+hand-written bucket had, which is the shape of gap this repository keeps
+paying for. Objects are a dict, so a test can ask what is in the bucket rather
+than what was called.
 """
 
 from __future__ import annotations
@@ -256,12 +267,52 @@ class _Table:
         raise AssertionError(f"unhandled op {q._op}")
 
 
+class _Bucket:
+    """One bucket's objects, as `{key: bytes}`.
+
+    `upload` is unconditional rather than modelling `upsert`: every caller here
+    passes it, and a fake that refused a second write would be inventing a
+    failure no call site can reach.
+
+    `remove` takes a list and ignores keys that are not there, which is what
+    Supabase does — it answers with the rows it deleted and does not error on a
+    key that is already gone. Both sweeps depend on that being harmless.
+    """
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.objects: dict[str, bytes] = {}
+
+    def upload(self, key: str, data: bytes, options: dict | None = None) -> None:
+        self.objects[key] = bytes(data)
+
+    def remove(self, keys: list[str]) -> list[dict]:
+        removed = [key for key in keys if self.objects.pop(key, None) is not None]
+        return [{"name": key} for key in removed]
+
+
+class _Storage:
+    def __init__(self) -> None:
+        self.buckets: dict[str, _Bucket] = {}
+
+    def from_(self, name: str) -> _Bucket:
+        return self.buckets.setdefault(name, _Bucket(name))
+
+
 class FakeSupabase:
     def __init__(self) -> None:
         self._tables: dict[str, _Table] = {}
+        self.storage = _Storage()
 
     def table(self, name: str) -> _Table:
         return self._tables.setdefault(name, _Table([]))
 
     def seed(self, name: str, rows: list[dict]) -> None:
         self.table(name).rows.extend(rows)
+
+    def put_object(self, bucket: str, key: str, data: bytes = b"take") -> None:
+        """Seed storage, the counterpart of `seed` for rows."""
+        self.storage.from_(bucket).upload(key, data)
+
+    def object_keys(self, bucket: str) -> set[str]:
+        return set(self.storage.from_(bucket).objects)

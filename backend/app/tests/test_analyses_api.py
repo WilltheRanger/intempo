@@ -226,13 +226,22 @@ def test_full_flow_queued_to_done(
     # for it — see that helper for why the wait is now explicit.
     monkeypatch.setattr(analysis_runner, "download_audio", lambda _url: _wav_bytes())
 
+    # The object the take was uploaded to, so the end of this flow has
+    # something real to delete. Seeded rather than assumed: the last thing
+    # `run_analysis` does is swap this WAV for an Opus, and until the fake
+    # modelled storage that call raised `AttributeError` into the worker
+    # pool's catch-all and this test passed anyway.
+    audio_url = _audio_url(user_id)
+    wav_key = f"{user_id}/{audio_url.rsplit('/', 1)[1].split('?')[0]}"
+    fake.put_object("audio-uploads", wav_key, _wav_bytes())
+
     token = make_token(sub=user_id)
     post = client.post(
         "/v1/analyses",
         headers={"Authorization": f"Bearer {token}"},
         json={
             "score_id": str(score_id),
-            "audio_url": _audio_url(user_id),
+            "audio_url": audio_url,
             "target_bpm": 120,
             "bpm_source": "manual",
         },
@@ -248,6 +257,15 @@ def test_full_flow_queued_to_done(
     assert body["result_json"]["status"] == "ok"
     assert body["alignment_quality"] is not None
     assert body["finished_at"] is not None
+
+    # And the take now costs a fraction of what it did. This is the only test
+    # that reaches `keep_playback_copy` through the worker rather than calling
+    # it directly, so it is the only one that can show the verdict and the
+    # archiving are one path: the WAV is gone, the Opus is beside it, and the
+    # row names the Opus.
+    opus_key = f"{wav_key.removesuffix('.wav')}.opus"
+    assert fake.object_keys("audio-uploads") == {opus_key}
+    assert fake.table("analyses").rows[0]["playback_key"] == opus_key
 
 
 def test_worker_marks_failed_when_audio_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -386,6 +404,70 @@ def test_recording_playback_reports_a_temporary_storage_failure(
     )
     assert response.status_code == 503
     assert response.json()["detail"] == "recording is temporarily unavailable"
+
+
+def test_a_reclaimed_recording_is_gone_rather_than_temporarily_unavailable(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """A failed take whose WAV the sweep reclaimed a day later.
+
+    `audio_url` still names the upload the row was created from — 018 says at
+    length why that column keeps meaning that — so without the mark this falls
+    through to signing a key that no longer exists, and a failed signature is
+    reported as **503, temporarily** unavailable. It is not temporary: the
+    object was deleted on purpose and is never coming back. 404 is what 018
+    already names as the answer for a take whose audio is gone, and it is the
+    difference between a player that retries forever and one that stops.
+    """
+    user_id = uuid4()
+    row = _analysis_row(
+        user_id,
+        uuid4(),
+        status="failed",
+        failure_reason="internal_error",
+        audio_reclaimed_at=datetime.now(tz=timezone.utc).isoformat(),
+    )
+    fake = FakeSupabase()
+    fake.seed("analyses", [row])
+    _install(monkeypatch, fake)
+
+    def _must_not_sign(_client: Any, _reference: str) -> str:
+        raise AssertionError("signed a key the sweep deleted")
+
+    monkeypatch.setattr(analyses_module, "readable_audio_url", _must_not_sign)
+    response = client.get(
+        f"/v1/analyses/{row['id']}/recording",
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "recording not found"
+
+
+def test_a_judged_take_still_plays_after_its_wav_was_replaced(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """The other side of the branch above, which is the one that could break
+    playback for every analysed take: `playback_key` names an Opus that is
+    really there, and `audio_reclaimed_at` has nothing to say about it."""
+    user_id = uuid4()
+    row = _analysis_row(user_id, uuid4(), playback_key=f"{user_id}/take.opus")
+    fake = FakeSupabase()
+    fake.seed("analyses", [row])
+    _install(monkeypatch, fake)
+    monkeypatch.setattr(
+        analyses_module,
+        "readable_audio_url",
+        lambda _client, reference: f"https://storage.test/{reference}?token=x",
+    )
+
+    response = client.get(
+        f"/v1/analyses/{row['id']}/recording",
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["url"].endswith(f"{user_id}/take.opus?token=x")
 
 
 def test_list_returns_only_the_callers_analyses(

@@ -16,6 +16,7 @@ from app.workers.analysis_runner import (
 from app.services.ocr.pipeline import _default_chain, unknown_provider_names
 from app.services import pending_uploads
 from app.services import reading_rate
+from app.services import take_archive
 from app.workers.transcription_runner import sweep_stuck_transcriptions
 
 log = logging.getLogger("intempo")
@@ -47,6 +48,12 @@ async def _sweep_periodically() -> None:
         # an abandoned photograph is ever removed. See
         # `services/pending_uploads` for the invariant it maintains.
         await asyncio.to_thread(pending_uploads.sweep_unclaimed)
+        # And the recordings of takes that ended without a verdict, which that
+        # sweep cannot see: `POST /v1/analyses` claims the object as it writes
+        # the row, so a take that then fails is claimed by a row finished with
+        # it and swept by nothing. The one path that deletes a WAV runs only
+        # after a verdict is written. See `services/take_archive`.
+        await asyncio.to_thread(take_archive.sweep_unjudged_takes)
         # And the rate-limiter's memory of accounts that have stopped scanning.
         #
         # **This is the only caller, and for eleven days there was none.**
