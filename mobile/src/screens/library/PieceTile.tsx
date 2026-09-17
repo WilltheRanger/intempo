@@ -252,7 +252,13 @@ const styles = StyleSheet.create({
   actions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
+    // **Wraps, because a tile is half a phone wide and type scales.** At the
+    // 2x text size the accessibility audit runs at, "Discard" ran 35pt off the
+    // right edge of the tile on one line — found by `audit-a11y`, which CI has
+    // not been able to run since the Actions minutes ran out. One line at
+    // ordinary sizes, two when the type is large enough to need them.
+    flexWrap: 'wrap',
+    columnGap: spacing.md,
   },
   action: {
     minHeight: MIN_TOUCH_TARGET,
