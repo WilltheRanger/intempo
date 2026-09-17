@@ -1,6 +1,6 @@
 """A signed URL for a profile picture, held still long enough to be cached.
 
-**Measured on `intempo-dev`, 2026-09-13: one avatar was downloaded 51 times in
+**Measured on the live project, 2026-09-13: one avatar was downloaded 51 times in
 24 hours — 9 MB of a 176 kB file.** It is the single most re-fetched object in
 the project, ahead of every sheet-music page.
 

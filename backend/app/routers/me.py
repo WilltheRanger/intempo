@@ -241,7 +241,7 @@ def _avatar_url(client: Any, key: str | None) -> str | None:
     **This signed a fresh URL on every `/v1/me`**, and the app asks for
     `/v1/me` on every launch, profile view and session refresh. A signed URL's
     token is part of the browser's cache key, so every answer was a URL the
-    browser had never seen and re-downloaded: measured on `intempo-dev`,
+    browser had never seen and re-downloaded: measured on the live project,
     **51 downloads of one 176 kB picture in 24 hours**, the most re-fetched
     object in the project.
 

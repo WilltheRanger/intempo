@@ -273,7 +273,7 @@ def test_the_probe_refuses_an_origin_that_is_not(
 ) -> None:
     """The whole point. A set variable naming the wrong site passes
     `cors_allowed_origins` and fails here."""
-    check = _probe(monkeypatch, ORIGIN, "https://idk-41z.pages.dev")
+    check = _probe(monkeypatch, ORIGIN, "https://fixture-app.pages.dev")
 
     assert check["ok"] is False
     # And it says what to do about it, naming the Pages shape that is almost

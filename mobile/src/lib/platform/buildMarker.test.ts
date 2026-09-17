@@ -52,11 +52,11 @@ describe('the line itself', () => {
   it('names the build, the origin and whether this is the installed app', () => {
     const line = markerFrom(
       '/_expo/static/js/web/index-18281825d242899541a9997c344099f6.js',
-      'idk-41z.pages.dev',
+      'fixture-app.pages.dev',
       true,
     );
 
-    expect(line).toBe('18281825 · idk-41z.pages.dev · home screen');
+    expect(line).toBe('18281825 · fixture-app.pages.dev · home screen');
   });
 
   /*
@@ -69,15 +69,15 @@ describe('the line itself', () => {
     expect(
       markerFrom(
         '/_expo/static/js/web/index-abcdef1234567890.js',
-        'claude-mobile-frontend-rebui.idk-41z.pages.dev',
+        'claude-mobile-frontend-rebui.fixture-app.pages.dev',
         false,
       ),
-    ).toBe('abcdef12 · claude-mobile-frontend-rebui.idk-41z.pages.dev');
+    ).toBe('abcdef12 · claude-mobile-frontend-rebui.fixture-app.pages.dev');
   });
 
   it('leaves out what it cannot establish rather than guessing at it', () => {
     // A marker is only worth showing if every part of it is a fact.
-    expect(markerFrom(null, 'idk-41z.pages.dev', false)).toBe('idk-41z.pages.dev');
+    expect(markerFrom(null, 'fixture-app.pages.dev', false)).toBe('fixture-app.pages.dev');
     expect(markerFrom(null, '', false)).toBe('');
   });
 });

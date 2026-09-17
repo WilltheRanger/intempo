@@ -9,7 +9,7 @@
 -- Supabase dashboard, and nothing in this repository says what they are
 -- configured as.
 --
--- Measured against `intempo-dev` on 2026-09-03, because speculation is not an
+-- Measured against the live project on 2026-09-03, because speculation is not an
 -- audit:
 --
 --     id              public   file_size_limit   allowed_mime_types
@@ -39,7 +39,7 @@
 -- directly, and the API's ownership check would stop being the only way in.
 --
 -- Additive and idempotent. It changes nothing on a database that already looks
--- like the table above — which `intempo-dev` does — and it makes a database
+-- like the table above — which the live project does — and it makes a database
 -- built from these files look the same.
 -- =============================================================
 
@@ -56,7 +56,7 @@ ON CONFLICT (id) DO UPDATE
       file_size_limit = EXCLUDED.file_size_limit;
 
 -- Named versions of the two policies that already exist. Created only when an
--- equivalent is absent, so applying this to `intempo-dev` adds two policies
+-- equivalent is absent, so applying this to the live project adds two policies
 -- with the same predicate as "hi" and "um" — harmless, because Postgres ORs
 -- permissive policies of the same command and both say exactly the same thing.
 --

@@ -1,0 +1,59 @@
+-- =============================================================
+-- 020_security_advisors — two findings from Supabase's own linter
+-- =============================================================
+--
+-- **Written while answering "is it safe to make this repository public".**
+-- That question is usually asked about credentials, and the answer there was
+-- yes: 1,773 commits and 13,635 objects scanned, no key ever committed. But
+-- publishing the repository publishes `migrations/`, and a reader who has the
+-- schema and the anon key — which is *designed* to be public and already ships
+-- in the web bundle — is separated from every row by row-level security and
+-- nothing else. RLS stops being a safety net and becomes the wall.
+--
+-- Measured before writing this, because "we have RLS" is the kind of claim
+-- that is true of eight tables out of nine: all nine `public` tables have
+-- `relrowsecurity`, and `get_advisors` reports no `rls_disabled_in_public`.
+-- The wall holds. What follows is the two things the linter did flag.
+--
+-- ## `set_updated_at` had a mutable `search_path`
+--
+-- The real fix, and the only change here with a security argument behind it.
+-- A `SECURITY DEFINER`-adjacent function whose `search_path` is resolved at
+-- call time can be pointed at a schema the caller controls: define your own
+-- `now()` earlier on the path and the function runs your code with the
+-- definer's rights. This one is `SECURITY INVOKER` and its whole body is
+-- `NEW.updated_at = now()`, so the reachable damage today is nil — but the
+-- hardening costs one statement and survives someone later adding a table
+-- reference to the body, which is exactly when it would start to matter.
+--
+-- `''` rather than `pg_catalog, public`: the body qualifies nothing and needs
+-- nothing qualified. `now()` lives in `pg_catalog`, which is always searched
+-- first whether it is named or not, and `NEW` is a plpgsql record rather than
+-- a relation. Checked against the definition in 001 before writing this, not
+-- assumed — a function that *did* reference a table unqualified would break
+-- on an empty path, loudly and at the worst moment.
+--
+-- ## `pending_uploads` has RLS enabled and no policies
+--
+-- This one is **not a hole, and the comment is the whole fix.** RLS with no
+-- policy denies every row to every role it applies to; `anon` and
+-- `authenticated` hold table grants and still read nothing, because a grant
+-- is permission to ask and a policy is permission to receive. The table is
+-- the sweeper's ledger of objects nobody has claimed yet, written and read
+-- only by the service role, which bypasses RLS. Closed is the correct state.
+--
+-- It is written down *in the database* because the linter reports it as a
+-- finding on every run, and a finding with no explanation attached is an
+-- invitation to make it go away. The way it goes away is a permissive policy,
+-- which would hand every user the whole upload ledger — turning a clean lint
+-- report into the first real RLS hole in the schema. A future reader meeting
+-- INFO `rls_enabled_no_policy` here should leave it exactly as it is.
+--
+-- Nothing here changes a row, and both statements are idempotent by
+-- construction: re-running this file re-sets a setting and re-writes a
+-- comment. `tools/check-migrations.py` applies it twice.
+
+ALTER FUNCTION public.set_updated_at() SET search_path = '';
+
+COMMENT ON TABLE public.pending_uploads IS
+  'Objects uploaded but not yet claimed by an analyses row — the unclaimed-upload sweeper''s ledger. RLS is enabled with NO policies on purpose: this table is written and read only by the service role, which bypasses RLS, and the empty policy set is what denies it to anon and authenticated. Supabase''s linter reports this as INFO rls_enabled_no_policy on every run; that finding is expected and must not be "fixed" by adding a policy, which would expose every user''s pending uploads to every other user. See migration 020.';

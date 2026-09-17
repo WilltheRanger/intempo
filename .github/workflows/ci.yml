@@ -362,9 +362,9 @@ jobs:
   # hand to a Supabase project, one at a time, and the only evidence any of
   # them works is that somebody watched it. CLAUDE.md records what that costs:
   # 013, 014 and 015 sat unapplied for weeks while a defect they fix looked
-  # parked, and the project named `intempo` is *still* four behind
-  # `intempo-dev` — so the day it is unpaused, four migrations run in a row
-  # against production with nobody having seen them run in sequence anywhere.
+  # parked, and the **paused** project is *still* four behind the live one — so
+  # the day it is unpaused, four migrations run in a row against production
+  # with nobody having seen them run in sequence anywhere.
   #
   # This is the cheapest possible version of that day: apply all of them, in
   # order, to an empty database. `auth` and `storage` are stubbed, so it proves
