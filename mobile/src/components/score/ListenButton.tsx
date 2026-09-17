@@ -1,5 +1,6 @@
 import { Pause, Play } from '../icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { warmPlayback } from '../../lib/score/warmPlayback';
 import { useFocusEffect } from '@react-navigation/native';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
@@ -108,6 +109,25 @@ export function ListenButton({
       stop();
     }
   }, [disabled, stop]);
+
+  // **Fetch what Listen needs while the musician is still reading the page.**
+  // The tap used to be the first moment anything was downloaded: a 620 KB
+  // synthesiser chunk and a ~1 MB instrument bank, both between the press and
+  // the first note. The synthesis itself is not the cost — it runs 23–45x
+  // faster than real time — so moving the two downloads ahead of the press is
+  // the whole of it. See `warmPlayback`, which is idempotent, respects Data
+  // Saver, and cannot fail in a way the musician sees.
+  //
+  // Guarded on `disabled` so a screen that is showing the button but refusing
+  // it — no score, mid-recording — does not spend the bandwidth. The score
+  // condition repeats the early return below rather than sitting after it: a
+  // hook below an early return is React error #310, which this project has
+  // shipped before.
+  useEffect(() => {
+    if (!disabled && score && score.measures.length > 0) {
+      warmPlayback(instrument);
+    }
+  }, [disabled, instrument, score]);
 
   if (!score || score.measures.length === 0) {
     return null;
