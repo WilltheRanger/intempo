@@ -4,12 +4,12 @@
 
 | | |
 |---|---|
-| API | `https://intempo-api.onrender.com` (Render, free plan, Oregon) |
-| App | `https://idk-41z.pages.dev` (Cloudflare Pages) |
-| Database | Supabase project `<project-ref>` (`intempo-dev`) |
+| API | `https://YOUR-API.onrender.com` — the managed host, free plan. Real hostname in `LOCAL_NOTES.md`. |
+| App | `https://YOUR-PROJECT.pages.dev` (Cloudflare Pages). Real project and hostname in `LOCAL_NOTES.md`. |
+| Database | Supabase project `<project-ref>` — named in `LOCAL_NOTES.md`; `list_projects` also finds it |
 
 Use the plain Pages domain, not the per-deployment ones like
-`https://a16c6845.idk-41z.pages.dev`. Those are different origins and CORS
+`https://a16c6845.YOUR-PROJECT.pages.dev`. Those are different origins and CORS
 rejects them — which presents as a network error, not a permissions one.
 
 The app already calls this API. `POST /v1/scores` runs the whole OCR pipeline —

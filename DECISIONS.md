@@ -306,7 +306,7 @@ four per-weight package imports in `typography.ts`, and drop the check from
 ## 2026-09-13 — Stored objects cache for a year, and their signed URLs live a week
 
 **Context.** The owner asked to bring egress down by 4 GB. Measured on
-`intempo-dev` before changing anything: the whole corpus is **71 MB** — 25
+the live project before changing anything: the whole corpus is **71 MB** — 25
 score images (59 MB), 3 avatars, 6 takes. Four gigabytes out of seventy-one
 megabytes is not a file-size problem, it is the same bytes leaving repeatedly.
 
@@ -349,7 +349,7 @@ alternative is re-downloading the library on every view. `private` rather than
 
 **The 34 existing objects were backfilled the same day**, at the owner's
 request, by rewriting `storage.objects.metadata->>'cacheControl'` on
-`intempo-dev` — every one of them was uniformly `no-cache`, so the rollback is
+the live project — every one of them was uniformly `no-cache`, so the rollback is
 a single statement back to that value. The code change above governs new
 uploads; this covered everything already stored.
 
@@ -432,7 +432,7 @@ late costs a few megabytes for a few hours.
   "the upload this row was created from" even once the object behind it is gone.
 
 **Trade-offs accepted.** A nineteenth hand-applied migration, and one more
-blocking row on `/v1/ready`; the column was applied to `intempo-dev` the same
+blocking row on `/v1/ready`; the column was applied to the live project the same
 day. The recording endpoint's projection now names it, so a deployment that has
 the code and not the column answers 400 on playback rather than degrading —
 which is why it is on the readiness list rather than left to be noticed. And a

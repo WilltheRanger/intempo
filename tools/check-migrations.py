@@ -4,10 +4,11 @@
 **Nothing has ever checked that these files run.** They are applied by hand to
 a Supabase project, one at a time, and the only evidence any of them works is
 that somebody watched it. CLAUDE.md records what that costs: 013, 014 and 015
-sat unapplied for weeks while a defect they fix looked parked, and the project
-named `intempo` is *still* four behind `intempo-dev` — so the day it is
+sat unapplied for weeks while a defect they fix looked parked, and the
+**paused** project is *still* four behind the live one — so the day it is
 unpaused, four migrations run in a row against production with nobody having
-seen them run in sequence anywhere.
+seen them run in sequence anywhere. (Both are named in `LOCAL_NOTES.md`, which
+is not in the repository; `list_projects` distinguishes them by status.)
 
 This runs them in sequence. It is the cheapest possible version of that day.
 
