@@ -11,7 +11,7 @@ Nothing ever removed one. `pending_uploads` sweeps objects *nothing claimed*,
 and `POST /v1/scores` claims the page as it writes the row — correctly, and
 permanently. So a failed scan and its photograph stayed until the musician
 deleted the piece by hand, and nine of them sat in the owner's library for
-three weeks at 3–5 MB apiece (measured on `intempo-dev`, 2026-09-17: **31.7 MB**
+three weeks at 3–5 MB apiece (measured on the live project, 2026-09-17: **31.7 MB**
 across nine rows, on a tier where 1 GB is about four musicians).
 
 The shelf now offers *try again* and *discard* on the tile itself, which is the

@@ -4,7 +4,7 @@ A piece is written before its page is read, so a failed reading leaves a row
 with a title, no notation and a photograph — and nothing ever removed one.
 `pending_uploads` sweeps objects *nothing claimed*, and `POST /v1/scores` claims
 the page as it writes the row, so the object ends up claimed by a row that is
-finished with it and reachable by no cleanup at all. Measured on `intempo-dev`
+finished with it and reachable by no cleanup at all. Measured on the live project
 on 2026-09-17: nine such rows, the oldest three weeks old, 31.7 MB between them.
 
 These cases are about the sweep taking the right scans and — four times over —

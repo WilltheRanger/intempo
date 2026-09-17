@@ -963,10 +963,10 @@ actually made here.
   (`services/score_archive`, 2026-09-17). It is the same hole as the one below,
   one table along: `POST /v1/scores` claims the page as it writes the row, so
   the unclaimed-upload sweep can never see it, and nothing else ever deleted
-  one — 31.7 MB across nine rows on `intempo-dev` before this existed. No mark
-  and no migration, unlike `take_archive`: the row is what gets removed, so it
-  cannot be found twice. Rows with an `analyses` or `assignments` reference are
-  left alone, and a lookup that fails counts as a reference.
+  one — 31.7 MB across nine rows on the live project before this existed. No
+  mark and no migration, unlike `take_archive`: the row is what gets removed, so
+  it cannot be found twice. Rows with an `analyses` or `assignments` reference
+  are left alone, and a lookup that fails counts as a reference.
 
 - **Every object in these buckets has a row somewhere.** A `scores` row because
   it became a piece, an `analyses` row because it became a take, a

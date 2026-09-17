@@ -18,8 +18,9 @@ with no notes in it to find that.
 Nothing ever removed one either. `pending_uploads` sweeps objects *nothing
 claimed*, and `POST /v1/scores` claims the photograph as it writes the row —
 correctly and permanently — so the object ends up claimed by a row that is
-finished with it and reachable by no cleanup at all. Measured on `intempo-dev`:
-**31.7 MB across the nine**, on a tier where 1 GB is about four musicians.
+finished with it and reachable by no cleanup at all. Measured on the live
+project: **31.7 MB across the nine**, on a tier where 1 GB is about four
+musicians.
 
 **Decision.** Two halves, one for the musician and one for the ones they never
 come back to.
