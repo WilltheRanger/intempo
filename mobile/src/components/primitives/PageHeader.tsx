@@ -36,6 +36,20 @@ export interface PageHeaderProps {
   onBack?: () => void;
   /** Announced by screen readers, e.g. "Back to library". */
   backLabel?: string;
+  /**
+   * A smaller title, for a screen whose subject is not the words.
+   *
+   * `screenTitle` is 36pt and right for a screen the title names — Library,
+   * Insights, a verdict. The score reader is the case it is wrong for: the
+   * subject is the engraving, a real repertoire title runs to two or three
+   * lines at 36pt, and §3 law 4 allows one dominant focal point per screen.
+   * A title that big competes with the music it is the caption for.
+   *
+   * Deliberately two named steps of the existing scale rather than a free
+   * `variant`: the choice is "this screen's subject is the page, not its
+   * name", not an invitation to size a header per screen (§3 law 5).
+   */
+  titleSize?: 'screen' | 'hero';
 }
 
 /** The serif screen title, with an optional line of context above it. */
@@ -45,6 +59,7 @@ export function PageHeader({
   action,
   onBack,
   backLabel = 'Back',
+  titleSize = 'screen',
 }: PageHeaderProps) {
   return (
     <View style={styles.container}>
@@ -77,7 +92,10 @@ export function PageHeader({
         <View style={styles.titleRow}>
           {/* flex so a long title wraps instead of shoving the action off-screen. */}
           {title ? (
-            <Text variant="screenTitle" style={styles.title}>
+            <Text
+              variant={titleSize === 'hero' ? 'heroTitle' : 'screenTitle'}
+              style={styles.title}
+            >
               {title}
             </Text>
           ) : null}

@@ -1,5 +1,6 @@
 import { audioContext, resumeAudio } from './audio/context.web';
 import { prepareForPlayback } from './audio/session.web';
+import { listenFailure, startTimeout } from './score/listenFailure';
 import type { Schedule } from './score/schedule';
 import {
   DEFAULT_VOICE,
@@ -147,7 +148,12 @@ export function playSchedule(
               if (typeof document !== 'undefined' && document.hidden)
                 visibleSince = Date.now();
               if (Date.now() - visibleSince > START_TIMEOUT_MS) {
-                onError?.('Audio couldn’t start. Tap Listen to try again.');
+                onError?.(
+                  listenFailure(
+                    'starting',
+                    startTimeout(context.state, Date.now() - visibleSince),
+                  ),
+                );
                 finish();
                 return;
               }
@@ -341,9 +347,16 @@ export function playSchedule(
       startCheck = setTimeout(watchForStart, START_POLL_MS);
       return;
     }
-    // Nothing was heard, so ending is honest rather than a cut-off. The caller
-    // puts the button back and the next press builds a fresh schedule — which
-    // is what the musician was doing by hand, twice, to get sound out of it.
+    // **Ending is honest; ending in silence is not.** The caller puts the
+    // button back and the next press builds a fresh schedule — which is what
+    // the musician was doing by hand, twice, to get sound out of it. That is
+    // the behaviour this comment described and defended, and it left the one
+    // person who could report the fault with nothing to report: a control that
+    // resets itself and never says why reads as a control that does nothing.
+    // The sampled voice two hundred lines up has always said something here.
+    onError?.(
+      listenFailure('starting', startTimeout(context.state, Date.now() - visibleSince)),
+    );
     finish();
   }
 

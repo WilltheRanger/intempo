@@ -45,6 +45,39 @@ const ADVICE: Record<ListenStage, string> = {
 };
 
 /**
+ * The `starting` failure that is a **timeout rather than a throw**.
+ *
+ * **Why this is a function here and not a string at the call site.** The three
+ * places playback can fail to begin — the sampled voice, the synthesised one,
+ * and the native player — each had their own answer, and all three were wrong
+ * in the way this module was written to prevent. Two carried a hand-typed
+ * sentence that `listenFailure` never saw, so no cause was ever appended; the
+ * third reported **nothing at all** and simply put the button back. A real
+ * iPhone report on 2026-09-16 was one of the first kind, and it narrowed the
+ * cause to exactly nothing, which is the outcome the header of this file
+ * predicts in as many words.
+ *
+ * Nothing threw, so there is no browser message to keep. What there is
+ * instead is the **clock's own excuse**: an `AudioContext` that never advanced
+ * is in some state, and which state it is in separates causes that look
+ * identical on a screen. `suspended` is a resume being refused; `interrupted`
+ * is iOS taking the session away, which is a different bug with a different
+ * fix; `running` while `currentTime` stands still is neither, and would mean
+ * the clock rather than the session. Naming it costs one word and is the
+ * difference between the next report being worth something and being worth
+ * what this one was.
+ */
+export function startTimeout(state: string | undefined, waitedMs: number): Error {
+  const timeout = new Error(
+    `context ${state ?? 'unknown'} after ${Math.max(0, Math.round(waitedMs))}ms`,
+  );
+  // `causeOf` keeps both halves, and the name is the half that says this was a
+  // clock that never moved rather than something the engine objected to.
+  timeout.name = 'AudioStartTimeout';
+  return timeout;
+}
+
+/**
  * The sentence to show when Listen fails.
  *
  * @param stage how far it got — the three stages fail for different reasons
