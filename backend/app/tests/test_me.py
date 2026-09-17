@@ -885,7 +885,7 @@ def test_an_account_can_still_be_deleted_where_migration_014_never_ran(
 ) -> None:
     """A missing table must not make deletion impossible.
 
-    Migration 014 is applied on `intempo-dev` and not everywhere (CLAUDE.md),
+    Migration 014 is applied on the live project and not everywhere (CLAUDE.md),
     and a failed inventory aborts the deletion with a 503 — correctly, for a
     database that is down. "This deployment has no `pending_uploads`" is not
     that, and refusing to delete an account over it would be a worse bug than

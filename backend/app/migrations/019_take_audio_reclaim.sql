@@ -3,7 +3,7 @@
 -- =============================================================
 --
 -- **Recovered from the live project, and then caught up with.** This column
--- exists on `intempo-dev` and was applied on 2026-09-13 as
+-- exists on the live project and was applied on 2026-09-13 as
 -- `20260913024401 019_take_audio_reclaim`; for three days no file in this
 -- repository created it and nothing in the tree referenced it. The statements
 -- below are the ones the project actually ran, read back out of
@@ -27,7 +27,7 @@
 -- column.
 --
 -- 018 replaced a judged take's WAV with an Opus and deleted the original.
--- Measured on `intempo-dev` on 2026-09-13, that half works: both analyses that
+-- Measured on the live project on 2026-09-13, that half works: both analyses that
 -- have run since it shipped carry a `playback_key`, and neither of their WAVs
 -- is in the bucket.
 --

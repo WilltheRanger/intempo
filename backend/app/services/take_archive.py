@@ -48,7 +48,7 @@ cleanup at all: ~3 MB per failed take, for as long as takes fail.
 `sweep_unjudged_takes` is that path, on a day's delay and off the sweeper loop
 in `main`.
 
-Measured on `intempo-dev` on 2026-09-13 before writing any of it, because the
+Measured on the live project on 2026-09-13 before writing any of it, because the
 report this answers said the opposite: both analyses that have ever run under
 018 carry a `playback_key` and neither WAV is in the bucket — the judged path
 works. The four stray `.wav` there have no `analyses` row at all and predate

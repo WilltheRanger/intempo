@@ -12,6 +12,27 @@ is, and the section they point at is simply not public. They were deliberately
 not rewritten, for the reason §5 gives about pointers: touching fifteen files to
 fix one is how a documentation change becomes a diff nobody reviews.
 
+**`LOCAL_NOTES.md` is not in this repository either, and four passages below
+point at it.** It holds the *identities* this file used to name: which Supabase
+project is the live one, which Cloudflare Pages project is the live site, what
+hosts the backend, and the Actions-minutes history. It is gitignored, so it is
+on the owner's machine and **a session container does not have it** — the same
+situation as the `.env` files §4 describes, and going to look for it costs a
+search that ends in nothing.
+
+It was moved out on 2026-09-17, while assessing the repository for going
+public. None of it is a credential — no key, token or project ref is in it, and
+none has ever been committed here. It is a *map*: harmless alone, and a list of
+what to probe once the schema is published beside it.
+
+**Every passage that used to name one of those identities keeps its lesson and
+now says how to recover the fact with a tool instead** — `list_projects` for
+the live project, `get_workflow_run_usage` for the refusal, which Pages check
+takes real seconds to build. So a session without the file is slower, never
+blocked, and no rule here has had its subject deleted out from under it. That
+last part is the whole difficulty of moving anything out of this file, and §5
+is the standing argument about it.
+
 ## 1. Follow the developer procedures — every session, no exceptions
 
 These are the "Operating principles" and "Build-time activity logging"
@@ -64,10 +85,13 @@ then refused before a runner picks one up — **0 billable milliseconds** on all
 five, a run about five seconds long, log downloads 404ing because no log
 exists, and an empty check-run output. That is an account being refused
 compute, not broken YAML, which fails differently and produces both logs and
-billable time. The cause was exhausted minutes: `intempo` is a **private repo
-on a personal account**, so Actions minutes are billed (public repos are free
-and unlimited), and Free's 2,000 a month had reached 2,032. The owner upgraded
-to Pro (3,000) and run 831 executed the same day — the first since 2026-09-06.
+billable time. The cause both times was **exhausted Actions minutes**: this is
+a private repo on a personal account, so minutes are billed, where a public
+repo's are free and unlimited. The plan, the allowance and the run numbers are
+in `LOCAL_NOTES.md` — gitignored, so a session container does not have it; what
+a session needs is the signature above and the conclusion, which is that **no
+commit can repair this** and it is the owner's billing page. `get_workflow_run_usage`
+on the run is how you confirm it rather than guess: 0 billable ms is the tell.
 
 **Minutes are still finite**, and `app-walk` — two web builds, the walk, the
 devices and two accessibility sweeps — is most of the cost of a run. Preflight
@@ -92,10 +116,12 @@ rather than what was pushed.
 **Three of the four Cloudflare Pages checks on every PR are permanently red and
 are not yours.** `front`, `intempo` and `i` are abandoned projects still wired
 to this repo — `front` builds the `frontend/` tree deleted on 2026-09-09 — and
-they fail in zero seconds on every commit, including on `main`. The live site
-is the project named **`idk`** (`idk-41z.pages.dev`), and that is the only
-Pages check worth reading. Their build settings live in the Cloudflare
-dashboard, so no commit can repair them; deleting them is the owner's.
+they fail in zero seconds on every commit, including on `main`. **Exactly one
+of the four is the live site and the only one worth reading**; it is named in
+`LOCAL_NOTES.md`, and without that file you can still tell which: it is the one
+that takes real seconds to build and passes, where the abandoned three fail in
+zero. Their build settings live in the Cloudflare dashboard, so no commit can
+repair them; deleting them is the owner's.
 
 **The session container runs a Postgres, and the migrations gate had been
 skipped for want of it.** Every session read "no `DATABASE_URL`" as "there is
@@ -119,10 +145,13 @@ Supabase SQL editor" and nobody checked whether that was still the only route.
 **Before calling anything owner-blocked, check whether a tool in this session
 can do it.**
 
-The live project is the one named **`intempo-dev`** — both `.env` files point
-at it, and it is what `apply_migration` should target. `list_projects` gives its
-ref; it is deliberately not written down here. The project literally named
-`intempo` is paused and nothing points at it.
+**Which project is the live one matters, and more than one of them looks
+plausible** — including one whose name is exactly this repository's, which is
+paused and which nothing points at. Targeting that one would apply a migration
+to a database no deploy reads. The live project's name is in `LOCAL_NOTES.md`;
+`list_projects` is how you find it without that file, and the discriminator is
+`status: ACTIVE_HEALTHY` plus a schema `list_migrations` shows to be in step
+with `migrations/`. Neither the name nor the ref is written down here.
 
 **The rest of the operating principles:**
 
@@ -329,19 +358,21 @@ and absence is the safe direction; and `preflight.py --full`'s
 broken — but "the anon key is set in both `.env` files" reads like a file you
 can open, and you cannot.
 
-- **The schema** — *not blocked.* See §1. `intempo-dev` is fully in step with
-  the code as of 2026-09-09; every column and table `readiness.py` requires is
-  present.
+- **The schema** — *not blocked.* See §1. The live project was fully in step
+  with the code as of 2026-09-17; every column and table `readiness.py`
+  requires is present, and `list_migrations` is how you confirm that rather
+  than trusting this line.
 - **upload→OCR→save** — *not blocked on keys, and a session got this wrong on
   2026-09-11.* `SUPABASE_SERVICE_ROLE_KEY`, `ANTHROPIC_API_KEY` and
   `GEMINI_API_KEY` are empty in `backend/.env`, and that file is **this
   container's scratch configuration, not the deployment's**. The backend runs
-  on Render, which holds its own environment; the owner set those keys there,
-  and `GET /v1/ready` on the deployed API answered `"ready": true` with an
-  empty `blocking` list. **Ask the running service, never the local `.env`** —
-  `readiness.py` exists to be asked, and the session container's proxy may
-  refuse `onrender.com`, in which case say you could not check rather than
-  reading the file and calling it an answer. Same shape as the two mistakes in
+  on a managed host that holds its own environment — named with its URL in
+  `LOCAL_NOTES.md` — the owner set those keys there, and `GET /v1/ready` on the
+  deployed API answered `"ready": true` with an empty `blocking` list. **Ask
+  the running service, never the local `.env`** — `readiness.py` exists to be
+  asked, and the session container's proxy may refuse that host, in which case
+  say you could not check rather than reading the file and calling it an
+  answer. Same shape as the two mistakes in
   §1: before calling something unconfigured, check whether the thing that
   actually runs it is configured.
 - **Live magic-link auth** — the anon key *is* set in both `.env` files. What is

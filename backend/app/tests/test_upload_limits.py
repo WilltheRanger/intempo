@@ -147,7 +147,7 @@ def test_the_app_is_not_refusing_far_more_than_it_needs_to(
 def test_every_bucket_the_migration_limits_has_a_client_cap_or_is_named() -> None:
     """Discovered, so a *new* limited bucket is the thing that fails.
 
-    `avatars` is deliberately absent from 016 — measured on `intempo-dev`, its
+    `avatars` is deliberately absent from 016 — measured on the live project, its
     `file_size_limit` is null, which CLAUDE.md carries as an open item for the
     owner. It is not in this file because there is nothing to compare against;
     the moment 016 gives it a limit, this fails and asks for the app's side.

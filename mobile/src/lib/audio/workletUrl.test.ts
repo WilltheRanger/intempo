@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { resolveWorkletUrl, WORKLET_FILE, workletUrl } from './workletUrl';
 
-const ORIGIN = 'https://idk-41z.pages.dev';
+// A fixture host, not the deployment's. What this exercises is how a URL is
+// built from *an* origin and a route, and naming the live site here coupled a
+// unit test to a Cloudflare project that can be renamed or replaced.
+const ORIGIN = 'https://fixture-app.pages.dev';
 
 describe('workletUrl', () => {
   /**

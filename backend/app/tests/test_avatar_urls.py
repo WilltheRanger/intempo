@@ -1,6 +1,6 @@
 """The profile picture's URL is held still, because the URL is the cache key.
 
-Measured on `intempo-dev` on 2026-09-13: **51 downloads of one 176 kB avatar
+Measured on the live project on 2026-09-13: **51 downloads of one 176 kB avatar
 in 24 hours**, the most re-fetched object in the project. `/v1/me` signed a
 fresh URL on every response and the app calls it on every launch, profile view
 and session refresh — so the browser was handed a URL it had never seen each

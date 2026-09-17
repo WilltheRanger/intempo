@@ -994,7 +994,7 @@ actually made here.
   deployment predating the migration can be narrow — any other failure would
   already have aborted on the three queries above, and refusing to delete an
   account over a missing table is worse than the bug being fixed.
-  **Migration 014 is applied on `intempo-dev` and nowhere
+  **Migration 014 is applied on the live project and nowhere
   else** (2026-09-02, verified against `supabase_migrations`). The paused
   `intempo` project stopped at 012, so if it is ever unpaused as production the
   sweeper finds no `pending_uploads` table there and the hole is still open on

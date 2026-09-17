@@ -30,7 +30,7 @@
 -- and whoever that is must be free to run it again without remembering whether
 -- they already did. `test_readiness.py` enforces it.
 --
--- Applied to `intempo-dev` on 2026-09-09 via the Supabase MCP, having sat
+-- Applied to the live project on 2026-09-09 via the Supabase MCP, having sat
 -- unapplied for several sessions that each reported it as blocked on the owner.
 ALTER TABLE scores ADD COLUMN IF NOT EXISTS transcription_runs integer NOT NULL DEFAULT 0
   CHECK (transcription_runs >= 0);
