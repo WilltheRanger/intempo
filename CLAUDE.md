@@ -90,8 +90,19 @@ a private repo on a personal account, so minutes are billed, where a public
 repo's are free and unlimited. The plan, the allowance and the run numbers are
 in `LOCAL_NOTES.md` — gitignored, so a session container does not have it; what
 a session needs is the signature above and the conclusion, which is that **no
-commit can repair this** and it is the owner's billing page. `get_workflow_run_usage`
-on the run is how you confirm it rather than guess: 0 billable ms is the tell.
+commit can repair this** and it is the owner's billing page.
+
+**The discriminator is the duration, not the billable figure — and a previous
+version of this paragraph got that wrong.** It said "0 billable ms is the
+tell", which is false: `get_workflow_run_usage` on run 889, which *succeeded*
+and took 347 seconds, also reports 0 billable milliseconds on all five jobs.
+This repository's minutes do not appear through that field at all, so it cannot
+separate a refused run from a green one and the older text above lists it only
+as one marker among four. What separates them is `run_duration_ms` — about
+**5,000 for a refusal against about 347,000 for a real run** — and logs that
+404 because no log was ever written. Per-job minutes have to be *computed* from
+`list_workflow_jobs` timings, rounded up per job, rather than read off a
+billing number.
 
 **Minutes are still finite**, and `app-walk` — two web builds, the walk, the
 devices and two accessibility sweeps — is most of the cost of a run. Preflight

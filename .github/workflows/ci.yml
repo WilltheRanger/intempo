@@ -1,7 +1,16 @@
 name: CI
 
 on:
+  # **`ready_for_review` is here because a job below is gated on `draft`.**
+  # The default set is `opened`, `synchronize` and `reopened` — marking a draft
+  # ready is none of them, so without this line the expensive jobs would skip
+  # on every push to a draft and then never get a chance to run when it became
+  # ready. The pull request would show them as "not run", which on a merge
+  # button is indistinguishable from "passed". That is the failure this
+  # repository names more than any other, and it would have been built in by
+  # omission.
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
   # **Runnable on demand, for a commit that never got a run.** The two triggers
@@ -39,6 +48,83 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  # **What this push actually touched, so the two six-minute jobs can sit out
+  # the pushes that cannot affect them.**
+  #
+  # Measured before writing, from run 889 — the last run to execute before the
+  # minutes ran out — by computing per-job time from `list_workflow_jobs` and
+  # rounding each up, which is how Actions bills:
+  #
+  #     app-walk 5m43s -> 6    backend 5m09s -> 6    mobile 3m06s -> 4
+  #     repo-checks 38s -> 1   migrations 25s -> 1        total ~18
+  #
+  # A documentation-only push paid all eighteen. Several did, on the day this
+  # was written. Gating the two sixes takes that to six.
+  #
+  # **Only those two, deliberately.** `mobile-check` could be gated on the same
+  # evidence and is not: every extra `if:` is another way for a check to be
+  # absent when it was needed, and the first version of a mechanism like this
+  # should be the one whose failure modes can be held in the head. The saving
+  # from two jobs is twelve of the eighteen minutes.
+  #
+  # **No third-party action**, because `git diff` answers this and a filter
+  # action would be a supply-chain dependency in the file that decides whether
+  # this repository's checks run at all.
+  changes:
+    name: What changed
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      mobile: ${{ steps.filter.outputs.mobile }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Both sides of the comparison have to be present locally.
+          fetch-depth: 0
+
+      - name: Diff against the base
+        id: filter
+        env:
+          # Empty for `workflow_dispatch`, which is the "run everything" case.
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+
+          # **Anything unresolvable runs everything.** A first push to a branch
+          # has an all-zero `before`; a force-push can leave a base this clone
+          # does not have; `workflow_dispatch` has neither. Each of those is a
+          # question this job cannot answer, and the safe answer to "I do not
+          # know what changed" is "check all of it" — never "skip it".
+          if [ -z "${BASE}" ] || [ "${BASE}" = "0000000000000000000000000000000000000000" ] \
+             || ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
+            echo "base unresolvable (${BASE:-none}) — running everything"
+            echo "backend=true" >> "$GITHUB_OUTPUT"
+            echo "mobile=true"  >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          FILES="$(git diff --name-only "${BASE}" "${{ github.sha }}")"
+          echo "changed files:"
+          echo "${FILES}" | sed 's/^/  /'
+
+          # The workflow itself, the lockfiles and the shared Python tooling
+          # can change what any job does, so they count as touching both.
+          if echo "${FILES}" | grep -qE '^(\.github/workflows/|backend/(app|tests|pyproject\.toml|uv\.lock|Dockerfile)|tools/.*\.py|render\.yaml|docker-compose\.yml)'; then
+            BACKEND=true
+          else
+            BACKEND=false
+          fi
+          if echo "${FILES}" | grep -qE '^(\.github/workflows/|mobile/|tools/.*\.(mjs|js)|fixtures/)'; then
+            MOBILE=true
+          else
+            MOBILE=false
+          fi
+
+          echo "backend=${BACKEND}" >> "$GITHUB_OUTPUT"
+          echo "mobile=${MOBILE}"  >> "$GITHUB_OUTPUT"
+          echo "-> backend=${BACKEND} mobile=${MOBILE}"
+
   # Two checks that need nothing but Python and a checkout, so they share the
   # cheapest job in the file.
   #
@@ -89,6 +175,11 @@ jobs:
 
   backend-test:
     name: Backend tests (pytest)
+    needs: changes
+    # Always on `main` — a deploy is not the place to economise — and always
+    # when the diff reaches anything Python. `changes` answers `true` whenever
+    # it cannot tell.
+    if: github.ref == 'refs/heads/main' || needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -277,6 +368,15 @@ jobs:
   # exactly what both tools need.
   app-walk:
     name: App walk + accessibility
+    needs: changes
+    # The most expensive job in the file, and the one a draft pays for over and
+    # over. Always on `main`; on a pull request, only once it is out of draft
+    # and only when the diff reaches the app. `ready_for_review` is in the
+    # trigger list above precisely so marking a draft ready runs this.
+    if: >-
+      github.ref == 'refs/heads/main' ||
+      (needs.changes.outputs.mobile == 'true' &&
+       github.event.pull_request.draft != true)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
