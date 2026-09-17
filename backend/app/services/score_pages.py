@@ -67,3 +67,46 @@ def select_with_pages(query_for, columns: str):
             if index == len(PAGE_COLUMNS) - 1:
                 raise
     raise last  # pragma: no cover — the loop either returns or raises
+
+
+def page_keys(row: dict) -> list[str]:
+    """Every storage object this row owns, in page order.
+
+    One place, so accept, delete and the unreadable-scan sweep cannot disagree
+    about how much of a scan there is. A key that cannot be recovered from its
+    URL is skipped rather than guessed — `object_key_from` returns None for a
+    URL this deployment does not recognise, and deleting a guessed key is worse
+    than leaking one.
+
+    **Lives here rather than in `routers/scores`, where it was written.** It
+    moved on 2026-09-17 when `score_archive` became the third caller: a private
+    copy in a router is a copy, and this module exists precisely so that what a
+    row means by "its pages" has one answer.
+    """
+    from app.services.page_image import object_key_from
+
+    keys = []
+    for url in pages_of(row):
+        key = object_key_from(url or "")
+        if key is not None:
+            keys.append(key)
+    return keys
+
+
+def display_keys(row: dict) -> list[str]:
+    """The display-size copies of this row's pages, for deletion only.
+
+    **Separate from `page_keys` rather than folded into it**, and the reason is
+    that five callers read that list as "the pages": the first element is the
+    `page_image_key` a training correction is filed under, another compares it
+    against what a re-scan replaced. Returning photographs and derivatives
+    interleaved would have left every one of them subtly wrong while `keys[0]`
+    still happened to be a photograph — the worst kind of change, since nothing
+    would have failed.
+
+    Derived rather than stored, so this cannot fall out of step with what
+    `store_display_copy` writes: both go through `display_key_for`.
+    """
+    from app.services.page_image import display_key_for
+
+    return [display_key_for(key) for key in page_keys(row)]

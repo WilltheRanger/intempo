@@ -40,7 +40,12 @@ from app.services.audio_storage import InvalidAudioReference, owned_audio_key
 from app.services.buckets import AUDIO_BUCKET, SCORE_BUCKET
 from app.services.ocr.musicxml import MusicXMLError, score_json_from_musicxml
 from app.workers.dispatch import start_transcription
-from app.services.score_pages import pages_of, select_with_pages
+from app.services.score_pages import (
+    display_keys,
+    page_keys,
+    pages_of,
+    select_with_pages,
+)
 from app.services.score_schema import (
     Clef,
     ScoreJson,
@@ -62,7 +67,6 @@ from app.services.training import (
 # and a test or the concurrency probe swapping the signer out has one place to
 # do it rather than one per importer.
 from app.services import display_urls
-from app.services.page_image import display_key_for
 from app.services.page_image import object_key_from as _object_key_from
 
 router = APIRouter(prefix="/scores", tags=["scores"])
@@ -581,37 +585,11 @@ def _concern_kind(finding: MeasureFinding) -> str:
     return "beats"
 
 
-def _page_keys(row: dict[str, Any]) -> list[str]:
-    """Every storage object this row owns, in page order.
-
-    One place, so accept and delete cannot disagree about how much of a scan
-    there is. A key that cannot be recovered from its URL is skipped rather
-    than guessed — `_object_key_from` returns None for a URL this deployment
-    does not recognise, and deleting a guessed key is worse than leaking one.
-    """
-    keys = []
-    for url in pages_of(row):
-        key = _object_key_from(url or "")
-        if key is not None:
-            keys.append(key)
-    return keys
-
-
-def _display_keys(row: dict[str, Any]) -> list[str]:
-    """The display-size copies of this row's pages, for deletion only.
-
-    **Separate from `_page_keys` rather than folded into it**, and the reason is
-    that five callers read that list as "the pages": the first element is the
-    `page_image_key` a training correction is filed under, another compares it
-    against what a re-scan replaced. Returning photographs and derivatives
-    interleaved would have left every one of them subtly wrong while `keys[0]`
-    still happened to be a photograph — the worst kind of change, since nothing
-    would have failed.
-
-    Derived here rather than stored, so this cannot fall out of step with what
-    `store_display_copy` writes: both go through `display_key_for`.
-    """
-    return [display_key_for(key) for key in _page_keys(row)]
+#: Both moved to `services/score_pages` on 2026-09-17, when the sweep for
+#: unreadable scans became a third caller. The names stay private here so the
+#: eleven call sites below read as they always did.
+_page_keys = page_keys
+_display_keys = display_keys
 
 
 def _consents_to_training(user_id: UUID) -> bool:

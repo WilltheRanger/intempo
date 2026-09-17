@@ -302,11 +302,15 @@ export function useSetClef(id: string) {
  *
  * Invalidates rather than patching: the row goes back to `queued` and
  * `usePiece` starts polling again, which is the state the screen keys off.
+ *
+ * **The id is the mutation's argument, not the hook's**, because the library
+ * offers this from a shelf of tiles and a hook cannot be called per tile.
+ * `useDeletePiece` is shaped the same way and for the same reason.
  */
-export function useRetranscribe(id: string) {
+export function useRetranscribe() {
   const queryClient = useQueryClient();
-  return useMutation<void, Error, void>({
-    mutationFn: async () => {
+  return useMutation<void, Error, string>({
+    mutationFn: async (id) => {
       if (!IS_LIVE_BACKEND) {
         throw new Error(
           'Reading a page again needs the backend. This build runs on sample data.',

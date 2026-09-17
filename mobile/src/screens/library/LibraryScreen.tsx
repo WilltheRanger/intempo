@@ -13,8 +13,14 @@ import {
   SearchField,
   SectionHeader,
 } from '../../components/primitives';
+import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
+import { Text } from '../../components/primitives/Text';
 import { describeLoadError } from '../../data/api/describeError';
-import { useLibrary } from '../../data/hooks/usePieces';
+import {
+  useDeletePiece,
+  useLibrary,
+  useRetranscribe,
+} from '../../data/hooks/usePieces';
 import type { Piece } from '../../data/types';
 import { spacing } from '../../design';
 import { groupByRecency, searchLibrary } from '../../lib/library';
@@ -44,6 +50,28 @@ export function LibraryScreen() {
   );
 
   const [addSheetVisible, setAddSheetVisible] = useState(false);
+
+  /*
+    **The shelf can now act on a scan that failed**, which it could not before:
+    the only way out of a blank tile was to open the piece, open its score, and
+    find the retry there. Nine of them sat in the owner's library for three
+    weeks. See `lib/library/tileState` for what the tile says and why.
+  */
+  const readAgain = useRetranscribe();
+  const discard = useDeletePiece();
+  const [discarding, setDiscarding] = useState<Piece | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  // Whichever piece has something running. Read off the mutations rather than
+  // held in a third piece of state that could disagree with them.
+  const busyPieceId =
+    (readAgain.isPending ? readAgain.variables : undefined) ??
+    (discard.isPending ? discard.variables : undefined) ??
+    null;
+
+  function describe(cause: unknown): string {
+    return cause instanceof Error ? cause.message : 'That could not be done. Try again.';
+  }
 
   /**
    * Whether the search field is on screen.
@@ -105,6 +133,16 @@ export function LibraryScreen() {
         />
       ) : null}
 
+      {/*
+        The only thing on this screen that can fail without a screen of its
+        own. A tile's action is two words and has nowhere to put a sentence.
+      */}
+      {actionError ? (
+        <Text variant="metadataSmall" color="textSecondary" style={styles.actionError}>
+          {actionError}
+        </Text>
+      ) : null}
+
       <LibraryContent
         load={loadStateFor({
           isError: library.isError,
@@ -120,12 +158,50 @@ export function LibraryScreen() {
         onOpenPiece={(piece) =>
           navigation.navigate('PieceDetail', { pieceId: piece.id })
         }
+        busyPieceId={busyPieceId}
+        onReadAgain={(piece) => {
+          setActionError(null);
+          readAgain.mutate(piece.id, {
+            onError: (cause) => setActionError(describe(cause)),
+          });
+        }}
+        onDiscard={(piece) => {
+          setActionError(null);
+          setDiscarding(piece);
+        }}
       />
 
       <AddPieceSheet
         visible={addSheetVisible}
         onClose={() => setAddSheetVisible(false)}
         onSelect={handleSelectOption}
+      />
+
+      {/*
+        Asked, even though nothing was read from the page: the photograph is
+        the musician's and this throws it away. `PieceDetailScreen` asks before
+        the same deletion, and a shelf that did it on one tap would be the one
+        destructive action in the app that does not.
+      */}
+      <ConfirmDialog
+        visible={discarding !== null}
+        title="Discard this scan?"
+        message={
+          discarding
+            ? `${discarding.title} and the photograph of it will be permanently deleted. Nothing was read from the page.`
+            : ''
+        }
+        confirmLabel="Discard"
+        onConfirm={() => {
+          const piece = discarding;
+          setDiscarding(null);
+          if (piece) {
+            discard.mutate(piece.id, {
+              onError: (cause) => setActionError(describe(cause)),
+            });
+          }
+        }}
+        onCancel={() => setDiscarding(null)}
       />
     </ScreenContainer>
   );
@@ -143,6 +219,12 @@ interface LibraryContentProps {
   /** Fetch again after a failure — see the comment on the error state below. */
   onRetry: () => void;
   retrying: boolean;
+  /** Read the page again, for a tile whose scan failed. */
+  onReadAgain: (piece: Piece) => void;
+  /** Ask before throwing that scan away. */
+  onDiscard: (piece: Piece) => void;
+  /** The one piece with something running, if any. */
+  busyPieceId: string | null;
 }
 
 function LibraryContent({
@@ -155,6 +237,9 @@ function LibraryContent({
   onOpenPiece,
   onRetry,
   retrying,
+  onReadAgain,
+  onDiscard,
+  busyPieceId,
 }: LibraryContentProps) {
   if (load === 'loading') {
     return (
@@ -256,7 +341,13 @@ function LibraryContent({
               // The stagger runs across the whole screen rather than restarting
               // per group, so the tiles arrive as one sweep instead of four.
               <FadeIn key={piece.id} index={row++} style={styles.slot}>
-                <PieceTile piece={piece} onPress={() => onOpenPiece(piece)} />
+                <PieceTile
+                  piece={piece}
+                  onPress={() => onOpenPiece(piece)}
+                  onReadAgain={() => onReadAgain(piece)}
+                  onDiscard={() => onDiscard(piece)}
+                  busy={busyPieceId === piece.id}
+                />
               </FadeIn>
             ))}
             {group.pieces.length % 2 === 1 ? (
@@ -275,6 +366,9 @@ function countLabel(count: number, searching: boolean): string {
 }
 
 const styles = StyleSheet.create({
+  actionError: {
+    marginTop: spacing.md,
+  },
   actions: {
     flexDirection: 'row',
     gap: spacing.sm,

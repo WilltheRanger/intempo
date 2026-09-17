@@ -16,6 +16,7 @@ from app.workers.analysis_runner import (
 from app.services.ocr.pipeline import _default_chain, unknown_provider_names
 from app.services import pending_uploads
 from app.services import reading_rate
+from app.services import score_archive
 from app.services import take_archive
 from app.workers.transcription_runner import sweep_stuck_transcriptions
 
@@ -54,6 +55,13 @@ async def _sweep_periodically() -> None:
         # it and swept by nothing. The one path that deletes a WAV runs only
         # after a verdict is written. See `services/take_archive`.
         await asyncio.to_thread(take_archive.sweep_unjudged_takes)
+        # And the scans the reader could not read, which that sweep cannot see
+        # either: `POST /v1/scores` claims the photograph as it writes the row,
+        # so a reading that fails leaves a titled piece with no notation and a
+        # page nothing will ever remove. The shelf offers *try again* and
+        # *discard* on the tile; this is for the ones nobody goes back to. See
+        # `services/score_archive`.
+        await asyncio.to_thread(score_archive.sweep_unreadable_scans)
         # And the rate-limiter's memory of accounts that have stopped scanning.
         #
         # **This is the only caller, and for eleven days there was none.**

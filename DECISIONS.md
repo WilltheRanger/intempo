@@ -1,5 +1,67 @@
 # InTempo Decisions
 
+## 2026-09-17 — A scan that failed says so on the shelf, and a week later it sweeps itself
+
+**Context.** The owner's library held nine pieces with a title, no notation and
+a blank page-shaped tile. All nine were scans whose reading had failed — the
+oldest three weeks old — and on the shelf they were indistinguishable from a
+scan still in flight, from a piece typed in by hand, and from a piece whose
+backend predates the field. `PieceTile` draws the engraving when there is one
+and an empty box when there is not; the box said nothing about which of the four
+it was.
+
+The way out existed the whole time and nothing pointed at it: `PieceScoreScreen`
+has the failure sentence and a *try reading it again*, two screens down from the
+tile. A musician looking at a blank card has no reason to tap through a piece
+with no notes in it to find that.
+
+Nothing ever removed one either. `pending_uploads` sweeps objects *nothing
+claimed*, and `POST /v1/scores` claims the photograph as it writes the row —
+correctly and permanently — so the object ends up claimed by a row that is
+finished with it and reachable by no cleanup at all. Measured on `intempo-dev`:
+**31.7 MB across the nine**, on a tier where 1 GB is about four musicians.
+
+**Decision.** Two halves, one for the musician and one for the ones they never
+come back to.
+
+*The tile says which of the four it is, and carries the actions for the one that
+can be acted on.* `lib/library/tileState` is the rule — engraved, reading,
+unreadable, bare — and a tile it calls unreadable gets **Try again** and
+**Discard** under it, as type rather than as two more buttons: §3 law 6 reaches
+for typography first, and a shelf two tiles across has no room for a pair of
+pills under every failed scan. The re-read leads, because the photograph is
+usually fine and the reading is what failed — the order `PieceScoreScreen`
+already settled on.
+
+*A week later, `score_archive.sweep_unreadable_scans` takes what is left.*
+Photographs first, then the row, then only rows nothing else references.
+
+**Alternatives considered.** *Deleting on failure, server-side* — rejected: a
+reader having a bad minute would silently eat a page the musician had already
+put away, with no retry and no second chance. *Hiding failed scans from the
+library* — rejected: it makes the piece unreachable rather than fixable, and the
+photograph then has no owner on screen at all. *Never writing the row until the
+read succeeds* — rejected as the largest change for the least benefit: the row
+is written first on purpose, so a musician can leave the screen while the page
+is read. *A `swept_at` column and a mark, like `take_archive`* — unnecessary
+here, because the row is the thing being removed and cannot be found twice; that
+saved a migration, a readiness check and a column.
+
+**Trade accepted.** A week is a long time to keep 4 MB of a page nobody can
+read, and a day would have been tidier. The two waits are different: a take's
+day is how long a musician might want to hear a recording whose analysis failed,
+and they are looking at that screen when it happens; a failed scan is discovered
+later, and what it holds is a photograph of a page that may no longer be in
+front of them. The tile's *Discard* is the fast path for anyone who wants it
+sooner.
+
+**`page_keys` and `display_keys` moved out of `routers/scores`** into
+`services/score_pages`, unchanged, because the sweep became their third caller
+and a private copy in a router is a copy. That module exists precisely so that
+what a row means by "its pages" has one answer — a sweep that disagreed with the
+delete endpoint about how much of a scan there is would leave half of one behind,
+invisibly, since by then nothing points at either half.
+
 ## 2026-09-17 — The session lives in `localStorage` on web, and an unreadable store is not a sign-out
 
 **Context.** Sign-in failed intermittently and the report was "sometimes it

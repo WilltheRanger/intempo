@@ -948,6 +948,26 @@ actually made here.
   setting the scanner does not have and a file importer that refuses JPEGs. Its
   test asserted that *some* advice was given, which is how it survived. When
   writing an error, name a route that exists.
+- **A blank tile on the shelf has to say which kind of blank it is** (2026-09-17).
+  `PieceTile` draws the engraving when there is one and an empty page when there
+  is not, so a scan in flight, a scan that failed, a piece typed in by hand and
+  a piece whose backend predates the field were one silent rectangle. Nine
+  failed ones sat in the owner's library for three weeks, the way out of them
+  two screens down in `PieceScoreScreen`. The rule is `lib/library/tileState`
+  — four states, in a module because a rule inside a `.tsx` is a rule nothing
+  checks — and the unreadable one carries **Try again** and **Discard** on the
+  tile. Notation wins over status there, deliberately: a row can carry measures
+  and a stale `failed`, and a tile that hid real music behind an error would be
+  wrong about the only thing it is for.
+- **A failed scan is swept after a week, photographs first**
+  (`services/score_archive`, 2026-09-17). It is the same hole as the one below,
+  one table along: `POST /v1/scores` claims the page as it writes the row, so
+  the unclaimed-upload sweep can never see it, and nothing else ever deleted
+  one — 31.7 MB across nine rows on `intempo-dev` before this existed. No mark
+  and no migration, unlike `take_archive`: the row is what gets removed, so it
+  cannot be found twice. Rows with an `analyses` or `assignments` reference are
+  left alone, and a lookup that fails counts as a reference.
+
 - **Every object in these buckets has a row somewhere.** A `scores` row because
   it became a piece, an `analyses` row because it became a take, a
   `users.avatar_url` because it became a face, or a `pending_uploads` row
