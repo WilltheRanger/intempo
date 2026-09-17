@@ -15,12 +15,15 @@ import {
   Text,
 } from '../../components/primitives';
 import {
+  type AuthResult,
+  hasSession,
   requestPasswordReset,
   resendConfirmation,
   sendSignInLink,
   signIn,
   signUp,
 } from '../../data/auth/session';
+import { ATTEMPT_STALLED, settleAuthCall } from './authAttempt';
 import {
   clearAuthRedirectNotice,
   useAuthRedirectNotice,
@@ -123,54 +126,83 @@ export function AuthScreen({
     setBusy(true);
     setError(null);
     const address = email.trim();
-    try {
-      if (mode === 'reset') {
-        await requestPasswordReset(address);
-        setSent('reset');
-        return;
-      }
 
-      if (mode === 'magicLink') {
-        await sendSignInLink(address);
-        setSent('magicLink');
-        return;
-      }
+    // `settleAuthCall` rather than a bare `await`: Supabase throws out of a
+    // sign-in for things that happen *after* the session is granted, and
+    // nothing bounds how long the call may take. Both used to reach the
+    // musician as a form that had refused them. See `authAttempt.ts`.
+    const settled = await settleAuthCall<'reset' | 'magicLink' | AuthResult>({
+      run: () => {
+        if (mode === 'reset') {
+          return requestPasswordReset(address).then(() => 'reset' as const);
+        }
+        if (mode === 'magicLink') {
+          return sendSignInLink(address).then(() => 'magicLink' as const);
+        }
+        return mode === 'signIn'
+          ? signIn(address, password)
+          : signUp(address, password);
+      },
+      signedIn: hasSession,
+    });
+    setBusy(false);
 
-      const result =
-        mode === 'signIn'
-          ? await signIn(address, password)
-          : await signUp(address, password);
-
-      // A sign-up against a project that confirms addresses returns no
-      // session. Saying "welcome" here and then showing the form again would
-      // read as a failure; what actually happened is that mail is on its way.
-      if (result.awaitingConfirmation) {
-        // An address that already has an account lands here too, looking
-        // identical — Supabase withholds the difference on purpose. Promising
-        // a link that is never sent strands the musician, so this case gets
-        // its own message rather than the confirmation one.
-        setSent(result.possiblyAlreadyRegistered ? 'maybeExisting' : 'confirmation');
-        setPassword('');
-      }
-      // Otherwise the auth listener swaps this screen out. Nothing to do.
-    } catch (cause) {
-      setError(describeAuthError(cause));
-    } finally {
-      setBusy(false);
+    // Signed in despite the throw, or despite the wait: the auth listener has
+    // already replaced this screen, and an error under it would be a lie about
+    // the thing that just worked.
+    if (settled.kind === 'signedIn') {
+      return;
     }
+    if (settled.kind === 'stalled') {
+      setError(ATTEMPT_STALLED);
+      return;
+    }
+    if (settled.kind === 'failed') {
+      setError(describeAuthError(settled.error));
+      return;
+    }
+
+    const result = settled.value;
+    if (result === 'reset' || result === 'magicLink') {
+      setSent(result);
+      return;
+    }
+
+    // A sign-up against a project that confirms addresses returns no
+    // session. Saying "welcome" here and then showing the form again would
+    // read as a failure; what actually happened is that mail is on its way.
+    if (result.awaitingConfirmation) {
+      // An address that already has an account lands here too, looking
+      // identical — Supabase withholds the difference on purpose. Promising
+      // a link that is never sent strands the musician, so this case gets
+      // its own message rather than the confirmation one.
+      setSent(result.possiblyAlreadyRegistered ? 'maybeExisting' : 'confirmation');
+      setPassword('');
+    }
+    // Otherwise the auth listener swaps this screen out. Nothing to do.
   }
 
   async function resend() {
     setBusy(true);
     setError(null);
-    try {
-      await resendConfirmation(email.trim());
-      setResent(true);
-    } catch (cause) {
-      setError(describeAuthError(cause));
-    } finally {
-      setBusy(false);
+    // No `signedIn`: another confirmation mail either goes out or does not, and
+    // a session says nothing about which. The deadline is the point here — this
+    // button is the last thing a stranded musician has, and one that spins for
+    // ever is worse than one that says to try again.
+    const settled = await settleAuthCall({
+      run: () => resendConfirmation(email.trim()),
+    });
+    setBusy(false);
+
+    if (settled.kind === 'stalled') {
+      setError(ATTEMPT_STALLED);
+      return;
     }
+    if (settled.kind === 'failed') {
+      setError(describeAuthError(settled.error));
+      return;
+    }
+    setResent(true);
   }
 
   if (legalDocument) {

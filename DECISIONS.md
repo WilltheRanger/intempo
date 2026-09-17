@@ -1,5 +1,86 @@
 # InTempo Decisions
 
+## 2026-09-17 — The session lives in `localStorage` on web, and an unreadable store is not a sign-out
+
+**Context.** Sign-in failed intermittently and the report was "sometimes it
+doesn't work". The Supabase auth log settles what happened: three password
+grants for one address at 05:45:13, 05:45:17 and 05:45:25, every one answered
+`200` with a session, and the backend's first `/v1/me` at 05:45:26 — the server
+signed the musician in three times and the app took the third. Nothing in
+Supabase returned an error in the whole 24 hours, and the failing attempts sent
+no request to the backend at all.
+
+The chain is entirely client-side, and each link is defensible on its own:
+
+1. `supabase.auth.getSession()` holds nothing in memory — every call re-reads
+   the store (`GoTrueClient.__loadSession`).
+2. On web `AsyncStorage` is **IndexedDB** (`@react-native-async-storage`
+   3.x). Its adapter has no deadline on any call, and it caches the connection
+   promise process-wide, so one `open` that hesitates takes every later read
+   with it.
+3. `getAccessToken` returned `data.session?.access_token ?? null`, which makes
+   "the store could not answer" and "there is no session" the same value.
+4. `apiFetch` signs the musician out on a null token — deliberately, with a
+   written argument, and *before* it sends anything. Hence the silent backend
+   log and the freshly mounted, empty form.
+
+**What is measured and what is inferred.** The log facts are measured: three
+grants, three sessions, one backend request, no auth errors, an iPhone on iOS
+18.6. Every link above is a fact about code that can be read. What is *not*
+proven from here is which link gave way on the day — the container has no egress
+to either host, so none of it could be reproduced against the live stack. It
+does not need to be: every link is wrong on its own terms, and the fix is the
+same for all of them.
+
+**Decision.** Three changes, and the third is the one that generalises.
+
+*The web session goes in `localStorage`*, which is what Supabase uses when it
+is handed nothing. It is synchronous, it cannot stall, and a session is about
+four kilobytes against a five-megabyte budget. IndexedDB keeps the library
+cache, where the data is large and a failure costs a refetch.
+
+*A session read once is remembered*, and the memory copy answers when the store
+fails, or comes back empty for a key this page has written. The store still
+wins whenever it answers with something, so a sign-out or a refresh in another
+tab is seen rather than shadowed.
+
+*An unreadable store throws instead of returning null.* `getAccessToken` now
+raises `SessionUnreadableError` when the store has failed and produced nothing,
+and `apiFetch` answers that with the sentence it already had for a token read
+that timed out — never with a sign-out. This is the same distinction
+`backend/app/auth.py` draws one layer up, where a key server it cannot reach is
+a **503 and not a 401**, *because could not check is not the same as not
+valid*. The app had the rule on the server and not on the client.
+
+**Alternatives considered.** *Retrying the sign-in automatically* — rejected:
+it treats the symptom, and the second grant in the log shows it would have
+failed the same way. *Keeping IndexedDB and adding a deadline only* — a
+deadline alone turns a wedge into a null, which is the value that caused the
+harm; the memory copy is what makes the null honest. *Clearing the store and
+starting again on failure* — that signs out every musician whose store merely
+hiccuped, which is the bug wearing a different hat. *Moving the whole app's
+storage to `localStorage`* — rejected on size: the library cache is budgeted at
+two million characters, which is most of the origin's quota in WebKit, where
+those are UTF-16 bytes.
+
+**Trade accepted.** A write that fails is now silent, so a session can be live
+in the page and gone after a reload — signing in again beats not being able to
+sign in at all, and the app cannot tell the musician about it either way
+(`mobile/` has no logging facility, and that is deliberate). The memory copy can
+also outlive a sign-out performed in another tab; Supabase broadcasts that
+across tabs, and the first 401 clears it. And moving the web session between
+stores would have signed everyone out once, so `sessionStore` inherits what it
+finds in IndexedDB, once per key.
+
+**A sign-in that throws is no longer proof of failure.** Supabase saves the
+session and notifies its listeners *inside* `signInWithPassword`, and rethrows
+whatever a listener throws — so the screen could be told a sign-in failed over
+a session already on disk. `settleAuthCall` asks the session rather than the
+exception, and bounds the call so the button can never spin for ever;
+`isolatedListener` stops this app's own two listeners from being the thing that
+throws. Both are modules with tests, because a rule inside a `.tsx` is a rule
+nothing checks.
+
 ## 2026-09-16 — The record screen is the music, and the controls are a sheet over it
 
 **Context.** Record had the shape every settings screen has: a title, a column

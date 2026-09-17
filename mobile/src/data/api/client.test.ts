@@ -4,14 +4,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // others. `vi.hoisted` because `vi.mock`'s factory is lifted above the imports.
 const session = vi.hoisted(() => ({
   token: (): Promise<string | null> => Promise.resolve('token'),
+  signOuts: 0,
 }));
 
 vi.mock('../auth/session', () => ({
   getAccessToken: () => session.token(),
-  signOut: async () => {},
+  signOut: async () => {
+    session.signOuts += 1;
+  },
 }));
 
 import { ApiError, apiFetch, REQUEST_FAILED, SERVER_FAULT } from './client';
+import { SessionUnreadableError } from '../auth/sessionUnreadable';
 
 /**
  * The first request after a quiet period.
@@ -177,6 +181,27 @@ describe('a request that never settles', () => {
     const settled = expect(pending).rejects.toThrow(/could not read your session/i);
     await vi.advanceTimersByTimeAsync(11_000);
     await settled;
+  });
+
+  it('does not end a session over a store that could not answer', async () => {
+    // Measured 2026-09-17: Supabase granted three sessions in twelve seconds
+    // and the backend saw a request after the third. `getSession()` re-reads
+    // storage every time and reports a read it could not make as an empty one,
+    // and this is the line that used to turn that into a sign-out — before any
+    // request went out, which is why the server log had nothing to show.
+    session.signOuts = 0;
+    session.token = () => Promise.reject(new SessionUnreadableError());
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(new Response(JSON.stringify({ status: 'ok' }), { status: 200 })),
+      ),
+    );
+
+    await expect(apiFetch('/v1/scores')).rejects.toThrow(
+      /could not read your session/i,
+    );
+    expect(session.signOuts).toBe(0);
   });
 
   /**

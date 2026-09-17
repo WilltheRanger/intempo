@@ -1,8 +1,10 @@
 import 'react-native-url-polyfill/auto';
 
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
+
+import { sessionStore, sessionStoreDegraded } from './sessionStore';
+import { SessionUnreadableError } from './sessionUnreadable';
 
 import {
   authRedirectPayload,
@@ -31,7 +33,13 @@ export function getSupabaseClient(): SupabaseClient | null {
   if (!client) {
     client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       auth: {
-        storage: AsyncStorage,
+        /*
+         * Not `AsyncStorage` directly — see `sessionStore`. On web that is
+         * IndexedDB with no deadline on any call, and a read of it that
+         * hesitated is what signed musicians out of sessions the server had
+         * just granted (measured 2026-09-17).
+         */
+        storage: sessionStore,
         autoRefreshToken: true,
         persistSession: true,
         /*
@@ -368,12 +376,46 @@ export async function getSessionEmail(): Promise<string | null> {
   return data.session?.user?.email ?? null;
 }
 
-/** Current access token, or null when signed out or unconfigured. */
+/**
+ * Whether there is a session at all.
+ *
+ * Separate from `getSessionEmail`, which answers *who* — this answers
+ * *whether*, and it is asked on a path where a caller has just been handed an
+ * exception and needs to know whether to believe it. A null read is taken at
+ * face value here on purpose: this is the conservative half of
+ * `settleAuthCall`, where being wrong costs a retry rather than an account.
+ */
+export async function hasSession(): Promise<boolean> {
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return false;
+  }
+  const { data } = await supabase.auth.getSession();
+  return Boolean(data.session);
+}
+
+/**
+ * Current access token, or null when signed out or unconfigured.
+ *
+ * **Null means signed out and nothing else.** `supabase.auth.getSession()`
+ * re-reads the store on every call and answers a failed read the same way it
+ * answers an empty one, so a store that hesitated used to arrive here as a
+ * missing session and leave as a sign-out. `sessionStore` keeps that from
+ * happening where it can; where it cannot, this throws instead of lying.
+ *
+ * The same distinction the backend draws one layer up: `app/auth.py` answers
+ * 503 rather than 401 when it cannot reach the key server, *because could not
+ * check is not the same as not valid*.
+ */
 export async function getAccessToken(): Promise<string | null> {
   const supabase = getSupabaseClient();
   if (!supabase) {
     return null;
   }
   const { data } = await supabase.auth.getSession();
-  return data.session?.access_token ?? null;
+  const token = data.session?.access_token ?? null;
+  if (token === null && sessionStoreDegraded()) {
+    throw new SessionUnreadableError();
+  }
+  return token;
 }

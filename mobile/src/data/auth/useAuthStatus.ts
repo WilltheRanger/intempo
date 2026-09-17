@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Linking, Platform } from 'react-native';
 
 import { IS_LIVE_BACKEND } from '../environment';
+import { isolatedListener } from './isolatedListener';
 import { setAuthRedirectNotice } from './redirectNotice';
 import { consumeAuthRedirect, getSupabaseClient } from './session';
 
@@ -77,29 +78,34 @@ export function useAuthStatus(): AuthStatus {
       );
     });
 
-    const { data } = supabase.auth.onAuthStateChange((event, session) => {
-      if (!session) {
-        setStatus('signedOut');
-        return;
-      }
-      // Any real session resolves an earlier dead-link notice, including a
-      // password sign-in that the musician uses instead of requesting mail.
-      setAuthRedirectNotice(null);
-      if (event === 'PASSWORD_RECOVERY') {
-        setStatus('recovering');
-        return;
-      }
-      // `USER_UPDATED` is what arrives when the new password is saved, which is
-      // the moment recovery is finished. Every other event with a session —
-      // including the token refreshes that keep arriving while the set-password
-      // screen is open — must not knock us out of `recovering` early, or the
-      // screen vanishes mid-typing.
-      setStatus((current) =>
-        current === 'recovering' && event !== 'USER_UPDATED'
-          ? 'recovering'
-          : 'signedIn',
-      );
-    });
+    // `isolatedListener`, because auth-js rethrows whatever a listener throws
+    // out of the call that notified it — and the call that notifies this one is
+    // the musician's sign-in.
+    const { data } = supabase.auth.onAuthStateChange(
+      isolatedListener((event, session) => {
+        if (!session) {
+          setStatus('signedOut');
+          return;
+        }
+        // Any real session resolves an earlier dead-link notice, including a
+        // password sign-in that the musician uses instead of requesting mail.
+        setAuthRedirectNotice(null);
+        if (event === 'PASSWORD_RECOVERY') {
+          setStatus('recovering');
+          return;
+        }
+        // `USER_UPDATED` is what arrives when the new password is saved, which
+        // is the moment recovery is finished. Every other event with a session
+        // — including the token refreshes that keep arriving while the
+        // set-password screen is open — must not knock us out of `recovering`
+        // early, or the screen vanishes mid-typing.
+        setStatus((current) =>
+          current === 'recovering' && event !== 'USER_UPDATED'
+            ? 'recovering'
+            : 'signedIn',
+        );
+      }),
+    );
 
     // auth-js reads callback tokens from `window.location` on web. Native
     // receives the same link through Linking, and detectSessionInUrl is off
