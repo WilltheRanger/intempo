@@ -41,10 +41,18 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v4
+      # **These three are pinned to the same majors as `ci.yml`, and on
+      # 2026-09-18 all three moved together.** They used to be `checkout@v4`,
+      # `setup-python@v5` and `setup-uv@v3`, all declaring `using: node20`,
+      # which the runner was forcing onto node24 and warning about on every
+      # run. Two files carry action pins in this repository and a bump that
+      # touches one of them leaves the other quietly deprecated, so they are
+      # audited as a pair. `ci.yml` has the reasoning, including why `setup-uv`
+      # stops at `v7` when that project's newest release is v10.
+      - uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -58,7 +66,7 @@ jobs:
       # CI checks these too, on the same push. This is here because CI going
       # red does not stop this job — only this does.
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@v7
         with:
           version: "0.11.7"
           enable-cache: true
