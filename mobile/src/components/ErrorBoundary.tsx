@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
+import * as Sentry from '@sentry/react-native';
 
 import { colors, spacing } from '../design';
 import { PrimaryButton } from './primitives/PrimaryButton';
@@ -39,6 +40,11 @@ export class ErrorBoundary extends Component<
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
+    if (!__DEV__ && process.env.EXPO_PUBLIC_SENTRY_DSN) {
+      Sentry.captureException(error, {
+        contexts: { react: { componentStack: info.componentStack } },
+      });
+    }
     // The only place this is recorded today. When crash reporting is wired up,
     // it reports from here.
     //

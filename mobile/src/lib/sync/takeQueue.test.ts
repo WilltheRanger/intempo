@@ -81,6 +81,7 @@ const T0 = 1_770_000_000_000;
 
 function aTake(overrides: Partial<NewTake> = {}): NewTake {
   return {
+    accountId: 'account-a',
     scoreId: 'score-1',
     targetBpm: 92,
     metronomeMode: 'off',

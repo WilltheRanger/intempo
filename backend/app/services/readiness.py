@@ -783,6 +783,25 @@ def _schema_checks(client) -> list[Check]:
     return checks
 
 
+def _client_grants_check(client) -> Check:
+    """Whether migration 021 closed direct client writes to protected rows."""
+    try:
+        response = client.rpc("client_update_grants_closed").execute()
+        closed = response.data is True
+    except Exception as exc:  # noqa: BLE001 — missing RPC is an unapplied migration
+        log.warning("readiness: client grant check unavailable: %s", type(exc).__name__)
+        closed = False
+    return Check(
+        name="security:client_update_grants",
+        ok=closed,
+        detail=(
+            "Client UPDATE grants on users or assignments are unverified or open. "
+            "Apply backend/app/migrations/021_restrict_client_updates.sql and "
+            "check the live database grants before serving this API build."
+        ),
+    )
+
+
 def _storage_checks(client) -> list[Check]:
     """That the worker will fetch anything the bucket agreed to hold.
 
@@ -900,6 +919,7 @@ def check() -> Readiness:
         return result
 
     result.checks.extend(_schema_checks(client))
+    result.checks.append(_client_grants_check(client))
     result.checks.extend(_storage_checks(client))
     return result
 

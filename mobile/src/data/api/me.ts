@@ -1,5 +1,6 @@
 import type { Instrument, MeResponse } from '../types';
 import { apiFetch } from './client';
+import { parseMe } from './responseSchemas';
 
 /**
  * GET /v1/me
@@ -9,7 +10,7 @@ import { apiFetch } from './client';
  * `/v1/scores` first fails with a foreign-key error (recorded in EDIT_LOG.md).
  */
 export function getMe(): Promise<MeResponse> {
-  return apiFetch<MeResponse>('/v1/me');
+  return apiFetch<unknown>('/v1/me').then(parseMe);
 }
 
 export interface UpdateMeInput {
@@ -43,5 +44,5 @@ export interface UpdateMeInput {
 
 /** PATCH /v1/me — at least one field required. */
 export function updateMe(input: UpdateMeInput): Promise<MeResponse> {
-  return apiFetch<MeResponse>('/v1/me', { method: 'PATCH', body: input });
+  return apiFetch<unknown>('/v1/me', { method: 'PATCH', body: input }).then(parseMe);
 }

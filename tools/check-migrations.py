@@ -100,6 +100,21 @@ def _apply(dsn: str, path: Path, label: str) -> tuple[bool, str]:
     return False, f"{label}\n{result.stderr.strip()}"
 
 
+def _simulate_client_grants(dsn: str) -> tuple[bool, str]:
+    """Recreate the permissive grants a live Supabase project may carry."""
+    sql = (
+        "GRANT UPDATE ON public.users, public.assignments TO authenticated; "
+        "GRANT UPDATE (tier) ON public.users TO anon; "
+        "GRANT UPDATE (status) ON public.assignments TO anon;"
+    )
+    result = subprocess.run(
+        ["psql", dsn, "-v", "ON_ERROR_STOP=1", "-q", "-c", sql],
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0, result.stderr.strip()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dsn", default=os.getenv("DATABASE_URL", ""))
@@ -129,7 +144,12 @@ def main() -> int:
         return 1
     print("  ok    supabase stubs (auth, storage)")
 
-    for _, path in migrations:
+    for number, path in migrations:
+        if number == 21:
+            ok, message = _simulate_client_grants(args.dsn)
+            if not ok:
+                print(f"\nFAIL  simulated client grants\n{message}", file=sys.stderr)
+                return 1
         ok, message = _apply(args.dsn, path, path.name)
         if not ok:
             print(f"\nFAIL  {message}", file=sys.stderr)

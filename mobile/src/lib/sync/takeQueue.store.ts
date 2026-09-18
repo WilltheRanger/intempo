@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Directory, File, Paths } from 'expo-file-system';
 
-import type { QueuedTake, TakeStore } from './takeQueue';
+import { load, type QueuedTake, type TakeStore } from './takeQueue';
 
 /**
  * Where a queued take actually lives on the device.
@@ -25,54 +25,75 @@ import type { QueuedTake, TakeStore } from './takeQueue';
  * in-memory take it has always had. Degraded, never wrong.
  */
 
-const ENTRIES_KEY = 'intempo.take-queue.v1';
-
-/** One directory, so a sweep of orphaned bytes is a listing rather than a guess. */
+/** V1 has no owner. Leave it inert rather than assigning its WAV to the next login. */
 const FOLDER = 'queued-takes';
 
-function folder(): Directory {
-  return new Directory(Paths.document, FOLDER);
+function accountKey(accountId: string): string {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(accountId)) {
+    throw new Error('Invalid account ID');
+  }
+  return `intempo.take-queue.v2.${accountId}`;
 }
 
-function fileFor(name: string): File {
-  return new File(folder(), name);
+export function deviceTakeStoreFor(accountId: string): TakeStore {
+  const entriesKey = accountKey(accountId);
+  const folder = () => new Directory(Paths.document, FOLDER, accountId);
+  const fileFor = (name: string) => {
+    if (!/^[a-zA-Z0-9_.-]+\.wav$/.test(name)) {
+      throw new Error('Invalid queued audio name');
+    }
+    return new File(folder(), name);
+  };
+
+  return {
+    async read() {
+      const raw = await AsyncStorage.getItem(entriesKey);
+      return raw ? (JSON.parse(raw) as unknown) : null;
+    },
+
+    async write(items: QueuedTake[]) {
+      if (items.some((item) => item.accountId !== accountId)) {
+        throw new Error('Queued take belongs to another account');
+      }
+      await AsyncStorage.setItem(entriesKey, JSON.stringify(items));
+    },
+
+    async putAudio(name: string, audio: Blob) {
+      const directory = folder();
+      if (!directory.exists) {
+        directory.create({ intermediates: true });
+      }
+      const target = fileFor(name);
+      target.create({ overwrite: true });
+      target.write(new Uint8Array(await audio.arrayBuffer()));
+    },
+
+    async getAudio(name: string) {
+      // Resolved here, from a name — never from a stored path. iOS rotates the
+      // container directory on update, so yesterday's absolute path is gone
+      // after a release and every queued take with it.
+      const source = fileFor(name);
+      if (!source.exists) {
+        return null;
+      }
+      return new Blob([await source.bytes()], { type: 'audio/wav' });
+    },
+
+    async deleteAudio(name: string) {
+      const target = fileFor(name);
+      if (target.exists) {
+        target.delete();
+      }
+    },
+  };
 }
 
-export const deviceTakeStore: TakeStore = {
-  async read() {
-    const raw = await AsyncStorage.getItem(ENTRIES_KEY);
-    return raw ? (JSON.parse(raw) as unknown) : null;
-  },
-
-  async write(items: QueuedTake[]) {
-    await AsyncStorage.setItem(ENTRIES_KEY, JSON.stringify(items));
-  },
-
-  async putAudio(name: string, audio: Blob) {
-    const directory = folder();
-    if (!directory.exists) {
-      directory.create({ intermediates: true });
-    }
-    const target = fileFor(name);
-    target.create({ overwrite: true });
-    target.write(new Uint8Array(await audio.arrayBuffer()));
-  },
-
-  async getAudio(name: string) {
-    // Resolved here, from a name — never from a stored path. iOS rotates the
-    // container directory on update, so yesterday's absolute path is gone
-    // after a release and every queued take with it.
-    const source = fileFor(name);
-    if (!source.exists) {
-      return null;
-    }
-    return new Blob([await source.bytes()], { type: 'audio/wav' });
-  },
-
-  async deleteAudio(name: string) {
-    const target = fileFor(name);
-    if (target.exists) {
-      target.delete();
-    }
-  },
-};
+/** Delete only the account whose server-side identity was removed. */
+export async function deleteAccountTakes(accountId: string): Promise<void> {
+  const store = deviceTakeStoreFor(accountId);
+  const { takes } = await load(store);
+  await AsyncStorage.removeItem(accountKey(accountId));
+  for (const take of takes) {
+    await store.deleteAudio(take.audioName);
+  }
+}
