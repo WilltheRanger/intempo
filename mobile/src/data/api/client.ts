@@ -1,4 +1,5 @@
 import { getAccessToken, signOut } from '../auth/session';
+import { SessionUnreadableError } from '../auth/sessionUnreadable';
 
 /**
  * What the musician is told when the session is the problem.
@@ -106,7 +107,16 @@ export async function apiFetch<T>(
         getAccessToken(),
         TOKEN_TIMEOUT_MS,
         () => new ApiError(0, path, SESSION_UNREADABLE),
-      ),
+      ).catch((cause) => {
+        // A store that could not answer, rather than one that answered with
+        // nothing. Same sentence as the deadline above and the same refusal to
+        // sign anyone out: the session may be perfectly good and merely
+        // unreachable, and the branch below would end it on that evidence.
+        if (cause instanceof SessionUnreadableError) {
+          throw new ApiError(0, path, SESSION_UNREADABLE);
+        }
+        throw cause;
+      }),
     ]);
     // No token means the session is gone — expired past refresh, or signed out
     // in another tab. Sending the request anyway is what this used to do, and

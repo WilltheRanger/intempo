@@ -36,6 +36,11 @@ vi.mock('react-native', () => ({ Platform: { get OS() { return platformOS; } } }
 // Same stand-in `authRedirect.test.ts` uses: `expo-linking` drags in
 // `expo-modules-core`, which reads `__DEV__` at import.
 vi.mock('expo-linking', () => ({ createURL: (path: string) => `intempo://${path}` }));
+let storeDegraded = false;
+vi.mock('./sessionStore', () => ({
+  sessionStore: {},
+  sessionStoreDegraded: () => storeDegraded,
+}));
 vi.mock('@supabase/supabase-js', () => ({
   createClient: (...args: unknown[]) => {
     createdWith.push(args);
@@ -49,6 +54,7 @@ async function load({
   os = 'ios',
 }: { configured?: boolean; os?: string } = {}) {
   vi.resetModules();
+  storeDegraded = false;
   platformOS = os;
   process.env.EXPO_PUBLIC_SUPABASE_URL = configured ? 'https://stub.supabase.co' : '';
   process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY = configured ? 'anon-key' : '';
@@ -305,6 +311,29 @@ describe('who is signed in', () => {
 
     auth.getSession.mockResolvedValue({ data: { session: null } });
     expect(await getAccessToken()).toBeNull();
+  });
+
+  it('refuses to call an unreadable store a sign-out', async () => {
+    // The 2026-09-17 failure in one assertion. `getSession()` re-reads storage
+    // on every call and answers a read it could not make exactly as it answers
+    // an empty one — and `apiFetch` ends the session on that answer, before it
+    // sends anything. Null here has to mean signed out and nothing else.
+    const { getAccessToken } = await load();
+    const { SessionUnreadableError } = await import('./sessionUnreadable');
+    auth.getSession.mockResolvedValue({ data: { session: null } });
+    storeDegraded = true;
+
+    await expect(getAccessToken()).rejects.toBeInstanceOf(SessionUnreadableError);
+  });
+
+  it('still answers with the token when the store has merely stumbled', async () => {
+    // Degraded is not a refusal: a store that failed once and then produced a
+    // session has produced a session.
+    const { getAccessToken } = await load();
+    auth.getSession.mockResolvedValue({ data: { session: { access_token: 'tok' } } });
+    storeDegraded = true;
+
+    expect(await getAccessToken()).toBe('tok');
   });
 
   it('takes an OAuth avatar from either field providers use', async () => {

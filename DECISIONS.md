@@ -1,5 +1,149 @@
 # InTempo Decisions
 
+## 2026-09-17 — A scan that failed says so on the shelf, and a week later it sweeps itself
+
+**Context.** The owner's library held nine pieces with a title, no notation and
+a blank page-shaped tile. All nine were scans whose reading had failed — the
+oldest three weeks old — and on the shelf they were indistinguishable from a
+scan still in flight, from a piece typed in by hand, and from a piece whose
+backend predates the field. `PieceTile` draws the engraving when there is one
+and an empty box when there is not; the box said nothing about which of the four
+it was.
+
+The way out existed the whole time and nothing pointed at it: `PieceScoreScreen`
+has the failure sentence and a *try reading it again*, two screens down from the
+tile. A musician looking at a blank card has no reason to tap through a piece
+with no notes in it to find that.
+
+Nothing ever removed one either. `pending_uploads` sweeps objects *nothing
+claimed*, and `POST /v1/scores` claims the photograph as it writes the row —
+correctly and permanently — so the object ends up claimed by a row that is
+finished with it and reachable by no cleanup at all. Measured on the live
+project: **31.7 MB across the nine**, on a tier where 1 GB is about four
+musicians.
+
+**Decision.** Two halves, one for the musician and one for the ones they never
+come back to.
+
+*The tile says which of the four it is, and carries the actions for the one that
+can be acted on.* `lib/library/tileState` is the rule — engraved, reading,
+unreadable, bare — and a tile it calls unreadable gets **Try again** and
+**Discard** under it, as type rather than as two more buttons: §3 law 6 reaches
+for typography first, and a shelf two tiles across has no room for a pair of
+pills under every failed scan. The re-read leads, because the photograph is
+usually fine and the reading is what failed — the order `PieceScoreScreen`
+already settled on.
+
+*A week later, `score_archive.sweep_unreadable_scans` takes what is left.*
+Photographs first, then the row, then only rows nothing else references.
+
+**Alternatives considered.** *Deleting on failure, server-side* — rejected: a
+reader having a bad minute would silently eat a page the musician had already
+put away, with no retry and no second chance. *Hiding failed scans from the
+library* — rejected: it makes the piece unreachable rather than fixable, and the
+photograph then has no owner on screen at all. *Never writing the row until the
+read succeeds* — rejected as the largest change for the least benefit: the row
+is written first on purpose, so a musician can leave the screen while the page
+is read. *A `swept_at` column and a mark, like `take_archive`* — unnecessary
+here, because the row is the thing being removed and cannot be found twice; that
+saved a migration, a readiness check and a column.
+
+**Trade accepted.** A week is a long time to keep 4 MB of a page nobody can
+read, and a day would have been tidier. The two waits are different: a take's
+day is how long a musician might want to hear a recording whose analysis failed,
+and they are looking at that screen when it happens; a failed scan is discovered
+later, and what it holds is a photograph of a page that may no longer be in
+front of them. The tile's *Discard* is the fast path for anyone who wants it
+sooner.
+
+**`page_keys` and `display_keys` moved out of `routers/scores`** into
+`services/score_pages`, unchanged, because the sweep became their third caller
+and a private copy in a router is a copy. That module exists precisely so that
+what a row means by "its pages" has one answer — a sweep that disagreed with the
+delete endpoint about how much of a scan there is would leave half of one behind,
+invisibly, since by then nothing points at either half.
+
+## 2026-09-17 — The session lives in `localStorage` on web, and an unreadable store is not a sign-out
+
+**Context.** Sign-in failed intermittently and the report was "sometimes it
+doesn't work". The Supabase auth log settles what happened: three password
+grants for one address at 05:45:13, 05:45:17 and 05:45:25, every one answered
+`200` with a session, and the backend's first `/v1/me` at 05:45:26 — the server
+signed the musician in three times and the app took the third. Nothing in
+Supabase returned an error in the whole 24 hours, and the failing attempts sent
+no request to the backend at all.
+
+The chain is entirely client-side, and each link is defensible on its own:
+
+1. `supabase.auth.getSession()` holds nothing in memory — every call re-reads
+   the store (`GoTrueClient.__loadSession`).
+2. On web `AsyncStorage` is **IndexedDB** (`@react-native-async-storage`
+   3.x). Its adapter has no deadline on any call, and it caches the connection
+   promise process-wide, so one `open` that hesitates takes every later read
+   with it.
+3. `getAccessToken` returned `data.session?.access_token ?? null`, which makes
+   "the store could not answer" and "there is no session" the same value.
+4. `apiFetch` signs the musician out on a null token — deliberately, with a
+   written argument, and *before* it sends anything. Hence the silent backend
+   log and the freshly mounted, empty form.
+
+**What is measured and what is inferred.** The log facts are measured: three
+grants, three sessions, one backend request, no auth errors, an iPhone on iOS
+18.6. Every link above is a fact about code that can be read. What is *not*
+proven from here is which link gave way on the day — the container has no egress
+to either host, so none of it could be reproduced against the live stack. It
+does not need to be: every link is wrong on its own terms, and the fix is the
+same for all of them.
+
+**Decision.** Three changes, and the third is the one that generalises.
+
+*The web session goes in `localStorage`*, which is what Supabase uses when it
+is handed nothing. It is synchronous, it cannot stall, and a session is about
+four kilobytes against a five-megabyte budget. IndexedDB keeps the library
+cache, where the data is large and a failure costs a refetch.
+
+*A session read once is remembered*, and the memory copy answers when the store
+fails, or comes back empty for a key this page has written. The store still
+wins whenever it answers with something, so a sign-out or a refresh in another
+tab is seen rather than shadowed.
+
+*An unreadable store throws instead of returning null.* `getAccessToken` now
+raises `SessionUnreadableError` when the store has failed and produced nothing,
+and `apiFetch` answers that with the sentence it already had for a token read
+that timed out — never with a sign-out. This is the same distinction
+`backend/app/auth.py` draws one layer up, where a key server it cannot reach is
+a **503 and not a 401**, *because could not check is not the same as not
+valid*. The app had the rule on the server and not on the client.
+
+**Alternatives considered.** *Retrying the sign-in automatically* — rejected:
+it treats the symptom, and the second grant in the log shows it would have
+failed the same way. *Keeping IndexedDB and adding a deadline only* — a
+deadline alone turns a wedge into a null, which is the value that caused the
+harm; the memory copy is what makes the null honest. *Clearing the store and
+starting again on failure* — that signs out every musician whose store merely
+hiccuped, which is the bug wearing a different hat. *Moving the whole app's
+storage to `localStorage`* — rejected on size: the library cache is budgeted at
+two million characters, which is most of the origin's quota in WebKit, where
+those are UTF-16 bytes.
+
+**Trade accepted.** A write that fails is now silent, so a session can be live
+in the page and gone after a reload — signing in again beats not being able to
+sign in at all, and the app cannot tell the musician about it either way
+(`mobile/` has no logging facility, and that is deliberate). The memory copy can
+also outlive a sign-out performed in another tab; Supabase broadcasts that
+across tabs, and the first 401 clears it. And moving the web session between
+stores would have signed everyone out once, so `sessionStore` inherits what it
+finds in IndexedDB, once per key.
+
+**A sign-in that throws is no longer proof of failure.** Supabase saves the
+session and notifies its listeners *inside* `signInWithPassword`, and rethrows
+whatever a listener throws — so the screen could be told a sign-in failed over
+a session already on disk. `settleAuthCall` asks the session rather than the
+exception, and bounds the call so the button can never spin for ever;
+`isolatedListener` stops this app's own two listeners from being the thing that
+throws. Both are modules with tests, because a rule inside a `.tsx` is a rule
+nothing checks.
+
 ## 2026-09-16 — The record screen is the music, and the controls are a sheet over it
 
 **Context.** Record had the shape every settings screen has: a title, a column

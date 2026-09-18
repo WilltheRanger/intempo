@@ -4,6 +4,7 @@ import { persistQueryClient } from '@tanstack/react-query-persist-client';
 import type { QueryClient } from '@tanstack/react-query';
 
 import { IS_LIVE_BACKEND } from '../environment';
+import { isolatedListener } from '../auth/isolatedListener';
 import { getSupabaseClient } from '../auth/session';
 import {
   CACHE_KEY,
@@ -111,8 +112,11 @@ export function startLibraryCache(queryClient: QueryClient): () => void {
   }
 
   void supabase.auth.getSession().then(({ data }) => follow(data.session?.user?.id));
-  const { data } = supabase.auth.onAuthStateChange((_event, session) =>
-    follow(session?.user?.id),
+  // `isolatedListener` for the reason in its own file: this runs inside
+  // `signInWithPassword`, and a cache that fails to start must not be reported
+  // to the musician as a sign-in that failed.
+  const { data } = supabase.auth.onAuthStateChange(
+    isolatedListener((_event, session) => follow(session?.user?.id)),
   );
 
   return () => {

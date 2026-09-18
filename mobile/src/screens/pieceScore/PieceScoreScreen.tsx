@@ -179,7 +179,7 @@ export function PieceScoreScreen() {
   const load = loadStateFor({ isError, hasData: piece !== undefined });
 
   const accept = useAcceptTranscription(params.pieceId);
-  const reread = useRetranscribe(params.pieceId);
+  const reread = useRetranscribe();
   const setClef = useSetClef(params.pieceId);
   const [confirmingAccept, setConfirmingAccept] = useState(false);
   const [pickingMeasure, setPickingMeasure] = useState(false);
@@ -385,7 +385,7 @@ export function PieceScoreScreen() {
           actionDisabled={reread.isPending}
           onActionPress={() => {
             setAcceptError(null);
-            reread.mutate(undefined, {
+            reread.mutate(params.pieceId, {
               onError: (cause) =>
                 setAcceptError(
                   cause instanceof Error

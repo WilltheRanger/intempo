@@ -27,6 +27,7 @@ document contains at least two of those, and says so where it knows.
 - [The API's concurrency](#the-api-serves-requests-in-parallel-and-only-just-started-to-2026-08-25)
 - [The recording path](#the-recording-path-2026-09-02--level-is-not-the-signal-you-think-it-is)
 - [The capture path](#the-capture-path-2026-08-24--what-an-audit-of-it-found)
+- [Signing in, and where the session lives](#signing-in-and-where-the-session-lives-2026-09-17)
 
 ---
 
@@ -947,6 +948,26 @@ actually made here.
   setting the scanner does not have and a file importer that refuses JPEGs. Its
   test asserted that *some* advice was given, which is how it survived. When
   writing an error, name a route that exists.
+- **A blank tile on the shelf has to say which kind of blank it is** (2026-09-17).
+  `PieceTile` draws the engraving when there is one and an empty page when there
+  is not, so a scan in flight, a scan that failed, a piece typed in by hand and
+  a piece whose backend predates the field were one silent rectangle. Nine
+  failed ones sat in the owner's library for three weeks, the way out of them
+  two screens down in `PieceScoreScreen`. The rule is `lib/library/tileState`
+  — four states, in a module because a rule inside a `.tsx` is a rule nothing
+  checks — and the unreadable one carries **Try again** and **Discard** on the
+  tile. Notation wins over status there, deliberately: a row can carry measures
+  and a stale `failed`, and a tile that hid real music behind an error would be
+  wrong about the only thing it is for.
+- **A failed scan is swept after a week, photographs first**
+  (`services/score_archive`, 2026-09-17). It is the same hole as the one below,
+  one table along: `POST /v1/scores` claims the page as it writes the row, so
+  the unclaimed-upload sweep can never see it, and nothing else ever deleted
+  one — 31.7 MB across nine rows on the live project before this existed. No
+  mark and no migration, unlike `take_archive`: the row is what gets removed, so
+  it cannot be found twice. Rows with an `analyses` or `assignments` reference
+  are left alone, and a lookup that fails counts as a reference.
+
 - **Every object in these buckets has a row somewhere.** A `scores` row because
   it became a piece, an `analyses` row because it became a take, a
   `users.avatar_url` because it became a face, or a `pending_uploads` row
@@ -1081,3 +1102,55 @@ image it leaves the white background, two constraints pointing at the imageView
 it just deleted, and an orphan `SplashScreenLogo` resource. That was tried and
 reverted — a launch storyboard that may not compile is worse than a flash.
 The splash wants the real mark on it, so it is one job with the icon.
+---
+
+## Signing in, and where the session lives (2026-09-17)
+
+**A sign-in the server granted can still fail in the app, and did.** Supabase's
+auth log for 2026-09-17 has three password grants for one address inside twelve
+seconds — 05:45:13, 05:45:17, 05:45:25 — each answered `200` with a session,
+and the backend's first `/v1/me` at 05:45:26. Nothing returned an error all day.
+The musician saw the sign-in form again, freshly mounted and empty, twice. Read
+`DECISIONS.md`, 2026-09-17 for the chain; what follows is what to know before
+touching any of it.
+
+- **`supabase.auth.getSession()` is a storage read, every single time.**
+  `GoTrueClient.__loadSession` re-reads the store on each call — there is no
+  in-memory session to fall back on. So every `getAccessToken()`, and therefore
+  every authenticated request, depends on the store answering.
+
+- **`AsyncStorage` is IndexedDB on web** (`@react-native-async-storage` 3.x —
+  `lib/module/web-module/IndexedDBStorage.js`). There is no deadline anywhere in
+  that adapter, and `IndexedDBConnectionRegistry` caches the connection promise
+  process-wide: one `open` that never settles wedges every later read for the
+  life of the page. The session is therefore **not** kept there.
+  `data/auth/sessionStore.ts` uses `localStorage` on web, remembers what it
+  wrote, bounds every call, and never rejects. The library cache still uses
+  IndexedDB, where the data is large and a failure costs a refetch.
+
+- **Null from a storage read is not a sign-out**, and `apiFetch` still ends a
+  session on a null token — which is right, so the null has to be earned.
+  `getAccessToken` raises `SessionUnreadableError` when the store has failed and
+  produced nothing. Same rule as `backend/app/auth.py`, which answers 503 rather
+  than 401 for a key server it cannot reach: *could not check is not the same as
+  not valid.*
+
+- **`signInWithPassword` saves the session and notifies its listeners inside
+  itself**, and `_notifyAllSubscribers` **rethrows the first error a listener
+  threw** — out of the sign-in call. A screen that blows up while being told
+  about a session therefore reports that the sign-in failed, over a session that
+  exists. This app's two listeners (`useAuthStatus`, `startLibraryCache`) are
+  wrapped in `isolatedListener`; anything added beside them must be too.
+
+- **Ask the session, not the exception.** `screens/auth/authAttempt.ts` settles
+  a call that threw or stalled by checking whether there is a session, and gives
+  every auth call a deadline so a button cannot spin for ever. The rule is in a
+  module rather than in `AuthScreen` because there is no React Native testing
+  library here.
+
+- **The logs are the only witness.** `mobile/` has no logging facility on
+  purpose, so a client-side auth failure leaves no trace on the device. What
+  found this was Supabase's `auth_logs` and `edge_logs` (the latter carries the
+  user agent — an iPhone on iOS 18.6 here) read next to Render's request log.
+  Three grants and no backend request is the signature of the app discarding a
+  session, and it is visible from nowhere else.
