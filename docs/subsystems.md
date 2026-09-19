@@ -900,6 +900,63 @@ nothing else covers `backend/`. Named here rather than left to be found.
   microphone leg beside it, and both exist because the container has no audio
   device and every unstubbed run takes the `NotFoundError` branch.
 
+- **Noise, clipping and reverb do not break onset detection. Dynamics under
+  reverb do (2026-09-19).** Every synthetic fixture here is a clean close-mic
+  recording, so "does this survive a worse recording" had never been asked.
+  `audio_helpers` now models the three axes a phone recording actually moves
+  along — `add_noise_at_snr`, `add_room_reverb`, `apply_clipping` — and
+  `test_degraded_audio.py` sweeps them.
+
+  The headline is a **negative result** and it is worth as much as a fix. At
+  **0 dB SNR**, under hard clipping, and in a **2-second room**, all 24 notes
+  are still found with 6–8 ms of jitter. Lowering `delta` or adding a denoiser
+  would be tuning something that is not broken — the 2026-09-14 mistake again.
+
+  What moves is the **systematic lag**: 42 ms clean, 65 ms degraded. That is
+  free, because `_residuals` fits offset and rate per take before quality is
+  measured. Jitter is what is left and it barely moves.
+
+  **The first version of the sweep said the exact opposite**, and the
+  correction is the transferable part. Matching detections to truth within
+  50 ms, recall fell to 0.00 at 0 dB SNR while `n_detected` stayed at 24 — the
+  detector was finding every note and the window was measuring the lag rather
+  than the detection. **A match tolerance narrower than a known systematic
+  offset measures the offset.** It was nearly reported as "the pipeline
+  collapses under noise", which is false.
+
+  What does break it is **dynamic range against a reverberant room**, which no
+  clean fixture can contain:
+
+      20 dB range, dry          24/24 found
+      20 dB range, RT60 0.9s    16/24
+      30 dB range, dry          24/24
+      30 dB range, RT60 0.9s    12/24
+
+  The tail of a loud note raises the floor under the attack of the quiet one
+  after it, and the onset envelope is normalised against the take's **global**
+  maximum, so the quiet attack never clears `delta`. **Precision stays 1.00** —
+  nothing spurious, nothing mistimed, the quiet notes are simply gone. That is
+  the worst shape this failure could take, because `coverage` falls and
+  `quality` is `timing_quality * coverage`: a musician who played musically in
+  a live room is told the take could not be read, or is shown a verdict
+  computed from half their notes with nothing saying so.
+
+  The fix is not a lower `delta`, which raises the floor everywhere and costs
+  precision on every clean take. It is a **local** threshold — each attack
+  judged against its own neighbourhood rather than against the loudest moment
+  of the take. Not yet made; the ceilings in `test_degraded_audio.py` are
+  asserted with `<=` so that fixing it fails the test and forces them to be
+  raised deliberately.
+
+- **The fitted tempo rate is computed on every analysis and thrown away
+  (2026-09-19).** `_residuals` does `rate, offset = np.polyfit(exp, settled, 1)`
+  and returns only the residuals. `rate` is the take's own pace against the
+  target — `target_bpm / rate` is the tempo the musician actually played — and
+  it is the single most valuable thing the pipeline already knows and has never
+  told anyone. Same for the residual *spread*, which is steadiness: a player
+  at ±5 ms every note and one averaging zero with ±40 ms swings get the same
+  verdict today.
+
 ## The capture path (2026-08-24) — what an audit of it found
 
 Nine defects between the shutter and a saved score, in a path that had **zero
