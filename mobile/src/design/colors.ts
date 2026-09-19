@@ -220,6 +220,31 @@ export const lightColors = {
    */
   scrim: 'rgba(20, 17, 14, 0.32)',
 
+  /**
+   * The wash under a glass panel whose ground is the app's own content.
+   *
+   * **Not `scrim`, and the difference is what each one is for.** A scrim dims
+   * to say *the thing behind is inactive* — it darkens, and darkening leaves
+   * contrast where it found it. This has to do the opposite: take the detail
+   * out of engraved notation, which is the highest-contrast thing this app
+   * draws, so that a glass sheet over a page of music reads as a surface
+   * rather than as a number printed on a stave. Darkening black noteheads on
+   * ivory achieves nothing; fading them toward the paper they are printed on
+   * is the whole job, which is why this is `surface` and not ink.
+   *
+   * 0.94 rather than opaque, because the panel is still glass and some sense
+   * of what is beneath it is the point of the material. What is left at 6% is
+   * a texture, not a stave you can read a pitch off. 0.88 was tried first and
+   * left a legible smear of staff lines across the record button.
+   *
+   * **The blur cannot be relied on for this and that is the finding behind the
+   * token.** It was reported from an iPhone where the engraving came through
+   * the raised sheet perfectly sharp — several browsers decline
+   * `backdrop-filter` and every one of them falls back to the tint alone, and
+   * 20% of an engraving is still a legible grid.
+   */
+  contentWash: 'rgba(255, 255, 255, 0.94)',
+
   // -------------------------------------------------------------------------
   // Verdict colours — the verdict screen and nothing else.
   //
@@ -359,6 +384,14 @@ export const darkColors: Palette = {
 
   /** Stronger than the light scrim: a sheet here is lighter than its ground. */
   scrim: 'rgba(8, 6, 5, 0.58)',
+
+  /**
+   * This palette's `surface` at the same 0.94 — see the light one for what the
+   * token is for. The alpha is shared deliberately: it is chosen against the
+   * engraving's contrast, which is the same ratio in both appearances because
+   * the notation is drawn in each palette's own ink.
+   */
+  contentWash: 'rgba(34, 30, 25, 0.94)',
 
   /**
    * Lightened, not darkened. The light values were pushed *down* to clear AA on

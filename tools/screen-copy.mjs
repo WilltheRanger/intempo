@@ -8,9 +8,10 @@
  * did exactly the same thing: it was pinned in three places across the two
  * tools, and renaming it broke both.
  *
- * So headings a check navigates by live here. Not every string on every
- * screen — only the ones a tool uses to decide *which screen it is looking at*,
- * which is the set that fails confusingly when it drifts.
+ * So headings a check navigates by live here, and with them the one key a
+ * check writes to *put* a screen into a state. Not every string on every
+ * screen — only the ones a tool uses to decide *which screen it is looking at*
+ * or how to get there, which is the set that fails confusingly when it drifts.
  */
 
 /**
@@ -26,3 +27,35 @@ export const PRACTICE_SETUP_HEADING = 'Ready when you are';
 
 /** The control on the record screen that reopens the one above. */
 export const PRACTICE_SETUP_REOPEN = 'Before you record';
+
+/**
+ * What the record screen says while sound is arriving from the microphone.
+ *
+ * **The walk navigates by this, and it drifted once already.** The leg that
+ * proves the worklet delivers anything at all matched `/audio received/i` —
+ * the old sentence, `Microphone: audio received`, which was a developer
+ * reading a stream shown to a musician mid-take. When that became
+ * `Hearing you` the walk reported "nothing arrived from a microphone that is
+ * producing a tone", which is a worklet failure, on a worklet that was working.
+ *
+ * That is the second time in two days a check here has named an app defect
+ * that was a copy change (`device-check.mjs`, 2026-09-17), and it is what this
+ * file is for. The sentence itself lives in `mobile/src/lib/record/takeStatus.ts`
+ * with its tests; this is the tools' copy of it, in the one place they all read.
+ */
+export const TAKE_HEARING = 'Hearing you';
+
+/**
+ * Where the app keeps its device preferences on web.
+ *
+ * `data/preferences.ts` writes this key through `AsyncStorage`, which on
+ * react-native-web is `localStorage` under the same name. Read off a running
+ * build rather than assumed: after dismissing the checks screen it holds
+ * `{"instrument":"violin","metronomeMode":"off","haptics":true,
+ * "reduceMotion":false,"practiceSetupSeen":true}`.
+ *
+ * Both tools seed through it, for states the app has no query parameter for —
+ * the audit to reach the recording controls, the walk to reach a take whose
+ * metronome will bleed into it.
+ */
+export const PREFERENCES_KEY = 'intempo.preferences.v1';
