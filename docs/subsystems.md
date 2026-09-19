@@ -900,6 +900,50 @@ nothing else covers `backend/`. Named here rather than left to be found.
   microphone leg beside it, and both exist because the container has no audio
   device and every unstubbed run takes the `NotFoundError` branch.
 
+- **A screen that is right every time is a screen nobody reads (2026-09-19).**
+  `PracticeSetup` was shown once to every device, whatever its checks came back
+  with. On a take with nothing wrong that is two rows of ✓ and a paragraph
+  standing between a musician holding an instrument and the record button — and
+  both of its items are already on the screen behind it, since the entry bar
+  and the metronome each have a row there. It now opens only when a check is
+  `warn`, through `hasWarning`, and is reachable any time from "Before you
+  record".
+
+  Two things to carry. **`hasWarning` already existed and nothing called it**:
+  written with the checks, referenced only by its own test, which is the shape
+  `check-dead-exports.py` exists to catch and the one case it cannot see,
+  because a test counts as a reference. Look for the predicate before writing a
+  second one beside it. And **the gate is wiring, so the tools have to hold
+  both halves**: `walk-app.mjs` asserting only that the screen stays out of the
+  way would pass just as well against a screen deleted outright, so it seeds
+  `metronomeMode: 'audio_with_headphones'` into a fresh profile and requires
+  the checks to appear. `audit-a11y.mjs` audits the same pair.
+
+- **A two-state toggle over a four-state enum hid three of them (2026-09-19).**
+  The record screen's metronome control switched between `off` and whichever
+  mode was last on, so a musician who had never chosen one could reach exactly
+  one of the four from the screen they were recording on; the other three lived
+  in Profile, two navigations away, with an instrument up. It is a picker now,
+  from `lib/record/metronomeChoice.ts` — a `Record<MetronomeMode, …>` rather
+  than an array, so a fifth mode stops compiling until it is described.
+
+  Profile's `METRONOME_OPTIONS` was a *second* hand-written enumeration of the
+  same enum and now derives from that list. Drift between the two would not
+  have looked like a bug: the segmented control would simply have been missing
+  an option, on the screen a musician was sent to in order to find it.
+
+- **`initialPosition` on a sheet is a claim about a transform, not a state
+  (2026-09-19).** `DragSheet` starts the record screen's controls lowered so
+  the music is the first thing on screen. Constructing the state as `lowered`
+  reported it lowered to the state, the ref and the screen reader while the
+  sheet sat visibly over the thing it was revealing — the animated offset
+  starts at 0 and only ever moves through `settle`. Travel is
+  `travelFor(height, peek)` and `height` is 0 until layout, so the offset can
+  only be set from a measurement, in an effect guarded to fire exactly once:
+  without that guard any later re-layout — a message appearing inside the
+  sheet, the keyboard, a rotation — snaps a sheet the musician had raised back
+  down under their hand.
+
 ## The capture path (2026-08-24) — what an audit of it found
 
 Nine defects between the shutter and a saved score, in a path that had **zero

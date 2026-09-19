@@ -34,7 +34,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { VERDICT_STATES } from './verdict-states.mjs';
-import { PRACTICE_SETUP_HEADING } from './screen-copy.mjs';
+import { PRACTICE_SETUP_HEADING, PREFERENCES_KEY } from './screen-copy.mjs';
 
 /**
  * Resolved from `mobile/`, not from here.
@@ -90,24 +90,29 @@ const ROUTES = [
   // in the library, so this is where the page caption and the pager exist at
   // all — the other pieces render a single image and no control.
   ['Original pages', 'pieces/fixture-wohlfahrt-01/score?view=original'],
-  // **The tips, which is what this route renders on a fresh page.** Every
-  // piece in the fixtures shows `PracticeSetup` first, so this entry — which
-  // has said "Record" since the first sweep — has never once audited the
-  // screen with the recording controls on it.
-  ['Record — first-take tips', 'pieces/fixture-bach-bwv1001/record', {
-    expect: PRACTICE_SETUP_HEADING,
-  }],
-  // The screen behind it: target tempo with its steppers, the metronome
-  // control, Listen, the start-at picker, the timer and Start recording. Eight
-  // controls, none of them ever measured, on the screen where a take is made.
+  // What this route renders on a fresh page: target tempo with its steppers,
+  // the metronome control, Listen, the start-at picker, the timer and Start
+  // recording. Eight controls, on the screen where a take is made.
   //
-  // Reached by seeding the preference the tips screen writes when it is
-  // dismissed, rather than by a query parameter the app does not have — see
-  // `seedPreferences`.
+  // **It used to render the pre-flight checks here instead**, for every
+  // musician who had not dismissed them, so this entry — which has said
+  // "Record" since the first sweep — audited a screen of ticks for months and
+  // never once the controls. No seed now, because the controls are what the
+  // route is.
+  ['Record — tempo and controls', 'pieces/fixture-bach-bwv1001/record', {
+    expect: 'Target tempo',
+  }],
+  // The pre-flight checks, which step in front of the controls only when one
+  // of them is `warn`. Reached by seeding the metronome mode that warns —
+  // audio, which would put clicks into the take — rather than by a query
+  // parameter the app does not have; see `seedPreferences`.
   [
-    'Record — tempo and controls',
+    'Record — pre-flight checks',
     'pieces/fixture-bach-bwv1001/record',
-    { seed: { practiceSetupSeen: true }, expect: 'Target tempo' },
+    {
+      seed: { metronomeMode: 'audio_with_headphones' },
+      expect: PRACTICE_SETUP_HEADING,
+    },
   ],
   // The payoff of the whole app, and the route the first sweep missed.
   ['Verdict', 'analyses/fixture-take-1', { expect: 'rushed' }],
@@ -809,17 +814,6 @@ function unvisitedRoutes() {
     return !visited.some((path) => pattern.test(path));
   });
 }
-
-/**
- * Where the app keeps its device preferences on web.
- *
- * `data/preferences.ts` writes this key through `AsyncStorage`, which on
- * react-native-web is `localStorage` under the same name. Read off a running
- * build rather than assumed: after dismissing the tips screen it holds
- * `{"instrument":"violin","metronomeMode":"off","haptics":true,
- * "reduceMotion":false,"practiceSetupSeen":true}`.
- */
-const PREFERENCES_KEY = 'intempo.preferences.v1';
 
 /**
  * Put a route's screen into the state that route is *for*.

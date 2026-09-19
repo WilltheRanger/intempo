@@ -123,7 +123,14 @@ with open(dst, 'wb') as f:
   return { path, real: false };
 }
 
-/** Get past the one-time setup card that stands in front of the recorder. */
+/**
+ * Get past the pre-flight checks, on the runs where they appear.
+ *
+ * They used to stand in front of the recorder on every fresh profile; they
+ * open only for a real warning now, so this is usually a no-op — and stays
+ * here because "usually" is not "never", and a device whose last take came
+ * back silent gets them.
+ */
 async function clearFirstTakeGate(page) {
   const gate = page.locator('text=Set tempo & record').first();
   if (await gate.count()) {
@@ -459,25 +466,36 @@ async function checkAudioOut(browser) {
     fail('the reference pitch plays', 'no Listen control on the screen');
   }
 
-  // **Silence here is the correct answer.** The default on-mode is visual,
-  // deliberately: a click through the speaker is the one mode that ends up
-  // inside the recording it is supposed to be timing. The audible mode is
-  // chosen on Profile, behind a headphones warning, and is checked there.
+  // **Silence here is the correct answer**, and it is worth more on a real
+  // device than it used to be. The record screen's metronome control was a
+  // two-state toggle; it is a picker now, so the one mode that ends up inside
+  // the recording it is supposed to be timing is offered here rather than only
+  // on Profile. Choosing the silent one has to actually stay silent on the
+  // hardware, which is the half no Chromium gate can answer for.
   await page.evaluate(() => { window.__started = 0; });
-  const metronome = page.locator('[aria-label="Metronome"]');
+  const metronome = page.locator('[aria-label^="Metronome,"]').first();
   if (await metronome.count()) {
     await metronome.click();
-    await page.waitForTimeout(2500);
-    const screen = await page.evaluate(() => document.body.innerText || '');
-    const started = await page.evaluate(() => window.__started);
-    if (/visual metronome/i.test(screen) && started === 0) {
-      pass('the metronome defaults to visual, and stays silent');
+    await page.waitForTimeout(600);
+    const visual = page.locator('[aria-label^="Visual."]').first();
+    if (await visual.count()) {
+      await visual.click();
+      await page.waitForTimeout(2500);
+      const chosen = await metronome.getAttribute('aria-label');
+      const started = await page.evaluate(() => window.__started);
+      if (/Visual/i.test(chosen ?? '') && started === 0) {
+        pass('the visual metronome can be chosen here, and stays silent');
+      } else {
+        fail('the visual metronome can be chosen here, and stays silent',
+          `the row reads "${chosen}" and ${started} source(s) played`);
+      }
     } else {
-      fail('the metronome defaults to visual, and stays silent',
-        `mode line missing or ${started} source(s) played`);
+      fail('the visual metronome can be chosen here, and stays silent',
+        'the picker opened without a Visual option');
     }
   } else {
-    fail('the metronome defaults to visual, and stays silent', 'no Metronome control');
+    fail('the visual metronome can be chosen here, and stays silent',
+      'no Metronome control');
   }
 
   await context.close();

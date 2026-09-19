@@ -91,7 +91,7 @@ import { PlaybackSettings } from '../../components/score/PlaybackSettings';
 import { ScoreBackdrop } from '../../components/score/ScoreBackdrop';
 import { scheduleScore, startableMeasures } from '../../lib/score';
 import { startFromMeasure } from '../../lib/score/startFrom';
-import { preflight } from '../../lib/record/preflight';
+import { hasWarning, preflight } from '../../lib/record/preflight';
 import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
 import {
   leavingRecord,
@@ -174,7 +174,20 @@ export function RecordScreen() {
   const [phase, setPhase] = useState<Phase>('ready');
   // The first recording on this device gets a short orientation before the
   // system permission prompt. It can always be reopened from the ready screen.
-  const [showSetup, setShowSetup] = useState(!practiceSetupSeen);
+  /**
+   * The pre-flight screen, which now opens only when it has something to say.
+   *
+   * **It used to be `!practiceSetupSeen`** — shown once to everybody, whatever
+   * the checks came back with. On a take with nothing wrong that is two rows
+   * of ✓ and a paragraph between a musician holding an instrument and the
+   * record button, and both of its items are already on the screen behind it:
+   * the entry bar is the "Start at" row and the metronome is the row above it.
+   *
+   * Starting `false` and raised by an effect, because the decision needs
+   * `checks`, and `checks` needs `startFrom` and the score — none of which
+   * exist at the first `useState`. `hasWarning` is the rule and it is tested.
+   */
+  const [showSetup, setShowSetup] = useState(false);
   /** The open metronome picker — how all four modes became reachable here. */
   const [pickingMetronome, setPickingMetronome] = useState(false);
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -711,6 +724,30 @@ export function RecordScreen() {
     firstSoundingBar: firstSoundingBar ?? startFrom,
     lastTakeHeardSound: lastTakeHadSound,
   });
+
+  /**
+   * Open it once, on a musician's first take, and only for a real warning.
+   *
+   * A ref rather than the position of the state, so a warning that appears
+   * later — the entry bar moved onto a rest, the metronome switched to audio —
+   * cannot throw a full screen over the music while somebody is setting up.
+   * They still reach it from "Before you record", which is the door that was
+   * always meant to be the way back in.
+   */
+  const offeredSetup = useRef(false);
+  useEffect(() => {
+    if (offeredSetup.current || practiceSetupSeen) {
+      return;
+    }
+    offeredSetup.current = true;
+    if (hasWarning(checks)) {
+      setShowSetup(true);
+    } else {
+      // Nothing to stop for, so the first take is not interrupted — and it
+      // does not ask again on the next one either.
+      preferences.setPracticeSetupSeen(true);
+    }
+  }, [checks, practiceSetupSeen]);
 
   /**
    * The piece as the take will actually be played: from the entry bar on.
@@ -1546,11 +1583,6 @@ export function RecordScreen() {
       </DragSheet>
 
       {/*
-        Only this view can raise it: the count-in leaves outright, and by
-        `analysing` the audio is already on its way. Both cases that hold
-        unsent audio — a live take, and one whose upload failed — are here.
-      */}
-      {/*
         Every way to mark the beat, on the screen that needs it. Before this
         the mode could only be set in Profile.
       */}
@@ -1592,6 +1624,11 @@ export function RecordScreen() {
         ))}
       </BottomSheet>
 
+      {/*
+        Only this view can raise it: the count-in leaves outright, and by
+        `analysing` the audio is already on its way. Both cases that hold
+        unsent audio — a live take, and one whose upload failed — are here.
+      */}
       <ConfirmDialog
         visible={leavePrompt !== null}
         title={leavePrompt?.title ?? ''}

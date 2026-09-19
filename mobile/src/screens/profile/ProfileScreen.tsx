@@ -24,6 +24,7 @@ import type { Musician } from '../../data/types';
 import { preferences, usePreferences } from '../../data/preferences';
 import type { Instrument, MetronomeMode } from '../../data/types';
 import { describeLoadError } from '../../data/api/describeError';
+import { metronomeChoices } from '../../lib/record/metronomeChoice';
 import {
   ProfilePhotoSaveError,
   saveProfilePhoto,
@@ -514,12 +515,20 @@ const INSTRUMENT_OPTIONS = [
   { value: 'double_bass' as const, label: 'Bass' },
 ];
 
-const METRONOME_OPTIONS = [
-  { value: 'off' as const, label: 'Off' },
-  { value: 'visual' as const, label: 'Visual' },
-  { value: 'haptic' as const, label: 'Haptic' },
-  { value: 'audio_with_headphones' as const, label: 'Audio' },
-];
+/**
+ * The four modes, from the same list the record screen's picker offers.
+ *
+ * **It was a second copy of them**, written here when this was the only place
+ * a mode could be chosen. `lib/record/metronomeChoice.ts` is now that list —
+ * typed as a `Record<MetronomeMode, …>`, so a fifth mode stops compiling until
+ * it is described — and two hand-written enumerations of one enum is exactly
+ * the drift the segmented control cannot show you: it would simply be missing
+ * an option, on the screen a musician was sent to to find it.
+ */
+const METRONOME_OPTIONS = metronomeChoices().map(({ mode, label }) => ({
+  value: mode,
+  label,
+}));
 
 const styles = StyleSheet.create({
   pressed: {

@@ -6,6 +6,7 @@ import {
   preflight,
   speakerBleed,
   startBar,
+  type PreflightCheck,
   type PreflightInput,
 } from './preflight';
 
@@ -107,5 +108,39 @@ describe('preflight', () => {
   it('knows when there is nothing worth stopping for', () => {
     expect(hasWarning(preflight({ ...BASE, lastTakeHeardSound: true }))).toBe(false);
     expect(hasWarning(preflight({ ...BASE, metronomeMode: 'audio_with_headphones' }))).toBe(true);
+  });
+});
+
+describe('hasWarning, as the gate on the pre-flight screen', () => {
+  const ok = (id: PreflightCheck['id']): PreflightCheck => ({
+    id,
+    tone: 'ok',
+    title: 'Fine',
+    detail: 'Nothing to do.',
+  });
+  const warn = (id: PreflightCheck['id']): PreflightCheck => ({
+    id,
+    tone: 'warn',
+    title: 'Not fine',
+    detail: 'Something to do.',
+  });
+
+  it('does not stop a musician to tell them everything is fine', () => {
+    // The state this replaces: two rows of ✓ and a paragraph, between someone
+    // holding an instrument and the record button. Both items are already on
+    // the screen behind it — the entry bar and the metronome each have a row.
+    expect(hasWarning([ok('bleed'), ok('start')])).toBe(false);
+    expect(hasWarning([])).toBe(false);
+  });
+
+  it('stops for anything a musician can fix before playing', () => {
+    expect(hasWarning([ok('bleed'), warn('start')])).toBe(true);
+    expect(hasWarning([warn('bleed')])).toBe(true);
+  });
+
+  it('stops when only one of several is wrong', () => {
+    // The screen sorts warnings first, so one among many is still the reason
+    // it opened and still the first thing read.
+    expect(hasWarning([ok('microphone'), ok('start'), warn('bleed')])).toBe(true);
   });
 });

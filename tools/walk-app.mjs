@@ -33,7 +33,12 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { VERDICT_STATES } from './verdict-states.mjs';
-import { PRACTICE_SETUP_HEADING, PRACTICE_SETUP_REOPEN, TAKE_HEARING } from './screen-copy.mjs';
+import {
+  PRACTICE_SETUP_HEADING,
+  PRACTICE_SETUP_REOPEN,
+  PREFERENCES_KEY,
+  TAKE_HEARING,
+} from './screen-copy.mjs';
 
 // Resolved from `mobile/`, where playwright is installed with `--no-save` — a
 // bare import would resolve against this directory instead. See the same note
@@ -871,11 +876,12 @@ console.log('\n## Downloading your own data');
 console.log('\n## Setting up a take');
 
 /*
- * **The screen where the clock is chosen, and no sweep had ever seen it.**
- * `pieces/:pieceId/record` renders `PracticeSetup` — the first-take tips —
- * until `practiceSetupSeen` is stored, so the a11y audit's "Record" entry has
- * been auditing the tips since the first sweep. Behind it are eight controls
- * including the tempo steppers and the start-at picker.
+ * **The screen where the clock is chosen.**
+ * `pieces/:pieceId/record` used to render `PracticeSetup` — the pre-flight
+ * checks — for every musician who had not seen it, whatever the checks came
+ * back with. It opens on the controls now, and only steps in front of them
+ * when a check is actually `warn`; both halves of that are asserted here,
+ * because the rule lives in `hasWarning` but the *wiring* lives in a `.tsx`.
  *
  * The tempo matters more than any other setting here: `submitTake` sends it as
  * `target_bpm`, `build_timeline` scales the whole expected timeline by it, and
@@ -884,12 +890,10 @@ console.log('\n## Setting up a take');
  * they did not choose, with nothing on screen disagreeing.
  */
 await open('pieces/fixture-bach-bwv1001/record');
-if (!(await leaves()).some((l) => l.includes(PRACTICE_SETUP_HEADING)))
-  fail('the record route did not open on the pre-flight checks');
-else pass('a first take opens on the tips, not on the controls');
-
-await page.getByRole('button', { name: /Set tempo & record/i }).first().click();
 await waitForText('the recording controls', (l) => /Target tempo/i.test(l));
+if ((await leaves()).some((l) => l.includes(PRACTICE_SETUP_HEADING)))
+  fail('a first take with nothing wrong still opened on a screen of ticks');
+else pass('a first take with nothing wrong opens on the controls');
 
 /** The number beside the BPM label, which is what the take is judged against. */
 const targetBpm = async () => {
@@ -900,7 +904,7 @@ const targetBpm = async () => {
 
 const opened = await targetBpm();
 if (!opened) fail('the recording screen shows no target tempo');
-else pass(`the tips lead to the controls, at ${opened} BPM`);
+else pass(`the controls carry a target tempo, at ${opened} BPM`);
 
 await page.getByRole('button', { name: 'Faster' }).first().click();
 await waitFor('the tempo to rise', async () => (await targetBpm()) !== opened);
@@ -938,10 +942,14 @@ await page.keyboard.press('Escape');
 await page.waitForTimeout(400);
 
 /*
- * Reopening the tips must come back to the controls. `RecordScreen` branches
- * on `practiceSetupSeen` here: dismissing the tips a *second* time closes them,
+ * Reopening the checks must come back to the controls. `RecordScreen` branches
+ * on `practiceSetupSeen` here: dismissing them a *second* time closes them,
  * while dismissing them the first time leaves the screen entirely. Getting
- * that backwards drops a musician out of the flow for reading the tips.
+ * that backwards drops a musician out of the flow for reading the checks.
+ *
+ * This is also the only door left to them on a take with nothing wrong, which
+ * is most takes — so a regression in it now costs the whole screen rather than
+ * a second way in.
  */
 await open('pieces/fixture-bach-bwv1001/record');
 await page.getByRole('button', { name: PRACTICE_SETUP_REOPEN }).first().click();
@@ -949,8 +957,62 @@ await waitForText('the pre-flight to reopen', (l) => l.includes(PRACTICE_SETUP_H
 await page.getByRole('button', { name: /Back to the piece/i }).first().click();
 await waitForText('the controls to come back', (l) => /Target tempo/i.test(l));
 if ((await path()).endsWith('/record'))
-  pass('reopening the tips comes back to the controls, not out of the flow');
-else fail(`closing the reopened tips left for ${await path()}`);
+  pass('reopening the checks comes back to the controls, not out of the flow');
+else fail(`closing the reopened checks left for ${await path()}`);
+
+/*
+ * **The other half of the gate: a take that does have something wrong.**
+ *
+ * Asserting only that the screen stays out of the way would pass just as well
+ * against a screen deleted outright, which is the failure this whole change is
+ * one step away from. So: a fresh profile whose metronome is already set to
+ * audio — the one mode that can put clicks into the take and have the analysis
+ * count them as playing — and the checks are expected to step in front of the
+ * controls and say so.
+ *
+ * A new page rather than this one, because the offer is once per device and
+ * this page has already had it. Seeded through `localStorage` under the
+ * preferences key, the same way `audit-a11y.mjs` reaches states the app has no
+ * query parameter for.
+ */
+{
+  const bleeding = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  bleeding.on('pageerror', (e) => errors.push(e.message));
+  await bleeding.addInitScript((key) => {
+    window.localStorage.setItem(
+      key,
+      JSON.stringify({ metronomeMode: 'audio_with_headphones' }),
+    );
+  }, PREFERENCES_KEY);
+  await bleeding.goto(`${BASE}/pieces/fixture-bach-bwv1001/record`, {
+    waitUntil: 'domcontentloaded',
+    timeout: 30000,
+  });
+
+  const shown = await (async () => {
+    const deadline = Date.now() + 20000;
+    for (;;) {
+      const lines = await bleeding.evaluate(() =>
+        [...document.querySelectorAll('*')]
+          .filter((el) => el.children.length === 0 && (el.textContent ?? '').trim())
+          .map((el) => el.textContent.trim()),
+      );
+      if (lines.some((l) => l.includes(PRACTICE_SETUP_HEADING))) return lines;
+      if (Date.now() > deadline) return null;
+      await bleeding.waitForTimeout(200);
+    }
+  })();
+
+  if (shown === null) {
+    fail('a take whose metronome will bleed into it was not stopped for');
+  } else if (!shown.some((l) => /headphone/i.test(l))) {
+    fail('the checks opened on a bleeding metronome without naming headphones');
+  } else {
+    pass('a take whose metronome will bleed into it is stopped for, and told why');
+  }
+
+  await bleeding.close();
+}
 
 console.log('\n## A refused microphone');
 

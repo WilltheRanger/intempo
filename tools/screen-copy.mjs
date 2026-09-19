@@ -8,9 +8,10 @@
  * did exactly the same thing: it was pinned in three places across the two
  * tools, and renaming it broke both.
  *
- * So headings a check navigates by live here. Not every string on every
- * screen — only the ones a tool uses to decide *which screen it is looking at*,
- * which is the set that fails confusingly when it drifts.
+ * So headings a check navigates by live here, and with them the one key a
+ * check writes to *put* a screen into a state. Not every string on every
+ * screen — only the ones a tool uses to decide *which screen it is looking at*
+ * or how to get there, which is the set that fails confusingly when it drifts.
  */
 
 /**
@@ -43,3 +44,18 @@ export const PRACTICE_SETUP_REOPEN = 'Before you record';
  * with its tests; this is the tools' copy of it, in the one place they all read.
  */
 export const TAKE_HEARING = 'Hearing you';
+
+/**
+ * Where the app keeps its device preferences on web.
+ *
+ * `data/preferences.ts` writes this key through `AsyncStorage`, which on
+ * react-native-web is `localStorage` under the same name. Read off a running
+ * build rather than assumed: after dismissing the checks screen it holds
+ * `{"instrument":"violin","metronomeMode":"off","haptics":true,
+ * "reduceMotion":false,"practiceSetupSeen":true}`.
+ *
+ * Both tools seed through it, for states the app has no query parameter for —
+ * the audit to reach the recording controls, the walk to reach a take whose
+ * metronome will bleed into it.
+ */
+export const PREFERENCES_KEY = 'intempo.preferences.v1';

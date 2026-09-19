@@ -142,7 +142,29 @@ export function preflight(input: PreflightInput): PreflightCheck[] {
   ];
 }
 
-/** Whether anything here is worth a musician's attention before they play. */
+/**
+ * Whether anything here is worth stopping a musician for.
+ *
+ * **It decides whether the pre-flight screen opens at all, and before
+ * 2026-09-19 nothing did.** The screen was shown once to everybody, whatever
+ * it had to say. On a take with nothing wrong that is two rows of ✓ and a
+ * paragraph standing between someone holding an instrument and the record
+ * button — and both of its items are already on the screen behind it: the
+ * entry bar has a row, and so does the metronome. A screen whose whole content
+ * is "everything is fine" has not earned the interruption.
+ *
+ * Every bit of its value survives for the case it was built for. When a check
+ * is `warn` — a click that will bleed into the take, an entry bar that opens
+ * on rests — it still stops, still explains, and still offers the one-tap
+ * remedy, which is a thing the musician can act on before playing rather than
+ * discover in a verdict.
+ *
+ * **This function already existed and nothing called it.** It was written
+ * with the checks and then only ever referenced by its own test, which is the
+ * shape `check-dead-exports.py` was built to catch and the one it cannot see,
+ * because a test counts as a reference. Giving it the job it was named for is
+ * a better answer than adding a second function beside it with the same body.
+ */
 export function hasWarning(checks: PreflightCheck[]): boolean {
   return checks.some((check) => check.tone === 'warn');
 }
