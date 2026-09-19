@@ -1,6 +1,6 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useQueryClient } from '@tanstack/react-query';
-import { Mic, Square } from '../../components/icons';
+import { ChevronRight, Mic, Square } from '../../components/icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Linking, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
@@ -50,9 +50,11 @@ import {
   disabledOpacity,
   ICON_SIZE,
   ICON_STROKE_WIDTH,
+  MIN_TOUCH_TARGET,
   radii,
   spacing,
 } from '../../design';
+import { BottomSheet } from '../../components/overlays/BottomSheet';
 import { TempoStepper } from '../../components/practice/TempoStepper';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import {
@@ -81,6 +83,10 @@ import { BeatIndicator } from './BeatIndicator';
 import { PracticeSetup } from './PracticeSetup';
 import { ListenButton } from '../../components/score/ListenButton';
 import { takeStatus } from '../../lib/record/takeStatus';
+import {
+  metronomeChoices,
+  metronomeValueLabel,
+} from '../../lib/record/metronomeChoice';
 import { PlaybackSettings } from '../../components/score/PlaybackSettings';
 import { ScoreBackdrop } from '../../components/score/ScoreBackdrop';
 import { scheduleScore, startableMeasures } from '../../lib/score';
@@ -94,13 +100,6 @@ import {
 } from '../../lib/record/leaving';
 import { useGoBack } from '../../navigation/useGoBack';
 import { loadStateFor } from '../../lib/loadState';
-
-const METRONOME_LABELS = {
-  off: 'Metronome off',
-  visual: 'Visual metronome',
-  haptic: 'Haptic metronome',
-  audio_with_headphones: 'Audio metronome — headphones',
-} as const;
 
 /**
  * What the toggle turns on when there's no earlier choice to restore.
@@ -176,6 +175,8 @@ export function RecordScreen() {
   // The first recording on this device gets a short orientation before the
   // system permission prompt. It can always be reopened from the ready screen.
   const [showSetup, setShowSetup] = useState(!practiceSetupSeen);
+  /** The open metronome picker — how all four modes became reachable here. */
+  const [pickingMetronome, setPickingMetronome] = useState(false);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [hasInputSignal, setHasInputSignal] = useState(false);
   useEffect(() => {
@@ -609,13 +610,6 @@ export function RecordScreen() {
       setElapsedMs(0);
       goPhase('ready');
     }
-  }
-
-  function toggleMetronome() {
-    impact(ImpactFeedbackStyle.Light);
-    preferences.setMetronomeMode(
-      metronomeMode === 'off' ? lastOnMode.current : 'off',
-    );
   }
 
   async function openMicrophoneSettings() {
@@ -1125,6 +1119,18 @@ export function RecordScreen() {
           </Text>
         )}
         {/*
+          **The beat, in the part of the sheet that is always on screen.**
+          It was the other branch of a ternary down in the settings, which
+          stopped working the moment those stopped rendering during a take —
+          and was already wrong once the sheet began opening lowered, because
+          a musician who had put the controls away would have had a visual
+          metronome drawn inside a panel they could not see.
+        */}
+        {recording && metronomeMode === 'visual' ? (
+          <BeatIndicator beat={metronome.beat} perBar={perBar} />
+        ) : null}
+
+        {/*
           What the bar says while the microphone is open — `lib/record/takeStatus.ts`,
           where it is tested, including the thing it must never say. The
           detector is amplitude-invariant (`TUNING_LOG.md`, 2026-09-02), so a
@@ -1366,43 +1372,75 @@ export function RecordScreen() {
           {/*
             Locked with the tempo once recording starts: the mode is written
             onto the take, so changing it mid-way would mislabel what was
-            actually playing. In visual mode the row it occupies becomes the
-            metronome itself — the same height, so nothing above shifts when
-            the take begins.
+            actually playing.
+
+            **The beat itself has moved out of this block**, up beside the
+            timer. It used to be the other branch of a ternary here — in
+            visual mode this row became the metronome — which was fine while
+            the settings were always on screen and is not fine now. Two things
+            changed under it: these controls are no longer rendered during a
+            take, and the sheet opens lowered, so a musician recording with the
+            controls put away would have had a visual metronome drawn inside a
+            panel they could not see. A beat that cannot be seen is the defect
+            `BeatIndicator` exists to fix.
           */}
-          {recording && metronomeMode === 'visual' ? (
-            <BeatIndicator beat={metronome.beat} perBar={perBar} />
-          ) : (
+          {/*
+            **A row that opens, not a word that looked like a caption.**
+
+            This was a `role="switch"` rendering a bare `Text`, and it toggled
+            between `off` and whichever mode was last on. Two things were wrong
+            with that and only one of them was the affordance.
+
+            The affordance: its own comment records that the label used to be
+            gold, that gold at 13px measured 3.54:1 against a 4.5:1 floor, and
+            that the colour was therefore removed. Nothing replaced it, so the
+            only control in this group rendered identically to the `Target
+            tempo` and `BPM` captions around it. Colour could not come back —
+            16px is still not "large text" under WCAG, so the accent fails
+            there too — which leaves shape, and the shape this screen already
+            uses for a setting that opens is the ruled row beneath it.
+
+            The bigger one: **a two-state toggle cannot reach four modes.**
+            `setMetronomeMode` was called from exactly one other place in the
+            app, `ProfileScreen`, so a musician who had never chosen a mode
+            could only turn the default on and off. Wanting a click for the
+            first time meant leaving a screen with an instrument up, finding
+            it in Profile, and coming back. The picker is on this screen now
+            and offers all four — `lib/record/metronomeChoice.ts`, where the
+            list is exhaustive by type and the headphones condition is tested.
+          */}
           <Pressable
-            onPress={toggleMetronome}
+            onPress={() => setPickingMetronome(true)}
             disabled={recording}
-            accessibilityRole="switch"
-            // The ARIA props rather than `accessibilityState`: react-native-web
-            // maps these through to the DOM, and drops `accessibilityState`'s
-            // `checked` entirely, so the web build would announce a switch with
-            // no on or off. On native both spellings land in the same place.
-            aria-checked={metronomeMode !== 'off'}
+            accessibilityRole="button"
+            accessibilityLabel={`Metronome, ${metronomeValueLabel(metronomeMode)}`}
+            accessibilityHint="Opens the ways to mark the beat"
             aria-disabled={recording}
-            accessibilityLabel="Metronome"
             style={({ pressed }) => [
-              styles.metronome,
+              styles.metronomeRow,
               pressed && styles.metronomePressed,
             ]}
           >
             <Text
-              variant="metadataSmall"
-              // Ink when live, metadata grey when locked during a take. It
-              // was gold, because gold was what a tappable label looked like
-              // everywhere in the app — but at 13px the accent is 3.54:1,
-              // under the 4.5:1 floor, so nothing is gold text any more. The
-              // word still carries on or off; the weight of the colour says
-              // whether the line does anything.
+              variant="body"
               color={recording ? 'textTertiary' : 'textPrimary'}
             >
-              {METRONOME_LABELS[metronomeMode]}
+              Metronome
             </Text>
+            <View style={styles.metronomeValue}>
+              <Text
+                variant="body"
+                color={recording ? 'textTertiary' : 'textSecondary'}
+              >
+                {metronomeValueLabel(metronomeMode)}
+              </Text>
+              <ChevronRight
+                size={ICON_SIZE.sm}
+                color={recording ? colors.textTertiary : colors.textSecondary}
+                strokeWidth={ICON_STROKE_WIDTH}
+              />
+            </View>
           </Pressable>
-          )}
 
           {/*
             Only where there is something to skip — a control that is always
@@ -1512,6 +1550,48 @@ export function RecordScreen() {
         `analysing` the audio is already on its way. Both cases that hold
         unsent audio — a live take, and one whose upload failed — are here.
       */}
+      {/*
+        Every way to mark the beat, on the screen that needs it. Before this
+        the mode could only be set in Profile.
+      */}
+      <BottomSheet
+        visible={pickingMetronome}
+        onClose={() => setPickingMetronome(false)}
+        title="Marking the beat"
+      >
+        {metronomeChoices().map((choice) => (
+          <Pressable
+            key={choice.mode}
+            onPress={() => {
+              setPickingMetronome(false);
+              preferences.setMetronomeMode(choice.mode);
+            }}
+            accessibilityRole="button"
+            accessibilityState={{ selected: choice.mode === metronomeMode }}
+            aria-pressed={choice.mode === metronomeMode}
+            accessibilityLabel={`${choice.label}. ${choice.detail}`}
+            style={({ pressed }) => [
+              styles.metronomeOption,
+              pressed && styles.metronomePressed,
+            ]}
+          >
+            <Text
+              variant="body"
+              color={choice.mode === metronomeMode ? 'accentText' : 'textPrimary'}
+            >
+              {choice.label}
+            </Text>
+            <Text
+              variant="metadataSmall"
+              color="textSecondary"
+              style={styles.metronomeOptionDetail}
+            >
+              {choice.detail}
+            </Text>
+          </Pressable>
+        ))}
+      </BottomSheet>
+
       <ConfirmDialog
         visible={leavePrompt !== null}
         title={leavePrompt?.title ?? ''}
@@ -1812,6 +1892,36 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     marginTop: spacing.md,
+  },
+  /**
+   * The ruled row `PlaybackSettings` already draws for "Start at", because
+   * this is the same kind of thing: a setting whose value is a word and whose
+   * control opens. Consistency is the affordance — someone who has tapped one
+   * of these knows this one does something, which the bare label it replaces
+   * could not say once its colour had to go for contrast.
+   */
+  metronomeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: MIN_TOUCH_TARGET,
+    marginTop: spacing.lg,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    paddingTop: spacing.sm,
+  },
+  metronomeValue: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  metronomeOption: {
+    paddingVertical: spacing.sm,
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: 'center',
+  },
+  metronomeOptionDetail: {
+    marginTop: 2,
   },
   metronome: {
     // A 44pt row rather than a line of text, negative-margined back so the
