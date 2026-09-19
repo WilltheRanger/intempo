@@ -29,6 +29,7 @@
  * Exits non-zero on any failure, so it can gate a change.
  */
 import { spawnSync } from 'node:child_process';
+import { TAKE_HEARING } from './screen-copy.mjs';
 import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -164,14 +165,25 @@ async function checkMicrophone(browser) {
   }
 
   // **The one assertion that proves hardware, rather than a button.** The
-  // screen says "audio received" only once the level meter has seen a sample
-  // above the floor, so this is the app's own reading of its own microphone.
+  // screen says this only once the level meter has seen a sample above the
+  // floor, so it is the app's own reading of its own microphone.
+  //
+  // **Through `screen-copy.mjs`, because this sentence was pinned twice.**
+  // It read `/audio received/i` here and in `walk-app.mjs`, so improving the
+  // copy — `Microphone: audio received` was a developer reading a stream,
+  // shown to a musician mid-take — failed both tools at once, one of them
+  // reporting a worklet that had not delivered. That is the third time in two
+  // days a check here has named an app defect that was a deliberate copy
+  // change, and the second in this file.
   await page.waitForTimeout(2500);
   const screen = await page.evaluate(() => document.body.innerText || '');
-  if (/audio received/i.test(screen)) {
+  if (screen.includes(TAKE_HEARING)) {
     pass('audio actually arrives from the device');
   } else {
-    const heard = screen.match(/Microphone:.*/)?.[0] ?? '(no microphone line on screen)';
+    // The take bar's own line, whatever it now says, rather than a pattern
+    // that only matches the sentence this check was written against.
+    const heard = screen.split('\n').find((l) => /hearing|no sound|microphone/i.test(l))
+      ?? '(no take line on screen)';
     fail('audio actually arrives from the device', heard);
   }
 
