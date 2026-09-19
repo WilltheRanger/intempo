@@ -734,5 +734,14 @@ def analyze(
             # be told the spread of one set of numbers and the average of
             # another.
             [d.delta_pct for d in deltas if d.timed],
+            # Paired with the written length of the note each delta belongs
+            # to, so the take can be grouped by what was on the page. The
+            # lookup is by `global_index` because `deltas` is already filtered
+            # and `timeline.notes` is not.
+            [
+                (timeline.notes[d.global_index].beats, d.delta_pct)
+                for d in deltas
+                if d.timed and 0 <= d.global_index < len(timeline.notes)
+            ],
         ),
     )

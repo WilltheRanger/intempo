@@ -14,8 +14,10 @@ from app.services.insights import (
     MIN_NOTES_FOR_INSIGHT,
     insights_for,
     played_tempo,
+    standout_note_value,
     steadiness,
     tempo_drift,
+    timing_by_note_value,
 )
 
 TARGET = 60.0
@@ -188,8 +190,112 @@ class TestInsightsFor:
         out = insights_for([], np.array([]), np.array([]), TARGET, [])
 
         assert out.as_dict() == {
+            "by_note_value": [],
+            "standout_value": None,
             "played_bpm": None,
             "tempo_difference_bpm": None,
             "drift_bpm": None,
             "steadiness_pct": None,
         }
+
+
+class TestTimingByNoteValue:
+    """The insight a metronome cannot give: not "you were fast" but "your
+    quarters are fine and your sixteenths run away"."""
+
+    def _mixed(self, sixteenth_delta: float):
+        """A page of quarters, eighths and sixteenths, only one of which is
+        mistimed."""
+        return (
+            [(1.0, 0.5)] * 32
+            + [(0.5, -0.3)] * 36
+            + [(0.25, sixteenth_delta)] * 16
+        )
+
+    def test_the_take_is_split_by_what_was_written(self):
+        values = timing_by_note_value(self._mixed(-12.0))
+
+        assert [v.label for v in values] == [
+            "quarter notes",
+            "eighth notes",
+            "sixteenth notes",
+        ]
+        assert [v.note_count for v in values] == [32, 36, 16]
+
+    def test_longest_value_first(self):
+        """A musician reads a page from the long notes down, and a table that
+        jumps between note values is a table nobody scans."""
+        values = timing_by_note_value(self._mixed(-12.0))
+
+        assert [v.beats for v in values] == sorted(
+            [v.beats for v in values], reverse=True
+        )
+
+    def test_a_value_with_too_few_notes_is_not_reported(self):
+        """Telling somebody they rush their sixteenths off four sixteenths is
+        telling them about four notes."""
+        values = timing_by_note_value([(1.0, 0.0)] * 20 + [(0.25, -30.0)] * 4)
+
+        assert [v.beats for v in values] == [1.0]
+
+    def test_a_length_with_no_plain_name_is_reported_without_one(self):
+        """Inventing a name for 1.75 beats would be worse than the number.
+        The count is still true and still groupable."""
+        values = timing_by_note_value([(1.75, 2.0)] * 8 + [(1.0, 0.0)] * 8)
+
+        odd = next(v for v in values if v.beats == 1.75)
+        assert odd.label is None
+        assert odd.note_count == 8
+
+
+class TestStandoutNoteValue:
+    def test_the_value_that_behaves_differently_is_named(self):
+        """Measured end to end on a real page: with only the sixteenths
+        pulled early, halves, quarters and eighths sit within ±1% and the
+        sixteenths read −11.9%. The verdict for that take names a single
+        measure; this names the habit."""
+        values = timing_by_note_value(
+            [(1.0, 0.9)] * 32 + [(0.5, -0.3)] * 36 + [(0.25, -11.9)] * 16
+        )
+
+        standout = standout_note_value(values)
+
+        assert standout is not None
+        assert standout.label == "sixteenth notes"
+
+    def test_a_take_that_rushed_throughout_names_nothing(self):
+        """**The distinction the rule exists for.** Every value rushing
+        equally is the verdict's finding, and repeating it under a new heading
+        as "your quarters rush" would be telling a musician to practise the
+        thing they already know while implying the others are fine."""
+        values = timing_by_note_value(
+            [(1.0, -14.0)] * 32 + [(0.5, -14.0)] * 36 + [(0.25, -14.0)] * 16
+        )
+
+        assert standout_note_value(values) is None
+
+    def test_an_even_take_names_nothing(self):
+        values = timing_by_note_value(
+            [(1.0, 0.2)] * 32 + [(0.5, -0.1)] * 36 + [(0.25, 1.3)] * 16
+        )
+
+        assert standout_note_value(values) is None
+
+    def test_one_value_alone_cannot_stand_out(self):
+        """There is nothing to stand out *from*. A page of nothing but
+        quarters that rushed is a take that rushed."""
+        values = timing_by_note_value([(1.0, -20.0)] * 32)
+
+        assert standout_note_value(values) is None
+
+    def test_a_dominant_value_is_measured_against_the_others_not_itself(self):
+        """The baseline excludes the candidate. Without that, a value
+        supplying most of the page would be compared against an average it
+        mostly *is*, so it could never stand out however far it drifted —
+        which is exactly backwards, since the commonest note value is the one
+        a musician most needs told about."""
+        values = timing_by_note_value([(1.0, -12.0)] * 60 + [(0.5, 0.0)] * 10)
+
+        standout = standout_note_value(values)
+
+        assert standout is not None and standout.beats == 1.0

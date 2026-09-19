@@ -1019,6 +1019,29 @@ nothing else covers `backend/`. Named here rather than left to be found.
   from the musician's *own* pace, whatever pace they chose. Found by measuring
   end to end, not by reading the code.
 
+  **Grouping by written note value is the one a metronome cannot give.**
+  `ExpectedNote` now carries `beats` — `_beats` already computed it while
+  building the timeline, so it costs nothing and cannot drift from the onsets
+  it produced. On a page of halves, quarters, eighths and sixteenths with only
+  the sixteenths pulled early:
+
+      half notes       n=8    mean  -0.1%
+      quarter notes    n=32   mean  +0.9%
+      eighth notes     n=36   mean  -0.3%
+      sixteenth notes  n=15   mean -11.9%   <- named as the standout
+
+  The verdict for that same take reads *"You rushed in measure 9 by an average
+  of 7 BPM"*. One names a bar; the other names the habit, and only one of them
+  tells a musician what to practise.
+
+  `standout_note_value` compares each value against the average of **the
+  others**, not against zero and not against an average it supplies itself.
+  Against zero, a take that rushed throughout would name one value and imply
+  the rest were fine — the verdict's finding repeated under a new heading.
+  Including the candidate in its own baseline would stop the *commonest* note
+  value from ever standing out, which is backwards: it is the one a musician
+  most needs told about.
+
 ## The capture path (2026-08-24) — what an audit of it found
 
 Nine defects between the shutter and a saved score, in a path that had **zero

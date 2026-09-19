@@ -71,6 +71,11 @@ class Insights(BaseModel):
     #: Spread of the per-note timing deltas, as a percentage of one beat.
     #: Low is even playing, whatever the average was.
     steadiness_pct: float | None = None
+    #: The take split by written note value, longest first.
+    by_note_value: list["NoteValueTiming"] = []
+    #: The one written value that behaves differently from the rest, if any —
+    #: "your quarters are fine and your sixteenths run away".
+    standout_value: "NoteValueTiming | None" = None
 
     def as_dict(self) -> dict:
         return self.model_dump()
@@ -196,6 +201,7 @@ def insights_for(
     expected: np.ndarray,
     target_bpm: float,
     delta_pcts: list[float],
+    by_note: list[tuple[float, float]] | None = None,
 ) -> Insights:
     """Everything above, or an empty `Insights` for a take too small to describe.
 
@@ -205,7 +211,10 @@ def insights_for(
     would throw away the two that are.
     """
     played = played_tempo(matched, detected, expected, target_bpm)
+    values = timing_by_note_value(by_note or [])
     return Insights(
+        by_note_value=values,
+        standout_value=standout_note_value(values),
         played_bpm=None if played is None else round(played, 1),
         tempo_difference_bpm=None if played is None else round(played - target_bpm, 1),
         drift_bpm=(
@@ -215,3 +224,125 @@ def insights_for(
             lambda s: None if s is None else round(s, 1)
         )(steadiness(delta_pcts)),
     )
+
+
+#: How many notes of one written value before it is worth reporting.
+#:
+#: Higher than `MIN_NOTES_FOR_INSIGHT`, because this is a *comparison* between
+#: groups rather than a description of one: telling a musician "you rush your
+#: sixteenths" off four sixteenths is telling them about four notes.
+MIN_NOTES_PER_VALUE = 6
+
+#: How far a note value's average must sit from the take's own average before
+#: it is called out, in percent of a beat.
+#:
+#: A starting value that wants a real recording and an ear, like everything in
+#: `[tolerance]`. It is deliberately above the tolerance bands' `inner` 5.0:
+#: the claim being made is not "these notes were off" — the verdict already
+#: says that — but "these notes were off *differently from the rest*", which
+#: has to clear the noise between groups before it is worth a sentence.
+NOTE_VALUE_STANDOUT_PCT = 6.0
+
+#: Written lengths in beats, and what a musician calls them.
+#:
+#: A table rather than arithmetic on the beat count, because the names are not
+#: derivable — 1.5 beats is a dotted quarter only in a simple metre, and the
+#: honest thing for anything unlisted is to say nothing rather than invent a
+#: name. Unmatched values are grouped and reported by their beat count.
+_NOTE_VALUE_NAMES: dict[float, str] = {
+    4.0: "whole notes",
+    3.0: "dotted half notes",
+    2.0: "half notes",
+    1.5: "dotted quarter notes",
+    1.0: "quarter notes",
+    0.75: "dotted eighth notes",
+    0.5: "eighth notes",
+    0.375: "dotted sixteenth notes",
+    0.25: "sixteenth notes",
+    0.125: "thirty-second notes",
+}
+
+
+class NoteValueTiming(BaseModel):
+    """How one written note value was timed, across the whole take."""
+
+    beats: float
+    #: What a musician calls it, or `None` for a length with no plain name.
+    label: str | None = None
+    note_count: int
+    #: Mean timing delta for this value, in percent of a beat. Negative is early.
+    mean_delta_pct: float
+
+
+def timing_by_note_value(
+    per_note: list[tuple[float, float]],
+) -> list[NoteValueTiming]:
+    """The take split by what was written, longest value first.
+
+    **The insight a metronome cannot give.** A metronome tells a musician they
+    were fast; it cannot tell them *their quarters were fine and their
+    sixteenths ran away*, which is the difference between "practise this" and
+    "practise this bit, slowly". The pipeline has always known the written
+    length of every note and has never grouped by it.
+
+    `per_note` is `(beats, delta_pct)` for the timed notes only — the same set
+    the verdict is built from, so the two cannot disagree about which notes
+    counted.
+    """
+    grouped: dict[float, list[float]] = {}
+    for beats, delta_pct in per_note:
+        grouped.setdefault(round(float(beats), 4), []).append(float(delta_pct))
+
+    out = [
+        NoteValueTiming(
+            beats=beats,
+            label=_NOTE_VALUE_NAMES.get(beats),
+            note_count=len(deltas),
+            mean_delta_pct=round(float(np.mean(deltas)), 1),
+        )
+        for beats, deltas in grouped.items()
+        if len(deltas) >= MIN_NOTES_PER_VALUE
+    ]
+    return sorted(out, key=lambda v: v.beats, reverse=True)
+
+
+def standout_note_value(
+    values: list[NoteValueTiming],
+) -> NoteValueTiming | None:
+    """The one written value that behaves differently from the rest, if any.
+
+    **Different from the take's own average, not different from zero.** A take
+    that rushed throughout has every value rushing, and naming one of them
+    would be reporting the verdict twice under a new heading. What is worth a
+    sentence is the value that departs from what this musician did everywhere
+    else — the sixteenths in an otherwise steady take.
+
+    Needs at least two groups to compare, and the comparison excludes the
+    candidate from the baseline it is measured against, so a value that
+    dominates the page cannot make itself stand out from an average it
+    supplies most of.
+    """
+    if len(values) < 2:
+        return None
+
+    best: NoteValueTiming | None = None
+    best_gap = NOTE_VALUE_STANDOUT_PCT
+
+    for candidate in values:
+        others = [v for v in values if v is not candidate]
+        weight = sum(v.note_count for v in others)
+        if weight == 0:
+            continue
+        baseline = sum(v.mean_delta_pct * v.note_count for v in others) / weight
+        gap = abs(candidate.mean_delta_pct - baseline)
+        if gap > best_gap:
+            best, best_gap = candidate, gap
+
+    return best
+
+
+# `Insights` names `NoteValueTiming` before it is defined, which pydantic
+# resolves only when asked. Done here rather than by reordering, because the
+# reading order — the summary first, then the breakdown it contains — is the
+# order somebody opening this file wants.
+Insights.model_rebuild()
