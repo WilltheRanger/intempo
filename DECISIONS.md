@@ -1,5 +1,97 @@
 # InTempo Decisions
 
+## 2026-09-19 — The paywall was a grant, not a policy
+
+**Context.** Measured on the live project before anything was written, because
+"a client could in principle" and "a client can, today, on the database serving
+the app" are different claims and only the second justifies a migration.
+
+Every one of the nine `public` tables granted `anon` and `authenticated`
+UPDATE, INSERT, DELETE and TRUNCATE — Supabase's default for a new project,
+applied to every table these migrations create — plus explicit **column-level**
+UPDATE and INSERT: **70 table-level and 392 column-level entries**. RLS was
+enabled on all nine, which is what had made this look closed.
+
+Two of them are live free-tier bypasses, and neither needs the other.
+
+*`users.tier` is writable by the account it limits.* `002`'s only UPDATE policy
+is `users update self` — `USING (auth.uid() = id) WITH CHECK (auth.uid() = id)`.
+Row-level security is row-level: the name says `self` and that is all it checks,
+*which row*, never *which column*. `tier_limits.tier_of` reads `users.tier`
+straight from the table and `usage_for` returns an unlimited quota for the paid
+tiers, so a signed-in musician holding the anon key that ships in the published
+bundle by design could set their own tier. The same write sets `role` and
+`studio_id`, which `002`'s teacher policies then honour.
+
+*Deleting your own analyses resets the allowance.* Independent, and it survives
+fixing the first. `analyses` carries `owner full access on analyses` — `FOR
+ALL` — and `count_analyses_this_month` derives the quota by **counting rows**
+for that user in the current calendar month. Delete them and it resets;
+backdate `created_at` through the same policy and it resets without deleting
+anything.
+
+**Decision.** *Revoke every client write privilege in `public`, at both levels,
+driven off the catalog. Keep SELECT.*
+
+Three things follow from how these two failed.
+
+*Privileges, not policies.* A policy cannot express the column rule. `WITH
+CHECK` sees the proposed row, so it can compare a column to itself — `tier =
+(SELECT tier FROM users WHERE id = auth.uid())` — but that reads the table it is
+guarding from inside its own guard, and it must be written out for every column
+that must not move, forever, with a new one silently unguarded every time the
+schema grows. Privileges are the mechanism Postgres has for "may not write
+this".
+
+*Every table, not the two with a proven bypass.* The first bypass was a column
+and the second was a row count; what they have in common is a client holding a
+write privilege it never uses, with only the shape of a policy in front of it —
+and policy shape had already been the wrong shape twice. Catalog-driven rather
+than a list of nine names, so a tenth table added later is covered by
+re-running the file, and so it cannot go stale against the schema.
+
+*Both levels.* Table privileges and column privileges are separate entries in
+Postgres, and this project had both. A table-only revoke would have read as a
+fix, passed every static check, and left `tier` writable in production.
+
+**Alternatives considered.** *Narrowing `users update self` to safe columns* —
+rejected above; it cannot be written without a self-referential subquery per
+column, and it does nothing about `analyses`. *A `BEFORE UPDATE` trigger that
+freezes `tier`* — rejected: it would work, and it is a second mechanism to
+maintain beside the one Postgres already has, applying only to the columns
+somebody remembered. *Revoking SELECT as well* — rejected: the app does not read
+these tables directly either, but a revoke is worth making where it removes a
+*reachable write*, the read policies already scope every table to its owner, and
+that would be a larger change with no finding behind it. *Waiting for #114,
+which proposes the `users` half* — rejected: it bundles Sentry, Zod validation
+and offline-queue changes with it, has never passed this repository's gates, and
+does not cover `analyses`.
+
+**Trade-offs accepted.** The client can now never write a table directly, so any
+future feature that wants it has to go through the backend or re-grant
+deliberately — which is the intended shape and is why `COMMENT ON TABLE` on
+`users` and `analyses` says so in the database, where somebody reaching for the
+dashboard will see it. `readiness.py` gains a blocking check, so a deployment
+against a database where 021 has not been applied now reports itself not ready
+rather than serving requests with the grants open.
+
+**Verified.** Nothing uses the privileges being removed, checked rather than
+assumed: every `supabase.*` call in `mobile/src` is `supabase.auth.*`, there is
+no `.from(` or `.table(` anywhere in the tree, exactly one `createClient` with
+the anon key exists in the repository, and the project has no edge functions.
+
+Applied to the live project. Post-state read back from the catalog: **0** client
+table writes and **0** client column writes remaining, SELECT retained on all 9
+tables, `service_role` keeping all 27 of its write grants so the backend is
+unaffected, `users update self` gone, and the probe returning true. Row counts
+unchanged either side — 4 users, 9 analyses, 21 scores. Grants outside `public`
+untouched, which the `auth` and `storage` schemas' 22 remaining entries confirm.
+
+The probe was mutation-tested on a local Postgres: it returns true at baseline,
+**false** when a table grant is re-granted, **false** when a single column grant
+is re-granted — the case a table-only revoke misses — and true again after
+re-running 021, which is also how its idempotency was shown.
+
 ## 2026-09-17 — A scan that failed says so on the shelf, and a week later it sweeps itself
 
 **Context.** The owner's library held nine pieces with a title, no notation and
