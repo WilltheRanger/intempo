@@ -10,11 +10,10 @@ import {
   Text,
 } from '../../components/primitives';
 import { UploadProgress } from '../../components/score/UploadProgress';
-import { ApiError } from '../../data/api/client';
-import { UploadError } from '../../data/api/upload';
 import { captureSession, useCapturedPages } from '../../data/captureSession';
 import { IS_LIVE_BACKEND } from '../../data/environment';
-import { ScanUploadError, uploadPage } from '../../lib/scan/uploadPage';
+import { describeScanFailure } from '../../lib/scan/describeFailure';
+import { uploadPage } from '../../lib/scan/uploadPage';
 import { uploadPages } from '../../lib/scan/uploadPages';
 import { spacing } from '../../design';
 import type { RootNavigation } from '../../navigation/types';
@@ -35,25 +34,6 @@ import type { RootNavigation } from '../../navigation/types';
  * `POST /v1/scores`, which needs a title, and only the musician has that. So
  * this screen uploads, and the review screen names and saves.
  */
-/**
- * The sentence to show for a failed scan.
- *
- * Three error types in this flow are written for a musician and say which of
- * the several ways it can fail actually happened — reading the file off the
- * device, sending it, or the API refusing. Anything else reaching here is a
- * bug, and its message is written for whoever fixes it.
- */
-function describeScanFailure(cause: unknown): string {
-  if (
-    cause instanceof UploadError ||
-    cause instanceof ScanUploadError ||
-    cause instanceof ApiError
-  ) {
-    return cause.message;
-  }
-  return 'The scan could not be sent. Check your connection and try again.';
-}
-
 export function TranscribeScreen() {
   const navigation = useNavigation<RootNavigation>();
   const goBack = useGoBack({ tab: 'Library' });

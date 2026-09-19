@@ -45,8 +45,9 @@ export class ErrorBoundary extends Component<
         contexts: { react: { componentStack: info.componentStack } },
       });
     }
-    // The only place this is recorded today. When crash reporting is wired up,
-    // it reports from here.
+    // Release builds report this to Sentry above. The console copy remains for
+    // local development and for builds whose release DSN is deliberately
+    // absent; neither path includes application analytics or routine events.
     //
     // The one `console` in shipped code besides `App.tsx`'s boot line, and the
     // exception `CLAUDE.md` §1 is about is *debug* output. A render that threw

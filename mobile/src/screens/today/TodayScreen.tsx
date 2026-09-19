@@ -13,13 +13,12 @@ import { useMe } from '../../data/hooks/useMe';
 import { useCurrentPiece, useLibrary } from '../../data/hooks/usePieces';
 import { practiceTempo, usePracticeTempos } from '../../data/practiceTempo';
 import type { Piece } from '../../data/types';
-import { describeLoadError } from '../../data/api/describeError';
-import { getAnalysis } from '../../data/api/analyses';
-import { ApiError } from '../../data/api/client';
+import { describeLoadError } from '../../data/describeLoadError';
 import {
   forgetPendingAnalysis,
   usePendingAnalysis,
 } from '../../data/practice/pendingAnalysis';
+import { readPendingAnalysisStatus } from '../../data/practice/pendingAnalysisStatus';
 import { getGreeting } from '../../lib/greeting';
 import type { TabScreenNavigation } from '../../navigation/types';
 import { PracticeHero, useHeroHeight } from './PracticeHero';
@@ -94,21 +93,15 @@ export function TodayScreen() {
     }
     setPendingCheck('checking');
     try {
-      const analysis = await getAnalysis(pendingAnalysisId);
-      setPendingCheck(
-        analysis.status === 'done' ||
-          analysis.status === 'failed' ||
-          analysis.status === 'failed_recoverable'
-          ? 'ready'
-          : 'working',
-      );
-    } catch (error) {
-      if (error instanceof ApiError && error.status === 404) {
+      const status = await readPendingAnalysisStatus(pendingAnalysisId);
+      if (status === 'missing') {
         // It belongs to an old/deleted account or was removed with its piece.
         await forgetPendingAnalysis(pendingAnalysisId);
         setPendingCheck(null);
         return;
       }
+      setPendingCheck(status);
+    } catch {
       setPendingCheck('unavailable');
     }
   }, [pendingAnalysisId]);

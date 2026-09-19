@@ -2,14 +2,14 @@ import { describe, expect, it, vi } from 'vitest';
 
 // `client.ts` reaches `../auth/session`, which reaches react-native — the same
 // stand-in `client.test.ts` uses, for the same reason.
-vi.mock('../auth/session', () => ({
+vi.mock('./auth/session', () => ({
   getAccessToken: () => Promise.resolve('token'),
   signOut: async () => {},
 }));
 
-import clientSource from './client.ts?raw';
-import { ApiError } from './client';
-import { describeLoadError } from './describeError';
+import clientSource from './api/client.ts?raw';
+import { ApiError } from './api/client';
+import { describeLoadError } from './describeLoadError';
 
 /**
  * The sentence a musician reads when a screen will not load.

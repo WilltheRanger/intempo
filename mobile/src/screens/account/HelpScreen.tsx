@@ -11,10 +11,9 @@ import {
   SectionHeader,
   Text,
 } from '../../components/primitives';
-import { apiFetch } from '../../data/api/client';
 import { IS_LIVE_BACKEND } from '../../data/environment';
+import { checkLiveAppConnection } from '../../data/liveSupportDiagnostics';
 import {
-  checkAppConnection,
   type ConnectionReport,
 } from '../../data/supportDiagnostics';
 import { BORDER_WIDTH, colors, spacing } from '../../design';
@@ -91,9 +90,7 @@ export function HelpScreen() {
     }
     setChecking(true);
     try {
-      setReport(
-        await checkAppConnection((path, options) => apiFetch(path, options)),
-      );
+      setReport(await checkLiveAppConnection());
     } finally {
       setChecking(false);
     }
