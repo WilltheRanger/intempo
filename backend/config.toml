@@ -41,6 +41,20 @@ pre_emphasis_coef = 0.97   # librosa.effects.preemphasis coefficient
 delta = 0.05
 highpass_hz = 80.0
 
+[intake]
+# What an uploaded file has to be before the pipeline decodes it.
+#
+# **The byte cap was a duration cap in disguise, and a file picker ends that.**
+# The bucket accepts 50 MB. 50 MB of the WAV the app records is about five
+# minutes; 50 MB of 64 kbps MP3 is about one hour and forty minutes — the same
+# bytes and twenty times the decode. Nothing downstream had an opinion about
+# duration because until a musician could pick a file, nothing needed one.
+#
+# Ten minutes is comfortably past the longest realistic practice take and
+# keeps the worst case bounded. Probed from the container header before any
+# sample is decoded, so a two-hour upload is refused in milliseconds.
+max_duration_s = 600.0
+
 [tolerance]
 # Bands as a % of one beat's duration at the target BPM. Asymmetric:
 # humans tolerate dragging better than rushing, so the dragging bands

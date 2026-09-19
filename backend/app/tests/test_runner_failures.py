@@ -11,6 +11,7 @@ and the missing lines were, without exception, the failure paths.
 
 from __future__ import annotations
 
+import dataclasses
 from uuid import uuid4
 
 import httpx
@@ -179,12 +180,62 @@ def _seeded() -> tuple[FakeSupabase, str]:
     return fake, analysis_id
 
 
+def _wav_bytes(seconds: float, sr: int = 22050) -> bytes:
+    """A real WAV the intake guard accepts, so a test about a later stage is
+    not silently testing the guard instead."""
+    import io
+
+    import numpy as np
+    import soundfile as sf
+
+    tone = 0.2 * np.sin(2 * np.pi * 220 * np.arange(int(seconds * sr)) / sr)
+    buffer = io.BytesIO()
+    sf.write(buffer, tone.astype(np.float32), sr, format="WAV")
+    return buffer.getvalue()
+
+
 def test_a_pipeline_error_ends_the_row_rather_than_leaving_it_running(monkeypatch) -> None:
     """The catch-all, and the branch a missing `config.toml` came through.
 
     Anything the analysis raises has to become a finished row. A row left
     `processing` is a progress screen that never resolves, and the stuck-row
     sweeper does not touch it for ten minutes.
+
+    **Raised from inside `analyze` rather than by feeding junk bytes.** This
+    used `b"not audio"`, which was a convenient way to make the pipeline throw
+    until the intake guard started refusing such a file *before* the pipeline
+    ran — at which point this test still passed a row to `failed` and stopped
+    exercising the catch-all it is named for. The guard is the better
+    behaviour and the coverage was real, so the error now comes from where the
+    test says it does.
+    """
+    fake, analysis_id = _seeded()
+    monkeypatch.setattr(analysis_runner, "get_service_client", lambda: fake)
+    monkeypatch.setattr(analysis_runner, "download_audio", lambda _url: _wav_bytes(2.0))
+
+    def _explode(*_args, **_kwargs):
+        raise RuntimeError("config.toml is missing")
+
+    monkeypatch.setattr(analysis_runner, "analyze", _explode)
+
+    analysis_runner.run_analysis(analysis_id)
+
+    row = fake.table("analyses").rows[0]
+    assert row["status"] == "failed"
+    assert row["failure_reason"] == "internal_error"
+
+
+def test_a_file_that_is_not_audio_is_refused_before_the_decoder_sees_it(
+    monkeypatch,
+) -> None:
+    """**The guard, through the runner rather than in isolation.**
+
+    `b"not audio"` is what a picked file that is not a recording looks like to
+    the worker, and what sits downstream of this point is
+    `librosa.load` -> `audioread` -> ffmpeg. The row ends with a code naming
+    the actual problem rather than `internal_error`, because "that is not an
+    audio file" and "something went wrong on our side" are different things to
+    tell a musician and only one of them is true.
     """
     fake, analysis_id = _seeded()
     monkeypatch.setattr(analysis_runner, "get_service_client", lambda: fake)
@@ -194,7 +245,35 @@ def test_a_pipeline_error_ends_the_row_rather_than_leaving_it_running(monkeypatc
 
     row = fake.table("analyses").rows[0]
     assert row["status"] == "failed"
-    assert row["failure_reason"] == "internal_error"
+    assert row["failure_reason"] == "audio_not_recognised"
+
+
+def test_a_recording_past_the_duration_cap_is_refused(monkeypatch) -> None:
+    """The refusal the upload feature exists to make possible.
+
+    Driven through the runner with the cap lowered rather than by building a
+    ten-minute file, because what is being checked is that the worker consults
+    the cap at all — the arithmetic has its own tests in
+    `test_audio_intake.py`.
+    """
+    fake, analysis_id = _seeded()
+    monkeypatch.setattr(analysis_runner, "get_service_client", lambda: fake)
+    monkeypatch.setattr(analysis_runner, "download_audio", lambda _url: _wav_bytes(4.0))
+
+    base = analysis_runner.load_audio_config()
+    monkeypatch.setattr(
+        analysis_runner,
+        "load_audio_config",
+        lambda: dataclasses.replace(
+            base, intake=dataclasses.replace(base.intake, max_duration_s=1.0)
+        ),
+    )
+
+    analysis_runner.run_analysis(analysis_id)
+
+    row = fake.table("analyses").rows[0]
+    assert row["status"] == "failed"
+    assert row["failure_reason"] == "audio_too_long"
 
 
 def test_a_missing_score_fails_the_take_instead_of_hanging(monkeypatch) -> None:
