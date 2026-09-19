@@ -1,5 +1,5 @@
 -- =============================================================
--- 021_assignment_transitions — close the assignment row before anything writes one
+-- 022_assignment_transitions — close the assignment row before anything writes one
 -- =============================================================
 --
 -- **Nothing has ever created an assignment.** `001` built the table, `002` gave
@@ -83,7 +83,7 @@
 --
 -- ## What holds this
 --
--- `migrations/checks/021_assignment_transitions.sql` exercises every edge and
+-- `migrations/checks/022_assignment_transitions.sql` exercises every edge and
 -- every invariant above against a real database, run by
 -- `tools/check-migrations.py` after the set applies. `readiness.py` cannot see
 -- any of it — it probes columns and tables over REST, and a trigger is neither
@@ -95,16 +95,55 @@
 -- policy, and REVOKE of an absent privilege is a no-op.
 
 -- -------------------------------------------------------------
--- 1. No direct UPDATE on assignments, for anyone but the service role
+-- 1. No direct UPDATE on assignments, at table or column level, for anyone
+--    but the service role
 -- -------------------------------------------------------------
+
+-- **Three corrections, all of them from PR #114**, which reaches the same
+-- conclusion about grants from the `users` side and does it properly:
+--
+--   1. `PUBLIC` was missing. A privilege granted to `PUBLIC` is held by every
+--      role including these two, and revoking from `anon` and `authenticated`
+--      by name leaves it entirely in place.
+--   2. **A table-level REVOKE does not remove column-level grants.** They are
+--      separate entries in Postgres, and a project that retained column grants
+--      from an earlier schema stays open to exactly the write this migration
+--      exists to stop. Hence the loop.
+--   3. This file covers `assignments` only. `002:30-33` gives `users` the same
+--      column-blind `users update self` policy, which is worse because rows
+--      exist today: a musician can set their own `tier`, `role` and
+--      `studio_id` and promote themselves into a paid tier and a studio.
+--      **That half is #114's and is not duplicated here** — widening this PR
+--      into another one's subject would make both harder to review. If #114
+--      lands first its 021 already covers `assignments` too, and everything
+--      below becomes an idempotent no-op that keeps working as a regression
+--      guard.
 
 DROP POLICY IF EXISTS "student update status on own assignments" ON public.assignments;
 
-REVOKE UPDATE ON public.assignments FROM authenticated;
-REVOKE UPDATE ON public.assignments FROM anon;
+REVOKE UPDATE ON TABLE public.assignments FROM PUBLIC, anon, authenticated;
+
+DO $$
+DECLARE
+  col record;
+BEGIN
+  FOR col IN
+    SELECT attname
+      FROM pg_attribute
+     WHERE attrelid = 'public.assignments'::regclass
+       AND attnum > 0
+       AND NOT attisdropped
+  LOOP
+    EXECUTE format(
+      'REVOKE UPDATE (%I) ON TABLE public.assignments FROM PUBLIC, anon, authenticated',
+      col.attname
+    );
+  END LOOP;
+END
+$$;
 
 COMMENT ON TABLE public.assignments IS
-  'Teacher-tier assignments. `authenticated` and `anon` hold SELECT only: both parties are the same Postgres role, so a column-level GRANT cannot separate what a student may write from what a teacher may write, and RLS is row-level and cannot either. All writes go through the backend on the service-role client, and public.assignments_enforce_transition() is the floor under those writes — it applies to the service role, which no policy does. Do not re-grant UPDATE here to make a direct-from-client write work; add the endpoint instead. See migration 021.';
+  'Teacher-tier assignments. `authenticated` and `anon` hold SELECT only: both parties are the same Postgres role, so a column-level GRANT cannot separate what a student may write from what a teacher may write, and RLS is row-level and cannot either. All writes go through the backend on the service-role client, and public.assignments_enforce_transition() is the floor under those writes — it applies to the service role, which no policy does. Do not re-grant UPDATE here to make a direct-from-client write work; add the endpoint instead. See migration 022.';
 
 -- -------------------------------------------------------------
 -- 2. The transition graph and the row's invariants
@@ -184,7 +223,7 @@ END
 $$;
 
 COMMENT ON FUNCTION public.assignments_enforce_transition() IS
-  'The status graph, the immutable identity columns, and the rule that a submitted analysis belongs to the assignment''s own student. Actor-agnostic on purpose: auth.uid() is NULL on the service-role connection that performs every write, so a trigger that read it would hold nowhere that matters. Who may make which edge belongs in the router, where the actor is known. See migration 021.';
+  'The status graph, the immutable identity columns, and the rule that a submitted analysis belongs to the assignment''s own student. Actor-agnostic on purpose: auth.uid() is NULL on the service-role connection that performs every write, so a trigger that read it would hold nowhere that matters. Who may make which edge belongs in the router, where the actor is known. See migration 022.';
 
 DROP TRIGGER IF EXISTS trg_assignments_transition ON public.assignments;
 CREATE TRIGGER trg_assignments_transition

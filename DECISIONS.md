@@ -24,7 +24,7 @@ Batch 12 when the teacher tier ships", so nothing constrained
 `archived -> assigned`, a repointed `student_user_id`, or a
 `submitted_analysis_id` naming another account's take.
 
-**Decision.** Migration `021`, in two halves.
+**Decision.** Migration `022`, in two halves. (Numbered 021 when written; renumbered when PR #114 turned out to be adding its own 021, and `check-migrations.py` fails on a duplicate.)
 
 *The UPDATE grant goes, rather than being narrowed to columns.* Teacher and
 student are both the Postgres role `authenticated` — what separates them lives
@@ -67,11 +67,32 @@ reviewable on its own.
 
 **Trade-off accepted.** A trigger cannot report *which* actor was wrong, so its
 messages name the rule rather than the caller, and the router still owes a 403
-that says who may do what. And `readiness.py` cannot see any of this: it probes
-columns and tables over REST, and a trigger and a revoked grant are neither, so
-a deployment missing `021` looks exactly like one that has it. That is what
-`migrations/checks/` is for — a new stage in `tools/check-migrations.py` that
-runs behavioural SQL against the finished schema. Two things followed from
+that says who may do what. And **`readiness.py` cannot see the trigger** — it
+probes columns and tables over REST, and a trigger is neither — so a deployment
+missing `022`'s second half looks exactly like one that has it. That is what
+`migrations/checks/` is for: a new stage in `tools/check-migrations.py` that
+runs behavioural SQL against the finished schema.
+
+*An earlier draft of this entry said readiness could see none of it, grant
+included. That was wrong, and PR #114 is what showed it:*
+`client_update_grants_closed()` is a `STABLE` function, executable by the
+service role alone, that reports the privilege state over PostgREST — so a
+missing revoke **is** detectable at runtime. The claim holds for the trigger
+only, and inventing a second RPC to report a trigger is not worth a migration.
+
+**What #114 corrected, recorded because it was wrong here first.** That PR
+reaches the same conclusion about grants from the `users` side, and the revoke
+written here was wrong in three ways. *`PUBLIC` was missing* — a privilege
+granted to `PUBLIC` is held by every role, so naming `anon` and `authenticated`
+left it standing. *A table-level REVOKE does not remove column-level grants* —
+they are separate entries, and a project retaining one from an earlier schema
+stayed open to exactly the write being prevented. *And `users` has the same
+hole, live rather than latent*: `002:30-33` gives `users update self` FOR
+UPDATE with the same column-blindness, so a musician can set their own `tier`,
+`role` and `studio_id` and promote themselves into a paid tier and a studio,
+against rows that exist today. The first two are fixed here. The third is not
+duplicated — it is #114's subject, and widening one PR into another's makes
+both harder to review. Two things followed from
 building it: `tools/supabase_stubs.sql` now models the table grants a real
 project starts with, because a REVOKE checked against a database where the role
 held nothing proves nothing; and `test_readiness.py`'s idempotency scan now

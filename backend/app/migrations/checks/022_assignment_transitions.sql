@@ -1,5 +1,5 @@
 -- =============================================================
--- Behavioural check for 021_assignment_transitions
+-- Behavioural check for 022_assignment_transitions
 -- =============================================================
 --
 -- Run by `tools/check-migrations.py` after the whole set has applied. A file in
@@ -8,13 +8,13 @@
 -- (`test_readiness.py`, `test_rls_invariants.py`, the gate's own applier) sees
 -- it as one.
 --
--- It exists because `021` is the first thing in this schema whose behaviour is
+-- It exists because `022` is the first thing in this schema whose behaviour is
 -- not visible in its own text. `test_rls_invariants.py` can read a migration
 -- and say whether a policy is scoped to its owner; nothing static can say
 -- whether a trigger rejects `archived -> assigned`. `readiness.py` cannot see
 -- it either: it probes columns and tables over REST, and a trigger is neither.
 --
--- Every assertion below is a rule stated in 021's header. If one stops being
+-- Every assertion below is a rule stated in 022's header. If one stops being
 -- true, this fails where the migration is applied rather than where an
 -- assignment is next written.
 --
@@ -169,7 +169,7 @@ BEGIN
 
     IF NOT v_rejected THEN
       RAISE EXCEPTION
-        'edge % -> % was accepted; the graph in 021 says it is not a transition',
+        'edge % -> % was accepted; the graph in 022 says it is not a transition',
         v_edge.from_status, v_edge.to_status;
     END IF;
   END LOOP;
@@ -225,7 +225,7 @@ BEGIN
     END;
 
     IF NOT v_rejected THEN
-      RAISE EXCEPTION '% was mutable; 021 says the identity columns are not',
+      RAISE EXCEPTION '% was mutable; 022 says the identity columns are not',
         v_edge.column_name;
     END IF;
   END LOOP;
@@ -276,13 +276,33 @@ END
 $$;
 
 -- ---------------------------------------------------------
--- 6. No role but the service role may UPDATE assignments directly. Read from
---    the catalog rather than the migration text, because the grant that
---    matters is the one the database ended up with.
+-- 6. No role but the service role may UPDATE assignments — at table level or
+--    at column level, by name or through PUBLIC. Read from the catalog rather
+--    than the migration text, because the grant that matters is the one the
+--    database ended up with.
+--
+--    The column half is here because PR #114 pointed out that a table-level
+--    REVOKE leaves column grants standing, and an earlier version of this
+--    check read `role_table_grants` only — so it would have passed a database
+--    where every column was still writable.
+--
+--    **This gate's own database cannot stage that**, and the loop is worth
+--    keeping anyway. `ALTER DEFAULT PRIVILEGES` in the stubs produces
+--    table-level entries, and `column_privileges` reports nothing once the
+--    table grant is gone, so on a fresh gate run the column loop finds an
+--    empty set whether or not 022 contains its revoke. The hazard is a *live*
+--    project that retained an explicit column grant from an earlier schema,
+--    which is the case #114's comment names. Verified by staging one by hand —
+--    `GRANT UPDATE (teacher_review_notes) ON public.assignments TO
+--    authenticated`, then this block, which names the role and the column —
+--    and by staging `GRANT UPDATE ... TO PUBLIC` for the table half. Recorded
+--    rather than automated: staging a grant inside the check that the check
+--    then reports would be asserting against its own setup.
 -- ---------------------------------------------------------
 DO $$
 DECLARE
   v_holder text;
+  v_col    record;
 BEGIN
   FOR v_holder IN
     SELECT grantee
@@ -290,12 +310,28 @@ BEGIN
      WHERE table_schema = 'public'
        AND table_name = 'assignments'
        AND privilege_type = 'UPDATE'
-       AND grantee IN ('authenticated', 'anon')
+       AND grantee IN ('authenticated', 'anon', 'PUBLIC')
   LOOP
     RAISE EXCEPTION
-      '% still holds UPDATE on assignments. Both parties are this one role, so '
-      'no column grant separates what a student may write from what a teacher '
-      'may write, and RLS is row-level. Writes go through the API.', v_holder;
+      '% still holds table-level UPDATE on assignments. Both parties are this '
+      'one role, so no column grant separates what a student may write from '
+      'what a teacher may write, and RLS is row-level. Writes go through the '
+      'API.', v_holder;
+  END LOOP;
+
+  FOR v_col IN
+    SELECT grantee, column_name
+      FROM information_schema.column_privileges
+     WHERE table_schema = 'public'
+       AND table_name = 'assignments'
+       AND privilege_type = 'UPDATE'
+       AND grantee IN ('authenticated', 'anon', 'PUBLIC')
+  LOOP
+    RAISE EXCEPTION
+      '% still holds UPDATE on assignments.%. A table-level REVOKE does not '
+      'remove a column grant — they are separate entries — so a project that '
+      'retained one from an earlier schema is still open to the write this '
+      'migration exists to stop.', v_col.grantee, v_col.column_name;
   END LOOP;
 
   IF NOT EXISTS (
@@ -304,10 +340,10 @@ BEGIN
        AND privilege_type = 'SELECT' AND grantee = 'authenticated'
   ) THEN
     RAISE EXCEPTION
-      'authenticated lost SELECT on assignments; 021 revokes UPDATE only, and '
+      'authenticated lost SELECT on assignments; 022 revokes UPDATE only, and '
       'both parties read their own rows through the policies in 002';
   END IF;
 
-  RAISE NOTICE 'assignment grants: SELECT kept, UPDATE revoked from authenticated and anon';
+  RAISE NOTICE 'assignment grants: SELECT kept; UPDATE revoked at table and column level from PUBLIC, anon and authenticated';
 END
 $$;

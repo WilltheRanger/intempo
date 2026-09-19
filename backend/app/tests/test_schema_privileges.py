@@ -52,8 +52,11 @@ _NO_DIRECT_UPDATE = {
         "and RLS is row-level and cannot either. Migration 002 shipped a "
         "policy named `student update status on own assignments` that in fact "
         "let a student write every column of their own row, `status = "
-        "'reviewed'` included. 021 revokes the grant and routes writes through "
-        "the API, where the actor is known."
+        "'reviewed'` included. 022 revokes the grant — at table *and* column "
+        "level, and from `PUBLIC` as well as by name, because a table REVOKE "
+        "leaves column grants standing and a privilege held by `PUBLIC` is "
+        "held by every role — and routes writes through the API, where the "
+        "actor is known."
     ),
 }
 
@@ -72,7 +75,7 @@ def test_tables_rls_cannot_protect_have_their_update_grant_revoked() -> None:
     sql = _sql()
 
     for table, reason in _NO_DIRECT_UPDATE.items():
-        for role in ("authenticated", "anon"):
+        for role in ("PUBLIC", "anon", "authenticated"):
             revoked = re.search(
                 rf"REVOKE\s+[^;]*\bUPDATE\b[^;]*\bON\s+(?:public\.)?{table}\b"
                 rf"[^;]*\bFROM\s+[^;]*\b{role}\b",
