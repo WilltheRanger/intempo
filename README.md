@@ -5,11 +5,12 @@ along, and get feedback on whether you rushed, dragged, or held tempo.
 
 ## Status
 
-Batches 0–4 complete (foundations, backend infrastructure, the sheet-music OCR
-pipeline, the audio analysis core, and the async analysis API). Batches 5–7 —
-the app itself — are built and running against fixtures; their remaining gates
-need live Supabase keys and a real device, and are listed honestly in
-`CLAUDE.md` §4. `git log` is the running account.
+Batches 0–4 cover the foundations, backend infrastructure, sheet-music OCR,
+audio analysis and the async analysis API. The shipping Expo app can run in a
+deterministic fixture mode or against the deployed services. Its remaining
+real-device and release gates are listed in `CLAUDE.md` §4; do not infer the
+deployment's configuration from a local `.env`. `git log` is the running
+account.
 
 ## Project layout
 
@@ -53,8 +54,8 @@ console at boot.
 
 ## Before you commit
 
-CI has been blocked since 2026-09-09 (see `CLAUDE.md` §1), so run the same
-checks locally:
+Run the local preflight before pushing, then treat GitHub Actions as the clean
+runner check rather than as a replacement for preflight:
 
 ```bash
 tools/preflight.py            # the gates that need no build

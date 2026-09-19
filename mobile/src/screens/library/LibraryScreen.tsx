@@ -15,7 +15,7 @@ import {
 } from '../../components/primitives';
 import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
 import { Text } from '../../components/primitives/Text';
-import { describeLoadError } from '../../data/api/describeError';
+import { describeLoadError } from '../../data/describeLoadError';
 import {
   useDeletePiece,
   useLibrary,

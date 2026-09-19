@@ -39,6 +39,7 @@ import { TrendLine } from './TrendLine';
 import { TakePlayback } from './TakePlayback';
 import { loadStateFor } from '../../lib/loadState';
 import { rowDivided } from '../../components/rowMetrics';
+import { retryFocus } from './retryFocus';
 
 /**
  * What one take came back as.
@@ -291,6 +292,7 @@ export function VerdictScreen() {
     covered?.last ??
     take.measures[take.measures.length - 1]?.measure ??
     take.measures.length;
+  const focus = take.lowConfidence ? null : retryFocus(take.measures);
 
   return (
     /*
@@ -314,14 +316,15 @@ export function VerdictScreen() {
     >
       <PageHeader
         eyebrow={take.pieceTitle}
-        title={formatTakeVerdict(take.measures)}
+        title={take.lowConfidence ? 'Timing is uncertain' : formatTakeVerdict(take.measures)}
         onBack={() => navigation.navigate('PieceDetail', { pieceId: take.pieceId })}
         backLabel="Back to the piece"
       />
 
-      {/* The pipeline's own sentence — it knows which measures drifted. */}
       <Text variant="body" color="textSecondary" style={styles.headline}>
-        {take.headline}
+        {take.lowConfidence
+          ? 'The recording was hard to follow, so this timing read may be inaccurate. Listen to your take, then record again in a quieter room or closer to the microphone.'
+          : take.headline}
       </Text>
 
       <MetadataRow
@@ -343,14 +346,9 @@ export function VerdictScreen() {
         <TakePlayback analysisId={take.id} />
       ) : null}
 
-      {take.lowConfidence ? (
-        <Text
-          variant="metadataSmall"
-          color="textTertiary"
-          style={styles.caveat}
-        >
-          The recording was hard to follow, so treat this as a rough read.
-          A quieter room or a closer microphone usually fixes it.
+      {focus ? (
+        <Text variant="body" color="textSecondary" style={styles.focus}>
+          {focus}
         </Text>
       ) : null}
 
@@ -449,7 +447,7 @@ const styles = StyleSheet.create({
   meta: {
     marginTop: spacing.md,
   },
-  caveat: {
+  focus: {
     marginTop: spacing.lg,
   },
   section: {

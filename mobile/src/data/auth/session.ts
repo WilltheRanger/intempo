@@ -419,3 +419,17 @@ export async function getAccessToken(): Promise<string | null> {
   }
   return token;
 }
+
+/** Local identity for account-scoped device data. Never infer it from a score. */
+export async function getActiveAccountId(): Promise<string | null> {
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return null;
+  }
+  const { data } = await supabase.auth.getSession();
+  const accountId = data.session?.user.id ?? null;
+  if (accountId === null && sessionStoreDegraded()) {
+    throw new SessionUnreadableError();
+  }
+  return accountId;
+}

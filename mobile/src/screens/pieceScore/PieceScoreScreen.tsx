@@ -494,6 +494,55 @@ export function PieceScoreScreen() {
         />
       ) : null}
 
+      {/* Put actionable reading concerns before playback and practice. A bad
+          bar duration can shift the timing of every bar that follows it. */}
+      {showing === 'notation' && hasNotation &&
+      (reading?.problemMeasures.length || proposals.length) ? (
+        <View style={styles.reviewFirst}>
+          <Text variant="sectionLabel" color="textPrimary">
+            Check before you practice
+          </Text>
+          {reading && reading.problemMeasures.length > 0 ? (
+            <Pressable
+              onPress={() =>
+                navigation.navigate('MeasureEdit', {
+                  pieceId: piece.id,
+                  measureNumber: reading.problemMeasures[0],
+                })
+              }
+              accessibilityRole="button"
+              accessibilityLabel={`Fix bar ${reading.problemMeasures[0]}`}
+              style={({ pressed }) => [styles.fixRow, pressed && styles.pressed]}
+            >
+              <Text variant="metadataSmall" color="textSecondary">
+                {describeProblemMeasures(reading.problemMeasures, {
+                  canCheck: hasPages,
+                  concerns: reading.concerns,
+                })}
+              </Text>
+              <Text variant="metadataSmall" color="accentText" style={styles.fixCue}>
+                Fix bar {reading.problemMeasures[0]}
+              </Text>
+            </Pressable>
+          ) : null}
+          {proposals.length > 0 ? (
+            <Pressable
+              onPress={() => navigation.navigate('ProofRead', { pieceId: piece.id })}
+              accessibilityRole="button"
+              accessibilityLabel="Check the reading"
+              style={({ pressed }) => [styles.fixRow, pressed && styles.pressed]}
+            >
+              <Text variant="metadataSmall" color="textSecondary">
+                {proposalsSummary(proposals.length)}
+              </Text>
+              <Text variant="metadataSmall" color="accentText" style={styles.fixCue}>
+                Check the reading
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
+
       {!hasNotation && !hasPages ? (
         <EmptyState
           fill
@@ -675,83 +724,6 @@ export function PieceScoreScreen() {
 
       {showing === 'notation' && hasNotation && stave ? (
         <>
-          {/*
-            What the reading is unsure about, in order of how much it matters.
-
-            Bars that don't add up first: that is arithmetic, not an opinion,
-            and it is the failure that corrupts a verdict — `alignment.py`
-            builds its expected timeline from these durations, so one bad bar
-            pushes every bar after it out of step.
-
-            Then what the engraver could not draw, then whatever the model
-            chose to say. Three quiet lines, not three badges: none of them is
-            an alert, and boxing them would make the caveats louder than the
-            music (§3 laws 3 and 6).
-          */}
-          {/*
-            The bars that don't add up are the way in to fixing them.
-
-            Naming a problem the musician cannot act on is the failure this
-            replaces: until now a misread duration meant re-photographing the
-            page or abandoning the piece, on a design whose spec assumed you
-            could fix a bar in ten seconds (intempo-combined.md:447). The line
-            was already here; it just did nothing.
-
-            Tapping opens the first broken bar. One tap for the common case of
-            a single bad bar, and the screen names the rest as you fix them.
-          */}
-          {reading && reading.problemMeasures.length > 0 ? (
-            <Pressable
-              onPress={() =>
-                navigation.navigate('MeasureEdit', {
-                  pieceId: piece.id,
-                  measureNumber: reading.problemMeasures[0],
-                })
-              }
-              accessibilityRole="button"
-              accessibilityLabel={`Fix bar ${reading.problemMeasures[0]}`}
-              style={({ pressed }) => [styles.fixRow, pressed && styles.pressed]}
-            >
-              <Text variant="metadataSmall" color="textSecondary">
-                {describeProblemMeasures(reading.problemMeasures, {
-                  canCheck: hasPages,
-                  concerns: reading.concerns,
-                })}
-              </Text>
-              <Text variant="metadataSmall" color="accentText" style={styles.fixCue}>
-                Fix bar {reading.problemMeasures[0]}
-              </Text>
-            </Pressable>
-          ) : null}
-
-          {/*
-            **What the arithmetic cannot see.** Every other caveat on this
-            screen comes from a sum: do the durations add up, could the engraver
-            draw it. A part that reads back at exactly four beats in every bar
-            passes all of them and can still carry a note the instrument cannot
-            play — measured on the live project, and nothing here said so.
-
-            Only when there is something to check. A row that is always present
-            and usually says "nothing found" is the row a musician stops
-            reading, which is the failure the pre-flight screen's three static
-            tips had.
-          */}
-          {proposals.length > 0 ? (
-            <Pressable
-              onPress={() => navigation.navigate('ProofRead', { pieceId: piece.id })}
-              accessibilityRole="button"
-              accessibilityLabel="Check the reading"
-              style={({ pressed }) => [styles.fixRow, pressed && styles.pressed]}
-            >
-              <Text variant="metadataSmall" color="textSecondary">
-                {proposalsSummary(proposals.length)}
-              </Text>
-              <Text variant="metadataSmall" color="accentText" style={styles.fixCue}>
-                Check the reading
-              </Text>
-            </Pressable>
-          ) : null}
-
           {describeOmissions(stave) ? (
             <Text
               variant="metadataSmall"
@@ -1243,6 +1215,9 @@ const styles = StyleSheet.create({
   },
   caveat: {
     marginTop: spacing.lg,
+  },
+  reviewFirst: {
+    marginTop: spacing.xl,
   },
   fixRow: {
     marginTop: spacing.lg,

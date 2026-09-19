@@ -1,5 +1,6 @@
 import type { AnalysisResponse, Instrument, MetronomeMode } from '../types';
 import { apiFetch } from './client';
+import { parseAnalysis, parseAnalyses } from './responseSchemas';
 
 export interface ListAnalysesParams {
   scoreId?: string;
@@ -48,12 +49,12 @@ export function listAnalyses({
   if (status) {
     query.set('status', status);
   }
-  return apiFetch<AnalysisResponse[]>(`/v1/analyses?${query}`);
+  return apiFetch<unknown>(`/v1/analyses?${query}`).then(parseAnalyses);
 }
 
 /** GET /v1/analyses/:id — poll one take while it runs. */
 export function getAnalysis(id: string): Promise<AnalysisResponse> {
-  return apiFetch<AnalysisResponse>(`/v1/analyses/${id}`);
+  return apiFetch<unknown>(`/v1/analyses/${id}`).then(parseAnalysis);
 }
 
 export interface RecordingPlaybackResponse {

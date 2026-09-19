@@ -60,6 +60,8 @@ export interface SubmitTakeInput {
    * thirty-nine to be told anything about it.
    */
   fromMeasure?: number | null;
+  /** Offline drain only: fail closed if sign-in changes during submission. */
+  assertOwner?: () => Promise<void>;
 }
 
 export interface SubmittedTakeState extends TakeSubmissionState {
@@ -82,22 +84,26 @@ export async function submitTake({
   resume = {},
   skipLongRests = false,
   fromMeasure = null,
+  assertOwner,
 }: SubmitTakeInput): Promise<SubmittedTakeState> {
   const state: TakeSubmissionState = { ...resume };
 
   try {
+    await assertOwner?.();
     if (state.analysisId) {
       return { ...state, analysisId: state.analysisId };
     }
 
     if (!state.audioKey) {
       const upload = await requestAudioUpload(filename);
+      await assertOwner?.();
       await uploadToSignedUrl(upload.upload_url, audio, 'audio/wav', {
         subject: 'recording',
       });
       state.audioKey = upload.object_key;
     }
 
+    await assertOwner?.();
     const { analysis_id } = await createAnalysis({
       score_id: scoreId,
       audio_key: state.audioKey,
@@ -182,12 +188,13 @@ const FINISHED = new Set(['done', 'failed', 'failed_recoverable']);
  */
 export async function waitForAnalysis(
   analysisId: string,
-  { signal }: { signal?: AbortSignal } = {},
+  { signal, assertOwner }: { signal?: AbortSignal; assertOwner?: () => Promise<void> } = {},
 ): Promise<AnalysisResponse> {
   for (let attempt = 0; attempt < MAX_POLLS; attempt += 1) {
     if (signal?.aborted) {
       throw new Error('Cancelled');
     }
+    await assertOwner?.();
     const analysis = await getAnalysis(analysisId);
     if (FINISHED.has(analysis.status)) {
       return analysis;

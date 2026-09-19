@@ -1,9 +1,9 @@
 /* global require, module, __dirname */
 /* eslint-disable @typescript-eslint/no-require-imports -- Metro loads this Node CommonJS configuration. */
-const { getDefaultConfig } = require('expo/metro-config');
+const { getSentryExpoConfig } = require('@sentry/react-native/metro');
 const path = require('node:path');
 
-const config = getDefaultConfig(__dirname);
+const config = getSentryExpoConfig(__dirname);
 config.resolver.assetExts.push('sf2');
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   // The selected banks contain uncompressed PCM only. Spessa's optional SF3

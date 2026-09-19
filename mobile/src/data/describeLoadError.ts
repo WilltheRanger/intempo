@@ -1,4 +1,4 @@
-import { ApiError, SERVER_FAULT } from './client';
+import { ApiError, SERVER_FAULT } from './api/client';
 
 /**
  * What to tell someone when a screen could not load.

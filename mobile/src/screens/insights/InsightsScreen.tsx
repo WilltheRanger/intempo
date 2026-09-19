@@ -17,7 +17,7 @@ import { InsightsSkeleton } from '../../components/skeletons';
 import { useInsights } from '../../data/hooks/useInsights';
 import { useLibrary } from '../../data/hooks/usePieces';
 import { useRecentTakes } from '../../data/hooks/useLatestTake';
-import { describeLoadError } from '../../data/api/describeError';
+import { describeLoadError } from '../../data/describeLoadError';
 import { spacing } from '../../design';
 import {
   formatLastPracticedShort,

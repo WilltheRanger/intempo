@@ -773,7 +773,7 @@ export const apiTakeSubmissionSource: TakeSubmissionSource = {
       createdAt: Date.now(),
     });
     try {
-      await waitForAnalysis(submitted.analysisId);
+      await waitForAnalysis(submitted.analysisId, { assertOwner: input.assertOwner });
       return submitted.analysisId;
     } catch (cause) {
       // Enqueue already succeeded. Keep its id so "Send it again" resumes the

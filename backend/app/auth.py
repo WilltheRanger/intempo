@@ -95,11 +95,13 @@ def _get_active_jwks() -> PyJWKClient:
 def _decode_token(token: str) -> dict[str, Any]:
     try:
         signing_key = _get_active_jwks().get_signing_key_from_jwt(token).key
+        issuer = f"{settings.SUPABASE_URL.rstrip('/')}/auth/v1"
         return jwt.decode(
             token,
             signing_key,
             algorithms=_ALLOWED_ALGORITHMS,
             audience="authenticated",
+            issuer=issuer,
         )
     except PyJWKClientConnectionError as exc:
         # **Could not check is not the same as not valid**, and answering 401

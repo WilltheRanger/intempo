@@ -13,8 +13,8 @@ npm start          # then press i for the iOS simulator
 npm run typecheck  # tsc --noEmit
 ```
 
-Before committing, run the checks from the repository root — `ci.yml` has been
-blocked since 2026-09-09 and this is what stands in for it:
+Before committing, run the checks from the repository root. GitHub Actions is
+the clean runner check; this catches most failures before a push spends a run:
 
 ```bash
 python3 tools/preflight.py          # the gates that need no build
@@ -29,8 +29,10 @@ Optional environment variables (all have working defaults):
 | `EXPO_PUBLIC_SUPABASE_URL` | — | Supabase project, for auth |
 | `EXPO_PUBLIC_SUPABASE_ANON_KEY` | — | Supabase anon key |
 
-The app boots without the Supabase variables — it runs on fixtures today, so
-nothing authenticated is on the Today screen's path yet.
+The app boots without the Supabase variables in deterministic fixture mode.
+With all three public runtime values configured, `data/sources/index.ts`
+selects the authenticated API source instead. Backend secrets belong to the
+deployed API host and are never placed in this app.
 
 ## Layout
 
@@ -87,21 +89,13 @@ What that means in practice when building a new screen:
   `SafeAreaView`; bottom spacing is the measured tab-bar height from
   `navigation/tabBarMetrics`. No status-bar or notch numbers anywhere.
 
-## Why fixtures
+## Why fixtures remain
 
-The Today screen shows progress, a last-practiced line, and score thumbnails.
-None of those exist behind the API:
-
-- `scores` has no progress column and no movement field.
-- Last-practiced would come from `analyses.created_at`, but `/v1/analyses`
-  isn't built (Batch 4).
-- Score images sit in a private bucket and no endpoint signs a download URL.
-  `scores.source_image_url` stores the signed *upload* URL, which expires
-  after five minutes.
-
-`data/sources/api.ts` implements the real mapping and returns `null` for each
-of those fields, so the gap is visible in code rather than hidden. The fixture
-artwork is the repo's own public-domain set from `fixtures/scores/` — each
+Fixtures keep screenshots, accessibility sweeps, failure states and local
+development deterministic without contacting the deployed API or a paid
+provider. The live source is implemented separately in `data/sources/api.ts`,
+so fixture data cannot silently become a production fallback. Fixture artwork
+is the repository's own public-domain set from `fixtures/scores/`; each
 thumbnail is genuinely the piece it claims to be. See
 `fixtures/scores/SOURCES.md` for provenance.
 
@@ -146,11 +140,10 @@ cryptography is the platform's TLS, which is exempt — the declaration saves an
 export-compliance question on every upload), and `RCTRootViewBackgroundColor`
 at the app's own paper colour.
 
-**The iOS bundle builds.** `ci.yml` has a step for it and **that step is not
-running**: since 2026-09-09 every job in the workflow fails two to three
-seconds in with no logs, which is a run blocked before a runner picks it up.
-What builds the bundle today is `tools/preflight.py --full`, on whatever
-machine a session is on. `expo export --platform ios` resolves the *native*
+**The iOS bundle builds.** `ci.yml` and `tools/preflight.py --full` both carry
+an iOS export gate. GitHub Actions is running again; a fork pull request may
+still require a maintainer to approve its first workflow run. `expo export
+--platform ios` resolves the *native*
 module graph — a different graph from the
 web one this repository's screenshots and walk all run through — and Hermes
 compiles it. Measured on the resulting bytecode: `intempo-listen-`, the WAV

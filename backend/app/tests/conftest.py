@@ -80,6 +80,7 @@ def make_token() -> Callable[..., str]:
         payload: dict = {
             "sub": str(sub) if sub is not None else str(uuid4()),
             "aud": aud,
+            "iss": "https://test.supabase.invalid/auth/v1",
             "iat": int(now.timestamp()),
             "exp": int(exp.timestamp()),
             "email": email,

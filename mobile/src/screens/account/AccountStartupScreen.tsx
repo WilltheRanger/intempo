@@ -9,7 +9,7 @@ import {
   SecondaryButton,
   Text,
 } from '../../components/primitives';
-import { describeLoadError } from '../../data/api/describeError';
+import { describeLoadError } from '../../data/describeLoadError';
 import { signOut } from '../../data/auth/session';
 import { spacing } from '../../design';
 

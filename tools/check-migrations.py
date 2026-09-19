@@ -100,6 +100,43 @@ def _apply(dsn: str, path: Path, label: str) -> tuple[bool, str]:
     return False, f"{label}\n{result.stderr.strip()}"
 
 
+def _simulate_client_grants(dsn: str) -> tuple[bool, str]:
+    """Recreate the permissive grants a live Supabase project may carry."""
+    sql = (
+        "GRANT UPDATE ON public.users, public.assignments TO authenticated; "
+        "GRANT UPDATE (tier, email) ON public.users TO anon; "
+        "GRANT UPDATE (status, teacher_user_id) ON public.assignments TO anon;"
+    )
+    result = subprocess.run(
+        ["psql", dsn, "-v", "ON_ERROR_STOP=1", "-q", "-c", sql],
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0, result.stderr.strip()
+
+
+def _verify_client_grants_closed(dsn: str) -> tuple[bool, str]:
+    """Ask migration 021's own deployment probe after the hostile grants."""
+    result = subprocess.run(
+        [
+            "psql",
+            dsn,
+            "-v",
+            "ON_ERROR_STOP=1",
+            "-qAt",
+            "-c",
+            "SELECT public.client_update_grants_closed();",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    closed = result.returncode == 0 and result.stdout.strip() == "t"
+    detail = result.stderr.strip() or (
+        "client_update_grants_closed() returned " + repr(result.stdout.strip())
+    )
+    return closed, detail
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dsn", default=os.getenv("DATABASE_URL", ""))
@@ -129,12 +166,23 @@ def main() -> int:
         return 1
     print("  ok    supabase stubs (auth, storage)")
 
-    for _, path in migrations:
+    for number, path in migrations:
+        if number == 21:
+            ok, message = _simulate_client_grants(args.dsn)
+            if not ok:
+                print(f"\nFAIL  simulated client grants\n{message}", file=sys.stderr)
+                return 1
         ok, message = _apply(args.dsn, path, path.name)
         if not ok:
             print(f"\nFAIL  {message}", file=sys.stderr)
             return 1
         print(f"  ok    {path.name}")
+        if number == 21:
+            ok, message = _verify_client_grants_closed(args.dsn)
+            if not ok:
+                print(f"\nFAIL  client grant probe\n{message}", file=sys.stderr)
+                return 1
+            print("  ok    client UPDATE grants closed on every column")
 
     for path in _claims_idempotent():
         ok, message = _apply(args.dsn, path, f"{path.name} (second time)")

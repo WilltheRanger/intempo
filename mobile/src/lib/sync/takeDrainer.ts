@@ -1,10 +1,10 @@
 import { AppState, Platform } from 'react-native';
 
-import { getAccessToken } from '../../data/auth/session';
+import { getAccessToken, getActiveAccountId } from '../../data/auth/session';
 import { takeSubmissionSource } from '../../data/sources';
 import { readTakeFailure } from '../audio/takeFailure';
 import { drainTakes, type DrainReport } from './drainQueue';
-import { deviceTakeStore } from './takeQueue.store';
+import { deviceTakeStoreFor } from './takeQueue.store';
 
 /**
  * The drain, bound to this device.
@@ -36,7 +36,7 @@ function cancelTimer(): void {
  */
 function scheduleNext(report: DrainReport): void {
   cancelTimer();
-  if (report.stopped === 'blocked' || report.nextDueAt === null) {
+  if (report.stopped === 'blocked' || report.stopped === 'account-mismatch' || report.nextDueAt === null) {
     return;
   }
   const wait = Math.max(1_000, report.nextDueAt - Date.now());
@@ -67,9 +67,21 @@ async function drainNow(): Promise<DrainReport | null> {
     if ((await getAccessToken()) === null) {
       return null;
     }
+    const accountId = await getActiveAccountId();
+    if (!accountId) return null;
     const report = await drainTakes({
-      store: deviceTakeStore,
+      store: deviceTakeStoreFor(accountId),
+      accountId,
       submit: async (take, audio) => {
+        if (take.accountId !== accountId) {
+          throw new Error('Queued take belongs to another account');
+        }
+        const assertOwner = async () => {
+          if (await getActiveAccountId() !== accountId) {
+            throw new Error('Account changed while sending a queued take');
+          }
+        };
+        await assertOwner();
         await takeSubmissionSource.submit({
           scoreId: take.scoreId,
           targetBpm: take.targetBpm,
@@ -79,6 +91,7 @@ async function drainNow(): Promise<DrainReport | null> {
           resume: take.resume,
           skipLongRests: take.skipLongRests,
           fromMeasure: take.fromMeasure,
+          assertOwner,
         });
       },
       read: (error) => readTakeFailure(error, Platform.OS),

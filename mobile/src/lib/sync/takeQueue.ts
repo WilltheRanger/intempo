@@ -27,6 +27,8 @@ import type { MetronomeMode } from '../../data/types';
 export interface QueuedTake {
   /** Local, ours, and stable across restarts. Not the analysis id. */
   id: string;
+  /** Supabase auth user id. Never submit under a different session. */
+  accountId: string;
   scoreId: string;
   targetBpm: number;
   metronomeMode: MetronomeMode;
@@ -121,6 +123,7 @@ function valid(value: unknown): value is QueuedTake {
   const t = value as Partial<QueuedTake>;
   return (
     typeof t.id === 'string' && t.id.length > 0 &&
+    typeof t.accountId === 'string' && t.accountId.length > 0 &&
     typeof t.scoreId === 'string' && t.scoreId.length > 0 &&
     typeof t.targetBpm === 'number' && Number.isFinite(t.targetBpm) &&
     typeof t.filename === 'string' && t.filename.length > 0 &&

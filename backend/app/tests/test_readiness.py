@@ -136,6 +136,25 @@ def test_a_missing_migration_names_the_file_to_apply(
     assert result.ready is False
 
 
+def test_client_grants_are_a_blocking_release_check() -> None:
+    class _SecurityRpc:
+        def __init__(self, value):
+            self.value = value
+
+        def rpc(self, name):
+            assert name == "client_update_grants_closed"
+            return self
+
+        def execute(self):
+            return type("Response", (), {"data": self.value})()
+
+    assert readiness._client_grants_check(_SecurityRpc(True)).ok is True
+    opened = readiness._client_grants_check(_SecurityRpc(False))
+    assert opened.ok is False
+    assert opened.blocking is True
+    assert "021" in opened.detail
+
+
 def test_ready_answers_503_when_something_blocking_is_missing(unconfigured) -> None:
     res = client.get("/v1/ready")
     assert res.status_code == 503

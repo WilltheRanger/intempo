@@ -93,6 +93,7 @@ const T0 = 1_770_000_000_000;
 
 function aTake(overrides: Partial<NewTake> = {}): NewTake {
   return {
+    accountId: 'account-a',
     scoreId: 'score-1',
     targetBpm: 92,
     metronomeMode: 'off',
@@ -131,6 +132,7 @@ function deps(
 ): DrainDeps {
   return {
     store,
+    accountId: 'account-a',
     async submit(take) {
       const problem = outcome(take);
       if (problem) {
@@ -142,6 +144,20 @@ function deps(
     now: () => clock,
   };
 }
+
+describe('account isolation', () => {
+  it('never reads or submits a take recorded under another account', async () => {
+    await enqueue(store, aTake({ accountId: 'account-b' }), T0, 'other-account');
+    expect(await drainTakes(deps())).toEqual({
+      sent: 0,
+      discarded: 0,
+      stopped: 'account-mismatch',
+      nextDueAt: null,
+    });
+    expect(sent).toEqual([]);
+    expect((await load(store)).takes).toHaveLength(1);
+  });
+});
 
 describe('an empty or waiting queue', () => {
   it('sends nothing and asks for no timer', async () => {
