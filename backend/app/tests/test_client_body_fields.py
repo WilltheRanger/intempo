@@ -92,6 +92,26 @@ NO_CLIENT_INTERFACE: dict[str, str] = {
         "itself is asserted separately, because one literal key is exactly "
         "the sort of thing that gets renamed."
     ),
+    # The teacher tier's three request bodies. All five of its paths are in
+    # `test_client_reachability.NOT_WIRED` for the same reason: every screen
+    # that would call them is user-facing and §2 reserves that to the owner,
+    # and a data-layer module with no screen behind it would trip
+    # `check-dead-exports.py`. A field check against nothing would pass for
+    # ever and say nothing — which is the argument `CalibrationRequest` above
+    # already makes. Delete these three when the screens land; the test below
+    # will say so.
+    "CreateAssignmentRequest": (
+        "POST /v1/assignments has no client — no studio or assignment screen "
+        "exists. See `NOT_WIRED`."
+    ),
+    "SubmitAssignmentRequest": (
+        "POST /v1/assignments/{id}/submit has no client — the verdict screen "
+        "has no 'send to my teacher' action yet. See `NOT_WIRED`."
+    ),
+    "ReviewAssignmentRequest": (
+        "POST /v1/assignments/{id}/review has no client — there is no review "
+        "screen. See `NOT_WIRED`."
+    ),
 }
 
 #: `class Name(BaseModel):` … then the **assignment** that forbids extras.

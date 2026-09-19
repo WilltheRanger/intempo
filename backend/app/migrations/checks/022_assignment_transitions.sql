@@ -92,6 +92,7 @@ BEGIN
       ('submitted',   'in_progress'),   -- back for another take: the retry loop
       ('submitted',   'archived'),
       ('reviewed',    'in_progress'),   -- next week, same passage
+      ('reviewed',    'submitted'),     -- 024: answering feedback with a better take
       ('reviewed',    'archived')
     ) AS t(from_status, to_status)
   LOOP
@@ -134,7 +135,6 @@ BEGIN
       ('in_progress', 'reviewed'),      -- skips the submission the review is of
       ('submitted',   'assigned'),
       ('reviewed',    'assigned'),
-      ('reviewed',    'submitted'),
       ('archived',    'assigned'),      -- archived is terminal
       ('archived',    'in_progress'),
       ('archived',    'submitted'),
