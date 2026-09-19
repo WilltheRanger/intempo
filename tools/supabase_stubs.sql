@@ -39,6 +39,22 @@ BEGIN
 END
 $$;
 
+-- **The grants a real project starts with, so a REVOKE has something to
+-- remove.** Supabase runs `ALTER DEFAULT PRIVILEGES ... GRANT ALL ON TABLES TO
+-- anon, authenticated` on a new project, so every table these migrations
+-- create is client-writable from the moment it exists. Without this the two
+-- roles held nothing here, a database where they hold `ALL` was
+-- indistinguishable from one where they hold nothing, and migration 021's
+-- revokes would have applied cleanly while proving absolutely nothing.
+--
+-- **What this still cannot model is a retained *column* grant.** Default
+-- privileges yield table-level entries only, and `column_privileges` reports
+-- nothing more once the table grant is gone — so 021's column loop finds an
+-- empty set on a fresh run either way. That half is real on live projects and
+-- was verified there; see the migration's header.
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT ALL ON TABLES TO anon, authenticated, service_role;
+
 CREATE SCHEMA IF NOT EXISTS auth;
 CREATE SCHEMA IF NOT EXISTS storage;
 
