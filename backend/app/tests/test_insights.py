@@ -12,7 +12,10 @@ import pytest
 
 from app.services.insights import (
     MIN_NOTES_FOR_INSIGHT,
+    Insights,
+    NoteValueTiming,
     insights_for,
+    lead_finding,
     played_tempo,
     standout_note_value,
     steadiness,
@@ -192,6 +195,7 @@ class TestInsightsFor:
         assert out.as_dict() == {
             "by_note_value": [],
             "standout_value": None,
+            "lead": None,
             "played_bpm": None,
             "tempo_difference_bpm": None,
             "drift_bpm": None,
@@ -299,3 +303,141 @@ class TestStandoutNoteValue:
         standout = standout_note_value(values)
 
         assert standout is not None and standout.beats == 1.0
+
+
+class TestLeadFinding:
+    """Which single thing a take is told about, when several are true."""
+
+    def _insights(self, **kw) -> Insights:
+        return Insights(**kw)
+
+    def test_a_take_with_nothing_unusual_says_nothing(self):
+        """**The common case, and the one that protects the rest.** A musician
+        who played at the tempo they set, evenly, has already been told so by
+        the verdict. A second line saying it again in other words teaches them
+        this part of the screen is furniture, and then the line that matters
+        is not read either."""
+        clean = self._insights(
+            played_bpm=92.0,
+            tempo_difference_bpm=0.4,
+            drift_bpm=0.3,
+            steadiness_pct=0.7,
+        )
+
+        assert lead_finding(clean, 92.0) is None
+
+    def test_the_tempo_gap_leads_when_it_is_the_biggest_thing(self):
+        out = lead_finding(
+            self._insights(
+                played_bpm=75.0, tempo_difference_bpm=15.0, steadiness_pct=0.7
+            ),
+            60.0,
+        )
+
+        assert out is not None and out.kind == "tempo"
+        assert "75" in out.text and "60" in out.text
+
+    def test_the_note_value_beats_a_tempo_gap_nobody_would_notice(self):
+        """**The reason this ranks rather than following a fixed order.** A
+        2 BPM difference at 92 and a note value 12% of a beat adrift are both
+        true; only one of them is worth the line, and a fixed priority list
+        with tempo first would show the other."""
+        out = lead_finding(
+            self._insights(
+                played_bpm=94.0,
+                tempo_difference_bpm=2.0,
+                by_note_value=[
+                    NoteValueTiming(
+                        beats=1.0, label="quarter notes", note_count=30,
+                        mean_delta_pct=0.5,
+                    ),
+                    NoteValueTiming(
+                        beats=0.25, label="sixteenth notes", note_count=16,
+                        mean_delta_pct=-12.0,
+                    ),
+                ],
+                standout_value=NoteValueTiming(
+                    beats=0.25, label="sixteenth notes", note_count=16,
+                    mean_delta_pct=-12.0,
+                ),
+            ),
+            92.0,
+        )
+
+        assert out is not None and out.kind == "note_value"
+        assert "sixteenth notes" in out.text
+        assert "ran ahead" in out.text
+
+    def test_a_lagging_value_is_described_as_lagging(self):
+        out = lead_finding(
+            self._insights(
+                by_note_value=[
+                    NoteValueTiming(beats=1.0, label="quarter notes",
+                                    note_count=30, mean_delta_pct=0.0),
+                    NoteValueTiming(beats=2.0, label="half notes",
+                                    note_count=10, mean_delta_pct=14.0),
+                ],
+                standout_value=NoteValueTiming(
+                    beats=2.0, label="half notes", note_count=10,
+                    mean_delta_pct=14.0,
+                ),
+            ),
+            92.0,
+        )
+
+        assert out is not None and "lagged behind" in out.text
+
+    def test_drift_is_named_in_the_direction_it_happened(self):
+        speeding = lead_finding(self._insights(drift_bpm=12.0), 92.0)
+        slowing = lead_finding(self._insights(drift_bpm=-12.0), 92.0)
+
+        assert speeding is not None and "sped up" in speeding.text
+        assert slowing is not None and "slowed down" in slowing.text
+        # The figure is unsigned in the sentence; the word carries direction.
+        assert "-" not in slowing.text
+
+    def test_drift_is_easier_to_report_than_a_tempo_difference(self):
+        """Changing speed within one take is a worse habit than holding a
+        different one, and harder to feel from inside — so the same number of
+        BPM counts for more as drift. Asserted because the two thresholds
+        being different is deliberate and looks like an inconsistency."""
+        same_bpm = 5.0
+        drift = lead_finding(self._insights(drift_bpm=same_bpm), 92.0)
+        tempo = lead_finding(
+            self._insights(played_bpm=97.0, tempo_difference_bpm=same_bpm), 92.0
+        )
+
+        assert drift is not None and tempo is not None
+        assert drift.weight > tempo.weight
+
+    def test_the_same_bpm_as_drift_wins_when_both_are_present(self):
+        """The consequence of the line above, on one take rather than two:
+        five BPM of drift and five BPM of tempo difference both clear, and
+        drift is what gets said."""
+        out = lead_finding(
+            self._insights(
+                played_bpm=97.0, tempo_difference_bpm=5.0, drift_bpm=5.0
+            ),
+            92.0,
+        )
+
+        assert out is not None and out.kind == "drift"
+
+    def test_a_steadiness_finding_does_not_contradict_the_verdict(self):
+        """It is shown on takes the verdict calls steady, so it has to agree
+        that the average was fine and say what the average cannot."""
+        out = lead_finding(self._insights(steadiness_pct=14.0), 92.0)
+
+        assert out is not None and out.kind == "steadiness"
+        assert "on average" in out.text
+
+    def test_the_weight_is_carried_so_the_ranking_is_inspectable(self):
+        out = lead_finding(
+            self._insights(played_bpm=75.0, tempo_difference_bpm=15.0), 60.0
+        )
+
+        # 15 BPM against a 5%-of-60 threshold is five times over.
+        assert out is not None and out.weight == pytest.approx(5.0, abs=0.1)
+
+    def test_a_nonsense_target_reports_nothing(self):
+        assert lead_finding(self._insights(tempo_difference_bpm=20.0), 0.0) is None

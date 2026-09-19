@@ -324,6 +324,35 @@ export function VerdictScreen() {
         {take.headline}
       </Text>
 
+      {/*
+        **One finding, and only when there is one.**
+
+        The verdict says what happened to the beat. This says the thing the
+        verdict cannot: the tempo actually played against the one that was
+        set, a take that sped up rather than one that was merely fast, or the
+        written note value that behaves differently from the rest — "your
+        quarters are fine and your sixteenths run away", which is a thing to
+        practise where "you rushed" is not.
+
+        Which one appears is ranked per take rather than by a fixed order, in
+        `services/insights.lead_finding`: a take whose real story is the
+        sixteenths must not lead with a 2 BPM difference nobody would notice.
+
+        **Null is the common case and is the design.** A musician who played
+        at the tempo they set, evenly, has already been told so above; a
+        second line restating it teaches them this part of the screen is
+        furniture, and then the line that matters is not read either.
+
+        Kept to `body` weight rather than given a heading, because §3 law 4
+        allows the screen one focal point and that is the verdict title above.
+        It reads as a continuation of the sentence before it.
+      */}
+      {take.finding ? (
+        <Text variant="body" style={styles.finding}>
+          {take.finding.text}
+        </Text>
+      ) : null}
+
       <MetadataRow
         variant="metadataSmall"
         items={[
@@ -444,6 +473,11 @@ function noteLabel(count: number): string {
 
 const styles = StyleSheet.create({
   headline: {
+    marginTop: spacing.sm,
+  },
+  finding: {
+    // Tucked under the headline rather than spaced as a sibling: it is a
+    // second sentence about the same take, not a new section.
     marginTop: spacing.sm,
   },
   meta: {

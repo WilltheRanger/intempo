@@ -540,6 +540,7 @@ function toTake(
     failure: null,
     status: result.status,
     headline: result.verdict,
+    finding: result.insights?.lead ?? null,
     direction: result.verdict_direction,
     verdict: verdictFor(worstBandOf(result), result.verdict_direction),
     lowConfidence: result.low_confidence,
@@ -581,6 +582,7 @@ function toFailedTake(
     // they exist only because `TakeResult` is one shape.
     status: 'ok',
     headline: '',
+    finding: null,
     direction: 'on',
     verdict: 'on_tempo',
     lowConfidence: false,

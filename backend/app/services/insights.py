@@ -76,6 +76,10 @@ class Insights(BaseModel):
     #: The one written value that behaves differently from the rest, if any —
     #: "your quarters are fine and your sixteenths run away".
     standout_value: "NoteValueTiming | None" = None
+    #: The single most unusual thing about this take, ranked across all of the
+    #: above, or `None` when nothing clears its own threshold. `None` is the
+    #: common case and is the point — see `lead_finding`.
+    lead: "Finding | None" = None
 
     def as_dict(self) -> dict:
         return self.model_dump()
@@ -202,6 +206,8 @@ def insights_for(
     target_bpm: float,
     delta_pcts: list[float],
     by_note: list[tuple[float, float]] | None = None,
+    *,
+    target_bpm_for_lead: float | None = None,
 ) -> Insights:
     """Everything above, or an empty `Insights` for a take too small to describe.
 
@@ -212,7 +218,7 @@ def insights_for(
     """
     played = played_tempo(matched, detected, expected, target_bpm)
     values = timing_by_note_value(by_note or [])
-    return Insights(
+    built = Insights(
         by_note_value=values,
         standout_value=standout_note_value(values),
         played_bpm=None if played is None else round(played, 1),
@@ -223,6 +229,12 @@ def insights_for(
         steadiness_pct=(
             lambda s: None if s is None else round(s, 1)
         )(steadiness(delta_pcts)),
+    )
+    # Ranked last, because it ranks the fields above and cannot be computed
+    # until they exist. Returned on a copy rather than mutated, so `Insights`
+    # stays something a caller can rely on not changing under them.
+    return built.model_copy(
+        update={"lead": lead_finding(built, target_bpm_for_lead or target_bpm)}
     )
 
 
@@ -345,4 +357,138 @@ def standout_note_value(
 # resolves only when asked. Done here rather than by reordering, because the
 # reading order — the summary first, then the breakdown it contains — is the
 # order somebody opening this file wants.
+
+
+
+#: What counts as "worth saying" for each candidate, in its own units.
+#:
+#: **The ranking is only as good as these.** "Furthest from normal" is
+#: meaningless across quantities measured in different things — 12 BPM of drift
+#: and 11% of a beat of note-value spread are not comparable numbers — so each
+#: candidate is divided by the point at which it *starts* being worth a
+#: sentence, and the ranking is in multiples of that. A candidate scoring below
+#: 1.0 is not reported at all.
+#:
+#: Every one is a starting value that wants real recordings and an ear, like
+#: everything in `[tolerance]`. They are chosen to be roughly equally
+#: noticeable rather than equally large:
+#:
+#:   * **Tempo difference**, as a fraction of the target. 5% is 3 BPM at 60 and
+#:     8 at 160 — about where a musician notices a piece is not at the speed
+#:     they set.
+#:   * **Drift**, lower, because changing speed within one take is a worse
+#:     habit than holding a different one and is harder to feel from inside.
+#:   * **Note value**, reusing the standout threshold, since a value has
+#:     already had to clear it to be a candidate.
+#:   * **Steadiness**, at the tolerance bands' own `inner` figure: departure
+#:     from your own pace by more than the app calls "on" for a single note.
+NOTABLE_TEMPO_SHARE = 0.05
+NOTABLE_DRIFT_SHARE = 0.04
+NOTABLE_STEADINESS_PCT = 5.0
+
+
+class Finding(BaseModel):
+    """The one thing most worth saying about a take, beyond its verdict."""
+
+    #: Which measurement produced it, for a screen that wants to style or
+    #: link them differently. Never shown as-is.
+    kind: str
+    #: A finished sentence, in the second person, in a musician's units.
+    text: str
+    #: How many times its own "worth saying" threshold this cleared. Carried
+    #: so a screen can choose to stay quiet below some bar of its own, and so
+    #: the ranking is inspectable rather than a black box.
+    weight: float
+
+
+def lead_finding(insights: Insights, target_bpm: float) -> Finding | None:
+    """The single most unusual thing about this take, or nothing.
+
+    **One finding, chosen per take rather than by fixed priority.** A take
+    whose real story is the sixteenths should not lead with a 2 BPM tempo
+    difference that nobody would notice, which is what a fixed order gives on
+    exactly the takes where the extra sentence would have earned its place.
+
+    Returns `None` when nothing clears its threshold, and that is the common
+    case by design: a musician who played the piece at the tempo they set,
+    evenly, has already been told so by the verdict, and a second line
+    repeating it in other words teaches them that this part of the screen is
+    furniture.
+    """
+    if target_bpm <= 0:
+        return None
+
+    candidates: list[Finding] = []
+
+    difference = insights.tempo_difference_bpm
+    if difference is not None and insights.played_bpm is not None:
+        weight = abs(difference) / (target_bpm * NOTABLE_TEMPO_SHARE)
+        candidates.append(
+            Finding(
+                kind="tempo",
+                # The number they set is named, because the finding is the gap
+                # between two tempi and one of them is theirs.
+                text=(
+                    f"You played this at {insights.played_bpm:.0f}, "
+                    f"not the {target_bpm:.0f} you set."
+                ),
+                weight=weight,
+            )
+        )
+
+    drift = insights.drift_bpm
+    if drift is not None:
+        weight = abs(drift) / (target_bpm * NOTABLE_DRIFT_SHARE)
+        direction = "sped up" if drift > 0 else "slowed down"
+        candidates.append(
+            Finding(
+                kind="drift",
+                text=f"You {direction} by {abs(drift):.0f} BPM across the take.",
+                weight=weight,
+            )
+        )
+
+    standout = insights.standout_value
+    if standout is not None:
+        others = [v for v in insights.by_note_value if v is not standout]
+        weight_total = sum(v.note_count for v in others)
+        baseline = (
+            sum(v.mean_delta_pct * v.note_count for v in others) / weight_total
+            if weight_total
+            else 0.0
+        )
+        gap = standout.mean_delta_pct - baseline
+        name = standout.label or f"{standout.beats:g}-beat notes"
+        candidates.append(
+            Finding(
+                kind="note_value",
+                text=(
+                    f"Your {name} ran ahead of the rest."
+                    if gap < 0
+                    else f"Your {name} lagged behind the rest."
+                ),
+                weight=abs(gap) / NOTE_VALUE_STANDOUT_PCT,
+            )
+        )
+
+    spread = insights.steadiness_pct
+    if spread is not None:
+        candidates.append(
+            Finding(
+                kind="steadiness",
+                text="Your tempo was right on average, but note to note it moved.",
+                weight=spread / NOTABLE_STEADINESS_PCT,
+            )
+        )
+
+    worth_saying = [c for c in candidates if c.weight > 1.0]
+    if not worth_saying:
+        return None
+    return max(worth_saying, key=lambda c: c.weight)
+
+
+# `Insights` names `NoteValueTiming` and `Finding` before either is defined,
+# which pydantic resolves only when asked. Done here rather than by
+# reordering, because the reading order — the summary first, then the parts it
+# is made of — is the order somebody opening this file wants.
 Insights.model_rebuild()

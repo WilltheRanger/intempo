@@ -743,5 +743,6 @@ def analyze(
                 for d in deltas
                 if d.timed and 0 <= d.global_index < len(timeline.notes)
             ],
+            target_bpm_for_lead=target_bpm,
         ),
     )
