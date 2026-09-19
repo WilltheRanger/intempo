@@ -33,7 +33,7 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { VERDICT_STATES } from './verdict-states.mjs';
-import { PRACTICE_SETUP_HEADING, PRACTICE_SETUP_REOPEN } from './screen-copy.mjs';
+import { PRACTICE_SETUP_HEADING, PRACTICE_SETUP_REOPEN, TAKE_HEARING } from './screen-copy.mjs';
 
 // Resolved from `mobile/`, where playwright is installed with `--no-save` — a
 // bare import would resolve against this directory instead. See the same note
@@ -1145,7 +1145,7 @@ console.log('\n## A take that records');
 
   // The screen says so while the take is running, which is the earliest point
   // the worklet can be shown to have delivered anything at all.
-  const arriving = await awaitLine((l) => /audio received/i.test(l), 15000);
+  const arriving = await awaitLine((l) => l.includes(TAKE_HEARING), 15000);
   if (arriving) pass('the microphone reaches the recorder: "' + arriving + '"');
   else fail('nothing arrived from a microphone that is producing a tone — the worklet did not deliver');
 

@@ -80,6 +80,7 @@ import type { RootNavigation, RootStackParamList } from '../../navigation/types'
 import { BeatIndicator } from './BeatIndicator';
 import { PracticeSetup } from './PracticeSetup';
 import { ListenButton } from '../../components/score/ListenButton';
+import { takeStatus } from '../../lib/record/takeStatus';
 import { PlaybackSettings } from '../../components/score/PlaybackSettings';
 import { ScoreBackdrop } from '../../components/score/ScoreBackdrop';
 import { scheduleScore, startableMeasures } from '../../lib/score';
@@ -643,6 +644,14 @@ export function RecordScreen() {
   const capturing = countingIn || recording;
 
   /**
+   * What the take bar says while the microphone is open.
+   *
+   * The rule is in `lib/record/takeStatus.ts` with its tests, including the
+   * one it exists to hold: it never comments on how loud the playing is.
+   */
+  const micLine = takeStatus(capturing, hasInputSignal);
+
+  /**
    * Practise the notes without sitting through the rests.
    *
    * Screen-local and defaulting to off, so a take is judged against the whole
@@ -1043,6 +1052,15 @@ export function RecordScreen() {
         <PageHeader
           eyebrow={piece.composer}
           title={piece.title}
+          /*
+           * **The smaller step, for the same reason the score reader took it.**
+           * `screenTitle` is 36pt, and a two-line repertoire title set over the
+           * music came to roughly 230 points of an 844pt display — the largest
+           * thing on screen while a musician is mid-take, naming the piece they
+           * chose a moment ago and are currently playing. §3 law 4 allows one
+           * dominant focal point and on this screen it is the part.
+           */
+          titleSize="hero"
           onBack={goBack}
           backLabel="Back to the piece"
         />
@@ -1051,11 +1069,31 @@ export function RecordScreen() {
       <DragSheet
         label="Practice controls"
         reveals="the music"
+        // **Down on arrival.** See `DragSheet.initialPosition`: raised, this
+        // covers about 625 of 844 points, so the screen opened on frosted
+        // glass over the part the musician was about to play. `peek` keeps the
+        // timer and the record button on screen, which is everything a take
+        // needs; the tempo and the metronome are one pull up.
+        initialPosition="lowered"
         peek={SHEET_PEEK}
-        // Something a musician has to read has just appeared inside the sheet.
-        // If the sheet is down it is hiding it, and a message nobody can see is
-        // the same bug as no message.
-        raiseSignal={footerNote}
+        /*
+          **`visibleProblem`, not `footerNote` — the same substitution this
+          screen already made once, for the same reason, a few lines below.**
+
+          Something a musician has to *act on* has appeared inside the sheet;
+          if the sheet is down it is hiding it, and a message nobody can see is
+          the same bug as no message. But `footerNote` falls back to the
+          last-free-analysis advisory, which is true on arrival for anyone on
+          their third take of the month — so the sheet hoisted itself over the
+          music before a note was played, for news that changes nothing about
+          the next five minutes. It defeated `initialPosition` entirely: the
+          screen was written to open on the part and opened on frosted glass.
+
+          A refused microphone or a failed upload raises it. A quota count
+          does not; it is still there in the peek, where it was already being
+          read.
+        */
+        raiseSignal={visibleProblem}
       >
         <View style={styles.take}>
         {activeRest ? (
@@ -1086,11 +1124,19 @@ export function RecordScreen() {
             {formatElapsed(elapsedMs)}
           </Text>
         )}
-        {capturing ? (
-          <Text variant="metadataSmall" color="textSecondary">
-            {hasInputSignal
-              ? 'Microphone: audio received'
-              : 'Microphone: waiting for sound'}
+        {/*
+          What the bar says while the microphone is open — `lib/record/takeStatus.ts`,
+          where it is tested, including the thing it must never say. The
+          detector is amplitude-invariant (`TUNING_LOG.md`, 2026-09-02), so a
+          screen that comments on level is asking for something that changes
+          nothing and can talk a musician out of a verdict.
+        */}
+        {micLine.line ? (
+          <Text
+            variant="metadataSmall"
+            color={micLine.wrong ? 'textPrimary' : 'textSecondary'}
+          >
+            {micLine.line}
           </Text>
         ) : null}
           <RecordButton
@@ -1262,6 +1308,21 @@ export function RecordScreen() {
               style={styles.retry}
             />
           ) : null}
+        {/*
+          **Gone during a take, not greyed during a take.**
+
+          Every control below is locked the moment recording starts — the
+          tempo and the mode are written onto the take, the entry bar is
+          already decided, and Listen cannot play into a live microphone. They
+          used to stay on screen disabled, which on a 390pt display is about
+          45% of it given to things that cannot be used, at the one moment the
+          musician has an instrument up and no attention to spare.
+
+          The messages above stay: a refused microphone or a failed upload is
+          exactly what has to survive into a take. This is only the settings.
+        */}
+        {!capturing ? (
+          <>
         <View style={styles.tempo}>
           <TempoStepper
             label="Target tempo"
@@ -1441,6 +1502,8 @@ export function RecordScreen() {
             </Pressable>
           ) : null}
           </View>
+          </>
+        ) : null}
         </ScrollView>
       </DragSheet>
 

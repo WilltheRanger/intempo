@@ -26,3 +26,20 @@ export const PRACTICE_SETUP_HEADING = 'Ready when you are';
 
 /** The control on the record screen that reopens the one above. */
 export const PRACTICE_SETUP_REOPEN = 'Before you record';
+
+/**
+ * What the record screen says while sound is arriving from the microphone.
+ *
+ * **The walk navigates by this, and it drifted once already.** The leg that
+ * proves the worklet delivers anything at all matched `/audio received/i` —
+ * the old sentence, `Microphone: audio received`, which was a developer
+ * reading a stream shown to a musician mid-take. When that became
+ * `Hearing you` the walk reported "nothing arrived from a microphone that is
+ * producing a tone", which is a worklet failure, on a worklet that was working.
+ *
+ * That is the second time in two days a check here has named an app defect
+ * that was a copy change (`device-check.mjs`, 2026-09-17), and it is what this
+ * file is for. The sentence itself lives in `mobile/src/lib/record/takeStatus.ts`
+ * with its tests; this is the tools' copy of it, in the one place they all read.
+ */
+export const TAKE_HEARING = 'Hearing you';

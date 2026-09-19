@@ -42,6 +42,19 @@ export interface DragSheetProps {
   label: string;
   /** What lowering it reveals, for the accessibility hint. */
   reveals: string;
+  /**
+   * Where the sheet sits before anything is dragged. Raised by default.
+   *
+   * **The record screen starts lowered, and that is the whole composition.**
+   * Raised, this sheet covers about 625 of an 844pt display, so a screen whose
+   * own style comment reads *"the music is the ground, and it owns the whole
+   * display"* opened with the music behind frosted glass and a musician
+   * expected to discover a drag to see the part they were about to play.
+   * Starting lowered makes the first thing on screen the thing the screen is
+   * for; the controls are one pull away and `peek` keeps the record button
+   * where the thumb already is.
+   */
+  initialPosition?: SheetPosition;
   style?: StyleProp<ViewStyle>;
   onPositionChange?: (position: SheetPosition) => void;
   /**
@@ -84,19 +97,20 @@ export function DragSheet({
   children,
   label,
   reveals,
+  initialPosition = 'raised',
   style,
   onPositionChange,
   peek = DEFAULT_PEEK,
   raiseSignal,
 }: DragSheetProps) {
-  const [position, setPosition] = useState<SheetPosition>('raised');
+  const [position, setPosition] = useState<SheetPosition>(initialPosition);
   const [height, setHeight] = useState(0);
   const reducedMotion = useReducedMotion();
 
   // Refs alongside the state: the pan handlers are built once and would
   // otherwise close over the position and the travel as they were on the first
   // render, which is a sheet that always thinks it is raised.
-  const positionRef = useRef<SheetPosition>('raised');
+  const positionRef = useRef<SheetPosition>(initialPosition);
   const travelRef = useRef(1);
   const offset = useRef(new Animated.Value(0)).current;
   const reducedRef = useRef(reducedMotion);
@@ -123,6 +137,35 @@ export function DragSheet({
       mass: 0.9,
     }).start();
   }).current;
+
+  /**
+   * Put a sheet that starts lowered where it says it is, once there is a
+   * height to lower it by.
+   *
+   * **`initialPosition` alone was a lie, and the screen showed it.** The
+   * offset starts at 0 — the raised transform — and only ever moves through
+   * `settle`, so a sheet constructed as `lowered` reported itself lowered to
+   * the state, the ref and the screen reader while sitting visibly over the
+   * thing it was supposed to be revealing. Travel is not known on the first
+   * render either: it is `travelFor(height, peek)` and `height` is 0 until
+   * layout, so this cannot be done at construction and has to wait for a
+   * measurement.
+   *
+   * Guarded on `laid.current` rather than on the position, so it fires exactly
+   * once. Without that, any later re-layout — a message appearing inside the
+   * sheet, the keyboard, a rotation — would snap a sheet the musician had
+   * raised back down under their hand.
+   */
+  const laid = useRef(false);
+  useEffect(() => {
+    if (laid.current || height === 0) {
+      return;
+    }
+    laid.current = true;
+    if (initialPosition === 'lowered') {
+      offset.setValue(travelFor(height, peek));
+    }
+  }, [height, initialPosition, offset, peek]);
 
   useEffect(() => {
     if (raiseSignal && positionRef.current === 'lowered') {
