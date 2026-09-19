@@ -987,14 +987,37 @@ nothing else covers `backend/`. Named here rather than left to be found.
     applied within a quarter of the closest written gap of a time the page and
     the take's own fitted pace agree on.
 
-- **The fitted tempo rate is computed on every analysis and thrown away
-  (2026-09-19).** `_residuals` does `rate, offset = np.polyfit(exp, settled, 1)`
-  and returns only the residuals. `rate` is the take's own pace against the
-  target — `target_bpm / rate` is the tempo the musician actually played — and
-  it is the single most valuable thing the pipeline already knows and has never
-  told anyone. Same for the residual *spread*, which is steadiness: a player
-  at ±5 ms every note and one averaging zero with ±40 ms swings get the same
-  verdict today.
+- **The pipeline already knew three things about every take and said none of
+  them (2026-09-19).** `_residuals` fits `rate, offset = np.polyfit(...)` on
+  every analysis and returns only the residuals. `services/insights.py` now
+  reports what that slope means, and two more that fall out beside it.
+
+  `target_bpm / slope` recovers the tempo actually played, and it is **exact**
+  rather than an estimate — measured against takes synthesised at five known
+  tempi: 75.0, 66.7, 60.0, 54.5, 48.0 against a target of 60. The matcher's
+  own rescaling does not destroy it, which had to be checked before trusting
+  it.
+
+  What the numbers separate, which the verdict cannot:
+
+      take                    verdict              played  drift  steady
+      exactly as written      Steady tempo           60.0    0.0     0.6
+      25% fast, evenly        You rushed             75.0    0.2     0.7
+      accelerando             You rushed             64.3   12.5    26.4
+      even average, ±60 ms    Steady tempo — held    60.0   -0.0     6.0
+
+  The last row is the one worth looking at: **the app tells a musician
+  swinging ±60 ms that they held a steady tempo.** The average is zero, which
+  is all the verdict reads.
+
+  **`steadiness` has to be detrended and the first version was not.** Playing
+  evenly at a different tempo makes the delta grow note after note, so a raw
+  spread is dominated by that slope — an even take at 75 scored **138.5**
+  against **6.0** for one with genuine swings, i.e. the figure ranked the most
+  controlled performance in the set as the least steady, and merely restated
+  `tempo_difference_bpm` in another unit. Removing the line leaves departure
+  from the musician's *own* pace, whatever pace they chose. Found by measuring
+  end to end, not by reading the code.
 
 ## The capture path (2026-08-24) — what an audit of it found
 

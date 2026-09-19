@@ -33,6 +33,7 @@ from app.services.alignment import (
     closest_expected_gap,
 )
 from app.services.audio_config import AudioConfig, load_audio_config
+from app.services.insights import Insights, insights_for
 from app.services.onset_recovery import predict_audio_times, recover_onsets
 from app.services.classification import (
     Band,
@@ -163,6 +164,11 @@ class AnalysisResult(BaseModel):
     n_expected_onsets: int = 0
     n_missed_notes: int = 0
     n_extra_notes: int = 0
+    #: What the pipeline already knew and never said — the pace actually
+    #: played, whether it held, and how evenly. See `services/insights.py`.
+    #: Every field inside is independently nullable: a short take has a pace
+    #: and a spread but no trustworthy drift.
+    insights: Insights = Field(default_factory=Insights)
     #: Which takes may be compared with which, stamped by the runner.
     #:
     #: **Not computed here**, because `analyze` is given audio and a score and
@@ -719,4 +725,14 @@ def analyze(
         n_expected_onsets=raw.n_expected,
         n_missed_notes=len(cleaned.missed_expected),
         n_extra_notes=len(cleaned.extra_detected),
+        insights=insights_for(
+            cleaned.matched,
+            onsets,
+            expected,
+            target_bpm,
+            # The same deltas the verdict is built from, so a musician cannot
+            # be told the spread of one set of numbers and the average of
+            # another.
+            [d.delta_pct for d in deltas if d.timed],
+        ),
     )
