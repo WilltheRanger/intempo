@@ -1,4 +1,4 @@
-import type { MetronomeMode } from '../../data/types';
+import type { Instrument, MetronomeMode } from '../../data/types';
 
 /**
  * What can be checked before a take, and what honestly cannot.
@@ -21,7 +21,7 @@ import type { MetronomeMode } from '../../data/types';
 export type CheckTone = 'ok' | 'warn';
 
 export interface PreflightCheck {
-  id: 'bleed' | 'start' | 'microphone';
+  id: 'bleed' | 'start' | 'microphone' | 'attack';
   tone: CheckTone;
   title: string;
   detail: string;
@@ -31,6 +31,8 @@ export interface PreflightCheck {
 
 export interface PreflightInput {
   metronomeMode: MetronomeMode;
+  /** What this musician plays. Only the double bass changes anything here. */
+  instrument: Instrument;
   /** The bar the take will start from. */
   startFrom: number;
   /** The first bar that actually sounds — `startableMeasures`' first entry. */
@@ -128,12 +130,46 @@ export function microphone(heard: boolean | null): PreflightCheck | null {
       };
 }
 
+/**
+ * What the detector is doing differently for this instrument.
+ *
+ * **Only the double bass, and it is a reading rather than advice.** The
+ * pipeline turns bass detection on by itself; this says so, and says the one
+ * thing a bassist can do about it. Every other instrument gets nothing, which
+ * is the point — a row that appears for everyone is a row nobody reads.
+ *
+ * `ok`, never `warn`: nothing is wrong, and `hasWarning` decides whether a
+ * musician is stopped. A bassist meets this when they open the checks, not
+ * instead of recording.
+ *
+ * **It used to be two lines of prose in the middle of the record screen's
+ * controls**, drawn for every double-bass take of every piece — which is how
+ * an area of a screen teaches you it is not worth reading. It is real
+ * information, so it moved rather than going: bowed attacks are genuinely
+ * where this detector is weakest, and `test_bowed_attacks.py` is the
+ * measurement behind the sentence.
+ */
+export function bowedAttack(instrument: Instrument): PreflightCheck | null {
+  if (instrument !== 'double_bass') {
+    return null;
+  }
+  return {
+    id: 'attack',
+    tone: 'ok',
+    title: 'Double-bass detection is on',
+    detail:
+      'The low strings are read with settings of their own. Give each bowed '
+      + 'attack a clear start and the timing comes back sharper.',
+  };
+}
+
 /** Every check that applies, warnings first — a musician reads the top. */
 export function preflight(input: PreflightInput): PreflightCheck[] {
   const checks = [
     microphone(input.lastTakeHeardSound),
     startBar(input),
     speakerBleed(input.metronomeMode),
+    bowedAttack(input.instrument),
   ].filter((check): check is PreflightCheck => check !== null);
 
   return [

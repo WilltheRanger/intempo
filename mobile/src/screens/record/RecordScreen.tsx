@@ -13,6 +13,7 @@ import {
   ScreenContainer,
   SecondaryButton,
   Text,
+  ToggleRow,
 } from '../../components/primitives';
 import { usePiece } from '../../data/hooks/usePieces';
 import { meKeys, useMe } from '../../data/hooks/useMe';
@@ -46,6 +47,7 @@ import {
 } from '../../lib/sync/queuedTakes';
 import { startRecording } from '../../lib/audioRecorder';
 import {
+  BORDER_WIDTH,
   colors,
   disabledOpacity,
   ICON_SIZE,
@@ -54,6 +56,7 @@ import {
   radii,
   spacing,
 } from '../../design';
+import { ROW_PADDING_VERTICAL } from '../../components/rowMetrics';
 import { BottomSheet } from '../../components/overlays/BottomSheet';
 import { TempoStepper } from '../../components/practice/TempoStepper';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
@@ -636,17 +639,18 @@ export function RecordScreen() {
   }
 
   const recording = phase === 'recording';
-  // **One slot, two senders, and the allowance notice yields.** A refused quota
-  // and a failed take are both about the take in hand; this is about the next
-  // one, so it never takes the slot from either.
+  // **The two of them no longer share a slot, and `footerNote` is gone.**
+  // A refused quota and a failed take are about the take in hand, so they stay
+  // beside the record button. The allowance notice is about the *next* take,
+  // and it sat under the button as two lines of prose splitting the one thing
+  // this sheet is for from the settings that configure it. It is at the foot
+  // of the sheet now; `visibleProblem` and `lastFreeMessage` are rendered in
+  // the two places they belong, and neither has to yield to the other.
   //
-  // It is *not* hidden once recording starts, though it has nothing left to
-  // decide by then. The record button sits directly under this line in a flex
-  // column, so dropping two lines of text moves the button at the exact moment
-  // a thumb is on it — and the count-in would move it a second time. The
-  // sentence stays true for the whole take, and the take ending leaves this
-  // screen anyway.
-  const footerNote = visibleProblem ?? lastFreeMessage;
+  // The reason the failure line is not hidden once recording starts still
+  // holds: the record button sits directly under it in a flex column, so
+  // dropping a line of text would move the button at the exact moment a thumb
+  // is on it, and the count-in would move it a second time.
   const countingIn = phase === 'counting_in';
   const capturing = countingIn || recording;
 
@@ -723,6 +727,7 @@ export function RecordScreen() {
     startFrom,
     firstSoundingBar: firstSoundingBar ?? startFrom,
     lastTakeHeardSound: lastTakeHadSound,
+    instrument,
   });
 
   /**
@@ -1244,13 +1249,13 @@ export function RecordScreen() {
                 </View>
               ))}
             </View>
-          ) : footerNote ? (
+          ) : visibleProblem ? (
             <Text
               variant="metadataSmall"
               color="textSecondary"
               style={styles.problem}
             >
-              {footerNote}
+              {visibleProblem}
             </Text>
           ) : null}
           {/*
@@ -1366,11 +1371,26 @@ export function RecordScreen() {
         */}
         {!capturing ? (
           <>
-        <View style={styles.tempo}>
+        {/*
+          **The settings, as a list of rows.** This block was centred, which
+          shrink-wrapped every child to its own content — so the metronome
+          row's label and value, laid out `space-between`, had no space to be
+          between and rendered as `MetronomeOff`. Stretched, the values line up
+          down the right edge and the rows read as one group.
+        */}
+        <View style={styles.settingRows}>
           <TempoStepper
             label="Target tempo"
             // On the practice sheet, which is itself glass.
             surface="plain"
+            /*
+              **A row, not a hero.** See `TempoStepper.density`: at
+              `screenTitle` under a record button this was the second large
+              thing on the sheet, and §3 law 4 allows one. The ± stay, because
+              nudging the tempo by two is the commonest thing done here and
+              burying it behind a picker would cost a tap each time.
+            */
+            density="row"
             bpm={displayedBpm}
             unitLabel={tempoUnitLabel(tempoBeatUnit)}
             minBpm={displayedRange.min}
@@ -1384,25 +1404,27 @@ export function RecordScreen() {
             disabled={recording}
           />
 
+          {/*
+            Kept, because it is not always true: it appears only on a page that
+            carries a tempo word and no metronome mark, and it explains where
+            the number above it came from.
+
+            **What was beside it is gone.** "Double-bass detection is on. Keep
+            the microphone uncovered and give bowed attacks a clear start." was
+            two lines of prose in the middle of the controls for every
+            double-bass take of every piece — the same defect the pre-flight
+            screen was just gated to avoid, and advice that already has a home
+            there. A note that is true every time teaches a musician that this
+            area is not worth reading, which costs the notes that are not.
+          */}
           {markingBpm !== null && marking ? (
             <Text
               variant="metadataSmall"
               color="textSecondary"
-              style={styles.bassNote}
+              style={styles.settingNote}
             >
               The page is marked {marking} and gives no metronome mark. This is
               what that usually means — move it to what you play.
-            </Text>
-          ) : null}
-
-          {instrument === 'double_bass' ? (
-            <Text
-              variant="metadataSmall"
-              color="textSecondary"
-              style={styles.bassNote}
-            >
-              Double-bass detection is on. Keep the microphone uncovered and
-              give bowed attacks a clear start.
             </Text>
           ) : null}
 
@@ -1491,28 +1513,27 @@ export function RecordScreen() {
             the take against, so flipping it mid-take would mean the first half
             and the second half were played against different pieces.
           */}
+          {/*
+            **A switch, drawn as one.** This was `accessibilityRole="switch"`
+            around a bare line of text whose wording changed between "Skip" and
+            "Skipping" — a control indistinguishable from the captions beside
+            it, which is the same defect as the metronome toggle two rows up
+            and was found in the same pass. §3: a drawn affordance must do what
+            it depicts, and the corollary is that a control which depicts
+            nothing cannot be found at all.
+
+            The bar count moves into the description, where it belongs: the
+            label says what the setting is and the line under it says what it
+            would do to this piece.
+          */}
           {skippable > 0 ? (
-            <Pressable
-              onPress={() => setSkipRests((on) => !on)}
+            <ToggleRow
+              label="Skip long rests"
+              description={`${skippable} ${skippable === 1 ? 'bar' : 'bars'} of rest in this part`}
+              value={skipRests}
+              onChange={setSkipRests}
               disabled={recording}
-              accessibilityRole="switch"
-              aria-checked={skipRests}
-              aria-disabled={recording}
-              accessibilityLabel="Skip long rests"
-              style={({ pressed }) => [
-                styles.metronome,
-                pressed && styles.metronomePressed,
-              ]}
-            >
-              <Text
-                variant="metadataSmall"
-                color={recording ? 'textTertiary' : 'textPrimary'}
-              >
-                {skipRests
-                  ? `Skipping ${skippable} bars of rest`
-                  : `Skip ${skippable} bars of rest`}
-              </Text>
-            </Pressable>
+            />
           ) : null}
 
           {/*
@@ -1566,6 +1587,7 @@ export function RecordScreen() {
               onPress={() => setShowSetup(true)}
               accessibilityRole="button"
               accessibilityLabel="Before you record"
+              accessibilityHint="Opens what the app can tell about this take"
               style={({ pressed }) => [
                 styles.metronome,
                 pressed && styles.metronomePressed,
@@ -1574,7 +1596,36 @@ export function RecordScreen() {
               <Text variant="metadataSmall" color="textPrimary">
                 Before you record
               </Text>
+              <ChevronRight
+                size={ICON_SIZE.sm}
+                color={colors.textSecondary}
+                strokeWidth={ICON_STROKE_WIDTH}
+              />
             </Pressable>
+          ) : null}
+
+          {/*
+            **The quota, at the foot rather than under the button.**
+
+            It used to sit directly beneath "Start recording", where on the
+            common phrasing it is two lines of prose splitting the one thing
+            the sheet is for from the settings that configure it. It is not a
+            failure and it is not urgent — nothing about it changes what a
+            musician does in the next five minutes — so it reads as what it is:
+            a standing note at the bottom of the panel.
+
+            `lastFreeMessage`, not `footerNote`: the failure half of that
+            fallback belongs beside the record button and is still there. This
+            is the half that never did.
+          */}
+          {lastFreeMessage ? (
+            <Text
+              variant="metadataSmall"
+              color="textTertiary"
+              style={styles.quota}
+            >
+              {lastFreeMessage}
+            </Text>
           ) : null}
           </View>
           </>
@@ -1845,9 +1896,12 @@ const styles = StyleSheet.create({
     // are the same measure, and they all scale together on a shorter phone.
     justifyContent: 'space-evenly',
   },
-  tempo: {
-    alignItems: 'center',
-    gap: spacing.md,
+  /** The rows that set up a take: tempo, metronome, long rests. */
+  settingRows: {
+    // Stretched, not centred. Every child here is a row whose value belongs
+    // against the right margin; centring shrink-wrapped each one to its own
+    // content and collapsed the gap `space-between` exists to make.
+    alignSelf: 'stretch',
   },
   /**
    * The count-in's ground: dark in both appearances, like the Today hero and
@@ -1919,9 +1973,10 @@ const styles = StyleSheet.create({
   restEntry: {
     textAlign: 'center',
   },
-  bassNote: {
-    maxWidth: 320,
-    textAlign: 'center',
+  settingNote: {
+    // Under the row it explains, ranged left with it — a centred line beneath
+    // a left-aligned row reads as a separate remark rather than a footnote.
+    marginBottom: spacing.md,
   },
   timer: {
     textAlign: 'center',
@@ -1942,10 +1997,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     minHeight: MIN_TOUCH_TARGET,
-    marginTop: spacing.lg,
-    borderTopWidth: StyleSheet.hairlineWidth,
+    // `rowMetrics`' grammar, now that the tempo above it is a row too: ruled
+    // on the top edge, the same padding, no margin of its own. It used to
+    // float below a centred hero block and needed the gap; as the second of
+    // three rows it needs the hairline to be a divider rather than a line
+    // hanging in space.
+    paddingVertical: ROW_PADDING_VERTICAL,
+    borderTopWidth: BORDER_WIDTH,
     borderTopColor: colors.border,
-    paddingTop: spacing.sm,
   },
   metronomeValue: {
     flexDirection: 'row',
@@ -1964,7 +2023,13 @@ const styles = StyleSheet.create({
     // A 44pt row rather than a line of text, negative-margined back so the
     // stack above doesn't move to accommodate the touch target.
     minHeight: 44,
+    // Centred as a pair now that it carries a chevron: the label alone read as
+    // a caption, which is the whole reason the metronome row above it was
+    // rebuilt. This one opens a screen, so it says so.
+    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'center',
+    gap: spacing.xs,
     paddingHorizontal: spacing.md,
     marginVertical: -spacing.md,
     borderRadius: radii.sm,
@@ -2000,6 +2065,10 @@ const styles = StyleSheet.create({
   problem: {
     textAlign: 'center',
     marginBottom: spacing.xl,
+  },
+  quota: {
+    marginTop: spacing.lg,
+    textAlign: 'center',
   },
   // Tucked under the message it belongs to, not spaced as a sibling: it is a
   // footnote on the failure above, and reads as one.

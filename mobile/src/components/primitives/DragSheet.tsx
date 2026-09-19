@@ -214,6 +214,31 @@ export function DragSheet({
       {...pan.panHandlers}
     >
       {/*
+        **The ground the material is given, because glass alone could not take
+        the detail out of engraved notation.**
+
+        Raised, this sheet floats over the highest-contrast thing the app draws,
+        and the two layers meant to soften it could not: the blur is declined
+        outright by several browsers — it did not run at all on the iPhone this
+        was reported from — and the tint alone leaves 20% of a stave, which is
+        still a grid of lines behind a number and a record button drawn across
+        a system.
+
+        So the ground changes and the material does not. Inside the sheet
+        rather than across the screen, and that is the whole of the second
+        attempt: a full-screen wash also fogged the header, so the piece title
+        and the music still on show read as disabled. What a musician can see
+        past the sheet stays sharp, which is the reason this sheet drags rather
+        than being a separate screen.
+
+        No opacity of its own and no interpolation: it shares the sheet's
+        transform, so it is exactly registered with the glass at every point of
+        a drag and there is no edge to catch. Radii matched by hand, because
+        `borderRadius: 'inherit'` does not exist in React Native.
+      */}
+      <View pointerEvents="none" style={styles.wash} />
+
+      {/*
         `bar`, not `control`, and the reason is design law 6. The specular
         catch reads as a highlight across a small capsule and as a pale band
         across a full-width surface — which is what this is. The law names the
@@ -241,6 +266,16 @@ export function DragSheet({
 }
 
 const styles = StyleSheet.create({
+  wash: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: colors.contentWash,
+    borderTopLeftRadius: radii.lg,
+    borderTopRightRadius: radii.lg,
+  },
   sheet: {
     position: 'absolute',
     left: 0,

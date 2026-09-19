@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  bowedAttack,
   hasWarning,
   microphone,
   preflight,
@@ -12,6 +13,7 @@ import {
 
 const BASE: PreflightInput = {
   metronomeMode: 'visual',
+  instrument: 'violin',
   startFrom: 1,
   firstSoundingBar: 1,
   lastTakeHeardSound: null,
@@ -86,10 +88,48 @@ describe('microphone', () => {
   });
 });
 
+describe('bowedAttack', () => {
+  it('says nothing to the three instruments it does not change', () => {
+    for (const instrument of ['violin', 'viola', 'cello'] as const) {
+      expect(bowedAttack(instrument)).toBeNull();
+    }
+  });
+
+  /**
+   * This was two lines of prose in the middle of the record screen's controls,
+   * drawn for every double-bass take of every piece. It is real information —
+   * `test_bowed_attacks.py` is the measurement behind it — so it moved here
+   * rather than going.
+   */
+  it('tells a bassist what is different, and what to do about it', () => {
+    const check = bowedAttack('double_bass');
+
+    expect(check?.title).toMatch(/double.bass/i);
+    expect(check?.detail).toMatch(/attack/i);
+  });
+
+  /**
+   * `ok`, never `warn`. Nothing is wrong, and tone is what `hasWarning` reads
+   * to decide whether a musician is stopped before playing — a bassist meets
+   * this when they open the checks, not instead of recording.
+   */
+  it('never stops a bassist to tell them the pipeline is working', () => {
+    expect(bowedAttack('double_bass')?.tone).toBe('ok');
+    expect(hasWarning([bowedAttack('double_bass')!])).toBe(false);
+  });
+});
+
 describe('preflight', () => {
   it('says nothing about the microphone before the first take', () => {
     const checks = preflight(BASE);
     expect(checks.map((check) => check.id)).toEqual(['start', 'bleed']);
+  });
+
+  it('carries the instrument reading for the one instrument that has one', () => {
+    const bass = preflight({ ...BASE, instrument: 'double_bass' });
+
+    expect(bass.map((check) => check.id)).toContain('attack');
+    expect(preflight(BASE).map((check) => check.id)).not.toContain('attack');
   });
 
   /** A musician reads the top of a list. What is wrong belongs there. */

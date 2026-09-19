@@ -16,6 +16,7 @@ import {
   SectionHeader,
   SegmentedControl,
   Text,
+  ToggleRow,
 } from '../../components/primitives';
 import { signOut } from '../../data/auth/session';
 import { useMe } from '../../data/hooks/useMe';
@@ -43,7 +44,6 @@ import { formatRole, formatTier } from '../../lib/format';
 import type { RootNavigation } from '../../navigation/types';
 import { AccountRow } from './AccountRow';
 import { LinkRow } from './LinkRow';
-import { ToggleRow } from './ToggleRow';
 import { loadStateFor } from '../../lib/loadState';
 
 /**
