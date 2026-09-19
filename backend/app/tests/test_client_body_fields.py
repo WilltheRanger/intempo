@@ -112,6 +112,14 @@ NO_CLIENT_INTERFACE: dict[str, str] = {
         "POST /v1/assignments/{id}/review has no client — there is no review "
         "screen. See `NOT_WIRED`."
     ),
+    "CreateStudioRequest": (
+        "POST /v1/studios has no client — no studio-creation screen. See "
+        "`NOT_WIRED`."
+    ),
+    "JoinStudioRequest": (
+        "POST /v1/studios/join has no client — no invite-code entry screen. "
+        "See `NOT_WIRED`."
+    ),
 }
 
 #: `class Name(BaseModel):` … then the **assignment** that forbids extras.

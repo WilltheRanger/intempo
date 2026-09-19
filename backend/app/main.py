@@ -15,6 +15,7 @@ from app.routers import (
     health,
     me,
     scores,
+    studios,
     upload,
 )
 from app.workers.analysis_runner import (
@@ -233,6 +234,10 @@ app.include_router(calibration.router, prefix="/v1")
 # No prefix collision with anything above: `/assignments` is its own root. The
 # teacher tier's way in — see the module docstring for what already existed.
 app.include_router(assignments.router, prefix="/v1")
+# How a teacher comes to have a studio at all. Registered after assignments
+# because it is the thing that makes those endpoints reachable — see its
+# docstring.
+app.include_router(studios.router, prefix="/v1")
 
 
 @app.get("/")

@@ -78,6 +78,20 @@ NOT_WIRED: dict[str, str] = {
     "/v1/assignments/{assignment_id}/review": (
         "Teacher tier; no review screen yet. §2 gate."
     ),
+    # The four studio endpoints, for the same reason as the five above: a
+    # teacher creating a studio and a student typing an invite code are both
+    # screens, and §2 reserves those to the owner.
+    "/v1/studios": "Teacher tier; no studio-creation screen yet. §2 gate.",
+    "/v1/studios/mine": (
+        "Teacher tier; nothing shows a studio, its seats or its invite code "
+        "yet. §2 gate."
+    ),
+    "/v1/studios/join": (
+        "Teacher tier; no invite-code entry screen yet. §2 gate."
+    ),
+    "/v1/studios/leave": (
+        "Teacher tier; leaving is offered nowhere yet. §2 gate."
+    ),
     "/v1/assignments/{assignment_id}/takes": (
         "Teacher tier; the takes-over-time view is the one genuinely new screen "
         "the loop needs, and it is unbuilt. §2 gate."
