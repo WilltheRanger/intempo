@@ -232,3 +232,94 @@ def test_dynamics_under_reverb_silently_lose_the_quiet_notes(span_db, found_at_m
     )
     # The half of the finding that says what kind of failure it is.
     assert s["precision"] == 1.0, "quiet notes are lost, not mistimed"
+
+
+# ---------------------------------------------------------------------------
+# End to end: does the second pass rescue a take the app would have refused?
+# ---------------------------------------------------------------------------
+
+
+def _bowed_page_take(span_db: float, bpm: float, *, wet: float):
+    """A real page, played with dynamics, recorded in a live room."""
+    import app.tests.test_bowed_attacks as bowed
+    from app.services.alignment import build_timeline
+
+    score = bowed._page()
+    written = list(np.asarray(build_timeline(score, bpm).onsets, dtype=float))
+    freqs = bass_scale(len(written), root_hz=OPEN_D2)
+
+    y = np.zeros(int((written[-1] + 1.5) * SR), dtype=np.float32)
+    for index, onset in enumerate(written):
+        amp = 1.0 if index % 2 == 0 else 10 ** (-span_db / 20)
+        note = synth_bowed_note(freqs[index], 0.45, sr=SR) * amp
+        start = int(onset * SR)
+        end = min(start + note.size, y.size)
+        y[start:end] += note[: end - start]
+
+    y = y / max(1e-9, float(np.abs(y).max())) * 0.6
+    y = (y + np.random.default_rng(3).normal(0, MIC_NOISE_FLOOR, y.size)).astype(
+        np.float32
+    )
+    if wet:
+        y = add_room_reverb(y, SR, rt60_s=0.9, wet=wet)
+    return y, score
+
+
+def _analyze(y, score, bpm, *, recovery: bool):
+    """Run the pipeline with the recovery pass on or off."""
+    from app.services import analysis as analysis_module
+    from app.services.analysis import analyze
+    from app.services.audio_config import load_audio_config
+
+    if recovery:
+        return analyze((y, SR), score, bpm, double_bass=True, config=load_audio_config())
+
+    original = analysis_module._recover_missed_onsets
+    analysis_module._recover_missed_onsets = lambda *a, **k: np.array([], dtype=float)
+    try:
+        return analyze((y, SR), score, bpm, double_bass=True, config=load_audio_config())
+    finally:
+        analysis_module._recover_missed_onsets = original
+
+
+def test_a_take_the_room_swallowed_is_read_instead_of_refused():
+    """**The outcome the second pass exists for, end to end.**
+
+    20 dB of dynamic range at 92 BPM in a 0.9-second room. Without the
+    recovery pass the take is refused outright — coverage 0.667, quality
+    0.248, and a musician who played the page correctly is told to check they
+    were on the right piece. With it the same audio reads.
+
+    Asserted as a *status* change rather than a quality number, because the
+    number will move as this is tuned and the thing that must not regress is
+    that the take is readable at all.
+    """
+    y, score = _bowed_page_take(20, 92.0, wet=0.45)
+
+    without = _analyze(y, score, 92.0, recovery=False)
+    with_recovery = _analyze(y, score, 92.0, recovery=True)
+
+    assert without.status == "alignment_failed", (
+        "the defect no longer reproduces — if detection improved, this test "
+        "is measuring nothing and should be re-based"
+    )
+    assert with_recovery.status == "ok"
+    assert with_recovery.quality > without.quality
+
+
+def test_a_take_that_needed_no_help_is_untouched():
+    """**The property the whole design was chosen for.**
+
+    Nothing is missed, so `missed_expected` is empty, so the pass returns
+    before it touches the audio. This is what the previous attempt — a more
+    sensitive detector — could not offer, and what let it break thirteen
+    tests elsewhere in this suite.
+    """
+    y, score = _bowed_page_take(0, 92.0, wet=0.0)
+
+    without = _analyze(y, score, 92.0, recovery=False)
+    with_recovery = _analyze(y, score, 92.0, recovery=True)
+
+    assert with_recovery.status == without.status == "ok"
+    assert with_recovery.quality == without.quality
+    assert with_recovery.n_detected_onsets == without.n_detected_onsets

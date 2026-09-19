@@ -948,6 +948,45 @@ nothing else covers `backend/`. Named here rather than left to be found.
   asserted with `<=` so that fixing it fails the test and forces them to be
   raised deliberately.
 
+- **A more sensitive detector could not be made to work; a second pass could
+  (2026-09-19).** The fix for the defect above was attempted twice.
+
+  **Attempt one, reverted:** replace the absolute `delta` on a globally
+  normalised envelope with a local one. The diagnosis was right — a quiet
+  note's peak collapses 0.22 → 0.030 under reverb while `delta` stays 0.07, so
+  it is rejected by about the width of `delta`. It fixed the target case and
+  **passed all six corpus clips at every setting tried**, which is exactly why
+  it was nearly shipped. Against the full audio suite it failed at every
+  window (13–14 failures against a baseline of 0), and the casualty was every
+  assertion in `test_varied_rhythm.py`: **a local baseline computed as a mean
+  is raised by dense passages and lowered by sparse ones**, so on mixed note
+  values the threshold moves with the rhythm it is supposed to be a reference
+  for. Structural, not a tuning miss.
+
+  **Attempt two, shipped:** `services/onset_recovery.py`, a pass that runs
+  after alignment and looks only where the score writes a note and the
+  alignment found none. A take that missed nothing is byte-identical by
+  construction, so the corpus needed no re-tuning and nothing that reads
+  correctly today can move. 92 BPM at 20 dB of range in a 0.9 s room goes from
+  `alignment_failed` (quality 0.248) to `ok` (0.603).
+
+  Three things cost time and are worth carrying:
+
+  - **A sweep against a subset of the suite is fiction.** Attempt one's window
+    was swept against four hand-picked cases, where 0.50 appeared to fix the
+    bowed re-trigger, the noise case and the dynamics win at once. Against the
+    full suite that value is 13 failures.
+  - **Placement beat parameters.** The recovery pass was first written *below*
+    the `is_alignment_broken` early return, where it can never run on the
+    takes it exists for — they are refused on coverage and return before
+    reaching it.
+  - **The guard that makes a low threshold safe is the window, not the
+    floor.** `floor_ratio` was first set to 0.08, which looked conservative
+    and excluded the entire population being recovered: those peaks are at
+    0.030. It is 0.015 now, and what keeps that safe is that it is only ever
+    applied within a quarter of the closest written gap of a time the page and
+    the take's own fitted pace agree on.
+
 - **The fitted tempo rate is computed on every analysis and thrown away
   (2026-09-19).** `_residuals` does `rate, offset = np.polyfit(exp, settled, 1)`
   and returns only the residuals. `rate` is the take's own pace against the
