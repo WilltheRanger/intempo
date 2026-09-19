@@ -14,6 +14,11 @@ by hand against a live database, and nothing here checked for it.
 Audited: 9 tables, 9 with RLS, no policy broader than its owner column. This
 holds that.
 
+**The grants either side of RLS are held by `test_schema_privileges.py`**, not
+here: that a role holds SELECT and not UPDATE where a policy cannot express the
+difference, and that every function this schema defines pins its `search_path`.
+RLS is one of the three and this file is only about that one.
+
 **`pending_uploads` deliberately has RLS on and no policy at all**, which is
 the safe direction — RLS with no policy denies everything to anon, and only
 the service role touches that table. So this checks the `ENABLE`, never the
