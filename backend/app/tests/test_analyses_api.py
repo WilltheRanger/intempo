@@ -597,6 +597,12 @@ def test_the_light_projection_names_every_other_field(
         "skip_long_rests": True,
         "from_measure": 17,
         "failure_reason": "the take was silent",
+        # Added with the field itself, because this test fails rather than
+        # skips when a response field has no distinguishing value — which is
+        # how it caught `assignment_id` arriving in the model. A fixed id
+        # rather than `uuid4()`: the assertion only needs it to be non-null and
+        # a stable one reads the same in every failure message.
+        "assignment_id": "6bd3f2e1-0000-4000-8000-00000000a551",
     }
     user_id = uuid4()
     row = _analysis_row(user_id, uuid4(), status="done", **distinctive)

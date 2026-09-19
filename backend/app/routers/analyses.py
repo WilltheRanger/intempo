@@ -35,6 +35,7 @@ from app.models.analysis import (
     Instrument,
     MetronomeMode,
 )
+from app.models.assignment import AssignmentStatus
 from app.routers.upload import AUDIO_BUCKET
 from app.workers.dispatch import start_analysis
 
@@ -78,6 +79,20 @@ class CreateAnalysisRequest(BaseModel):
     #: and report `alignment_failed` — "check you're on the right piece" — for
     #: a take of exactly the right piece.
     from_measure: int | None = Field(default=None, ge=1)
+    #: The teacher-tier assignment this take answers, if any.
+    #:
+    #: **The column and its index have existed since `001` and nothing ever
+    #: wrote them**, so `002`'s `"teacher reads assignment analyses"` policy —
+    #: the only route by which a teacher sees a student's take at all — matched
+    #: no row. This field is what makes the weekly loop visible from the
+    #: teacher's side.
+    #:
+    #: Null for every take a musician records for themselves, which is every
+    #: take so far. Validated at enqueue against the assignment's student, its
+    #: piece and its status; migration 023 holds the same three rules in the
+    #: database, because this router is where they belong and also where a
+    #: wrong `.eq()` lives.
+    assignment_id: UUID | None = None
 
     @model_validator(mode="after")
     def _one_audio_reference(self) -> "CreateAnalysisRequest":
@@ -107,6 +122,12 @@ class AnalysisResponse(BaseModel):
     #: deployment whose `analyses` table predates the column.
     skip_long_rests: bool | None = None
     from_measure: int | None = None
+    #: The assignment this take answers, or null for a take the musician
+    #: recorded for themselves. Added to this model rather than only to the
+    #: row, because a client that cannot tell an assigned take from a personal
+    #: one cannot show the difference — and `_WITHOUT_RESULT` is derived from
+    #: these fields, so the light projection picks it up with no second edit.
+    assignment_id: UUID | None = None
     result_json: dict[str, Any] | None = None
     failure_reason: str | None = None
     alignment_quality: float | None = None
@@ -183,6 +204,48 @@ def _assert_measure_in_score(row: dict[str, Any], from_measure: int | None) -> N
         )
 
 
+def _assert_assignment_open_for(
+    client: Any, assignment_id: UUID, user_id: UUID, score_id: UUID
+) -> None:
+    """Refuse an assignment that is not this musician's, not this piece, or put away.
+
+    The same three rules migration 023 enforces in the database, checked here
+    because this is where the actor is known and where a refusal can say which
+    of the three it was. The trigger cannot: it sees a service-role connection
+    and `auth.uid()` is NULL on it, so its messages name the rule rather than
+    the caller. Neither is redundant — 023's header gives the argument.
+
+    **A 404 for both "no such assignment" and "not yours".** Distinguishing
+    them would let anyone with an id confirm that an assignment exists in a
+    studio they are not in, which is the kind of answer an enumeration wants.
+    `_assert_score_owned` is written the same way and for the same reason.
+    """
+    res = (
+        client.table("assignments")
+        .select("id, score_id, status")
+        .eq("id", str(assignment_id))
+        .eq("student_user_id", str(user_id))
+        .limit(1)
+        .execute()
+    )
+    rows = res.data or []
+    if not rows:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="assignment not found"
+        )
+    row = rows[0]
+    if str(row.get("score_id")) != str(score_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="that assignment is for a different piece",
+        )
+    if row.get("status") == AssignmentStatus.archived.value:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="that assignment has been archived",
+        )
+
+
 #: Every column `AnalysisResponse` reads **except** `result_json`.
 #:
 #: **Derived from the model rather than typed out**, because a projection that
@@ -214,6 +277,7 @@ def _row_to_response(row: dict[str, Any]) -> AnalysisResponse:
         # to explain why a take was judged against the whole page.
         skip_long_rests=row.get("skip_long_rests"),
         from_measure=row.get("from_measure"),
+        assignment_id=row.get("assignment_id"),
         result_json=row.get("result_json"),
         failure_reason=row.get("failure_reason"),
         alignment_quality=row.get("alignment_quality"),
@@ -267,6 +331,10 @@ def create_analysis(
         ) from exc
     score_row = _assert_score_owned(client, body.score_id, user_id)
     _assert_measure_in_score(score_row, body.from_measure)
+    if body.assignment_id is not None:
+        _assert_assignment_open_for(
+            client, body.assignment_id, user_id, body.score_id
+        )
 
     # One uploaded object is one take. If the POST response was lost, the
     # recording screen retries with the same key; return the existing row
@@ -281,9 +349,43 @@ def create_analysis(
         .execute()
     ).data or []
     if existing:
+        row = existing[0]
+        # **The retry path had to learn about the assignment, and this is the
+        # defect that reading it found.** One uploaded object is one take, so a
+        # POST whose response was lost comes back with the same `audio_key` and
+        # is answered from the row already written. That answer predates
+        # `assignment_id`: a first attempt that reached the server without one
+        # and a retry that carries one would return the untouched row, leaving
+        # the take unattached — and `002`'s teacher read policy then matches
+        # nothing, which is the whole failure this field exists to end. Silent,
+        # and only on the retry, so a person would see it as "some takes reach
+        # my teacher and some do not".
+        held = row.get("assignment_id")
+        if body.assignment_id is not None and held is None:
+            updated = (
+                client.table("analyses")
+                .update({"assignment_id": str(body.assignment_id)})
+                .eq("id", row["id"])
+                .execute()
+            ).data or []
+            if updated:
+                row = updated[0]
+        elif (
+            body.assignment_id is not None
+            and str(held) != str(body.assignment_id)
+        ):
+            # The same recording answering two assignments is not a retry, and
+            # quietly returning the first attachment would hide it. Neither is
+            # it the client's to resolve by guessing, so it is named.
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="that recording is already submitted to another assignment",
+            )
+        # A request with no assignment never clears one the row already holds:
+        # an older client retrying must not detach a take from its assignment.
         return CreateAnalysisResponse(
-            analysis_id=existing[0]["id"],
-            status=existing[0]["status"],
+            analysis_id=row["id"],
+            status=row["status"],
         )
 
     # Only a genuinely new take spends quota. A retry of a row already written
@@ -311,6 +413,12 @@ def create_analysis(
         insert_payload["skip_long_rests"] = True
     if body.from_measure is not None:
         insert_payload["from_measure"] = body.from_measure
+    # Written only when there is one, like the two keys above. The column has
+    # existed since `001`, so unlike them this carries no half-applied-schema
+    # risk; the shape is kept because a payload that names only what was asked
+    # for is the one this file already reasons in.
+    if body.assignment_id is not None:
+        insert_payload["assignment_id"] = str(body.assignment_id)
     try:
         inserted = client.table("analyses").insert(insert_payload).execute()
     except Exception as exc:  # noqa: BLE001 — see below for the one case kept

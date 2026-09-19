@@ -7,7 +7,17 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.logging_config import configure_logging
-from app.routers import analyses, calibration, corrections, health, me, scores, upload
+from app.routers import (
+    analyses,
+    assignments,
+    calibration,
+    corrections,
+    health,
+    me,
+    scores,
+    studios,
+    upload,
+)
 from app.workers.analysis_runner import (
     SWEEP_INTERVAL_SECONDS,
     sweep_once,
@@ -221,6 +231,13 @@ app.include_router(analyses.router, prefix="/v1")
 # /analyses/{id}/corrections routes don't shadow /analyses/{id}.
 app.include_router(corrections.router, prefix="/v1")
 app.include_router(calibration.router, prefix="/v1")
+# No prefix collision with anything above: `/assignments` is its own root. The
+# teacher tier's way in — see the module docstring for what already existed.
+app.include_router(assignments.router, prefix="/v1")
+# How a teacher comes to have a studio at all. Registered after assignments
+# because it is the thing that makes those endpoints reachable — see its
+# docstring.
+app.include_router(studios.router, prefix="/v1")
 
 
 @app.get("/")

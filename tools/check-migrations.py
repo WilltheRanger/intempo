@@ -14,8 +14,9 @@ This runs them in sequence. It is the cheapest possible version of that day.
 
 **What it proves:** the set applies in filename order on an empty database,
 no file references a table or column an earlier one has not created, the SQL
-parses, and every file that claims to be idempotent survives being applied
-twice.
+parses, every file that claims to be idempotent survives being applied twice,
+and every behavioural assertion under `migrations/checks/` holds against the
+finished schema — see `_checks()` for why that stage exists at all.
 
 **What it cannot prove:** anything about Supabase's own semantics. `auth` and
 `storage` are stubbed by `tools/supabase_stubs.sql` in the shape these files
@@ -42,6 +43,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 MIGRATIONS = REPO / "backend" / "app" / "migrations"
+CHECKS = MIGRATIONS / "checks"
 STUBS = REPO / "tools" / "supabase_stubs.sql"
 
 #: `013_training_corrections.sql` → (13, path). Anything not numbered this way
@@ -77,6 +79,36 @@ def _claims_idempotent() -> list[Path]:
     convention rather than a check.
     """
     return [path for number, path in _migrations() if number >= FIRST_IDEMPOTENT_MIGRATION]
+
+
+def _checks() -> list[Path]:
+    """Behavioural assertions to run once the whole set has applied.
+
+    A migration whose effect is not visible in its own text may ship a file of
+    the same name under `migrations/checks/`. It is plain SQL — `DO $$ ...
+    RAISE EXCEPTION ... $$` — so `ON_ERROR_STOP` makes a failed assertion a
+    failed gate, and it never runs against a project.
+
+    **This exists because 021 is the first migration that installs behaviour.**
+    Everything before it adds a column, a table or a policy, and the static
+    readers cover those: `test_readiness.py` reads the spelling,
+    `test_rls_invariants.py` reads the policies. Neither can say whether a
+    trigger rejects `archived -> assigned`, and `readiness.py` cannot either —
+    it probes columns and tables over REST, and a trigger is neither. Running
+    the SQL is the only thing that knows, and this is the one place with a
+    database to run it against.
+
+    Derived from the directory rather than listed, for the reason
+    `_claims_idempotent` gives about its own set: a hand-maintained list is
+    enforced for the files that happened to exist when somebody wrote it.
+
+    Run after **every** migration rather than after its own, because an
+    assertion about the finished schema is the useful kind — a later migration
+    that revokes the wrong grant or drops the trigger should fail here too.
+    """
+    if not CHECKS.is_dir():
+        return []
+    return sorted(CHECKS.glob("*.sql"))
 
 
 def _migrations() -> list[tuple[int, Path]]:
@@ -148,6 +180,21 @@ def main() -> int:
             )
             return 1
         print(f"  ok    {path.name} applied twice, as it says it can be")
+
+    checks = _checks()
+    if not checks:
+        print("\nnote: no behavioural checks under migrations/checks/")
+    for path in checks:
+        ok, message = _apply(args.dsn, path, f"checks/{path.name}")
+        if not ok:
+            print(
+                f"\n\nFAIL  {message}\n\nThat is a behavioural assertion about "
+                "the finished schema, not a syntax error. The migration applied; "
+                "what it installed does not do what its header says.",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"  ok    checks/{path.name}")
 
     if duplicates:
         print(f"\nFAIL  two migrations share a number: {duplicates}", file=sys.stderr)

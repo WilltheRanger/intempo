@@ -1,3 +1,20 @@
+/**
+ * Renamed from `heldTake.test.ts`, which is all this commit does to it.
+ *
+ * The old name read as covering `heldTake.ts`. It never did — every assertion
+ * here imports `./heldTake.web`, and the native module has no test of its own.
+ * That is correct rather than a gap: native `heldTake.ts` returns null and
+ * does nothing on purpose, because the take is a `Blob` and `expo-audio`'s
+ * native source resolves file paths, so a URL made there would draw a play
+ * control that does nothing — the affordance §3 forbids outright. Its own
+ * docstring says so.
+ *
+ * But a file called `heldTake.test.ts` that tests only the web half makes that
+ * deliberate emptiness look like coverage. `session.web.test.ts` and
+ * `context.web.test.ts` already name themselves honestly; this one now does
+ * too, and the absence of a `heldTake.test.ts` beside them is the thing a
+ * reader should notice.
+ */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { heldTakeUrl, releaseHeldTake } from './heldTake.web';

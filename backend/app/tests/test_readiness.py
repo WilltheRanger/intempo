@@ -417,11 +417,30 @@ def test_migrations_written_under_the_rule_are_safe_to_run_again() -> None:
     `IF NOT EXISTS` form for it. The only safe spelling is to drop it first,
     which 015 does, and a reader copying the surrounding style would not know
     that from the other statements.
+
+    **Comments are stripped before counting, and were not.** These scans read
+    text, so a header that quotes the SQL it is replacing counted as that SQL:
+    021 explains itself by reproducing the policy from 002 that it revokes, and
+    that comment alone failed this test with `1x CREATE POLICY`. The error runs
+    the other way too, and worse — a genuinely unguarded `CREATE POLICY` was
+    masked by writing `-- IF NOT EXISTS (` anywhere in the file, because the
+    guard count came from the same unfiltered text. A migration that explains
+    what it changes by quoting it is a migration worth encouraging.
     """
     import re
     from pathlib import Path
 
     migrations = Path(__file__).resolve().parents[1] / "migrations"
+
+    def statements(text: str) -> str:
+        """The file with its `--` line comments removed.
+
+        Line comments only. A `--` inside a string literal would be stripped
+        too, which would *under*-count and so cannot turn a guarded statement
+        into a failure; no migration has one today, and the scan is a floor
+        rather than a parser.
+        """
+        return re.sub(r"--[^\n]*", "", text)
 
     #: Statement, and the spelling that makes re-running it a no-op.
     GUARDED = (
@@ -436,7 +455,7 @@ def test_migrations_written_under_the_rule_are_safe_to_run_again() -> None:
         number = path.name.split("_", 1)[0]
         if not number.isdigit() or int(number) < FIRST_IDEMPOTENT_MIGRATION:
             continue
-        sql = path.read_text()
+        sql = statements(path.read_text())
         for statement, guard in GUARDED:
             bare = len(re.findall(statement, sql, re.IGNORECASE))
             safe = len(re.findall(guard, sql, re.IGNORECASE))
