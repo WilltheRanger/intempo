@@ -25,12 +25,10 @@ BEGIN
     END LOOP;
   END LOOP;
 
-  IF has_column_privilege('anon', 'public.users', 'tier', 'UPDATE')
-     OR has_column_privilege('anon', 'public.assignments', 'status', 'UPDATE')
-     OR has_column_privilege('authenticated', 'public.users', 'tier', 'UPDATE')
-     OR has_column_privilege('authenticated', 'public.users', 'role', 'UPDATE')
-     OR has_column_privilege('authenticated', 'public.users', 'studio_id', 'UPDATE')
-     OR has_column_privilege('authenticated', 'public.assignments', 'status', 'UPDATE')
+  IF has_any_column_privilege('anon', 'public.users', 'UPDATE')
+     OR has_any_column_privilege('authenticated', 'public.users', 'UPDATE')
+     OR has_any_column_privilege('anon', 'public.assignments', 'UPDATE')
+     OR has_any_column_privilege('authenticated', 'public.assignments', 'UPDATE')
   THEN
     RAISE EXCEPTION 'client UPDATE privilege remains on a protected column';
   END IF;
@@ -49,11 +47,10 @@ AS $$
     OR has_table_privilege('authenticated', 'public.users', 'UPDATE')
     OR has_table_privilege('anon', 'public.assignments', 'UPDATE')
     OR has_table_privilege('authenticated', 'public.assignments', 'UPDATE')
-    OR has_column_privilege('anon', 'public.users', 'tier', 'UPDATE')
-    OR has_column_privilege('authenticated', 'public.users', 'tier', 'UPDATE')
-    OR has_column_privilege('authenticated', 'public.users', 'role', 'UPDATE')
-    OR has_column_privilege('authenticated', 'public.users', 'studio_id', 'UPDATE')
-    OR has_column_privilege('authenticated', 'public.assignments', 'status', 'UPDATE')
+    OR has_any_column_privilege('anon', 'public.users', 'UPDATE')
+    OR has_any_column_privilege('authenticated', 'public.users', 'UPDATE')
+    OR has_any_column_privilege('anon', 'public.assignments', 'UPDATE')
+    OR has_any_column_privilege('authenticated', 'public.assignments', 'UPDATE')
   );
 $$;
 
