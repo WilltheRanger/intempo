@@ -25,6 +25,7 @@ import type { TabScreenNavigation } from '../../navigation/types';
 import { PracticeHero, useHeroHeight } from './PracticeHero';
 import { heroContentFor, pendingLineFor } from './heroContent';
 import { useAddPieceOption } from '../../navigation/useAddPieceOption';
+import { useAddPieceCapture } from '../../navigation/useAddPieceCapture';
 import { loadStateFor } from '../../lib/loadState';
 
 /**
@@ -154,6 +155,7 @@ export function TodayScreen() {
   const handleSelectOption = useAddPieceOption(() =>
     setAddSheetVisible(false),
   );
+  const handleCaptured = useAddPieceCapture(() => setAddSheetVisible(false));
 
   const take = recentTakes.data?.[0] ?? null;
 
@@ -241,6 +243,7 @@ export function TodayScreen() {
         visible={addSheetVisible}
         onClose={() => setAddSheetVisible(false)}
         onSelect={handleSelectOption}
+        onCaptured={handleCaptured}
       />
     </ScreenContainer>
   );

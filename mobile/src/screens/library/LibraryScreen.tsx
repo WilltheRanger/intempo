@@ -24,6 +24,7 @@ import type {
 import { AddPieceSheet } from '../../components/pieces/AddPieceSheet';
 import { PieceRow } from './PieceRow';
 import { useAddPieceOption } from '../../navigation/useAddPieceOption';
+import { useAddPieceCapture } from '../../navigation/useAddPieceCapture';
 import { loadStateFor, type LoadState } from '../../lib/loadState';
 
 export function LibraryScreen() {
@@ -46,6 +47,7 @@ export function LibraryScreen() {
   const handleSelectOption = useAddPieceOption(() =>
     setAddSheetVisible(false),
   );
+  const handleCaptured = useAddPieceCapture(() => setAddSheetVisible(false));
 
   return (
     <ScreenContainer onRefresh={refresh}>
@@ -96,6 +98,7 @@ export function LibraryScreen() {
         visible={addSheetVisible}
         onClose={() => setAddSheetVisible(false)}
         onSelect={handleSelectOption}
+        onCaptured={handleCaptured}
       />
     </ScreenContainer>
   );

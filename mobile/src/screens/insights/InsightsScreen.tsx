@@ -33,6 +33,7 @@ import { SessionTrendChart } from '../../components/charts/SessionTrendChart';
 import { PieceInsightRow } from './PieceInsightRow';
 import { firstStep, focusReason, windowLabel } from './copy';
 import { useAddPieceOption } from '../../navigation/useAddPieceOption';
+import { useAddPieceCapture } from '../../navigation/useAddPieceCapture';
 import { loadStateFor } from '../../lib/loadState';
 
 /**
@@ -79,6 +80,7 @@ export function InsightsScreen() {
   const handleSelectOption = useAddPieceOption(() =>
     setAddSheetVisible(false),
   );
+  const handleCaptured = useAddPieceCapture(() => setAddSheetVisible(false));
 
   if (load === 'loading') {
     return (
@@ -130,6 +132,7 @@ export function InsightsScreen() {
           visible={addSheetVisible}
           onClose={() => setAddSheetVisible(false)}
           onSelect={handleSelectOption}
+          onCaptured={handleCaptured}
         />
       </ScreenContainer>
     );
