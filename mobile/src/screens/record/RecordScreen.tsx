@@ -1490,7 +1490,6 @@ export function RecordScreen() {
           <TempoStepper
             label="Target tempo"
             // On the practice sheet, which is itself glass.
-            surface="plain"
             /*
               **A row, not a hero.** See `TempoStepper.density`: at
               `screenTitle` under a record button this was the second large

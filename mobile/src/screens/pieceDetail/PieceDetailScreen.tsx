@@ -8,7 +8,7 @@ import {
   PencilLine,
   Trash2,
 } from '../../components/icons';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useGoBack } from '../../navigation/useGoBack';
 import { ComposerField } from '../../components/pieces/ComposerField';
@@ -26,7 +26,6 @@ import {
   IconButton,
   Input,
   LoadingState,
-  MetadataRow,
   PageHeader,
   PrimaryButton,
   SCREEN_GUTTER,
@@ -42,8 +41,6 @@ import {
 import type { Piece } from '../../data/types';
 import { practiceTempo, usePracticeTempos } from '../../data/practiceTempo';
 import { BORDER_WIDTH, colors, spacing } from '../../design';
-import { formatLastPracticed } from '../../lib/format';
-import { scheduleScore, soundingMeasureAt } from '../../lib/score';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
 import { ListenButton } from '../../components/score/ListenButton';
 import { loadStateFor } from '../../lib/loadState';
@@ -82,10 +79,6 @@ export function PieceDetailScreen() {
   // card for the music.
   const history = usePieceHistory(params.pieceId);
   const load = loadStateFor({ isError, hasData: piece !== undefined });
-
-  // Null when nothing is sounding, so the readout can say how long the piece
-  // is rather than claiming a playhead sits on measure 1.
-  const [measure, setMeasure] = useState<number | null>(null);
 
   const [menuVisible, setMenuVisible] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -145,16 +138,6 @@ export function PieceDetailScreen() {
   // be heard at — the same value the record screen and Today read.
   usePracticeTempos();
   const bpm = piece ? practiceTempo.for(piece.id, piece.markedBpm) : 0;
-
-  // Deterministic and pure, so building it here costs one pass over the notes
-  // and keeps `ListenButton` unaware that anyone is counting measures.
-  const schedule = useMemo(
-    () =>
-      piece?.score && piece.score.measures.length > 0
-        ? scheduleScore(piece.score, bpm)
-        : null,
-    [piece?.score, bpm],
-  );
 
   if (load === 'loading') {
     return (
@@ -337,42 +320,18 @@ export function PieceDetailScreen() {
       ) : null}
 
       {/*
-        **One line of facts, in place of two cards.** When you last played it,
-        how long it is, and the tempo it will be heard at — typography doing
-        what a box was doing (§3 law 8). The middle item becomes the playhead
-        while something is sounding, so the line changes in one place instead of
-        being replaced.
+        **Nothing under the piece.** This carried the movement, when it was
+        last practised, and — while Listen was sounding — which measure had
+        been reached. Removed whole: on a screen whose subject is one piece,
+        the header already names it and everything below is about practising
+        it, so a line of facts between the two was a caption on a thing the
+        reader is looking at.
+
+        The live "Measure 12 of 24" went with it, which is the part worth
+        knowing: Listen no longer reports where it has got to. That readout
+        belongs with the control that starts it rather than in a facts line,
+        if it comes back at all.
       */}
-      <MetadataRow
-        style={styles.facts}
-        items={[
-          // First, because it names *which* piece this is — a movement is
-          // closer to the title than to the tempo. It had its own line under
-          // the header until 2026-09-14; `MetadataRow` drops a null, so a piece
-          // without one reads exactly as it did.
-          // First, because it names *which* piece this is — a movement is
-          // closer to the title than to the tempo.
-          piece.movement,
-          played ? formatLastPracticed(piece.lastPracticedAt) : null,
-          /*
-           * **The idle readouts are gone; the live one stays.**
-           *
-           * This line used to carry "24 measures" and a tempo whenever the
-           * screen was at rest. Both described the file rather than the
-           * practice: the score is on the screen below, so its length is
-           * visible, and the tempo is set on the Record screen where it can
-           * actually be changed. Neither is a thing a musician opens this
-           * screen to find out, and together they turned a line about *this
-           * piece* into a specification.
-           *
-           * "Measure 12 of 24" while Listen is sounding is not the same kind
-           * of thing and is kept: it is feedback about something happening
-           * now, not a property of the file, and it is the only readout of
-           * where the playback has got to.
-           */
-          measure === null ? null : `Measure ${measure} of ${measureCount}`,
-        ]}
-      />
 
       {stillReading ? (
         <Text variant="metadataSmall" color="textSecondary" style={styles.facts}>
@@ -391,9 +350,6 @@ export function PieceDetailScreen() {
           <ListenButton
             score={piece.score}
             bpm={bpm}
-            onProgress={(elapsed, total) =>
-              setMeasure(total > 0 ? soundingMeasureAt(schedule, elapsed) : null)
-            }
           />
         </View>
       ) : null}

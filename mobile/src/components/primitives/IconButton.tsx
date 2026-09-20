@@ -11,7 +11,6 @@ import {
   radii,
 } from '../../design';
 import { PressableScale } from '../motion/PressableScale';
-import { GlassSurface } from './GlassSurface';
 
 export interface IconButtonProps {
   icon: LucideIcon;
@@ -20,32 +19,14 @@ export interface IconButtonProps {
   onPress: () => void;
   disabled?: boolean;
   /**
-   * Which ground this sits on.
+   * `onDark` for a control over a photograph or another dark ground.
    *
-   * `auto` follows the appearance, which is right everywhere the control is on
-   * the page. `onDark` is for a surface that is dark in *both* appearances — a
-   * full-bleed photograph or the camera viewfinder — where `textPrimary` is
-   * ink in light mode and the glyph disappears. Same distinction, and the same
-   * tokens, as `colors.darkBg`/`onDark`.
-   *
-   * A prop rather than a second component, because the glass material, the
-   * target size and the press behaviour are identical and two copies of those
-   * is how the second one stops being updated.
+   * It picks the glyph colour and, since design law 6 took the glass away
+   * from buttons, the fill and edge too: an ivory disc over the Today
+   * photograph is a hole in the picture, where a wash of light still reads
+   * as a control.
    */
   tone?: 'auto' | 'onDark';
-  /**
-   * What this control is drawn on.
-   *
-   * **Glass is chrome over content. Chrome over chrome is plain.** A glass
-   * capsule inside a glass sheet has no ground to refract: the two materials
-   * stack, the blur compounds, and the result is a pale lozenge on a pale
-   * panel. `audit-a11y.mjs` calls that GLASS ON GLASS and it found this one on
-   * the record screen's practice sheet the day the sheet arrived.
-   *
-   * So a control that sits *on* a glass surface asks for `plain`, and gets a
-   * bordered fill with a defined ground instead.
-   */
-  surface?: 'glass' | 'plain';
   style?: StyleProp<ViewStyle>;
 }
 
@@ -65,7 +46,6 @@ export function IconButton({
   onPress,
   disabled = false,
   tone = 'auto',
-  surface = 'glass',
   style,
 }: IconButtonProps) {
   const glyph =
@@ -101,11 +81,13 @@ export function IconButton({
         The sweep cannot see it — it composites glass correctly but only visits
         elements with text in them, and an icon is a stroke.
       */}
-      {surface === 'glass' ? (
-        <GlassSurface radius={MIN_TOUCH_TARGET / 2} tone={tone} style={styles.fill} />
-      ) : (
-        <View style={[styles.fill, styles.plain]} />
-      )}
+      {/*
+        **Always plain now.** This chose between a glass capsule and a bordered
+        circle, and glass was the default. Design law 6 keeps the material for
+        the bottom bar alone, so the choice is gone rather than re-defaulted —
+        a prop with one value is a prop that invites the other one back.
+      */}
+      <View style={[styles.fill, styles.plain, tone === 'onDark' && styles.plainOnDark]} />
       <View style={styles.glyph}>
         <Icon
           size={ICON_SIZE.md}
@@ -119,11 +101,18 @@ export function IconButton({
 
 const styles = StyleSheet.create({
   fill: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
-  /** The same edge the glass draws, without the material behind it. */
+  /** The edge the glass used to draw, without the material behind it. */
   plain: {
     borderRadius: MIN_TOUCH_TARGET / 2,
     borderWidth: BORDER_WIDTH,
     borderColor: colors.borderStrong,
+    backgroundColor: colors.surface,
+  },
+  plainOnDark: {
+    // Over the Today photograph. A white disc would be a hole in the picture;
+    // a wash of light with a soft edge is still visibly a control.
+    backgroundColor: colors.onDarkFill,
+    borderColor: colors.onDarkMuted,
   },
   /*
     **Above the glass.** `GlassSurface` fills the control absolutely, and a
