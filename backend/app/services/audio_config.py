@@ -69,6 +69,13 @@ class ToleranceConfig:
 
 
 @dataclass(frozen=True)
+class IntakeConfig:
+    """See `[intake]` in config.toml. What a file has to be to be decoded."""
+
+    max_duration_s: float = 600.0
+
+
+@dataclass(frozen=True)
 class TrendConfig:
     window: int
 
@@ -102,6 +109,10 @@ class AudioConfig:
     trend: TrendConfig
     alignment: AlignmentConfig
     calibration: CalibrationConfig
+    #: Defaulted, so a deployment whose remote-config row predates the upload
+    #: feature keeps loading rather than failing to parse a config it has
+    #: always been able to read.
+    intake: IntakeConfig = IntakeConfig()
 
 
 def _parse(raw: dict) -> AudioConfig:
@@ -145,6 +156,9 @@ def _parse(raw: dict) -> AudioConfig:
             broken_quality=float(align["broken_quality"]),
             sakoe_chiba_band=float(align["sakoe_chiba_band"]),
             slur_tolerance_pct=float(align["slur_tolerance_pct"]),
+        ),
+        intake=IntakeConfig(
+            max_duration_s=float(raw.get("intake", {}).get("max_duration_s", 600.0)),
         ),
         calibration=CalibrationConfig(
             min_duration_s=float(cal["min_duration_s"]),
