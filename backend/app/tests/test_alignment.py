@@ -515,7 +515,12 @@ def test_playing_detache_against_written_slurs_is_told_apart_from_a_wrong_piece(
 
     detache = to_timeline_base(np.arange(32, dtype=float) * (expected[1] - expected[0]) / 4)
     raw = align_dtw(detache, expected, target_bpm=60.0)
-    assert _why_alignment_failed(raw, detache, expected).startswith("We heard every note")
+    # The claim is the discrimination, not the opening words: this branch has
+    # to name the slurs, and must not send anyone to re-photograph a score
+    # that is fine. Asserted the same way the wrong-piece case below is.
+    detache_why = _why_alignment_failed(raw, detache, expected)
+    assert "slurs" in detache_why
+    assert "right piece" not in detache_why
 
     rng = np.random.default_rng(1)
     wrong = to_timeline_base(np.sort(rng.uniform(0, float(expected[-1]), 8)))

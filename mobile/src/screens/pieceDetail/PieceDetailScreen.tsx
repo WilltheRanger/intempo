@@ -8,7 +8,7 @@ import {
   PencilLine,
   Trash2,
 } from '../../components/icons';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useGoBack } from '../../navigation/useGoBack';
 import { ComposerField } from '../../components/pieces/ComposerField';
@@ -26,7 +26,6 @@ import {
   IconButton,
   Input,
   LoadingState,
-  MetadataRow,
   PageHeader,
   PrimaryButton,
   SCREEN_GUTTER,
@@ -42,9 +41,6 @@ import {
 import type { Piece } from '../../data/types';
 import { practiceTempo, usePracticeTempos } from '../../data/practiceTempo';
 import { BORDER_WIDTH, colors, spacing } from '../../design';
-import { formatLastPracticed } from '../../lib/format';
-import { formatTempo } from '../../lib/tempo';
-import { scheduleScore, soundingMeasureAt } from '../../lib/score';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
 import { ListenButton } from '../../components/score/ListenButton';
 import { loadStateFor } from '../../lib/loadState';
@@ -83,10 +79,6 @@ export function PieceDetailScreen() {
   // card for the music.
   const history = usePieceHistory(params.pieceId);
   const load = loadStateFor({ isError, hasData: piece !== undefined });
-
-  // Null when nothing is sounding, so the readout can say how long the piece
-  // is rather than claiming a playhead sits on measure 1.
-  const [measure, setMeasure] = useState<number | null>(null);
 
   const [menuVisible, setMenuVisible] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -146,16 +138,6 @@ export function PieceDetailScreen() {
   // be heard at — the same value the record screen and Today read.
   usePracticeTempos();
   const bpm = piece ? practiceTempo.for(piece.id, piece.markedBpm) : 0;
-
-  // Deterministic and pure, so building it here costs one pass over the notes
-  // and keeps `ListenButton` unaware that anyone is counting measures.
-  const schedule = useMemo(
-    () =>
-      piece?.score && piece.score.measures.length > 0
-        ? scheduleScore(piece.score, bpm)
-        : null,
-    [piece?.score, bpm],
-  );
 
   if (load === 'loading') {
     return (
@@ -272,7 +254,7 @@ export function PieceDetailScreen() {
             label="Movement"
             value={draftMovement}
             onChangeText={setDraftMovement}
-            placeholder="I. Adagio — optional"
+            placeholder="I. Adagio (optional)"
             autoCapitalize="words"
             style={styles.editField}
           />
@@ -338,34 +320,18 @@ export function PieceDetailScreen() {
       ) : null}
 
       {/*
-        **One line of facts, in place of two cards.** When you last played it,
-        how long it is, and the tempo it will be heard at — typography doing
-        what a box was doing (§3 law 8). The middle item becomes the playhead
-        while something is sounding, so the line changes in one place instead of
-        being replaced.
+        **Nothing under the piece.** This carried the movement, when it was
+        last practised, and — while Listen was sounding — which measure had
+        been reached. Removed whole: on a screen whose subject is one piece,
+        the header already names it and everything below is about practising
+        it, so a line of facts between the two was a caption on a thing the
+        reader is looking at.
+
+        The live "Measure 12 of 24" went with it, which is the part worth
+        knowing: Listen no longer reports where it has got to. That readout
+        belongs with the control that starts it rather than in a facts line,
+        if it comes back at all.
       */}
-      <MetadataRow
-        style={styles.facts}
-        items={[
-          // First, because it names *which* piece this is — a movement is
-          // closer to the title than to the tempo. It had its own line under
-          // the header until 2026-09-14; `MetadataRow` drops a null, so a piece
-          // without one reads exactly as it did.
-          piece.movement,
-          played ? formatLastPracticed(piece.lastPracticedAt) : null,
-          measureCount === 0
-            ? null
-            : measure === null
-              ? `${measureCount} ${measureCount === 1 ? 'measure' : 'measures'}`
-              : `Measure ${measure} of ${measureCount}`,
-          // **In the page's own unit.** `bpm` is quarter-note BPM, which is the
-          // clock the score and the analysis run on and not always the number
-          // printed on the music: a 6/8 piece marked dotted-quarter = 60 is 90
-          // here. Saying "90 BPM" beside a Record screen that says 60 is two
-          // numbers for one tempo.
-          hasNotation ? formatTempo(bpm, piece.score?.tempo_beat_unit) : null,
-        ]}
-      />
 
       {stillReading ? (
         <Text variant="metadataSmall" color="textSecondary" style={styles.facts}>
@@ -384,9 +350,6 @@ export function PieceDetailScreen() {
           <ListenButton
             score={piece.score}
             bpm={bpm}
-            onProgress={(elapsed, total) =>
-              setMeasure(total > 0 ? soundingMeasureAt(schedule, elapsed) : null)
-            }
           />
         </View>
       ) : null}
@@ -484,7 +447,6 @@ export function PieceDetailScreen() {
               <SheetOptionRow
                 icon={FileMusic}
                 label="Digital score"
-                description="The notes read from the page."
                 divided={false}
                 onPress={() =>
                   navigation.navigate('PieceScore', {
@@ -503,7 +465,6 @@ export function PieceDetailScreen() {
               <SheetOptionRow
                 icon={Layers}
                 label="Original pages"
-                description="The pages this piece was read from."
                 divided={hasNotation || stillReading || readingFailed}
                 onPress={() =>
                   navigation.navigate('PieceScore', {
@@ -524,7 +485,6 @@ export function PieceDetailScreen() {
         <SheetOptionRow
           icon={PencilLine}
           label="Rename"
-          description="Correct the title or composer."
           divided={false}
           onPress={() => {
             setMenuVisible(false);

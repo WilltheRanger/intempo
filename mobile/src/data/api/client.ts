@@ -20,7 +20,7 @@ const SESSION_ENDED = 'Your session has ended. Sign in again.';
  * goes one way.
  */
 export const SERVER_FAULT =
-  'The server had a problem. This is not something you did — try again in a minute.';
+  'The server had a problem. This is not something you did. Try again in a minute.';
 
 /**
  * The last resort, when the server said nothing a person could read.
@@ -38,7 +38,7 @@ export const SERVER_FAULT =
  * is where a developer should be reading them from anyway.
  */
 export const REQUEST_FAILED =
-  'Something went wrong at our end. Try again — if it keeps happening, it is not you.';
+  'Something went wrong at our end. Try again. If it keeps happening, it is not you.';
 
 /**
  * Base URL for the FastAPI backend. Override per environment with
@@ -462,7 +462,7 @@ async function send(path: string, init: RequestInit): Promise<Sent> {
     throw new ApiError(
       0,
       path,
-      'The server took too long to answer. It may be waking up — try again in a moment.',
+      'The server took too long to answer. It may be waking up. Try again in a moment.',
     );
   }
   throw new ApiError(

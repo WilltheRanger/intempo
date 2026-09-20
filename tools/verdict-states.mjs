@@ -45,8 +45,13 @@ export const VERDICT_STATES = [
     label: 'Verdict — nothing heard',
     // `diagnostics.py` distinguishes a silent take from a page with no notes
     // read off it, and the screen must not paraphrase either into the other.
-    says: /completely silent/i,
-    needle: 'completely silent',
+    // Shortened 2026-09-20: the sentence was three clauses of advice under a
+    // headline, and the home hero renders it verbatim. The needle follows the
+    // copy, and the distinction it guards is unchanged — a silent take says
+    // the microphone heard nothing, a page with no notes says the piece has
+    // none to compare against.
+    says: /no sound reached the microphone/i,
+    needle: 'No sound reached the microphone',
     offers: /^Record again$/i,
   },
   {
@@ -55,10 +60,14 @@ export const VERDICT_STATES = [
     label: 'Verdict — too little of the page heard',
     // Changed 2026-09-14. This read "matching your recording to the score —
     // check you're on the right piece", which is what every early take was
-    // told while being the right piece. The counts are the point of the new
+    // told while being the right piece. The counts are the point of the
     // sentence, so the needle keeps them while staying off the exact figures.
-    says: /only picked out \d+ notes/i,
-    needle: 'only picked out',
+    //
+    // Shortened again 2026-09-20 to "Only 18 of 76 notes came through." The
+    // counts survived the edit, which is what this marker is really pinning:
+    // a version of this screen that stops naming them would fail here.
+    says: /only \d+ of \d+ notes/i,
+    needle: 'notes came through',
     offers: /^Record again$/i,
   },
 ];

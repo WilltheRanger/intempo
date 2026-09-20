@@ -33,6 +33,10 @@ import {
   MicrophonePermissionError,
   type Recorder,
 } from '../../lib/audio/types';
+import * as DocumentPicker from 'expo-document-picker';
+import { File as FSFile } from 'expo-file-system';
+import { ACCEPTED_LABEL, describePickedTake } from '../../lib/record/pickedTake';
+import { playheadAt } from '../../lib/record/playhead';
 import { readTakeFailure } from '../../lib/audio/takeFailure';
 import { heldTakeUrl, releaseHeldTake } from '../../lib/audio/heldTake';
 import { HeldTakePlayer } from './HeldTakePlayer';
@@ -533,6 +537,76 @@ export function RecordScreen() {
   }
 
   /**
+   * Send a recording the musician already has, instead of playing one now.
+   *
+   * **The take a musician cares most about is often already on their phone.**
+   * A lesson, a run-through caught on a voice memo, a performance — none of
+   * which can be played again for the app's benefit. Everything downstream of
+   * the upload is identical to a recorded take, so this joins `send` rather
+   * than building a second path to the same place.
+   *
+   * Two checks before the bytes move, and they are different in kind.
+   * `describePickedTake` is local and instant, so an obviously wrong file
+   * costs no data and no waiting. The real guard is
+   * `backend/app/services/audio_intake.py`, which reads the bytes; this one
+   * is a courtesy and is documented as such, because a client check protects
+   * nobody.
+   */
+  async function pickTake() {
+    if (recording || isStarting || phase === 'analysing') {
+      return;
+    }
+    setProblem(null);
+    let asset: DocumentPicker.DocumentPickerAsset | undefined;
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        // A hint to the picker, not a guarantee: every platform treats this
+        // differently and some ignore it, which is why the name is checked
+        // afterwards rather than trusted.
+        type: 'audio/*',
+        multiple: false,
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled) {
+        return;
+      }
+      asset = result.assets?.[0];
+    } catch {
+      setProblem('That file could not be opened. Try choosing it again.');
+      return;
+    }
+    if (!asset) {
+      setProblem('Nothing was selected.');
+      return;
+    }
+
+    const picked = describePickedTake({
+      name: asset.name,
+      size: asset.size ?? null,
+    });
+    if (!picked.ok) {
+      setProblem(picked.message);
+      return;
+    }
+
+    let audio: Blob;
+    try {
+      // Web hands back a Blob, native a URI. Both read the same way — the
+      // same two lines `ImportFile` uses for a score.
+      audio = asset.file ?? (new FSFile(asset.uri) as unknown as Blob);
+    } catch {
+      setProblem('That file could not be read. Try choosing it again.');
+      return;
+    }
+
+    await send({
+      audio,
+      filename: picked.filename,
+      contentType: picked.contentType,
+    });
+  }
+
+  /**
    * Sends a finished take, keeping it if that fails.
    *
    * Separate from `stop` so a retry runs the same path with the same bytes
@@ -541,6 +615,8 @@ export function RecordScreen() {
   async function send(recording: {
     audio: Blob;
     filename: string;
+    /** Absent for a recorded take, which is always the WAV the app wrote. */
+    contentType?: string;
     resume?: TakeSubmissionState;
   }) {
     // Hold the bytes before the first awaited upload step. This is not yet a
@@ -557,6 +633,7 @@ export function RecordScreen() {
         metronomeMode,
         audio: recording.audio,
         filename: recording.filename,
+        contentType: recording.contentType,
         resume: recording.resume,
         // **Sent, not just applied on the phone.** The metronome counted a
         // shortened piece, so the analysis has to judge a shortened one — see
@@ -776,6 +853,36 @@ export function RecordScreen() {
   const entryTimeSignature = openingTimeSignature(takeScore);
   const pulse = metronomePulse(entryTimeSignature);
   const perBar = pulse?.pulsesPerBar ?? null;
+
+  /**
+   * Where the beat says the musician is, for the mark on the page.
+   *
+   * **Only while recording**, never during the count-in: the count-in is
+   * beats before bar one, so a mark during it would sit on a bar nobody is
+   * playing yet and start by being wrong.
+   *
+   * `startable` is the bars that actually sound, in playing order, so its
+   * last entry is the last bar there is to point at. `playheadAt` returns
+   * null past it rather than pinning the mark to the final bar forever.
+   *
+   * **It advances at 100ms**, the rate `elapsedMs` already ticks at, which is
+   * about four percent of a bar at 92 BPM. Deliberately not given a faster
+   * clock of its own: the mark lives inside the engraved SVG, so every tick
+   * re-renders the notation, and a take is exactly the moment the JavaScript
+   * thread must stay free for the recorder. Whether the stepping is visible,
+   * and whether ten notation renders a second cost anything on a real phone,
+   * are both device questions - see the PR.
+   */
+  const playhead =
+    recording && perBar && targetBpm
+      ? playheadAt({
+          elapsedMs,
+          bpm: targetBpm,
+          beatsPerBar: perBar,
+          startFrom,
+          lastBar: startable[startable.length - 1] ?? startFrom,
+        })
+      : null;
   const metronomePlan = useMemo(
     () => buildMetronomePlan(takeScore, targetBpm),
     [takeScore, targetBpm],
@@ -1063,6 +1170,7 @@ export function RecordScreen() {
           score={heard}
           bars={startable}
           startFrom={startFrom}
+          playhead={playhead}
           onStartFromChange={setStartFrom}
           insetBottom={SHEET_PEEK}
           insetTop={headerHeight}
@@ -1382,7 +1490,6 @@ export function RecordScreen() {
           <TempoStepper
             label="Target tempo"
             // On the practice sheet, which is itself glass.
-            surface="plain"
             /*
               **A row, not a hero.** See `TempoStepper.density`: at
               `screenTitle` under a record button this was the second large
@@ -1581,6 +1688,45 @@ export function RecordScreen() {
             beatUnit={tempoBeatUnit}
             disabled={recording}
           />
+
+          {/*
+            **A take you already have, in the row grammar of the ones above.**
+
+            Under the controls rather than beside the record button, because
+            it is the other way to answer the same question and not a second
+            primary action: design law 4 gives this screen one focal point and
+            that is the disc. A musician who came here to play never has to
+            read this row; one who came with a voice memo finds it where the
+            other settings are.
+
+            Hidden while a take is being started, for the same reason the
+            settings are: it would put a second submission over the top of the
+            first. The surrounding block already only renders in `ready`, so
+            the running and sending phases need no test here — `pickTake`
+            still makes them explicit, because it can be reached from a
+            keyboard while a phase change is in flight.
+          */}
+          {!recording && !isStarting ? (
+            <Pressable
+              onPress={() => void pickTake()}
+              accessibilityRole="button"
+              accessibilityLabel="Upload a recording"
+              accessibilityHint={`Choose an audio file you already have. ${ACCEPTED_LABEL} all work.`}
+              style={({ pressed }) => [
+                styles.metronome,
+                pressed && styles.metronomePressed,
+              ]}
+            >
+              <Text variant="metadataSmall" color="textPrimary">
+                Upload a recording
+              </Text>
+              <ChevronRight
+                size={ICON_SIZE.sm}
+                color={colors.textSecondary}
+                strokeWidth={ICON_STROKE_WIDTH}
+              />
+            </Pressable>
+          ) : null}
 
           {!recording ? (
             <Pressable
@@ -1849,7 +1995,22 @@ const styles = StyleSheet.create({
   /** Always visible: the take, whether the sheet is up or down. */
   take: {
     alignItems: 'center',
-    paddingTop: spacing.xs,
+    /*
+     * **A vertical rhythm, because there was none.** Measured on a built app
+     * at 390x844: the grab handle ended at 288, the timer began at 292, and
+     * the record disc began at 334 — the exact pixel the timer ended. Three
+     * elements in the one block a musician looks at while holding an
+     * instrument, stacked flush, which is what "mushed" describes.
+     *
+     * `gap` rather than margins on each child, because two of them are
+     * conditional: the beat indicator appears only for a visual metronome
+     * during a take, and the microphone line only when there is something to
+     * say. Margins would have to be right for every combination; one interval
+     * is right for all of them, which is what design law 5 means by spacing
+     * being a system rather than a per-component guess.
+     */
+    paddingTop: spacing.lg,
+    gap: spacing.lg,
   },
   settings: {
     // Capped so the sheet cannot grow past about half the display and leave
@@ -2023,14 +2184,24 @@ const styles = StyleSheet.create({
     // A 44pt row rather than a line of text, negative-margined back so the
     // stack above doesn't move to accommodate the touch target.
     minHeight: 44,
-    // Centred as a pair now that it carries a chevron: the label alone read as
-    // a caption, which is the whole reason the metronome row above it was
-    // rebuilt. This one opens a screen, so it says so.
+    /*
+     * **Left label, right chevron — the grammar the rows above it already
+     * use.** This was centred, on the reasoning that a label with a chevron
+     * reads as a control rather than a caption. It does, and it was still the
+     * one element in the panel that did not line up with anything: "Target
+     * tempo", "Metronome" and "Start at" all set a label against the left
+     * margin and their affordance against the right, and this sat in the
+     * middle between two of them.
+     *
+     * Design law 5 asks for consistent horizontal margins, and a row that
+     * opens a screen is the same kind of thing as the two rows either side of
+     * it that also open one. It keeps the chevron, so it still reads as a
+     * control; it stops being the exception.
+     */
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     gap: spacing.xs,
-    paddingHorizontal: spacing.md,
     marginVertical: -spacing.md,
     borderRadius: radii.sm,
   },
@@ -2083,11 +2254,21 @@ const styles = StyleSheet.create({
   control: {
     alignItems: 'center',
     gap: spacing.md,
-    // Lifted off the bottom edge. The safe-area inset below this only keeps the
-    // control clear of the home indicator, which is a different question from
-    // where a thumb actually rests — that is around a sixth of the screen up,
-    // not against the edge.
-    marginBottom: spacing['4xl'],
+    /*
+     * **The reason for this changed underneath it.** It was 40pt, to lift the
+     * control off the bottom edge of the screen — a thumb rests about a sixth
+     * of the way up, not against the edge. That was true when the button was
+     * the last thing on the screen. It now sits inside the sheet with the
+     * settings below it, so the margin is no longer lifting the control off
+     * anything: it is a gap before the next row, and measured on a built app
+     * it was 40pt of it, with another 43pt after — 83pt between "Start
+     * recording" and "Target tempo" while the top of the same panel was 16.
+     *
+     * The thumb argument still holds in the *lowered* state, where the peek
+     * leaves the button near the bottom edge, which is why this is reduced
+     * rather than removed. Both states were re-measured after the change.
+     */
+    marginBottom: spacing.lg,
   },
   controlDisabled: {
     opacity: disabledOpacity,

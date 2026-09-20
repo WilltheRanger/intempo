@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, type QueryClient } from '@tanstack/react-query';
 
 import { takeSource } from '../sources';
 import type { TakeResult } from '../types';
@@ -48,4 +48,34 @@ export function usePieceHistory(pieceId: string) {
     queryKey: takeKeys.history(pieceId),
     queryFn: () => takeSource.getPieceHistory(pieceId),
   });
+}
+
+/**
+ * Start fetching a piece's history before its screen exists.
+ *
+ * **The card arrived after the screen did.** `PieceDetailScreen` renders the
+ * history only once the query resolves, so opening a piece drew the screen
+ * and then, a moment later, dropped "12 takes since 3 March" into the middle
+ * of it — content appearing under a thumb that had already started moving.
+ *
+ * Called from wherever a piece is opened, which is one tap earlier than the
+ * screen that needs it. That tap is enough on a warm connection and is never
+ * worse than not doing it: `prefetchQuery` is a no-op when the data is already
+ * fresh, and a failure here is simply the query the screen runs anyway.
+ *
+ * It does not *guarantee* the card is there on the first frame - a cold, slow
+ * connection will still resolve after the screen mounts. It removes the common
+ * case rather than the possibility, which is why `PracticeHistory` still has
+ * to be able to arrive late.
+ */
+export function prefetchPieceHistory(
+  client: QueryClient,
+  pieceId: string,
+): void {
+  void client
+    .prefetchQuery({
+      queryKey: takeKeys.history(pieceId),
+      queryFn: () => takeSource.getPieceHistory(pieceId),
+    })
+    .catch(() => {});
 }

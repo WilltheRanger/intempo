@@ -28,9 +28,11 @@ function usage(over: Partial<UsageResponse> = {}): UsageResponse {
 
 describe('describeLastFreeAnalysis', () => {
   it('speaks on the last one', () => {
-    expect(describeLastFreeAnalysis(usage())).toContain(
-      'This is your last free analysis this month.',
-    );
+    // The claim, not the sentence. This line sits under the record button on
+    // a screen a musician reads with an instrument up, so its wording is
+    // expected to get shorter over time; what must not change is that the
+    // last free take is the one it speaks on, and that it says so.
+    expect(describeLastFreeAnalysis(usage())).toContain('Last free analysis');
   });
 
   it('is silent while the count still has slack', () => {
@@ -64,7 +66,7 @@ describe('describeLastFreeAnalysis', () => {
       undefined,
       { day: 'numeric', month: 'long' },
     );
-    expect(describeLastFreeAnalysis(usage())).toContain(`available on ${date}.`);
+    expect(describeLastFreeAnalysis(usage())).toContain(date);
   });
 });
 

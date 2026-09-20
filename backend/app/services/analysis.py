@@ -285,16 +285,14 @@ def _why_alignment_failed(
 
     if heard_everything and far_too_many:
         return (
-            "We heard every note the score expects, and a lot more besides — "
-            "this usually means the slurs on the page aren't the ones you "
-            "played. Check the slur markings on this piece."
+            "We heard many more notes than this page writes. The slurs on "
+            "the page are probably not the ones you played."
         )
 
     if _take_is_much_longer_than_the_page(onsets, expected):
         return (
-            "Your recording is much longer than this page of music — that "
-            "usually means some bars are missing from it. Check for a rest bar "
-            "with a number over it, or a repeat, that didn't make it into the "
+            "Your take runs much longer than this page. Look for a repeat, "
+            "or a rest bar with a number over it, missing from the "
             "transcription."
         )
 
@@ -307,10 +305,8 @@ def _why_alignment_failed(
     # is on the stand.
     if raw.coverage < _SPARSE_COVERAGE and raw.n_detected < raw.n_expected:
         return (
-            f"We only picked out {raw.n_detected} notes where this page writes "
-            f"{raw.n_expected}, so there wasn't enough to compare. Move the "
-            "microphone closer and check the piece was read correctly, then "
-            "record again."
+            f"Only {raw.n_detected} of {raw.n_expected} notes came through. "
+            "Try moving the microphone closer."
         )
 
     # **Everything the page writes was heard, and none of it where the page
@@ -319,9 +315,8 @@ def _why_alignment_failed(
     # would tell the musician nothing, and what is left is that these notes are
     # not this music.
     return (
-        "We heard about as many notes as this page writes, but not at the "
-        "times it writes them — check you're on the right piece, and that the "
-        "tempo you set is the one you played."
+        "The notes came at different times than this page writes them. "
+        "Check you're on the right piece, and the tempo you set."
     )
 
 
@@ -395,14 +390,12 @@ def _why_nothing_to_compare(expected: np.ndarray) -> str:
     """
     if expected.size == 0:
         return (
-            "There are no notes on this piece for us to compare against — the "
-            "transcription came back empty. Open the piece and check the "
-            "reading before recording again."
+            "This piece has no notes to compare against. Check the "
+            "transcription."
         )
     return (
-        "Your recording is completely silent — no sound reached the microphone "
-        "at all. Check which input your device is recording from, and that "
-        "nothing is muting it, then record again."
+        "No sound reached the microphone. Check your input and that nothing "
+        "is muting it."
     )
 
 

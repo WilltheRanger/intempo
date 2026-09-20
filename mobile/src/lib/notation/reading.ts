@@ -289,7 +289,7 @@ export function describeConfidence(confidence: number | null): string | null {
   if (confidence === null || confidence >= LOW_CONFIDENCE) {
     return null;
   }
-  return "The reading wasn't confident about this page — worth checking against your copy before you record.";
+  return "The reading wasn't confident about this page. Worth checking against your copy before you record.";
 }
 
 /** The durations a musician can choose from, shortest last. */
@@ -446,7 +446,7 @@ export function describeBeats(
     // The backend's own words for this measure, so the two never disagree in
     // front of a musician: "allowed, a first measure may be a pickup".
     return {
-      text: `${shown} of ${expected} beats — a pickup`,
+      text: `${shown} of ${expected} beats, a pickup`,
       balanced: true,
       expected,
       pickup: true,

@@ -11,7 +11,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 
-import { colors, radii, spacing } from '../../design';
+import { BORDER_WIDTH, colors, radii, spacing } from '../../design';
 import { settleVelocity } from '../../lib/motion/springHandoff';
 import {
   anchorNearest,
@@ -22,7 +22,6 @@ import {
   type SheetPosition,
 } from '../../lib/record/sheet';
 import { useReducedMotion } from '../../lib/useReducedMotion';
-import { GlassSurface } from './GlassSurface';
 
 /**
  * How much of the sheet stays on screen when it is down, by default.
@@ -285,13 +284,19 @@ export function DragSheet({
       <View pointerEvents="none" style={styles.wash} />
 
       {/*
-        `bar`, not `control`, and the reason is design law 6. The specular
-        catch reads as a highlight across a small capsule and as a pale band
-        across a full-width surface — which is what this is. The law names the
-        tab bar because that is where it was found; the property it describes
-        belongs to the shape, and this is that shape.
+        **A solid panel.** This was glass in the `bar` context, on the argument
+        that the specular catch reads as a pale band across a full-width
+        surface rather than as a highlight. That argument was about which
+        *kind* of glass; design law 6 now keeps the material for the bottom
+        navigation bar alone, so this is an opaque surface with a hairline at
+        its top edge.
+
+        It loses nothing this screen was relying on. The wash that keeps the
+        music from reading through is a separate layer and still does its job
+        — see `styles.wash`, which is why the notes behind this do not compete
+        with the controls on it.
       */}
-      <GlassSurface radius={radii.lg} variant="bar" style={styles.glass}>
+      <View style={[styles.panel, styles.glass]}>
         <Pressable
           onPress={toggle}
           accessibilityRole="button"
@@ -306,7 +311,7 @@ export function DragSheet({
           <View style={styles.grip} />
         </Pressable>
         {children}
-      </GlassSurface>
+      </View>
     </Animated.View>
   );
 }
@@ -327,6 +332,11 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+  },
+  panel: {
+    backgroundColor: colors.surface,
+    borderTopWidth: BORDER_WIDTH,
+    borderTopColor: colors.border,
   },
   glass: {
     borderTopLeftRadius: radii.lg,

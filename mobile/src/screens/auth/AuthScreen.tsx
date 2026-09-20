@@ -225,7 +225,7 @@ export function AuthScreen({
           */}
           <Text variant="screenTitle">
             {sent === 'maybeExisting'
-              ? 'Check your email — or sign in'
+              ? 'Check your email, or sign in'
               : 'Check your email'}
           </Text>
           <Text variant="body" color="textSecondary" style={styles.lede}>
@@ -234,7 +234,7 @@ export function AuthScreen({
               : sent === 'reset'
               ? `If there's an account for ${email.trim()}, a link to set a new password is on its way.`
               : sent === 'maybeExisting'
-                ? `If ${email.trim()} is new, a confirmation link is on its way. If it already has an account, no mail is sent — sign in instead, or reset the password.`
+                ? `If ${email.trim()} is new, a confirmation link is on its way. If it already has an account, no mail is sent. Sign in instead, or reset the password.`
                 : `We sent a confirmation link to ${email.trim()}. Follow it and you'll be signed in.`}
           </Text>
 

@@ -54,7 +54,10 @@ export function describeLastFreeAnalysis(
   if (!usage || usage.limit === null || usage.remaining !== 1) {
     return null;
   }
-  return `This is your last free analysis this month. The next one is available ${whenAnalysisAllowanceResets(usage.resets_at)}.`;
+  // Two lines of centred prose under the record button for one fact. The
+  // fact is which take this is; the reset date is a detail for the screen
+  // that is about the allowance, not for the one with an instrument in hand.
+  return `Last free analysis. Next one ${whenAnalysisAllowanceResets(usage.resets_at)}.`;
 }
 
 /**

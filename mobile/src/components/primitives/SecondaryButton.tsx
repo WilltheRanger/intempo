@@ -7,6 +7,7 @@ import {
 } from 'react-native';
 
 import {
+  BORDER_WIDTH,
   CONTROL_HEIGHT,
   CONTROL_PRESSED_SCALE,
   colors,
@@ -17,7 +18,6 @@ import {
   spacing,
 } from '../../design';
 import { PressableScale } from '../motion/PressableScale';
-import { GlassSurface } from './GlassSurface';
 import { Text } from './Text';
 
 export interface SecondaryButtonProps {
@@ -62,12 +62,22 @@ export function SecondaryButton({
         style,
       ]}
     >
-      {/* Neutral glass: colourless, so whatever it floats over decides how it
-          looks. Tint is reserved for the primary action beside it. */}
-      <GlassSurface
-        radius={CONTROL_HEIGHT / 2}
-        tone={onDark ? 'onDark' : 'auto'}
-        style={styles.fill}
+      {/*
+        **A solid control.** This was a glass capsule; design law 6 now keeps
+        the material for the bottom bar alone. What a secondary action needs
+        is an edge that says it is pressable and a fill that separates it from
+        the ground, and two tokens do that without a material.
+
+        `onDark` still matters: over the Today photograph a white fill is a
+        slab, so that case keeps a translucent wash of ink and a brighter edge
+        — the same job the glass `tone` was doing, done with colour.
+      */}
+      <View
+        style={[
+          styles.fill,
+          styles.solid,
+          onDark ? styles.solidOnDark : styles.solidOnGround,
+        ]}
       />
       <View style={styles.content}>
         {Icon ? (
@@ -87,6 +97,21 @@ export function SecondaryButton({
 
 const styles = StyleSheet.create({
   fill: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
+  solid: {
+    borderRadius: CONTROL_HEIGHT / 2,
+    borderWidth: BORDER_WIDTH,
+  },
+  solidOnGround: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+  },
+  solidOnDark: {
+    // Not `surface`: an ivory slab over the photograph. A wash of light with a
+    // soft edge reads as a control without covering the picture — the same two
+    // tokens the other `onDark` controls in this app already use.
+    backgroundColor: colors.onDarkFill,
+    borderColor: colors.onDarkMuted,
+  },
   button: {
     overflow: 'hidden',
     height: CONTROL_HEIGHT,

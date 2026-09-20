@@ -52,3 +52,64 @@ export function failureTitle(failure: TakeFailure): string {
 export function nothingUsableTitle(status: Exclude<ResultStatus, 'ok'>): string {
   return FOR_STATUS[status];
 }
+
+/**
+ * A take refused before the decoder ever saw it, in words a musician can act on.
+ *
+ * **These codes had nowhere to go, and the default was wrong for all of them.**
+ * `audio_intake.py` refuses an upload for one of six reasons and writes a
+ * machine token into `analyses.failure_reason`. The verdict screen mapped
+ * every non-recoverable failure to one sentence — "Your playing wasn't the
+ * problem. Record it again when you have a moment." — which is true of a
+ * crashed worker and actively misleading here: the playing was never
+ * involved, and recording again does nothing about a file that is ninety
+ * minutes long or is not audio.
+ *
+ * Six entries rather than one, because they are six different things to do:
+ * trim it, export it again, pick a different file, pick a different format,
+ * check it is not empty, try opening it again.
+ *
+ * Returns `null` for every other reason, including the pipeline's own
+ * failures, so those keep the sentence written for them.
+ */
+const INTAKE: Record<string, { title: string; description: string }> = {
+  audio_too_long: {
+    title: 'That recording is too long',
+    description:
+      'Trim it to the passage you want read, then upload it again. Ten minutes is the limit.',
+  },
+  audio_too_large: {
+    title: 'That file is too big',
+    description:
+      'The limit is 50 MB. A shorter recording, or one saved as MP3 rather than WAV, will fit.',
+  },
+  audio_not_recognised: {
+    title: 'That isn’t an audio file we can read',
+    description: 'WAV, MP3, M4A, FLAC and OGG all work. Pick one of those and try again.',
+  },
+  audio_damaged: {
+    title: 'That file looks damaged',
+    description:
+      'Its length could not be read, which usually means the export did not finish. Export it again.',
+  },
+  audio_empty: {
+    title: 'That file has no audio in it',
+    description: 'Check it plays on your device, then upload it again.',
+  },
+  audio_unreadable: {
+    title: 'That file could not be read',
+    description: 'Try choosing it again, or pick a different recording.',
+  },
+};
+
+export function intakeRefusal(
+  reason: string | null | undefined,
+): { title: string; description: string } | null {
+  // An explicit check rather than `reason && …`: an empty-string reason makes
+  // that expression evaluate to `''`, which is falsy but is not `null` and
+  // does not typecheck as the return shape.
+  if (!reason) {
+    return null;
+  }
+  return INTAKE[reason] ?? null;
+}

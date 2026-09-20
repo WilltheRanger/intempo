@@ -81,7 +81,7 @@ export function CorrectionPrompt({
               aria-pressed={isApps}
               accessibilityLabel={
                 isApps
-                  ? `${correctionWord(choice)} — what this app read`
+                  ? `${correctionWord(choice)}, what this app read`
                   : correctionWord(choice)
               }
               style={({ pressed }) => [

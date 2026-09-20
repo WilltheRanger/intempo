@@ -1126,6 +1126,42 @@ nothing else covers `backend/`. Named here rather than left to be found.
     put a button a screen reader could find on top of a sheet that was already
     down. Playwright found it by tripping over it.
 
+- **On iOS, `AudioContext.resume()` resolves nothing and the state is the only
+  answer (2026-09-20).** Takes failed on a real iPhone with "Audio did not
+  start. Return to this screen and try Record again." while the microphone was
+  open and the context was running. `startRecording` raced the resume promise
+  against a five second deadline; on WebKit that promise frequently **never
+  settles** on a context that reaches `running` anyway, so the deadline always
+  won. Reproduced against the old code with a context that behaves that way: it
+  threw, and `context.state` was `'running'` at the moment it threw.
+
+  **The obvious fix is not available to a take.** `context.web.ts` says
+  playback resumes "inside the gesture", and a take cannot: `releaseAudioSession()`
+  suspends the shared context *on purpose* before asking for the microphone,
+  because WebKit will not reassign the audio session away from a running one
+  and capture fails with `InvalidStateError` otherwise. The suspend is
+  load-bearing and it spends the gesture, so the resume is unavoidably outside
+  one. `lib/audio/running.ts` polls `state` instead, re-asking on each look
+  because an interrupted context can refuse the first request and accept a
+  later one.
+
+  Two things to carry. **The promise is a hint and the state is the fact** —
+  anywhere this app waits on Web Audio. And **no gate here can catch it**: every
+  check in this repository is headless Chromium, where `resume()` settles
+  promptly and `navigator.audioSession` does not exist at all. That is the same
+  blind spot that cost six attempts on the capture-category bug, and it is the
+  second time it has been paid for.
+
+- **A stalled fetch does not reject, so a spinner with no deadline has no end
+  (2026-09-20).** `beginSampledPlayback` set `onLoading(true)` and awaited a
+  download and a render with nothing bounding either, so Listen could spin
+  indefinitely — while `listenFailure` already held exactly the right sentence
+  for it, "Couldn't load the instrument sound. Check your connection and tap
+  Listen to retry.", with no way of being reached. Both stages are bounded now.
+  The deadlines are generous on purpose: the failure being removed is an
+  *infinite* wait, not a long one, and refusing a musician on poor cellular who
+  would have had sound at twenty seconds is worse than making them wait.
+
 - **A centred container silently breaks `space-between` (2026-09-19).** The
   record sheet's settings block had `alignItems: 'center'`, which shrink-wraps
   every child to its own content — so the metronome row, laid out

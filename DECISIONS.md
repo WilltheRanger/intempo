@@ -1,6 +1,59 @@
 # InTempo Decisions
 
 
+## 2026-09-20 — The state is the fact, the promise is a hint
+
+**Context.** Two audio failures reported from a real iPhone, and one shape
+under both: a promise that never settles, awaited as though it would.
+`startRecording` raced `AudioContext.resume()` against a five second deadline
+and reported "Audio did not start" on takes where the microphone was open and
+the context was running. `beginSampledPlayback` awaited a download and a render
+with nothing bounding either, so Listen spun with no end.
+
+**Decision.** *Wait on observable state, not on the promise that reports it —
+and where only a promise exists, bound it.*
+
+`lib/audio/running.ts` polls `context.state` and re-asks for the resume on each
+look. `lib/score/deadline.ts` bounds the two playback stages that have no state
+to read.
+
+**Alternatives considered.** *Resume inside the gesture, as playback does* —
+not available to a take. `releaseAudioSession()` suspends the shared context on
+purpose before opening the microphone, because WebKit will not reassign the
+audio session away from a running one; the suspend is load-bearing and it
+spends the gesture. *A longer deadline* — rejected: the promise does not settle
+late, it does not settle, so any finite deadline fails identically. *Trusting
+the resume's rejection* — rejected: on some engines it throws synchronously
+instead, and on others it neither rejects nor resolves.
+
+**Trade-offs accepted.** Polling costs a timer for as long as a context is not
+running, capped by the deadline. `resumeToRunning` never throws, so every
+caller has to word its own failure — deliberate, since a shared exception would
+make them all say the same unhelpful thing. And **none of this is verifiable
+here**: every check in this repository is headless Chromium, where the promise
+settles promptly. The diagnosis is reproduced against a stub that behaves the
+way WebKit is documented to; the phone is the only thing that can confirm it.
+
+## 2026-09-20 — A control that disappears keeps its space
+
+**Context.** The search field's clear button rendered only when there was text.
+Besides appearing between one frame and the next, **its arrival took width from
+the input**, so the text being typed shifted left under the caret on the first
+character.
+
+**Decision.** *Keep it mounted at zero opacity rather than unmounting it.*
+
+**Alternatives considered.** *Animating it out before unmounting* — solves the
+pop and not the layout shift, which was the worse half and the one nobody had
+noticed. *Reserving the space with a spacer* — the same width cost with an
+extra node and no fade.
+
+**Trade-offs accepted.** An invisible node stays in the tree, so it must be
+hidden from touch and from the screen reader or it can be selected and do
+nothing — which is worse than not being there. `pointerEvents` and
+`importantForAccessibility` carry that, and they are easy to forget if this
+pattern is copied.
+
 ## 2026-09-19 — The assignment row is closed by a revoked grant and an actor-blind trigger
 
 **Context.** The teacher-tier router is the next thing to land, and it is the

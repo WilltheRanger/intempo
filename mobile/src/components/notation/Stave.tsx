@@ -267,6 +267,20 @@ export interface StaveProps {
    */
   highlightMeasure?: number | null;
   /**
+   * Where a running take has got to, as a bar and how far through it.
+   *
+   * **A line, where `highlightMeasure` is a wash, because they say different
+   * things.** The wash marks a bar that has been *chosen* and holds still. This
+   * moves, and a surface that slides is a surface the eye chases; a hairline
+   * is the least ink that can answer "where am I". Drawn behind the notes for
+   * the same reason the wash is: the notation stays the darkest thing.
+   *
+   * `lib/record/playhead.ts` computes it and explains the one thing this must
+   * not imply — it follows the click, not the playing, because nothing here
+   * analyses audio live.
+   */
+  playhead?: { measureNumber: number; through: number } | null;
+  /**
    * Called with a bar's number when it is tapped.
    *
    * **The stave is the bar picker.** A musician chooses where to start by
@@ -393,6 +407,7 @@ export function Stave({
   head,
   showNoteNames = true,
   highlightMeasure = null,
+  playhead = null,
   onMeasurePress,
   pressableMeasures,
   measurePressRole = 'select',
@@ -506,6 +521,37 @@ export function Stave({
                     opacity={0.14}
                   />
                 ))
+            : null}
+
+          {/* The moving mark. A `Rect` rather than a `Line` for the same
+              reason the barlines are: a one-unit stroke lands between pixels
+              and renders soft, where a filled rectangle of a known width does
+              not. */}
+          {playhead
+            ? system.measureSpans
+                .filter((span) => span.measureNumber === playhead.measureNumber)
+                .map((span, index) => {
+                  // Clamped rather than trusted: `through` is a ratio and a
+                  // caller that hands over 1.02 on the frame a bar turns
+                  // should draw at the barline, not past it into the next bar.
+                  const through = Math.min(1, Math.max(0, playhead.through));
+                  const width = lineGap * 0.28;
+                  const x = span.from + (span.to - span.from) * through;
+                  return (
+                    <Rect
+                      key={`playhead-mark-${index}`}
+                      // Centred on the position rather than starting at it, so
+                      // the mark reads as being *at* the beat instead of just
+                      // after it.
+                      x={x - width / 2}
+                      y={system.staffLines[0] - lineGap}
+                      width={width}
+                      height={lineGap * 6}
+                      fill={colors.accent}
+                      opacity={0.85}
+                    />
+                  );
+                })
             : null}
 
           {system.staffLines.map((y, index) => (

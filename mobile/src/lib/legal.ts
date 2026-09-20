@@ -83,7 +83,7 @@ export const PRIVACY: LegalDocument = {
       body: [
         'Your email address and password, so you can sign in. The password is handled by Supabase Auth and is never visible to this app or to us.',
         'Your name, your profile photograph and the instrument you play. You give these once, when you first sign in.',
-        'The pieces in your library — their titles, composers and movements — and the notation read from them.',
+        'The pieces in your library (their titles, composers and movements) and the notation read from them.',
         'Photographs of sheet music you scan, until the reading is accepted. See “How long things are kept”.',
         'Audio recordings of you playing, and the timing results worked out from them.',
       ],
@@ -100,7 +100,7 @@ export const PRIVACY: LegalDocument = {
     {
       heading: 'How long things are kept',
       body: [
-        'A photograph of a page is deleted as soon as you accept the reading taken from it. Nothing else deletes it — not a confidence score, not a timer — because the photograph is what the reading is checked against.',
+        'A photograph of a page is deleted as soon as you accept the reading taken from it. Nothing else deletes it, not a confidence score and not a timer, because the photograph is what the reading is checked against.',
         'Deleting a piece deletes its photographs with it.',
         'Recordings and their results stay until you delete the piece or your account, so you can look back at how a passage went.',
         'Deleting your account removes all of it. There is no waiting period and no archived copy.',

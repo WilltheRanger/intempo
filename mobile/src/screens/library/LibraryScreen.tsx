@@ -1,4 +1,5 @@
 import { useNavigation } from '@react-navigation/native';
+import { useQueryClient } from '@tanstack/react-query';
 import { Library, Plus, Search, X } from '../../components/icons';
 import { useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -16,6 +17,7 @@ import {
 import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
 import { Text } from '../../components/primitives/Text';
 import { describeLoadError } from '../../data/api/describeError';
+import { prefetchPieceHistory } from '../../data/hooks/useLatestTake';
 import {
   useDeletePiece,
   useLibrary,
@@ -36,6 +38,7 @@ import { rowDivided } from '../../components/rowMetrics';
 
 export function LibraryScreen() {
   const navigation = useNavigation<TabScreenNavigation<'Library'>>();
+  const queryClient = useQueryClient();
   const library = useLibrary();
 
   async function refresh() {
@@ -95,7 +98,12 @@ export function LibraryScreen() {
         // The count moves into the eyebrow, where every other screen puts its
         // line of context. As a row of its own it was a third heading between
         // the search field and the first piece.
-        eyebrow={pieces.length > 0 ? countLabel(results.length, Boolean(query.trim())) : null}
+        // **No count.** "20 pieces" sat above a list of twenty pieces. A
+        // number the content already shows is furniture (§3 law 10), and the
+        // one case where it said something — how many a search matched — is
+        // answered by the results themselves, or by the empty state when
+        // there are none.
+        eyebrow={null}
         title="Library"
         action={
           <View style={styles.actions}>
@@ -155,9 +163,13 @@ export function LibraryScreen() {
         onClearSearch={() => setQuery('')}
         onRetry={() => void refresh()}
         retrying={library.isFetching}
-        onOpenPiece={(piece) =>
-          navigation.navigate('PieceDetail', { pieceId: piece.id })
-        }
+        onOpenPiece={(piece) => {
+          // One tap earlier than the screen that needs it, so the history
+          // card is usually there on the first frame instead of dropping in
+          // afterwards. See `prefetchPieceHistory`.
+          prefetchPieceHistory(queryClient, piece.id);
+          navigation.navigate('PieceDetail', { pieceId: piece.id });
+        }}
         busyPieceId={busyPieceId}
         onReadAgain={(piece) => {
           setActionError(null);
@@ -268,12 +280,11 @@ function LibraryContent({
 
   if (pieces.length === 0) {
     return (
-      // No action here: the primary Add piece button sits directly above.
-      <EmptyState
-        icon={Library}
-        title="No pieces yet"
-        description="Add a piece and it will appear here, ready to practice."
-      />
+      // No action here, and no description: the primary Add piece button sits
+      // directly above, so "Add a piece and it will appear here" was telling a
+      // musician to do the thing already on screen. The title is the whole of
+      // what this state has to say.
+      <EmptyState icon={Library} title="No pieces yet" />
     );
   }
 
@@ -302,7 +313,27 @@ function LibraryContent({
         matches in one list, densest first. The two gestures want different
         shapes, which is why the frame's grid did not simply replace the row.
       */
-      <View style={styles.section}>
+      <View
+        style={styles.section}
+        /*
+         * **Named because a list of results deserves a name**, and because
+         * `walk-app.mjs` needs a scope rather than a caption.
+         *
+         * The walk used to read "12 pieces found" off this screen to check
+         * that searching narrows. That line is gone — it told a musician the
+         * length of a list they were looking at — and the walk now counts the
+         * rows inside this container instead, which measures the real thing
+         * rather than a label claiming it.
+         *
+         * The scope is the load-bearing part. React Navigation keeps the
+         * other tabs mounted, so Today's take row still holds a piece title
+         * in the document while this list is filtered to nothing; an
+         * unscoped count passed with the filter broken, which is the exact
+         * trap `walk-app.mjs` documents above its search checks.
+         */
+        accessibilityLabel="Search results"
+        accessible={false}
+      >
         {results.map((piece, index) => (
           <FadeIn key={piece.id} index={index}>
             <PieceRow
@@ -358,11 +389,6 @@ function LibraryContent({
       ))}
     </View>
   );
-}
-
-function countLabel(count: number, searching: boolean): string {
-  const noun = count === 1 ? 'piece' : 'pieces';
-  return searching ? `${count} ${noun} found` : `${count} ${noun}`;
 }
 
 const styles = StyleSheet.create({

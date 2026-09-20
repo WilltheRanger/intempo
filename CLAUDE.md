@@ -251,11 +251,17 @@ the user's rules, not suggestions to weigh against convenience.
    Spacing is a system, not a per-component guess.
 6. **Rounded containers, pills, gradients, shadows, borders and floating
    elements are exceptions, not the default styling language.** Reach for
-   typography and spacing first. **The control layer is the one exception**
-   (amended 2026-09-06): navigation, toolbars, buttons and floating panels are
-   floating glass capsules — `mobile/src/components/primitives/GlassSurface`.
-   That list *is* the definition of chrome for this rule; content keeps the rule
-   in full and may never use the material.
+   typography and spacing first. **The bottom navigation bar is the one
+   exception** (amended 2026-09-20, narrowing the 2026-09-06 amendment). That
+   earlier version made "navigation, toolbars, buttons and floating panels"
+   into floating glass capsules, and the result was the material on nearly
+   every control in the app. The exception is now **one element**:
+   `navigation/BottomTabBar`, the only thing on screen at all times.
+   Everything else is a normal control — a solid fill and a hairline, from
+   `colors.surface` and `colors.border`, or `onDarkFill` and `onDarkMuted`
+   over a photograph, because an ivory disc on the Today hero is a hole in the
+   picture. `GlassSurface` still exists and the bar still uses it; **nothing
+   else may**. Content keeps the rule in full, as it always did.
    **The bottom bar is not covered by that exception and never carries a
    gradient** (amended 2026-09-12, asked for three times). The glass material's
    specular catch is light across a small curved capsule; across the full width

@@ -140,7 +140,7 @@ export function HelpScreen() {
           />
           <Tip
             title="Use headphones for an audible click"
-            detail="During the take, a metronome over the speaker enters the recording and can be mistaken for your attacks; visual and haptic modes do not. The count-in is the exception — it always ticks out loud, and those seconds are discarded before the take is sent."
+            detail="During the take, a metronome over the speaker enters the recording and can be mistaken for your attacks; visual and haptic modes do not. The count-in is the exception: it always ticks out loud, and those seconds are discarded before the take is sent."
           />
           <Tip
             title="Count-in and long rests"

@@ -147,7 +147,7 @@ export function MeasureEditScreen() {
   const keyDescription = workingKey
     ? describeKeySignature(workingKey)
     : isFirstBar
-      ? 'Unknown — choose what the page shows'
+      ? 'Unknown. Choose what the page shows'
       : `No new signature · ${describeKeySignature(keyBefore)} continues`;
   /*
     **The metre in force at this bar, not the page's opening metre.** A part
@@ -174,7 +174,7 @@ export function MeasureEditScreen() {
   const clefDescription = workingClef
     ? describeClef(workingClef)
     : isFirstBar
-      ? 'Unknown — choose what the page shows'
+      ? 'Unknown. Choose what the page shows'
       : `No new clef · ${describeClef(clefBefore)} continues`;
 
   function change(patch: Partial<ScoreNote>) {
@@ -333,7 +333,7 @@ export function MeasureEditScreen() {
               // headline that has just called it a pickup contradicts it. A
               // musician who opened this bar because it looked short deserves
               // to be told why it is allowed to be.
-              'An opening bar may be short — the piece starts on an upbeat. Save it, or keep adjusting.'
+              'An opening bar may be short if the piece starts on an upbeat. Save it, or keep adjusting.'
             : beats.balanced
               ? 'This bar adds up. Save it, or keep adjusting.'
               : 'Tap a note, then choose what it should be.'}

@@ -156,7 +156,7 @@ export function ImportFileScreen() {
     }
     const trimmed = title.trim();
     if (!trimmed) {
-      setError('A title, at least — it is how you will find this again.');
+      setError('A title, at least. It is how you will find this again.');
       return;
     }
 

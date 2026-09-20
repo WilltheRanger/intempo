@@ -1112,7 +1112,7 @@ export function PieceScoreScreen() {
         // The consequence, not the verb. Naming what survives matters as much
         // as naming what goes: someone who thinks they are deleting the piece
         // will cancel a thing they actually wanted.
-        message={`The notes stay in your library. The photograph of the page is deleted and cannot be recovered — so check the notation above first.`}
+        message={`The notes stay in your library. The photograph of the page is deleted and cannot be recovered, so check the notation above first.`}
         confirmLabel="Delete photograph"
         onConfirm={() => {
           setConfirmingAccept(false);
