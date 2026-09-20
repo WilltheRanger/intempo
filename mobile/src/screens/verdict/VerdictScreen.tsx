@@ -26,7 +26,11 @@ import {
   timedMeasureRange,
 } from '../../lib/verdict/measureReading';
 import { passageLabel } from '../../lib/verdict/passage';
-import { failureTitle, nothingUsableTitle } from '../../lib/verdict/failureTitle';
+import {
+  failureTitle,
+  intakeRefusal,
+  nothingUsableTitle,
+} from '../../lib/verdict/failureTitle';
 import {
   appVerdictFor,
   canCorrect,
@@ -177,11 +181,31 @@ export function VerdictScreen() {
   // offer a retry". The recording is theirs either way and nothing about it
   // was wrong, which is the first thing to say.
   if (take.failure) {
+    /**
+     * **A file refused before decoding is not a failed analysis**, and the
+     * sentence written for one is wrong for the other. `audio_intake.py`
+     * refuses an upload for six named reasons; each has its own next move, and
+     * none of them is "your playing wasn't the problem" — the playing was
+     * never involved. `null` for every other reason, which keeps the
+     * pipeline's own failures on the copy written for them.
+     */
+    const refused = intakeRefusal(take.failure.reason);
+
     return (
       <ScreenContainer
         footer={
           <PrimaryButton
-            label={take.failure.recoverable ? 'Try again' : 'Record again'}
+            // A refused file is not something to play again: the record
+            // screen is still the destination, because that is where both
+            // "record" and "upload" live, but the label must not tell someone
+            // to perform the piece over a file that was too long.
+            label={
+              refused
+                ? 'Back to the piece'
+                : take.failure.recoverable
+                  ? 'Try again'
+                  : 'Record again'
+            }
             onPress={() =>
               navigation.replace('Record', { pieceId: take.pieceId })
             }
@@ -213,7 +237,7 @@ export function VerdictScreen() {
           // analysed" is the least useful true thing available. See
           // `failureTitle`, which also decides that the recoverable one owns
           // it rather than leaving ownership to the third line.
-          title={failureTitle(take.failure)}
+          title={refused ? refused.title : failureTitle(take.failure)}
           /*
             **The heading owns it now, so the body stops repeating it.** Both
             of these opened by restating the heading — "Something went wrong on
@@ -227,9 +251,11 @@ export function VerdictScreen() {
             the walk and the audit went out of step for a push.
           */
           description={
-            take.failure.recoverable
-              ? "Your playing wasn't the problem. Recording it again usually works."
-              : "Your playing wasn't the problem. Record it again when you have a moment."
+            refused
+              ? refused.description
+              : take.failure.recoverable
+                ? "Your playing wasn't the problem. Recording it again usually works."
+                : "Your playing wasn't the problem. Record it again when you have a moment."
           }
         />
         {take.recordingAvailable ? (

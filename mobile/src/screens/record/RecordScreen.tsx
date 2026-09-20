@@ -33,6 +33,9 @@ import {
   MicrophonePermissionError,
   type Recorder,
 } from '../../lib/audio/types';
+import * as DocumentPicker from 'expo-document-picker';
+import { File as FSFile } from 'expo-file-system';
+import { ACCEPTED_LABEL, describePickedTake } from '../../lib/record/pickedTake';
 import { playheadAt } from '../../lib/record/playhead';
 import { readTakeFailure } from '../../lib/audio/takeFailure';
 import { heldTakeUrl, releaseHeldTake } from '../../lib/audio/heldTake';
@@ -534,6 +537,76 @@ export function RecordScreen() {
   }
 
   /**
+   * Send a recording the musician already has, instead of playing one now.
+   *
+   * **The take a musician cares most about is often already on their phone.**
+   * A lesson, a run-through caught on a voice memo, a performance — none of
+   * which can be played again for the app's benefit. Everything downstream of
+   * the upload is identical to a recorded take, so this joins `send` rather
+   * than building a second path to the same place.
+   *
+   * Two checks before the bytes move, and they are different in kind.
+   * `describePickedTake` is local and instant, so an obviously wrong file
+   * costs no data and no waiting. The real guard is
+   * `backend/app/services/audio_intake.py`, which reads the bytes; this one
+   * is a courtesy and is documented as such, because a client check protects
+   * nobody.
+   */
+  async function pickTake() {
+    if (recording || isStarting || phase === 'analysing') {
+      return;
+    }
+    setProblem(null);
+    let asset: DocumentPicker.DocumentPickerAsset | undefined;
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        // A hint to the picker, not a guarantee: every platform treats this
+        // differently and some ignore it, which is why the name is checked
+        // afterwards rather than trusted.
+        type: 'audio/*',
+        multiple: false,
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled) {
+        return;
+      }
+      asset = result.assets?.[0];
+    } catch {
+      setProblem('That file could not be opened. Try choosing it again.');
+      return;
+    }
+    if (!asset) {
+      setProblem('Nothing was selected.');
+      return;
+    }
+
+    const picked = describePickedTake({
+      name: asset.name,
+      size: asset.size ?? null,
+    });
+    if (!picked.ok) {
+      setProblem(picked.message);
+      return;
+    }
+
+    let audio: Blob;
+    try {
+      // Web hands back a Blob, native a URI. Both read the same way — the
+      // same two lines `ImportFile` uses for a score.
+      audio = asset.file ?? (new FSFile(asset.uri) as unknown as Blob);
+    } catch {
+      setProblem('That file could not be read. Try choosing it again.');
+      return;
+    }
+
+    await send({
+      audio,
+      filename: picked.filename,
+      contentType: picked.contentType,
+    });
+  }
+
+  /**
    * Sends a finished take, keeping it if that fails.
    *
    * Separate from `stop` so a retry runs the same path with the same bytes
@@ -542,6 +615,8 @@ export function RecordScreen() {
   async function send(recording: {
     audio: Blob;
     filename: string;
+    /** Absent for a recorded take, which is always the WAV the app wrote. */
+    contentType?: string;
     resume?: TakeSubmissionState;
   }) {
     // Hold the bytes before the first awaited upload step. This is not yet a
@@ -558,6 +633,7 @@ export function RecordScreen() {
         metronomeMode,
         audio: recording.audio,
         filename: recording.filename,
+        contentType: recording.contentType,
         resume: recording.resume,
         // **Sent, not just applied on the phone.** The metronome counted a
         // shortened piece, so the analysis has to judge a shortened one — see
@@ -1613,6 +1689,45 @@ export function RecordScreen() {
             beatUnit={tempoBeatUnit}
             disabled={recording}
           />
+
+          {/*
+            **A take you already have, in the row grammar of the ones above.**
+
+            Under the controls rather than beside the record button, because
+            it is the other way to answer the same question and not a second
+            primary action: design law 4 gives this screen one focal point and
+            that is the disc. A musician who came here to play never has to
+            read this row; one who came with a voice memo finds it where the
+            other settings are.
+
+            Hidden while a take is being started, for the same reason the
+            settings are: it would put a second submission over the top of the
+            first. The surrounding block already only renders in `ready`, so
+            the running and sending phases need no test here — `pickTake`
+            still makes them explicit, because it can be reached from a
+            keyboard while a phase change is in flight.
+          */}
+          {!recording && !isStarting ? (
+            <Pressable
+              onPress={() => void pickTake()}
+              accessibilityRole="button"
+              accessibilityLabel="Upload a recording"
+              accessibilityHint={`Choose an audio file you already have. ${ACCEPTED_LABEL} all work.`}
+              style={({ pressed }) => [
+                styles.metronome,
+                pressed && styles.metronomePressed,
+              ]}
+            >
+              <Text variant="metadataSmall" color="textPrimary">
+                Upload a recording
+              </Text>
+              <ChevronRight
+                size={ICON_SIZE.sm}
+                color={colors.textSecondary}
+                strokeWidth={ICON_STROKE_WIDTH}
+              />
+            </Pressable>
+          ) : null}
 
           {!recording ? (
             <Pressable

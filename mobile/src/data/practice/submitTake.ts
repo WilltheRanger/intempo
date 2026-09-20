@@ -36,6 +36,17 @@ export interface SubmitTakeInput {
   audio: Blob;
   filename: string;
   /**
+   * What the bytes are, for the signed upload.
+   *
+   * **Defaulted rather than required, because until a musician could pick a
+   * file the app produced every byte this ever saw** — `audioRecorder` writes
+   * WAV — and this was hardcoded to `audio/wav`. A picked MP3 sent as
+   * `audio/wav` is stored under a type it is not, which the storage layer
+   * believes and hands on. `lib/record/pickedTake.ts` derives the right one
+   * from the extension it has already had to check anyway.
+   */
+  contentType?: string;
+  /**
    * Progress from an earlier attempt. Both fields are server-issued and may be
    * reused safely; absence means start that step.
    */
@@ -79,6 +90,7 @@ export async function submitTake({
   metronomeMode,
   audio,
   filename,
+  contentType = 'audio/wav',
   resume = {},
   skipLongRests = false,
   fromMeasure = null,
@@ -92,7 +104,7 @@ export async function submitTake({
 
     if (!state.audioKey) {
       const upload = await requestAudioUpload(filename);
-      await uploadToSignedUrl(upload.upload_url, audio, 'audio/wav', {
+      await uploadToSignedUrl(upload.upload_url, audio, contentType, {
         subject: 'recording',
       });
       state.audioKey = upload.object_key;
