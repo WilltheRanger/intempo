@@ -47,6 +47,48 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+# **Every action here is pinned to a moving major tag, and on 2026-09-18 all
+# four were bumped to majors that declare `using: node24`.** Until then
+# `checkout@v4`, `setup-node@v4`, `setup-python@v5` and `setup-uv@v3` all
+# declared `node20`, and every job closed with the runner saying it was forcing
+# them onto node24 anyway:
+#
+#     Node.js 20 is deprecated. The following actions target Node.js 20 but are
+#     being forced to run on Node.js 24: actions/checkout@v4, setup-python@v5
+#
+# Nothing was broken — the forcing is what kept them working — which is exactly
+# why it was worth doing before it became urgent. The warning names only the
+# actions a given job uses, so reading one job's log undercounts it: `v3` of
+# `setup-uv` appears solely in `backend-test`, and `setup-node` in the two jobs
+# that build the app. The list to audit is this file, not a log.
+#
+# **The bumps were chosen by reading each action's `action.yml` at both tags**,
+# which is the only thing that actually decides the runtime, rather than by
+# trusting a release note. `checkout` v4→v7 changes exactly one line, `node20`
+# to `node24` — every input and every default is byte-identical, so the
+# `fetch-depth: 0` below keeps its meaning. `setup-python` v5→v7 only adds a
+# `pip-version` input and drops `pip-install`, which nothing here sets;
+# `setup-node` v4→v7 drops `always-auth` and adds automatic npm caching, which
+# stays dormant because neither `package.json` carries a `packageManager` or
+# `devEngines` field and both cached steps name `cache: "npm"` outright.
+#
+# Two changes between v4 and v7 of `checkout` are real and simply do not reach
+# this file: v6 moves the credential out of `.git/config` into `$RUNNER_TEMP`,
+# which matters only to a step that runs an authenticated git command — no job
+# here does, `changes` reads an already-fetched history locally — and v7
+# refuses to check out fork code under `pull_request_target` or `workflow_run`,
+# neither of which this workflow triggers on.
+#
+# **`setup-uv@v7` is deliberately not that project's newest release**, and the
+# reason is worth the paragraph so nobody "fixes" it. astral-sh publishes no
+# moving tag above `v7` — `v8`, `v9` and `v10` exist only as exact versions —
+# so v7 is the highest pin that still collects its own patches, and every other
+# `uses:` in this repository is a major tag. Going to v10.1.0 would mean an
+# exact pin that never moves, and it would also flip `download-from-astral-mirror`
+# on by default, changing where the uv binary is fetched from. That is a
+# supply-chain decision, and a deprecation fix is not the change that should
+# make it quietly. v7 runs on node24, which is the whole of what was wrong.
+
 jobs:
   # **What this push actually touched, so the two six-minute jobs can sit out
   # the pushes that cannot affect them.**
@@ -78,7 +120,7 @@ jobs:
       backend: ${{ steps.filter.outputs.backend }}
       mobile: ${{ steps.filter.outputs.mobile }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # Both sides of the comparison have to be present locally.
           fetch-depth: 0
@@ -146,7 +188,7 @@ jobs:
     # the same hour it happened.
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # **`check-brand-assets.py` re-draws the art to compare it, so it needs
       # Pillow.** This job had `python3` and nothing else, so the generator
@@ -154,7 +196,7 @@ jobs:
       # Pinned to the version in `backend/pyproject.toml`, because the
       # comparison is byte-for-byte: a different Pillow rasterises the Bravura
       # glyph differently and the check would fail on art nobody had touched.
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - name: Pillow, for the brand generator
@@ -186,10 +228,10 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@v7
         with:
           version: "0.11.7"
           enable-cache: true
@@ -224,7 +266,7 @@ jobs:
       # Last, because it queries a registry: a network flake here must not
       # stand between a push and the answer from the suite above it.
       - name: Set up Node (for `npm audit`)
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
 
@@ -259,10 +301,10 @@ jobs:
       run:
         working-directory: mobile
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: "npm"
@@ -306,7 +348,7 @@ jobs:
       #
       # It found one the moment it could see JSX text: a `•` on two account
       # screens, drawn as a bare child rather than a string literal.
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 
@@ -383,10 +425,10 @@ jobs:
       run:
         working-directory: mobile
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: "npm"
@@ -489,7 +531,7 @@ jobs:
         ports:
           - 5432:5432
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Apply every migration to an empty database
         env:
