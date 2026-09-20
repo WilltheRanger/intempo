@@ -159,11 +159,12 @@ export function CapturedPagesScreen() {
           fill
           icon={Layers}
           title={everHeld ? 'No pages left' : 'No pages yet'}
-          description={
-            everHeld
-              ? "You've removed every page. Capture at least one to continue."
-              : 'Photograph a page of sheet music to start a scan.'
-          }
+          // No description: both branches restated what is already on screen.
+          // "Photograph a page of sheet music to start a scan" sat above a
+          // button reading "Photograph a page", and "You've removed every
+          // page" sat under a title reading "No pages left". The hint below
+          // is the one sentence here that says something neither the title
+          // nor the button does.
           // **The cheapest place in the product to improve reading accuracy.**
           // Everything downstream of this screen is decided by how the page
           // was photographed, and this is the one moment the app has a
@@ -191,14 +192,12 @@ export function CapturedPagesScreen() {
         <SheetOptionRow
           icon={Camera}
           label="Photograph a page"
-          description="Use the camera on the page in front of you."
           onPress={addFromCamera}
           divided={false}
         />
         <SheetOptionRow
           icon={Images}
           label="Choose photos"
-          description="Pictures of the music already on this device."
           onPress={addFromLibrary}
         />
       </BottomSheet>
@@ -284,14 +283,12 @@ export function CapturedPagesScreen() {
         <SheetOptionRow
           icon={Camera}
           label="Photograph a page"
-          description="Use the camera on the page in front of you."
           onPress={addFromCamera}
           divided={false}
         />
         <SheetOptionRow
           icon={Images}
           label="Choose photos"
-          description="Pictures of the music already on this device."
           onPress={addFromLibrary}
         />
       </BottomSheet>

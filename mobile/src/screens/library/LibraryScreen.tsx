@@ -275,12 +275,11 @@ function LibraryContent({
 
   if (pieces.length === 0) {
     return (
-      // No action here: the primary Add piece button sits directly above.
-      <EmptyState
-        icon={Library}
-        title="No pieces yet"
-        description="Add a piece and it will appear here, ready to practice."
-      />
+      // No action here, and no description: the primary Add piece button sits
+      // directly above, so "Add a piece and it will appear here" was telling a
+      // musician to do the thing already on screen. The title is the whole of
+      // what this state has to say.
+      <EmptyState icon={Library} title="No pieces yet" />
     );
   }
 

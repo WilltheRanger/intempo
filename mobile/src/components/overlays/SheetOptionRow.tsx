@@ -15,7 +15,18 @@ import { Text } from '../primitives/Text';
 export interface SheetOptionRowProps {
   icon: LucideIcon;
   label: string;
-  description: string;
+  /**
+   * A supporting line under the label, **where the label does not already say
+   * it.**
+   *
+   * Optional, and it was required — which is how "Photograph a page" came to
+   * carry "Use the camera on the page in front of you." underneath it. A type
+   * that demands a second sentence gets a second sentence, whether or not
+   * there is one worth writing, and four rows across this app restated their
+   * own labels because of it. `CLAUDE.md` §3 law 10: every element justifies
+   * its presence, and a prop that cannot be omitted never has to.
+   */
+  description?: string;
   onPress: () => void;
   /** Hairline above the row. Omit on the first row in a group. */
   divided?: boolean;
@@ -35,6 +46,8 @@ export function SheetOptionRow({
       activeScale={0.99}
       accessibilityRole="button"
       accessibilityLabel={label}
+      // Undefined rather than an empty string: a screen reader announces the
+      // label alone, instead of pausing for a hint that is not there.
       accessibilityHint={description}
       style={({ pressed }) => [
         styles.row,
@@ -50,13 +63,15 @@ export function SheetOptionRow({
 
       <View style={styles.text}>
         <Text variant="button">{label}</Text>
-        <Text
-          variant="metadataSmall"
-          color="textTertiary"
-          style={styles.description}
-        >
-          {description}
-        </Text>
+        {description ? (
+          <Text
+            variant="metadataSmall"
+            color="textTertiary"
+            style={styles.description}
+          >
+            {description}
+          </Text>
+        ) : null}
       </View>
     </PressableScale>
   );
