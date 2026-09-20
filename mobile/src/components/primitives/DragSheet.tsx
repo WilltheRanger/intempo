@@ -12,10 +12,12 @@ import {
 } from 'react-native';
 
 import { colors, radii, spacing } from '../../design';
+import { settleVelocity } from '../../lib/motion/springHandoff';
 import {
+  anchorNearest,
   isVerticalDrag,
-  offsetDuring,
-  settleTo,
+  offsetFromGrab,
+  settleFrom,
   travelFor,
   type SheetPosition,
 } from '../../lib/record/sheet';
@@ -106,7 +108,16 @@ export function DragSheet({
   onPositionChangeRef.current = onPositionChange;
   travelRef.current = travelFor(height, peek);
 
-  const settle = useRef((next: SheetPosition) => {
+  /**
+   * Where the sheet was when the finger claimed it.
+   *
+   * Live, not derived from `positionRef`: `settle` sets the target position
+   * before the spring has moved anything, so a sheet caught mid-flight would
+   * otherwise be measured from an anchor it is nowhere near.
+   */
+  const grabbedAtRef = useRef(0);
+
+  const settle = useRef((next: SheetPosition, from?: number, vy = 0) => {
     positionRef.current = next;
     setPosition(next);
     onPositionChangeRef.current?.(next);
@@ -121,6 +132,11 @@ export function DragSheet({
       damping: 24,
       stiffness: 220,
       mass: 0.9,
+      // The finger's momentum, carried into the spring so the sheet keeps
+      // moving at the speed it was thrown rather than restarting from rest.
+      // Absent `from`, this is a tap on the handle or a `raiseSignal`, neither
+      // of which has a velocity to hand over.
+      velocity: from === undefined ? 0 : settleVelocity(vy, { from, to }),
     }).start();
   }).current;
 
@@ -145,16 +161,46 @@ export function DragSheet({
         // on a control inside the sheet has to reach it. Movement claims it.
         onStartShouldSetPanResponder: () => false,
         onMoveShouldSetPanResponder: (_event, { dx, dy }) => isVerticalDrag(dx, dy),
+        // **Catching a sheet that is still moving.** `stopAnimation` halts the
+        // settle and reports the value it had reached, which is the sheet's
+        // *presentation* value — the one on screen. Reading the target instead
+        // is what made a mid-flight grab jump: the spring was still at a third
+        // of its travel while `positionRef` already said `lowered`.
+        onPanResponderGrant: () => {
+          offset.stopAnimation((value) => {
+            grabbedAtRef.current = value;
+          });
+        },
         onPanResponderMove: (_event, { dy }) => {
-          offset.setValue(offsetDuring(positionRef.current, dy, travelRef.current));
+          offset.setValue(
+            offsetFromGrab(grabbedAtRef.current, dy, travelRef.current),
+          );
         },
         onPanResponderRelease: (_event, { dy, vy }) => {
-          settle(settleTo(positionRef.current, { dy, vy }, travelRef.current));
+          const releasedAt = offsetFromGrab(
+            grabbedAtRef.current,
+            dy,
+            travelRef.current,
+          );
+          settle(
+            settleFrom(
+              { grabbedAt: grabbedAtRef.current, releasedAt, vy },
+              travelRef.current,
+            ),
+            releasedAt,
+            vy,
+          );
         },
         // A gesture taken away mid-drag — a call arriving, a system sheet —
-        // returns to where it started rather than committing on a movement the
-        // musician never finished.
-        onPanResponderTerminate: () => settle(positionRef.current),
+        // returns to the anchor it was nearest rather than committing on a
+        // movement the musician never finished. Nearest rather than
+        // `positionRef`, because an interrupted mid-flight grab has no
+        // position to go back to.
+        onPanResponderTerminate: () => {
+          offset.stopAnimation((value) => {
+            settle(anchorNearest(value, travelRef.current), value, 0);
+          });
+        },
       }),
     [offset, settle],
   );

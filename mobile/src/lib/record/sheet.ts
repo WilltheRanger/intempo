@@ -30,9 +30,11 @@ export const FLICK_VELOCITY = 0.35;
 export const COMMIT_FRACTION = 1 / 3;
 
 export interface DragEnd {
-  /** Total vertical movement, positive downwards, in points. */
-  dy: number;
-  /** Instantaneous vertical velocity at release, points per millisecond. */
+  /** The offset the sheet sat at when the finger claimed it, in points. */
+  grabbedAt: number;
+  /** The offset it sat at when the finger lifted, in points. */
+  releasedAt: number;
+  /** Vertical velocity at release, points per millisecond, positive downwards. */
   vy: number;
 }
 
@@ -40,56 +42,84 @@ export interface DragEnd {
  * The distance the sheet moves between its two positions.
  *
  * Never zero or negative: a sheet with no travel would make every drag a
- * commit, since `dy` would always clear the threshold.
+ * commit, since the movement would always clear the threshold.
  */
 export function travelFor(sheetHeight: number, visibleWhenLowered: number): number {
   return Math.max(1, sheetHeight - visibleWhenLowered);
 }
 
 /**
- * Where a drag from `from` ends up.
+ * The anchor an offset is closest to.
  *
- * Direction is decided by velocity when the release is fast, and by distance
- * otherwise. A drag that goes the wrong way — pulling down on an already
- * lowered sheet — never commits, because there is nowhere further to go.
+ * Needed because a grab no longer implies a position. Before this the sheet
+ * was only ever grabbed at rest, so "where it came from" was one of two
+ * values; a sheet you can catch mid-flight can be grabbed anywhere, and a
+ * drag too small to commit has to return to *an* anchor rather than to a
+ * `SheetPosition` nobody recorded.
+ */
+export function anchorNearest(offset: number, travel: number): SheetPosition {
+  return offset >= travel / 2 ? 'lowered' : 'raised';
+}
+
+/**
+ * Where a drag ends up.
  *
- * `travel` is required, and the first version of this function did not take it:
+ * Decided from **the distance the finger actually moved the sheet**, not from
+ * the position it started at — which is what lets the sheet be caught while it
+ * is still settling. The previous version took a `SheetPosition` and measured
+ * against it, so a sheet grabbed in flight was measured from an anchor it was
+ * no longer anywhere near: a 10pt nudge on a sheet caught at four fifths of
+ * its travel read as a four-fifths drag and committed.
+ *
+ * Velocity still overrules distance, and still decides by **sign** rather than
+ * by where the finger ended up, so a flick commits however short it was. A
+ * drag that goes the wrong way — pulling down on an already lowered sheet —
+ * still cannot commit, because `offsetFromGrab` clamps it and the movement
+ * comes out as zero.
+ *
+ * `travel` is required, and an early version of this function did not take it:
  * it tested `forwards > 0`, so any movement at all committed and
  * `COMMIT_FRACTION` was declared and never read. A two-point twitch would have
  * dropped the sheet. The test found it on the first run, which is the argument
  * for the rule living out here rather than inside the component.
  */
-export function settleTo(
-  from: SheetPosition,
-  { dy, vy }: DragEnd,
+export function settleFrom(
+  { grabbedAt, releasedAt, vy }: DragEnd,
   travel: number,
 ): SheetPosition {
   if (Math.abs(vy) >= FLICK_VELOCITY) {
     return vy > 0 ? 'lowered' : 'raised';
   }
 
-  const towardsLowered = from === 'raised';
-  const forwards = towardsLowered ? dy : -dy;
+  const moved = releasedAt - grabbedAt;
   const enough = travelFor(travel, 0) * COMMIT_FRACTION;
 
-  if (forwards < enough) return from;
-  return towardsLowered ? 'lowered' : 'raised';
+  if (moved >= enough) return 'lowered';
+  if (moved <= -enough) return 'raised';
+  return anchorNearest(grabbedAt, travel);
 }
 
 /**
  * The offset to draw at mid-drag, clamped to the travel.
  *
+ * Measured from **the offset the sheet was at when the finger landed on it**,
+ * which on a sheet that can be caught mid-flight is a live number read off the
+ * animation rather than one of two anchors. Starting from the anchor instead
+ * is the jump this change exists to remove: the settle sets the target
+ * position first and the spring catches up afterwards, so a sheet grabbed
+ * while it was still moving snapped to wherever the target implied before it
+ * began following the finger.
+ *
  * Clamped rather than rubber-banded: a rubber band past the end says the sheet
  * could go further, which is a second thing the affordance would be promising
  * and not doing.
  */
-export function offsetDuring(
-  from: SheetPosition,
+export function offsetFromGrab(
+  grabbedAt: number,
   dy: number,
   travel: number,
 ): number {
-  const base = from === 'lowered' ? travel : 0;
-  return Math.min(travel, Math.max(0, base + dy));
+  return Math.min(travel, Math.max(0, grabbedAt + dy));
 }
 
 /** How far a drag has to run before it is a drag and not a tap. */
