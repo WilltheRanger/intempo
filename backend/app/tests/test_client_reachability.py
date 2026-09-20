@@ -61,6 +61,41 @@ NOT_WIRED: dict[str, str] = {
         "No clip-to-tempo flow; the record screen sets the tempo directly. "
         "§2 gate."
     ),
+    # The teacher tier's six endpoints. The backend half is complete and
+    # tested; every screen that would call them — a teacher's studio list, an
+    # assignment detail, the student's Today card for assigned work — is
+    # user-facing, and §2 reserves that to the owner. A data-layer module with
+    # no screen behind it would also trip `check-dead-exports.py`, so the
+    # client arrives with the screens or not at all.
+    "/v1/assignments": "Teacher tier; no studio or assignment screens yet. §2 gate.",
+    "/v1/assignments/{assignment_id}": (
+        "Teacher tier; no assignment detail screen yet. §2 gate."
+    ),
+    "/v1/assignments/{assignment_id}/submit": (
+        "Teacher tier; the student's verdict screen has no 'send to my teacher' "
+        "action yet. §2 gate."
+    ),
+    "/v1/assignments/{assignment_id}/review": (
+        "Teacher tier; no review screen yet. §2 gate."
+    ),
+    # The four studio endpoints, for the same reason as the five above: a
+    # teacher creating a studio and a student typing an invite code are both
+    # screens, and §2 reserves those to the owner.
+    "/v1/studios": "Teacher tier; no studio-creation screen yet. §2 gate.",
+    "/v1/studios/mine": (
+        "Teacher tier; nothing shows a studio, its seats or its invite code "
+        "yet. §2 gate."
+    ),
+    "/v1/studios/join": (
+        "Teacher tier; no invite-code entry screen yet. §2 gate."
+    ),
+    "/v1/studios/leave": (
+        "Teacher tier; leaving is offered nowhere yet. §2 gate."
+    ),
+    "/v1/assignments/{assignment_id}/takes": (
+        "Teacher tier; the takes-over-time view is the one genuinely new screen "
+        "the loop needs, and it is unbuilt. §2 gate."
+    ),
 }
 
 

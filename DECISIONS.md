@@ -1,5 +1,107 @@
 # InTempo Decisions
 
+
+## 2026-09-19 — The assignment row is closed by a revoked grant and an actor-blind trigger
+
+**Context.** The teacher-tier router is the next thing to land, and it is the
+first code that will create an `assignments` row. `001` built the table, `002`
+gave it policies, and `models/assignment.py` says in its own docstring that no
+MVP endpoint reads or writes one — so this was the last moment before rows exist
+in which the row's rules could be set without a backfill.
+
+Two things were wrong, and both only wrong once there are rows.
+
+`002` ships a policy named `student update status on own assignments`, scoped
+`USING (auth.uid() = student_user_id)`. **Row-level security is row-level**; it
+has no opinion about columns. A student holding the anon key — inlined into the
+published bundle by design, the situation `test_rls_invariants.py` is written
+from — passes that policy on their own row and may then write
+`teacher_review_notes`, `target_bpm`, `due_at`, or `status = 'reviewed'`. The
+table's `CHECK (status <> 'reviewed' OR reviewed_at IS NOT NULL)` does not stop
+it: set `reviewed_at` in the same statement and the check passes.
+
+And `002`'s own comment defers the transition graph to "a trigger added in
+Batch 12 when the teacher tier ships", so nothing constrained
+`archived -> assigned`, a repointed `student_user_id`, or a
+`submitted_analysis_id` naming another account's take.
+
+**Decision.** Migration `022`, in two halves. (Numbered 021 when written; renumbered when PR #114 turned out to be adding its own 021, and `check-migrations.py` fails on a duplicate.)
+
+*The UPDATE grant goes, rather than being narrowed to columns.* Teacher and
+student are both the Postgres role `authenticated` — what separates them lives
+in `auth.uid()`, inside the policy predicate, not in the role — so
+`GRANT UPDATE (status, submitted_analysis_id)` would take
+`teacher_review_notes` away from the teacher too. There is no per-column split
+of one role into two actors. The app's supabase-js client is auth-only
+(`data/auth/session.ts` calls `supabase.auth.*`; nothing in `mobile/src/` calls
+`.from()` or `.table()` on a data table), so every write already goes through
+the backend on the service-role client and the revoke costs no caller. The
+student policy is dropped with the grant rather than left inert, for the reason
+`020` gives about `pending_uploads` in reverse: a policy that cannot be
+exercised reads as a working control in every audit that greps for one.
+
+*The trigger is actor-blind, and that is the whole design.* The obvious
+shape — read `auth.uid()`, allow students one set of edges and teachers
+another — **does nothing here**: the service role bypasses RLS and `auth.uid()`
+is NULL on a service-role connection, so an actor-aware trigger would be
+invisible in the one place it needs to hold. What a trigger *can* do, and no
+policy can, is apply to the service role. So it enforces what is true of a
+valid transition whoever makes it: the status graph (including
+`submitted -> in_progress` and `reviewed -> in_progress`, because sending a
+passage back for another take *is* the product), `archived` as terminal, the
+identity columns as immutable, and `submitted_analysis_id` belonging to this
+assignment's own student — which the FK cannot say, and which the teacher read
+policy in `002` would otherwise turn into a cross-account read. Who may make
+which edge stays in the router, where the actor is known.
+
+**Alternatives considered.** *Column-level `GRANT UPDATE`* — rejected on the
+mechanism above: one role, two actors. *A `SECURITY DEFINER` function per
+transition, called over RPC* — rejected as a second write path beside the API
+for no gain, since the API is already the only writer and the trigger reaches
+it. *An `auth.uid()`-aware trigger, as `002`'s comment implies* — rejected
+because it would hold nowhere: NULL under the service role means every branch
+falls through. *Leaving the graph to the router alone* — rejected: the router is
+where it belongs and also where a wrong `.eq()` lives; the trigger is the floor
+under it, not a substitute. *Waiting for the router and shipping one migration*
+— rejected because the schema change is the one that must land first, and it is
+reviewable on its own.
+
+**Trade-off accepted.** A trigger cannot report *which* actor was wrong, so its
+messages name the rule rather than the caller, and the router still owes a 403
+that says who may do what. And **`readiness.py` cannot see the trigger** — it
+probes columns and tables over REST, and a trigger is neither — so a deployment
+missing `022`'s second half looks exactly like one that has it. That is what
+`migrations/checks/` is for: a new stage in `tools/check-migrations.py` that
+runs behavioural SQL against the finished schema.
+
+*An earlier draft of this entry said readiness could see none of it, grant
+included. That was wrong, and PR #114 is what showed it:*
+`client_update_grants_closed()` is a `STABLE` function, executable by the
+service role alone, that reports the privilege state over PostgREST — so a
+missing revoke **is** detectable at runtime. The claim holds for the trigger
+only, and inventing a second RPC to report a trigger is not worth a migration.
+
+**What #114 corrected, recorded because it was wrong here first.** That PR
+reaches the same conclusion about grants from the `users` side, and the revoke
+written here was wrong in three ways. *`PUBLIC` was missing* — a privilege
+granted to `PUBLIC` is held by every role, so naming `anon` and `authenticated`
+left it standing. *A table-level REVOKE does not remove column-level grants* —
+they are separate entries, and a project retaining one from an earlier schema
+stayed open to exactly the write being prevented. *And `users` has the same
+hole, live rather than latent*: `002:30-33` gives `users update self` FOR
+UPDATE with the same column-blindness, so a musician can set their own `tier`,
+`role` and `studio_id` and promote themselves into a paid tier and a studio,
+against rows that exist today. The first two are fixed here. The third is not
+duplicated — it is #114's subject, and widening one PR into another's makes
+both harder to review. Two things followed from
+building it: `tools/supabase_stubs.sql` now models the table grants a real
+project starts with, because a REVOKE checked against a database where the role
+held nothing proves nothing; and `test_readiness.py`'s idempotency scan now
+strips comments before counting, because it read `021`'s header quotation of the
+policy it removes as a `CREATE POLICY` statement — and, worse in the other
+direction, had been letting a real unguarded policy be masked by a comment.
+
+
 ## 2026-09-19 — The paywall was a grant, not a policy
 
 **Context.** Measured on the live project before anything was written, because
@@ -91,6 +193,7 @@ The probe was mutation-tested on a local Postgres: it returns true at baseline,
 **false** when a table grant is re-granted, **false** when a single column grant
 is re-granted — the case a table-only revoke misses — and true again after
 re-running 021, which is also how its idempotency was shown.
+
 
 ## 2026-09-17 — A scan that failed says so on the shelf, and a week later it sweeps itself
 

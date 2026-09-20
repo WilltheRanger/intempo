@@ -15,7 +15,9 @@
 --
 -- What this therefore cannot check is Supabase's own semantics — whether a
 -- policy grants what it means to, or whether `storage.foldername` splits a key
--- the way the real one does. Those need a project. This checks the half that
+-- the way the real one does. Those need a project. The *table privileges* are
+-- modelled below and so are checkable; what a policy does with a request that
+-- passed them is not. This checks the half that
 -- is knowable from a checkout, and that half is where the last four defects
 -- were: 013, 014 and 015 sat unapplied for weeks, and the project named
 -- `intempo` is still four behind.
@@ -39,21 +41,38 @@ BEGIN
 END
 $$;
 
--- **The grants a real project starts with, so a REVOKE has something to
--- remove.** Supabase runs `ALTER DEFAULT PRIVILEGES ... GRANT ALL ON TABLES TO
--- anon, authenticated` on a new project, so every table these migrations
--- create is client-writable from the moment it exists. Without this the two
--- roles held nothing here, a database where they hold `ALL` was
--- indistinguishable from one where they hold nothing, and migration 021's
--- revokes would have applied cleanly while proving absolutely nothing.
+-- **The grants those roles hold on a real project**, which nothing here used
+-- to model. Supabase sets these before any user table exists, so every table
+-- `001` onward creates arrives with `ALL` granted to `anon`, `authenticated`
+-- and `service_role`. That is not an oversight on Supabase's part and it is
+-- the premise the whole schema is written on: a grant is permission to ask and
+-- a policy is permission to receive, so `authenticated` holds INSERT on every
+-- table and still reaches nothing but its own rows. `020`'s note on
+-- `pending_uploads` says it in as many words, and `test_rls_invariants.py` is
+-- written from it.
 --
+-- Added when `021` became the first migration to REVOKE one of them. Until
+-- then no migration mentioned a privilege, so a database where the roles held
+-- nothing was indistinguishable from a project where they hold everything —
+-- and a REVOKE checked against the first proves nothing about the second. A
+-- check that asserts a privilege is gone wants to run against a database that
+-- started with it.
+--
+-- Default privileges attach to the role that creates the table, which here is
+-- whoever runs the gate; that is the same role for the stubs and for every
+-- migration after them, so the grants land.
 -- **What this still cannot model is a retained *column* grant.** Default
 -- privileges yield table-level entries only, and `column_privileges` reports
--- nothing more once the table grant is gone — so 021's column loop finds an
+-- nothing more once the table grant is gone — so `021`'s column loop finds an
 -- empty set on a fresh run either way. That half is real on live projects and
 -- was verified there; see the migration's header.
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
   GRANT ALL ON TABLES TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT ALL ON SEQUENCES TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT ALL ON FUNCTIONS TO anon, authenticated, service_role;
+GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
 
 CREATE SCHEMA IF NOT EXISTS auth;
 CREATE SCHEMA IF NOT EXISTS storage;
