@@ -292,11 +292,20 @@ console.log('\n## Finding a piece in the library');
 // bundle with the old rule: the title was in the document twice and reported
 // visible, while the Library had filtered to nothing.
 //
-// `countLabel` is rendered by this screen alone and is a direct function of
-// what the filter returned, so it cannot be satisfied by a screen that is not
-// being looked at.
+// **Counted inside the results list, not scraped from the page.** This read
+// `countLabel` — "12 pieces found" — which was rendered by this screen alone
+// and so could not be satisfied by a tab that was merely mounted. That line
+// has been removed: it told a musician the length of a list they were looking
+// at, which is the kind of caption §3 law 10 rules out.
+//
+// The replacement keeps the property that made the count work, which is the
+// *scope* rather than the number. `Search results` names the container this
+// screen renders around its rows, so counting inside it cannot be satisfied by
+// Today's mounted copy of a piece title — and it measures the rows themselves
+// rather than a label claiming how many there are, which is the stronger
+// assertion of the two.
 
-/** Type a query and read the Library's own count of what it found. */
+/** Type a query and count the rows the Library actually rendered for it. */
 const searchCount = async (query) => {
   const field = page.getByLabel('Search your library').first();
   await field.click({ timeout: 10000 });
@@ -304,8 +313,14 @@ const searchCount = async (query) => {
   // Filtered synchronously on each keystroke; one settled frame is enough, and
   // there is no request to wait on.
   await page.waitForTimeout(250);
-  const line = (await leaves()).find((text) => /^\d+ pieces? found$/.test(text));
-  return line === undefined ? null : Number.parseInt(line, 10);
+  const list = page.getByLabel('Search results').first();
+  if ((await list.count()) === 0) {
+    // The list is absent rather than empty — an unsearched library, or a
+    // screen that is not the Library at all. Distinguished from zero results,
+    // which renders the container with nothing in it.
+    return null;
+  }
+  return await list.getByRole('button').count();
 };
 
 const finds = async (what, query, atLeast = 1) => {
@@ -338,20 +353,35 @@ else fail(`adding a word did not narrow: ${bach} → ${bachAdagio}`);
 
 // A search that genuinely matches nothing says so, rather than showing a
 // library that looks empty for no stated reason.
+//
+// **`null` rather than `0` here, and that is the screen being right.** No
+// matches renders the empty state *instead of* the results list, so the
+// container this counts inside is absent — which is a different thing from a
+// container holding nothing, and the sentence is what a musician actually
+// gets. Both halves are asserted: no rows, and a reason.
 const none = await searchCount('zzzznotapiece');
 const nothingText = await leaves();
-if (none === 0 && nothingText.some((line) => /Nothing in your library matches/.test(line)))
+if (none === null && nothingText.some((line) => /Nothing in your library matches/.test(line)))
   pass('a search with no matches explains itself');
-else fail(`a search with no matches: count ${none}, no explanation on screen`);
+else fail(`a search with no matches: rows ${none}, explanation ${nothingText.some((l) => /Nothing in your library matches/.test(l))}`);
 
 // And the way back is a control, not a re-typed field.
 await page.getByRole('button', { name: 'Clear search' }).first().click({ timeout: 10000 });
 await page.waitForTimeout(250);
 const cleared = await leaves();
-// Not "found": an unsearched library counts itself without the word.
-if (cleared.some((line) => /^\d+ pieces$/.test(line)))
-  pass('Clear search restores the whole library');
-else fail('Clear search left the library filtered');
+// **Asserted on the filter lifting, not on a count.** This looked for
+// "20 pieces", the caption that used to sit above the list; with that gone,
+// what says the search was cleared is that the no-matches explanation is no
+// longer on screen and the browsing shelf — which only renders unsearched —
+// is back.
+const stillFiltered = cleared.some((line) => /Nothing in your library matches/.test(line));
+// The four `GROUP_LABELS` in `lib/library.ts`. Rendered upper-case by
+// `SectionHeader`, hence the flag.
+const browsing = cleared.some((line) =>
+  /^(This week|Earlier this month|Longer ago|Not practiced yet)$/i.test(line),
+);
+if (!stillFiltered && browsing) pass('Clear search restores the whole library');
+else fail(`Clear search left the library filtered: explanation ${stillFiltered}, shelf ${browsing}`);
 
 console.log('\n## One reading of the window, and it is a habit only where it is one');
 

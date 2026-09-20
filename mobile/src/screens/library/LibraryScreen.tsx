@@ -313,7 +313,27 @@ function LibraryContent({
         matches in one list, densest first. The two gestures want different
         shapes, which is why the frame's grid did not simply replace the row.
       */
-      <View style={styles.section}>
+      <View
+        style={styles.section}
+        /*
+         * **Named because a list of results deserves a name**, and because
+         * `walk-app.mjs` needs a scope rather than a caption.
+         *
+         * The walk used to read "12 pieces found" off this screen to check
+         * that searching narrows. That line is gone — it told a musician the
+         * length of a list they were looking at — and the walk now counts the
+         * rows inside this container instead, which measures the real thing
+         * rather than a label claiming it.
+         *
+         * The scope is the load-bearing part. React Navigation keeps the
+         * other tabs mounted, so Today's take row still holds a piece title
+         * in the document while this list is filtered to nothing; an
+         * unscoped count passed with the filter broken, which is the exact
+         * trap `walk-app.mjs` documents above its search checks.
+         */
+        accessibilityLabel="Search results"
+        accessible={false}
+      >
         {results.map((piece, index) => (
           <FadeIn key={piece.id} index={index}>
             <PieceRow
