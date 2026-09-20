@@ -88,6 +88,5 @@ def next_run_count(row: Any) -> int:
 #: that cannot be read.
 EXHAUSTED_MESSAGE = (
     "This page has been read as many times as it usefully can be. "
-    "A clearer photograph — flatter, closer, more light — will do more than "
-    "another attempt at this one."
+    "A flatter, closer, better-lit photograph will do more than another try."
 )

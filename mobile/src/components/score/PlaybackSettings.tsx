@@ -3,7 +3,8 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { MAX_BPM, MIN_BPM } from '../../data/practiceTempo';
 import type { TempoBeatUnit } from '../../data/types';
-import { MIN_TOUCH_TARGET, spacing } from '../../design';
+import { BORDER_WIDTH, MIN_TOUCH_TARGET, spacing } from '../../design';
+import { ROW_PADDING_VERTICAL } from '../rowMetrics';
 import {
   displayTempoBpm,
   formatTempo,
@@ -71,6 +72,19 @@ export interface PlaybackSettingsProps {
    */
   entry?: EntryScope;
   disabled?: boolean;
+  /**
+   * How these rows draw themselves.
+   *
+   * `panel` is the score reader: a bounded group of its own, set off from the
+   * content above it by a margin and closed with a bottom rule, because
+   * nothing else on that screen shares its rhythm.
+   *
+   * `row` is the record panel, where this is one of five settings in a single
+   * list and the group treatment is exactly what makes it look like a second
+   * list. It takes `rowMetrics`' padding and drops the margin and the closing
+   * rule, so the hairline above it is the same divider every neighbour draws.
+   */
+  density?: 'panel' | 'row';
 }
 
 /**
@@ -97,7 +111,9 @@ export function PlaybackSettings({
   entry = 'listen',
   score = null,
   disabled = false,
+  density = 'panel',
 }: PlaybackSettingsProps) {
+  const inList = density === 'row';
   const [pickingBar, setPickingBar] = useState(false);
   const [pickingTempo, setPickingTempo] = useState(false);
 
@@ -162,21 +178,31 @@ export function PlaybackSettings({
       and the value touching. Measured: "Listen fromBar 1" on a 290pt row
       inside a 390pt screen.
     */
-    <View style={styles.settings}>
+    <View style={inList ? styles.settingsInList : styles.settings}>
       {canPickBar ? (
         <Pressable
           onPress={() => setPickingBar(true)}
           disabled={disabled}
           accessibilityRole="button"
           accessibilityLabel={entryAccessibilityLabel(entry, fromMeasure)}
-          style={({ pressed }) => [styles.settingRow, pressed && styles.pressed]}
+          style={({ pressed }) => [
+            styles.settingRow,
+            inList && styles.settingRowInList,
+            pressed && (inList ? styles.pressedInList : styles.pressed),
+          ]}
         >
           {/* The words depend on what the bar governs — see `entryCopy`. */}
-          <Text variant="body" color={disabled ? 'textTertiary' : 'textSecondary'}>
+          <Text
+            variant={inList ? 'button' : 'body'}
+            color={disabled ? 'textTertiary' : inList ? 'textPrimary' : 'textSecondary'}
+          >
             {entryRowLabel(entry)}
           </Text>
           <View style={styles.settingValue}>
-            <Text variant="body" color={disabled ? 'textTertiary' : 'textPrimary'}>
+            <Text
+              variant={inList ? 'metadata' : 'body'}
+              color={disabled || inList ? 'textTertiary' : 'textPrimary'}
+            >
               Bar {fromMeasure}
             </Text>
             <ChevronRight
@@ -263,6 +289,26 @@ const styles = StyleSheet.create({
   */
   pressed: {
     opacity: 0.6,
+  },
+  /**
+   * The same acknowledgement `LinkRow` gives, for the row form.
+   *
+   * Not `pressed`'s flat 0.6: a row that only dims reads as going *away* under
+   * the finger, where a row that also takes the pressed surface reads as being
+   * held. Design law "a tap gets an immediate response".
+   */
+  pressedInList: {
+    backgroundColor: colors.surfacePressed,
+    opacity: 0.88,
+  },
+  /** No margin, no closing rule: the list around it owns both. */
+  settingsInList: {
+    alignSelf: 'stretch',
+  },
+  settingRowInList: {
+    paddingVertical: ROW_PADDING_VERTICAL,
+    borderTopWidth: BORDER_WIDTH,
+    borderTopColor: colors.border,
   },
   settings: {
     alignSelf: 'stretch',

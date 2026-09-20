@@ -43,7 +43,7 @@ import {
 import { formatRole, formatTier } from '../../lib/format';
 import type { RootNavigation } from '../../navigation/types';
 import { AccountRow } from './AccountRow';
-import { LinkRow } from './LinkRow';
+import { LinkRow } from '../../components/primitives/LinkRow';
 import { loadStateFor } from '../../lib/loadState';
 
 /**

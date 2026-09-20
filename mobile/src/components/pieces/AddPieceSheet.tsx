@@ -11,31 +11,26 @@ export interface AddPieceSheetProps {
   onSelect: (option: AddPieceOption) => void;
 }
 
+/**
+ * **Four labels, and no line under any of them.**
+ *
+ * Each one carried a description and each description said the label again:
+ * "Photograph sheet music / Use the camera on the pages in front of you",
+ * "Choose photos / Pictures of the music already on this device", "Enter it by
+ * hand / Type the details in". A second sentence that adds nothing is not
+ * neutral — it doubles the height of the sheet, halves the number of choices a
+ * thumb can reach without scrolling, and teaches a musician that the small
+ * grey type on this screen is never worth reading, which costs the places
+ * where it is (§3 law 10).
+ *
+ * `SheetOptionRow.description` is optional precisely so a row can decline it.
+ * It was required once, which is how all four of these came to exist.
+ */
 const OPTIONS = [
-  {
-    option: 'scan' as const,
-    icon: Camera,
-    label: 'Photograph sheet music',
-    description: 'Use the camera on the pages in front of you.',
-  },
-  {
-    option: 'import' as const,
-    icon: Images,
-    label: 'Choose photos',
-    description: 'Pictures of the music already on this device.',
-  },
-  {
-    option: 'notation' as const,
-    icon: FileMusic,
-    label: 'Open a MusicXML file',
-    description: 'Exported from MuseScore, Sibelius or Finale.',
-  },
-  {
-    option: 'manual' as const,
-    icon: PencilLine,
-    label: 'Enter it by hand',
-    description: 'Type the details in. Nothing is read from a page.',
-  },
+  { option: 'scan' as const, icon: Camera, label: 'Photograph sheet music' },
+  { option: 'import' as const, icon: Images, label: 'Choose photos' },
+  { option: 'notation' as const, icon: FileMusic, label: 'Open a MusicXML file' },
+  { option: 'manual' as const, icon: PencilLine, label: 'Enter it by hand' },
 ];
 
 /**
@@ -63,7 +58,6 @@ export function AddPieceSheet({
           key={entry.option}
           icon={entry.icon}
           label={entry.label}
-          description={entry.description}
           divided={rowDivided(index)}
           onPress={() => onSelect(entry.option)}
         />

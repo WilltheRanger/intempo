@@ -10,6 +10,7 @@ import {
   MIN_TOUCH_TARGET,
   radii,
 } from '../../design';
+import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import { PressableScale } from '../motion/PressableScale';
 
 export interface IconButtonProps {
@@ -58,7 +59,14 @@ export function IconButton({
         : colors.textPrimary;
   return (
     <PressableScale
-      onPress={onPress}
+      onPress={() => {
+        // Back, close, add, transport. These are the controls pressed most
+        // often in the app and they were the ones with no tick at all, while
+        // the tab bar and the primary button both had one — so the weight of
+        // the feedback depended on which control you happened to touch.
+        impact(ImpactFeedbackStyle.Light);
+        onPress();
+      }}
       disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={label}

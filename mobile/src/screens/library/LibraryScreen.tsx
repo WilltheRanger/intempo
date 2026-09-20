@@ -1,6 +1,6 @@
 import { useNavigation } from '@react-navigation/native';
 import { useQueryClient } from '@tanstack/react-query';
-import { Library, Plus, Search, X } from '../../components/icons';
+import { Library, Plus, Search } from '../../components/icons';
 import { useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
@@ -9,9 +9,8 @@ import { PieceListSkeleton } from '../../components/skeletons';
 import {
   EmptyState,
   IconButton,
-  PageHeader,
   ScreenContainer,
-  SearchField,
+  SearchHeader,
   SectionHeader,
 } from '../../components/primitives';
 import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
@@ -86,60 +85,32 @@ export function LibraryScreen() {
    * screen is a list of pieces, so the pieces get it; both controls are now
    * chrome-weight circles and two more rows clear the fold.
    */
-  const [searchOpen, setSearchOpen] = useState(false);
-
   const handleSelectOption = useAddPieceOption(() =>
     setAddSheetVisible(false),
   );
 
   return (
     <ScreenContainer onRefresh={refresh}>
-      <PageHeader
-        // The count moves into the eyebrow, where every other screen puts its
-        // line of context. As a row of its own it was a third heading between
-        // the search field and the first piece.
-        // **No count.** "20 pieces" sat above a list of twenty pieces. A
-        // number the content already shows is furniture (§3 law 10), and the
-        // one case where it said something — how many a search matched — is
-        // answered by the results themselves, or by the empty state when
-        // there are none.
-        eyebrow={null}
+      {/*
+        **The title becomes the field; it does not grow one underneath.** See
+        `SearchHeader`, which holds both the crossfade and the reason: the
+        field used to mount into the flow on a boolean, so it appeared between
+        two frames and pushed the whole shelf down 60 points as it did.
+      */}
+      <SearchHeader
         title="Library"
+        query={query}
+        onQueryChange={setQuery}
+        placeholder="Search your library"
+        searchable={pieces.length > 0}
         action={
-          <View style={styles.actions}>
-            {/* Nothing to search through until there's a repertoire. */}
-            {pieces.length > 0 ? (
-              <IconButton
-                icon={searchOpen ? X : Search}
-                label={searchOpen ? 'Close search' : 'Search your library'}
-                onPress={() => {
-                  // Closing clears the query: leaving a filter applied behind a
-                  // control you just dismissed is how a library looks empty for
-                  // no visible reason.
-                  setSearchOpen((open) => {
-                    if (open) setQuery('');
-                    return !open;
-                  });
-                }}
-              />
-            ) : null}
-            <IconButton
-              icon={Plus}
-              label="Add piece"
-              onPress={() => setAddSheetVisible(true)}
-            />
-          </View>
+          <IconButton
+            icon={Plus}
+            label="Add piece"
+            onPress={() => setAddSheetVisible(true)}
+          />
         }
       />
-
-      {searchOpen && pieces.length > 0 ? (
-        <SearchField
-          value={query}
-          onChangeText={setQuery}
-          placeholder="Search your library"
-          autoFocus
-        />
-      ) : null}
 
       {/*
         The only thing on this screen that can fail without a screen of its
@@ -394,10 +365,6 @@ function LibraryContent({
 const styles = StyleSheet.create({
   actionError: {
     marginTop: spacing.md,
-  },
-  actions: {
-    flexDirection: 'row',
-    gap: spacing.sm,
   },
   section: {
     marginTop: spacing['2xl'],

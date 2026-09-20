@@ -43,13 +43,20 @@ export interface SearchFieldProps {
   placeholder?: string;
   style?: StyleProp<ViewStyle>;
   /**
-   * Take the keyboard as soon as this mounts.
+   * Take the keyboard while this is true, and give it back when it is not.
    *
    * For a field that appears because somebody asked for it. Library's search
    * lives behind a magnifier, and a field that arrives without the caret makes
    * the tap cost two: one to reveal, one to focus. `CLAUDE.md` §3 — a tap gets
    * an immediate response, and revealing an input the user then has to go and
    * poke is not one.
+   *
+   * **A state, not an event, and that is the fix for a real bug.** It went
+   * straight to `TextInput`'s own `autoFocus`, which React Native reads once
+   * at mount and never again. That was correct while the field was mounted by
+   * the tap that revealed it; `SearchHeader` keeps it mounted and crossfades
+   * to it, so the prop flipped to true on a component that had already decided
+   * — and the caret never arrived, on the control this prop exists for.
    */
   autoFocus?: boolean;
 }
@@ -70,6 +77,23 @@ export function SearchField({
 }: SearchFieldProps) {
   const [focused, setFocused] = useState(false);
   const reduceMotion = useReducedMotion();
+
+  /**
+   * The keyboard follows `autoFocus` in both directions.
+   *
+   * Blurring on the way out matters as much as focusing on the way in: a field
+   * that has faded out of a header while still holding the keyboard leaves a
+   * phone with half its screen taken by a keyboard belonging to a control
+   * nobody can see.
+   */
+  const input = useRef<TextInput>(null);
+  useEffect(() => {
+    if (autoFocus) {
+      input.current?.focus();
+    } else {
+      input.current?.blur();
+    }
+  }, [autoFocus]);
 
   /**
    * Focus, as a number, so the border can travel between the two colours.
@@ -148,9 +172,9 @@ export function SearchField({
       />
 
       <TextInput
+        ref={input}
         value={value}
         onChangeText={onChangeText}
-        autoFocus={autoFocus}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         placeholder={placeholder}

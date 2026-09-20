@@ -50,7 +50,7 @@ def calibrate(
     if duration < cal.min_duration_s:
         return CalibrationResult(
             ok=False, code="too_short",
-            message="Hold a bit longer — at least 2 seconds.",
+            message="Play for at least 2 seconds.",
         )
     if duration > cal.max_duration_s:
         y = y[: int(cal.max_duration_s * sr)]  # truncate, then proceed
@@ -60,7 +60,7 @@ def calibrate(
     if _dbfs(peak) < cal.min_peak_dbfs or _dbfs(rms) < cal.min_rms_dbfs:
         return CalibrationResult(
             ok=False, code="too_quiet",
-            message="Couldn't hear that — move closer to the mic and try again.",
+            message="Couldn't hear that. Move closer to the microphone.",
         )
 
     onsets = audio_svc.detect_onsets(audio_svc.pre_emphasis(y, config=cfg), sr, config=cfg)
@@ -68,7 +68,7 @@ def calibrate(
     if n < cal.min_onsets:
         return CalibrationResult(
             ok=False, code="too_few_onsets", n_onsets=n,
-            message="We didn't hear at least 2 notes — try 3 or 4 quarter notes at your tempo.",
+            message="Play 3 or 4 quarter notes at your tempo.",
         )
 
     iois = np.diff(onsets)
@@ -91,7 +91,7 @@ def calibrate(
     if iois.size == 0:
         return CalibrationResult(
             ok=False, code="too_few_onsets", n_onsets=n,
-            message="We didn't hear at least 2 notes — try 3 or 4 quarter notes at your tempo.",
+            message="Play 3 or 4 quarter notes at your tempo.",
         )
 
     mean_ioi = float(np.mean(iois))
@@ -104,7 +104,7 @@ def calibrate(
     if cv > cal.ioi_cv_max:
         return CalibrationResult(
             ok=False, code="inconsistent", n_onsets=n,
-            message="The notes weren't evenly spaced — play a steady quarter-note pulse.",
+            message="Play a steady quarter-note pulse.",
         )
 
     bpm = round(60.0 / float(np.median(iois)), 1)
@@ -135,7 +135,7 @@ def calibrate(
     if n > cal.max_onsets:
         return CalibrationResult(
             ok=True, bpm=bpm, warning="too_many_onsets", n_onsets=n,
-            message=f"Detected ♩={bpm:g}. That seems fast — is that right?",
+            message=f"Detected ♩={bpm:g}. Is that right?",
         )
 
     return CalibrationResult(ok=True, bpm=bpm, n_onsets=n, message=f"Detected ♩={bpm:g}. Use this?")

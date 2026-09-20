@@ -9,6 +9,7 @@ import {
   MIN_TOUCH_TARGET,
   spacing,
 } from '../../design';
+import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import { PressableScale } from '../motion/PressableScale';
 import { Text } from '../primitives/Text';
 
@@ -42,7 +43,13 @@ export function SheetOptionRow({
 }: SheetOptionRowProps) {
   return (
     <PressableScale
-      onPress={onPress}
+      onPress={() => {
+        // The weight every other row in this app answers a press with. A sheet
+        // that opens a camera or a file picker has a visible pause before
+        // anything happens, and the tick is what says the tap was taken.
+        impact(ImpactFeedbackStyle.Light);
+        onPress();
+      }}
       activeScale={0.99}
       accessibilityRole="button"
       accessibilityLabel={label}

@@ -257,7 +257,7 @@ export function describeProblemMeasures(
       : `Bars ${measures.slice(0, -1).join(', ')} and ${measures[measures.length - 1]}`;
   const verb = measures.length === 1 ? "doesn't" : "don't";
   const tail = canCheck
-    ? ` — check ${measures.length === 1 ? 'it' : 'them'} against your copy.`
+    ? `. Check ${measures.length === 1 ? 'it' : 'them'} against your copy.`
     : ', so timing after that point may be off.';
   return `${list} ${verb} add up to the time signature${tail}`;
 }

@@ -33,8 +33,7 @@ const CAUSES: ReadonlyArray<readonly [readonly string[], string]> = [
     // The device exists and something else is holding it. On a phone that is
     // usually a call, a voice memo, or another tab still recording.
     ['NotReadableError', 'TrackStartError', 'AbortError'],
-    'The microphone is busy. Close anything else that is using it: a call, a '
-      + 'voice memo, another tab — and try again.',
+    'The microphone is busy. Close whatever else is using it and try again.',
   ],
   [
     // **Reported from a real iPhone on 2026-09-04**, in Safari, on the

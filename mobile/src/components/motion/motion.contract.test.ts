@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import fadeInSource from './FadeIn?raw';
 import iconButtonSource from '../primitives/IconButton?raw';
+import secondaryButtonSource from '../primitives/SecondaryButton?raw';
+import linkRowSource from '../primitives/LinkRow?raw';
+import sheetOptionRowSource from '../overlays/SheetOptionRow?raw';
 import tabBarSource from '../../navigation/BottomTabBar?raw';
 import bottomSheetSource from '../overlays/BottomSheet?raw';
 import confirmDialogSource from '../overlays/ConfirmDialog?raw';
@@ -94,6 +97,43 @@ describe('interaction motion', () => {
     expect(pressableScaleSource).toContain(
       "'transform, background-color, border-color, opacity'",
     );
+  });
+
+  /**
+   * **The release springs; the contact does not.** That asymmetry is the
+   * whole of what a press feels like — the contact is under a fingertip and
+   * nobody watches it, and the release is the half anybody sees.
+   *
+   * It was a 120ms `timing` on `EASE_OUT` on both platforms, which returns a
+   * control to its own size and stops dead. Asserted on both branches because
+   * they are separate implementations of one behaviour: `Animated.spring` on
+   * device, and `SPRING_CSS` — whose control point is past 1, which is where
+   * the overshoot comes from — on the web build, which has no spring at all.
+   */
+  it('springs a control back to size rather than easing it', () => {
+    expect(pressableScaleSource).toContain('Animated.spring(scale');
+    expect(pressableScaleSource).toContain('...SPRING,');
+    expect(pressableScaleSource).toContain('SPRING_CSS');
+    // The contact keeps its own short, non-overshooting curve.
+    expect(pressableScaleSource).toContain("'cubic-bezier(0.22, 1, 0.36, 1)'");
+  });
+
+  /**
+   * **Every control that answers a finger answers it the same way.** The tab
+   * bar and the primary button had a tick; back, close, add, the secondary
+   * button and every settings row did not — so how hard a press registered
+   * depended on which control you happened to touch, which reads as the quiet
+   * ones being broken rather than as being quiet.
+   */
+  it('gives the shared controls the same haptic weight', () => {
+    for (const source of [
+      iconButtonSource,
+      secondaryButtonSource,
+      linkRowSource,
+      sheetOptionRowSource,
+    ]) {
+      expect(source).toContain('ImpactFeedbackStyle.Light');
+    }
   });
 
   it('shares the system motion listener across animated rows', () => {

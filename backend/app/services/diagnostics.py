@@ -168,7 +168,7 @@ def analyze_with_diagnostics(
 
     if onsets.size == 0 or expected.size == 0:
         base.status = "no_onsets"
-        base.verdict = "No onsets to work with — nothing detected, or the score has no notes."
+        base.verdict = "Nothing to compare. No notes were detected, or the score has none."
         return base
 
     # `base.detected_onsets` above stays in the recording's clock, because the

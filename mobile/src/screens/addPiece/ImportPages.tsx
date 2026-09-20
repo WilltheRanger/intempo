@@ -119,7 +119,7 @@ export function ImportPagesScreen({
           setError(
             taken === 0
               ? `This scan already has ${MAX_SCAN_PAGES} pages, which is the most InTempo can read at once.`
-              : `Only ${taken === 1 ? '1 image' : `${taken} images`} fitted — a scan can hold ${MAX_SCAN_PAGES} pages.`,
+              : `Only ${taken === 1 ? '1 image' : `${taken} images`} fitted. A scan holds ${MAX_SCAN_PAGES} pages.`,
           );
           return;
         }

@@ -1,6 +1,121 @@
 # InTempo Decisions
 
 
+## 2026-09-20 — The take is a bar at the bottom edge, not the top of the sheet
+
+**Context.** The record screen put the timer, the microphone line and the record
+button at the head of the drag sheet, kept on screen when the sheet was lowered
+by a `peek` constant. Three things were wrong with that at once, and the owner
+reported all three as one complaint about the panel.
+
+`peek` was 232. Measured on the built app at 390x844, the content it was
+describing came to **256**, so "Start recording" was clipped by the bottom of
+the display on every visit with nothing wrong. Raised, the sheet put that
+button in the vertical middle of the screen — the one control a musician
+reaches for without looking, outside the thumb zone, while five settings sat
+below it. And lowering translated 375 points of sheet past the bottom of the
+document, which on the web build is 375 points of page: `scrollHeight` 1219
+against an `innerHeight` of 844, blank ground under the panel, and a grab
+handle that scrolled the page instead of dragging.
+
+**Decision.** The take becomes its own bar, anchored to the bottom edge,
+rendered outside the sheet. The sheet holds the setup alone, is anchored above
+the bar, and slides down behind it; `styles.stage` clips what goes past the
+edge. Nothing about the bar is declared: it reports its own height with
+`onLayout`, and both the sheet's anchor and the score's bottom inset read it.
+`peek` defaults to `HANDLE_HEIGHT`, derived from the tokens the handle's style
+is built from.
+
+The failure messages move into the bar with the button, which lets the sheet's
+`raiseSignal` be deleted — it existed to haul the sheet up over the music
+whenever a message appeared inside it, a rescue only needed because something
+that always has to be seen was somewhere that can be hidden.
+
+**Alternatives considered.** Raising `peek` to 256 — rejected: it fixes one
+visit and none of the rest, and leaves the next person to re-measure it when a
+line of conditional content changes. Putting the settings above the take
+*inside* the sheet — rejected after working it through: lowering a sheet
+reveals its top, so the take would have been the half that disappeared.
+Removing the sheet entirely and moving all setup to the pre-flight screen —
+rejected because it reverses 2026-09-16 for a layout problem, and costs a tap
+on the setting changed most often.
+
+**Trade accepted.** Two surfaces now meet at a seam that has to look like one
+panel: the sheet keeps the rounded top and the hairline, the bar is squared and
+opaque in the same token. They are separated in the tree and joined only by
+appearance, so a future change to one has to be made to the other.
+
+## 2026-09-20 — Five rows in one grammar, and the sixth goes behind "More"
+
+**Context.** The panel spoke five grammars in one column: a stepper, a ruled
+row, a bordered pill for Listen, and two lines of small type carrying
+`marginVertical: -12`, so that two consecutive ones pulled 24 points out from
+between them. Measured on the built app, the gaps down the column ran **44, 29,
+40, 11 and 2 points**. `components/rowMetrics` already held the rule; it could
+not enforce it, because the rule was in a module while the row was copied by
+hand four times.
+
+**Decision.** One row component for the whole list. `LinkRow` moves from
+`screens/profile/` to `components/primitives/` and the panel uses it;
+`ListenButton` and `PlaybackSettings` each gain a `density="row"` that conforms
+them to `rowMetrics`, the way `TempoStepper` already had. Five rows: target
+tempo, metronome, start at, listen, more. The sixth — skip long rests — appears
+only on a part that has rests to skip.
+
+"Upload a recording" and "Before you record" go behind a **More** row that
+opens a sheet. Both are real doors and neither is on the path a musician takes
+to play; in the column they took the list past the 360-point cap the sheet is
+bounded at and gave the setup a scrollbar. At ordinary text size five rows
+measure about 320, so the cap never engages and the panel does not scroll at
+all.
+
+**Alternatives considered.** Folding Listen onto the "Start at" row as a play
+glyph — rejected: two affordances on one row's right edge, a chevron that opens
+a picker and a triangle that starts audio, and no way to tell which a tap will
+get. Keeping all seven rows and letting the list scroll — rejected: a scrollbar
+inside a panel that is itself draggable is two scroll gestures competing over
+the same 40 points.
+
+**Trade accepted.** "More" is a vague label, and it is the one word on this
+screen that does not say what it does. The alternative was naming it after one
+of the two things behind it, which would be worse.
+
+## 2026-09-20 — The screen title becomes the search field
+
+**Context.** Library's search mounted a field into the flow on a boolean, below
+the title. It arrived between one frame and the next, and it pushed the whole
+shelf down by its own height as it did. The owner described it as popping up,
+and asked for the field to replace the title rather than grow under it.
+
+**Decision.** `SearchHeader`: the title and the field are two layers of one
+band, crossfading on `motion.base` with 6 points of opposed travel. The closed
+layer stays mounted at zero opacity, which is what holds the band's height —
+measured to **96 points before and after**, so nothing below it moves. The
+magnifier is replaced by a **Cancel** word, and the field is what carries the
+screen's name while it is open.
+
+Two names for two controls, which is what the old header did not have: the
+magnifier answered to `Search your library` and renamed itself `Close search`
+when open, so the button and the field shared one accessible name for half the
+time both were on screen. The button is `Search` now.
+
+**Alternatives considered.** Animating the field's height from zero — rejected:
+it still moves everything below it, which was half the complaint. Reserving the
+title's height with a measurement — rejected: a second source for a number the
+title already knows, wrong for one frame every time the title changes.
+
+**Trade accepted.** The screen's other action — "Add piece" — is hidden while
+searching. That is what the platform does, and the alternative is three
+controls and a field on a 390-point band.
+
+**A real bug came out of it.** `SearchField`'s `autoFocus` went straight to
+`TextInput`'s own, which React Native reads once at mount. The field is now
+mounted before it is shown, so the prop flipped true on a component that had
+already decided, and the caret never arrived — on the control that prop exists
+for. It follows the state in both directions now, and blurs on the way out so a
+hidden field cannot keep the keyboard.
+
+
 ## 2026-09-20 — The state is the fact, the promise is a hint
 
 **Context.** Two audio failures reported from a real iPhone, and one shape

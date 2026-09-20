@@ -448,7 +448,7 @@ def generate_verdict(
                 direction=Direction.on,
             )
         return Verdict(
-            text="Steady tempo — you held it within tolerance across the piece.",
+            text="Steady tempo. You held it right across the piece.",
             direction=Direction.on,
         )
 
