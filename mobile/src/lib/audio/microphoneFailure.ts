@@ -33,7 +33,7 @@ const CAUSES: ReadonlyArray<readonly [readonly string[], string]> = [
     // The device exists and something else is holding it. On a phone that is
     // usually a call, a voice memo, or another tab still recording.
     ['NotReadableError', 'TrackStartError', 'AbortError'],
-    'The microphone is busy. Close anything else that is using it — a call, a '
+    'The microphone is busy. Close anything else that is using it: a call, a '
       + 'voice memo, another tab — and try again.',
   ],
   [
@@ -55,7 +55,7 @@ const CAUSES: ReadonlyArray<readonly [readonly string[], string]> = [
     // app there is no chrome. `RELOAD_FIXES` below is the app offering it
     // itself rather than describing where to find it.
     ['InvalidStateError'],
-    'The page needs reloading before it can record — this is the page\'s '
+    'The page needs reloading before it can record. This is the page\'s '
       + 'state, not your microphone.',
   ],
   [

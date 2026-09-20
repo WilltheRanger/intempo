@@ -2255,11 +2255,21 @@ const styles = StyleSheet.create({
   control: {
     alignItems: 'center',
     gap: spacing.md,
-    // Lifted off the bottom edge. The safe-area inset below this only keeps the
-    // control clear of the home indicator, which is a different question from
-    // where a thumb actually rests — that is around a sixth of the screen up,
-    // not against the edge.
-    marginBottom: spacing['4xl'],
+    /*
+     * **The reason for this changed underneath it.** It was 40pt, to lift the
+     * control off the bottom edge of the screen — a thumb rests about a sixth
+     * of the way up, not against the edge. That was true when the button was
+     * the last thing on the screen. It now sits inside the sheet with the
+     * settings below it, so the margin is no longer lifting the control off
+     * anything: it is a gap before the next row, and measured on a built app
+     * it was 40pt of it, with another 43pt after — 83pt between "Start
+     * recording" and "Target tempo" while the top of the same panel was 16.
+     *
+     * The thumb argument still holds in the *lowered* state, where the peek
+     * leaves the button near the bottom edge, which is why this is reduced
+     * rather than removed. Both states were re-measured after the change.
+     */
+    marginBottom: spacing.lg,
   },
   controlDisabled: {
     opacity: disabledOpacity,

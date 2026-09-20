@@ -72,5 +72,5 @@ export function describeTierLimit(error: unknown): string | null {
     limit.limit === null
       ? `${limit.used} analyses`
       : `all ${limit.limit} of your free analyses`;
-  return `That take wasn't analysed — you've used ${count} this month. The count resets ${whenAnalysisAllowanceResets(limit.resetsAt)}.`;
+  return `That take wasn't analysed. You've used ${count} this month. The count resets ${whenAnalysisAllowanceResets(limit.resetsAt)}.`;
 }

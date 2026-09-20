@@ -88,7 +88,7 @@ export function ManualPieceForm() {
   async function submit() {
     const trimmedTitle = title.trim();
     if (!trimmedTitle) {
-      setError('A title, at least — it is how you will find this again.');
+      setError('A title, at least. It is how you will find this again.');
       return;
     }
 
@@ -155,7 +155,7 @@ export function ManualPieceForm() {
         label="Movement"
         value={movement}
         onChangeText={setMovement}
-        placeholder="I. Adagio — optional"
+        placeholder="I. Adagio (optional)"
         autoCapitalize="words"
         returnKeyType="next"
         style={styles.field}

@@ -190,7 +190,7 @@ export function readMusicXML(bytes: Uint8Array): string {
   }
   if (overLimit || totalBytes(files) > MAX_UNZIPPED_BYTES) {
     throw new MusicXMLFileError(
-      'That file unpacks to far more than a score of music — it may be damaged.',
+      'That file unpacks to far more than a score of music, so it may be damaged.',
     );
   }
   return decode(files[scoreEntryName(files)]);

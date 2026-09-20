@@ -45,7 +45,7 @@ export function describeLoadError(error: unknown): string {
       return "This isn't yours to open.";
     }
     if (error.status === 404) {
-      return "It isn't there any more — it may have been removed.";
+      return "It isn't there any more. It may have been removed.";
     }
     if (error.status === 429) {
       /*

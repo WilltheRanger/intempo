@@ -104,7 +104,7 @@ describe('describeBeats and the opening bar', () => {
       first: true,
     });
     expect(described.balanced).toBe(true);
-    expect(described.text).toBe('1 of 4 beats — a pickup');
+    expect(described.text).toBe('1 of 4 beats, a pickup');
   });
 
   it('says nothing of the sort about the same bar later in the piece', () => {

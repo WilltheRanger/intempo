@@ -727,7 +727,7 @@ export function describeUndrawnScore({
   // from this page" and asked for a better photograph — blaming the camera for
   // a reading that in fact succeeded.
   if (rests + undrawable + unplaceable === 0) {
-    return "Nothing was read from this page. The photograph is below — try reading it again, or photograph the page closer and straighter.";
+    return "Nothing was read from this page. The photograph is below. Try reading it again, or photograph the page closer and straighter.";
   }
   // Three causes, three words. The note/rest distinction was already here and
   // is kept: a page that is nothing but undrawable rests is not a page of
@@ -735,7 +735,7 @@ export function describeUndrawnScore({
   // looking at their rhythm and looking at their silences.
   const values =
     undrawable > 0 ? 'note values' : rests > 0 ? 'rest values' : 'pitches';
-  return `This page is written in ${values} the app can't draw yet, so there is no stave to show. The reading is stored and recording will use it — the photograph is below.`;
+  return `This page is written in ${values} the app can't draw yet, so there is no stave to show. The reading is stored and recording will use it. The photograph is below.`;
 }
 
 export function describeOmissions({
@@ -775,5 +775,5 @@ export function describeOmissions({
   if (parts.length === 0) {
     return null;
   }
-  return `Not drawn: ${parts.join(' and ')}. The engraving is incomplete rather than approximate — playback uses the full score.`;
+  return `Not drawn: ${parts.join(' and ')}. The engraving is incomplete rather than approximate: playback uses the full score.`;
 }

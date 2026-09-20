@@ -96,7 +96,7 @@ export function TranscriptionReviewScreen() {
 
     const trimmed = title.trim();
     if (!attachmentPieceId && !trimmed) {
-      setError('Give the piece a title — it is how you will find it again.');
+      setError('Give the piece a title. It is how you will find it again.');
       return;
     }
 
@@ -177,7 +177,7 @@ export function TranscriptionReviewScreen() {
             label="Movement"
             value={movement}
             onChangeText={setMovement}
-            placeholder="I. Adagio — optional"
+            placeholder="I. Adagio (optional)"
             autoCapitalize="words"
             style={styles.field}
           />

@@ -99,7 +99,7 @@ const VIOLIN: Warmup[] = [
   {
     id: 'violin-string-crossing',
     name: 'Open-string crossings',
-    focus: 'The bow arm alone — no left hand to hide behind.',
+    focus: 'The bow arm alone, with no left hand to hide behind.',
     notes: crossings('D4', 'A4', ['G3', 'D4'], 'D4'),
     bpm: 66,
     clef: 'treble',
@@ -107,7 +107,7 @@ const VIOLIN: Warmup[] = [
   {
     id: 'violin-a-major-broken',
     name: 'A major, broken thirds',
-    focus: 'Finger independence — the third finger stays down.',
+    focus: 'Finger independence: the third finger stays down.',
     notes: [
       q('A4', true), q('C#5'), q('B4'), q('D5'),
       q('C#5', true), q('E5'), q('D5'), q('F#5'),
@@ -133,7 +133,7 @@ const VIOLA: Warmup[] = [
   {
     id: 'viola-string-crossing',
     name: 'Open-string crossings',
-    focus: 'The bow arm alone — no left hand to hide behind.',
+    focus: 'The bow arm alone, with no left hand to hide behind.',
     notes: crossings('G3', 'D4', ['C3', 'G3'], 'G3'),
     bpm: 66,
     clef: 'alto',
@@ -167,7 +167,7 @@ const CELLO: Warmup[] = [
   {
     id: 'cello-string-crossing',
     name: 'Open-string crossings',
-    focus: 'The bow arm alone — no left hand to hide behind.',
+    focus: 'The bow arm alone, with no left hand to hide behind.',
     notes: crossings('G2', 'D3', ['C2', 'G2'], 'G2'),
     bpm: 66,
     clef: 'bass',
@@ -175,7 +175,7 @@ const CELLO: Warmup[] = [
   {
     id: 'cello-g-major-broken',
     name: 'G major, broken thirds',
-    focus: 'Finger independence — extensions stay quiet.',
+    focus: 'Finger independence: extensions stay quiet.',
     notes: [
       q('G2', true), q('B2'), q('A2'), q('C3'),
       q('B2', true), q('D3'), q('C3'), q('E3'),
@@ -205,7 +205,7 @@ const DOUBLE_BASS: Warmup[] = [
   {
     id: 'bass-string-crossing',
     name: 'Open-string crossings',
-    focus: 'The bow arm alone — no left hand to hide behind.',
+    focus: 'The bow arm alone, with no left hand to hide behind.',
     notes: crossings('A2', 'D3', ['E2', 'A2'], 'A2'),
     bpm: 60,
     clef: 'bass',

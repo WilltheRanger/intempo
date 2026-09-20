@@ -261,7 +261,7 @@ export function uploadToSignedUrl(
       settle(() =>
         reject(
           new UploadError(
-            `Sending ${thing} took too long. A stronger connection — or moving closer to the router — usually fixes it.`,
+            `Sending ${thing} took too long. A stronger connection, or moving closer to the router, usually fixes it.`,
           ),
         ),
       );

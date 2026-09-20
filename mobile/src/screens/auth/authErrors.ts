@@ -74,7 +74,7 @@ export function describeAuthError(error: unknown): string {
     return "That email and password don't match an account.";
   }
   if (message.includes('email not confirmed')) {
-    return 'Confirm your email address first — check your inbox for the link.';
+    return 'Confirm your email address first. Check your inbox for the link.';
   }
   if (message.includes('user already registered')) {
     return 'There is already an account with that address. Sign in instead.';
