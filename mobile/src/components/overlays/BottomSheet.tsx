@@ -21,6 +21,7 @@ import {
   velocityFrom,
   type DragSample,
 } from '../../lib/motion/sheetDrag';
+import { settleVelocity } from '../../lib/motion/springHandoff';
 import { useReducedMotion } from '../../lib/useReducedMotion';
 import { IconButton } from '../primitives/IconButton';
 import { Text } from '../primitives/Text';
@@ -173,22 +174,47 @@ export function BottomSheet({
           const height = heightRef.current;
           const vy = velocityFrom(samplesRef.current);
           samplesRef.current = [];
+          const from = dragOffset(gesture.dy);
           if (shouldDismiss({ dy: gesture.dy, vy, height })) {
+            const to = height || ESTIMATED_HEIGHT;
             // Carry the sheet the rest of the way, then hand over. Snapping
             // back to closed would throw away the continuity the drag just
             // established.
-            Animated.timing(drag, {
-              toValue: height || ESTIMATED_HEIGHT,
-              duration: reduceMotion ? 0 : motion.fast,
-              easing: EASE_OUT,
+            //
+            // **A spring rather than the fixed-duration timing this used to
+            // be.** A duration cannot know how hard the sheet was thrown, so a
+            // hard flick and a slow shove took the same 200ms and the moment
+            // the finger lifted the sheet stopped being thrown and started
+            // being played back. The spring takes the release velocity and
+            // continues at exactly the speed the finger left it at.
+            if (reduceMotion) {
+              drag.setValue(to);
+              onClose();
+              return;
+            }
+            Animated.spring(drag, {
+              toValue: to,
               useNativeDriver: Platform.OS !== 'web',
-            }).start(() => onClose());
+              ...SPRING,
+              velocity: settleVelocity(vy, { from, to }),
+              // It is leaving. Letting it overshoot past the bottom edge costs
+              // nothing visible, where clamping makes a fast flick decelerate
+              // into the edge it is supposed to be flying through.
+              overshootClamping: false,
+            }).start(({ finished }) => {
+              // A spring that was interrupted — by the sheet being closed
+              // another way, or unmounted — must not also fire `onClose`.
+              if (finished) {
+                onClose();
+              }
+            });
             return;
           }
           Animated.spring(drag, {
             toValue: 0,
             useNativeDriver: Platform.OS !== 'web',
             ...SPRING,
+            velocity: settleVelocity(vy, { from, to: 0 }),
           }).start();
         },
         // A system gesture or an incoming call takes the touch away mid-drag;
