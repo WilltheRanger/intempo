@@ -42,7 +42,17 @@ export function focusReason(sessions: number): string {
  * screen further on.
  */
 export interface NextStep {
-  description: string;
+  /**
+   * **No description any more.** This carried "Add a piece and record
+   * yourself playing it. InTempo will show you where the tempo held and
+   * where it drifted." under a title reading "No practice recorded yet",
+   * above a button reading "Add your first piece". Three lines to say the
+   * one thing the button already said, on the screen a musician reaches
+   * when they have nothing yet and least want a paragraph.
+   *
+   * The title says what is true and the button says what to do. That is the
+   * whole of what this state has.
+   */
   label: string;
   /** Where the button goes. The screen owns the navigating; this owns the choice. */
   destination: 'add' | 'library';
@@ -50,16 +60,9 @@ export interface NextStep {
 
 export function firstStep(pieceCount: number): NextStep {
   if (pieceCount === 0) {
-    return {
-      description:
-        'Add a piece and record yourself playing it. InTempo will show you where the tempo held and where it drifted.',
-      label: 'Add your first piece',
-      destination: 'add',
-    };
+    return { label: 'Add your first piece', destination: 'add' };
   }
   return {
-    description:
-      'Record yourself playing a piece and InTempo will show you where the tempo held and where it drifted.',
     // Not "Record a take": with more than one piece in the library there is no
     // one take to start, and picking one on the musician's behalf would open
     // the microphone on something they did not choose.

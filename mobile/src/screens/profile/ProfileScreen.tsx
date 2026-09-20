@@ -388,14 +388,15 @@ export function ProfileScreen() {
       <SectionHeader label="Preferences" style={styles.section} />
       <ToggleRow
         label="Haptic feedback"
-        description="A short tap when a button or the shutter responds."
         value={settings.haptics}
         onChange={preferences.setHaptics}
         divided={false}
       />
       <ToggleRow
         label="Reduce motion"
-        description="Hold back animation. Already on if your device asks for it."
+        // The label says what it does. What it cannot say is that the device
+        // may already have asked for it, which is the only part worth keeping.
+        description="Already on if your device asks for it."
         value={settings.reduceMotion}
         onChange={preferences.setReduceMotion}
       />

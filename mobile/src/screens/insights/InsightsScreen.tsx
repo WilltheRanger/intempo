@@ -116,7 +116,6 @@ export function InsightsScreen() {
           fill
           icon={ChartLine}
           title="No practice recorded yet"
-          description={step.description}
           actionLabel={step.label}
           onActionPress={() => {
             if (step.destination === 'add') {

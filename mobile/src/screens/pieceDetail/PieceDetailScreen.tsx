@@ -43,7 +43,6 @@ import type { Piece } from '../../data/types';
 import { practiceTempo, usePracticeTempos } from '../../data/practiceTempo';
 import { BORDER_WIDTH, colors, spacing } from '../../design';
 import { formatLastPracticed } from '../../lib/format';
-import { formatTempo } from '../../lib/tempo';
 import { scheduleScore, soundingMeasureAt } from '../../lib/score';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
 import { ListenButton } from '../../components/score/ListenButton';
@@ -351,19 +350,27 @@ export function PieceDetailScreen() {
           // closer to the title than to the tempo. It had its own line under
           // the header until 2026-09-14; `MetadataRow` drops a null, so a piece
           // without one reads exactly as it did.
+          // First, because it names *which* piece this is — a movement is
+          // closer to the title than to the tempo.
           piece.movement,
           played ? formatLastPracticed(piece.lastPracticedAt) : null,
-          measureCount === 0
-            ? null
-            : measure === null
-              ? `${measureCount} ${measureCount === 1 ? 'measure' : 'measures'}`
-              : `Measure ${measure} of ${measureCount}`,
-          // **In the page's own unit.** `bpm` is quarter-note BPM, which is the
-          // clock the score and the analysis run on and not always the number
-          // printed on the music: a 6/8 piece marked dotted-quarter = 60 is 90
-          // here. Saying "90 BPM" beside a Record screen that says 60 is two
-          // numbers for one tempo.
-          hasNotation ? formatTempo(bpm, piece.score?.tempo_beat_unit) : null,
+          /*
+           * **The idle readouts are gone; the live one stays.**
+           *
+           * This line used to carry "24 measures" and a tempo whenever the
+           * screen was at rest. Both described the file rather than the
+           * practice: the score is on the screen below, so its length is
+           * visible, and the tempo is set on the Record screen where it can
+           * actually be changed. Neither is a thing a musician opens this
+           * screen to find out, and together they turned a line about *this
+           * piece* into a specification.
+           *
+           * "Measure 12 of 24" while Listen is sounding is not the same kind
+           * of thing and is kept: it is feedback about something happening
+           * now, not a property of the file, and it is the only readout of
+           * where the playback has got to.
+           */
+          measure === null ? null : `Measure ${measure} of ${measureCount}`,
         ]}
       />
 
@@ -484,7 +491,6 @@ export function PieceDetailScreen() {
               <SheetOptionRow
                 icon={FileMusic}
                 label="Digital score"
-                description="The notes read from the page."
                 divided={false}
                 onPress={() =>
                   navigation.navigate('PieceScore', {
@@ -503,7 +509,6 @@ export function PieceDetailScreen() {
               <SheetOptionRow
                 icon={Layers}
                 label="Original pages"
-                description="The pages this piece was read from."
                 divided={hasNotation || stillReading || readingFailed}
                 onPress={() =>
                   navigation.navigate('PieceScore', {
@@ -524,7 +529,6 @@ export function PieceDetailScreen() {
         <SheetOptionRow
           icon={PencilLine}
           label="Rename"
-          description="Correct the title or composer."
           divided={false}
           onPress={() => {
             setMenuVisible(false);

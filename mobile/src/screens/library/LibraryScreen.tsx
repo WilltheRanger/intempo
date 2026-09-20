@@ -98,7 +98,12 @@ export function LibraryScreen() {
         // The count moves into the eyebrow, where every other screen puts its
         // line of context. As a row of its own it was a third heading between
         // the search field and the first piece.
-        eyebrow={pieces.length > 0 ? countLabel(results.length, Boolean(query.trim())) : null}
+        // **No count.** "20 pieces" sat above a list of twenty pieces. A
+        // number the content already shows is furniture (§3 law 10), and the
+        // one case where it said something — how many a search matched — is
+        // answered by the results themselves, or by the empty state when
+        // there are none.
+        eyebrow={null}
         title="Library"
         action={
           <View style={styles.actions}>
@@ -364,11 +369,6 @@ function LibraryContent({
       ))}
     </View>
   );
-}
-
-function countLabel(count: number, searching: boolean): string {
-  const noun = count === 1 ? 'piece' : 'pieces';
-  return searching ? `${count} ${noun} found` : `${count} ${noun}`;
 }
 
 const styles = StyleSheet.create({

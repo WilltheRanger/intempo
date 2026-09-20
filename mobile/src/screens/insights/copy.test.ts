@@ -41,8 +41,6 @@ describe('firstStep', () => {
   it('sends an empty library to the add flow', () => {
     // A record button is not reachable yet — there is nothing to record.
     expect(firstStep(0)).toEqual({
-      description:
-        'Add a piece and record yourself playing it. InTempo will show you where the tempo held and where it drifted.',
       label: 'Add your first piece',
       destination: 'add',
     });
