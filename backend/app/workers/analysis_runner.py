@@ -20,13 +20,17 @@
 from __future__ import annotations
 
 import logging
+import tempfile
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import httpx
 
 from app.db import get_service_client
 from app.models.analysis import Instrument
 from app.services import audio as audio_svc
+from app.services.audio_intake import inspect_upload
+from app.services.audio_config import load_audio_config
 from app.services.audio_storage import AudioStorageError, readable_audio_url
 from app.services.take_archive import keep_playback_copy
 from app.services.analysis import analyze
@@ -230,6 +234,38 @@ def run_analysis(analysis_id: str) -> None:
             score = start_from_measure(score, int(row["from_measure"]))
         if row.get("skip_long_rests"):
             score = shorten_long_rests(score).score
+        # **Inspected before it is decoded, not after.**
+        #
+        # Until a musician could upload a file, the app authored every byte
+        # that reached here: it records WAV, the bucket caps the size, and the
+        # extension was ours to choose. A picker ends all three, and what sits
+        # downstream of this line is `librosa.load` -> `audioread` -> ffmpeg,
+        # which is not a parser to hand arbitrary input.
+        #
+        # `services/audio_intake` checks the bytes rather than the name and
+        # reads the length out of the container header. A refusal here is a
+        # sentence for the musician, not an exception: this runs in a worker,
+        # and an exception leaves the row `analysing` forever.
+        # Spilled to a file because both halves of the inspection want one:
+        # `soundfile.info` and the MP4 atom walk read headers by seeking, not
+        # by holding the whole thing. `load_audio_bytes` below spills too, for
+        # the same reason — one more temp file on the path that refuses, none
+        # on the path that does not.
+        with tempfile.NamedTemporaryFile(suffix=".upload") as spill:
+            spill.write(audio_bytes)
+            spill.flush()
+            intake = inspect_upload(
+                Path(spill.name),
+                max_duration_s=load_audio_config().intake.max_duration_s,
+                max_bytes=MAX_AUDIO_BYTES,
+            )
+        if not intake.accepted:
+            log.warning(
+                "analysis %s: refused at intake — %s", analysis_id, intake.refusal
+            )
+            _finish_failed(client, analysis_id, intake.code or "audio_unreadable")
+            return
+
         y, sr = audio_svc.load_audio_bytes(audio_bytes)
         # The one caller that has ever set this. `analyze()` has taken a
         # `double_bass` flag since Batch 3 — a high-pass filter and a lower

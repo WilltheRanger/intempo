@@ -49,6 +49,10 @@ class OnsetConfig:
     # double-bass overrides
     double_bass_delta: float
     double_bass_highpass_hz: float
+    #: See `[onset.recovery]` in config.toml. Defaulted so a deployment whose
+    #: remote-config row predates them keeps loading.
+    recovery_search_share: float = 0.25
+    recovery_floor_ratio: float = 0.015
 
 
 @dataclass(frozen=True)
@@ -62,6 +66,13 @@ class ToleranceConfig:
     #: See `[tolerance.pulse]` in config.toml.
     disturbance_deviations: float = 6.0
     disturbance_floor_beats: float = 0.1667
+
+
+@dataclass(frozen=True)
+class IntakeConfig:
+    """See `[intake]` in config.toml. What a file has to be to be decoded."""
+
+    max_duration_s: float = 600.0
 
 
 @dataclass(frozen=True)
@@ -98,11 +109,16 @@ class AudioConfig:
     trend: TrendConfig
     alignment: AlignmentConfig
     calibration: CalibrationConfig
+    #: Defaulted, so a deployment whose remote-config row predates the upload
+    #: feature keeps loading rather than failing to parse a config it has
+    #: always been able to read.
+    intake: IntakeConfig = IntakeConfig()
 
 
 def _parse(raw: dict) -> AudioConfig:
     onset = raw["onset"]
     dbl = onset.get("double_bass", {})
+    rec = onset.get("recovery", {})
     tol = raw["tolerance"]
     trend = raw["trend"]
     align = raw["alignment"]
@@ -117,6 +133,8 @@ def _parse(raw: dict) -> AudioConfig:
             pre_emphasis_coef=float(onset["pre_emphasis_coef"]),
             double_bass_delta=float(dbl.get("delta", onset["delta"])),
             double_bass_highpass_hz=float(dbl.get("highpass_hz", 80.0)),
+            recovery_search_share=float(rec.get("search_share", 0.25)),
+            recovery_floor_ratio=float(rec.get("floor_ratio", 0.015)),
         ),
         tolerance=ToleranceConfig(
             rushing_inner_pct=float(tol["rushing_inner_pct"]),
@@ -138,6 +156,9 @@ def _parse(raw: dict) -> AudioConfig:
             broken_quality=float(align["broken_quality"]),
             sakoe_chiba_band=float(align["sakoe_chiba_band"]),
             slur_tolerance_pct=float(align["slur_tolerance_pct"]),
+        ),
+        intake=IntakeConfig(
+            max_duration_s=float(raw.get("intake", {}).get("max_duration_s", 600.0)),
         ),
         calibration=CalibrationConfig(
             min_duration_s=float(cal["min_duration_s"]),

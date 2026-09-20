@@ -61,6 +61,11 @@ $$;
 -- Default privileges attach to the role that creates the table, which here is
 -- whoever runs the gate; that is the same role for the stubs and for every
 -- migration after them, so the grants land.
+-- **What this still cannot model is a retained *column* grant.** Default
+-- privileges yield table-level entries only, and `column_privileges` reports
+-- nothing more once the table grant is gone — so `021`'s column loop finds an
+-- empty set on a fresh run either way. That half is real on live projects and
+-- was verified there; see the migration's header.
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
   GRANT ALL ON TABLES TO anon, authenticated, service_role;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public

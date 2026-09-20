@@ -783,6 +783,58 @@ def _schema_checks(client) -> list[Check]:
     return checks
 
 
+def _client_write_grants_check(client) -> Check:
+    """That no client role can still write to a table directly.
+
+    **The one thing in this module that a `select` cannot see.** Every other
+    schema check here detects a migration by reading a column it added; 021
+    adds no column — it takes a privilege away, and a privilege is invisible
+    from the outside. So the migration ships a `SECURITY DEFINER` function that
+    reads `information_schema` and answers the question, and this asks it.
+
+    What it is protecting: while `anon` and `authenticated` held UPDATE, an
+    account could write `users.tier` — which `tier_limits.tier_of` reads — and
+    delete its own `analyses` rows, which `count_analyses_this_month` counts.
+    Both are the free-tier limit, by two different routes. See migration 021.
+
+    **Blocking**, unlike most of what `_storage_checks` reports. A deployment
+    that serves requests with the grants open is not degraded, it is giving the
+    product away, and the fix is one migration rather than a code change.
+
+    A missing function is reported as *not closed* rather than as an error:
+    the only database where it does not exist is one where 021 has not been
+    applied, which is exactly the state this is here to name.
+    """
+    try:
+        response = client.rpc("client_write_grants_closed", {}).execute()
+    except Exception as exc:  # noqa: BLE001 — any failure means "cannot say it is closed"
+        return Check(
+            name="security:client_write_grants",
+            ok=False,
+            detail=(
+                "Could not confirm that client write grants are closed — apply "
+                "`backend/app/migrations/021_restrict_client_updates.sql`. Until "
+                "then a signed-in account can set its own tier and delete its own "
+                f"analyses, and the free-tier limit is not enforced. ({type(exc).__name__})"
+            ),
+        )
+
+    closed = getattr(response, "data", None)
+    if closed is True:
+        return Check(name="security:client_write_grants", ok=True, detail="")
+
+    return Check(
+        name="security:client_write_grants",
+        ok=False,
+        detail=(
+            "`anon` or `authenticated` still holds a write privilege in `public` "
+            "— re-apply `backend/app/migrations/021_restrict_client_updates.sql`. "
+            "A signed-in account can set its own tier and delete its own analyses, "
+            "so the free-tier limit is not enforced."
+        ),
+    )
+
+
 def _storage_checks(client) -> list[Check]:
     """That the worker will fetch anything the bucket agreed to hold.
 
@@ -900,6 +952,7 @@ def check() -> Readiness:
         return result
 
     result.checks.extend(_schema_checks(client))
+    result.checks.append(_client_write_grants_check(client))
     result.checks.extend(_storage_checks(client))
     return result
 

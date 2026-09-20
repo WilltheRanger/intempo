@@ -113,6 +113,12 @@ def high_pass(y: np.ndarray, sr: int, cutoff_hz: float) -> np.ndarray:
 _HOP_LENGTH = 512
 _N_FFT = 2048
 
+#: The hop, for callers that have to convert frames to seconds themselves.
+#: Public because `analysis._recover_missed_onsets` searches the same envelope
+#: this module produces, and a second copy of the number is how the two would
+#: come to disagree about what a frame is.
+HOP_LENGTH = _HOP_LENGTH
+
 
 def peak_window_frames(
     min_gap_s: float | None, sr: int, *, config: AudioConfig | None = None

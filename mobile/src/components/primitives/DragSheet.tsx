@@ -12,10 +12,12 @@ import {
 } from 'react-native';
 
 import { colors, radii, spacing } from '../../design';
+import { settleVelocity } from '../../lib/motion/springHandoff';
 import {
+  anchorNearest,
   isVerticalDrag,
-  offsetDuring,
-  settleTo,
+  offsetFromGrab,
+  settleFrom,
   travelFor,
   type SheetPosition,
 } from '../../lib/record/sheet';
@@ -42,6 +44,19 @@ export interface DragSheetProps {
   label: string;
   /** What lowering it reveals, for the accessibility hint. */
   reveals: string;
+  /**
+   * Where the sheet sits before anything is dragged. Raised by default.
+   *
+   * **The record screen starts lowered, and that is the whole composition.**
+   * Raised, this sheet covers about 625 of an 844pt display, so a screen whose
+   * own style comment reads *"the music is the ground, and it owns the whole
+   * display"* opened with the music behind frosted glass and a musician
+   * expected to discover a drag to see the part they were about to play.
+   * Starting lowered makes the first thing on screen the thing the screen is
+   * for; the controls are one pull away and `peek` keeps the record button
+   * where the thumb already is.
+   */
+  initialPosition?: SheetPosition;
   style?: StyleProp<ViewStyle>;
   onPositionChange?: (position: SheetPosition) => void;
   /**
@@ -84,19 +99,20 @@ export function DragSheet({
   children,
   label,
   reveals,
+  initialPosition = 'raised',
   style,
   onPositionChange,
   peek = DEFAULT_PEEK,
   raiseSignal,
 }: DragSheetProps) {
-  const [position, setPosition] = useState<SheetPosition>('raised');
+  const [position, setPosition] = useState<SheetPosition>(initialPosition);
   const [height, setHeight] = useState(0);
   const reducedMotion = useReducedMotion();
 
   // Refs alongside the state: the pan handlers are built once and would
   // otherwise close over the position and the travel as they were on the first
   // render, which is a sheet that always thinks it is raised.
-  const positionRef = useRef<SheetPosition>('raised');
+  const positionRef = useRef<SheetPosition>(initialPosition);
   const travelRef = useRef(1);
   const offset = useRef(new Animated.Value(0)).current;
   const reducedRef = useRef(reducedMotion);
@@ -106,7 +122,16 @@ export function DragSheet({
   onPositionChangeRef.current = onPositionChange;
   travelRef.current = travelFor(height, peek);
 
-  const settle = useRef((next: SheetPosition) => {
+  /**
+   * Where the sheet was when the finger claimed it.
+   *
+   * Live, not derived from `positionRef`: `settle` sets the target position
+   * before the spring has moved anything, so a sheet caught mid-flight would
+   * otherwise be measured from an anchor it is nowhere near.
+   */
+  const grabbedAtRef = useRef(0);
+
+  const settle = useRef((next: SheetPosition, from?: number, vy = 0) => {
     positionRef.current = next;
     setPosition(next);
     onPositionChangeRef.current?.(next);
@@ -121,8 +146,42 @@ export function DragSheet({
       damping: 24,
       stiffness: 220,
       mass: 0.9,
+      // The finger's momentum, carried into the spring so the sheet keeps
+      // moving at the speed it was thrown rather than restarting from rest.
+      // Absent `from`, this is a tap on the handle or a `raiseSignal`, neither
+      // of which has a velocity to hand over.
+      velocity: from === undefined ? 0 : settleVelocity(vy, { from, to }),
     }).start();
   }).current;
+
+  /**
+   * Put a sheet that starts lowered where it says it is, once there is a
+   * height to lower it by.
+   *
+   * **`initialPosition` alone was a lie, and the screen showed it.** The
+   * offset starts at 0 — the raised transform — and only ever moves through
+   * `settle`, so a sheet constructed as `lowered` reported itself lowered to
+   * the state, the ref and the screen reader while sitting visibly over the
+   * thing it was supposed to be revealing. Travel is not known on the first
+   * render either: it is `travelFor(height, peek)` and `height` is 0 until
+   * layout, so this cannot be done at construction and has to wait for a
+   * measurement.
+   *
+   * Guarded on `laid.current` rather than on the position, so it fires exactly
+   * once. Without that, any later re-layout — a message appearing inside the
+   * sheet, the keyboard, a rotation — would snap a sheet the musician had
+   * raised back down under their hand.
+   */
+  const laid = useRef(false);
+  useEffect(() => {
+    if (laid.current || height === 0) {
+      return;
+    }
+    laid.current = true;
+    if (initialPosition === 'lowered') {
+      offset.setValue(travelFor(height, peek));
+    }
+  }, [height, initialPosition, offset, peek]);
 
   useEffect(() => {
     if (raiseSignal && positionRef.current === 'lowered') {
@@ -145,16 +204,46 @@ export function DragSheet({
         // on a control inside the sheet has to reach it. Movement claims it.
         onStartShouldSetPanResponder: () => false,
         onMoveShouldSetPanResponder: (_event, { dx, dy }) => isVerticalDrag(dx, dy),
+        // **Catching a sheet that is still moving.** `stopAnimation` halts the
+        // settle and reports the value it had reached, which is the sheet's
+        // *presentation* value — the one on screen. Reading the target instead
+        // is what made a mid-flight grab jump: the spring was still at a third
+        // of its travel while `positionRef` already said `lowered`.
+        onPanResponderGrant: () => {
+          offset.stopAnimation((value) => {
+            grabbedAtRef.current = value;
+          });
+        },
         onPanResponderMove: (_event, { dy }) => {
-          offset.setValue(offsetDuring(positionRef.current, dy, travelRef.current));
+          offset.setValue(
+            offsetFromGrab(grabbedAtRef.current, dy, travelRef.current),
+          );
         },
         onPanResponderRelease: (_event, { dy, vy }) => {
-          settle(settleTo(positionRef.current, { dy, vy }, travelRef.current));
+          const releasedAt = offsetFromGrab(
+            grabbedAtRef.current,
+            dy,
+            travelRef.current,
+          );
+          settle(
+            settleFrom(
+              { grabbedAt: grabbedAtRef.current, releasedAt, vy },
+              travelRef.current,
+            ),
+            releasedAt,
+            vy,
+          );
         },
         // A gesture taken away mid-drag — a call arriving, a system sheet —
-        // returns to where it started rather than committing on a movement the
-        // musician never finished.
-        onPanResponderTerminate: () => settle(positionRef.current),
+        // returns to the anchor it was nearest rather than committing on a
+        // movement the musician never finished. Nearest rather than
+        // `positionRef`, because an interrupted mid-flight grab has no
+        // position to go back to.
+        onPanResponderTerminate: () => {
+          offset.stopAnimation((value) => {
+            settle(anchorNearest(value, travelRef.current), value, 0);
+          });
+        },
       }),
     [offset, settle],
   );
@@ -170,6 +259,31 @@ export function DragSheet({
       style={[styles.sheet, style, { transform: [{ translateY: offset }] }]}
       {...pan.panHandlers}
     >
+      {/*
+        **The ground the material is given, because glass alone could not take
+        the detail out of engraved notation.**
+
+        Raised, this sheet floats over the highest-contrast thing the app draws,
+        and the two layers meant to soften it could not: the blur is declined
+        outright by several browsers — it did not run at all on the iPhone this
+        was reported from — and the tint alone leaves 20% of a stave, which is
+        still a grid of lines behind a number and a record button drawn across
+        a system.
+
+        So the ground changes and the material does not. Inside the sheet
+        rather than across the screen, and that is the whole of the second
+        attempt: a full-screen wash also fogged the header, so the piece title
+        and the music still on show read as disabled. What a musician can see
+        past the sheet stays sharp, which is the reason this sheet drags rather
+        than being a separate screen.
+
+        No opacity of its own and no interpolation: it shares the sheet's
+        transform, so it is exactly registered with the glass at every point of
+        a drag and there is no edge to catch. Radii matched by hand, because
+        `borderRadius: 'inherit'` does not exist in React Native.
+      */}
+      <View pointerEvents="none" style={styles.wash} />
+
       {/*
         `bar`, not `control`, and the reason is design law 6. The specular
         catch reads as a highlight across a small capsule and as a pale band
@@ -198,6 +312,16 @@ export function DragSheet({
 }
 
 const styles = StyleSheet.create({
+  wash: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: colors.contentWash,
+    borderTopLeftRadius: radii.lg,
+    borderTopRightRadius: radii.lg,
+  },
   sheet: {
     position: 'absolute',
     left: 0,

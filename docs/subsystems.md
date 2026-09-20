@@ -900,6 +900,240 @@ nothing else covers `backend/`. Named here rather than left to be found.
   microphone leg beside it, and both exist because the container has no audio
   device and every unstubbed run takes the `NotFoundError` branch.
 
+- **Noise, clipping and reverb do not break onset detection. Dynamics under
+  reverb do (2026-09-19).** Every synthetic fixture here is a clean close-mic
+  recording, so "does this survive a worse recording" had never been asked.
+  `audio_helpers` now models the three axes a phone recording actually moves
+  along — `add_noise_at_snr`, `add_room_reverb`, `apply_clipping` — and
+  `test_degraded_audio.py` sweeps them.
+
+  The headline is a **negative result** and it is worth as much as a fix. At
+  **0 dB SNR**, under hard clipping, and in a **2-second room**, all 24 notes
+  are still found with 6–8 ms of jitter. Lowering `delta` or adding a denoiser
+  would be tuning something that is not broken — the 2026-09-14 mistake again.
+
+  What moves is the **systematic lag**: 42 ms clean, 65 ms degraded. That is
+  free, because `_residuals` fits offset and rate per take before quality is
+  measured. Jitter is what is left and it barely moves.
+
+  **The first version of the sweep said the exact opposite**, and the
+  correction is the transferable part. Matching detections to truth within
+  50 ms, recall fell to 0.00 at 0 dB SNR while `n_detected` stayed at 24 — the
+  detector was finding every note and the window was measuring the lag rather
+  than the detection. **A match tolerance narrower than a known systematic
+  offset measures the offset.** It was nearly reported as "the pipeline
+  collapses under noise", which is false.
+
+  What does break it is **dynamic range against a reverberant room**, which no
+  clean fixture can contain:
+
+      20 dB range, dry          24/24 found
+      20 dB range, RT60 0.9s    16/24
+      30 dB range, dry          24/24
+      30 dB range, RT60 0.9s    12/24
+
+  The tail of a loud note raises the floor under the attack of the quiet one
+  after it, and the onset envelope is normalised against the take's **global**
+  maximum, so the quiet attack never clears `delta`. **Precision stays 1.00** —
+  nothing spurious, nothing mistimed, the quiet notes are simply gone. That is
+  the worst shape this failure could take, because `coverage` falls and
+  `quality` is `timing_quality * coverage`: a musician who played musically in
+  a live room is told the take could not be read, or is shown a verdict
+  computed from half their notes with nothing saying so.
+
+  The fix is not a lower `delta`, which raises the floor everywhere and costs
+  precision on every clean take. It is a **local** threshold — each attack
+  judged against its own neighbourhood rather than against the loudest moment
+  of the take. Not yet made; the ceilings in `test_degraded_audio.py` are
+  asserted with `<=` so that fixing it fails the test and forces them to be
+  raised deliberately.
+
+- **A more sensitive detector could not be made to work; a second pass could
+  (2026-09-19).** The fix for the defect above was attempted twice.
+
+  **Attempt one, reverted:** replace the absolute `delta` on a globally
+  normalised envelope with a local one. The diagnosis was right — a quiet
+  note's peak collapses 0.22 → 0.030 under reverb while `delta` stays 0.07, so
+  it is rejected by about the width of `delta`. It fixed the target case and
+  **passed all six corpus clips at every setting tried**, which is exactly why
+  it was nearly shipped. Against the full audio suite it failed at every
+  window (13–14 failures against a baseline of 0), and the casualty was every
+  assertion in `test_varied_rhythm.py`: **a local baseline computed as a mean
+  is raised by dense passages and lowered by sparse ones**, so on mixed note
+  values the threshold moves with the rhythm it is supposed to be a reference
+  for. Structural, not a tuning miss.
+
+  **Attempt two, shipped:** `services/onset_recovery.py`, a pass that runs
+  after alignment and looks only where the score writes a note and the
+  alignment found none. A take that missed nothing is byte-identical by
+  construction, so the corpus needed no re-tuning and nothing that reads
+  correctly today can move. 92 BPM at 20 dB of range in a 0.9 s room goes from
+  `alignment_failed` (quality 0.248) to `ok` (0.603).
+
+  Three things cost time and are worth carrying:
+
+  - **A sweep against a subset of the suite is fiction.** Attempt one's window
+    was swept against four hand-picked cases, where 0.50 appeared to fix the
+    bowed re-trigger, the noise case and the dynamics win at once. Against the
+    full suite that value is 13 failures.
+  - **Placement beat parameters.** The recovery pass was first written *below*
+    the `is_alignment_broken` early return, where it can never run on the
+    takes it exists for — they are refused on coverage and return before
+    reaching it.
+  - **The guard that makes a low threshold safe is the window, not the
+    floor.** `floor_ratio` was first set to 0.08, which looked conservative
+    and excluded the entire population being recovered: those peaks are at
+    0.030. It is 0.015 now, and what keeps that safe is that it is only ever
+    applied within a quarter of the closest written gap of a time the page and
+    the take's own fitted pace agree on.
+
+- **The pipeline already knew three things about every take and said none of
+  them (2026-09-19).** `_residuals` fits `rate, offset = np.polyfit(...)` on
+  every analysis and returns only the residuals. `services/insights.py` now
+  reports what that slope means, and two more that fall out beside it.
+
+  `target_bpm / slope` recovers the tempo actually played, and it is **exact**
+  rather than an estimate — measured against takes synthesised at five known
+  tempi: 75.0, 66.7, 60.0, 54.5, 48.0 against a target of 60. The matcher's
+  own rescaling does not destroy it, which had to be checked before trusting
+  it.
+
+  What the numbers separate, which the verdict cannot:
+
+      take                    verdict              played  drift  steady
+      exactly as written      Steady tempo           60.0    0.0     0.6
+      25% fast, evenly        You rushed             75.0    0.2     0.7
+      accelerando             You rushed             64.3   12.5    26.4
+      even average, ±60 ms    Steady tempo — held    60.0   -0.0     6.0
+
+  The last row is the one worth looking at: **the app tells a musician
+  swinging ±60 ms that they held a steady tempo.** The average is zero, which
+  is all the verdict reads.
+
+  **`steadiness` has to be detrended and the first version was not.** Playing
+  evenly at a different tempo makes the delta grow note after note, so a raw
+  spread is dominated by that slope — an even take at 75 scored **138.5**
+  against **6.0** for one with genuine swings, i.e. the figure ranked the most
+  controlled performance in the set as the least steady, and merely restated
+  `tempo_difference_bpm` in another unit. Removing the line leaves departure
+  from the musician's *own* pace, whatever pace they chose. Found by measuring
+  end to end, not by reading the code.
+
+  **Grouping by written note value is the one a metronome cannot give.**
+  `ExpectedNote` now carries `beats` — `_beats` already computed it while
+  building the timeline, so it costs nothing and cannot drift from the onsets
+  it produced. On a page of halves, quarters, eighths and sixteenths with only
+  the sixteenths pulled early:
+
+      half notes       n=8    mean  -0.1%
+      quarter notes    n=32   mean  +0.9%
+      eighth notes     n=36   mean  -0.3%
+      sixteenth notes  n=15   mean -11.9%   <- named as the standout
+
+  The verdict for that same take reads *"You rushed in measure 9 by an average
+  of 7 BPM"*. One names a bar; the other names the habit, and only one of them
+  tells a musician what to practise.
+
+  `standout_note_value` compares each value against the average of **the
+  others**, not against zero and not against an average it supplies itself.
+  Against zero, a take that rushed throughout would name one value and imply
+  the rest were fine — the verdict's finding repeated under a new heading.
+  Including the candidate in its own baseline would stop the *commonest* note
+  value from ever standing out, which is backwards: it is the one a musician
+  most needs told about.
+
+- **A screen that is right every time is a screen nobody reads (2026-09-19).**
+  `PracticeSetup` was shown once to every device, whatever its checks came back
+  with. On a take with nothing wrong that is two rows of ✓ and a paragraph
+  standing between a musician holding an instrument and the record button — and
+  both of its items are already on the screen behind it, since the entry bar
+  and the metronome each have a row there. It now opens only when a check is
+  `warn`, through `hasWarning`, and is reachable any time from "Before you
+  record".
+
+  Two things to carry. **`hasWarning` already existed and nothing called it**:
+  written with the checks, referenced only by its own test, which is the shape
+  `check-dead-exports.py` exists to catch and the one case it cannot see,
+  because a test counts as a reference. Look for the predicate before writing a
+  second one beside it. And **the gate is wiring, so the tools have to hold
+  both halves**: `walk-app.mjs` asserting only that the screen stays out of the
+  way would pass just as well against a screen deleted outright, so it seeds
+  `metronomeMode: 'audio_with_headphones'` into a fresh profile and requires
+  the checks to appear. `audit-a11y.mjs` audits the same pair.
+
+  **Gating it also gave it somewhere to put things.** The record screen carried
+  "Double-bass detection is on. Keep the microphone uncovered and give bowed
+  attacks a clear start." in the middle of its controls, for every double-bass
+  take of every piece. That is real information — `test_bowed_attacks.py` is
+  the measurement behind it — and it was in the wrong place, because an area of
+  a screen that says the same thing every time teaches a musician to skip it.
+  It is a `bowedAttack` check now: `ok`-toned, so it never stops anyone, and
+  read when the checks are opened.
+
+- **A two-state toggle over a four-state enum hid three of them (2026-09-19).**
+  The record screen's metronome control switched between `off` and whichever
+  mode was last on, so a musician who had never chosen one could reach exactly
+  one of the four from the screen they were recording on; the other three lived
+  in Profile, two navigations away, with an instrument up. It is a picker now,
+  from `lib/record/metronomeChoice.ts` — a `Record<MetronomeMode, …>` rather
+  than an array, so a fifth mode stops compiling until it is described.
+
+  Profile's `METRONOME_OPTIONS` was a *second* hand-written enumeration of the
+  same enum and now derives from that list. Drift between the two would not
+  have looked like a bug: the segmented control would simply have been missing
+  an option, on the screen a musician was sent to in order to find it.
+
+- **`initialPosition` on a sheet is a claim about a transform, not a state
+  (2026-09-19).** `DragSheet` starts the record screen's controls lowered so
+  the music is the first thing on screen. Constructing the state as `lowered`
+  reported it lowered to the state, the ref and the screen reader while the
+  sheet sat visibly over the thing it was revealing — the animated offset
+  starts at 0 and only ever moves through `settle`. Travel is
+  `travelFor(height, peek)` and `height` is 0 until layout, so the offset can
+  only be set from a measurement, in an effect guarded to fire exactly once:
+  without that guard any later re-layout — a message appearing inside the
+  sheet, the keyboard, a rotation — snaps a sheet the musician had raised back
+  down under their hand.
+
+- **Glass cannot be the thing that makes text legible, and engraving is where
+  that shows (2026-09-19).** Reported from an iPhone: raised over a page of
+  music, the record sheet's controls sat on staves — clefs, noteheads and staff
+  lines read straight through `00:00` and the record button, perfectly sharp.
+
+  Two layers were supposed to prevent that and neither could finish the job.
+  The blur is `backdrop-filter` on the web and several browsers decline it
+  outright; on that phone it did not run at all, so the surface fell back to
+  its tint alone. And `glassTint` is 0.80, which leaves 20% of the highest-
+  contrast thing this app draws — still a legible grid.
+
+  **So the ground changes and the material does not.** `colors.contentWash` is
+  `surface` at 0.94, drawn inside the sheet under the glass. Three things make
+  it the right shape:
+
+  - **It is not `scrim`.** A scrim *darkens*, to say the thing behind is
+    inactive, and darkening leaves contrast where it found it — black
+    noteheads on ivory stay black noteheads. This fades them toward the paper
+    they are printed on, which is the only operation that takes detail out.
+  - **Inside the sheet, not across the screen.** The first attempt was a
+    full-screen wash interpolated from the sheet's offset. It worked, and it
+    also fogged the header: the piece title and the music still on show read as
+    disabled. What a musician can see past the sheet has to stay sharp — that
+    is the reason this sheet drags instead of being a separate screen.
+  - **Sharing the sheet's transform**, so it needs no opacity of its own and is
+    exactly registered with the glass at every point of a drag. The version
+    with its own interpolation also needed a dismiss target, and
+    `pointerEvents="none"` leaves an element in the accessibility tree — so it
+    put a button a screen reader could find on top of a sheet that was already
+    down. Playwright found it by tripping over it.
+
+- **A centred container silently breaks `space-between` (2026-09-19).** The
+  record sheet's settings block had `alignItems: 'center'`, which shrink-wraps
+  every child to its own content — so the metronome row, laid out
+  `space-between`, had no space to be between and shipped as `MetronomeOff`.
+  Nothing catches this: it is not a contrast failure, not a missing name, not
+  an overflow. Rows that put a value against the right margin need a stretched
+  parent, and the parent is where to look when two halves of a row collide.
+
 ## The capture path (2026-08-24) — what an audit of it found
 
 Nine defects between the shutter and a saved score, in a path that had **zero

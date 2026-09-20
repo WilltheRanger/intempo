@@ -176,3 +176,160 @@ def bass_scale(n: int, *, root_hz: float = OPEN_E1) -> list[float]:
     """
     steps = [0, 2, 4, 5, 7, 9, 11, 12, 14, 12, 11, 9, 7, 5, 4, 2]
     return [root_hz * 2 ** (steps[i % len(steps)] / 12) for i in range(n)]
+
+
+# ---------------------------------------------------------------------------
+# Degradations — what a phone on a music stand actually records
+# ---------------------------------------------------------------------------
+#
+# **Why these exist.** Every synthetic fixture above is a clean close-mic
+# recording: one room mode, a -60 dBFS floor, no reflections, no clipping.
+# That is not what the pipeline is given. A musician props a phone on a stand
+# two metres away in a room with hard walls, an extractor fan running, and an
+# input stage that limits the loudest attacks — and the detector has to find
+# the same onsets in *that*.
+#
+# Nothing here modelled any of it, so "does this survive a worse recording"
+# had no answer, and any threshold chosen against the clean fixtures was
+# chosen against the easy case. `docs/subsystems.md` records what that costs:
+# a change tuned on a pure sine read the *opposite* way on a bowed string.
+# These three are the axes a phone recording actually moves along.
+
+
+def add_noise_at_snr(y: np.ndarray, snr_db: float, *, seed: int = 7) -> np.ndarray:
+    """Broadband noise at a stated signal-to-noise ratio.
+
+    **An SNR, not an amplitude**, which is the difference between a knob that
+    means something and one that does not. `synth_bowed_take`'s `noise` is an
+    absolute floor, so its effect depends entirely on how loud the take
+    happens to be — fine for "there is a floor at all", useless for "how much
+    noise can this survive". Signal power is measured over the part that
+    sounds rather than the whole buffer: a take is mostly decay and silence,
+    and including those puts the reference power somewhere between the notes
+    and the floor, which would make the ratio a function of the tempo.
+
+    Gaussian rather than a recording of a room. What matters to a flux
+    detector is that energy is spread across the mel bands at every frame,
+    raising the floor the peak-picker normalises against; the exact spectrum
+    of one extractor fan is not general.
+    """
+    sounding = y[np.abs(y) > 0.05 * max(1e-9, float(np.abs(y).max()))]
+    if sounding.size == 0:
+        sounding = y
+    signal_power = float(np.mean(sounding.astype(np.float64) ** 2))
+    noise_power = signal_power / (10 ** (snr_db / 10))
+    rng = np.random.default_rng(seed)
+    noise = rng.normal(0, np.sqrt(noise_power), y.size)
+    return (y + noise).astype(np.float32)
+
+
+def add_room_reverb(
+    y: np.ndarray,
+    sr: int,
+    *,
+    rt60_s: float = 0.6,
+    wet: float = 0.35,
+    predelay_s: float = 0.012,
+    seed: int = 13,
+) -> np.ndarray:
+    """A decaying reflection tail — the distance axis.
+
+    **This is the degradation that should hurt an onset detector most**, and
+    the one the fixtures had no model of. `synth_bowed_take`'s room is a
+    single resonant mode: it rings at one frequency and says nothing about
+    reflections. Reverb is different in the way that matters here — it lays a
+    smeared copy of every previous note *under* the next attack, so the flux
+    at an onset is measured against a floor the take itself raised. A note
+    following a loud one is the hard case, and no clean fixture contains it.
+    
+    Exponentially-decaying Gaussian noise as the impulse response: the
+    standard cheap model of a diffuse tail, and diffuseness is the property
+    being tested. `rt60_s` is the time to -60 dB — 0.6 s is a small room with
+    hard surfaces, 1.5 s is a hall.
+
+    `wet` is the reflected proportion, which in a real room is what moving the
+    microphone further away changes.
+    """
+    n = max(1, int(rt60_s * sr))
+    rng = np.random.default_rng(seed)
+    # -60 dB over the length of the response, which is what RT60 means.
+    tail = rng.normal(0, 1, n) * 10 ** (-3 * np.arange(n) / n)
+    tail /= max(1e-9, float(np.sqrt(np.sum(tail**2))))
+
+    pre = int(predelay_s * sr)
+    impulse = np.concatenate([np.zeros(pre), tail])
+    wetted = np.convolve(y.astype(np.float64), impulse)[: y.size]
+
+    # Matched in power before mixing, so `wet` is a mix ratio rather than a
+    # number whose meaning changes with `rt60_s`.
+    dry_power = float(np.mean(y.astype(np.float64) ** 2))
+    wet_power = float(np.mean(wetted**2))
+    if wet_power > 0:
+        wetted *= np.sqrt(dry_power / wet_power)
+
+    return ((1 - wet) * y + wet * wetted).astype(np.float32)
+
+
+def apply_clipping(y: np.ndarray, headroom_db: float) -> np.ndarray:
+    """Hard clipping at `headroom_db` below the take's peak.
+
+    The input-stage axis. A phone's microphone path limits, and a détaché
+    attack is the loudest thing in the take — so the part that gets flattened
+    is precisely the transient the detector is looking for. Hard rather than
+    soft because the question is what happens when the attack's *shape* is
+    destroyed, and a soft knee is a gentler version of the same experiment.
+
+    Expressed as headroom below peak rather than as an absolute level, so the
+    number means the same thing whatever the take's gain is — which is the
+    same reason `add_noise_at_snr` takes a ratio.
+    """
+    peak = max(1e-9, float(np.abs(y).max()))
+    ceiling = peak * 10 ** (-abs(headroom_db) / 20)
+    return np.clip(y, -ceiling, ceiling).astype(np.float32)
+
+
+def detection_scores(
+    detected_s: Sequence[float], truth_s: Sequence[float], *, tol_s: float = 0.05
+) -> dict[str, float]:
+    """Recall, precision and mean timing error against known onset times.
+
+    **Greedy nearest-match within `tol_s`, each truth onset claimed once**, so
+    a detector that fires twice on one note scores one hit and one false
+    positive rather than two hits. That distinction is the whole difference
+    between "finds the notes" and "finds the notes and nothing else", and a
+    sweep that could not see it would call a detector that doubled every
+    attack perfect.
+
+    50 ms is the tolerance because the pipeline does not need better: a
+    constant lag is fitted out before quality is measured (`_residuals`), and
+    what survives is variation. Timing error is reported separately for that
+    reason — it is the number that actually costs a take.
+    """
+    truth = list(truth_s)
+    claimed = [False] * len(truth)
+    errors: list[float] = []
+    hits = 0
+
+    for onset in detected_s:
+        best, best_gap = -1, tol_s
+        for index, t in enumerate(truth):
+            if claimed[index]:
+                continue
+            gap = abs(onset - t)
+            if gap <= best_gap:
+                best, best_gap = index, gap
+        if best >= 0:
+            claimed[best] = True
+            hits += 1
+            errors.append(onset - truth[best])
+
+    detected_n = len(list(detected_s))
+    return {
+        "recall": hits / len(truth) if truth else 0.0,
+        "precision": hits / detected_n if detected_n else 0.0,
+        "n_detected": float(detected_n),
+        "mean_error_ms": float(np.mean(errors) * 1000) if errors else float("nan"),
+        # The number that survives the offset fit, and therefore the one that
+        # decides whether a take passes.
+        "jitter_ms": float(np.std(errors) * 1000) if errors else float("nan"),
+    }

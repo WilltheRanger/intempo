@@ -1,16 +1,19 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  bowedAttack,
   hasWarning,
   microphone,
   preflight,
   speakerBleed,
   startBar,
+  type PreflightCheck,
   type PreflightInput,
 } from './preflight';
 
 const BASE: PreflightInput = {
   metronomeMode: 'visual',
+  instrument: 'violin',
   startFrom: 1,
   firstSoundingBar: 1,
   lastTakeHeardSound: null,
@@ -85,10 +88,48 @@ describe('microphone', () => {
   });
 });
 
+describe('bowedAttack', () => {
+  it('says nothing to the three instruments it does not change', () => {
+    for (const instrument of ['violin', 'viola', 'cello'] as const) {
+      expect(bowedAttack(instrument)).toBeNull();
+    }
+  });
+
+  /**
+   * This was two lines of prose in the middle of the record screen's controls,
+   * drawn for every double-bass take of every piece. It is real information —
+   * `test_bowed_attacks.py` is the measurement behind it — so it moved here
+   * rather than going.
+   */
+  it('tells a bassist what is different, and what to do about it', () => {
+    const check = bowedAttack('double_bass');
+
+    expect(check?.title).toMatch(/double.bass/i);
+    expect(check?.detail).toMatch(/attack/i);
+  });
+
+  /**
+   * `ok`, never `warn`. Nothing is wrong, and tone is what `hasWarning` reads
+   * to decide whether a musician is stopped before playing — a bassist meets
+   * this when they open the checks, not instead of recording.
+   */
+  it('never stops a bassist to tell them the pipeline is working', () => {
+    expect(bowedAttack('double_bass')?.tone).toBe('ok');
+    expect(hasWarning([bowedAttack('double_bass')!])).toBe(false);
+  });
+});
+
 describe('preflight', () => {
   it('says nothing about the microphone before the first take', () => {
     const checks = preflight(BASE);
     expect(checks.map((check) => check.id)).toEqual(['start', 'bleed']);
+  });
+
+  it('carries the instrument reading for the one instrument that has one', () => {
+    const bass = preflight({ ...BASE, instrument: 'double_bass' });
+
+    expect(bass.map((check) => check.id)).toContain('attack');
+    expect(preflight(BASE).map((check) => check.id)).not.toContain('attack');
   });
 
   /** A musician reads the top of a list. What is wrong belongs there. */
@@ -107,5 +148,39 @@ describe('preflight', () => {
   it('knows when there is nothing worth stopping for', () => {
     expect(hasWarning(preflight({ ...BASE, lastTakeHeardSound: true }))).toBe(false);
     expect(hasWarning(preflight({ ...BASE, metronomeMode: 'audio_with_headphones' }))).toBe(true);
+  });
+});
+
+describe('hasWarning, as the gate on the pre-flight screen', () => {
+  const ok = (id: PreflightCheck['id']): PreflightCheck => ({
+    id,
+    tone: 'ok',
+    title: 'Fine',
+    detail: 'Nothing to do.',
+  });
+  const warn = (id: PreflightCheck['id']): PreflightCheck => ({
+    id,
+    tone: 'warn',
+    title: 'Not fine',
+    detail: 'Something to do.',
+  });
+
+  it('does not stop a musician to tell them everything is fine', () => {
+    // The state this replaces: two rows of ✓ and a paragraph, between someone
+    // holding an instrument and the record button. Both items are already on
+    // the screen behind it — the entry bar and the metronome each have a row.
+    expect(hasWarning([ok('bleed'), ok('start')])).toBe(false);
+    expect(hasWarning([])).toBe(false);
+  });
+
+  it('stops for anything a musician can fix before playing', () => {
+    expect(hasWarning([ok('bleed'), warn('start')])).toBe(true);
+    expect(hasWarning([warn('bleed')])).toBe(true);
+  });
+
+  it('stops when only one of several is wrong', () => {
+    // The screen sorts warnings first, so one among many is still the reason
+    // it opened and still the first thing read.
+    expect(hasWarning([ok('microphone'), ok('start'), warn('bleed')])).toBe(true);
   });
 });
