@@ -1250,9 +1250,8 @@ const FIXTURE_TAKE_STATES: Record<string, Partial<TakeResult>> = {
   'fixture-take-silent': {
     status: 'no_onsets',
     headline:
-      'Your recording is completely silent — no sound reached the microphone ' +
-      'at all. Check which input your device is recording from, and that ' +
-      'nothing is muting it, then record again.',
+      'No sound reached the microphone. Check your input and that nothing ' +
+      'is muting it.',
   },
   /**
    * **A passage, not a whole page** — which is what practice looks like and
@@ -1273,9 +1272,7 @@ const FIXTURE_TAKE_STATES: Record<string, Partial<TakeResult>> = {
   'fixture-take-unmatched': {
     status: 'alignment_failed',
     headline:
-      'We only picked out 18 notes where this page writes 76, so there ' +
-      "wasn't enough to compare. Move the microphone closer and check the " +
-      'piece was read correctly, then record again.',
+      'Only 18 of 76 notes came through. Try moving the microphone closer.',
   },
 };
 

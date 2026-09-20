@@ -1849,7 +1849,22 @@ const styles = StyleSheet.create({
   /** Always visible: the take, whether the sheet is up or down. */
   take: {
     alignItems: 'center',
-    paddingTop: spacing.xs,
+    /*
+     * **A vertical rhythm, because there was none.** Measured on a built app
+     * at 390x844: the grab handle ended at 288, the timer began at 292, and
+     * the record disc began at 334 — the exact pixel the timer ended. Three
+     * elements in the one block a musician looks at while holding an
+     * instrument, stacked flush, which is what "mushed" describes.
+     *
+     * `gap` rather than margins on each child, because two of them are
+     * conditional: the beat indicator appears only for a visual metronome
+     * during a take, and the microphone line only when there is something to
+     * say. Margins would have to be right for every combination; one interval
+     * is right for all of them, which is what design law 5 means by spacing
+     * being a system rather than a per-component guess.
+     */
+    paddingTop: spacing.lg,
+    gap: spacing.lg,
   },
   settings: {
     // Capped so the sheet cannot grow past about half the display and leave
@@ -2023,14 +2038,24 @@ const styles = StyleSheet.create({
     // A 44pt row rather than a line of text, negative-margined back so the
     // stack above doesn't move to accommodate the touch target.
     minHeight: 44,
-    // Centred as a pair now that it carries a chevron: the label alone read as
-    // a caption, which is the whole reason the metronome row above it was
-    // rebuilt. This one opens a screen, so it says so.
+    /*
+     * **Left label, right chevron — the grammar the rows above it already
+     * use.** This was centred, on the reasoning that a label with a chevron
+     * reads as a control rather than a caption. It does, and it was still the
+     * one element in the panel that did not line up with anything: "Target
+     * tempo", "Metronome" and "Start at" all set a label against the left
+     * margin and their affordance against the right, and this sat in the
+     * middle between two of them.
+     *
+     * Design law 5 asks for consistent horizontal margins, and a row that
+     * opens a screen is the same kind of thing as the two rows either side of
+     * it that also open one. It keeps the chevron, so it still reads as a
+     * control; it stops being the exception.
+     */
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     gap: spacing.xs,
-    paddingHorizontal: spacing.md,
     marginVertical: -spacing.md,
     borderRadius: radii.sm,
   },
