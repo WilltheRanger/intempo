@@ -12,6 +12,7 @@ import {
   shouldRetryUnconstrained,
 } from './audio/microphoneFailure';
 import { audioContext, releaseAudioSession } from './audio/context.web';
+import { resumeToRunning } from './audio/running';
 import { prepareForCapture, prepareForPlayback } from './audio/session.web';
 import { durationOf, encodeWav } from './audio/wav';
 import { resolveWorkletUrl, WORKLET_FILE as WORKLET } from './audio/workletUrl';
@@ -195,19 +196,17 @@ export async function startRecording(): Promise<Recorder> {
       'Audio could not start. Close other audio apps, return here, and try Record again.',
     );
   }
-  let resume: Promise<void> = Promise.resolve();
+  // Ask early so the context has the whole of the graph build to come back,
+  // and never await it: `audio/running.ts` explains why the promise is a hint
+  // and the state is the answer. Failures are swallowed for the same reason.
   try {
     if (context.state !== 'running') {
-      // Handle rejection immediately, while the graph is still being built.
-      resume = context.resume();
-      void resume.catch(() => {});
+      void context.resume().catch(() => {});
     }
   } catch {
-    releaseMicrophone();
-    // Not closed: it is the app's one context and Listen needs it after this.
-    throw new MicrophoneUnavailableError(
-      'Audio could not start. Try Record again.',
-    );
+    // A synchronous throw here is not fatal on its own. The context may still
+    // reach `running`, and the wait below is what decides. Throwing now would
+    // refuse a take that was about to work, which is this file's old bug.
   }
 
   try {
@@ -314,38 +313,24 @@ export async function startRecording(): Promise<Recorder> {
 
     source.connect(node);
 
-    // Opening the microphone can suspend/interupt the context after its first
-    // unlock. That earlier promise may already be resolved; resume the current
-    // state as well, under the same bounded startup deadline.
-    if (context.state !== 'running') {
-      resume = Promise.all([resume, context.resume()]).then(() => {});
-      void resume.catch(() => {});
-    }
-
-    // Autoplay policy can hand back a suspended context even from a tap; without
-    // this the graph never pulls and the take is silence.
-    let resumeDeadline: ReturnType<typeof setTimeout> | undefined;
-    try {
-      await Promise.race([
-        resume,
-        new Promise<never>((_, reject) => {
-          resumeDeadline = setTimeout(
-            () =>
-              reject(
-                new MicrophoneUnavailableError(
-                  'Audio did not start. Return to this screen and try Record again.',
-                ),
-              ),
-            5000,
-          );
-        }),
-      ]);
-    } finally {
-      clearTimeout(resumeDeadline);
-    }
-    if (context.state !== 'running') {
+    // **Wait for the context to be running, not for `resume()` to say it is.**
+    //
+    // This raced the resume promise against a five second deadline, and that
+    // is why takes failed on an iPhone with "Audio did not start" while the
+    // microphone was open and the context was running: on iOS WebKit the
+    // promise from `resume()` frequently never settles on a context that
+    // reaches `running` anyway, so the deadline always won. Reproduced against
+    // the old code with a context that behaves that way — it threw, with
+    // `context.state === 'running'` at the moment it threw.
+    //
+    // The take cannot avoid this by resuming inside the gesture the way
+    // playback does: `releaseAudioSession()` above suspends the context on
+    // purpose before asking for the microphone, because WebKit will not
+    // reassign the audio session away from a running one. See
+    // `audio/running.ts`.
+    if (!(await resumeToRunning(context))) {
       throw new MicrophoneUnavailableError(
-        'Audio was interrupted. Return to this screen and try Record again.',
+        'Audio could not start. Close other audio apps, then try Record again.',
       );
     }
 

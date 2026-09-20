@@ -1,6 +1,7 @@
 import type { Instrument } from '../../data/types';
 import type { Schedule } from './schedule';
 import type { PlaybackHandle, PlayOptions } from './player.types';
+import { LOAD_DEADLINE_MS, RENDER_DEADLINE_MS, within } from './deadline';
 import { listenFailure } from './listenFailure';
 import type { RenderedInstrument } from './soundfontRender';
 
@@ -31,14 +32,18 @@ export function beginSampledPlayback(
       const { loadSoundfont } = await import('./soundfontBank');
       const { renderSoundfont } = await import('./soundfontRender');
       if (stopped) return;
-      const bank = await loadSoundfont(instrument);
+      // **Bounded, because a stalled download does not reject.** Without a
+      // deadline the await below never returned and the Listen spinner spun
+      // for as long as the musician was willing to watch it — while
+      // `listenFailure` already held the right sentence for a load that fails
+      // and had no way of being reached. See `deadline.ts` for why the bound
+      // is generous rather than tight.
+      const bank = await within(loadSoundfont(instrument), LOAD_DEADLINE_MS);
       if (stopped) return;
       stage = 'rendering';
-      const pcm = await renderSoundfont(
-        schedule,
-        bank,
-        instrument,
-        () => stopped,
+      const pcm = await within(
+        renderSoundfont(schedule, bank, instrument, () => stopped),
+        RENDER_DEADLINE_MS,
       );
       if (stopped) return;
       stage = 'starting';
