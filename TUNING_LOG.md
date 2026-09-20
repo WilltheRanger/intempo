@@ -6,6 +6,88 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-09-19 — Two new thresholds, after a third approach was built and reverted
+
+**New section `[onset.recovery]`: `search_share = 0.25`, `floor_ratio = 0.015`.**
+No existing value changed. The six clips are **byte-identical** — by
+construction, not by luck, and that is the whole argument for this shape.
+
+### The defect
+
+Measured with new degradation models (`add_noise_at_snr`, `add_room_reverb`,
+`apply_clipping` in `audio_helpers`). Noise, clipping and reverb *alone* do not
+break detection — 0 dB SNR, hard clipping and a 2-second room all keep 24/24
+notes. **Dynamic range against a reverberant room does:**
+
+    20 dB range, dry          24/24      30 dB range, dry          24/24
+    20 dB range, RT60 0.9s    16/24      30 dB range, RT60 0.9s    12/24
+
+Precision stays 1.00 — the quiet notes are gone, not mistimed. End to end at
+92 BPM the 20 dB case is **refused outright**: coverage 0.667, quality 0.248,
+and a musician who played the page correctly is told to check the piece.
+
+### The approach that was reverted
+
+Replace the absolute `delta` on a globally-normalised envelope with a local
+one: `envelope / max(local_mean, floor × peak)`. The diagnosis behind it is
+correct and still stands — a quiet note's peak collapses from 0.22 to 0.030
+while `delta` stays 0.07, so it is rejected by about the width of `delta`.
+
+It fixed the target case (20 dB + reverb 0.67 → 1.00) and **passed all six
+corpus clips at every setting tried**. Against the full audio suite it failed
+at every window:
+
+    adaptive_avg_s   0.10    0.20    0.35    0.50
+    failures           14      13      14      13        (baseline: 0)
+
+Chief casualty: every assertion in `test_varied_rhythm.py`. A local baseline
+computed as a **mean** is raised by dense passages and lowered by sparse ones,
+so on mixed note values the threshold moves with the rhythm it is meant to be
+a reference for. No window escapes that; it is structural. Reverted before it
+left the working tree, as the 2026-09-14 change was.
+
+**A methodological note, because it nearly shipped.** The window was swept
+against a *subset* of the suite, where 0.50 looked like it fixed everything —
+the bowed re-trigger, the noise case, and the dynamics win together. Against
+the full suite that same value is 13 failures. A sweep against a subset is
+fiction.
+
+### What shipped instead
+
+A second pass, after alignment, that looks **only where the score writes a
+note and the alignment found none**, and can only add an onset there. Two
+properties follow and both were the reason for the shape:
+
+  * A take that missed nothing is **byte-identical** — `missed_expected` is
+    empty and the pass returns before touching the audio. The six clips are
+    therefore unchanged without needing to be re-tuned.
+  * A phantom cannot appear where the page writes no note.
+
+`floor_ratio = 0.015` is far below anything the detector reports, and the
+first value tried — 0.08 — was wrong for exactly that reason: the population
+it exists to find peaks at 0.030, so 0.08 rejected all of it and recovered
+nothing. **The window is the guard, not the floor**: a quarter of the closest
+written gap, around a time the page and the take's own fitted pace agree on,
+with an interior local maximum required.
+
+Placement mattered as much as the numbers. It was first written *below* the
+refusal check, where it was useless — a take refused on coverage returns early
+and never reaches the code written to rescue it.
+
+### Regression
+
+| | without | with |
+|---|---|---|
+| Six corpus clips | pass | pass, **byte-identical** |
+| 92 BPM, 20 dB + RT60 0.9s | `alignment_failed`, q 0.248 | **`ok`, q 0.603** |
+| Clean take, same page | `ok`, q 0.970 | `ok`, q 0.970, same onsets |
+| Full backend suite | 2,321 passed | **2,332 passed, 0 failed** |
+
+Still open: 30 dB + reverb at 92 BPM, and everything at 120 BPM, remain
+refused. The pass helps and does not yet close the case.
+
+---
+
 ## 2026-09-14 — Bowed attacks measured, and a threshold change written and thrown away
 
 **No value changed**, and the first draft of this entry changed one. Recorded

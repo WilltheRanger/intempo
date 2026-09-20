@@ -900,6 +900,148 @@ nothing else covers `backend/`. Named here rather than left to be found.
   microphone leg beside it, and both exist because the container has no audio
   device and every unstubbed run takes the `NotFoundError` branch.
 
+- **Noise, clipping and reverb do not break onset detection. Dynamics under
+  reverb do (2026-09-19).** Every synthetic fixture here is a clean close-mic
+  recording, so "does this survive a worse recording" had never been asked.
+  `audio_helpers` now models the three axes a phone recording actually moves
+  along — `add_noise_at_snr`, `add_room_reverb`, `apply_clipping` — and
+  `test_degraded_audio.py` sweeps them.
+
+  The headline is a **negative result** and it is worth as much as a fix. At
+  **0 dB SNR**, under hard clipping, and in a **2-second room**, all 24 notes
+  are still found with 6–8 ms of jitter. Lowering `delta` or adding a denoiser
+  would be tuning something that is not broken — the 2026-09-14 mistake again.
+
+  What moves is the **systematic lag**: 42 ms clean, 65 ms degraded. That is
+  free, because `_residuals` fits offset and rate per take before quality is
+  measured. Jitter is what is left and it barely moves.
+
+  **The first version of the sweep said the exact opposite**, and the
+  correction is the transferable part. Matching detections to truth within
+  50 ms, recall fell to 0.00 at 0 dB SNR while `n_detected` stayed at 24 — the
+  detector was finding every note and the window was measuring the lag rather
+  than the detection. **A match tolerance narrower than a known systematic
+  offset measures the offset.** It was nearly reported as "the pipeline
+  collapses under noise", which is false.
+
+  What does break it is **dynamic range against a reverberant room**, which no
+  clean fixture can contain:
+
+      20 dB range, dry          24/24 found
+      20 dB range, RT60 0.9s    16/24
+      30 dB range, dry          24/24
+      30 dB range, RT60 0.9s    12/24
+
+  The tail of a loud note raises the floor under the attack of the quiet one
+  after it, and the onset envelope is normalised against the take's **global**
+  maximum, so the quiet attack never clears `delta`. **Precision stays 1.00** —
+  nothing spurious, nothing mistimed, the quiet notes are simply gone. That is
+  the worst shape this failure could take, because `coverage` falls and
+  `quality` is `timing_quality * coverage`: a musician who played musically in
+  a live room is told the take could not be read, or is shown a verdict
+  computed from half their notes with nothing saying so.
+
+  The fix is not a lower `delta`, which raises the floor everywhere and costs
+  precision on every clean take. It is a **local** threshold — each attack
+  judged against its own neighbourhood rather than against the loudest moment
+  of the take. Not yet made; the ceilings in `test_degraded_audio.py` are
+  asserted with `<=` so that fixing it fails the test and forces them to be
+  raised deliberately.
+
+- **A more sensitive detector could not be made to work; a second pass could
+  (2026-09-19).** The fix for the defect above was attempted twice.
+
+  **Attempt one, reverted:** replace the absolute `delta` on a globally
+  normalised envelope with a local one. The diagnosis was right — a quiet
+  note's peak collapses 0.22 → 0.030 under reverb while `delta` stays 0.07, so
+  it is rejected by about the width of `delta`. It fixed the target case and
+  **passed all six corpus clips at every setting tried**, which is exactly why
+  it was nearly shipped. Against the full audio suite it failed at every
+  window (13–14 failures against a baseline of 0), and the casualty was every
+  assertion in `test_varied_rhythm.py`: **a local baseline computed as a mean
+  is raised by dense passages and lowered by sparse ones**, so on mixed note
+  values the threshold moves with the rhythm it is supposed to be a reference
+  for. Structural, not a tuning miss.
+
+  **Attempt two, shipped:** `services/onset_recovery.py`, a pass that runs
+  after alignment and looks only where the score writes a note and the
+  alignment found none. A take that missed nothing is byte-identical by
+  construction, so the corpus needed no re-tuning and nothing that reads
+  correctly today can move. 92 BPM at 20 dB of range in a 0.9 s room goes from
+  `alignment_failed` (quality 0.248) to `ok` (0.603).
+
+  Three things cost time and are worth carrying:
+
+  - **A sweep against a subset of the suite is fiction.** Attempt one's window
+    was swept against four hand-picked cases, where 0.50 appeared to fix the
+    bowed re-trigger, the noise case and the dynamics win at once. Against the
+    full suite that value is 13 failures.
+  - **Placement beat parameters.** The recovery pass was first written *below*
+    the `is_alignment_broken` early return, where it can never run on the
+    takes it exists for — they are refused on coverage and return before
+    reaching it.
+  - **The guard that makes a low threshold safe is the window, not the
+    floor.** `floor_ratio` was first set to 0.08, which looked conservative
+    and excluded the entire population being recovered: those peaks are at
+    0.030. It is 0.015 now, and what keeps that safe is that it is only ever
+    applied within a quarter of the closest written gap of a time the page and
+    the take's own fitted pace agree on.
+
+- **The pipeline already knew three things about every take and said none of
+  them (2026-09-19).** `_residuals` fits `rate, offset = np.polyfit(...)` on
+  every analysis and returns only the residuals. `services/insights.py` now
+  reports what that slope means, and two more that fall out beside it.
+
+  `target_bpm / slope` recovers the tempo actually played, and it is **exact**
+  rather than an estimate — measured against takes synthesised at five known
+  tempi: 75.0, 66.7, 60.0, 54.5, 48.0 against a target of 60. The matcher's
+  own rescaling does not destroy it, which had to be checked before trusting
+  it.
+
+  What the numbers separate, which the verdict cannot:
+
+      take                    verdict              played  drift  steady
+      exactly as written      Steady tempo           60.0    0.0     0.6
+      25% fast, evenly        You rushed             75.0    0.2     0.7
+      accelerando             You rushed             64.3   12.5    26.4
+      even average, ±60 ms    Steady tempo — held    60.0   -0.0     6.0
+
+  The last row is the one worth looking at: **the app tells a musician
+  swinging ±60 ms that they held a steady tempo.** The average is zero, which
+  is all the verdict reads.
+
+  **`steadiness` has to be detrended and the first version was not.** Playing
+  evenly at a different tempo makes the delta grow note after note, so a raw
+  spread is dominated by that slope — an even take at 75 scored **138.5**
+  against **6.0** for one with genuine swings, i.e. the figure ranked the most
+  controlled performance in the set as the least steady, and merely restated
+  `tempo_difference_bpm` in another unit. Removing the line leaves departure
+  from the musician's *own* pace, whatever pace they chose. Found by measuring
+  end to end, not by reading the code.
+
+  **Grouping by written note value is the one a metronome cannot give.**
+  `ExpectedNote` now carries `beats` — `_beats` already computed it while
+  building the timeline, so it costs nothing and cannot drift from the onsets
+  it produced. On a page of halves, quarters, eighths and sixteenths with only
+  the sixteenths pulled early:
+
+      half notes       n=8    mean  -0.1%
+      quarter notes    n=32   mean  +0.9%
+      eighth notes     n=36   mean  -0.3%
+      sixteenth notes  n=15   mean -11.9%   <- named as the standout
+
+  The verdict for that same take reads *"You rushed in measure 9 by an average
+  of 7 BPM"*. One names a bar; the other names the habit, and only one of them
+  tells a musician what to practise.
+
+  `standout_note_value` compares each value against the average of **the
+  others**, not against zero and not against an average it supplies itself.
+  Against zero, a take that rushed throughout would name one value and imply
+  the rest were fine — the verdict's finding repeated under a new heading.
+  Including the candidate in its own baseline would stop the *commonest* note
+  value from ever standing out, which is backwards: it is the one a musician
+  most needs told about.
+
 ## The capture path (2026-08-24) — what an audit of it found
 
 Nine defects between the shutter and a saved score, in a path that had **zero

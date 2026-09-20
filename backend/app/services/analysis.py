@@ -27,11 +27,14 @@ from app.services.alignment import (
     AlignmentResult,
     apply_fuzzy_match,
     build_timeline,
+    CleanedAlignment,
     ExpectedTimeline,
     is_alignment_broken,
     closest_expected_gap,
 )
 from app.services.audio_config import AudioConfig, load_audio_config
+from app.services.insights import Insights, insights_for
+from app.services.onset_recovery import predict_audio_times, recover_onsets
 from app.services.classification import (
     Band,
     Delta,
@@ -161,6 +164,11 @@ class AnalysisResult(BaseModel):
     n_expected_onsets: int = 0
     n_missed_notes: int = 0
     n_extra_notes: int = 0
+    #: What the pipeline already knew and never said — the pace actually
+    #: played, whether it held, and how evenly. See `services/insights.py`.
+    #: Every field inside is independently nullable: a short take has a pace
+    #: and a spread but no trustworthy drift.
+    insights: Insights = Field(default_factory=Insights)
     #: Which takes may be compared with which, stamped by the runner.
     #:
     #: **Not computed here**, because `analyze` is given audio and a score and
@@ -468,6 +476,66 @@ def prepare_for_alignment(
     )
 
 
+
+# The two recovery thresholds live in `[onset.recovery]` in config.toml,
+# like every other tunable number in this pipeline (`CLAUDE.md` §1 rule 7).
+
+
+
+def _recover_missed_onsets(
+    heard: Heard,
+    cleaned: CleanedAlignment,
+    onsets: np.ndarray,
+    expected: np.ndarray,
+    *,
+    min_gap_s: float | None,
+    config: AudioConfig,
+) -> np.ndarray:
+    """A second look, only where the page writes a note and none was heard.
+
+    **Nothing happens when nothing was missed**, which is the property the
+    whole shape was chosen for: `missed_expected` empty means this returns an
+    empty array before touching the audio, so a take that read correctly
+    cannot be moved by this pass and no existing reading changes.
+
+    The envelope is recomputed rather than carried on `Heard`, and that is a
+    deliberate trade. It costs one more pass over the audio on takes that
+    missed something — bounded, since `onset_envelope` is already blocked for
+    memory — and it buys leaving `detect_onsets`, `Heard` and both of their
+    call sites exactly as they were. A signature change there would touch the
+    calibration path too, which has no score and no use for any of this.
+    """
+    if not cleaned.missed_expected or not cleaned.matched:
+        return np.array([], dtype=float)
+
+    predicted = predict_audio_times(
+        cleaned.matched, onsets, expected, cleaned.missed_expected
+    )
+    if predicted.size == 0:
+        return np.array([], dtype=float)
+
+    strength = audio_svc.onset_envelope(
+        audio_svc.pre_emphasis(heard.y, config=config), heard.sr
+    )
+    search = (min_gap_s or 0.0) * config.onset.recovery_search_share
+    if search <= 0:
+        return np.array([], dtype=float)
+
+    return recover_onsets(
+        strength,
+        hop_length=audio_svc.HOP_LENGTH,
+        sr=heard.sr,
+        detected=onsets,
+        predicted_s=predicted,
+        search_s=search,
+        floor_ratio=config.onset.recovery_floor_ratio,
+        # A recovered note may not land within one `wait` of anything already
+        # there; the detector's own re-trigger guard, reused so the two cannot
+        # disagree about what counts as one attack.
+        min_separation_s=config.onset.wait_ms / 1000.0,
+    )
+
+
 def analyze(
     audio: str | Path | tuple[np.ndarray, int],
     score: ScoreJson,
@@ -545,6 +613,46 @@ def analyze(
     )
     onsets = anchored.onsets
     raw = anchored.alignment
+
+    # **A second look, before the take is called unreadable rather than
+    # after.** This began life below the refusal check, where it was useless:
+    # a take that lost half its notes to a live room is refused on coverage,
+    # returns early, and never reaches the code written to rescue it.
+    # Measured — at 92 BPM with 20 dB of range in a 0.9 s room the take is
+    # refused outright at coverage 0.667, and the recovery pass sat unreached
+    # below it.
+    #
+    # `apply_fuzzy_match` is pure, so asking it here for the missed-note list
+    # and asking it again below changes nothing. A badly broken alignment
+    # gives a nonsense line to predict from, and that is safe by construction:
+    # the search finds no peak at a nonsense time, so nothing is added.
+    probe = apply_fuzzy_match(raw, onsets, expected, optional=optional)
+    recovered = _recover_missed_onsets(
+        heard,
+        probe,
+        onsets,
+        expected,
+        # The same gap the detector was sized from, so the search window and
+        # the peak-pick window are derived from one number rather than two.
+        min_gap_s=closest_expected_gap(expected, optional=optional),
+        config=cfg,
+    )
+    if recovered.size:
+        log.info(
+            "analysis: recovered %d onset(s) the first pass did not report",
+            recovered.size,
+        )
+        anchored = align_take(
+            np.sort(np.concatenate([onsets, recovered])),
+            expected,
+            target_bpm=target_bpm,
+            config=cfg,
+            steady=steady,
+            optional=optional,
+        )
+        onsets = anchored.onsets
+        raw = anchored.alignment
+
     if is_alignment_broken(raw.quality, config=cfg):
         # **The one line that says which half refused the take.**
         #
@@ -617,4 +725,24 @@ def analyze(
         n_expected_onsets=raw.n_expected,
         n_missed_notes=len(cleaned.missed_expected),
         n_extra_notes=len(cleaned.extra_detected),
+        insights=insights_for(
+            cleaned.matched,
+            onsets,
+            expected,
+            target_bpm,
+            # The same deltas the verdict is built from, so a musician cannot
+            # be told the spread of one set of numbers and the average of
+            # another.
+            [d.delta_pct for d in deltas if d.timed],
+            # Paired with the written length of the note each delta belongs
+            # to, so the take can be grouped by what was on the page. The
+            # lookup is by `global_index` because `deltas` is already filtered
+            # and `timeline.notes` is not.
+            [
+                (timeline.notes[d.global_index].beats, d.delta_pct)
+                for d in deltas
+                if d.timed and 0 <= d.global_index < len(timeline.notes)
+            ],
+            target_bpm_for_lead=target_bpm,
+        ),
     )

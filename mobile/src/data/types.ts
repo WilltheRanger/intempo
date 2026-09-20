@@ -593,6 +593,50 @@ export interface AnalysisResultJson {
   n_expected_onsets: number;
   n_missed_notes: number;
   n_extra_notes: number;
+  /**
+   * What the pipeline knows beyond the verdict — the pace actually played,
+   * whether it held, how evenly, and the take split by written note value.
+   *
+   * Optional because a take analysed before the pipeline computed any of it
+   * has none, and every field inside is independently nullable: a short take
+   * has a pace and a spread but no trustworthy drift.
+   */
+  insights?: AnalysisInsights | null;
+}
+
+/** One written note value, and how it was timed across the take. */
+export interface NoteValueTiming {
+  beats: number;
+  /** What a musician calls it, or null for a length with no plain name. */
+  label: string | null;
+  note_count: number;
+  /** Mean delta for this value, in percent of a beat. Negative is early. */
+  mean_delta_pct: number;
+}
+
+/**
+ * The single most unusual thing about a take, already a finished sentence.
+ *
+ * Ranked server-side across every candidate rather than chosen by a fixed
+ * priority, so a take whose real story is the sixteenths does not lead with a
+ * 2 BPM tempo difference nobody would notice.
+ */
+export interface TakeFinding {
+  kind: 'tempo' | 'drift' | 'note_value' | 'steadiness';
+  text: string;
+  /** How many times its own "worth saying" threshold this cleared. */
+  weight: number;
+}
+
+export interface AnalysisInsights {
+  played_bpm: number | null;
+  tempo_difference_bpm: number | null;
+  drift_bpm: number | null;
+  steadiness_pct: number | null;
+  by_note_value: NoteValueTiming[];
+  standout_value: NoteValueTiming | null;
+  /** Null when nothing clears its threshold, which is the common case. */
+  lead: TakeFinding | null;
 }
 
 /** POST /v1/upload/score-image and /v1/upload/audio */
@@ -903,6 +947,13 @@ export interface TakeResult {
   status: ResultStatus;
   /** The pipeline's sentence, shown verbatim. */
   headline: string;
+  /**
+   * One line under the headline, or null on the takes where there is nothing
+   * worth adding — which is most of them, deliberately. A screen that always
+   * has a second sentence teaches a musician that the second sentence is
+   * furniture, and then the one that matters is not read either.
+   */
+  finding: TakeFinding | null;
   direction: Direction;
   verdict: Verdict;
   /** Alignment was poor enough that the numbers deserve a caveat. */

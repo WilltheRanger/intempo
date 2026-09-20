@@ -57,6 +57,18 @@ class ExpectedNote:
     #: ending on a measure's last note puts "the first note after" in the next
     #: measure, and this is computed per measure, so that one goes unmarked.
     is_slur_boundary: bool
+    #: The note's own written length in beats — a quarter is 1.0 at any tempo.
+    #:
+    #: Carried so `insights.timing_by_note_value` can group the take by what
+    #: was written rather than by what was played: "you rush your sixteenths
+    #: and your quarters are fine" is a thing to practise, and "you rushed"
+    #: is not. `_beats` already computes it while building the timeline, so
+    #: this costs nothing to keep and cannot drift from the onsets it produced.
+    #:
+    #: 1.0 rather than 0.0 as the default, because every caller that does not
+    #: set it is constructing a grace note or a test fixture, and a *zero*
+    #: would silently create a note value nothing can be grouped under.
+    beats: float = 1.0
     #: A written tempo change — rit., accel. — covers this note's measure.
     #:
     #: The tolerance bands do not apply here, and cannot: they measure distance
@@ -482,6 +494,7 @@ def build_timeline(score: ScoreJson, target_bpm: float) -> ExpectedTimeline:
                         # which way depends on a reading the page does not
                         # state. See `ExpectedNote.after_grace_note`.
                         after_grace_note=bool(note.grace_notes),
+                        beats=_beats(note.duration),
                     )
                 )
                 global_index += 1

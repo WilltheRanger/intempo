@@ -41,6 +41,29 @@ pre_emphasis_coef = 0.97   # librosa.effects.preemphasis coefficient
 delta = 0.05
 highpass_hz = 80.0
 
+[onset.recovery]
+# A second look for notes the first pass was not confident enough to report,
+# run only where the score writes a note and the alignment found none. See
+# `services/onset_recovery.py` for why this is a second pass rather than a
+# more sensitive detector — the latter was tried on 2026-09-19 and broke
+# thirteen tests.
+#
+# How far either side of a predicted time to look, as a fraction of the
+# closest gap the score writes. Derived rather than absolute for the reason
+# `peak_window_frames` gives: a fixed number of milliseconds is useless on
+# slow music and lets one note be recovered onto its neighbour on fast music.
+search_share = 0.25
+# How loud a candidate must be, against the onset envelope's own peak.
+#
+# **Deliberately far below anything the detector reports, and the first value
+# tried here was wrong for exactly that reason.** 0.08 looked conservative and
+# excluded the entire population this exists to find: a quiet note under
+# reverb peaks at 0.030 of the envelope maximum, so a floor at 0.08 rejects it
+# and nothing is ever recovered. What makes a low floor safe is the window,
+# not the floor — a quarter of the closest written gap, around a time the page
+# and the take's own pace agree on, with an interior local maximum required.
+floor_ratio = 0.015
+
 [tolerance]
 # Bands as a % of one beat's duration at the target BPM. Asymmetric:
 # humans tolerate dragging better than rushing, so the dragging bands

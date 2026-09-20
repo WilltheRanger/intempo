@@ -1421,6 +1421,21 @@ function buildFixtureTake(): TakeResult | null {
     composer: piece?.composer ?? null,
     recordedAt: recordedAt.toISOString(),
     targetBpm: 96,
+    /**
+     * The sample take carries a finding, because a fixtures build is the only
+     * place this line can be looked at — `preflight --full` and the a11y sweep
+     * both run against fixtures, and a screen element that never appears there
+     * is a screen element no gate has ever seen.
+     *
+     * A note-value finding rather than a tempo one on purpose: it is the
+     * longest of the four sentences and the one whose layout is worth
+     * checking at 390pt.
+     */
+    finding: {
+      kind: 'note_value' as const,
+      text: 'Your sixteenth notes ran ahead of the rest.',
+      weight: 2.0,
+    },
     // The sample take always succeeds. A failed run is a live-only outcome —
     // fabricating one here would put a "we couldn't read that" screen in front
     // of someone browsing the demo, describing a recording they never made.
