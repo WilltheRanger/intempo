@@ -224,6 +224,76 @@ describe('startRecording (web)', () => {
     expect(recorder.inputPeak?.()).toBe(0);
     await recorder.stop().catch(() => {});
   });
+  /**
+   * **The take that failed on a phone while everything was working.**
+   *
+   * On iOS WebKit the promise from `AudioContext.resume()` frequently never
+   * settles on a context that reaches `running` anyway. This function used to
+   * race that promise against a five second deadline, so the deadline always
+   * won and the musician was told "Audio did not start. Return to this screen
+   * and try Record again." — with the microphone open and the context running.
+   *
+   * The old code was run against this exact stub before the fix: it threw,
+   * and `context.state` was `'running'` at the moment it threw. Waiting on the
+   * state instead of the promise is what makes this pass.
+   */
+  it('records when the context runs but resume() never settles', async () => {
+    class WebKitContext extends StubContext {
+      createMediaStreamSource() {
+        this.state = 'suspended';
+        return super.createMediaStreamSource();
+      }
+      resume() {
+        // Reaches running, and never answers. Both halves matter: a promise
+        // that merely resolved late would be caught by any deadline long
+        // enough, and this one is never long enough.
+        setTimeout(() => {
+          this.state = 'running';
+        }, 0);
+        return new Promise<void>(() => {});
+      }
+    }
+    vi.stubGlobal('window', { AudioContext: WebKitContext });
+
+    const recorder = await startRecording();
+
+    node.deliver(silenceWith(64, 5000));
+    expect((await recorder.stop()).seconds).toBeGreaterThan(0);
+  });
+
+  /**
+   * The other half: a context that genuinely never runs still fails, and says
+   * something a musician can act on. A guard that only ever passes is not a
+   * guard, and this file has shipped one of those before.
+   */
+  it('still refuses a take when the context never reaches running', async () => {
+    class DeadContext extends StubContext {
+      createMediaStreamSource() {
+        this.state = 'suspended';
+        return super.createMediaStreamSource();
+      }
+      resume() {
+        return new Promise<void>(() => {});
+      }
+    }
+    vi.stubGlobal('window', { AudioContext: DeadContext });
+
+    // Fake timers, because the real wait is the full five second deadline and
+    // a suite should not spend five seconds proving a timeout is a timeout.
+    vi.useFakeTimers();
+    try {
+      const started = startRecording();
+      const refused = expect(started).rejects.toThrow(/Audio could not start/);
+      await vi.advanceTimersByTimeAsync(6_000);
+      await refused;
+    } finally {
+      vi.useRealTimers();
+    }
+    // The device is handed back: a refused take must not leave the recording
+    // indicator lit with nothing recording.
+    expect(tracksStopped).toBeGreaterThan(0);
+  });
+
   it('resumes again when microphone setup suspends an already unlocked context', async () => {
     let resumes = 0;
     class InterruptedContext extends StubContext {
