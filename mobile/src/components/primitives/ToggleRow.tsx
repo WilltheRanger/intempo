@@ -1,7 +1,8 @@
 import { Platform, Pressable, StyleSheet, Switch, View } from 'react-native';
 
-import { Text } from '../../components/primitives/Text';
 import { BORDER_WIDTH, colors, disabledOpacity, spacing } from '../../design';
+import { ROW_PADDING_VERTICAL } from '../rowMetrics';
+import { Text } from './Text';
 
 /**
  * react-native-web reads `activeThumbColor` for the "on" thumb and leaves
@@ -33,6 +34,14 @@ export interface ToggleRowProps {
  * The platform switch, in the app's palette — gold when on, the strong border
  * when off. It's the control people already know for this, and drawing our own
  * would be a worse version of it.
+ *
+ * **A primitive rather than a Profile component**, since 2026-09-19. It lived
+ * under `screens/profile/` while Profile was the only screen with settings on
+ * it; the record sheet's "skip long rests" then shipped as an
+ * `accessibilityRole="switch"` around a bare line of text — a control drawn as
+ * a caption, which is the affordance defect §3 names and the second one found
+ * on that sheet in a week. The answer to "this screen needs a switch" has to
+ * be a switch anyone can reach.
  */
 export function ToggleRow({
   label,
@@ -118,7 +127,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.lg,
-    paddingVertical: spacing.lg,
+    paddingVertical: ROW_PADDING_VERTICAL,
   },
   disabled: {
     opacity: disabledOpacity,
