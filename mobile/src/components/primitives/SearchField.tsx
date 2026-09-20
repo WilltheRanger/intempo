@@ -1,11 +1,11 @@
 import { Search, X } from '../icons';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
+  Animated,
   Platform,
   Pressable,
   StyleSheet,
   TextInput,
-  View,
   type StyleProp,
   type TextStyle,
   type ViewStyle,
@@ -21,7 +21,10 @@ import {
   radii,
   spacing,
   typography,
+  EASE_OUT,
+  motion,
 } from '../../design';
+import { useReducedMotion } from '../../lib/useReducedMotion';
 
 /**
  * react-native-web renders TextInput as a DOM input, which draws the browser's
@@ -66,9 +69,78 @@ export function SearchField({
   autoFocus = false,
 }: SearchFieldProps) {
   const [focused, setFocused] = useState(false);
+  const reduceMotion = useReducedMotion();
+
+  /**
+   * Focus, as a number, so the border can travel between the two colours.
+   *
+   * It was a boolean driving a style swap, so the edge of the field changed
+   * colour between one frame and the next. On the one control whose job is to
+   * answer a tap, that reads as a jolt rather than as an answer.
+   *
+   * `useNativeDriver` cannot be true here: a colour is neither a transform nor
+   * an opacity, so it interpolates on the JavaScript thread. Acceptable for a
+   * short run on a single edge, and the reason this is the only colour in the
+   * app that animates rather than swapping.
+   */
+  const focus = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (reduceMotion) {
+      focus.setValue(focused ? 1 : 0);
+      return;
+    }
+    Animated.timing(focus, {
+      toValue: focused ? 1 : 0,
+      duration: motion.fast,
+      easing: EASE_OUT,
+      useNativeDriver: false,
+    }).start();
+  }, [focused, focus, reduceMotion]);
+
+  /**
+   * The clear button's presence, and **why it now stays mounted.**
+   *
+   * It rendered only when there was text, so it appeared and vanished between
+   * frames — and its arrival took width from the input, so the text being
+   * typed shifted left under the caret on the first character. Keeping it
+   * mounted at zero opacity holds the layout still and lets it fade.
+   *
+   * Hidden from touch and from the screen reader while invisible: a control
+   * that cannot be seen but can still be selected, and does nothing when it
+   * is, is worse than one that is not there.
+   */
+  const hasText = value.length > 0;
+  const clear = useRef(new Animated.Value(hasText ? 1 : 0)).current;
+  useEffect(() => {
+    if (reduceMotion) {
+      clear.setValue(hasText ? 1 : 0);
+      return;
+    }
+    Animated.timing(clear, {
+      toValue: hasText ? 1 : 0,
+      duration: motion.fast,
+      easing: EASE_OUT,
+      useNativeDriver: true,
+    }).start();
+  }, [hasText, clear, reduceMotion]);
 
   return (
-    <View style={[styles.field, focused && styles.focused, style]}>
+    <Animated.View
+      style={[
+        styles.field,
+        {
+          // The whole container takes the accent on focus: the one place the
+          // gold marks state rather than an action. It is interpolated here
+          // rather than swapped by a `focused` style, which is what this
+          // replaced.
+          borderColor: focus.interpolate({
+            inputRange: [0, 1],
+            outputRange: [colors.border, colors.accent],
+          }),
+        },
+        style,
+      ]}
+    >
       <Search
         size={ICON_SIZE.md}
         strokeWidth={ICON_STROKE_WIDTH}
@@ -94,7 +166,19 @@ export function SearchField({
         accessibilityLabel={placeholder}
       />
 
-      {value.length > 0 ? (
+      <Animated.View
+        pointerEvents={hasText ? 'auto' : 'none'}
+        accessibilityElementsHidden={!hasText}
+        importantForAccessibility={hasText ? 'auto' : 'no-hide-descendants'}
+        style={{
+          opacity: clear,
+          // A small rise out of nothing rather than a plain fade: it is
+          // arriving, and the scale is what says so in the time available.
+          transform: [
+            { scale: clear.interpolate({ inputRange: [0, 1], outputRange: [0.8, 1] }) },
+          ],
+        }}
+      >
         <Pressable
           onPress={() => onChangeText('')}
           accessibilityRole="button"
@@ -107,8 +191,8 @@ export function SearchField({
             color={colors.textTertiary}
           />
         </Pressable>
-      ) : null}
-    </View>
+      </Animated.View>
+    </Animated.View>
   );
 }
 
@@ -148,11 +232,6 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     borderWidth: BORDER_WIDTH,
     borderColor: colors.border,
-  },
-  focused: {
-    // The whole container takes the accent on focus — the one place the gold
-    // marks state rather than an action.
-    borderColor: colors.accent,
   },
   input: {
     flex: 1,

@@ -33,6 +33,7 @@ import {
   MicrophonePermissionError,
   type Recorder,
 } from '../../lib/audio/types';
+import { playheadAt } from '../../lib/record/playhead';
 import { readTakeFailure } from '../../lib/audio/takeFailure';
 import { heldTakeUrl, releaseHeldTake } from '../../lib/audio/heldTake';
 import { HeldTakePlayer } from './HeldTakePlayer';
@@ -776,6 +777,36 @@ export function RecordScreen() {
   const entryTimeSignature = openingTimeSignature(takeScore);
   const pulse = metronomePulse(entryTimeSignature);
   const perBar = pulse?.pulsesPerBar ?? null;
+
+  /**
+   * Where the beat says the musician is, for the mark on the page.
+   *
+   * **Only while recording**, never during the count-in: the count-in is
+   * beats before bar one, so a mark during it would sit on a bar nobody is
+   * playing yet and start by being wrong.
+   *
+   * `startable` is the bars that actually sound, in playing order, so its
+   * last entry is the last bar there is to point at. `playheadAt` returns
+   * null past it rather than pinning the mark to the final bar forever.
+   *
+   * **It advances at 100ms**, the rate `elapsedMs` already ticks at, which is
+   * about four percent of a bar at 92 BPM. Deliberately not given a faster
+   * clock of its own: the mark lives inside the engraved SVG, so every tick
+   * re-renders the notation, and a take is exactly the moment the JavaScript
+   * thread must stay free for the recorder. Whether the stepping is visible,
+   * and whether ten notation renders a second cost anything on a real phone,
+   * are both device questions - see the PR.
+   */
+  const playhead =
+    recording && perBar && targetBpm
+      ? playheadAt({
+          elapsedMs,
+          bpm: targetBpm,
+          beatsPerBar: perBar,
+          startFrom,
+          lastBar: startable[startable.length - 1] ?? startFrom,
+        })
+      : null;
   const metronomePlan = useMemo(
     () => buildMetronomePlan(takeScore, targetBpm),
     [takeScore, targetBpm],
@@ -1063,6 +1094,7 @@ export function RecordScreen() {
           score={heard}
           bars={startable}
           startFrom={startFrom}
+          playhead={playhead}
           onStartFromChange={setStartFrom}
           insetBottom={SHEET_PEEK}
           insetTop={headerHeight}

@@ -1,4 +1,5 @@
 import { useNavigation } from '@react-navigation/native';
+import { useQueryClient } from '@tanstack/react-query';
 import { Library, Plus, Search, X } from '../../components/icons';
 import { useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -16,6 +17,7 @@ import {
 import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
 import { Text } from '../../components/primitives/Text';
 import { describeLoadError } from '../../data/api/describeError';
+import { prefetchPieceHistory } from '../../data/hooks/useLatestTake';
 import {
   useDeletePiece,
   useLibrary,
@@ -36,6 +38,7 @@ import { rowDivided } from '../../components/rowMetrics';
 
 export function LibraryScreen() {
   const navigation = useNavigation<TabScreenNavigation<'Library'>>();
+  const queryClient = useQueryClient();
   const library = useLibrary();
 
   async function refresh() {
@@ -155,9 +158,13 @@ export function LibraryScreen() {
         onClearSearch={() => setQuery('')}
         onRetry={() => void refresh()}
         retrying={library.isFetching}
-        onOpenPiece={(piece) =>
-          navigation.navigate('PieceDetail', { pieceId: piece.id })
-        }
+        onOpenPiece={(piece) => {
+          // One tap earlier than the screen that needs it, so the history
+          // card is usually there on the first frame instead of dropping in
+          // afterwards. See `prefetchPieceHistory`.
+          prefetchPieceHistory(queryClient, piece.id);
+          navigation.navigate('PieceDetail', { pieceId: piece.id });
+        }}
         busyPieceId={busyPieceId}
         onReadAgain={(piece) => {
           setActionError(null);

@@ -1,4 +1,6 @@
+import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { Image } from 'expo-image';
 
 import { musicianSource } from '../sources';
 import type { Musician } from '../types';
@@ -22,10 +24,35 @@ export const meKeys = {
  * and can be called whenever it is convenient.
  */
 export function useMe() {
-  return useQuery<Musician>({
+  const query = useQuery<Musician>({
     queryKey: meKeys.all,
     queryFn: () => musicianSource.getMusician(),
     // The tier gates paid features; don't let a stale value linger all session.
     staleTime: 5 * 60 * 1000,
   });
+
+  /**
+   * **Fetch the photograph before the screen that shows it exists.**
+   *
+   * The Profile screen rendered the placeholder mark and then swapped to the
+   * photograph a moment later, which reads as the screen loading in two
+   * stages. The URL was never the problem - Today already calls this hook, so
+   * by the time Profile opens it is cached - the bytes were. So they are
+   * fetched here, at the first screen that knows the URL, rather than at the
+   * one that draws it.
+   *
+   * `Image.prefetch` is idempotent and already-cached URLs cost nothing, which
+   * is what makes it safe to call from a hook several screens use. Failures
+   * are swallowed: this is an optimisation, and a musician on a bad connection
+   * should get the placeholder and no error, exactly as before.
+   */
+  const avatarUrl = query.data?.avatarUrl ?? null;
+  useEffect(() => {
+    if (!avatarUrl) {
+      return;
+    }
+    void Image.prefetch(avatarUrl).catch(() => {});
+  }, [avatarUrl]);
+
+  return query;
 }

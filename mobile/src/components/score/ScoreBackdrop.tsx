@@ -35,6 +35,15 @@ export interface ScoreBackdropProps {
   bars: number[];
   /** The bar a take will start from, washed the way a playhead is. */
   startFrom: number;
+  /**
+   * Where a running take has got to, or null when none is.
+   *
+   * Passed straight through to `Stave`, which draws it. Separate from
+   * `startFrom` because they answer different questions and are true at
+   * different times: the wash says where this take *began*, and stays there
+   * all take; the mark says where the beat is *now*.
+   */
+  playhead?: { measureNumber: number; through: number } | null;
   onStartFromChange: (measureNumber: number) => void;
   /** Room at the foot for whatever floats over the music. */
   insetBottom: number;
@@ -72,6 +81,7 @@ export function ScoreBackdrop({
   score,
   bars,
   startFrom,
+  playhead = null,
   onStartFromChange,
   insetBottom,
   insetTop = 0,
@@ -159,6 +169,7 @@ export function ScoreBackdrop({
                 head={head}
                 showNoteNames={false}
                 highlightMeasure={startFrom}
+                playhead={playhead}
                 onMeasurePress={disabled ? undefined : onStartFromChange}
                 pressableMeasures={disabled ? undefined : bars}
                 layout={engraved}
@@ -169,7 +180,7 @@ export function ScoreBackdrop({
         : null,
     [
       bars, clef, disabled, engraved, head, height, onStartFromChange, pages,
-      startFrom, stave, width,
+      playhead, startFrom, stave, width,
     ],
   );
 
