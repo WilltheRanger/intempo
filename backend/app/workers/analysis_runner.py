@@ -163,9 +163,7 @@ def download_audio(url: str, *, expected_origin: str | None = None) -> bytes:
                     )
                 declared = response.headers.get("content-length")
                 if declared and declared.isdigit() and int(declared) > MAX_AUDIO_BYTES:
-                    raise AudioFetchError(
-                        f"audio larger than {MAX_AUDIO_BYTES} bytes"
-                    )
+                    raise AudioFetchError(f"audio larger than {MAX_AUDIO_BYTES} bytes")
                 chunks: list[bytes] = []
                 total = 0
                 for chunk in response.iter_bytes():
@@ -180,6 +178,48 @@ def download_audio(url: str, *, expected_origin: str | None = None) -> bytes:
     except httpx.RequestError as exc:
         raise AudioFetchError(f"download failed: {exc}") from exc
     return b"".join(chunks)
+
+
+#: The legs of a run, in the order they happen.
+#:
+#: **Written because `status` could not say this.** It has one value for the
+#: whole run — `processing` — and a take costs about 150 seconds on the
+#: deployed instance, so the app had nothing finer to show than two lines of
+#: static text for two and a half minutes. A musician cannot tell that from a
+#: hang.
+#:
+#: The order is the order `run_analysis` performs them, and the app's bar
+#: advances on these transitions rather than on a clock: a bar driven by
+#: elapsed time is a drawn affordance that does not do what it depicts, which
+#: `CLAUDE.md` §3 rules out.
+#:
+#: `listening` is the long one — onset detection over the whole take — and it
+#: is deliberately one leg rather than several. Splitting it would need
+#: `analyze()` to report into the worker, and a progress callback threaded
+#: through the pipeline to make a bar move more smoothly is the wrong trade
+#: against the analysis staying a pure function of its inputs.
+STAGES: tuple[str, ...] = (
+    "fetching",
+    "checking",
+    "decoding",
+    "listening",
+    "saving",
+)
+
+
+def _stage(client, analysis_id: str, stage: str) -> None:
+    """Record which leg the run has reached.
+
+    **Never raises.** A failed progress write must not fail an analysis that
+    is otherwise fine: this is advisory, `status` remains the authority, and a
+    musician losing the bar is a smaller harm than losing the take. A row
+    written before the column existed, or a database that has not taken the
+    migration, lands here too.
+    """
+    try:
+        _update(client, analysis_id, {"stage": stage, "updated_at": _now_iso()})
+    except Exception:  # noqa: BLE001 — advisory, see above
+        log.debug("analysis %s: could not record stage %s", analysis_id, stage)
 
 
 def run_analysis(analysis_id: str) -> None:
@@ -209,7 +249,11 @@ def run_analysis(analysis_id: str) -> None:
             "SUPABASE_URL matches the one the API uses."
         )
 
-    _update(client, analysis_id, {"status": "processing", "updated_at": _now_iso()})
+    _update(
+        client,
+        analysis_id,
+        {"status": "processing", "stage": STAGES[0], "updated_at": _now_iso()},
+    )
 
     try:
         # Rows keep a durable key-shaped reference, never the five-minute PUT
@@ -251,6 +295,7 @@ def run_analysis(analysis_id: str) -> None:
         # by holding the whole thing. `load_audio_bytes` below spills too, for
         # the same reason — one more temp file on the path that refuses, none
         # on the path that does not.
+        _stage(client, analysis_id, "checking")
         with tempfile.NamedTemporaryFile(suffix=".upload") as spill:
             spill.write(audio_bytes)
             spill.flush()
@@ -266,6 +311,7 @@ def run_analysis(analysis_id: str) -> None:
             _finish_failed(client, analysis_id, intake.code or "audio_unreadable")
             return
 
+        _stage(client, analysis_id, "decoding")
         y, sr = audio_svc.load_audio_bytes(audio_bytes)
         # The one caller that has ever set this. `analyze()` has taken a
         # `double_bass` flag since Batch 3 — a high-pass filter and a lower
@@ -275,6 +321,7 @@ def run_analysis(analysis_id: str) -> None:
         #
         # Read from the row rather than passed in: the work happens after the
         # response is sent, so the row is the only thing that survives.
+        _stage(client, analysis_id, "listening")
         result = analyze(
             (y, sr),
             score,
@@ -299,6 +346,10 @@ def run_analysis(analysis_id: str) -> None:
         analysis_id,
         {
             "status": "done",
+            # Cleared rather than left on the last leg: a finished run has no
+            # leg to be on, and a row reading `done` + `listening` invites a
+            # reader to believe one of the two.
+            "stage": None,
             "result_json": result_payload,
             "alignment_quality": result.quality,
             "failure_reason": None,
@@ -348,7 +399,12 @@ def _finish_failed(client, analysis_id: str, reason: str) -> None:
     _update(
         client,
         analysis_id,
-        {"status": "failed", "failure_reason": reason, "updated_at": _now_iso()},
+        {
+            "status": "failed",
+            "stage": None,
+            "failure_reason": reason,
+            "updated_at": _now_iso(),
+        },
     )
 
 

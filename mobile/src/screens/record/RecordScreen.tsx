@@ -2,7 +2,14 @@ import { useNavigation, useRoute, type RouteProp } from '@react-navigation/nativ
 import { useQueryClient } from '@tanstack/react-query';
 import { Mic, Square } from '../../components/icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Linking, Platform, ScrollView, StyleSheet, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Linking,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  View,
+} from 'react-native';
 
 import {
   Card,
@@ -54,6 +61,7 @@ import {
 } from '../../lib/sync/queuedTakes';
 import { startRecording } from '../../lib/audioRecorder';
 import {
+  BORDER_WIDTH,
   colors,
   disabledOpacity,
   ICON_SIZE,
@@ -61,6 +69,11 @@ import {
   MIN_TOUCH_TARGET,
   spacing,
 } from '../../design';
+import {
+  elapsedLabel,
+  isTakingLong,
+  progressFor,
+} from '../../lib/analysis/waitProgress';
 import { BottomSheet } from '../../components/overlays/BottomSheet';
 import { TempoStepper } from '../../components/practice/TempoStepper';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
@@ -200,7 +213,26 @@ export function RecordScreen() {
   /** The open metronome picker — how all four modes became reachable here. */
   const [pickingMetronome, setPickingMetronome] = useState(false);
   const [elapsedMs, setElapsedMs] = useState(0);
+  /**
+   * Which leg the analysis has reached, and how long the wait has run.
+   *
+   * Separate from `elapsedMs`, which is the *take's* clock and is reset by
+   * every path that starts one. These belong to the wait that follows and
+   * would be wrong the moment the take timer were reset under them.
+   */
+  const [analysisStage, setAnalysisStage] = useState<string | null>(null);
+  const [waitingMs, setWaitingMs] = useState(0);
   const [hasInputSignal, setHasInputSignal] = useState(false);
+  // The wait's own clock, on `monotonicNow` for the reason the take's timer
+  // uses it: a phone that sleeps mid-analysis must not show a jump or a
+  // negative, and wall-clock time does both.
+  useEffect(() => {
+    if (phase !== 'analysing') return;
+    const since = monotonicNow();
+    setWaitingMs(0);
+    const timer = setInterval(() => setWaitingMs(monotonicNow() - since), 1000);
+    return () => clearInterval(timer);
+  }, [phase]);
   useEffect(() => {
     if (phase !== 'recording' && phase !== 'counting_in') return;
     const timer = setInterval(() => {
@@ -645,7 +677,7 @@ export function RecordScreen() {
         // response, so the row is the only thing that survives to say which
         // bar was played first.
         fromMeasure: startFrom,
-      });
+      }, { onStage: setAnalysisStage });
       unsent.current = null;
       setPendingTake(false);
       holdForListening(null);
@@ -1150,15 +1182,70 @@ export function RecordScreen() {
   }
 
   if (phase === 'analysing') {
+    /*
+      **Three things move here, and each of them is true.**
+
+      This was a title and one line of static text, held for the whole run —
+      about 150 seconds against the deployed instance. Nothing on it changed,
+      so it was indistinguishable from a hang, and that is what was reported.
+
+      The bar advances on legs the runner actually reports (`waitProgress`),
+      the clock counts real elapsed seconds, and the indicator says the app is
+      still asking. None of the three is a timer dressed as progress: where
+      there is no leg to place — an older deployment, a run not yet picked up —
+      the bar is *absent* rather than empty, because an empty bar claims "no
+      progress yet", which is both more than the app knows and the exact
+      reading this screen exists to avoid.
+
+      One dominant focal point (§3 law 4): the title. The rail is a hairline
+      the width of the text column, the clock is tertiary metadata, and the
+      long-wait line appears only when it has something to add.
+    */
+    const { label, through } = progressFor(analysisStage);
     return (
       <ScreenContainer scrollable={false} contentStyle={styles.centred}>
         <View>
           <Text variant="heroTitle">Listening back</Text>
           <Text variant="body" color="textSecondary" style={styles.subtitle}>
             {truncated
-              ? `Only the first ${Math.floor(keptSeconds / 60)} minutes were kept. Matching them against the score.`
-              : 'Matching what you played against the score.'}
+              ? `Only the first ${Math.floor(keptSeconds / 60)} minutes were kept. ${label}.`
+              : `${label}.`}
           </Text>
+          {through === null ? null : (
+            /*
+              **The role goes on the rail, not on a wrapper round the text.**
+              `role="progressbar"` with a label overrides its own content for a
+              screen reader, so wrapping the title and the line in one hid both
+              and announced a name instead. The rail carries the role and the
+              leg is in its name — `accessibilityValue` is dropped entirely by
+              react-native-web, checked on the built bundle, so nothing here
+              may depend on it — and the sentence above stays ordinary text
+              that is read as ordinary text.
+            */
+            <View
+              accessibilityRole="progressbar"
+              accessibilityLabel={`Analysing your take: ${label}`}
+              style={styles.waitTrack}
+            >
+              <View style={[styles.waitFill, { width: `${through * 100}%` }]} />
+            </View>
+          )}
+          <View style={styles.waitFoot}>
+            <ActivityIndicator size="small" color={colors.textTertiary} />
+            <Text variant="metadata" color="textTertiary">
+              {elapsedLabel(waitingMs)}
+            </Text>
+          </View>
+          {isTakingLong(waitingMs) ? (
+            <Text
+              variant="metadata"
+              color="textTertiary"
+              style={styles.subtitle}
+            >
+              Still going. A long take and a busy server both look like this.
+              Your recording is safe either way.
+            </Text>
+          ) : null}
         </View>
       </ScreenContainer>
     );
@@ -2088,6 +2175,31 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     marginTop: spacing.md,
+  },
+  /**
+   * The wait's progress rail.
+   *
+   * A hairline, not a bar with a border and a radius: §3 law 6 keeps rounded
+   * containers and borders for exceptions, and this is one line under some
+   * text. It takes the text column's width so it reads as belonging to the
+   * sentence above rather than as a component dropped beneath it.
+   */
+  waitTrack: {
+    marginTop: spacing.lg,
+    height: BORDER_WIDTH * 3,
+    backgroundColor: colors.border,
+    overflow: 'hidden',
+  },
+  waitFill: {
+    height: '100%',
+    backgroundColor: colors.textSecondary,
+  },
+  /** The clock and the live indicator, on one line under the rail. */
+  waitFoot: {
+    marginTop: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   /**
    * The ruled row `PlaybackSettings` already draws for "Start at", because

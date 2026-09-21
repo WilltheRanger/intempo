@@ -152,6 +152,15 @@ export interface TakeSubmissionSource {
   /**
    * Uploads the take, waits for the pipeline, and returns the analysis id to
    * show. Rejects if the upload fails or the analysis never finishes.
+   *
+   * `onStage` reports which leg the run is on while the wait is in progress.
+   * Optional, and a source that cannot say passes nothing — the wait screen
+   * reads silence as "no finer information" rather than as no progress, so a
+   * deployment predating migration 025 stays honest without pretending to
+   * know where the run has got to.
    */
-  submit(input: SubmitTakeInput): Promise<string>;
+  submit(
+    input: SubmitTakeInput,
+    options?: { onStage?: (stage: string | null) => void },
+  ): Promise<string>;
 }
