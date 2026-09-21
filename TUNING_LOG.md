@@ -6,6 +6,111 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-09-21 — One attack reported twice is not two notes
+
+**No threshold changed, and nothing was added to `config.toml`.** The floor
+this introduces is derived from two constants that already exist. The six clips
+are **identical** — quality, status, direction and per-note count, clip by clip.
+
+### The defect
+
+The owner played the **first half** of a 25-bar part, starting at bar 1. The
+run reported `onsets=77/75`: more attacks than the whole page writes, from half
+of it. It was refused with "check you're on the right piece".
+
+Two things went wrong together, and the second is the one worth recording.
+`subsequence` is the machinery for a take covering part of a page, and it is
+gated on two tests:
+
+    detected.size < expected.size          77 < 75   -> False   (vetoes)
+    take_span * MAX_TEMPO_RATIO < page_span  49.5 < 58.2 -> True  (correct)
+
+The span test was right. The count test vetoed it, because over-detection had
+pushed ~43 played notes to 77 reported ones. So the match fell back to the
+corner-anchored path, which stretches a half-take across the whole page, and
+every residual was enormous.
+
+**The diagnosis before this one was wrong**, and it is worth saying so: the
+same numbers — 29.1 s of take against a 58.2 s page — were read as a take of
+the whole piece played at twice the tempo. A half-take at the right tempo and a
+whole take at 2x are the same ratio, and `MAX_TEMPO_RATIO`'s own comment names
+2.0 as exactly the number it cannot resolve. The owner said which it was.
+
+### The change
+
+Drop detections too close together to be two of *this page's* notes, after
+detection and before alignment.
+
+**The floor is derived, not chosen.** `closest_expected_gap` is the nearest two
+notes the page prints; `MAX_TEMPO_RATIO` is the fastest the matcher will
+believe a performance of it. Their quotient is the closest two of this page's
+notes can honestly arrive. On the page in question: 294 ms / 1.7 = **173 ms**.
+
+`wait_ms` in `[onset]` stays at 60 ms. It is a fact about how fast a string can
+be re-attacked and it does not know what is on the stand; this is the page's
+floor. They are different claims and both are wanted.
+
+Measured on that page, a take of its first 43 notes:
+
+    doubled attacks   onsets   as shipped   collapsed
+                  0       43        0.974       0.974
+                 10       53        0.607       0.974
+                 20       63        0.536       0.974
+                 34       77        0.000       0.974
+
+### Two things it must not do, and the guards for them
+
+**An ornamented page is left alone entirely.** An acciaccatura sits a fraction
+of a beat before the note it decorates — inside any floor derived from the
+required notes — so the pair would be collapsed and the attack kept would be
+the *grace's*. The main note is the required one, and handing it a timestamp
+60 ms early is a timing error invented on a note that was played correctly.
+
+**The opening pair is left to `align_take`.** Found by
+`test_a_bow_settling_before_the_first_note_no_longer_writes_the_verdict[0.5]`,
+which this broke: a bow settling 0.5 s before the first note is, in times
+alone, indistinguishable from that note being reported twice, and the two want
+opposite repairs — here the *second* sound is the music. At 60 BPM the floor is
+588 ms, so the scrape swallowed the first note and the take read as half a beat
+early. `align_take` already decides the origin with a trim search that pays for
+what it discards, and it is better informed than this rule.
+
+The cost of that second guard is honest: one doubled attack survives at the
+origin, and across takes of 15 to 18 notes the result lands between 0.478 and
+0.967 rather than at 0.974. The claim the test makes is the stable one — the
+take stops being **refused** and gets a verdict against the passage it played.
+
+### Regression — the six clips
+
+Old rule against new, in one process, same decoded audio:
+
+    clip                    quality (off -> on)   status   direction   notes
+    01_detache_clean          0.988 -> 0.988        ok        on         32
+    02_detache_rushing        0.988 -> 0.988        ok        rush       32
+    03_detache_dragging       0.988 -> 0.988        ok        drag       32
+    04_slurred                0.990 -> 0.990        ok        on          8
+    05_open_e_long            1.000 -> 1.000        ok        on          1
+    06_pizzicato              0.990 -> 0.990        ok        on         16
+
+**Identical on all six.** Expected rather than lucky: the corpus is a
+synthesised click track with no doubled attacks in it, so there is nothing here
+for this to remove. The corpus proves no regression and cannot prove the fix.
+
+Full backend suite: 2513 passed. The three new tests fail against a stubbed-out
+`collapse_double_attacks`, checked.
+
+### Still owed
+
+The recording that prompted this was never replayed — the session proxy refuses
+both the API host and storage, and the buckets are private. So the trigger is
+reproduced from the production log's own numbers and from synthetic takes built
+on the real score, not from the audio. **Whether the owner's take actually had
+34 doubled attacks is unknown**; what is known is that it reported 77 onsets
+for a half-take, and that a page-derived floor is the principled repair for
+that shape. The next real take is the test.
+
+---
+
 ## 2026-09-21 — The steady tempo comes out before the hesitation detector
 
 **No threshold changed.** `broken_quality` is still 0.40, `warn_quality` still

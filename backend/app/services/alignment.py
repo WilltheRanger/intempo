@@ -149,7 +149,6 @@ def _beats(duration: str) -> float:
         ) from None
 
 
-
 def expand_repeats(score: ScoreJson) -> list[Measure]:
     """The measures in playing order, with repeated sections written out twice.
 
@@ -857,6 +856,137 @@ def closest_expected_gap(
     return float(positive.min()) if positive.size else None
 
 
+def attacks_outnumber_the_music(
+    detected: np.ndarray, expected: np.ndarray
+) -> bool:
+    """Did more sound arrive than any performance of this page could produce?
+
+    **A count against the page is the wrong question and it was asked for a
+    long time.** A take of half a page reporting 77 onsets against a 75-note
+    score is 1.03x by count and looks unremarkable, while against the ~43 notes
+    its own span writes it is nearly double. The span is not known until the
+    match is made, so what can be asked first is how *thickly* attacks arrive.
+
+    **The threshold is `MAX_TEMPO_RATIO` and nothing else is chosen.** That is
+    the fastest the matcher will believe a performance of this page, so a take
+    whose attacks arrive closer together than the page's own notes at that
+    tempo is not a performance of it — some of what was heard is not the music.
+    Derived, like the floor in `collapse_double_attacks`, rather than picked.
+
+    Measured against every take this app has received, and against takes
+    synthesised from the same page and read through the same detector:
+
+        115 onsets / 34.2s = 3.36/s   vs 2.49/s   over-detected
+         88 onsets / 32.6s = 2.70/s   vs 1.72/s   over-detected
+         77 onsets / 29.1s = 2.65/s   vs 2.19/s   over-detected
+         31 onsets / 10.8s = 2.87/s   vs 2.49/s   over-detected
+         25 onsets / 17.6s = 1.42/s   vs 2.49/s   ordinary
+
+    It says nothing about *why* — a bass under a bow re-triggering, a room, a
+    microphone too close to the body of the instrument. What it buys is that
+    the musician stops being told to check they are on the right piece when
+    the page was never the problem.
+    """
+    if detected.size < 2 or expected.size < 2:
+        return False
+    page_span = float(expected[-1] - expected[0])
+    take_span = float(detected[-1] - detected[0])
+    if page_span <= 0 or take_span <= 0:
+        return False
+    believable = (expected.size / page_span) * MAX_TEMPO_RATIO
+    return detected.size / take_span > believable
+
+
+def collapse_double_attacks(
+    detected: np.ndarray,
+    expected: np.ndarray,
+    *,
+    optional: np.ndarray | None = None,
+) -> np.ndarray:
+    """Drop detections too close together to be two of *this page's* notes.
+
+    **A partial take of an over-detected recording was read as a wrong piece.**
+    The owner played the first half of a 25-bar part, starting at bar 1, and
+    the run reported `onsets=77/75`: more attacks than the whole page writes,
+    from half of it. Two things then went wrong together.
+
+    `subsequence` is the machinery for a take that covers part of a page, and
+    it is gated on `detected.size < expected.size` as well as on the span. The
+    span test was right — 29.1 s at the fastest believable tempo does not reach
+    the end of a 58.2 s page — and the count test vetoed it, because
+    over-detection had pushed 43 played notes to 77 reported ones. So the match
+    fell back to the corner-anchored path, which stretches a half-take across
+    the whole page, and every residual was enormous: **quality 0.000, "check
+    you're on the right piece"**, on a take that was the right piece.
+
+    Measured on that page, a take of its first 43 notes:
+
+        doubled attacks   onsets   as shipped   collapsed here
+                      0       43        0.974            0.974
+                     10       53        0.607            0.974
+                     20       63        0.536            0.974
+                     34       77        0.000            0.974
+
+    **The floor is derived, not chosen.** `closest_expected_gap` is the nearest
+    two notes this page prints; `MAX_TEMPO_RATIO` is the fastest the matcher
+    will believe a performance of it. Their quotient is therefore the closest
+    two of *this page's* notes can honestly arrive, and anything nearer is one
+    attack reported twice — a bass's slow attack under a bow, or string ring
+    after a pizzicato. There is no number to tune here and nothing to put in
+    `config.toml`: it falls out of two constants that already exist, and it
+    moves with the page rather than with a guess about instruments.
+
+    Checked against the takes it must not touch: a whole page played at tempo,
+    and one played at 1.6x — just inside the clamp — both lose **zero**
+    onsets.
+
+    `wait_ms` in `[onset]` is the detector's own floor and stays at 60 ms: it
+    is a fact about how fast a *string* can be re-attacked, and it does not
+    know what is on the stand. This is the page's floor, and the two are
+    different claims.
+
+    **The earlier attack is the one kept**, which is the same choice
+    `librosa`'s `wait` makes and the safe one here: the first is the note, and
+    what follows inside the floor is its ring.
+
+    `optional` is passed through to `closest_expected_gap` so an ornament does
+    not set the floor for the whole page — the same argument, and the same
+    omission, that `prepare_for_alignment` records for the detector's window.
+    """
+    if detected.size < 2 or expected.size < 2:
+        return detected
+    # **A page that prints an ornament is left alone**, and the reason is the
+    # one thing this cannot get right. An acciaccatura sits a fraction of a
+    # beat before the note it decorates — 75 ms at 120 BPM, inside any floor
+    # derived from the *required* notes — so the pair would be collapsed, and
+    # the attack kept would be the grace's. The main note is the required one,
+    # and handing it a timestamp 60 ms early is a timing error invented on a
+    # note that was played correctly. Keeping the *later* attack instead is
+    # wrong for the case this exists for, where the first is the note and what
+    # follows is its ring. The two cannot be told apart from times alone, so
+    # an ornamented page keeps the behaviour it has today.
+    if optional is not None and bool(np.any(np.asarray(optional, dtype=bool))):
+        return detected
+    floor = closest_expected_gap(expected, optional=optional)
+    if floor is None or floor <= 0:
+        return detected
+    floor /= MAX_TEMPO_RATIO
+    # **The opening pair is left to `align_take`.** A bow settling half a
+    # second before the first note is, in times alone, indistinguishable from
+    # that note being reported twice — and the two want opposite repairs, since
+    # here the *second* sound is the music. `align_take` already decides the
+    # origin with a trim search that has to pay for what it discards, and it is
+    # better informed than this rule is; collapsing the first pair pre-empts it
+    # and hands the take the scrape's timestamp. Measured: at a 0.5 s settle on
+    # a page of quarters at 60 BPM the floor is 588 ms, so the scrape swallowed
+    # the first note and the take read as half a beat early.
+    kept = [float(detected[0])]
+    for index, time in enumerate(detected[1:], start=1):
+        if index == 1 or float(time) - kept[-1] >= floor:
+            kept.append(float(time))
+    return np.asarray(kept, dtype=float)
+
+
 def to_timeline_base(detected: np.ndarray) -> np.ndarray:
     """Detected onsets re-expressed as seconds since the first note.
 
@@ -1069,8 +1199,11 @@ def align_dtw(
     expected = np.asarray(expected, dtype=float)
     if detected.size == 0 or expected.size == 0:
         return AlignmentResult(
-            mapping=[], cost=float("inf"), quality=0.0,
-            n_detected=int(detected.size), n_expected=int(expected.size),
+            mapping=[],
+            cost=float("inf"),
+            quality=0.0,
+            n_detected=int(detected.size),
+            n_expected=int(expected.size),
         )
 
     # --- matching is tempo-invariant; measurement is not -------------------
@@ -1143,7 +1276,9 @@ def align_dtw(
         if steady is not None and steady.size == reference.size:
             # Gaps between two steady notes. A gap that straddles the start of
             # a change belongs to neither pace.
-            both = np.asarray(steady[:-1], dtype=bool) & np.asarray(steady[1:], dtype=bool)
+            both = np.asarray(steady[:-1], dtype=bool) & np.asarray(
+                steady[1:], dtype=bool
+            )
             if both.sum() >= 2:
                 written_gaps = written_gaps[both]
         played = typical_gap(np.diff(seq))
@@ -1313,7 +1448,6 @@ def align_dtw(
                 refined = _clamp_ratio(written / played)
                 if abs(refined - ratio) > 1e-6:
                     mapping = _match(refined)
-
 
     # Quality measures how well the *shape* of the performance matches the
     # score — not the lead-in before the first note, and not the tempo it was
@@ -1500,9 +1634,7 @@ def apply_fuzzy_match(
     matched = sorted((det_i, exp_i) for exp_i, det_i in held.items())
 
     covered = {exp_i for _, exp_i in matched}
-    missed = [
-        i for i in range(expected.size) if i not in covered and not skippable[i]
-    ]
+    missed = [i for i in range(expected.size) if i not in covered and not skippable[i]]
 
     return CleanedAlignment(
         matched=matched,

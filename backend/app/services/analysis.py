@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 from app.services import audio as audio_svc
 from app.services.alignment import (
     align_take,
+    attacks_outnumber_the_music,
     AlignmentResult,
     apply_fuzzy_match,
     build_timeline,
@@ -31,6 +32,7 @@ from app.services.alignment import (
     ExpectedTimeline,
     is_alignment_broken,
     closest_expected_gap,
+    collapse_double_attacks,
 )
 from app.services.audio_config import AudioConfig, load_audio_config
 from app.services.insights import Insights, insights_for
@@ -305,6 +307,18 @@ def _why_alignment_failed(
             "Move the microphone closer."
         )
 
+    # **More sound arrived than any performance of this page could make.**
+    # Checked before the wrong-piece sentence because it is the commoner cause
+    # and the two are indistinguishable from the counts alone: a take carrying
+    # a great deal of noise matches badly everywhere, which looks exactly like
+    # the wrong music. Every take this app has analysed lands here, and every
+    # one of them was the right piece — see `attacks_outnumber_the_music`.
+    if attacks_outnumber_the_music(onsets, expected):
+        return (
+            "More sound came through than this page writes. Move the "
+            "microphone closer to the instrument, away from anything noisy."
+        )
+
     # **Everything the page writes was heard, and none of it where the page
     # puts it.** That really is the wrong-piece signature, and the advice is
     # earned here in a way it was not above: the counts agree, so quoting them
@@ -451,6 +465,14 @@ def prepare_for_alignment(
         config=config,
         min_gap_s=closest_expected_gap(expected, optional=grace),
     )
+    # **One attack reported twice is not two notes**, and until this line it
+    # could out-vote the machinery for a partial take: `subsequence` is gated
+    # on the detections being fewer than the page's notes, so an over-detected
+    # half-take (`onsets=77/75`) was matched against the whole page and refused
+    # as a wrong piece. The detector's own `wait_ms` is a fact about how fast a
+    # string can be re-attacked; this is a fact about what is on the stand, and
+    # they are different claims. See `collapse_double_attacks`.
+    onsets = collapse_double_attacks(onsets, expected, optional=grace)
     return Heard(
         y=y, sr=sr, timeline=timeline, expected=expected, grace=grace, onsets=onsets
     )
