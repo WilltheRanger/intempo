@@ -890,3 +890,100 @@ def test_the_mark_survives_the_bar_it_was_printed_in() -> None:
 
     assert timeline.notes[4].measure_number == 2
     assert timeline.notes[4].after_fermata is True
+
+
+# A steady tempo difference is the product, not a reason to refuse.
+#
+# `quality` answers "can this alignment be trusted", and `_residuals` takes a
+# straight line out so that a take played evenly at another pace still reads as
+# the right piece — the comment above the call in `align_dtw` says a take "at
+# 95% of the marked tempo" must be a 1.0. It was, and 92% was a 0.000, because
+# the hesitation detector ran *before* the line was removed and read the ramp's
+# proportionally-larger steps at long notes as a run of disturbances.
+#
+# Measured in production: eleven consecutive takes, none of which ever produced
+# a verdict, every one refused with coverage between 0.72 and 0.88 and
+# `timing=0.000`. See `TUNING_LOG.md`, 2026-09-21.
+#: A page whose notes are not all the same length.
+#:
+#: **The note lengths have to vary or this proves nothing.** On an even grid of
+#: quarters a tempo difference moves every step by the same amount, so the
+#: spread `pulse_anchors` measures is zero, nothing is ever called a
+#: disturbance, and the old rule scores 1.000 at every pace here. The defect
+#: needs gaps of different sizes: at 1.3x an eighth drifts 68 ms and a half
+#: drifts 271 ms from the one cause, and it is the long ones that get read as
+#: hesitations.
+#:
+#: Built through `compute_expected_onsets` rather than by hand, so the shape
+#: under test is one the timeline builder actually produces. The mixture —
+#: eighths, quarters, halves and a bar of rest — is the shape of the page the
+#: production failures were found on.
+def _mixed_length_page() -> np.ndarray:
+    e, q, h = "eighth", "quarter", "half"
+    bars = [
+        [("C3", e), ("rest", e), ("D3", e), ("rest", e),
+         ("Eb3", e), ("rest", e), ("F3", e), ("rest", e)],
+        [("Bb3", q), ("G3", q), ("Eb3", q), ("C3", q)],
+        [("Eb3", h), ("C3", h)],
+        [("F3", e), ("G3", e), ("Ab3", e), ("Bb3", e), ("C4", q), ("D4", q)],
+        [("G2", h), ("E2", h)],
+        [("A2", q), ("B2", q), ("C3", q), ("D3", q)],
+        [("D3", e), ("rest", e), ("rest", q), ("rest", h)],
+        [("G3", h), ("C3", q), ("D3", q)],
+    ]
+    score = ScoreJson.model_validate(
+        {
+            "clef": "bass",
+            "ocr_confidence": 1.0,
+            "measures": [
+                {
+                    "measure_number": i + 1,
+                    "notes": [
+                        {"pitch": pitch, "duration": duration}
+                        for pitch, duration in bar
+                    ],
+                }
+                for i, bar in enumerate(bars)
+            ],
+        }
+    )
+    return compute_expected_onsets(score, 120.0)
+
+
+@pytest.mark.parametrize("pace", [0.5, 0.7, 0.83, 0.92, 0.95, 1.0, 1.05, 1.2, 1.4])
+def test_a_take_played_evenly_at_another_pace_is_still_the_right_piece(
+    pace: float,
+) -> None:
+    expected = _mixed_length_page()
+    result = align_dtw(expected * pace, expected, target_bpm=120.0)
+    assert result.mapping == [(i, i) for i in range(expected.size)]
+    assert result.quality > 0.95, f"{pace}x scored {result.quality:.3f}"
+
+
+def test_the_pace_is_taken_from_a_median_so_one_held_bar_does_not_move_it() -> None:
+    """A hesitation must not be mistaken for the take's pace.
+
+    The initial detrend is a median of per-interval rates rather than a fitted
+    slope for exactly this: a least-squares line is dragged by the one long
+    interval and the take reads 0.569 instead of 0.640.
+    """
+    expected = _mixed_length_page()
+    detected = expected.copy()
+    detected[detected.size // 2 :] += 0.5  # one bar held, then the pulse resumes
+    held = align_dtw(detected, expected, target_bpm=120.0)
+    even = align_dtw(expected.copy(), expected, target_bpm=120.0)
+    # The hesitation is still visible — it is not absorbed into the pace.
+    assert held.quality < even.quality
+    # But the take is still readable: a held bar is playing, not a wrong piece.
+    assert held.quality > 0.4, f"a single held bar scored {held.quality:.3f}"
+    # The step costs the one match it straddles and nothing else.
+    assert held.coverage > 0.95
+
+
+def test_noise_is_still_refused_after_the_pace_is_removed() -> None:
+    """Widening what counts as a pace must not widen what counts as music."""
+    expected = _mixed_length_page()
+    rng = np.random.default_rng(0)
+    for seed_shift in range(8):
+        noise = np.sort(rng.random(expected.size) * float(expected[-1]) + seed_shift * 0.0)
+        assert align_dtw(noise, expected, target_bpm=120.0).quality < 0.4

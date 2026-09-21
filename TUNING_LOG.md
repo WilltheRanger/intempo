@@ -6,6 +6,120 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-09-21 — The steady tempo comes out before the hesitation detector
+
+**No threshold changed.** `broken_quality` is still 0.40, `warn_quality` still
+0.70, `[tolerance.pulse]` untouched. What changed is the *order* of two steps
+inside `_residuals`, and the six clips are **identical** — quality, status,
+direction and per-note count, clip by clip.
+
+### The defect
+
+Eleven consecutive takes in production, from 2026-09-12 to 2026-09-20, every
+one refused. **None has ever produced a verdict.** All eleven are
+`alignment_failed` with `alignment_quality = 0`, and the three still inside the
+host's log retention name the cause:
+
+    refused, quality=0.000 (timing=0.000 coverage=0.720) onsets=77/75 take_span=29.1s page_span=58.2s
+    refused, quality=0.000 (timing=0.000 coverage=0.880) onsets=84/75 take_span=30.0s page_span=51.2s
+    refused, quality=0.000 (timing=0.000 coverage=0.787) onsets=88/75 take_span=32.6s page_span=74.2s
+
+Coverage is healthy in all three and the onset counts are close to the page's
+75 — the microphone, the transcription and the OCR all did their jobs. Only
+`timing` is broken, and it is broken to exactly 0.
+
+`quality` exists to ask whether an alignment can be trusted, and `_residuals`
+takes a straight line out so that a take played evenly at another pace still
+reads as the right piece — the comment above the call in `align_dtw` is
+explicit that a take "at 95% of the marked tempo" must score 1.0. It did. 92%
+scored 0.000.
+
+The cause is that `pulse_anchors` ran **before** the line was removed. It
+judges a step against the spread of the take's other steps, and a steady tempo
+difference moves every note in proportion to its own length: at 1.3x an eighth
+drifts 68 ms and a half drifts 271 ms, from one cause. The long notes then read
+as a run of disturbances, the anchor resets part way down the ramp, and what
+reaches `polyfit` is a sawtooth rather than a line. Measured on the 25-bar
+production page at 102 BPM, same notes, played steadily faster:
+
+    pace    fitted rate (want)      residual    quality
+    1.05x   0.9524 (0.9524)              0 ms     1.000
+    1.08x   0.9909 (0.9259)            357 ms     0.000
+    1.30x   0.9560 (0.7692)            955 ms     0.000
+    2.00x   0.9412 (0.5000)           1331 ms     0.000
+
+The mapping was the identity in every row and coverage was 1.000: all 75 notes
+matched, and the score was thrown away afterwards.
+
+**The usable window was about 0.95x to 1.07x of the tempo the player set**, and
+outside it the musician was told to check they were on the right piece. It was
+also erratic rather than monotonic — on one page shape 0.50x and 0.70x passed
+while 0.92x and 1.40x failed — because whether the trip happens depends on how
+the proportional steps land against `max(6 x spread, 0.1667 x beat)`.
+
+### The change
+
+Remove the steady pace first, hand `pulse_anchors` only what a steady pace
+cannot explain, then fit the line as before. The pace is a **median of
+per-interval rates**, not a least-squares slope, because the series this has to
+survive is the one `pulse_anchors` exists for.
+
+Three estimators were measured on the hesitation case (one bar held a beat, the
+pulse then resuming), against 0.640 for the old rule:
+
+    median of per-interval rates     0.640   <- unchanged, chosen
+    least-squares slope              0.569   dragged by the held interval
+    typical_gap(played)/typical_gap(written)
+                                     0.220   its core filter drops the long
+                                             gaps, so the ratio of two filtered
+                                             means is not a rate when the two
+                                             gap distributions differ
+
+### Regression — the six clips
+
+Run old rule against new in one process, same decoded audio:
+
+    clip                    quality (old -> new)   status   direction   notes
+    01_detache_clean          0.988 -> 0.988         ok        on         32
+    02_detache_rushing        0.988 -> 0.988         ok        rush       32
+    03_detache_dragging       0.988 -> 0.988         ok        drag       32
+    04_slurred                0.990 -> 0.990         ok        on          8
+    05_open_e_long            1.000 -> 1.000         ok        on          1
+    06_pizzicato              0.990 -> 0.990         ok        on         16
+
+**Identical on all six**, including the two that carry a direction. That is the
+expected result rather than a lucky one: the corpus is a click track at a
+single pace, so the ramp this fixes is not present in any of the six. The six
+prove the arithmetic still runs and still points the right way; they cannot
+prove the fix, and the page that can is in `test_alignment.py`.
+
+### What still refuses
+
+Checked on a page built through `compute_expected_onsets` with eighths,
+quarters, halves and a bar of rest — the shape the failures were found on.
+Unchanged from the old rule in every case: every other note 0.000, note values
+drawn at random 0.000, uniform noise 0.000 across eight seeds, a swung rhythm
+and a part-take unchanged to three decimals. Widening what counts as a pace did
+not widen what counts as music.
+
+`test_a_take_played_evenly_at_another_pace_is_still_the_right_piece` fails at
+six of its nine paces against the old rule and passes at all nine against the
+new one. On an even grid of quarters it passes against both, which is why the
+page it runs on has mixed note lengths and says so.
+
+### Still owed
+
+This is arithmetic verified against synthetic takes built from a real score,
+not against the recordings that failed — those need a service-role key this
+session does not have. The numbers above reproduce the production log's
+`page_span` to 0.1 s on all three retained failures and reproduce
+`quality=0.000 timing=0.000`, so the mechanism is confirmed; replaying the
+actual WAVs is not done. **The threshold question the corpus README raises is
+untouched and still open**: whether 0.5 beats of average error is the right
+anchor needs real recordings and an ear.
+
+---
+
 ## 2026-09-19 — Two new thresholds, after a third approach was built and reverted
 
 **New section `[onset.recovery]`: `search_share = 0.25`, `floor_ratio = 0.015`.**
