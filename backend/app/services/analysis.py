@@ -284,16 +284,12 @@ def _why_alignment_failed(
     far_too_many = len(cleaned.extra_detected) > len(cleaned.matched)
 
     if heard_everything and far_too_many:
-        return (
-            "We heard many more notes than this page writes. The slurs on "
-            "the page are probably not the ones you played."
-        )
+        return "More notes came through than the page writes. Check its slurs."
 
     if _take_is_much_longer_than_the_page(onsets, expected):
         return (
-            "Your take runs much longer than this page. Look for a repeat, "
-            "or a rest bar with a number over it, missing from the "
-            "transcription."
+            "Your take runs longer than this page. Look for a missing repeat, "
+            "or a rest bar with a number over it."
         )
 
     # Far fewer attacks than the page writes. A take that is simply *short* no
@@ -306,7 +302,7 @@ def _why_alignment_failed(
     if raw.coverage < _SPARSE_COVERAGE and raw.n_detected < raw.n_expected:
         return (
             f"Only {raw.n_detected} of {raw.n_expected} notes came through. "
-            "Try moving the microphone closer."
+            "Move the microphone closer."
         )
 
     # **Everything the page writes was heard, and none of it where the page
@@ -314,10 +310,7 @@ def _why_alignment_failed(
     # earned here in a way it was not above: the counts agree, so quoting them
     # would tell the musician nothing, and what is left is that these notes are
     # not this music.
-    return (
-        "The notes came at different times than this page writes them. "
-        "Check you're on the right piece, and the tempo you set."
-    )
+    return "Same notes, different times. Check you're on the right piece and the tempo."
 
 
 #: Below this share of the page's notes, there is not enough of a take to
@@ -389,14 +382,8 @@ def _why_nothing_to_compare(expected: np.ndarray) -> str:
     silent one.
     """
     if expected.size == 0:
-        return (
-            "This piece has no notes to compare against. Check the "
-            "transcription."
-        )
-    return (
-        "No sound reached the microphone. Check your input and that nothing "
-        "is muting it."
-    )
+        return "This piece has no notes to compare against. Check the transcription."
+    return "No sound reached the microphone. Check that nothing is muting it."
 
 
 @dataclass(frozen=True)

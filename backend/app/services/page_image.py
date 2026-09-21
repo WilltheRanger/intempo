@@ -1120,11 +1120,9 @@ def too_small_to_read(image_bytes: bytes) -> str | None:
     space = measured.spacing
     if space is None:
         return (
-            "The staff lines in this photograph are too small to read — the app "
-            "can find the systems on the page but not the five lines in them. "
-            "A photo taken with a phone camera, close enough that one system "
-            "fills the width of the frame, reads reliably; a laptop webcam "
-            "usually does not have the resolution for a page of music."
+            "The staff lines in this photograph are too small to read. "
+            "Photograph the page with a phone, close enough that one system "
+            "fills the frame."
         )
 
     if space < _MIN_STAFF_SPACE_PX:
@@ -1135,11 +1133,10 @@ def too_small_to_read(image_bytes: bytes) -> str | None:
         # sitting right here unsaid.
         width, height = measured.size
         return (
-            "This photograph is too small to read the notation from — the staff "
-            "lines are about "
-            f"{space:.0f} pixels apart and the app needs {_MIN_STAFF_SPACE_PX}. "
-            f"The image is {width}x{height}. Photographing the page again from "
-            "closer, or with a phone rather than a webcam, is what fixes it."
+            "This photograph is too small to read the notation from. "
+            f"The staff lines are {space:.0f} pixels apart and the app needs "
+            f"{_MIN_STAFF_SPACE_PX}; the image is {width}x{height}. "
+            "Photograph the page again from closer."
         )
     return None
 

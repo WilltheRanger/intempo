@@ -26,6 +26,7 @@ import {
 import { usePreferences } from '../../data/preferences';
 import { playSchedule } from '../../lib/scorePlayer';
 import { INSTRUMENT_LABELS } from '../../lib/warmup';
+import { ROW_PADDING_VERTICAL } from '../rowMetrics';
 
 export interface ListenButtonProps {
   score: ScoreJson | null;
@@ -41,6 +42,25 @@ export interface ListenButtonProps {
   fromMeasure?: number;
   /** Locked during a take. */
   disabled?: boolean;
+  /**
+   * How this draws itself.
+   *
+   * `button` is the bordered control the score reader uses, where it is the
+   * only thing on its line and a box is what marks it as tappable.
+   *
+   * `row` is the record panel, where it is the fourth of five settings rows
+   * and a box around one of them is the odd one out. Measured on a built app
+   * before the change: the panel put a stepper, two ruled rows, a bordered
+   * pill and two unruled lines of small type in one column, with gaps of 44,
+   * 29, 40, 11 and 2 points between them. A row here is what makes the last
+   * three of those numbers the same as the first two.
+   *
+   * A density rather than a second component, for the reason `TempoStepper`
+   * gives: the playback wiring, the warm-up, the focus cleanup and the
+   * progress reporting are the component, and two copies of them is how one
+   * stops being fixed.
+   */
+  density?: 'button' | 'row';
   /**
    * Where the playhead is, about once a frame, and `(0, 0)` when it stops.
    *
@@ -75,6 +95,7 @@ export function ListenButton({
   fromMeasure,
   disabled = false,
   onProgress,
+  density = 'button',
 }: ListenButtonProps) {
   const { instrument } = usePreferences();
   const [playing, setPlaying] = useState(false);
@@ -186,6 +207,32 @@ export function ListenButton({
     setPlaying(sounding);
   }
 
+  const glyph = loading ? (
+    <ActivityIndicator size="small" color={colors.textPrimary} />
+  ) : playing ? (
+    <Pause
+      size={ICON_SIZE.sm}
+      strokeWidth={ICON_STROKE_WIDTH}
+      color={colors.textPrimary}
+      fill={colors.textPrimary}
+    />
+  ) : (
+    <Play
+      size={ICON_SIZE.sm}
+      strokeWidth={ICON_STROKE_WIDTH}
+      color={colors.textPrimary}
+      fill={colors.textPrimary}
+    />
+  );
+
+  const spokenLabel = loading
+    ? 'Loading instrument, tap to cancel'
+    : playing
+      ? 'Stop listening'
+      : `Listen with ${INSTRUMENT_LABELS[instrument]} at this tempo`;
+
+  const row = density === 'row';
+
   return (
     <View>
       <Pressable
@@ -193,46 +240,52 @@ export function ListenButton({
         disabled={disabled}
         accessibilityRole="button"
         accessibilityState={{ disabled, busy: loading }}
-        accessibilityLabel={
-          loading
-            ? 'Loading instrument, tap to cancel'
-            : playing
-              ? 'Stop listening'
-              : `Listen with ${INSTRUMENT_LABELS[instrument]} at this tempo`
-        }
+        accessibilityLabel={spokenLabel}
         style={({ pressed }) => [
-          styles.button,
-          pressed && styles.pressed,
+          row ? styles.row : styles.button,
+          pressed && (row ? styles.rowPressed : styles.pressed),
           disabled && styles.disabled,
         ]}
       >
-        {loading ? (
-          <ActivityIndicator size="small" color={colors.textPrimary} />
-        ) : playing ? (
-          <Pause
-            size={ICON_SIZE.sm}
-            strokeWidth={ICON_STROKE_WIDTH}
-            color={colors.textPrimary}
-            fill={colors.textPrimary}
-          />
+        {row ? (
+          <>
+            {/*
+              The label never changes, the value does. That is the grammar of
+              every other row in the panel — "Metronome / Off", "Start at /
+              Bar 1" — and it is what lets a musician read the column down the
+              left instead of re-reading a control whose own name moved.
+            */}
+            <Text variant="button">Listen</Text>
+            <View style={styles.rowValue}>
+              {glyph}
+              <Text variant="metadata" color="textTertiary" numberOfLines={1}>
+                {loading
+                  ? 'Loading'
+                  : playing
+                    ? 'Playing'
+                    : INSTRUMENT_LABELS[instrument]}
+              </Text>
+            </View>
+          </>
         ) : (
-          <Play
-            size={ICON_SIZE.sm}
-            strokeWidth={ICON_STROKE_WIDTH}
-            color={colors.textPrimary}
-            fill={colors.textPrimary}
-          />
+          <>
+            {glyph}
+            <Text variant="metadataSmall">
+              {loading
+                ? 'Loading · Cancel'
+                : playing
+                  ? 'Stop'
+                  : `Listen · ${INSTRUMENT_LABELS[instrument]}`}
+            </Text>
+          </>
         )}
-        <Text variant="metadataSmall">
-          {loading
-            ? 'Loading · Cancel'
-            : playing
-              ? 'Stop'
-              : `Listen · ${INSTRUMENT_LABELS[instrument]}`}
-        </Text>
 
         {/* Sits inside the control's border rather than under it, so the button
-          keeps one outline instead of growing a second element beneath it. */}
+          keeps one outline instead of growing a second element beneath it.
+
+          In `row` form there is no border to sit inside, so it rules the row's
+          own bottom edge — visible only while something is sounding, which is
+          the only time it has anything to report. */}
         <View style={styles.track} pointerEvents="none">
           <View
             style={[styles.fill, { width: `${Math.min(1, progress) * 100}%` }]}
@@ -272,6 +325,38 @@ const styles = StyleSheet.create({
   },
   pressed: {
     backgroundColor: colors.surfacePressed,
+  },
+  /**
+   * The panel's row, to `rowMetrics`' grammar: label left, value right, a
+   * hairline on the top edge, `ROW_PADDING_VERTICAL` above and below.
+   *
+   * `overflow: 'hidden'` is kept from the button form and does a different job
+   * here — it clips the progress fill to the row so a take of a long movement
+   * cannot draw a gold line out past the panel's gutter.
+   */
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    minHeight: MIN_TOUCH_TARGET,
+    paddingVertical: ROW_PADDING_VERTICAL,
+    borderTopWidth: BORDER_WIDTH,
+    borderTopColor: colors.border,
+    overflow: 'hidden',
+  },
+  rowPressed: {
+    backgroundColor: colors.surfacePressed,
+    opacity: 0.88,
+  },
+  rowValue: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    flexShrink: 1,
+    // See `LinkRow`: a flex item's CSS min-width is its content, so a long
+    // instrument name would push the row off the web build's screen.
+    minWidth: 0,
   },
   disabled: {
     opacity: disabledOpacity,

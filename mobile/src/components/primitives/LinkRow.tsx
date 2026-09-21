@@ -1,16 +1,19 @@
-import { ChevronRight } from '../../components/icons';
+import { ChevronRight } from '../icons';
 import { StyleSheet, View } from 'react-native';
 
-import { PressableScale } from '../../components/motion';
-import { Text } from '../../components/primitives/Text';
+import { PressableScale } from '../motion';
+import { Text } from './Text';
 import {
   BORDER_WIDTH,
   colors,
+  disabledOpacity,
   ICON_SIZE,
   ICON_STROKE_WIDTH,
   MIN_TOUCH_TARGET,
   spacing,
 } from '../../design';
+import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
+import { ROW_PADDING_VERTICAL } from '../rowMetrics';
 
 export interface LinkRowProps {
   label: string;
@@ -19,6 +22,16 @@ export interface LinkRowProps {
   onPress: () => void;
   /** Hairline above the row. Omit on the first row in a group. */
   divided?: boolean;
+  /**
+   * Locked, for a setting that cannot be changed right now.
+   *
+   * The record panel's rows are written onto a take the moment it starts, so
+   * they have a real locked state — the row greys, stops answering, and tells
+   * a screen reader it is disabled rather than silently doing nothing.
+   */
+  disabled?: boolean;
+  /** Announced after the label, for a row whose destination isn't obvious. */
+  hint?: string;
 }
 
 /**
@@ -26,26 +39,45 @@ export interface LinkRowProps {
  *
  * The chevron is the whole point: it separates rows that go somewhere from
  * rows that only report a value, which otherwise look identical.
+ *
+ * **A primitive, since 2026-09-20, and it was Profile's own.** The record
+ * panel needed the same row and had been drawing three near-misses of it by
+ * hand — one centred, one at half the vertical padding, one ruled and one not
+ * — which is the drift `rowMetrics` was written to stop and could not, because
+ * the rule was in a module while the row was copied. One component is the
+ * enforcement the constant could not be.
  */
 export function LinkRow({
   label,
   value,
   onPress,
   divided = true,
+  disabled = false,
+  hint,
 }: LinkRowProps) {
   return (
     <PressableScale
-      onPress={onPress}
+      onPress={() => {
+        // The same weight the tab bar and the primary button use. A settings
+        // row that opens a sheet is a navigation, and a navigation that starts
+        // with a tick under the finger reads as having been received.
+        impact(ImpactFeedbackStyle.Light);
+        onPress();
+      }}
+      disabled={disabled}
       activeScale={0.99}
       accessibilityRole="button"
       accessibilityLabel={value ? `${label}, ${value}` : label}
+      accessibilityHint={hint}
+      accessibilityState={{ disabled }}
       style={({ pressed }) => [
         styles.row,
         divided && styles.divided,
-        pressed && styles.pressed,
+        pressed && !disabled && styles.pressed,
+        disabled && styles.disabled,
       ]}
     >
-      <Text variant="button" style={styles.label}>
+      <Text variant="button" color={disabled ? 'textTertiary' : 'textPrimary'} style={styles.label}>
         {label}
       </Text>
 
@@ -77,7 +109,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing.md,
     minHeight: MIN_TOUCH_TARGET,
-    paddingVertical: spacing.lg,
+    paddingVertical: ROW_PADDING_VERTICAL,
   },
   divided: {
     borderTopWidth: BORDER_WIDTH,
@@ -86,6 +118,9 @@ const styles = StyleSheet.create({
   pressed: {
     backgroundColor: colors.surfacePressed,
     opacity: 0.88,
+  },
+  disabled: {
+    opacity: disabledOpacity,
   },
   label: {
     flexShrink: 0,

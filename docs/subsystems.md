@@ -1170,6 +1170,51 @@ nothing else covers `backend/`. Named here rather than left to be found.
   an overflow. Rows that put a value against the right margin need a stretched
   parent, and the parent is where to look when two halves of a row collide.
 
+- **A sheet that lowers itself makes the web build's page scroll, and nothing
+  here could see it (2026-09-20).** `DragSheet` lowers by `translateY`, and in
+  CSS a translated absolutely-positioned element still counts toward the
+  document's scrollable overflow — so the record screen shipped with
+  `document.scrollHeight` at **1219 against an innerHeight of 844**, exactly
+  the sheet's 375 points of travel. On a phone that is blank ground under the
+  panel, a panel that slides up under the finger, and a drag on the grab handle
+  that scrolls the page instead of moving the sheet. All three were reported as
+  one complaint.
+
+  React Native clips this on device, so it exists only in the build the app is
+  actually looked at in — and every check in this repository drives that build
+  and still missed it, because none of them reads `scrollHeight`. The fix is
+  `overflow: 'hidden'` on the screen's own root, which is a one-line style and
+  was not obvious from any symptom.
+
+  **The walk had been passing *because* of it.** `walk-app.mjs` reached the
+  tempo stepper through Playwright's "scroll into view", on a page scroll no
+  musician could have used; clipping the stage took that accident away and the
+  step started timing out on a control sitting under the take bar. A green
+  check that depends on a bug is worse than a red one. It raises the sheet
+  explicitly now.
+
+- **Content that must not move belongs outside a sheet that moves
+  (2026-09-20).** The record button lived at the top of the drag sheet, kept on
+  screen by `peek` — a constant declaring how tall four pieces of conditional
+  content would come out. It said 232 and the content measured **256**, so the
+  button's own label was clipped by the bottom edge of every phone, on a screen
+  with nothing wrong with it. Raising the sheet then put the one control a
+  musician reaches for without looking in the middle of the display rather than
+  under the thumb.
+
+  It is a bar of its own now, anchored to the bottom edge, outside the sheet;
+  the sheet is inset above it and reports nothing about it. `peek` defaults to
+  `HANDLE_HEIGHT`, derived from the two tokens the handle's own style is built
+  from, because two numbers that have to agree in two files are a number that
+  will stop agreeing — the caller that passed this one counted the handle's
+  padding twice.
+
+  The failure messages moved into that bar with the button. The sheet used to
+  carry a `raiseSignal` that hauled itself up over the music whenever a message
+  the musician had to read appeared inside it; a rescue like that only exists
+  because something that always has to be seen was put somewhere that can be
+  hidden. Both are gone.
+
 ## The capture path (2026-08-24) — what an audit of it found
 
 Nine defects between the shutter and a saved score, in a path that had **zero

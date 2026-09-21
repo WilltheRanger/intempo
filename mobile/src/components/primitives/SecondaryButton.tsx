@@ -17,6 +17,7 @@ import {
   radii,
   spacing,
 } from '../../design';
+import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import { PressableScale } from '../motion/PressableScale';
 import { Text } from './Text';
 
@@ -49,7 +50,14 @@ export function SecondaryButton({
   const ink = onDark ? colors.onDark : colors.textPrimary;
   return (
     <PressableScale
-      onPress={onPress}
+      onPress={() => {
+        // The same tick the primary button gives, at the same weight. They sit
+        // side by side on half the screens in this app, and one answering the
+        // finger while the other does not reads as the quiet one being broken
+        // rather than as the quiet one being quiet.
+        impact(ImpactFeedbackStyle.Light);
+        onPress();
+      }}
       disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={label}

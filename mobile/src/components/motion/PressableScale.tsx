@@ -9,7 +9,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 
-import { EASE_OUT, PRESSED_SCALE, motion } from '../../design';
+import { EASE_OUT, PRESSED_SCALE, SPRING, SPRING_CSS, motion } from '../../design';
 import { useReducedMotion } from '../../lib/useReducedMotion';
 
 const WEB_PRESSABLE_STYLE = Platform.select({
@@ -52,9 +52,10 @@ export interface PressableScaleProps extends Omit<PressableProps, 'style' | 'chi
  * shrinking a 44pt button by 3% is invisible, and the app already has a
  * consistent pressed colour for them.
  *
- * Press-in is very short and press-out eases, which is the asymmetry iOS uses:
- * the response has to meet the finger without snapping between frames, while
- * the release can settle.
+ * Press-in is very short and press-out springs, which is the asymmetry iOS
+ * uses: the response has to meet the finger without snapping between frames,
+ * while the release settles with a hair of overshoot. Both halves are below,
+ * each with its own note.
  *
  * Scale is a transform, so native builds use the native driver and hold 60fps
  * regardless of what the JS thread is doing — which matters most exactly when
@@ -70,17 +71,48 @@ export function PressableScale({
   const reduceMotion = useReducedMotion();
   const scale = useRef(new Animated.Value(1)).current;
 
-  function animateTo(value: number, duration: number) {
-    // Web gets the same quick-down / eased-release behavior from a CSS
-    // transition below. Keeping it off the JavaScript animation loop prevents
-    // dropped frames while a tap is also navigating or starting network work.
+  /**
+   * Contact: a timed run, because the only thing that matters is that it
+   * arrives. `motion.pressIn` is 55ms, which meets the finger without the
+   * control snapping to its pressed size between two frames.
+   */
+  function pressIn() {
+    // Web gets the same behaviour from the CSS transition below. Keeping it off
+    // the JavaScript animation loop prevents dropped frames while a tap is also
+    // navigating or starting network work.
     if (reduceMotion || Platform.OS === 'web') {
       return;
     }
     Animated.timing(scale, {
-      toValue: value,
-      duration,
+      toValue: activeScale,
+      duration: motion.pressIn,
       easing: EASE_OUT,
+      useNativeDriver: true,
+    }).start();
+  }
+
+  /**
+   * Release: the shared spring, which **overshoots by a hair and settles**.
+   *
+   * It was a 120ms `timing` on `EASE_OUT`, which returns a control to its own
+   * size and stops dead there. That is the difference between a button that
+   * lets go and a button that springs back, and it is most of what "more
+   * satisfying to tap" describes — the release is the half of a press anybody
+   * actually watches, because the contact is under their fingertip.
+   *
+   * `SPRING` is the app's own (stiffness 260, damping 24), so this bounces
+   * exactly as much as the floating control layer does and no more. A spring
+   * is also interruptible from wherever it has reached, which a duration is
+   * not: tapping twice quickly no longer restarts the second press from a
+   * size the control was never at.
+   */
+  function pressOut() {
+    if (reduceMotion || Platform.OS === 'web') {
+      return;
+    }
+    Animated.spring(scale, {
+      toValue: 1,
+      ...SPRING,
       useNativeDriver: true,
     }).start();
   }
@@ -89,11 +121,11 @@ export function PressableScale({
     <Pressable
       {...rest}
       onPressIn={(event) => {
-        animateTo(activeScale, motion.pressIn);
+        pressIn();
         rest.onPressIn?.(event);
       }}
       onPressOut={(event) => {
-        animateTo(1, motion.fast);
+        pressOut();
         rest.onPressOut?.(event);
       }}
       style={[
@@ -122,10 +154,19 @@ export function PressableScale({
                       // colour does not flash while the surface settles.
                       transitionProperty:
                         'transform, background-color, border-color, opacity',
+                      // **The release is longer than the contact and curves
+                      // differently**, which is the same asymmetry the native
+                      // branch gets from `SPRING`: `SPRING_CSS` carries its
+                      // control point past 1, so the control overshoots its own
+                      // size by a hair on the way back rather than arriving and
+                      // stopping. There is no `Animated.spring` on
+                      // react-native-web, and this is what stands in for it.
                       transitionDuration: state.pressed
                         ? `${motion.pressIn}ms`
-                        : `${motion.fast}ms`,
-                      transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
+                        : `${motion.spring}ms`,
+                      transitionTimingFunction: state.pressed
+                        ? 'cubic-bezier(0.22, 1, 0.36, 1)'
+                        : SPRING_CSS,
                       willChange: 'transform',
                     } as unknown as ViewStyle),
               ]}

@@ -239,11 +239,9 @@ export async function uploadPage(
     );
     if (smaller.size > MAX_PAGE_BYTES) {
       throw new ScanUploadError(
-        `That photograph is ${megabytes(bytes.size)} and could not be made ` +
-          `small enough to send — the limit is ${megabytes(MAX_PAGE_BYTES)}, ` +
-          `and the smallest version of it is still ` +
-          `${megabytes(smaller.size)}. A photograph of one page, rather than a ` +
-          `scan of several, is usually well inside it.`,
+        `That photograph is ${megabytes(bytes.size)} and will not go below ` +
+          `${megabytes(smaller.size)}. The limit is ` +
+          `${megabytes(MAX_PAGE_BYTES)}. Photograph one page at a time.`,
       );
     }
     if (smaller.changed) {

@@ -23,14 +23,24 @@ import {
 } from '../../lib/record/sheet';
 import { useReducedMotion } from '../../lib/useReducedMotion';
 
+/** The drawn grip. The target around it is what `HANDLE_HEIGHT` adds. */
+const GRIP_HEIGHT = 4;
+
 /**
- * How much of the sheet stays on screen when it is down, by default.
+ * How much of the sheet stays on screen when it is down: its handle, exactly.
  *
- * Enough for the handle and the one control that has to remain reachable. A
- * sheet that goes away entirely is a sheet with no way back, and the way back
- * cannot be the thing it is covering.
+ * A sheet that goes away entirely is a sheet with no way back, and the way
+ * back cannot be the thing it is covering. So the handle is the floor, and
+ * this is **derived from the two tokens `styles.handle` is built out of**
+ * rather than typed out beside them.
+ *
+ * That is not fussiness. The record screen passed `44 + spacing.xl * 2` for
+ * this and counted the padding twice — 84 against a handle measuring 44 — so
+ * the lowered sheet left 40 points of its first control showing above the bar
+ * that was supposed to be the bottom of the screen. Two numbers that have to
+ * agree, in two files, is a number that will stop agreeing.
  */
-const DEFAULT_PEEK = 84;
+export const HANDLE_HEIGHT = GRIP_HEIGHT + spacing.xl * 2;
 
 export interface DragSheetProps {
   children: ReactNode;
@@ -52,8 +62,8 @@ export interface DragSheetProps {
    * display"* opened with the music behind frosted glass and a musician
    * expected to discover a drag to see the part they were about to play.
    * Starting lowered makes the first thing on screen the thing the screen is
-   * for; the controls are one pull away and `peek` keeps the record button
-   * where the thumb already is.
+   * for; the controls are one pull away and the take bar below the sheet keeps
+   * the record button where the thumb already is, whichever way this sits.
    */
   initialPosition?: SheetPosition;
   style?: StyleProp<ViewStyle>;
@@ -61,24 +71,26 @@ export interface DragSheetProps {
   /**
    * How much stays on screen when lowered.
    *
-   * The caller decides, because the caller knows which of its controls has to
-   * survive the lowering. On the record screen that is the record button: a
-   * musician who has put the controls away still has to be able to start.
+   * The caller decides, because the caller knows what has to survive the
+   * lowering. Keep it to chrome whose height is a property of *this* component
+   * — the handle — rather than a guess at how tall the caller's content comes
+   * out: the record screen kept its record button alive this way with a peek
+   * of 232 against content measuring 256, and the 24 points of difference were
+   * the button's own label, clipped by the bottom of the phone on every visit.
+   * Content that must not move belongs outside a sheet that moves.
+   *
+   * **There was a `raiseSignal` here too, and it is gone with the same
+   * mistake.** It hauled the sheet up over the music whenever a message the
+   * musician had to read appeared inside it — a rescue that only exists
+   * because something that always has to be seen was put somewhere that can be
+   * hidden. The record screen's failures are in its take bar now, which is
+   * always on screen, so there is nothing left to rescue.
    */
   peek?: number;
-  /**
-   * Raise the sheet whenever this value changes to something truthy.
-   *
-   * For the case the gesture cannot cover: something appears inside the sheet
-   * that the musician has to read — a microphone failure, a refused upload —
-   * while the sheet is down and hiding it. A message nobody can see is the
-   * same bug as no message.
-   */
-  raiseSignal?: unknown;
 }
 
 /**
- * Controls on a glass sheet you can drag down out of the way.
+ * Controls on a sheet you can drag down out of the way.
  *
  * The record screen is the one screen in this app where the content and the
  * chrome genuinely compete: the music is what a musician wants to see, and the
@@ -101,8 +113,7 @@ export function DragSheet({
   initialPosition = 'raised',
   style,
   onPositionChange,
-  peek = DEFAULT_PEEK,
-  raiseSignal,
+  peek = HANDLE_HEIGHT,
 }: DragSheetProps) {
   const [position, setPosition] = useState<SheetPosition>(initialPosition);
   const [height, setHeight] = useState(0);
@@ -147,8 +158,8 @@ export function DragSheet({
       mass: 0.9,
       // The finger's momentum, carried into the spring so the sheet keeps
       // moving at the speed it was thrown rather than restarting from rest.
-      // Absent `from`, this is a tap on the handle or a `raiseSignal`, neither
-      // of which has a velocity to hand over.
+      // Absent `from`, this is a tap on the handle, which has no velocity to
+      // hand over.
       velocity: from === undefined ? 0 : settleVelocity(vy, { from, to }),
     }).start();
   }).current;
@@ -181,12 +192,6 @@ export function DragSheet({
       offset.setValue(travelFor(height, peek));
     }
   }, [height, initialPosition, offset, peek]);
-
-  useEffect(() => {
-    if (raiseSignal && positionRef.current === 'lowered') {
-      settle('raised');
-    }
-  }, [raiseSignal, settle]);
 
   function toggle() {
     const next = positionRef.current === 'raised' ? 'lowered' : 'raised';
@@ -354,7 +359,7 @@ const styles = StyleSheet.create({
   },
   grip: {
     width: 44,
-    height: 4,
+    height: GRIP_HEIGHT,
     borderRadius: radii.pill,
     backgroundColor: colors.borderStrong,
   },

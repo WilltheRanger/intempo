@@ -306,4 +306,4 @@ def test_a_page_with_no_marking_is_untouched() -> None:
     assert result.quality > 0.95
     assert not any(n.under_tempo_change for n in result.per_note)
     assert not any(m.uneven for m in result.per_measure)
-    assert result.verdict.startswith("Steady tempo — you held it")
+    assert result.verdict.startswith("Steady tempo. You held it")

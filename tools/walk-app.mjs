@@ -305,10 +305,31 @@ console.log('\n## Finding a piece in the library');
 // rather than a label claiming how many there are, which is the stronger
 // assertion of the two.
 
+/**
+ * Whether the Library's search band has been opened yet.
+ *
+ * **The magnifier and the field are two controls with two names now**, and
+ * this replaces the trick that relied on them sharing one. The old step
+ * clicked `Search your library`, which resolved to the button while search was
+ * closed and to the field once the button had renamed itself `Close search` —
+ * so one locator opened the search and then typed into it. The field is
+ * always mounted today (`SearchHeader` crossfades to it rather than inserting
+ * it), so both would match and the click would land on the button forever.
+ *
+ * Every call below runs in one uninterrupted block on the Library tab, so one
+ * flag covers it. A step that navigates away has to clear it.
+ */
+let searchBandOpen = false;
+
 /** Type a query and count the rows the Library actually rendered for it. */
 const searchCount = async (query) => {
+  if (!searchBandOpen) {
+    await page
+      .getByRole('button', { name: 'Search', exact: true })
+      .click({ timeout: 10000 });
+    searchBandOpen = true;
+  }
   const field = page.getByLabel('Search your library').first();
-  await field.click({ timeout: 10000 });
   await field.fill(query);
   // Filtered synchronously on each keystroke; one settled frame is enough, and
   // there is no request to wait on.
@@ -919,11 +940,43 @@ console.log('\n## Setting up a take');
  * showed one number and sent another would have a musician judged at a tempo
  * they did not choose, with nothing on screen disagreeing.
  */
+/**
+ * Pull the setup sheet up, and check it actually came.
+ *
+ * **The record screen opens on the music, with the setup lowered**, so every
+ * control below the handle is off the bottom of the display until this runs.
+ * That was true before 2026-09-20 as well and this step did not exist — the
+ * lowered sheet used to push the page 375 points past the bottom of the
+ * document, so Playwright's "scroll into view" reached the controls through a
+ * page scroll that no musician could have used and that the screen was never
+ * meant to have. Clipping the stage fixed the scroll and took the accident
+ * with it.
+ *
+ * Asserted rather than assumed: a handle that does not raise the sheet is
+ * exactly the drawn-affordance-that-does-nothing defect `CLAUDE.md` §3 exists
+ * for, and it would otherwise show up here as an unrelated click timing out.
+ */
+const raiseControls = async (target = page) => {
+  const handle = target.getByRole('button', { name: 'Practice controls' }).first();
+  await handle.click({ timeout: 10000 });
+  await target
+    .getByRole('button', { name: /^Target tempo/i })
+    .first()
+    .waitFor({ state: 'visible', timeout: 10000 })
+    .catch(() => {});
+  // The stepper is what the settings are for; if the sheet did not move, this
+  // is the control still sitting under the take bar.
+  await target.getByRole('button', { name: 'Faster' }).first().waitFor({ timeout: 10000 });
+};
+
 await open('pieces/fixture-bach-bwv1001/record');
 await waitForText('the recording controls', (l) => /Target tempo/i.test(l));
 if ((await leaves()).some((l) => l.includes(PRACTICE_SETUP_HEADING)))
   fail('a first take with nothing wrong still opened on a screen of ticks');
 else pass('a first take with nothing wrong opens on the controls');
+
+await raiseControls();
+pass('the handle raises the setup sheet');
 
 /** The number beside the BPM label, which is what the take is judged against. */
 const targetBpm = async () => {
@@ -982,6 +1035,15 @@ await page.waitForTimeout(400);
  * a second way in.
  */
 await open('pieces/fixture-bach-bwv1001/record');
+await raiseControls();
+/*
+ * **Behind "More" since 2026-09-20.** The panel holds five rows, and these two
+ * — this and "Upload a recording" — are the ones nobody passes through on the
+ * way to playing. Six rows in the column took it past the height it is capped
+ * at and gave the setup a scrollbar; five do not.
+ */
+await page.getByRole('button', { name: 'More' }).first().click();
+await page.waitForTimeout(400);
 await page.getByRole('button', { name: PRACTICE_SETUP_REOPEN }).first().click();
 await waitForText('the pre-flight to reopen', (l) => l.includes(PRACTICE_SETUP_HEADING));
 await page.getByRole('button', { name: /Back to the piece/i }).first().click();

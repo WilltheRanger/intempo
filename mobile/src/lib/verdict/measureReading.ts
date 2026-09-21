@@ -79,7 +79,7 @@ const UNTIMED_WORDS: Record<
 > = {
   fermata: {
     label: 'Held',
-    spoken: 'held — the page marks a fermata, so its length is yours',
+    spoken: 'held, because the page marks a fermata, so its length is yours',
   },
   // Reached only through the branch above in practice, since a bar under a
   // change is caught by `underTempoChange` first. Here so the table is total
@@ -91,7 +91,7 @@ const UNTIMED_WORDS: Record<
   ornament: {
     label: 'Not timed',
     spoken:
-      'not timed — an ornament is placed by an estimate rather than by the page',
+      'not timed, because an ornament is placed by an estimate rather than by the page',
   },
   unsaid: null,
 };
