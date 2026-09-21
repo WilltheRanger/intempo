@@ -1469,8 +1469,25 @@ const MOCK_ANALYSIS_MS = 2200;
  * the flow that has to feel considered.
  */
 export const fixtureTakeSubmissionSource: TakeSubmissionSource = {
-  async submit() {
-    await new Promise((resolve) => setTimeout(resolve, MOCK_ANALYSIS_MS));
+  async submit(_input, options) {
+    // **Walks the same legs the real runner does, compressed.** A fixtures
+    // build is what every check in this repository drives and what a
+    // screenshot is taken from, so a wait screen that only ever showed the
+    // generic line here would be a wait screen whose stage labels nothing has
+    // ever seen. The shares mirror `waitProgress`: `listening` is most of it.
+    const legs: Array<[string, number]> = [
+      ['fetching', 0.1],
+      ['checking', 0.1],
+      ['decoding', 0.1],
+      ['listening', 0.6],
+      ['saving', 0.1],
+    ];
+    for (const [stage, share] of legs) {
+      options?.onStage?.(stage);
+      await new Promise((resolve) =>
+        setTimeout(resolve, MOCK_ANALYSIS_MS * share),
+      );
+    }
     return FIXTURE_TAKE_ID_FOR_FLOW;
   },
 };

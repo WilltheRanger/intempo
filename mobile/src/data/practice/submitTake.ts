@@ -194,13 +194,36 @@ const FINISHED = new Set(['done', 'failed', 'failed_recoverable']);
  */
 export async function waitForAnalysis(
   analysisId: string,
-  { signal }: { signal?: AbortSignal } = {},
+  {
+    signal,
+    onStage,
+  }: {
+    signal?: AbortSignal;
+    /**
+     * Called with each stage the run reports, so a caller can show where it
+     * has got to. Called on every poll rather than only on a change: the
+     * screen owns its own de-duplication, and a callback that fires only on
+     * transitions cannot tell "still on a long leg" from "stopped answering".
+     *
+     * **Never allowed to fail the wait.** This is decoration on a poll whose
+     * job is to return the analysis, so a caller that throws in here must not
+     * turn a finished take into an error.
+     */
+    onStage?: (stage: string | null) => void;
+  } = {},
 ): Promise<AnalysisResponse> {
   for (let attempt = 0; attempt < MAX_POLLS; attempt += 1) {
     if (signal?.aborted) {
       throw new Error('Cancelled');
     }
     const analysis = await getAnalysis(analysisId);
+    if (onStage) {
+      try {
+        onStage(analysis.stage ?? null);
+      } catch {
+        // See `onStage` — a broken progress display must not lose the take.
+      }
+    }
     if (FINISHED.has(analysis.status)) {
       return analysis;
     }

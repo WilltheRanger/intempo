@@ -481,6 +481,15 @@ export interface AnalysisResponse {
   result_json: Record<string, unknown> | null;
   failure_reason: string | null;
   alignment_quality: number | null;
+  /**
+   * Which leg of the pipeline an in-flight run has reached, or null.
+   *
+   * Advisory: `status` remains the authority on whether an analysis is
+   * finished. Null on a row the runner has not picked up, on a finished row,
+   * and on a deployment whose table predates migration 025 — all of which
+   * `progressFor` reads as "no finer information" rather than as no progress.
+   */
+  stage: string | null;
   created_at: string;
   updated_at: string;
   finished_at: string | null;

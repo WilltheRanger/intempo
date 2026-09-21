@@ -134,6 +134,15 @@ REQUIRED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     # app offered them is worth naming here before they meet it.
     ("analyses", "skip_long_rests", "012"),
     ("analyses", "from_measure", "015"),
+    # 025. The leg an in-flight run has reached, so a two-and-a-half minute
+    # wait can show a bar that moves on something real. Degrades quietly by
+    # construction — `_stage` swallows its own failures and the app treats a
+    # null as "no finer information" — so a deployment missing it analyses
+    # takes exactly as before and simply cannot say where they are. Listed
+    # anyway, because "the bar never moves" is indistinguishable from the
+    # defect this was written to fix, and that is precisely the confusion
+    # worth being able to look up rather than re-diagnose.
+    ("analyses", "stage", "025"),
     # 013. All three degrade quietly on purpose — every caller narrows its
     # select or retries its write without them, because the alternative was a
     # save that 500s and a scan that sits `reading` forever during the window
@@ -300,7 +309,7 @@ def _configuration_checks() -> list[Check]:
                 "CORS_ALLOWED_ORIGINS is not set. Native clients are unaffected, "
                 "and localhost development is already covered — but a browser on "
                 "any other origin is refused *before* it sends anything, and the "
-                "only thing it can report is \"Failed to fetch\". Name the web "
+                'only thing it can report is "Failed to fetch". Name the web '
                 "app's origin here, including its preview domain if previews "
                 "should work."
             ),
@@ -611,9 +620,7 @@ def _transcription_runtime_checks() -> list[Check]:
         )
         return checks
 
-    checks.append(
-        Check(name="transcription_runtime:modal", ok=True, detail="")
-    )
+    checks.append(Check(name="transcription_runtime:modal", ok=True, detail=""))
     return checks
 
 
@@ -741,9 +748,7 @@ def _analysis_runtime_checks() -> list[Check]:
             )
         ]
 
-    return [
-        Check(name="analysis_runtime:modal", ok=True, detail="", blocking=False)
-    ]
+    return [Check(name="analysis_runtime:modal", ok=True, detail="", blocking=False)]
 
 
 def _schema_checks(client) -> list[Check]:
@@ -934,9 +939,7 @@ def check() -> Readiness:
 
     try:
         client.table("users").select("id").limit(1).execute()
-        result.checks.append(
-            Check(name="database", ok=True, detail="")
-        )
+        result.checks.append(Check(name="database", ok=True, detail=""))
     except Exception as exc:  # noqa: BLE001 — report, never raise out of a health route
         log.warning("readiness: database unreachable: %s", exc)
         result.checks.append(

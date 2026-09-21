@@ -131,6 +131,14 @@ class AnalysisResponse(BaseModel):
     result_json: dict[str, Any] | None = None
     failure_reason: str | None = None
     alignment_quality: float | None = None
+    #: Which leg of the pipeline an in-flight run has reached, or null.
+    #:
+    #: Advisory, and the client must treat it that way: `status` says whether
+    #: an analysis is finished and this says nothing about that. Null on a row
+    #: written before the runner started, on a deployment whose table predates
+    #: the column, and on every finished row. An unrecognised value is a
+    #: pipeline this client is older than, not an error.
+    stage: str | None = None
     created_at: str
     updated_at: str
     finished_at: str | None = None
@@ -175,7 +183,9 @@ def _assert_score_owned(client, score_id: UUID, user_id: UUID) -> dict[str, Any]
     )
     rows = res.data or []
     if not rows:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="score not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="score not found"
+        )
     return rows[0]
 
 
@@ -281,6 +291,7 @@ def _row_to_response(row: dict[str, Any]) -> AnalysisResponse:
         result_json=row.get("result_json"),
         failure_reason=row.get("failure_reason"),
         alignment_quality=row.get("alignment_quality"),
+        stage=row.get("stage"),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
         finished_at=row.get("finished_at"),
@@ -312,7 +323,9 @@ def _assert_within_quota(client: Any, user_id: UUID) -> None:
     )
 
 
-@router.post("", response_model=CreateAnalysisResponse, status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "", response_model=CreateAnalysisResponse, status_code=status.HTTP_202_ACCEPTED
+)
 def create_analysis(
     body: CreateAnalysisRequest,
     user_id: UUID = Depends(current_user_id_provisioned),
@@ -332,9 +345,7 @@ def create_analysis(
     score_row = _assert_score_owned(client, body.score_id, user_id)
     _assert_measure_in_score(score_row, body.from_measure)
     if body.assignment_id is not None:
-        _assert_assignment_open_for(
-            client, body.assignment_id, user_id, body.score_id
-        )
+        _assert_assignment_open_for(client, body.assignment_id, user_id, body.score_id)
 
     # One uploaded object is one take. If the POST response was lost, the
     # recording screen retries with the same key; return the existing row
@@ -370,10 +381,7 @@ def create_analysis(
             ).data or []
             if updated:
                 row = updated[0]
-        elif (
-            body.assignment_id is not None
-            and str(held) != str(body.assignment_id)
-        ):
+        elif body.assignment_id is not None and str(held) != str(body.assignment_id):
             # The same recording answering two assignments is not a retry, and
             # quietly returning the first attachment would hide it. Neither is
             # it the client's to resolve by guessing, so it is named.
@@ -514,7 +522,9 @@ def list_analyses(
     if status_filter is not None:
         query = query.eq("status", status_filter)
 
-    res = query.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
+    res = (
+        query.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
+    )
     return [_row_to_response(row) for row in (res.data or [])]
 
 
@@ -534,7 +544,9 @@ def get_analysis(
     )
     rows = res.data or []
     if not rows:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="analysis not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="analysis not found"
+        )
     return _row_to_response(rows[0])
 
 

@@ -1,0 +1,34 @@
+{
+  "_why": [
+    "The legs the analysis runner writes into analyses.stage, and where the app",
+    "puts the bar for each. They are the contract between",
+    "backend/app/workers/analysis_runner.py and",
+    "mobile/src/lib/analysis/waitProgress.ts.",
+    "",
+    "Written the same way as parity.json beside it, and for the same reason:",
+    "the transcription stages drifted twice while a docstring called them a",
+    "contract and nothing held them to one. A leg added to the runner and",
+    "forgotten in the app shows the generic line for the longest part of a",
+    "two-and-a-half minute wait, which is the defect the bar was added to fix.",
+    "",
+    "backend/app/tests/test_analysis_stage_parity.py holds the runner to this",
+    "file; mobile/src/lib/analysis/waitProgress.test.ts holds the app."
+  ],
+  "_order_is_the_pipeline_order": true,
+  "stages": ["fetching", "checking", "decoding", "listening", "saving"],
+  "_shares_are_measured_not_equal": [
+    "Seven production runs took 150.5, 152.1, 153.3, 154.8, 155.1, 157.6 and",
+    "160.4 seconds, and the logs put almost all of it between the decode and",
+    "the alignment. Equal fifths would sit the bar at 60% with two thirds of",
+    "the wait still ahead, which is the same lie as a timer. 'listening' gets",
+    "most of the track because it is most of the wait."
+  ],
+  "through": {
+    "fetching": 0.1,
+    "checking": 0.2,
+    "decoding": 0.3,
+    "listening": 0.9,
+    "saving": 0.98
+  },
+  "_longest_leg": "listening"
+}

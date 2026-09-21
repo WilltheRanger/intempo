@@ -763,7 +763,7 @@ export const apiTakeSource: TakeSource = {
  * screen it hands over to always has a finished analysis to read.
  */
 export const apiTakeSubmissionSource: TakeSubmissionSource = {
-  async submit(input) {
+  async submit(input, options) {
     const submitted = await submitTake(input);
     // The row and audio are durable at this point. Remember the hand-off before
     // the first poll so a refresh, tab close, or phone suspension can resume
@@ -775,7 +775,7 @@ export const apiTakeSubmissionSource: TakeSubmissionSource = {
       createdAt: Date.now(),
     });
     try {
-      await waitForAnalysis(submitted.analysisId);
+      await waitForAnalysis(submitted.analysisId, { onStage: options?.onStage });
       return submitted.analysisId;
     } catch (cause) {
       // Enqueue already succeeded. Keep its id so "Send it again" resumes the

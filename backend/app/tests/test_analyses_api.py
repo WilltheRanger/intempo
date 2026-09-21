@@ -26,8 +26,16 @@ GOOD_SCORE_JSON = {
     "tempo_marking": None,
     "bpm_hint": None,
     "measures": [
-        {"measure_number": 1, "notes": [{"pitch": "A4", "duration": "quarter"}] * 4, "slurs": []},
-        {"measure_number": 2, "notes": [{"pitch": "A4", "duration": "quarter"}] * 4, "slurs": []},
+        {
+            "measure_number": 1,
+            "notes": [{"pitch": "A4", "duration": "quarter"}] * 4,
+            "slurs": [],
+        },
+        {
+            "measure_number": 2,
+            "notes": [{"pitch": "A4", "duration": "quarter"}] * 4,
+            "slurs": [],
+        },
     ],
     "repeats": [],
     "ocr_confidence": 0.9,
@@ -77,9 +85,15 @@ def _install(monkeypatch: pytest.MonkeyPatch, fake: FakeSupabase) -> None:
 
 
 def test_post_unauthenticated_returns_401(client: TestClient) -> None:
-    res = client.post("/v1/analyses", json={
-        "score_id": str(uuid4()), "audio_url": "x", "target_bpm": 120, "bpm_source": "manual",
-    })
+    res = client.post(
+        "/v1/analyses",
+        json={
+            "score_id": str(uuid4()),
+            "audio_url": "x",
+            "target_bpm": 120,
+            "bpm_source": "manual",
+        },
+    )
     assert res.status_code == 401
 
 
@@ -131,7 +145,10 @@ def test_post_enqueues_and_returns_202(
     user_id = uuid4()
     score_id = uuid4()
     fake = FakeSupabase()
-    fake.seed("scores", [{"id": str(score_id), "user_id": str(user_id), "score_json": GOOD_SCORE_JSON}])
+    fake.seed(
+        "scores",
+        [{"id": str(score_id), "user_id": str(user_id), "score_json": GOOD_SCORE_JSON}],
+    )
     _install(monkeypatch, fake)
 
     # Spy on the background worker instead of running it here.
@@ -219,7 +236,10 @@ def test_full_flow_queued_to_done(
     user_id = uuid4()
     score_id = uuid4()
     fake = FakeSupabase()
-    fake.seed("scores", [{"id": str(score_id), "user_id": str(user_id), "score_json": GOOD_SCORE_JSON}])
+    fake.seed(
+        "scores",
+        [{"id": str(score_id), "user_id": str(user_id), "score_json": GOOD_SCORE_JSON}],
+    )
     _install(monkeypatch, fake)
     # Real worker runs, on `dispatch`'s pool; only stub the storage fetch so
     # the real pipeline analyzes real audio. `_analysed()` below is what waits
@@ -250,7 +270,9 @@ def test_full_flow_queued_to_done(
     analysis_id = post.json()["analysis_id"]
     _analysed()
 
-    got = client.get(f"/v1/analyses/{analysis_id}", headers={"Authorization": f"Bearer {token}"})
+    got = client.get(
+        f"/v1/analyses/{analysis_id}", headers={"Authorization": f"Bearer {token}"}
+    )
     assert got.status_code == 200
     body = got.json()
     assert body["status"] == "done"
@@ -268,16 +290,30 @@ def test_full_flow_queued_to_done(
     assert fake.table("analyses").rows[0]["playback_key"] == opus_key
 
 
-def test_worker_marks_failed_when_audio_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_worker_marks_failed_when_audio_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     user_id, score_id = uuid4(), uuid4()
     fake = FakeSupabase()
-    fake.seed("scores", [{"id": str(score_id), "user_id": str(user_id), "score_json": GOOD_SCORE_JSON}])
+    fake.seed(
+        "scores",
+        [{"id": str(score_id), "user_id": str(user_id), "score_json": GOOD_SCORE_JSON}],
+    )
     analysis_id = str(uuid4())
-    fake.seed("analyses", [{
-        "id": analysis_id, "user_id": str(user_id), "score_id": str(score_id),
-        "audio_url": _audio_url(user_id), "target_bpm": 120, "bpm_source": "manual",
-        "status": "queued",
-    }])
+    fake.seed(
+        "analyses",
+        [
+            {
+                "id": analysis_id,
+                "user_id": str(user_id),
+                "score_id": str(score_id),
+                "audio_url": _audio_url(user_id),
+                "target_bpm": 120,
+                "bpm_source": "manual",
+                "status": "queued",
+            }
+        ],
+    )
     monkeypatch.setattr(analysis_runner, "get_service_client", lambda: fake)
 
     def _boom(_url):
@@ -321,6 +357,11 @@ def _analysis_row(user_id: UUID, score_id: UUID, **over: Any) -> dict:
         "metronome_mode": "off",
         "result_json": {"verdict": {"text": "Steady"}},
         "alignment_quality": 0.9,
+        # A finished row carries no stage in production — the runner clears it
+        # — but this seed exists to prove the projection *names* every column,
+        # and a null cannot tell a kept field from a dropped one. See the
+        # assertion in `test_the_light_projection_names_every_other_field`.
+        "stage": "listening",
         "created_at": now,
         "updated_at": now,
         "finished_at": now,
@@ -347,9 +388,7 @@ def test_recording_playback_is_private_and_short_lived(
     monkeypatch.setattr(analyses_module, "readable_audio_url", _sign)
     headers = {"Authorization": f"Bearer {make_token(sub=mine)}"}
 
-    response = client.get(
-        f"/v1/analyses/{mine_row['id']}/recording", headers=headers
-    )
+    response = client.get(f"/v1/analyses/{mine_row['id']}/recording", headers=headers)
     assert response.status_code == 200
     assert response.json() == {
         "url": "https://storage.test/signed/take.wav?token=short-lived",
@@ -360,9 +399,7 @@ def test_recording_playback_is_private_and_short_lived(
 
     # The same response covers an unknown id and another musician's id. The
     # endpoint must not reveal that the latter recording exists.
-    hidden = client.get(
-        f"/v1/analyses/{their_row['id']}/recording", headers=headers
-    )
+    hidden = client.get(f"/v1/analyses/{their_row['id']}/recording", headers=headers)
     assert hidden.status_code == 404
     assert len(seen) == 1
 
@@ -374,9 +411,7 @@ def test_recording_playback_is_private_and_short_lived(
         audio_url=f"{PROJECT_HOST}/storage/v1/object/authenticated/audio-uploads/{theirs}/take.wav",
     )
     fake.table("analyses").rows.append(corrupt)
-    refused = client.get(
-        f"/v1/analyses/{corrupt['id']}/recording", headers=headers
-    )
+    refused = client.get(f"/v1/analyses/{corrupt['id']}/recording", headers=headers)
     assert refused.status_code == 404
     assert len(seen) == 1
 
@@ -517,7 +552,9 @@ def test_list_filters_by_score_and_status(
     assert by_score.status_code == 200
     assert len(by_score.json()) == 2
 
-    done_only = client.get(f"/v1/analyses?score_id={wanted}&status=done", headers=headers)
+    done_only = client.get(
+        f"/v1/analyses?score_id={wanted}&status=done", headers=headers
+    )
     assert done_only.status_code == 200
     assert [row["status"] for row in done_only.json()] == ["done"]
 
@@ -680,7 +717,9 @@ def test_paging_walks_the_list_without_repeating_or_skipping(
     fake.seed(
         "analyses",
         [
-            _analysis_row(user_id, score_id, created_at=f"2026-01-{day:02d}T09:00:00+00:00")
+            _analysis_row(
+                user_id, score_id, created_at=f"2026-01-{day:02d}T09:00:00+00:00"
+            )
             for day in range(1, 8)
         ],
     )
@@ -712,12 +751,19 @@ def test_sweeper_recovers_stuck_rows(monkeypatch: pytest.MonkeyPatch) -> None:
     fake = FakeSupabase()
     old = (datetime.now(tz=timezone.utc) - timedelta(minutes=15)).isoformat()
     fresh = datetime.now(tz=timezone.utc).isoformat()
-    fake.seed("analyses", [
-        {"id": "1", "status": "processing", "updated_at": old},
-        {"id": "2", "status": "queued", "updated_at": old},
-        {"id": "3", "status": "processing", "updated_at": fresh},  # too recent — leave it
-        {"id": "4", "status": "done", "updated_at": old},  # already terminal
-    ])
+    fake.seed(
+        "analyses",
+        [
+            {"id": "1", "status": "processing", "updated_at": old},
+            {"id": "2", "status": "queued", "updated_at": old},
+            {
+                "id": "3",
+                "status": "processing",
+                "updated_at": fresh,
+            },  # too recent — leave it
+            {"id": "4", "status": "done", "updated_at": old},  # already terminal
+        ],
+    )
 
     swept = sweep_stuck_analyses(fake)
 
@@ -905,7 +951,10 @@ def test_a_take_that_skipped_the_rests_says_so_on_the_row(
     user_id = uuid4()
     score_id = uuid4()
     fake = FakeSupabase()
-    fake.seed("scores", [{"id": str(score_id), "user_id": str(user_id), "score_json": GOOD_SCORE_JSON}])
+    fake.seed(
+        "scores",
+        [{"id": str(score_id), "user_id": str(user_id), "score_json": GOOD_SCORE_JSON}],
+    )
     _install(monkeypatch, fake)
     monkeypatch.setattr(analysis_runner, "run_analysis", lambda _id: None)
 
@@ -928,12 +977,16 @@ def test_a_take_that_did_not_skip_writes_no_key_at_all(
     user_id = uuid4()
     score_id = uuid4()
     fake = FakeSupabase()
-    fake.seed("scores", [{"id": str(score_id), "user_id": str(user_id), "score_json": GOOD_SCORE_JSON}])
+    fake.seed(
+        "scores",
+        [{"id": str(score_id), "user_id": str(user_id), "score_json": GOOD_SCORE_JSON}],
+    )
     _install(monkeypatch, fake)
     monkeypatch.setattr(analysis_runner, "run_analysis", lambda _id: None)
 
     assert (
-        _post_take(client, make_token(sub=user_id), user_id, score_id).status_code == 202
+        _post_take(client, make_token(sub=user_id), user_id, score_id).status_code
+        == 202
     )
     assert "skip_long_rests" not in fake.table("analyses").rows[0]
 
@@ -963,6 +1016,7 @@ def _install_insert_that_lacks_from_measure(monkeypatch, fake) -> None:
 
     def insert(payload):
         if isinstance(payload, dict) and "from_measure" in payload:
+
             class _Boom:
                 def execute(self):
                     raise RuntimeError(
