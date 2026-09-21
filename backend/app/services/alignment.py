@@ -699,6 +699,12 @@ def _residuals(
     other note, the last third, a swung rhythm, note values drawn at random,
     and sixty seeds of uniform noise all stay at 0.000.
 
+    **The order matters, and it was wrong.** The step has to be taken out of a
+    series the steady tempo has already left, or the tempo difference is itself
+    read as a run of disturbances — see the measurements on the pace estimate
+    below. A steady 1.08x is now 1.000 where it was 0.000; the hesitation above
+    is unchanged; every refusal in the list above is unchanged.
+
     That is not luck — it is the same robustness that makes `pulse_anchors`
     safe. A wrong piece has a huge spread of interval errors, so its
     disturbance threshold is huge, so nothing is absorbed.
@@ -724,7 +730,47 @@ def _residuals(
         # it rather than no model at all.
         if keep.sum() >= 3:
             det, exp = det[keep], exp[keep]
-    settled = det - pulse_anchors(det - exp, sec_per_beat, config=config)
+    # **The steady tempo comes out before the hesitation detector, not after.**
+    # `pulse_anchors` judges a step against the spread of the take's other
+    # steps, and a tempo difference makes every step proportional to its own
+    # note: at 1.3x, an eighth drifts 68 ms and a half drifts 271 ms, from one
+    # cause. The long notes then read as disturbances, the anchor resets part
+    # way down the ramp, and what reaches `polyfit` is a sawtooth rather than a
+    # line. Measured on the 25-bar corpus page at 102 BPM, a take of the same
+    # notes played steadily faster:
+    #
+    #     1.05x   fitted rate 0.9524 (exact)   residual   0 ms   quality 1.000
+    #     1.08x   fitted rate 0.9909 (0.9259)  residual 357 ms   quality 0.000
+    #     1.30x   fitted rate 0.9560 (0.7692)  residual 955 ms   quality 0.000
+    #
+    # So every take more than about 6% off the tempo its player set was refused
+    # with "check you're on the right piece", on an alignment that had matched
+    # all 75 notes at coverage 1.000. Eleven consecutive takes in production
+    # failed this way and none ever produced a verdict.
+    #
+    # The pace is a **median of per-interval rates** rather than a least-squares
+    # slope, because the series this has to survive is the one `pulse_anchors`
+    # exists for: a single held bar moves one interval enormously and a median
+    # ignores it, where a fitted line is dragged by it and the hesitation case
+    # falls from 0.640 to 0.569. `typical_gap` is the wrong instrument here —
+    # its core filter drops the long gaps, so the ratio of two filtered means is
+    # not a rate when the two gap distributions differ, and it scores 0.220.
+    if det.size >= 2 and float(np.ptp(exp)) > 0:
+        played_steps, written_steps = np.diff(det), np.diff(exp)
+        usable = written_steps > 0
+        pace = (
+            float(np.median(played_steps[usable] / written_steps[usable]))
+            if usable.any()
+            else 1.0
+        )
+        if not np.isfinite(pace) or pace <= 0:
+            pace = 1.0
+    else:
+        pace = 1.0
+    # What a steady pace cannot explain. This is what a hesitation looks like
+    # on its own, which is what `pulse_anchors` was written to read.
+    flat = det - (pace * exp + float(np.median(det - pace * exp)))
+    settled = det - pulse_anchors(flat, sec_per_beat, config=config)
     if settled.size >= 2 and float(np.ptp(exp)) > 0:
         rate, offset = np.polyfit(exp, settled, 1)
     else:

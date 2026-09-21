@@ -1,5 +1,62 @@
 # InTempo Decisions
 
+## 2026-09-21 — A tempo difference is the finding, not a reason to refuse
+
+**Context.** Every take the app has ever analysed in production has been
+refused: eleven of them, from the first on 2026-09-12 to 2026-09-20, all
+`alignment_failed` with `alignment_quality = 0`, none ever reaching a verdict.
+The pipeline around the failure was healthy — onsets detected within two of the
+page's 75, coverage 0.72 to 0.88, the timeline reproducing the page's span to
+0.1 s. Only `timing` was broken, and always to exactly 0.
+
+`quality` answers "can this alignment be trusted", and `_residuals` already
+removed a straight line so that a take played evenly at another pace still read
+as the right piece. It did that *after* `pulse_anchors`, whose job is to absorb
+a hesitation. A steady tempo difference moves every note in proportion to its
+own length, so its steps at long notes look exactly like the disturbances
+`pulse_anchors` hunts for; it re-anchored part way down the ramp and handed
+`polyfit` a sawtooth. The fitted slope came back near 1.0 instead of the true
+pace and the whole tempo difference survived into the residual.
+
+**Decision.** *Remove the steady pace before the hesitation detector sees the
+series, and estimate that pace with a median of per-interval rates rather than
+a fitted slope.*
+
+The two steps commute in intent and not in effect: a hesitation is only legible
+once the pace is gone, and a pace is only measurable if a hesitation cannot drag
+it. Ordering them this way lets each do its own job on input it can read.
+
+**Alternatives considered.**
+
+*Widen `MAX_TEMPO_RATIO`, or lower `broken_quality`.* Both treat the symptom.
+The clamp was not even engaged for most of the failures — at 1.08x and 1.3x the
+ratio passed through `_clamp_ratio` unchanged and the alignment still scored
+0.000 — so raising it would have fixed nothing, and lowering the refusal
+threshold would have admitted the noise cases along with the real takes.
+
+*Least-squares slope for the initial detrend.* Simplest, and wrong for the one
+series this must survive: a single held bar drags the line, and the hesitation
+case falls from 0.640 to 0.569. A median of per-interval rates leaves it at
+0.640 exactly.
+
+*`typical_gap(played) / typical_gap(written)`, reusing the module's own robust
+interval estimator.* Scores the hesitation case at 0.220. Its core filter drops
+gaps far from the median, so when the played and written gap *distributions*
+differ the ratio of two filtered means is not a rate at all. It is the right
+instrument for "what does one interval look like here" and the wrong one for
+"how much faster is this".
+
+**Trade-offs accepted.** The six corpus clips cannot demonstrate this fix —
+they are a click track at a single pace, so the ramp is absent by construction
+and all six are byte-identical across the change. The page that demonstrates it
+is synthetic, built through `compute_expected_onsets` with mixed note lengths,
+and lives in `test_alignment.py`; on an even grid of quarters the old rule
+passes every pace, which is why that page's note lengths vary and the comment
+says so. The fix is verified against the production log's numbers rather than
+against the recordings themselves, which need a service-role key no session
+has.
+
+
 
 ## 2026-09-20 — The take is a bar at the bottom edge, not the top of the sheet
 
