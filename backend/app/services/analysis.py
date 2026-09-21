@@ -31,6 +31,7 @@ from app.services.alignment import (
     ExpectedTimeline,
     is_alignment_broken,
     closest_expected_gap,
+    collapse_double_attacks,
 )
 from app.services.audio_config import AudioConfig, load_audio_config
 from app.services.insights import Insights, insights_for
@@ -451,6 +452,14 @@ def prepare_for_alignment(
         config=config,
         min_gap_s=closest_expected_gap(expected, optional=grace),
     )
+    # **One attack reported twice is not two notes**, and until this line it
+    # could out-vote the machinery for a partial take: `subsequence` is gated
+    # on the detections being fewer than the page's notes, so an over-detected
+    # half-take (`onsets=77/75`) was matched against the whole page and refused
+    # as a wrong piece. The detector's own `wait_ms` is a fact about how fast a
+    # string can be re-attacked; this is a fact about what is on the stand, and
+    # they are different claims. See `collapse_double_attacks`.
+    onsets = collapse_double_attacks(onsets, expected, optional=grace)
     return Heard(
         y=y, sr=sr, timeline=timeline, expected=expected, grace=grace, onsets=onsets
     )

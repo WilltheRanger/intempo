@@ -1,5 +1,76 @@
 # InTempo Decisions
 
+## 2026-09-21 — The page decides how close two notes can be
+
+**Context.** A musician played the first half of a 25-bar part from bar 1 and
+was told to check they were on the right piece. The run reported
+`onsets=77/75` — more attacks than the whole page writes, from half of it.
+
+`subsequence` exists for exactly this take and is gated on two tests: that the
+span is too short to be the whole page, and that the detections are fewer than
+the page's notes. The span test was right. The count test vetoed it, because
+over-detection had pushed ~43 played notes to 77 reported ones, so the match
+fell back to the corner-anchored path and stretched a half-take across the
+whole score.
+
+Nothing in the pipeline collapsed a doubled attack. `wait_ms` is the detector's
+own floor at 60 ms, and a bass under a bow re-triggers well outside it.
+
+**Decision.** *Drop detections too close together to be two of this page's
+notes, and derive that floor from the page rather than choosing it.*
+
+`closest_expected_gap / MAX_TEMPO_RATIO` — the nearest two notes the page
+prints, at the fastest tempo the matcher will believe a performance of it.
+Anything closer is one attack reported twice. There is no number to tune and
+nothing new in `config.toml`; it falls out of two constants that already exist
+and it moves with the page instead of with a guess about instruments.
+
+**Alternatives considered.**
+
+*Raise `wait_ms`, or make it page-derived inside the detector.* The detector's
+floor is a claim about how fast a string can be re-attacked, which is true of
+the instrument and says nothing about what is on the stand. Merging the two
+claims into one number would mean a page of half notes silently changing how
+the detector behaves on sixteenths elsewhere, and it would put the repair
+before the peak-picking where the corpus cannot see it.
+
+*Relax the `subsequence` count veto instead.* The direct reading of the bug,
+and it does not work: forcing subsequence matching on the over-detected take
+still scored 0.000, and removing the corner anchoring scored 0.000 too. The
+detections were the problem, not the gate — with them thinned, the veto
+un-trips itself because the count falls back under the page's.
+
+*Keep the later attack of a collapsed pair.* Correct for an ornament and a
+leading scrape, wrong for the case this exists for, where the first sound is
+the note and what follows is its ring. The two are indistinguishable from times
+alone, which is why the two exceptions below are exceptions rather than a
+cleverer rule.
+
+**Trade-offs accepted.** Two carve-outs, both found by tests rather than
+reasoning:
+
+- **An ornamented page is skipped entirely.** A grace note sits inside any
+  floor derived from the required notes, so it would be collapsed into the note
+  it decorates and the *earlier* attack kept — handing a required note the
+  ornament's timestamp, 60 ms early. Such pages keep today's behaviour.
+- **The opening pair is left to `align_take`.** A bow settling before the first
+  note looks exactly like that note reported twice.
+  `test_a_bow_settling_before_the_first_note_no_longer_writes_the_verdict[0.5]`
+  caught this: at 60 BPM the floor is 588 ms, the scrape swallowed the first
+  note, and the take read as half a beat early. The origin already has a trim
+  search that pays for what it discards.
+
+The second carve-out has a price: one doubled attack survives at the origin, so
+the repaired take lands between 0.478 and 0.967 rather than at 0.974. That is
+accepted — the claim worth making is that the take stops being refused.
+
+The six corpus clips are byte-identical across this change and cannot be
+evidence for it: they are a synthesised click track with no doubled attacks to
+remove. And the recording that prompted it was never replayed, because the
+session proxy refuses both the API host and storage and the buckets are
+private. Whether that take really had ~34 doubled attacks is unknown; what is
+known is its shape.
+
 ## 2026-09-21 — A tempo difference is the finding, not a reason to refuse
 
 **Context.** Every take the app has ever analysed in production has been

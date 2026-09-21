@@ -7,6 +7,9 @@ import pytest
 
 from app.services.alignment import (
     AlignmentResult,
+    MAX_TEMPO_RATIO,
+    closest_expected_gap,
+    collapse_double_attacks,
     expand_repeats,
     align_dtw,
     apply_fuzzy_match,
@@ -19,12 +22,16 @@ from app.services.score_schema import Measure, Note, Repeat, ScoreJson, Slur
 
 
 def _score(measures: list[Measure]) -> ScoreJson:
-    return ScoreJson(clef="treble", time_signature="4/4", ocr_confidence=0.9, measures=measures)
+    return ScoreJson(
+        clef="treble", time_signature="4/4", ocr_confidence=0.9, measures=measures
+    )
 
 
 def test_expected_onsets_quarter_notes_at_120() -> None:
     # 4 quarter notes at 120 BPM → 0.5s apart, starting at 0.
-    score = _score([Measure(measure_number=1, notes=[Note(pitch="A4", duration="quarter")] * 4)])
+    score = _score(
+        [Measure(measure_number=1, notes=[Note(pitch="A4", duration="quarter")] * 4)]
+    )
     onsets = compute_expected_onsets(score, target_bpm=120.0)
     assert np.allclose(onsets, [0.0, 0.5, 1.0, 1.5])
 
@@ -79,7 +86,11 @@ def test_a_note_under_the_bow_is_not_expected_at_all() -> None:
     two flagged.
     """
     notes = [Note(pitch="A4", duration="quarter")] * 4
-    measure = Measure(measure_number=1, notes=notes, slurs=[Slur(start_note_index=0, end_note_index=3)])
+    measure = Measure(
+        measure_number=1,
+        notes=notes,
+        slurs=[Slur(start_note_index=0, end_note_index=3)],
+    )
     timeline = build_timeline(_score([measure]), target_bpm=120.0)
 
     assert [n.note_index_in_measure for n in timeline.notes] == [0], (
@@ -104,7 +115,9 @@ def test_the_note_after_a_slur_is_attacked_and_expected() -> None:
     """The bow changes on it, so it sounds and it counts."""
     notes = [Note(pitch="A4", duration="quarter")] * 4
     measure = Measure(
-        measure_number=1, notes=notes, slurs=[Slur(start_note_index=0, end_note_index=2)]
+        measure_number=1,
+        notes=notes,
+        slurs=[Slur(start_note_index=0, end_note_index=2)],
     )
     timeline = build_timeline(_score([measure]), target_bpm=120.0)
     assert [n.note_index_in_measure for n in timeline.notes] == [0, 3]
@@ -116,7 +129,10 @@ def test_two_slurs_in_a_measure_expect_two_bow_changes() -> None:
     measure = Measure(
         measure_number=1,
         notes=notes,
-        slurs=[Slur(start_note_index=0, end_note_index=1), Slur(start_note_index=3, end_note_index=4)],
+        slurs=[
+            Slur(start_note_index=0, end_note_index=1),
+            Slur(start_note_index=3, end_note_index=4),
+        ],
     )
     timeline = build_timeline(_score([measure]), target_bpm=120.0)
     # 0 starts the first slur; 1 is under it. 2 is attacked. 3 starts the
@@ -226,7 +242,9 @@ def test_first_and_second_endings_are_read_the_way_a_player_reads_them() -> None
     """First time through take the first ending and go back; second time skip
     it and take the second."""
     score = ScoreJson(
-        clef="bass", time_signature="4/4", ocr_confidence=0.9,
+        clef="bass",
+        time_signature="4/4",
+        ocr_confidence=0.9,
         measures=[_bar(n) for n in range(1, 5)],
         repeats=[
             Repeat(start_measure=1, end_measure=3, type="repeat"),
@@ -266,6 +284,7 @@ def test_measure_numbers_are_not_renumbered_across_passes() -> None:
 
 # --- the recording's clock vs the score's clock -----------------------------
 
+
 def test_a_lead_in_does_not_break_alignment() -> None:
     """A perfect take is perfect whenever the player started.
 
@@ -299,7 +318,9 @@ def test_dtw_no_longer_needs_the_shift_but_fuzzy_matching_still_does() -> None:
     the earliest — which on a re-attacked note is the wrong one.
     """
     expected = np.arange(32, dtype=float)
-    assert align_dtw(expected + 5.0, expected, target_bpm=60.0).quality == pytest.approx(1.0)
+    assert align_dtw(
+        expected + 5.0, expected, target_bpm=60.0
+    ).quality == pytest.approx(1.0)
 
     # Two candidates for written note 3: one 100ms early, one 50ms late. The
     # closest is the late one, and that must not depend on the lead-in.
@@ -307,7 +328,11 @@ def test_dtw_no_longer_needs_the_shift_but_fuzzy_matching_still_does() -> None:
     mapping = [(0, 0), (1, 1), (2, 2), (3, 3), (4, 3), (5, 4), (6, 5), (7, 6), (8, 7)]
     played = np.array([0, 1, 2, 2.90, 3.05, 4, 5, 6, 7], dtype=float)
     alignment = AlignmentResult(
-        mapping=mapping, cost=0.0, quality=1.0, n_detected=played.size, n_expected=exp.size
+        mapping=mapping,
+        cost=0.0,
+        quality=1.0,
+        n_detected=played.size,
+        n_expected=exp.size,
     )
 
     def note_three_from(detected: np.ndarray) -> int:
@@ -320,6 +345,7 @@ def test_dtw_no_longer_needs_the_shift_but_fuzzy_matching_still_does() -> None:
 
 
 # --- matching must not depend on how fast it was played --------------------
+
 
 def test_a_steady_take_at_a_different_tempo_still_aligns() -> None:
     """The bug that mattered most: DTW ran on raw seconds, so a uniform tempo
@@ -347,13 +373,15 @@ def test_the_tempo_difference_still_reaches_the_verdict() -> None:
     the app has stopped being able to say anyone rushed."""
     from app.services.classification import compute_deltas
 
-    score = _score([
-        Measure(
-            measure_number=bar + 1,
-            notes=[Note(pitch="A4", duration="quarter") for _ in range(4)],
-        )
-        for bar in range(4)
-    ])
+    score = _score(
+        [
+            Measure(
+                measure_number=bar + 1,
+                notes=[Note(pitch="A4", duration="quarter") for _ in range(4)],
+            )
+            for bar in range(4)
+        ]
+    )
     timeline = build_timeline(score, target_bpm=60.0)
     played = to_timeline_base(timeline.onsets * 0.90)  # 10% fast, dead steady
 
@@ -444,7 +472,9 @@ def test_the_verdict_does_not_depend_on_when_you_started(tmp_path) -> None:
     for lead_in in (0.2, 3.0):
         times = [lead_in + i * 0.6 for i in range(8)]  # 100bpm, target 100
         path = write_wav(
-            tmp_path / f"lead{lead_in}.wav", synth_click_track(times, sr=22050), sr=22050
+            tmp_path / f"lead{lead_in}.wav",
+            synth_click_track(times, sr=22050),
+            sr=22050,
         )
         results.append(analyze(path, score, target_bpm=100.0))
 
@@ -469,19 +499,24 @@ def test_the_verdict_does_not_depend_on_when_you_started(tmp_path) -> None:
 
 # --- slurred music, end to end ---------------------------------------------
 
+
 def _slurred_score(notes_per_bar: int = 8, bars: int = 4) -> ScoreJson:
     """Eighths slurred in fours: two bow changes a bar, six notes under them."""
-    return _score([
-        Measure(
-            measure_number=bar + 1,
-            notes=[Note(pitch="E2", duration="eighth") for _ in range(notes_per_bar)],
-            slurs=[
-                Slur(start_note_index=0, end_note_index=3),
-                Slur(start_note_index=4, end_note_index=7),
-            ],
-        )
-        for bar in range(bars)
-    ])
+    return _score(
+        [
+            Measure(
+                measure_number=bar + 1,
+                notes=[
+                    Note(pitch="E2", duration="eighth") for _ in range(notes_per_bar)
+                ],
+                slurs=[
+                    Slur(start_note_index=0, end_note_index=3),
+                    Slur(start_note_index=4, end_note_index=7),
+                ],
+            )
+            for bar in range(bars)
+        ]
+    )
 
 
 def test_a_slurred_passage_played_as_written_aligns_perfectly() -> None:
@@ -495,7 +530,9 @@ def test_a_slurred_passage_played_as_written_aligns_perfectly() -> None:
     assert result.quality == pytest.approx(1.0)
 
 
-def test_playing_detache_against_written_slurs_is_told_apart_from_a_wrong_piece() -> None:
+def test_playing_detache_against_written_slurs_is_told_apart_from_a_wrong_piece() -> (
+    None
+):
     """The cost of the change above, and the one thing that makes it bearable.
 
     A musician who bows every note separately produces an attack for each one,
@@ -513,7 +550,9 @@ def test_playing_detache_against_written_slurs_is_told_apart_from_a_wrong_piece(
     timeline = build_timeline(_slurred_score(), target_bpm=60.0)
     expected = timeline.onsets
 
-    detache = to_timeline_base(np.arange(32, dtype=float) * (expected[1] - expected[0]) / 4)
+    detache = to_timeline_base(
+        np.arange(32, dtype=float) * (expected[1] - expected[0]) / 4
+    )
     raw = align_dtw(detache, expected, target_bpm=60.0)
     # The claim is the discrimination, not the opening words: this branch has
     # to name the slurs, and must not send anyone to re-photograph a score
@@ -540,6 +579,7 @@ def _minuet() -> ScoreJson:
     whose "first ending" is the B section because it is played once, before
     the jump back.
     """
+
     def bar(number: int) -> Measure:
         return Measure(
             measure_number=number,
@@ -599,9 +639,7 @@ def test_an_ending_that_starts_where_its_section_starts_is_not_its_ending() -> N
 
     # The bracket covers the whole span, so it is not this span's ending and
     # both bars are played twice.
-    assert [m.measure_number for m in expand_repeats(score)] == [
-        1, 2, 1, 2
-    ]
+    assert [m.measure_number for m in expand_repeats(score)] == [1, 2, 1, 2]
 
 
 def test_two_spans_naming_the_same_bars_terminate() -> None:
@@ -623,6 +661,7 @@ def test_one_sections_ending_does_not_reach_into_another() -> None:
     Two independent repeated sections, each with its own first and second
     ending, is what a strophic piece looks like.
     """
+
     def bar(number: int) -> Measure:
         return Measure(
             measure_number=number, notes=[Note(pitch="D3", duration="whole")]
@@ -646,8 +685,18 @@ def test_one_sections_ending_does_not_reach_into_another() -> None:
     )
 
     assert [m.measure_number for m in expand_repeats(score)] == [
-        1, 2, 3, 1, 2, 4,
-        5, 6, 7, 5, 6, 8,
+        1,
+        2,
+        3,
+        1,
+        2,
+        4,
+        5,
+        6,
+        7,
+        5,
+        6,
+        8,
     ]
 
 
@@ -664,6 +713,7 @@ def test_an_ending_that_overruns_its_section_is_ignored_rather_than_obeyed() -> 
     trade `expand_repeats` already makes for a repeat naming bars that do not
     exist.
     """
+
     def bar(number: int) -> Measure:
         return Measure(
             measure_number=number, notes=[Note(pitch="D3", duration="whole")]
@@ -681,9 +731,7 @@ def test_an_ending_that_overruns_its_section_is_ignored_rather_than_obeyed() -> 
         ocr_confidence=1.0,
     )
 
-    assert [m.measure_number for m in expand_repeats(score)] == [
-        1, 2, 3, 1, 2, 3, 4, 5
-    ]
+    assert [m.measure_number for m in expand_repeats(score)] == [1, 2, 3, 1, 2, 3, 4, 5]
 
 
 def test_a_repeat_naming_bars_that_do_not_exist_is_ignored_not_fatal() -> None:
@@ -698,6 +746,7 @@ def test_a_repeat_naming_bars_that_do_not_exist_is_ignored_not_fatal() -> None:
 
     Removing the guards was safe. Leaving the promise unchecked was not.
     """
+
     def bar(number: int) -> Measure:
         return Measure(
             measure_number=number, notes=[Note(pitch="D3", duration="whole")]
@@ -717,7 +766,9 @@ def test_a_repeat_naming_bars_that_do_not_exist_is_ignored_not_fatal() -> None:
     assert played([Repeat(start_measure=7, end_measure=9, type="repeat")]) == [1, 2, 3]
     assert played([Repeat(start_measure=3, end_measure=1, type="repeat")]) == [1, 2, 3]
     assert played([Repeat(start_measure=2, end_measure=2, type="first_ending")]) == [
-        1, 2, 3
+        1,
+        2,
+        3,
     ]
 
 
@@ -729,6 +780,7 @@ def test_the_played_order_is_never_empty() -> None:
     that span's ending and filters nothing. Even a bar marked as both endings
     at once — what a misread pair of brackets looks like — only costs that bar.
     """
+
     def bar(number: int) -> Measure:
         return Measure(
             measure_number=number, notes=[Note(pitch="D3", duration="whole")]
@@ -783,8 +835,14 @@ def test_the_note_after_a_fermata_is_the_one_marked() -> None:
     timeline = build_timeline(_held([1, 2], fermata_on=(1, 3)), 60.0)
 
     assert [n.after_fermata for n in timeline.notes] == [
-        False, False, False, False,   # bar 1, the fourth of which is held
-        True, False, False, False,    # bar 2 opens on the moved note
+        False,
+        False,
+        False,
+        False,  # bar 1, the fourth of which is held
+        True,
+        False,
+        False,
+        False,  # bar 2 opens on the moved note
     ]
 
 
@@ -921,8 +979,16 @@ def test_the_mark_survives_the_bar_it_was_printed_in() -> None:
 def _mixed_length_page() -> np.ndarray:
     e, q, h = "eighth", "quarter", "half"
     bars = [
-        [("C3", e), ("rest", e), ("D3", e), ("rest", e),
-         ("Eb3", e), ("rest", e), ("F3", e), ("rest", e)],
+        [
+            ("C3", e),
+            ("rest", e),
+            ("D3", e),
+            ("rest", e),
+            ("Eb3", e),
+            ("rest", e),
+            ("F3", e),
+            ("rest", e),
+        ],
         [("Bb3", q), ("G3", q), ("Eb3", q), ("C3", q)],
         [("Eb3", h), ("C3", h)],
         [("F3", e), ("G3", e), ("Ab3", e), ("Bb3", e), ("C4", q), ("D4", q)],
@@ -985,5 +1051,137 @@ def test_noise_is_still_refused_after_the_pace_is_removed() -> None:
     expected = _mixed_length_page()
     rng = np.random.default_rng(0)
     for seed_shift in range(8):
-        noise = np.sort(rng.random(expected.size) * float(expected[-1]) + seed_shift * 0.0)
+        noise = np.sort(
+            rng.random(expected.size) * float(expected[-1]) + seed_shift * 0.0
+        )
         assert align_dtw(noise, expected, target_bpm=120.0).quality < 0.4
+
+
+# One attack reported twice is not two notes.
+#
+# The owner played the first half of a 25-bar part from bar 1 and the run
+# reported `onsets=77/75` — more attacks than the whole page writes, from half
+# of it. `subsequence` is gated on the detections being fewer than the page's
+# notes as well as on the span; the span was right and the count vetoed it, so
+# a half-take was stretched across the whole page and refused as a wrong piece.
+# See `collapse_double_attacks`.
+
+
+def _page_of_quarters(n: int = 24, bpm: float = 120.0) -> np.ndarray:
+    return np.arange(n, dtype=float) * (60.0 / bpm)
+
+
+def test_a_second_trigger_inside_the_floor_is_the_same_attack() -> None:
+    page = _page_of_quarters()
+    floor = closest_expected_gap(page) / MAX_TEMPO_RATIO
+    # From the second note on: the opening pair is deliberately left to
+    # `align_take`, which owns the origin. See `collapse_double_attacks`.
+    doubled = np.sort(np.concatenate([page, page[1:7] + floor * 0.5]))
+    kept = collapse_double_attacks(doubled, page)
+    assert kept.size == page.size
+    assert np.allclose(kept, page)
+
+
+def test_the_earlier_attack_is_the_one_kept() -> None:
+    """The first is the note; what follows inside the floor is its ring."""
+    page = _page_of_quarters()
+    floor = closest_expected_gap(page) / MAX_TEMPO_RATIO
+    doubled = np.sort(np.array([page[0], page[0] + floor * 0.4, *page[1:]]))
+    kept = collapse_double_attacks(doubled, page)
+    assert kept[0] == pytest.approx(page[0])
+
+
+@pytest.mark.parametrize("pace", [1.0, 1.2, 1.4, 1.6])
+def test_a_genuinely_fast_take_loses_nothing(pace: float) -> None:
+    """The floor is the closest these notes can honestly arrive, not a guess.
+
+    `MAX_TEMPO_RATIO` is the fastest the matcher will believe, so a take
+    inside it must keep every attack — otherwise this would be removing real
+    notes from a musician who was simply playing quickly.
+    """
+    page = _page_of_quarters()
+    played = page / pace
+    assert collapse_double_attacks(played, page).size == played.size
+
+
+def test_the_floor_moves_with_the_page_rather_than_the_instrument() -> None:
+    """A page of sixteenths must not be held to a page of half notes' floor."""
+    slow = np.arange(12, dtype=float) * 2.0
+    fast = np.arange(12, dtype=float) * 0.25
+    slow_floor = closest_expected_gap(slow) / MAX_TEMPO_RATIO
+    fast_floor = closest_expected_gap(fast) / MAX_TEMPO_RATIO
+    assert slow_floor > fast_floor * 4
+
+    # 300 ms cannot be two of the slow page's notes; on the fast page it is
+    # longer than the gap it prints, so it is two notes and must survive.
+    pair = 0.30
+    slow_take = np.sort(np.concatenate([slow, [slow[5] + pair]]))
+    assert collapse_double_attacks(slow_take, slow).size == slow.size
+    assert pair > fast_floor
+    assert collapse_double_attacks(fast, fast).size == fast.size
+
+
+def test_an_ornament_does_not_set_the_floor_for_the_whole_page() -> None:
+    """The same argument, and the same omission, `prepare_for_alignment` records.
+
+    An acciaccatura sits a fraction of a beat before the note it decorates. If
+    it set the floor, the floor would collapse to nothing and this would stop
+    removing anything at all.
+    """
+    page = np.array([0.0, 0.06, 0.5, 1.0, 1.5, 2.0])
+    optional = np.array([False, True, False, False, False, False])
+    without = closest_expected_gap(page, optional=optional)
+    assert without == pytest.approx(0.5)
+    # And because the grace's own attack would be collapsed into the note it
+    # decorates — keeping the *earlier* of the pair, which is the ornament —
+    # a page that prints one is left alone rather than handed a required note
+    # 60 ms early. See `collapse_double_attacks`.
+    doubled = np.sort(np.append(page, 1.0 + 0.1))
+    kept = collapse_double_attacks(doubled, page, optional=optional)
+    assert kept.size == doubled.size
+    assert np.allclose(kept, doubled)
+
+
+def test_a_take_with_no_room_to_judge_is_returned_unchanged() -> None:
+    page = _page_of_quarters()
+    assert collapse_double_attacks(np.array([1.0]), page).size == 1
+    assert collapse_double_attacks(np.array([]), page).size == 0
+    assert collapse_double_attacks(page, np.array([0.5])).size == page.size
+
+
+def test_an_over_detected_half_take_is_matched_against_the_half_it_played() -> None:
+    """The regression this was written for, end to end through `align_take`.
+
+    Half a page, every attack reported twice, is the shape that scored 0.000
+    and was told to check it was the right piece.
+    """
+    # **A mixed-length page, for the reason the pace tests give.** On an even
+    # grid of quarters the doubled take still scores 0.685 — equal intervals
+    # are forgiving, and the fragility that refused a real take needs a page
+    # whose notes are not all the same length.
+    page = _mixed_length_page()
+    half = page[:17]
+    floor = closest_expected_gap(page) / MAX_TEMPO_RATIO
+    doubled = np.sort(np.concatenate([half, half + floor * 0.5]))
+    assert float(doubled[-1] - doubled[0]) * MAX_TEMPO_RATIO < float(
+        page[-1] - page[0]
+    ), "the span must prove the take is partial, or there is nothing to veto"
+
+    assert doubled.size > page.size, "the count veto only bites when it outnumbers"
+
+    refused = align_dtw(doubled.copy(), page, target_bpm=120.0)
+    assert refused.quality < 0.4
+
+    kept = collapse_double_attacks(doubled, page)
+    # One doubled attack survives by design — the opening pair is the origin's
+    # to decide, not this rule's — and it costs some quality. Across takes of
+    # 15 to 18 notes the result lands between 0.478 and 0.967, so the claim
+    # here is the one that matters and is stable: the take stops being refused
+    # as a wrong piece and gets a verdict, against the passage it played.
+    assert kept.size == half.size + 1
+    reported = align_dtw(kept, page, target_bpm=120.0)
+    assert reported.quality > 0.4, f"still refused at {reported.quality:.3f}"
+    assert reported.subsequence, "the half-take should match as a subsequence"
+    assert reported.coverage == pytest.approx(1.0), (
+        "every note of the passage it played should be accounted for"
+    )
