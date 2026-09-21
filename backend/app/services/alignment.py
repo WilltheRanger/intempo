@@ -856,6 +856,47 @@ def closest_expected_gap(
     return float(positive.min()) if positive.size else None
 
 
+def attacks_outnumber_the_music(
+    detected: np.ndarray, expected: np.ndarray
+) -> bool:
+    """Did more sound arrive than any performance of this page could produce?
+
+    **A count against the page is the wrong question and it was asked for a
+    long time.** A take of half a page reporting 77 onsets against a 75-note
+    score is 1.03x by count and looks unremarkable, while against the ~43 notes
+    its own span writes it is nearly double. The span is not known until the
+    match is made, so what can be asked first is how *thickly* attacks arrive.
+
+    **The threshold is `MAX_TEMPO_RATIO` and nothing else is chosen.** That is
+    the fastest the matcher will believe a performance of this page, so a take
+    whose attacks arrive closer together than the page's own notes at that
+    tempo is not a performance of it — some of what was heard is not the music.
+    Derived, like the floor in `collapse_double_attacks`, rather than picked.
+
+    Measured against every take this app has received, and against takes
+    synthesised from the same page and read through the same detector:
+
+        115 onsets / 34.2s = 3.36/s   vs 2.49/s   over-detected
+         88 onsets / 32.6s = 2.70/s   vs 1.72/s   over-detected
+         77 onsets / 29.1s = 2.65/s   vs 2.19/s   over-detected
+         31 onsets / 10.8s = 2.87/s   vs 2.49/s   over-detected
+         25 onsets / 17.6s = 1.42/s   vs 2.49/s   ordinary
+
+    It says nothing about *why* — a bass under a bow re-triggering, a room, a
+    microphone too close to the body of the instrument. What it buys is that
+    the musician stops being told to check they are on the right piece when
+    the page was never the problem.
+    """
+    if detected.size < 2 or expected.size < 2:
+        return False
+    page_span = float(expected[-1] - expected[0])
+    take_span = float(detected[-1] - detected[0])
+    if page_span <= 0 or take_span <= 0:
+        return False
+    believable = (expected.size / page_span) * MAX_TEMPO_RATIO
+    return detected.size / take_span > believable
+
+
 def collapse_double_attacks(
     detected: np.ndarray,
     expected: np.ndarray,

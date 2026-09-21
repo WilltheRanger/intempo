@@ -9,6 +9,7 @@ from app.services.alignment import (
     AlignmentResult,
     MAX_TEMPO_RATIO,
     closest_expected_gap,
+    attacks_outnumber_the_music,
     collapse_double_attacks,
     expand_repeats,
     align_dtw,
@@ -1185,3 +1186,55 @@ def test_an_over_detected_half_take_is_matched_against_the_half_it_played() -> N
     assert reported.coverage == pytest.approx(1.0), (
         "every note of the passage it played should be accounted for"
     )
+
+
+# More sound than the page can account for.
+#
+# Every take this app has analysed in production landed on "check you're on
+# the right piece", and every one of them was the right piece. The numbers
+# below are those takes, read off the runner's own log lines.
+
+
+def _take_of(onsets: int, span: float) -> np.ndarray:
+    return np.linspace(0.0, span, onsets)
+
+
+def _page_of(notes: int, span: float) -> np.ndarray:
+    return np.linspace(0.0, span, notes)
+
+
+@pytest.mark.parametrize(
+    ("onsets", "take_span", "notes", "page_span"),
+    [
+        (115, 34.2, 75, 51.2),
+        (88, 32.6, 75, 74.2),
+        (77, 29.1, 75, 58.2),
+        (31, 10.8, 75, 51.2),
+    ],
+)
+def test_the_production_takes_are_all_over_detected(
+    onsets: int, take_span: float, notes: int, page_span: float
+) -> None:
+    assert attacks_outnumber_the_music(
+        _take_of(onsets, take_span), _page_of(notes, page_span)
+    )
+
+
+def test_a_take_read_plausibly_is_left_alone() -> None:
+    """Synthesised from the same page and read through the same detector."""
+    assert not attacks_outnumber_the_music(_take_of(25, 17.6), _page_of(75, 51.2))
+
+
+@pytest.mark.parametrize("pace", [1.0, 1.2, 1.4, 1.69])
+def test_playing_fast_is_not_over_detecting(pace: float) -> None:
+    """The bound is the fastest the matcher will believe, so anything it would
+    accept as a performance must not be called noise."""
+    page = _page_of(60, 30.0)
+    assert not attacks_outnumber_the_music(page / pace, page)
+
+
+def test_a_take_with_nothing_to_compare_is_not_accused() -> None:
+    page = _page_of(60, 30.0)
+    assert not attacks_outnumber_the_music(np.array([1.0]), page)
+    assert not attacks_outnumber_the_music(page, np.array([0.5]))
+    assert not attacks_outnumber_the_music(np.array([2.0, 2.0]), page)

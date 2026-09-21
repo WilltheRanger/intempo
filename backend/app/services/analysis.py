@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 from app.services import audio as audio_svc
 from app.services.alignment import (
     align_take,
+    attacks_outnumber_the_music,
     AlignmentResult,
     apply_fuzzy_match,
     build_timeline,
@@ -304,6 +305,18 @@ def _why_alignment_failed(
         return (
             f"Only {raw.n_detected} of {raw.n_expected} notes came through. "
             "Move the microphone closer."
+        )
+
+    # **More sound arrived than any performance of this page could make.**
+    # Checked before the wrong-piece sentence because it is the commoner cause
+    # and the two are indistinguishable from the counts alone: a take carrying
+    # a great deal of noise matches badly everywhere, which looks exactly like
+    # the wrong music. Every take this app has analysed lands here, and every
+    # one of them was the right piece — see `attacks_outnumber_the_music`.
+    if attacks_outnumber_the_music(onsets, expected):
+        return (
+            "More sound came through than this page writes. Move the "
+            "microphone closer to the instrument, away from anything noisy."
         )
 
     # **Everything the page writes was heard, and none of it where the page
