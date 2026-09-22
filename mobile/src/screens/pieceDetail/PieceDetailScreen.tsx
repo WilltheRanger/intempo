@@ -17,6 +17,8 @@ import { BottomSheet } from '../../components/overlays/BottomSheet';
 import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
 import { SheetOptionRow } from '../../components/overlays/SheetOptionRow';
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
+import { InlineCameraCapture } from '../../components/pieces/InlineCameraCapture';
+import { captureSession } from '../../data/captureSession';
 import {
   Card,
   EmptyState,
@@ -87,6 +89,7 @@ export function PieceDetailScreen() {
   const [draftTitle, setDraftTitle] = useState('');
   const [draftComposer, setDraftComposer] = useState('');
   const [draftMovement, setDraftMovement] = useState('');
+  const [showCamera, setShowCamera] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const updatePiece = useUpdatePiece(params.pieceId);
@@ -193,6 +196,17 @@ export function PieceDetailScreen() {
   const readingFailed = piece.transcriptionStatus === 'failed';
   const canPractice = hasNotation && !stillReading && !readingFailed;
   const needsNotation = !hasNotation && !hasPages && !stillReading;
+  // Captured by value rather than relying on the closure narrowing `piece`
+  // itself — it's a primitive, not the whole record, so there's nothing to
+  // go stale between this render and the sheet's next capture.
+  const pieceId = piece.id;
+
+  function handleCameraCapture(uri: string) {
+    captureSession.reset({ attachToPieceId: pieceId });
+    captureSession.capture(uri);
+    setShowCamera(false);
+    navigation.navigate('CapturedPages');
+  }
 
   return (
     /*
@@ -380,9 +394,7 @@ export function PieceDetailScreen() {
           <PrimaryButton
             label="Photograph sheet music"
             icon={Camera}
-            onPress={() =>
-              navigation.navigate('Scanner', { attachToPieceId: piece.id })
-            }
+            onPress={() => setShowCamera(true)}
             style={styles.notationPrimary}
           />
           <SecondaryButton
@@ -522,6 +534,19 @@ export function PieceDetailScreen() {
         onConfirm={() => void confirmDelete()}
         onCancel={() => setConfirmingDelete(false)}
       />
+
+      <BottomSheet
+        visible={showCamera}
+        onClose={() => setShowCamera(false)}
+        expand
+        hideCloseButton
+        dragWholeBody
+      >
+        <InlineCameraCapture
+          onCapture={handleCameraCapture}
+          onCancel={() => setShowCamera(false)}
+        />
+      </BottomSheet>
     </ScreenContainer>
   );
 }

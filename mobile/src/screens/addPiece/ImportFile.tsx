@@ -7,6 +7,8 @@ import { ComposerField } from '../../components/pieces/ComposerField';
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
+import { BottomSheet } from '../../components/overlays/BottomSheet';
+import { InlineCameraCapture } from '../../components/pieces/InlineCameraCapture';
 import {
   Input,
   PageHeader,
@@ -15,6 +17,7 @@ import {
   SecondaryButton,
   Text,
 } from '../../components/primitives';
+import { captureSession } from '../../data/captureSession';
 import { useImportPiece } from '../../data/hooks/usePieces';
 import { BORDER_WIDTH, colors, MIN_TOUCH_TARGET, spacing } from '../../design';
 import {
@@ -91,6 +94,7 @@ export function ImportFileScreen() {
   const [part, setPart] = useState<string | null>(null);
   const [title, setTitle] = useState('');
   const [composer, setComposer] = useState('');
+  const [showCamera, setShowCamera] = useState(false);
 
   /** Web hands back a Blob; native hands back a URI. Both read the same way. */
   async function bytesOf(asset: DocumentPicker.DocumentPickerAsset) {
@@ -179,6 +183,19 @@ export function ImportFileScreen() {
     }
   }
 
+  /**
+   * The camera fallback's own capture — a fresh session and straight to
+   * review, same as `AddPieceSheet`'s camera option, since this screen never
+   * takes `attachToPieceId` or `adding`: reached only from "Add piece", never
+   * from a piece already in the library.
+   */
+  function handleCameraCapture(uri: string) {
+    captureSession.reset();
+    captureSession.capture(uri);
+    setShowCamera(false);
+    navigation.replace('CapturedPages');
+  }
+
   const choosingPart = chosen !== null && part === null;
   const chosenPart = chosen?.parts.find((entry) => entry.id === part) ?? null;
 
@@ -209,7 +226,7 @@ export function ImportFileScreen() {
 
           <SecondaryButton
             label="Photograph the music instead"
-            onPress={() => navigation.replace('Scanner')}
+            onPress={() => setShowCamera(true)}
             style={styles.secondary}
           />
 
@@ -311,6 +328,19 @@ export function ImportFileScreen() {
           {error}
         </Text>
       ) : null}
+
+      <BottomSheet
+        visible={showCamera}
+        onClose={() => setShowCamera(false)}
+        expand
+        hideCloseButton
+        dragWholeBody
+      >
+        <InlineCameraCapture
+          onCapture={handleCameraCapture}
+          onCancel={() => setShowCamera(false)}
+        />
+      </BottomSheet>
     </ScreenContainer>
   );
 }

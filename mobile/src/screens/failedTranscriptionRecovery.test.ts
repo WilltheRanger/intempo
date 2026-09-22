@@ -5,8 +5,9 @@ import scoreScreen from './pieceScore/PieceScoreScreen.tsx?raw';
 
 describe('failed transcription recovery', () => {
   it('keeps a camera retake attached to the failed piece', () => {
+    expect(scoreScreen).toMatch(/const pieceId = piece\.id;/);
     expect(scoreScreen).toMatch(
-      /navigate\('Scanner',\s*\{ attachToPieceId: piece\.id \}\)/,
+      /captureSession\.reset\(\{\s*attachToPieceId: pieceId\s*\}\)/,
     );
   });
 

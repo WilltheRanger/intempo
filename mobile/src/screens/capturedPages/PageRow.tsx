@@ -78,7 +78,15 @@ export function PageRow({
           accessibilityLabel={`View page ${position} full size`}
           style={({ pressed }) => [styles.thumbnailPress, pressed && styles.thumbnailPressed]}
         >
-          <ScoreThumbnail source={page.source} style={styles.thumbnail} />
+          <ScoreThumbnail
+            source={page.source}
+            style={styles.thumbnail}
+            // Contain, not the component's own `cover` default. This row
+            // exists so a musician can check a capture before it's sent off
+            // to be read — cropping it to fill a fixed box is the same
+            // mistake `PagePreview` was written to fix, one row up.
+            fit="contain"
+          />
         </Pressable>
 
         <Text variant="button" style={styles.position}>

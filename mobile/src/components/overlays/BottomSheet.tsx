@@ -45,6 +45,26 @@ export interface BottomSheetProps {
    * header rather than needing a height of its own.
    */
   expand?: boolean;
+  /**
+   * Skip the header's own close button.
+   *
+   * For content that draws its own way out — the inline camera has an X of
+   * its own, in the reference this was built to match, and a second one in
+   * the corner is a second exit for the same gesture: one dismisses the
+   * camera back to the menu, the other would dismiss the whole sheet, and
+   * nothing on screen says which is which.
+   */
+  hideCloseButton?: boolean;
+  /**
+   * Let the drag gesture reach the body, not just the handle strip.
+   *
+   * `expand` sheets normally confine dragging to the handle so a scrollable
+   * body underneath doesn't fight it for the same touch. The camera has
+   * nothing to scroll and, under `expand`, is most of the screen — leaving
+   * only the handle draggable would leave a sliver at the very top as the
+   * one place a gesture the whole sheet promises actually works.
+   */
+  dragWholeBody?: boolean;
   children: ReactNode;
 }
 
@@ -63,6 +83,8 @@ export function BottomSheet({
   onClose,
   title,
   expand = false,
+  hideCloseButton = false,
+  dragWholeBody = false,
   children,
 }: BottomSheetProps) {
   const insets = useSafeAreaInsets();
@@ -267,14 +289,18 @@ export function BottomSheet({
           <View {...pan.panHandlers}>
             <View style={styles.handle} />
 
-            <View style={styles.header}>
-              {title ? (
-                <Text variant="pieceTitle" style={styles.title}>
-                  {title}
-                </Text>
-              ) : null}
-              <IconButton icon={X} label="Close" onPress={onClose} />
-            </View>
+            {title || !hideCloseButton ? (
+              <View style={styles.header}>
+                {title ? (
+                  <Text variant="pieceTitle" style={styles.title}>
+                    {title}
+                  </Text>
+                ) : null}
+                {hideCloseButton ? null : (
+                  <IconButton icon={X} label="Close" onPress={onClose} />
+                )}
+              </View>
+            ) : null}
           </View>
 
           {/*
@@ -284,7 +310,12 @@ export function BottomSheet({
             Short sheets have nothing to scroll, so all of them drags.
           */}
           {expand ? (
-            <View style={styles.body}>{children}</View>
+            <View
+              style={styles.body}
+              {...(dragWholeBody ? pan.panHandlers : null)}
+            >
+              {children}
+            </View>
           ) : (
             <View {...pan.panHandlers}>{children}</View>
           )}

@@ -1,9 +1,10 @@
 import type { AddPieceOption, RootStackParamList } from './types';
 
 /** Where an add-piece choice goes, as data rather than as a `navigate` call. */
-export type AddPieceDestination =
-  | { route: 'Scanner' }
-  | { route: 'AddPiece'; params: RootStackParamList['AddPiece'] };
+export type AddPieceDestination = {
+  route: 'AddPiece';
+  params: RootStackParamList['AddPiece'];
+};
 
 /**
  * Which screen each way of adding a piece opens.
@@ -15,14 +16,14 @@ export type AddPieceDestination =
  * removing it. Three copies of a routing decision that nothing checked, so a
  * fifth way of adding a piece would have needed finding all three.
  *
- * The shape mirrors what the route types already say: `AddPiece` accepts
- * `Exclude<AddPieceOption, 'scan'>`, because a scan is a camera session rather
- * than a form. That exclusion is the whole rule, and now the compiler and a
- * test both hold it.
+ * **Only three options reach this, not four.** The camera used to be a
+ * fourth branch here — "the camera is presented over everything rather than
+ * pushed into the form" — back when it was a route of its own. It is inline
+ * now, wherever it appears, and `AddPieceSheet` never calls this for it; the
+ * parameter type says so, the same way the route types do.
  */
-export function addPieceDestination(option: AddPieceOption): AddPieceDestination {
-  // The camera is presented over everything rather than pushed into the form.
-  return option === 'scan'
-    ? { route: 'Scanner' }
-    : { route: 'AddPiece', params: { option } };
+export function addPieceDestination(
+  option: Exclude<AddPieceOption, 'scan'>,
+): AddPieceDestination {
+  return { route: 'AddPiece', params: { option } };
 }

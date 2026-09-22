@@ -104,11 +104,15 @@ export function AddPieceSheet({
       visible={visible}
       onClose={onClose}
       title={mode === 'menu' ? 'Add piece' : undefined}
+      expand={mode === 'camera'}
+      hideCloseButton={mode === 'camera'}
+      dragWholeBody={mode === 'camera'}
     >
       {mode === 'camera' ? (
         <InlineCameraCapture
           onCapture={handleCapture}
           onCancel={() => setMode('menu')}
+          onChooseImages={() => onSelect('import')}
         />
       ) : (
         <>

@@ -1,12 +1,13 @@
 import { useNavigation } from '@react-navigation/native';
 import { Camera, Images, Layers, Plus } from '../../components/icons';
 import { useGoBack } from '../../navigation/useGoBack';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { StyleSheet } from 'react-native';
 
 import { BottomSheet } from '../../components/overlays/BottomSheet';
 import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
 import { SheetOptionRow } from '../../components/overlays/SheetOptionRow';
+import { InlineCameraCapture } from '../../components/pieces/InlineCameraCapture';
 import {
   EmptyState,
   PageHeader,
@@ -42,6 +43,11 @@ export function CapturedPagesScreen() {
   // A captured page can't be recovered — the photo is gone with it — and the
   // bin sits a thumb's width from the drag handle.
   const [addSheet, setAddSheet] = useState(false);
+  // Which half of the "add page" sheet is showing — its menu, or the camera
+  // in place of it. Mirrors `AddPieceSheet`'s own `mode`, for the reason
+  // `renderAddPageSheet` below explains: adding page two should not feel
+  // like a different feature from taking page one.
+  const [sheetMode, setSheetMode] = useState<'menu' | 'camera'>('menu');
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   // Remembered when the dialog opens rather than derived from `pendingDelete`,
   // and deliberately *not* cleared with it. `ConfirmDialog` is a fading modal
@@ -59,6 +65,14 @@ export function CapturedPagesScreen() {
     setPendingDelete(id);
   }
 
+  // Closed sheets reopen on the menu, not wherever they were left — same
+  // reasoning as `AddPieceSheet`'s identical effect.
+  useEffect(() => {
+    if (!addSheet) {
+      setSheetMode('menu');
+    }
+  }, [addSheet]);
+
   // Whether the viewfinder is underneath us.
   //
   // It is on the scan route and it is not on the import route, where
@@ -69,31 +83,25 @@ export function CapturedPagesScreen() {
   // start a new one.
   const atPageLimit = pages.length >= MAX_SCAN_PAGES;
 
-  const scannerBelow =
-    navigation.getState()?.routes.some((route) => route.name === 'Scanner') ?? false;
-
   /**
    * **"Add page" used to mean the viewfinder, and only the viewfinder.**
    *
    * Reported as *"why can't I upload the 2nd page as an image?"* — and the
-   * answer was that this function navigated to `Scanner` with no other route
-   * out. The library was reachable only from the action that *began* a scan,
-   * because `importAll` resets, so coming back to add page two from the photo
-   * roll threw page one away. A photograph already on the phone could join a
-   * scan in the first action or not at all.
+   * answer was that this sheet's camera option navigated to `Scanner` with no
+   * other route out. The library was reachable only from the action that
+   * *began* a scan, because `importAll` resets, so coming back to add page
+   * two from the photo roll threw page one away.
    *
-   * Both are offered now. `adding` is what stops either of them resetting the
-   * scan they were opened to extend — the caller decides, because from inside
-   * `captureSession` an abandoned scan and one being added to are the same
-   * array.
+   * Both are offered now, and the camera option no longer leaves this screen
+   * either — it opens the same `InlineCameraCapture` page one was taken with,
+   * for the same reason `AddPieceSheet` does: adding page two should not
+   * feel like a different feature from taking page one. `addFromLibrary`
+   * still navigates, because the photo library has no in-place equivalent
+   * here the way the camera does.
    */
-  function addFromCamera() {
+  function handleAddCapture(uri: string) {
+    captureSession.capture(uri);
     setAddSheet(false);
-    if (scannerBelow) {
-      goBack();
-      return;
-    }
-    navigation.navigate('Scanner', { adding: true });
   }
 
   function addFromLibrary() {
@@ -123,13 +131,83 @@ export function CapturedPagesScreen() {
     // sends `pages[0]`, the app then transcribed page 2 while the page just
     // re-shot was never sent at all.
     //
-    // `navigate` rather than `goBack`: on the scanner route the viewfinder is
-    // below this screen and navigating pops back to it, unmounted-effect and
-    // all. Pages that arrived through Import have no scanner below them, and
-    // `goBack` there dropped the musician onto the Today tab with the scan
-    // unreachable.
+    // **Opens the same sheet "Add page" does, straight to the camera.** This
+    // used to navigate to the full-screen scanner, which was its own route
+    // with its own reasoning here about `navigate` versus `goBack`; there is
+    // no route to leave anymore, so none of that applies. `capture` already
+    // knows a retake is armed and replaces in place regardless of which
+    // screen called it — this just has to arm one and open a camera.
     captureSession.beginRetake(id);
-    navigation.navigate('Scanner');
+    setSheetMode('camera');
+    setAddSheet(true);
+  }
+
+  /**
+   * The sheet both empty and non-empty states open on "Add page" — same
+   * markup either way, so pulled out once rather than kept as two copies
+   * that could drift.
+   */
+  function renderAddPageSheet() {
+    return (
+      <BottomSheet
+        visible={addSheet}
+        onClose={() => setAddSheet(false)}
+        title={sheetMode === 'menu' ? 'Add page' : undefined}
+        expand={sheetMode === 'camera'}
+        hideCloseButton={sheetMode === 'camera'}
+        dragWholeBody={sheetMode === 'camera'}
+      >
+        {sheetMode === 'camera' ? (
+          <InlineCameraCapture
+            onCapture={handleAddCapture}
+            onCancel={() => {
+              // A retake has nowhere to fall back to — there is no menu
+              // version of "redo this one page", so canceling means
+              // abandoning the retake outright rather than returning to a
+              // choice of actions. An ordinary "add page" still has that
+              // choice, so it goes back to it instead.
+              if (captureSession.retaking() !== null) {
+                captureSession.cancelRetake();
+                setAddSheet(false);
+                return;
+              }
+              setSheetMode('menu');
+            }}
+            // Choosing a library photo mid-retake would leave the retake
+            // still armed for whatever tapped the shutter next — `capture`
+            // deliberately leaves it that way, see its own docstring — which
+            // is a confusing thing to hand a musician expecting the picker to
+            // finish the retake. The original scanner never offered this
+            // combination either, so this keeps that boundary rather than
+            // inventing new behavior for it.
+            onChooseImages={
+              captureSession.retaking() === null ? addFromLibrary : undefined
+            }
+          />
+        ) : (
+          <>
+            {/*
+              Named by what the musician has in their hand, the way
+              `AddPieceSheet` names its four — not by what the app does with
+              it.
+            */}
+            <SheetOptionRow
+              icon={Camera}
+              label="Photograph a page"
+              description="Use the camera on the page in front of you."
+              onPress={() => setSheetMode('camera')}
+              divided={false}
+            />
+            <SheetOptionRow
+              icon={Images}
+              label="Choose photos"
+              description="Pictures of the music already on this device."
+              onPress={addFromLibrary}
+            />
+          </>
+        )}
+      </BottomSheet>
+    );
   }
 
   if (pages.length === 0) {
@@ -139,7 +217,7 @@ export function CapturedPagesScreen() {
         <PageHeader
           title="Review pages"
           onBack={goBack}
-          backLabel={scannerBelow ? 'Back to the scanner' : 'Back'}
+          backLabel="Back"
         />
         {/*
           **Two empty states, because empty means two things.** A scan whose
@@ -162,29 +240,7 @@ export function CapturedPagesScreen() {
           onActionPress={addPage}
         />
 
-      <BottomSheet
-        visible={addSheet}
-        onClose={() => setAddSheet(false)}
-        title="Add page"
-      >
-        {/*
-          Named by what the musician has in their hand, the way `AddPieceSheet`
-          names its four — not by what the app does with it.
-        */}
-        <SheetOptionRow
-          icon={Camera}
-          label="Photograph a page"
-          description="Use the camera on the page in front of you."
-          onPress={addFromCamera}
-          divided={false}
-        />
-        <SheetOptionRow
-          icon={Images}
-          label="Choose photos"
-          description="Pictures of the music already on this device."
-          onPress={addFromLibrary}
-        />
-      </BottomSheet>
+      {renderAddPageSheet()}
       </ScreenContainer>
     );
   }
@@ -206,8 +262,7 @@ export function CapturedPagesScreen() {
         eyebrow={pageCountLabel(pages.length)}
         title="Review pages"
         onBack={goBack}
-        // It said "Back to the scanner" on a route with no scanner on it.
-        backLabel={scannerBelow ? 'Back to the scanner' : 'Back'}
+        backLabel="Back"
       />
 
       <Text variant="metadataSmall" color="textTertiary" style={styles.hint}>
@@ -252,29 +307,7 @@ export function CapturedPagesScreen() {
         onCancel={() => setPendingDelete(null)}
       />
 
-      <BottomSheet
-        visible={addSheet}
-        onClose={() => setAddSheet(false)}
-        title="Add page"
-      >
-        {/*
-          Named by what the musician has in their hand, the way `AddPieceSheet`
-          names its four — not by what the app does with it.
-        */}
-        <SheetOptionRow
-          icon={Camera}
-          label="Photograph a page"
-          description="Use the camera on the page in front of you."
-          onPress={addFromCamera}
-          divided={false}
-        />
-        <SheetOptionRow
-          icon={Images}
-          label="Choose photos"
-          description="Pictures of the music already on this device."
-          onPress={addFromLibrary}
-        />
-      </BottomSheet>
+      {renderAddPageSheet()}
 
       {/*
         Held by index and read back out of `pages`, so deleting or reordering

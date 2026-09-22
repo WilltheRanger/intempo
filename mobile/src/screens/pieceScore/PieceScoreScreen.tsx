@@ -13,6 +13,8 @@ import {
 import { describePagePosition, pageAtOffset } from '../../lib/score/pageIndex';
 import { Stave } from '../../components/notation/Stave';
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
+import { InlineCameraCapture } from '../../components/pieces/InlineCameraCapture';
+import { captureSession } from '../../data/captureSession';
 import { ListenButton } from '../../components/score/ListenButton';
 import { PlaybackSettings } from '../../components/score/PlaybackSettings';
 import { TranscribingPanel } from '../../components/score/TranscribingPanel';
@@ -207,6 +209,7 @@ export function PieceScoreScreen() {
    */
   const [pageWidth, setPageWidth] = useState(0);
   const [pageIndex, setPageIndex] = useState(0);
+  const [showCamera, setShowCamera] = useState(false);
   const skippable = useMemo(() => skippableBars(piece?.score), [piece?.score]);
   const heard = useMemo(() => {
     if (!piece?.score) {
@@ -340,6 +343,17 @@ export function PieceScoreScreen() {
   }
 
   if (piece.transcriptionStatus === 'failed') {
+    // A primitive, not the whole record — nothing to go stale in the closure
+    // between this render and the sheet's next capture. Same reasoning as
+    // `PieceDetailScreen`'s identical line.
+    const pieceId = piece.id;
+    function handleCameraCapture(uri: string) {
+      captureSession.reset({ attachToPieceId: pieceId });
+      captureSession.capture(uri);
+      setShowCamera(false);
+      navigation.navigate('CapturedPages');
+    }
+
     return (
       <ScreenContainer>
         <PageHeader
@@ -410,9 +424,7 @@ export function PieceScoreScreen() {
         <SecondaryButton
           label="Take new photographs instead"
           icon={Camera}
-          onPress={() =>
-            navigation.navigate('Scanner', { attachToPieceId: piece.id })
-          }
+          onPress={() => setShowCamera(true)}
           disabled={reread.isPending}
           style={styles.recoveryAction}
         />
@@ -428,6 +440,18 @@ export function PieceScoreScreen() {
           disabled={reread.isPending}
           style={styles.recoverySecondary}
         />
+        <BottomSheet
+          visible={showCamera}
+          onClose={() => setShowCamera(false)}
+          expand
+          hideCloseButton
+          dragWholeBody
+        >
+          <InlineCameraCapture
+            onCapture={handleCameraCapture}
+            onCancel={() => setShowCamera(false)}
+          />
+        </BottomSheet>
         {/*
           **It said "you can practise it with the metronome", and you cannot.**
           `PieceDetailScreen` gates its practice button on `hasNotation`, and

@@ -20,17 +20,11 @@ import type { AddPieceOption, RootNavigation } from './types';
 export function useAddPieceOption(closeSheet: () => void) {
   const navigation = useNavigation<RootNavigation>();
 
-  return (option: AddPieceOption) => {
+  return (option: Exclude<AddPieceOption, 'scan'>) => {
     closeSheet();
     setTimeout(() => {
       const destination = addPieceDestination(option);
-      // The union of every route and its own params is exactly what `navigate`
-      // accepts and exactly what TypeScript cannot narrow across a mapped type.
-      // Cast once, here, as `useGoBack` does for the same reason.
-      (navigation.navigate as (route: string, params?: object) => void)(
-        destination.route,
-        'params' in destination ? destination.params : undefined,
-      );
+      navigation.navigate('AddPiece', destination.params);
     }, motion.fast);
   };
 }

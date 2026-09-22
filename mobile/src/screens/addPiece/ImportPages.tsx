@@ -5,6 +5,8 @@ import { useGoBack } from '../../navigation/useGoBack';
 import { useState } from 'react';
 import { Platform, StyleSheet } from 'react-native';
 
+import { BottomSheet } from '../../components/overlays/BottomSheet';
+import { InlineCameraCapture } from '../../components/pieces/InlineCameraCapture';
 import {
   PageHeader,
   PrimaryButton,
@@ -76,6 +78,7 @@ export function ImportPagesScreen({
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showCamera, setShowCamera] = useState(false);
   // Read at the moment of picking rather than held in state: the review screen
   // can delete a page while this is open on top of it.
   const room = MAX_SCAN_PAGES - captureSession.current().length;
@@ -142,6 +145,37 @@ export function ImportPagesScreen({
     }
   }
 
+  /**
+   * The camera's counterpart to `pick()`, one photograph instead of however
+   * many the library hands back.
+   *
+   * Same two branches for the same reason: adding to a scan in progress vs
+   * starting one fresh is a decision only the caller can make, and this
+   * screen already carries it in `adding`. Kept beside `pick()` deliberately
+   * rather than folded into it — a single photograph from the camera has
+   * nothing in common with a multi-select result beyond where it ends up.
+   */
+  function handleCameraCapture(uri: string) {
+    if (adding) {
+      const taken = captureSession.appendAll([uri]);
+      setShowCamera(false);
+      if (taken === 0) {
+        setError(
+          `This scan already has ${MAX_SCAN_PAGES} pages, which is the most InTempo can read at once.`,
+        );
+        return;
+      }
+      backToPages();
+      return;
+    }
+
+    // A fresh session, exactly as opening the scanner does — same as the
+    // library branch below.
+    captureSession.importAll([uri], { attachToPieceId });
+    setShowCamera(false);
+    navigation.replace('CapturedPages');
+  }
+
   return (
     <ScreenContainer>
       <PageHeader
@@ -182,7 +216,7 @@ export function ImportPagesScreen({
       {hasUsableCamera ? (
         <SecondaryButton
           label="Use the camera instead"
-          onPress={() => navigation.replace('Scanner')}
+          onPress={() => setShowCamera(true)}
           style={styles.secondary}
         />
       ) : null}
@@ -191,6 +225,19 @@ export function ImportPagesScreen({
         Choose up to {MAX_SCAN_PAGES} pages. InTempo keeps their order and reads
         all of them.
       </Text>
+
+      <BottomSheet
+        visible={showCamera}
+        onClose={() => setShowCamera(false)}
+        expand
+        hideCloseButton
+        dragWholeBody
+      >
+        <InlineCameraCapture
+          onCapture={handleCameraCapture}
+          onCancel={() => setShowCamera(false)}
+        />
+      </BottomSheet>
     </ScreenContainer>
   );
 }

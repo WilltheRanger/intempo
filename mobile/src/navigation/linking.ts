@@ -79,8 +79,10 @@ export const screenConfig: LinkingOptions<RootStackParamList>['config'] = {
       // the pages themselves live in memory: someone who refreshes mid-scan
       // should land on the step they were on and find it empty, which is
       // recoverable, rather than on Today wondering where the scan went.
+      //
+      // No entry for the camera itself: it is inline wherever it appears now,
+      // never its own screen, so there is nothing here for a URL to point at.
       AddPiece: 'add/:option',
-      Scanner: 'scan',
       CapturedPages: 'scan/pages',
       Transcribe: 'scan/sending',
       TranscriptionReview: 'scan/name',

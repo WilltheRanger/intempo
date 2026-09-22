@@ -32,7 +32,6 @@ import { OnboardingScreen } from '../screens/onboarding/OnboardingScreen';
 import { PieceScoreScreen } from '../screens/pieceScore/PieceScoreScreen';
 import { RecordScreen } from '../screens/record/RecordScreen';
 import { ProfileScreen } from '../screens/profile/ProfileScreen';
-import { ScannerScreen } from '../screens/scanner/ScannerScreen';
 import { TodayScreen } from '../screens/today/TodayScreen';
 import { TranscribeScreen } from '../screens/transcribe/TranscribeScreen';
 import { TranscriptionReviewScreen } from '../screens/transcriptionReview/TranscriptionReviewScreen';
@@ -313,12 +312,6 @@ function SignedInApp() {
     >
       <Stack.Screen name="Tabs" component={TabNavigator} />
       <Stack.Screen name="AddPiece" component={AddPieceScreen} />
-      {/* Full-bleed dark camera surface — presented over everything. */}
-      <Stack.Screen
-        name="Scanner"
-        component={ScannerScreen}
-        options={{ animation: 'slide_from_bottom' }}
-      />
       <Stack.Screen name="CapturedPages" component={CapturedPagesScreen} />
       <Stack.Screen name="Transcribe" component={TranscribeScreen} />
       <Stack.Screen
