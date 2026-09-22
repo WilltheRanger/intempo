@@ -421,7 +421,8 @@ def prepare_for_alignment(
     score: ScoreJson,
     target_bpm: float,
     *,
-    double_bass: bool,
+    instrument: str | None = None,
+    double_bass: bool = False,
     config: AudioConfig,
 ) -> Heard:
     """Decode, filter, read the score, and detect — the steps before aligning.
@@ -443,8 +444,17 @@ def prepare_for_alignment(
         y, sr = audio
     else:
         y, sr = audio_svc.load_audio(audio, sr=config.onset.sr)
-    if double_bass:
-        y = audio_svc.high_pass(y, sr, config.onset.double_bass_highpass_hz)
+    # **The filter and the threshold come from one entry.** They were two
+    # decisions before — this function chose whether to high-pass and
+    # `detect_onsets` chose the threshold — so a caller could get a bass's
+    # peak-pick threshold with a violin's (absent) filter. A viola's open C is
+    # 131 Hz and a cello's is 65 Hz, and neither was ever given a cutoff of
+    # its own; the table says so explicitly now rather than a boolean hiding
+    # it. See `[onset.instrument]` in config.toml.
+    named = instrument or ("double_bass" if double_bass else None)
+    settings = audio_svc.onset_settings_for(config, named)
+    if settings.highpass_hz > 0:
+        y = audio_svc.high_pass(y, sr, settings.highpass_hz)
 
     # The score is read *before* the audio, so the detector can be told how
     # close together the notes it is looking for actually are. Nothing about
@@ -461,7 +471,7 @@ def prepare_for_alignment(
     onsets = audio_svc.detect_onsets(
         audio_svc.pre_emphasis(y, config=config),
         sr,
-        double_bass=double_bass,
+        instrument=named,
         config=config,
         min_gap_s=closest_expected_gap(expected, optional=grace),
     )
@@ -478,10 +488,8 @@ def prepare_for_alignment(
     )
 
 
-
 # The two recovery thresholds live in `[onset.recovery]` in config.toml,
 # like every other tunable number in this pipeline (`CLAUDE.md` §1 rule 7).
-
 
 
 def _recover_missed_onsets(
@@ -543,6 +551,7 @@ def analyze(
     score: ScoreJson,
     target_bpm: float,
     *,
+    instrument: str | None = None,
     double_bass: bool = False,
     config: AudioConfig | None = None,
 ) -> AnalysisResult:
@@ -558,7 +567,12 @@ def analyze(
     """
     cfg = config or load_audio_config()
     heard = prepare_for_alignment(
-        audio, score, target_bpm, double_bass=double_bass, config=cfg
+        audio,
+        score,
+        target_bpm,
+        instrument=instrument,
+        double_bass=double_bass,
+        config=cfg,
     )
     timeline = heard.timeline
     expected = heard.expected

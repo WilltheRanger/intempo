@@ -12,6 +12,8 @@ from fastapi.testclient import TestClient
 from app import db as db_module
 from app.main import app
 from app.routers import analyses as analyses_module
+from app.services.audio import onset_settings_for
+from app.services.audio_config import load_audio_config
 from app.tests.audio_helpers import evenly_spaced, synth_click_track
 from app.tests.fake_supabase import FakeSupabase
 from app.workers import analysis_runner, dispatch
@@ -815,32 +817,45 @@ def _submit(
 
 
 @pytest.mark.parametrize(
-    ("instrument", "expected_flag"),
+    ("instrument", "expected_delta", "expected_highpass"),
     [
-        ("double_bass", True),
-        ("cello", False),
-        ("violin", False),
-        (None, False),
+        ("double_bass", 0.05, 80.0),
+        ("cello", 0.07, 0.0),
+        ("viola", 0.07, 0.0),
+        ("violin", 0.07, 0.0),
+        (None, 0.07, 0.0),
     ],
 )
-def test_the_instrument_decides_the_double_bass_setting(
+def test_the_instrument_decides_the_onset_settings(
     monkeypatch: pytest.MonkeyPatch,
     client: TestClient,
     make_token: Callable[..., str],
     instrument: str | None,
-    expected_flag: bool,
+    expected_delta: float,
+    expected_highpass: float,
 ) -> None:
-    """`analyze()`'s `double_bass` flag had no caller that ever set it.
+    """The instrument reaches the pipeline, and it decides both settings.
 
-    It turns on a high-pass filter and a lower onset threshold for the register
-    where attacks are softest — and every bass player was analysed without it,
-    in an app whose spec names double bass as its initial instrument focus.
-    This is the test that the flag is reachable at all.
+    **This asserted a boolean, and the boolean was the bug.** `analyze()` took
+    a `double_bass` flag, so `analysis_runner` computed
+    `instrument == "double_bass"` and three of the four string instruments
+    arrived as "not a bass" — sharing the threshold tuned for a violin, with
+    no way for the analysis to tell them apart. What is checked now is the
+    instrument going through and the settings it resolves to, which is the
+    thing a tuning session will change.
 
-    Cello is here deliberately: it reads bass clef and it is *not* a double
-    bass. Its low C is around 65 Hz, under the 80 Hz high-pass, so treating the
-    two alike would filter away the fundamental of the notes a cellist most
-    needs heard.
+    **Viola and cello are here deliberately, and they are not passing by
+    accident.** Both currently resolve to the violin's numbers, which is what
+    they have always had; the point of naming them is that the day either gets
+    its own row in `[onset.instrument]`, this test fails and says so rather
+    than the change landing unnoticed.
+
+    Cello also earns its place for the original reason: it reads bass clef and
+    it is *not* a double bass. Its low C is around 65 Hz, under the 80 Hz
+    high-pass, so treating the two alike would filter away the fundamental of
+    the notes a cellist most needs heard. `None` is the row written before the
+    column existed, and it must keep the reading it has always had rather than
+    be guessed into an instrument.
     """
     user_id = uuid4()
     score_id = uuid4()
@@ -852,11 +867,11 @@ def test_the_instrument_decides_the_double_bass_setting(
     _install(monkeypatch, fake)
     monkeypatch.setattr(analysis_runner, "download_audio", lambda _url: _wav_bytes())
 
-    seen: list[bool] = []
+    seen: list[str | None] = []
     real = analysis_runner.analyze
 
     def spy(audio, score, target_bpm, **kwargs):
-        seen.append(bool(kwargs.get("double_bass")))
+        seen.append(kwargs.get("instrument"))
         return real(audio, score, target_bpm, **kwargs)
 
     monkeypatch.setattr(analysis_runner, "analyze", spy)
@@ -865,7 +880,11 @@ def test_the_instrument_decides_the_double_bass_setting(
     extra = {} if instrument is None else {"instrument": instrument}
     _submit(client, token, user_id, score_id, **extra)
 
-    assert seen == [expected_flag]
+    assert seen == [instrument], "the instrument itself has to reach `analyze`"
+
+    settings = onset_settings_for(load_audio_config(), instrument)
+    assert settings.delta == pytest.approx(expected_delta)
+    assert settings.highpass_hz == pytest.approx(expected_highpass)
 
 
 def test_the_instrument_is_stored_and_read_back(

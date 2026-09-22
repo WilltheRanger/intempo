@@ -31,7 +31,12 @@ from app.services.alignment import (
 )
 from app.services.analysis import prepare_for_alignment
 from app.services.audio_config import AudioConfig, load_audio_config
-from app.services.classification import Delta, compute_deltas, generate_verdict, rolling_trend
+from app.services.classification import (
+    Delta,
+    compute_deltas,
+    generate_verdict,
+    rolling_trend,
+)
 from app.services.score_schema import ScoreJson
 
 
@@ -59,10 +64,7 @@ def envelope_of(y: np.ndarray, sr: int, *, buckets: int = 900) -> Envelope:
     # `pairwise`, not `zip(edges[:-1], edges[1:])`. The two slices differ in
     # length by one *on purpose*, so `strict=` has no right answer here —
     # and the intent is consecutive pairs, which is what this says.
-    peaks = [
-        float(magnitude[a:b].max()) if b > a else 0.0
-        for a, b in pairwise(edges)
-    ]
+    peaks = [float(magnitude[a:b].max()) if b > a else 0.0 for a, b in pairwise(edges)]
     ceiling = max(peaks) or 1.0
     return Envelope(
         peaks=[p / ceiling for p in peaks],
@@ -96,6 +98,7 @@ class Diagnostics:
     config: AudioConfig | None = None
     target_bpm: float = 0.0
     double_bass: bool = False
+    instrument: str | None = None
 
     @property
     def n_detected(self) -> int:
@@ -127,6 +130,7 @@ def analyze_with_diagnostics(
     target_bpm: float,
     *,
     double_bass: bool = False,
+    instrument: str | None = None,
     config: AudioConfig | None = None,
 ) -> Diagnostics:
     """`analyze()`, with the intermediate state kept instead of discarded.
@@ -143,7 +147,12 @@ def analyze_with_diagnostics(
     # dashboard sized the detector's window off the acciaccatura and showed
     # onsets the pipeline would never have produced.
     heard = prepare_for_alignment(
-        audio, score, target_bpm, double_bass=double_bass, config=cfg
+        audio,
+        score,
+        target_bpm,
+        instrument=instrument,
+        double_bass=double_bass,
+        config=cfg,
     )
     y, sr = heard.y, heard.sr
     timeline = heard.timeline
@@ -168,7 +177,9 @@ def analyze_with_diagnostics(
 
     if onsets.size == 0 or expected.size == 0:
         base.status = "no_onsets"
-        base.verdict = "Nothing to compare. No notes were detected, or the score has none."
+        base.verdict = (
+            "Nothing to compare. No notes were detected, or the score has none."
+        )
         return base
 
     # `base.detected_onsets` above stays in the recording's clock, because the
@@ -201,7 +212,9 @@ def analyze_with_diagnostics(
 
     if is_alignment_broken(raw.quality, config=cfg):
         base.status = "alignment_failed"
-        base.verdict = f"Alignment broke: quality {raw.quality:.3f} is under the broken threshold."
+        base.verdict = (
+            f"Alignment broke: quality {raw.quality:.3f} is under the broken threshold."
+        )
         return base
 
     cleaned = apply_fuzzy_match(raw, onsets, expected, optional=optional)

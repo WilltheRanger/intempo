@@ -1,5 +1,63 @@
 # InTempo Decisions
 
+## 2026-09-22 — The pipeline is told which instrument it is hearing
+
+**Context.** This app is for four string instruments and the analysis could
+distinguish two things: a double bass, and everything else.
+`analysis_runner` computed `instrument == Instrument.double_bass.value` and
+handed `analyze()` a boolean, so violin, viola and cello shared one path — the
+one whose peak-pick threshold was chosen for a violin. A viola's open C is
+131 Hz and a cello's is 65 Hz, the latter below the 80 Hz high-pass only the
+bass was given, and the analysis had no way to know which of the three it was
+reading. A row whose `instrument` column predated the feature also resolved to
+that path, so a cellist could be analysed as a violinist twice over.
+
+The settings were decided in three places as well: `detect_onsets` chose the
+threshold, `prepare_for_alignment` chose whether to filter, and the runner
+decided what counted as a bass. Three decisions that had to agree, and nothing
+made them.
+
+**Decision.** *Pass the instrument, not a boolean about one of them, and
+resolve both settings in one place.*
+
+`[onset.instrument.<name>]` in `config.toml` holds a `delta` and a
+`highpass_hz` per instrument; `audio.onset_settings_for(config, instrument)`
+is the single resolver. **Every instrument is seeded with exactly the value it
+was already getting**, so no reading changes: the six corpus clips are
+identical, quality, status, direction and per-note count.
+
+**Alternatives considered.**
+
+*Add a `cello` boolean beside `double_bass`.* Where the existing shape leads,
+and it does not scale past the next instrument — nor does it fix the three
+scattered decisions, it adds a fourth.
+
+*Put the resolver on `OnsetConfig` as a method.* Where it was first written,
+and it silently blinded `test_tuning_knobs.py`: that file proves every value
+in `config.toml` reaches something that reads it, by looking for attribute
+access in the pipeline modules *excluding the loader* — because the loader
+writes every field and counting it would make the proof vacuous. A resolver on
+the dataclass is a read inside the loader, so four knobs stopped being
+provably live the moment it went there. The resolver belongs in the pipeline;
+the loader loads.
+
+*Give viola and cello their own thresholds now.* The change this is really
+for, and it cannot be made here. `TUNING_LOG.md` reserves onset thresholds for
+the six-clip corpus and `fixtures/audio/README.md` records that none of it is
+recorded yet — "only a real instrument in a real room can answer that". Values
+invented for a cello would be the exact failure that file warns about.
+
+**Trade-offs accepted.** The three treble rows in the new table are identical,
+which reads like duplication and is the point: it is what they are today, not
+what is right. `test_the_instrument_decides_the_onset_settings` names viola and
+cello explicitly so that the day either gets its own numbers the test fails and
+says so.
+
+`double_bass` survives as a keyword on `detect_onsets`, `prepare_for_alignment`
+and `analyze` because twenty-eight tests assert bass behaviour through it;
+rewriting them all to say the same thing differently is a diff nobody would
+review (§5). `instrument` wins where both are given.
+
 ## 2026-09-21 — The page decides how close two notes can be
 
 **Context.** A musician played the first half of a 25-bar part from bar 1 and

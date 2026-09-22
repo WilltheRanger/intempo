@@ -6,6 +6,74 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-09-22 — Per-instrument onset settings, seeded at today's values
+
+**No threshold changed.** The six clips are **identical** — quality, status,
+direction and per-note count, clip by clip. This is a restructuring, logged
+here because it touches `[onset]` and because it is the thing that has to exist
+before any of the tuning below can be done at all.
+
+### What was wrong
+
+The analysis could tell a double bass from "everything else" and nothing
+finer. `analysis_runner` collapsed the instrument to a boolean before calling
+`analyze()`, so violin, viola and cello shared the path whose `delta = 0.07`
+was chosen for a violin:
+
+    instrument     high-pass   delta      open strings
+    violin              none    0.07      G3 196 · D4 294 · A4 440 · E5 659
+    viola               none    0.07      C3 131 · G3 196 · D4 294 · A4 440
+    cello               none    0.07      C2  65 · G2  98 · D3 147 · A3 220
+    double bass        80 Hz    0.05      E1  41 · A1  55 · D2  73 · G2  98
+
+A cello's lowest fundamental sits below the cutoff only the bass was given, and
+its attack envelope has far more in common with a bass than with a violin. None
+of that could be acted on, because the analysis was never told.
+
+### The change
+
+`[onset.instrument.<name>]` per instrument, resolved once by
+`audio.onset_settings_for`. Seeded with exactly the values each instrument was
+already getting, so violin, viola and cello are identical rows today. That is
+deliberate and it is not a claim that they should be.
+
+### Regression — the six clips
+
+    clip                    quality (before -> after)   status   direction   notes
+    01_detache_clean          0.988 -> 0.988              ok        on         32
+    02_detache_rushing        0.988 -> 0.988              ok        rush       32
+    03_detache_dragging       0.988 -> 0.988              ok        drag       32
+    04_slurred                0.990 -> 0.990              ok        on          8
+    05_open_e_long            1.000 -> 1.000              ok        on          1
+    06_pizzicato              0.990 -> 0.990              ok        on         16
+
+Identical, by construction: every instrument resolves to the number it
+resolved to before, and the corpus is all one instrument anyway.
+
+Full backend suite: 2523 passed.
+
+### What this does NOT do, and what it is owed
+
+**It does not improve any instrument's reading.** Viola and cello are still
+read with a violin's threshold and no high-pass. Whether either should have its
+own is precisely the question this repository cannot answer yet:
+`fixtures/audio/README.md` records that none of the six clips is recorded, and
+"only a real instrument in a real room can answer that". Values invented for a
+cello here would be the failure that file exists to prevent.
+
+**What the corpus now needs is four times over.** The six clips were specified
+for one instrument. Splitting `[onset.instrument]` apart honestly needs the
+same passage recorded on each instrument that is going to get its own row —
+same room, same mic placement, per the README's own rule about not tuning
+against the room.
+
+**A cello is the first one worth recording.** It is the instrument furthest
+from the settings it currently gets: bass clef, a 65 Hz open C under an 80 Hz
+cutoff it does not receive, and a bowed attack closer to a bass's than to a
+violin's.
+
+---
+
 ## 2026-09-21 — One attack reported twice is not two notes
 
 **No threshold changed, and nothing was added to `config.toml`.** The floor

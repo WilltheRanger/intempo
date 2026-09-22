@@ -30,12 +30,25 @@ to load an alternate file.
 from __future__ import annotations
 
 import tomllib
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
 # backend/config.toml — two parents up from app/services/.
 CONFIG_PATH = Path(__file__).resolve().parents[2] / "config.toml"
+
+
+@dataclass(frozen=True)
+class InstrumentOnset:
+    """The two onset settings that depend on which instrument was played.
+
+    `highpass_hz` of 0 means no filter, which is what the three treble
+    instruments get today.
+    """
+
+    delta: float
+    highpass_hz: float
 
 
 @dataclass(frozen=True)
@@ -46,9 +59,19 @@ class OnsetConfig:
     post_max: int
     wait_ms: int
     pre_emphasis_coef: float
-    # double-bass overrides
+    # The older spelling of the bass row, kept because a deployment's
+    # remote-config row may still send only this. `instruments` is what the
+    # pipeline reads; this seeds the bass entry when the table is absent.
     double_bass_delta: float
     double_bass_highpass_hz: float
+    #: Per instrument, keyed by the `Instrument` enum's values.
+    #:
+    #: **Empty is a valid config and not an error.** A remote-config row
+    #: written before this table existed sends no `[onset.instrument]`, and
+    #: such a deployment must keep reading takes exactly as it did — so
+    #: `for_instrument` falls back to the flat `delta` and the bass override,
+    #: which is precisely the old behaviour.
+    instruments: Mapping[str, InstrumentOnset] = field(default_factory=dict)
     #: See `[onset.recovery]` in config.toml. Defaulted so a deployment whose
     #: remote-config row predates them keeps loading.
     recovery_search_share: float = 0.25
@@ -133,6 +156,14 @@ def _parse(raw: dict) -> AudioConfig:
             pre_emphasis_coef=float(onset["pre_emphasis_coef"]),
             double_bass_delta=float(dbl.get("delta", onset["delta"])),
             double_bass_highpass_hz=float(dbl.get("highpass_hz", 80.0)),
+            instruments={
+                name: InstrumentOnset(
+                    delta=float(row.get("delta", onset["delta"])),
+                    highpass_hz=float(row.get("highpass_hz", 0.0)),
+                )
+                for name, row in (onset.get("instrument") or {}).items()
+                if isinstance(row, dict)
+            },
             recovery_search_share=float(rec.get("search_share", 0.25)),
             recovery_floor_ratio=float(rec.get("floor_ratio", 0.015)),
         ),

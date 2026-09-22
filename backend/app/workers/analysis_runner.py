@@ -27,7 +27,6 @@ from pathlib import Path
 import httpx
 
 from app.db import get_service_client
-from app.models.analysis import Instrument
 from app.services import audio as audio_svc
 from app.services.audio_intake import inspect_upload
 from app.services.audio_config import load_audio_config
@@ -326,7 +325,17 @@ def run_analysis(analysis_id: str) -> None:
             (y, sr),
             score,
             float(row["target_bpm"]),
-            double_bass=row.get("instrument") == Instrument.double_bass.value,
+            # **The instrument, not a boolean about one of them.** This read
+            # `instrument == "double_bass"`, which is why three of the four
+            # string instruments shared the path tuned for a violin: the
+            # analysis was never told which one it was hearing. A viola's open
+            # C is 131 Hz and a cello's is 65 Hz, and both arrived here as
+            # "not a bass".
+            #
+            # Passed through as the row has it, `None` included. A take whose
+            # row predates the column resolves to the flat threshold with no
+            # filter — what it has always had — rather than being guessed at.
+            instrument=row.get("instrument"),
         )
         # Stamped on the model, not bolted onto the dump, so `AnalysisResult`
         # stays the whole truth about what an analysis result contains.

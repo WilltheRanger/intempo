@@ -18,7 +18,11 @@ import librosa
 import numpy as np
 from scipy.signal import butter, sosfiltfilt
 
-from app.services.audio_config import AudioConfig, load_audio_config
+from app.services.audio_config import (
+    AudioConfig,
+    InstrumentOnset,
+    load_audio_config,
+)
 
 
 def load_audio(path: str | Path, *, sr: int | None = None) -> tuple[np.ndarray, int]:
@@ -246,10 +250,48 @@ def onset_envelope(y: np.ndarray, sr: int) -> np.ndarray:
     return out
 
 
+def onset_settings_for(config: AudioConfig, instrument: str | None) -> InstrumentOnset:
+    """The peak-pick threshold and high-pass cutoff for one instrument.
+
+    **One place decides this, because it used to be decided in three.**
+    `detect_onsets` chose the threshold, `prepare_for_alignment` chose whether
+    to filter, and `analysis_runner` decided which instrument counted as a
+    bass — so the three could disagree, and a caller that forgot the filter
+    still got the bass threshold.
+
+    **It lives here rather than on `OnsetConfig` for a reason worth keeping.**
+    `test_tuning_knobs.py` proves every value in `config.toml` reaches
+    something that reads it, and it does that by looking for attribute access
+    in the pipeline modules *excluding the loader* — because the loader writes
+    every field and counting it would make the proof vacuous. A resolver on the
+    dataclass is read-in-the-loader, so the guard went blind on four knobs the
+    moment it was put there. Keeping the decision in the pipeline keeps the
+    proof sharp.
+
+    `None` is the honest answer for a take whose row predates the `instrument`
+    column, and it resolves to the flat `delta` with no filter: the same
+    reading such a take has always had. It is deliberately not guessed at — a
+    null instrument silently becoming a violin is the behaviour this replaces,
+    and it was wrong for every cellist it touched.
+    """
+    onset = config.onset
+    if instrument and instrument in onset.instruments:
+        return onset.instruments[instrument]
+    # No table, or a name this build does not know. Reproduce the two branches
+    # that existed before exactly, rather than inventing a third.
+    if instrument == "double_bass":
+        return InstrumentOnset(
+            delta=onset.double_bass_delta,
+            highpass_hz=onset.double_bass_highpass_hz,
+        )
+    return InstrumentOnset(delta=onset.delta, highpass_hz=0.0)
+
+
 def detect_onsets(
     y: np.ndarray,
     sr: int,
     *,
+    instrument: str | None = None,
     double_bass: bool = False,
     config: AudioConfig | None = None,
     min_gap_s: float | None = None,
@@ -259,13 +301,24 @@ def detect_onsets(
     Uses the peak-pick parameters from config (`delta`, `pre_max`,
     `post_max`, `wait`). `wait` enforces a minimum inter-onset gap, which
     suppresses the double/triple triggers a ringing pizzicato string
-    produces (§7 problem 4). In `double_bass` mode we drop `delta` and
-    high-pass first (caller is expected to pass an already-filtered `y`;
-    this only swaps the peak-pick threshold).
+    produces (§7 problem 4).
+
+    `instrument` selects the peak-pick threshold through
+    `OnsetConfig.for_instrument`. The filtering is the caller's job — this
+    only chooses the threshold — and `prepare_for_alignment` reads the same
+    entry for the cutoff, so the two cannot disagree about which instrument
+    was played.
+
+    **`double_bass` is the older spelling**, kept because twenty-eight tests
+    assert bass behaviour through it and rewriting them all to say the same
+    thing differently is a diff nobody would review (`CLAUDE.md` §5). It means
+    `instrument="double_bass"`; `instrument` wins when both are given.
     """
     cfg = config or load_audio_config()
     onset = cfg.onset
-    delta = onset.double_bass_delta if double_bass else onset.delta
+    named = instrument or ("double_bass" if double_bass else None)
+    settings = onset_settings_for(cfg, named)
+    delta = settings.delta
     window = peak_window_frames(min_gap_s, sr, config=cfg)
     # librosa wants `wait` in frames; convert from milliseconds.
     hop_length = _HOP_LENGTH

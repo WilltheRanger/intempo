@@ -36,8 +36,56 @@ wait_ms = 60               # minimum inter-onset gap; suppresses pizzicato strin
 pre_emphasis_coef = 0.97   # librosa.effects.preemphasis coefficient
 
 [onset.double_bass]
-# Low register: slow attack envelopes, broad onset peaks. Lower delta +
-# a high-pass before detection catches soft bass attacks (§7.5 problem 1).
+# **The older spelling, kept because a deployment's remote-config row may
+# still send it.** `[onset.instrument.double_bass]` below is the same two
+# numbers and is what the code reads; this is the fallback when the
+# per-instrument table is absent. Changing one and not the other is how the
+# two come to disagree, so they are held equal by
+# `app/tests/test_tuning_knobs.py`.
+delta = 0.05
+highpass_hz = 80.0
+
+# Per-instrument onset settings.
+#
+# **Until now the pipeline had one boolean, `double_bass`, and three of the
+# four instruments shared the path tuned for a violin.** A viola's open C is
+# 131 Hz and a cello's is 65 Hz — below the 80 Hz high-pass only the bass was
+# given — and both were read with a violin's peak-pick threshold. The analysis
+# could not tell them apart, because `analysis_runner` collapsed the
+# instrument to `instrument == "double_bass"` before calling it.
+#
+# **Every instrument below is seeded with exactly the value it was getting, so
+# no reading changes.** Violin, viola and cello are identical here because
+# that is what they are today, not because it is right: the open strings
+# (`mobile/src/lib/score/voice.ts`) are
+#
+#     violin      G3 196 · D4 294 · A4 440 · E5 659
+#     viola       C3 131 · G3 196 · D4 294 · A4 440
+#     cello       C2  65 · G2  98 · D3 147 · A3 220
+#     bass        E1  41 · A1  55 · D2  73 · G2  98
+#
+# and a threshold that suits the first cannot be assumed to suit the third.
+# Splitting them apart is a tuning question with an ear, on recordings this
+# repository does not have — see `fixtures/audio/README.md` and
+# `TUNING_LOG.md`. What this table buys is that the question can now be
+# answered per instrument instead of being invisible.
+#
+# `highpass_hz = 0.0` means no filter, which is what the three treble
+# instruments get today.
+
+[onset.instrument.violin]
+delta = 0.07
+highpass_hz = 0.0
+
+[onset.instrument.viola]
+delta = 0.07
+highpass_hz = 0.0
+
+[onset.instrument.cello]
+delta = 0.07
+highpass_hz = 0.0
+
+[onset.instrument.double_bass]
 delta = 0.05
 highpass_hz = 80.0
 

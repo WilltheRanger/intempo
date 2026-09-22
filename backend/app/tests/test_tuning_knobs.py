@@ -67,7 +67,7 @@ TURNS_NOTHING: dict[str, str] = {
     "alignment.slur_tolerance_pct": (
         "The threshold for a check that was never built. `alignment.py` says "
         "so itself, on `is_slur_boundary`: *'Nothing reads this yet … it is "
-        "what a slur-total check (spec: \"we measure the total duration of the "
+        'what a slur-total check (spec: "we measure the total duration of the '
         "slur\") would need.'* Slur handling today is `is_slur_interior`, which "
         "excludes those notes from the trend and the verdict rather than "
         "measuring the phrase against a tolerance."
@@ -111,7 +111,9 @@ def _readers(field: str) -> list[str]:
     both of which appear in `audio.py`.
     """
     pattern = re.compile(rf"\w\.{re.escape(field.split('.')[-1])}\b")
-    return [name for name, source in _pipeline_source().items() if pattern.search(source)]
+    return [
+        name for name, source in _pipeline_source().items() if pattern.search(source)
+    ]
 
 
 CONFIG_FIELDS = _config_fields()
@@ -130,6 +132,14 @@ def _raw_keys(table: dict, fields_known: set[str]) -> set[str]:
     So a sub-table key is matched against the prefixed name first and the bare
     one second, and a key matching neither is reported as unread — which is the
     point of the check that uses this.
+
+    **One table is a third level deep, and it fills a single field.**
+    `[onset.instrument.violin]` and its three siblings are parsed into
+    `OnsetConfig.instruments`, a mapping — so every leaf under
+    `onset.instrument` fills that one field, and the name of the instrument is
+    data rather than another knob. Pluralised on the way, which is the loader's
+    spelling: `instrument` in the file, `instruments` on the dataclass, because
+    the file names one instrument per table and the field holds them all.
     """
     keys: set[str] = set()
     for section, body in table.items():
@@ -137,12 +147,13 @@ def _raw_keys(table: dict, fields_known: set[str]) -> set[str]:
             continue
         for name, value in body.items():
             if isinstance(value, dict):
+                if any(isinstance(leaf, dict) for leaf in value.values()):
+                    keys.add(f"{section}.{name}s")
+                    continue
                 for leaf in value:
                     prefixed = f"{section}.{name}_{leaf}"
                     keys.add(
-                        prefixed
-                        if prefixed in fields_known
-                        else f"{section}.{leaf}"
+                        prefixed if prefixed in fields_known else f"{section}.{leaf}"
                     )
             else:
                 keys.add(f"{section}.{name}")
