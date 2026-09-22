@@ -58,8 +58,22 @@ def load_audio_bytes(
 def pre_emphasis(y: np.ndarray, *, config: AudioConfig | None = None) -> np.ndarray:
     """Boost high frequencies before onset detection.
 
-    Sharpens note attacks, which especially helps the broad, slow-attack
-    onsets of the low register (§4, §7.5).
+    **This does very little to what the detector reports, and the claim that
+    stood here — that it "sharpens note attacks, which especially helps the
+    broad, slow-attack onsets of the low register" — was measured false.** The
+    onset envelope differences *log* mel spectra, and a fixed filter is a
+    constant number of decibels per band, which the difference removes.
+    Envelope correlation with and without it is 0.998 on bowed violin and
+    cello takes in a 0.8 s room, and the detected onsets are identical.
+
+    What it can still move is the −80 dB floor the envelope is clamped to,
+    which is set by the take's loudest moment: where that moment is a
+    low-frequency boom, attenuating the boom lowers the reference and the
+    correlation falls to about 0.93. That is an effect on the clamp, not a
+    sharper attack.
+
+    Kept because the spec's signal chain names it (§4) and removing it moves
+    nothing. See `high_pass` for why no filter can reach this detector.
     """
     cfg = config or load_audio_config()
     return librosa.effects.preemphasis(y, coef=cfg.onset.pre_emphasis_coef)
@@ -80,6 +94,28 @@ def high_pass(y: np.ndarray, sr: int, cutoff_hz: float) -> np.ndarray:
     Used in double-bass mode: detecting onsets in the high partials of a
     bass note is more reliable than in the boomy fundamental, and it
     rejects room-mode reverb tails that fake onsets (§7.5 problem 1/3).
+
+    **It does neither, and nothing could make a cutoff do either here.**
+    Measured 2026-09-22 against the detector this feeds:
+
+      * The flux differences *log* spectra, so a fixed filter is a constant
+        number of decibels per band, removed by the difference. Envelope
+        correlation with and without 80 Hz on a bowed bass in a room with a
+        58 Hz mode: 0.9999, detected onsets byte-identical.
+      * Moving the cutoff into the detector — the lowest mel band — does no
+        better: 0.9999 dry, 0.9993 in a 0.9 s room. Notes of a pure 50 Hz tone
+        are all still found with the floor at 150 Hz, because leakage sixty
+        decibels down makes the same log-flux as the note; only a floor at
+        300 Hz loses them, which would lose a bass.
+      * **And the risk it was for does not arise.** A 45–60 Hz boom between
+        bass notes, at up to five times their peak, is not detected with no
+        filter at all: the flux is a mean over 128 bands, and a sound confined
+        to the bottom two or three barely moves it.
+
+    So `highpass_hz` in `[onset.instrument]` shapes the waveform the dashboard
+    draws and nothing the analysis reports; `config.toml` says so beside it.
+    `test_onset_placement.py` holds all three facts, so a change that makes any
+    of them untrue has to say so.
     """
     nyquist = 0.5 * sr
     normalized = min(cutoff_hz / nyquist, 0.99)
@@ -250,6 +286,160 @@ def onset_envelope(y: np.ndarray, sr: int) -> np.ndarray:
     return out
 
 
+#: The finer look each onset gets once the peak-picker has found it.
+#:
+#: **Every onset time used to sit on the 23.2 ms analysis hop**, and at the
+#: tempos this app is used at that is most of a tolerance band: a steady
+#: quarter at 120 BPM is detected 21 and 22 frames apart in turn, so a
+#: metronomic take reads as alternating ±12 ms — 2.3% of a beat out of the
+#: 5% the inner band allows, before the musician has done anything. At
+#: 160 BPM the inner band is 19 ms, narrower than one frame.
+#:
+#: **And where on the attack it landed depended on the attack.** The 2048-point
+#: window is 93 ms long, so the flux peak lags the start of a note by however
+#: long the note takes to speak: measured on bowed notes played exactly on the
+#: grid, 30 ms after a 5 ms rise and 65 ms after a 120 ms one. A constant lag
+#: cancels, since every delta is relative; a lag that varies with the stroke
+#: does not, and a bar of martelé against a bar of soft détaché is exactly
+#: that.
+#:
+#: So once a note has been *found* on the coarse grid it is *placed* on a fine
+#: one: a 1024-point window (46 ms — still two periods of a bass's open E) at a
+#: 64-sample hop (2.9 ms), with the flux differenced over the same 512 samples
+#: the detector uses, and the onset put where that flux first reaches half its
+#: peak on the rise. Measured on bowed notes at 90 BPM, twelve per take, rise
+#: times from 5 to 120 ms:
+#:
+#:                          spread across rise times   spread within one
+#:     violin, dry                 34.8 → 12.6 ms           6.9 →  1.4 ms
+#:     violin, 0.8 s room          29.0 → 13.5 ms           8.1 →  2.1 ms
+#:     bass, dry                   19.3 →  6.3 ms           8.7 →  4.0 ms
+#:     bass, 0.8 s room            50.3 → 32.2 ms          11.0 → 12.7 ms
+#:
+#: The last row is the honest limit: a bass in a live room is smeared by the
+#: room itself, and a finer grid cannot place what the room has blurred.
+#:
+#: Detection is untouched — which notes are found is still decided on the
+#: coarse grid, by the tuned peak-picker. This only moves each one, and never
+#: by more than `_REFINE_SEARCH_S` or halfway to a neighbour.
+_REFINE_N_FFT = 1024
+_REFINE_HOP = 64
+#: How far the fine flux peak is looked for either side of the coarse onset.
+_REFINE_SEARCH_S = 0.045
+#: How far back along the rise the onset may be walked from that peak.
+_REFINE_RISE_S = 0.2
+#: The share of the peak flux that marks the rise.
+_REFINE_RISE_SHARE = 0.5
+
+
+def refine_onset_times(y: np.ndarray, sr: int, times: np.ndarray) -> np.ndarray:
+    """Each onset moved onto its attack at 2.9 ms resolution. See `_REFINE_N_FFT`.
+
+    An onset the finer look cannot place — at the very edge of the recording,
+    or in a window with no rise in it at all — keeps the time it came with.
+    """
+    times = np.asarray(times, dtype=float)
+    if times.size == 0:
+        return times
+    lag = max(1, _HOP_LENGTH // _REFINE_HOP)
+    # Frames whose window reaches back into the segment's zero padding compare
+    # audio against nothing — the same artefact `detect_onsets` silences at the
+    # start of a recording — so no onset may be placed on one.
+    guard = _REFINE_N_FFT // _REFINE_HOP + lag
+    refined = times.copy()
+    for i, t in enumerate(times):
+        room = _REFINE_SEARCH_S
+        back = _REFINE_RISE_S
+        if i > 0:
+            room = min(room, 0.5 * (t - times[i - 1]))
+            back = min(back, 0.5 * (t - times[i - 1]))
+        if i + 1 < times.size:
+            room = min(room, 0.5 * (times[i + 1] - t))
+        start = max(0, int(round((t - back - room) * sr)) - _REFINE_N_FFT)
+        stop = min(y.size, int(round((t + room) * sr)) + _REFINE_N_FFT)
+        segment = y[start:stop]
+        if segment.size < 2 * _REFINE_N_FFT:
+            continue
+        mel = librosa.feature.melspectrogram(
+            y=segment, sr=sr, n_fft=_REFINE_N_FFT, hop_length=_REFINE_HOP
+        )
+        peak = float(mel.max())
+        if peak <= 0:
+            continue
+        db = librosa.power_to_db(mel, ref=peak, top_db=_TOP_DB)
+        flux = librosa.onset.onset_strength(
+            S=db, sr=sr, hop_length=_REFINE_HOP, lag=lag
+        )
+        at = start / sr + np.arange(flux.size) * _REFINE_HOP / sr
+        # And never into the opening the coarse detector silences, for the
+        # same reason: there, the recording beginning looks like a note.
+        usable = (np.arange(flux.size) >= guard) & (at > _N_FFT / sr)
+        if start + segment.size < y.size:
+            # The far edge is padded too; nothing there is a rise either.
+            usable &= np.arange(flux.size) < flux.size - _REFINE_N_FFT // _REFINE_HOP
+        near = np.flatnonzero(usable & (at >= t - room) & (at <= t + room))
+        if near.size == 0:
+            continue
+        top = int(near[np.argmax(flux[near])])
+        if flux[top] <= 0:
+            continue
+        rise = top
+        limit = t - back
+        while (
+            rise - 1 >= 0
+            and usable[rise - 1]
+            and at[rise - 1] >= limit
+            and flux[rise - 1] >= _REFINE_RISE_SHARE * flux[top]
+        ):
+            rise -= 1
+        refined[i] = float(at[rise])
+    # Every move is bounded by half the gap to each neighbour, so order holds;
+    # sorting is a guard on that arithmetic rather than a repair it needs.
+    return np.sort(refined)
+
+
+#: The share of a take's frames quieter than its noise floor, by definition.
+#:
+#: Nearly every take opens on room tone before the first note and closes on it
+#: after the last, so its quietest twentieth is the room, not the playing.
+_FLOOR_PERCENTILE = 5.0
+
+
+def level_above_floor_db(y: np.ndarray, sr: int, times: np.ndarray) -> np.ndarray:
+    """How far above the take's own noise floor the recording sounds at each time.
+
+    **Relative to the take, so it stays as level-invariant as the detector.** A
+    take recorded ten decibels quieter has a floor ten decibels lower, and
+    every answer here is the same.
+
+    RMS per hop, computed a block at a time for the reason `onset_envelope`
+    gives: framing a long take whole allocates a window per frame. Each time is
+    read as the loudest frame within one hop of it, so an attack that lands
+    between two frames is not judged by the quieter of them.
+    """
+    times = np.asarray(times, dtype=float)
+    if times.size == 0 or y.size == 0:
+        return np.zeros(times.size, dtype=float)
+    hop = _HOP_LENGTH
+    block = _ENVELOPE_BLOCK_FRAMES * hop
+    levels: list[np.ndarray] = []
+    for start in range(0, y.size, block):
+        piece = y[start : start + block]
+        if piece.size == 0:
+            continue
+        rms = librosa.feature.rms(
+            y=piece, frame_length=_N_FFT, hop_length=hop, center=True
+        )[0]
+        levels.append(rms[: int(np.ceil(piece.size / hop))])
+    db = 20.0 * np.log10(np.maximum(np.concatenate(levels), 1e-10))
+    floor = float(np.percentile(db, _FLOOR_PERCENTILE))
+    frames = np.clip(np.round(times * sr / hop).astype(int), 0, db.size - 1)
+    near = np.maximum.reduce(
+        [db[np.clip(frames + k, 0, db.size - 1)] for k in (-1, 0, 1)]
+    )
+    return near - floor
+
+
 def onset_settings_for(config: AudioConfig, instrument: str | None) -> InstrumentOnset:
     """The peak-pick threshold and high-pass cutoff for one instrument.
 
@@ -304,10 +494,13 @@ def detect_onsets(
     produces (§7 problem 4).
 
     `instrument` selects the peak-pick threshold through
-    `OnsetConfig.for_instrument`. The filtering is the caller's job — this
-    only chooses the threshold — and `prepare_for_alignment` reads the same
-    entry for the cutoff, so the two cannot disagree about which instrument
-    was played.
+    `onset_settings_for`. The filtering is the caller's job — this only
+    chooses the threshold — and `prepare_for_alignment` reads the same entry
+    for the cutoff. **That cutoff changes no onset**, and nothing placed here
+    could make it: see `high_pass`.
+
+    Each onset is found on the 23 ms analysis grid and then placed on a 2.9 ms
+    one — see `_REFINE_N_FFT`.
 
     **`double_bass` is the older spelling**, kept because twenty-eight tests
     assert bass behaviour through it and rewriting them all to say the same
@@ -365,4 +558,5 @@ def detect_onsets(
         backtrack=False,
     )
     times = librosa.frames_to_time(frames, sr=sr, hop_length=hop_length)
-    return np.asarray(times, dtype=float)
+    # Found on the coarse grid, placed on a fine one. See `_REFINE_N_FFT`.
+    return refine_onset_times(y, sr, np.asarray(times, dtype=float))

@@ -29,7 +29,7 @@ from app.services.alignment import (
     is_alignment_broken,
     to_timeline_base,
 )
-from app.services.analysis import prepare_for_alignment
+from app.services.analysis import Reading, prepare_for_alignment
 from app.services.audio_config import AudioConfig, load_audio_config
 from app.services.classification import (
     Delta,
@@ -188,17 +188,14 @@ def analyze_with_diagnostics(
     # exactly as `analyze()` does.
     onsets = to_timeline_base(onsets)
 
-    # The same two masks `analyze()` builds, so a diagnostic run and a real one
-    # do not disagree about a page with ornaments on it. `optional` now comes
-    # back from the shared step, which is also what sized the detector.
-    optional = heard.grace
-    steady = np.array(
-        [
-            not n.under_tempo_change and not n.is_grace_note and not n.after_grace_note
-            for n in timeline.notes
-        ],
-        dtype=bool,
-    )
+    # The same masks `analyze()` reads off a `Reading`, so a diagnostic run and
+    # a real one do not disagree about a page with ornaments on it. This is the
+    # page as written: the dashboard shows what the detector made of the page
+    # a musician is tuning against, not which other reading `analyze()` may
+    # have preferred for a take.
+    as_written = Reading(name="as written", timeline=timeline)
+    optional = as_written.optional
+    steady = as_written.steady
     raw = align_dtw(
         onsets,
         expected,
@@ -217,7 +214,9 @@ def analyze_with_diagnostics(
         )
         return base
 
-    cleaned = apply_fuzzy_match(raw, onsets, expected, optional=optional)
+    cleaned = apply_fuzzy_match(
+        raw, onsets, expected, optional=optional, reclaimable=as_written.reclaimable
+    )
     deltas = compute_deltas(cleaned, onsets, timeline, target_bpm, config=cfg)
 
     base.matched = list(cleaned.matched)

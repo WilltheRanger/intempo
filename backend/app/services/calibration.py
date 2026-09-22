@@ -18,6 +18,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from app.services import audio as audio_svc
+from app.services.alignment import typical_gap
 from app.services.audio_config import AudioConfig, load_audio_config
 
 
@@ -63,7 +64,22 @@ def calibrate(
             message="Couldn't hear that. Move closer to the microphone.",
         )
 
-    onsets = audio_svc.detect_onsets(audio_svc.pre_emphasis(y, config=cfg), sr, config=cfg)
+    # **Sized for the fastest tempo this will accept, not left at the cap.**
+    # Without a score there is no written gap to derive the peak-pick window
+    # from, and the fallback is `pre_max` — ±464 ms, which cannot see two
+    # quarters closer than that. Measured before this: played at 150 BPM it
+    # returned **49.7**, at 180 it returned 60.1, at 208 it returned 83.4, and
+    # at 135 it refused the clip as inconsistent — every one of them a steady
+    # pulse the detector was only allowed to hear every second or third note
+    # of. `bpm_max` is the fastest pulse the answer may be, so its beat is the
+    # closest gap to expect; `peak_window_frames` does the rest, exactly as it
+    # does for a score.
+    onsets = audio_svc.detect_onsets(
+        audio_svc.pre_emphasis(y, config=cfg),
+        sr,
+        config=cfg,
+        min_gap_s=60.0 / cal.bpm_max if cal.bpm_max > 0 else None,
+    )
     n = int(onsets.size)
     if n < cal.min_onsets:
         return CalibrationResult(
@@ -107,7 +123,13 @@ def calibrate(
             message="Play a steady quarter-note pulse.",
         )
 
-    bpm = round(60.0 / float(np.median(iois)), 1)
+    # The typical interval, not the median one. A median snaps to the grid its
+    # inputs sit on, and a steady 120 read as **117.5**: 0.5 s is 21.5 frames,
+    # detected 21 and 22 frames apart in turn, and the median took the 22.
+    # Onsets are now placed far finer than a frame, and `typical_gap` — the
+    # median to find the centre, the mean of everything near it for precision
+    # — is what the alignment already uses for the same reason.
+    bpm = round(60.0 / typical_gap(iois), 1)
     # **The range test cannot catch a non-finite tempo**, because every
     # comparison against `nan` is false and `inf` only fails one side. Both are
     # reachable from arithmetic rather than from a setting — a median interval

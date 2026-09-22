@@ -1,5 +1,96 @@
 # InTempo Decisions
 
+## 2026-09-22 — The take decides how the page was played
+
+**Context.** The analysis built one timeline per page — the page exactly as
+printed — and a take that did not follow it was refused as a wrong piece.
+Measured end to end on takes with every note on time:
+
+    slurred passage, slurred notes heard by the detector    0.385  refused
+    printed repeat, not taken                               0.000  refused
+    stopped in bar 6, went back to bar 5                    0.134  refused
+
+None of these is a mistake, and two of them are most of what practice is.
+
+**Decision.** *Build each plausible reading of the page as a timeline, align the
+take against every one, and keep the page as written unless another fits by
+more than `MIN_READING_GAIN` (the trim search's margin, for its reason).*
+`analysis.Reading`, `readings_of`, `_with_restarts`. Legato and repeats-not-taken
+are built only where the page has slurs or repeats; restarts are only looked
+for on a take the chosen reading scores under `warn_quality`. A stop that
+carried on from where it stopped is scored as a candidate — without it the
+nearest restart wins by default and invents missed notes — but is never
+chosen: it is indistinguishable from bars of rest the transcription missed,
+which must still be refused with the hint to look for them. A page with
+neither slurs nor repeats is aligned exactly once, as before, and a take that
+already reads is never re-read — so nothing that reads today can move.
+
+**Alternatives considered.**
+
+- *Ask the musician* — a "took the repeat" switch, a "slurred notes sound"
+  switch. Rejected: it is UI (the §2 gate), it is a question they would answer
+  wrongly as often as not about their own playing, and the take already holds
+  the answer.
+- *Always use the legato reading.* Rejected: a slurred note the detector does
+  not hear would then be expected and missing, and the matcher is measurably
+  weaker when most of the page is optional (see the three matcher changes this
+  needed in `TUNING_LOG.md`). The page as written stays the default.
+- *Segment the take at every silence and align each piece as a subsequence.*
+  Rejected after reasoning it through: on a page of uniform rhythm a short
+  segment fits anywhere, and the restart point is exactly what the rhythm
+  cannot tell. Building "played to note k, then from bar c" as a timeline lets
+  the whole take vote, and ties go to the latest bar — the nearest phrase is
+  where musicians go back to.
+
+**Trade-offs accepted.** More alignments per take: up to four static readings,
+and on a weak take roughly seventy candidate restarts per stop, each one DTW.
+Measured end to end on a take that stopped and went back: the restart search
+takes 0.07 s on 40 onsets and 0.41 s on 256, of a whole analysis of 1.4 s. A
+restart that repeats bars averages both passes in `PerMeasure`, as a taken
+repeat already does. A musician who restarts without stopping — no silence —
+is not recognised.
+
+## 2026-09-22 — Onsets are found on the coarse grid and placed on a fine one
+
+**Context.** Every onset time sat on the 23.2 ms analysis hop. A metronomic take
+at 120 BPM read ±12 ms of alternation — half the inner tolerance band before
+the musician did anything — and where on an attack the onset landed moved 35 ms
+between a 5 ms and a 120 ms bow rise.
+
+**Decision.** *Detection is unchanged; each detected onset is then placed on a
+2.9 ms grid* (`audio.refine_onset_times`: 1024-point window, 64-sample hop,
+the half-rise point of the flux). Within-note jitter 6.9 → 1.4 ms on bowed
+violin, spread across attack shapes 34.8 → 12.6 ms.
+
+**Alternatives considered.** *A finer hop for the detector itself.* Rejected:
+every tuned number — `delta`, the peak-pick window, `wait_ms`, the recovery
+floor — is in frames or relative to a frame-rate envelope, so changing the hop
+re-tunes all of it at once with no corpus to tune against. *`backtrack=True`.*
+Rejected: it rolls back to the preceding energy minimum, still on the coarse
+grid, and on a sustained line the minimum can sit far before the attack.
+
+**Trade-offs accepted.** A second, local spectrogram per onset — a few
+milliseconds each. And it exposed a matcher weakness the coarse grid had been
+hiding by luck (`STEP_PENALTY_CAPS`, `TUNING_LOG.md`).
+
+## 2026-09-22 — The bass's high-pass is declared inert rather than moved
+
+**Context.** `highpass_hz` filters the waveform before detection, and the
+detector reads *log*-spectral flux, which cancels any fixed filter: envelope
+correlation 0.9999 with and without it.
+
+**Decision.** *Say so beside the knob and in `audio.high_pass`, pin it in
+`test_onset_placement.py`, and leave the waveform filter for the dashboard.*
+
+**Alternatives considered.** *Move the cutoff into the detector as the lowest
+mel band.* Built and measured: 0.9999 dry, 0.9993 in a live room, and 50 Hz
+notes all still found with the bands starting at 150 Hz — leakage sixty
+decibels down makes the same log-flux as the note. Reverted, because a
+mechanism that measures as nothing is a claim the code would be making falsely.
+What made that acceptable is the third measurement: a 45–60 Hz boom at five
+times the notes' peak is not detected even with no filter at all, so the risk
+the filter was written for does not arise in this detector.
+
 ## 2026-09-22 — The pipeline is told which instrument it is hearing
 
 **Context.** This app is for four string instruments and the analysis could

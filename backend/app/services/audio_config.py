@@ -18,6 +18,15 @@ the exception worth knowing about: its comment says it was *"chosen against two
 synthetic takes and no real recording, which is the honest limit on it"*, so it
 is a value the tuning session should look at and it is not in this file.
 
+Added 2026-09-22, each beside its measurement and each structure rather than a
+knob: `STEP_PENALTY_CAPS` (flat from 2 to 6), `LEVEL_NOTES` / `PACE_NOTES` /
+`MIN_LEVEL_NOTES` (`alignment.py`), the `_REFINE_*` onset-placement constants
+(`audio.py`), `MIN_VERDICT_RUN` (`classification.py`), and `MIN_READING_GAIN`,
+`PAUSE_FLOOR_S`, `RESTART_BARS_BACK`, `RESTART_SLACK_NOTES`, `MAX_RESTARTS`
+(`analysis.py`). `MIN_VERDICT_RUN` is the one a tuning session with real
+recordings should revisit: it was set against simulated timing spread, and how
+much a real player's timing wanders is exactly what a real recording knows.
+
 Two fields here turn nothing at all; `test_tuning_knobs.py` names them and
 `config.toml` says so beside each.
 
@@ -76,6 +85,7 @@ class OnsetConfig:
     #: remote-config row predates them keeps loading.
     recovery_search_share: float = 0.25
     recovery_floor_ratio: float = 0.015
+    recovery_min_level_db: float = 10.0
 
 
 @dataclass(frozen=True)
@@ -166,6 +176,7 @@ def _parse(raw: dict) -> AudioConfig:
             },
             recovery_search_share=float(rec.get("search_share", 0.25)),
             recovery_floor_ratio=float(rec.get("floor_ratio", 0.015)),
+            recovery_min_level_db=float(rec.get("min_level_db", 10.0)),
         ),
         tolerance=ToleranceConfig(
             rushing_inner_pct=float(tol["rushing_inner_pct"]),

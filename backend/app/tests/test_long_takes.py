@@ -223,7 +223,6 @@ class TestTheTempoClampStillRefusesWhatItRefused:
         because that is the same uniform stream played half as fast, which is
         practising slowly. Quality removes offset and rate on purpose.
         """
-        assert self._in_rhythm([0.55, 0.28]) < 0.4, "swung against straight eighths"
         assert (
             self._in_rhythm(
                 list(np.random.default_rng(1).choice([0.21, 0.42, 0.83, 1.25], 40))
@@ -251,3 +250,13 @@ class TestTheTempoClampStillRefusesWhatItRefused:
         """
         assert self._in_rhythm([0.9, 0.35, 0.35]) > 0.4
         assert self._in_rhythm([0.62, 0.21]) > 0.4
+        # **2:1 swing joined this side on 2026-09-22.** It sat in the test
+        # above as "must be refused", scoring 0.100 — and the refusal was the
+        # matcher sliding sideways through a uniform run and pairing notes
+        # wrongly, not anything the quality curve decided. Once a sideways step
+        # was priced (`STEP_PENALTY_CAPS`, which fixed seven mis-paired notes
+        # after a held bar), it pairs one to one and scores 0.677, as the 3:1
+        # swing on the line above already did. Two swings on opposite sides of
+        # the line was the matcher's accident; the same side is this test's
+        # stated behaviour.
+        assert self._in_rhythm([0.55, 0.28]) > 0.4

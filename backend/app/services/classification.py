@@ -200,8 +200,11 @@ def compute_deltas(
     """Per matched note-pair, compute the timing delta in ms and % of beat.
 
     The recording's lead-in latency (reaction time before the first note) is
-    not a timing error, so the origin sits at the first matched onset: its
-    delta is zero and every later note is measured as drift from that start.
+    not a timing error, so the origin sits where the take starts: the level its
+    opening notes agree on, and every later note is measured as drift from that
+    start. Read from several notes rather than from the first alone, because
+    one note's error used to be copied onto all the others — see
+    `alignment._settled_level`.
     Gradual rushing therefore shows up as a *growing* delta, which is what the
     trend and the verdict key on, and it has to stay that way — the rushing
     fixture drifts 8 ms a beat, and anything that measures each note against
@@ -220,7 +223,30 @@ def compute_deltas(
     offsets = np.array(
         [detected[d] - timeline.onsets[e] for d, e in cleaned.matched], dtype=float
     )
-    anchors = pulse_anchors(offsets, beat_ms / 1000.0, config=cfg)
+    # The level each stretch sits at is read from the notes whose written time
+    # the page states — see `alignment._settled_level`. An ornament, the note
+    # it decorates, a note arriving after a fermata, a note under a `rit.` or a
+    # slur: none of them is a claim about where the beat is.
+    usable = np.array(
+        [
+            not (
+                timeline.notes[e].under_tempo_change
+                or timeline.notes[e].after_fermata
+                or timeline.notes[e].is_grace_note
+                or timeline.notes[e].after_grace_note
+                or timeline.notes[e].is_slur_interior
+            )
+            for _, e in cleaned.matched
+        ],
+        dtype=bool,
+    )
+    anchors = pulse_anchors(
+        offsets,
+        beat_ms / 1000.0,
+        config=cfg,
+        positions=np.array([timeline.onsets[e] for _, e in cleaned.matched], dtype=float),
+        usable=usable,
+    )
 
     uneven = uneven_measures(cleaned, detected, timeline, config=cfg)
 
@@ -340,6 +366,66 @@ class Verdict:
     avg_bpm_delta: float | None = None
 
 
+#: The fewest consecutive notes that make a drift worth naming on their own.
+#:
+#: **Two was enough, and two is what chance produces.** A take with no drift
+#: at all — only the timing spread of a good player, each note independently a
+#: few milliseconds either side — was told it rushed or dragged on 14 of 40
+#: seeds at a 12 ms spread and 29 of 40 at 18 ms, every time on the strength of
+#: two notes that happened to fall just outside the inner band on the same
+#: side. Four in a row is where that stops happening by chance and a bar of
+#: genuine rushing still clears it.
+MIN_VERDICT_RUN = 4
+
+#: Bands past the middle one. A shorter run still counts when every note in it
+#: is this far out — two notes a fifth of a beat late are a real lurch, and
+#: chance does not put two consecutive notes there.
+_CLEAR_BANDS = frozenset({Band.rush_drag, Band.severe})
+
+
+def _run_is_worth_naming(run: list[Delta]) -> bool:
+    """Long enough, or far enough out, that chance does not explain it."""
+    if len(run) >= MIN_VERDICT_RUN:
+        return True
+    return len(run) >= 2 and all(d.band in _CLEAR_BANDS for d in run)
+
+
+def run_tempo_difference(
+    run: list[Delta], before: Delta | None, target_bpm: float
+) -> float | None:
+    """How much faster than the target the run was played, in BPM.
+
+    **This is a tempo, and what it replaced was not.** The verdict used to say
+    `target_bpm × mean(|delta_pct|) / 100`, and `delta_pct` is how far a note
+    sits from its place on the grid — a *position*, which a small tempo
+    difference keeps adding to for as long as it lasts. Measured on 32 quarters
+    played steadily at 63 against a target of 60: "You rushed across measures
+    1–8 by an average of **48 BPM**", on the same result whose `insights`
+    said, correctly, 63.0. The error grew with the length of the piece.
+
+    So the figure is the pace across the run: the slope of the drift against
+    the written time, fitted over the run and the note just before it — the
+    last one that was still with the beat, which is where the getting-ahead
+    began. A slope of −0.05 means every written second took 0.95, so the
+    passage went at `target / 0.95`.
+
+    `None` when there is nothing to fit — fewer than two points, or no written
+    time between them.
+    """
+    points = ([before] if before is not None else []) + run
+    if len(points) < 2 or target_bpm <= 0:
+        return None
+    written = np.array([d.expected_ms for d in points], dtype=float)
+    drift = np.array([d.delta_ms for d in points], dtype=float)
+    if float(np.ptp(written)) <= 0:
+        return None
+    slope, _ = np.polyfit(written, drift, 1)
+    pace = 1.0 + float(slope)
+    if pace <= 0:
+        return None
+    return target_bpm / pace - target_bpm
+
+
 def describe_tempo_change(
     deltas: list[Delta], spans: list[TempoSpan]
 ) -> str | None:
@@ -396,16 +482,24 @@ def generate_verdict(
     We surface the longest contiguous run of notes that drift the same
     way (all rushing or all dragging, ignoring notes inside tolerance and
     slur interiors) and phrase it in BPM, never percentages — musicians
-    think in BPM (§3.5 language rules). The BPM figure is an
-    approximation: target_bpm scaled by the run's mean %-of-beat drift.
+    think in BPM (§3.5 language rules). The BPM figure is the tempo the run
+    was actually played at against the target — see `run_tempo_difference`
+    — and a run has to be long enough that chance does not explain it — see
+    `MIN_VERDICT_RUN`.
+
+    Notes that were not timed — a `rit.`, a fermata, an ornament — are left
+    out of the run-finding altogether rather than counted as on the beat.
+    Their band is `on` by refusal, not by measurement, so letting one break a
+    run would split a rushed passage at every ornament in it.
     """
     # No config is read here — the run-finding below is pure geometry over
     # deltas that were already banded using it. `config` stays in the signature
     # because every function in this module takes it, and a caller having to
     # remember which ones actually use it is worse than an ignored argument.
-    timed = [d for d in deltas if not d.is_slur_interior]
-    if not timed:
+    judged = [d for d in deltas if not d.is_slur_interior]
+    if not judged:
         return Verdict(text="Not enough clear notes to judge your timing.", direction=Direction.on)
+    timed = [d for d in judged if d.timed]
 
     # Sign per note: +1 rushing, -1 dragging, 0 within tolerance.
     signs = [
@@ -424,14 +518,15 @@ def generate_verdict(
         j = i
         while j + 1 < n and signs[j + 1] == signs[i]:
             j += 1
-        if (j - i + 1) > best_len:
+        if (j - i + 1) > best_len and _run_is_worth_naming(timed[i : j + 1]):
             best_len, best_start, best_end = j - i + 1, i, j
         i = j + 1
 
     lurch = describe_tempo_change(deltas, tempo_spans or [])
 
-    # No meaningful run (everything within tolerance, or a run of 1).
-    if best_len < 2:
+    # No meaningful run: everything within tolerance, or nothing chance could
+    # not have produced.
+    if best_len == 0:
         if lurch:
             return Verdict(text=lurch, direction=Direction.on)
         if tempo_spans:
@@ -454,8 +549,17 @@ def generate_verdict(
 
     run = timed[best_start : best_end + 1]
     rushing = run[0].direction is Direction.rush
-    mean_pct = float(np.mean([abs(d.delta_pct) for d in run]))
-    bpm_delta = round(target_bpm * mean_pct / 100.0)
+    difference = run_tempo_difference(
+        run, timed[best_start - 1] if best_start > 0 else None, target_bpm
+    )
+    # The figure is only said when it agrees with the direction and survives
+    # rounding. A run that got ahead of the beat at its first note and then
+    # held the tempo exactly *was* rushed, and its pace across the run is still
+    # nearer the target than one BPM — "by an average of 0 BPM" says nothing,
+    # and a figure pointing the other way would contradict the verb.
+    bpm_delta: int | None = None
+    if difference is not None and (difference > 0) == rushing:
+        bpm_delta = round(abs(difference)) or None
     start_m = run[0].measure_number
     end_m = run[-1].measure_number
     verb = "rushed" if rushing else "dragged"
@@ -464,7 +568,11 @@ def generate_verdict(
         where = f"in measure {start_m}"
     else:
         where = f"across measures {start_m}–{end_m}"
-    text = f"You {verb} {where} by an average of {bpm_delta} BPM."
+    text = (
+        f"You {verb} {where} by an average of {bpm_delta} BPM."
+        if bpm_delta is not None
+        else f"You {verb} {where}."
+    )
     if lurch:
         # Two things happened and both are worth saying. The drift comes first
         # because it is the one the tolerance bands measured.
@@ -475,5 +583,5 @@ def generate_verdict(
         direction=Direction.rush if rushing else Direction.drag,
         start_measure=start_m,
         end_measure=end_m,
-        avg_bpm_delta=float(bpm_delta),
+        avg_bpm_delta=None if bpm_delta is None else float(bpm_delta),
     )

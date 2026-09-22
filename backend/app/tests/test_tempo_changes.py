@@ -229,14 +229,17 @@ def test_the_same_take_unmarked_still_reads_as_dragging() -> None:
     """
     result = _analyse(EVEN_RIT, [])
 
-    assert result.low_confidence is True
-    assert "dragged" in result.verdict
-    assert {m.measure_number for m in result.per_measure if m.worst_band != "on"} >= {
-        5,
-        6,
-        7,
-        8,
-    }
+    # **Refused, where it used to be read — and the reading was not a reading.**
+    # Until 2026-09-22 this asserted a low-confidence "dragged" across bars
+    # 5–8, and that verdict was computed with 25 of the 32 notes paired to the
+    # wrong written note: a sideways step cost the matcher nothing, so it slid
+    # through the slowing bars to shrink the residuals. Priced
+    # (`STEP_PENALTY_CAPS`), every note pairs with its own, and a steady-tempo
+    # alignment cannot explain a quarter's slowing — timing quality 0.324.
+    # The page is still not quietly excused: the musician is told to check the
+    # tempo, and the marked page below reads it correctly.
+    assert result.status == "alignment_failed"
+    assert "tempo" in result.verdict
 
 
 def test_an_uneven_change_is_named_at_the_bar_it_lurched() -> None:

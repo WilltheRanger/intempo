@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from app.services.alignment import CleanedAlignment, build_timeline
 from app.services.classification import (
@@ -26,8 +27,13 @@ def _delta(
 ) -> Delta:
     band = classify_band(pct)
     direction = Direction.on if band is Band.on else (Direction.rush if pct < 0 else Direction.drag)
+    # One quarter at 120 BPM per index, as `compute_deltas` would place it. The
+    # verdict reads a run's pace from these, so a helper that left them at zero
+    # would test a `Delta` the pipeline never produces.
+    expected_ms = idx * 500.0
     return Delta(
-        global_index=idx, measure_number=measure, expected_ms=0.0, actual_ms=0.0,
+        global_index=idx, measure_number=measure, expected_ms=expected_ms,
+        actual_ms=expected_ms + pct * 5.0,
         delta_ms=pct * 5.0, delta_pct=pct, band=band, direction=direction, is_slur_interior=slur,
         under_tempo_change=under_tempo_change,
         # The two travel together in `compute_deltas`: a note under a change is
@@ -124,10 +130,110 @@ def test_generate_verdict_steady_when_within_tolerance() -> None:
 
 
 def test_generate_verdict_uses_bpm_not_percent() -> None:
-    deltas = [_delta(20.0, measure=m, idx=m) for m in range(1, 4)]
+    # A drift that grows, which is what a tempo difference looks like. A run
+    # sitting at one constant displacement has no pace of its own to report.
+    deltas = [_delta(15.0 * m, measure=m, idx=m) for m in range(1, 5)]
     verdict = generate_verdict(deltas, target_bpm=120.0)
     assert "BPM" in verdict.text
     assert "%" not in verdict.text
+
+
+# ---------------------------------------------------------------------------
+# The verdict's figure is a tempo, and it takes more than chance to earn one
+# ---------------------------------------------------------------------------
+
+
+def _quarters(bars: int) -> ScoreJson:
+    return ScoreJson(
+        clef="treble",
+        time_signature="4/4",
+        ocr_confidence=0.9,
+        measures=[
+            Measure(measure_number=m + 1, notes=[Note(pitch="A4", duration="quarter")] * 4)
+            for m in range(bars)
+        ],
+    )
+
+
+def _verdict_for(detected: list[float], target_bpm: float, bars: int = 8):
+    timeline = build_timeline(_quarters(bars), target_bpm)
+    matched = [(i, i) for i in range(len(detected))]
+    deltas = compute_deltas(
+        CleanedAlignment(matched=matched), np.asarray(detected), timeline, target_bpm
+    )
+    return deltas, generate_verdict(deltas, target_bpm)
+
+
+@pytest.mark.parametrize("played_bpm", [57.0, 61.5, 63.0, 66.0])
+def test_the_figure_is_the_tempo_the_run_was_played_at(played_bpm: float) -> None:
+    """**It used to be a position, and it grew with the length of the piece.**
+
+    `target_bpm × mean(|delta_pct|) / 100` — where `delta_pct` is how far a note
+    sits from the grid. Thirty-two quarters played steadily at 63 against a
+    target of 60 were told "You rushed across measures 1–8 by an average of
+    **48 BPM**", on a result whose own `insights` said 63.0.
+    """
+    detected = [i * 60.0 / played_bpm for i in range(32)]
+    _, verdict = _verdict_for(detected, 60.0)
+
+    assert verdict.avg_bpm_delta == pytest.approx(abs(played_bpm - 60.0), abs=1.0)
+    assert verdict.direction is (Direction.rush if played_bpm > 60 else Direction.drag)
+
+
+def test_a_run_that_got_ahead_but_kept_the_tempo_names_no_figure() -> None:
+    """A jump, not a slope: ahead of the beat for six bars, at the tempo.
+
+    It was rushed — the notes are early — but across the run the pace is the
+    target's to within a fraction of a BPM, so there is no figure that is true.
+    "By an average of 0 BPM" would say nothing, so the sentence stops at where.
+    """
+    detected = [i * 0.5 for i in range(32)]
+    for i in range(8, 32):
+        detected[i] -= 0.035  # 7% of a beat early, from bar 3 to the end
+    _, verdict = _verdict_for(detected, 120.0)
+
+    assert verdict.direction is Direction.rush
+    assert "BPM" not in verdict.text
+    assert verdict.text.endswith(".")
+
+
+def test_two_notes_just_outside_the_band_are_not_a_verdict() -> None:
+    """**What chance produces, and what the app used to name.**
+
+    Two consecutive notes a few milliseconds outside the inner band, on the
+    same side, is what a steady player's ordinary spread throws up on most
+    takes — and was enough to be told "You rushed in measure 7".
+    """
+    pcts = [0.0] * 8 + [-6.0, -6.5] + [0.0] * 8
+    deltas = [_delta(p, measure=1 + i // 4, idx=i) for i, p in enumerate(pcts)]
+
+    assert generate_verdict(deltas, target_bpm=120.0).direction is Direction.on
+
+
+def test_two_notes_well_outside_the_band_still_are() -> None:
+    """A short run is still named when it is far enough out that chance does
+    not put two consecutive notes there — a real lurch is short."""
+    pcts = [0.0] * 8 + [-15.0, -30.0] + [0.0] * 8
+    deltas = [_delta(p, measure=1 + i // 4, idx=i) for i, p in enumerate(pcts)]
+
+    verdict = generate_verdict(deltas, target_bpm=120.0)
+    assert verdict.direction is Direction.rush
+    assert verdict.start_measure == 3
+
+
+def test_a_steady_player_is_not_told_they_drifted() -> None:
+    """End to end through `compute_deltas`: no drift, only a good player's
+    spread — each note independently ±12 ms, 2.4% of a beat at 120 BPM.
+
+    Measured before: 14 of these 40 seeds were told they rushed or dragged.
+    """
+    told = 0
+    for seed in range(40):
+        rng = np.random.default_rng(100 + seed)
+        detected = [i * 0.5 + rng.normal(0, 0.012) for i in range(32)]
+        _, verdict = _verdict_for(detected, 120.0)
+        told += verdict.direction is not Direction.on
+    assert told <= 2, f"{told} of 40 steady takes were told they drifted"
 
 
 # ---------------------------------------------------------------------------

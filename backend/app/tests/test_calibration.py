@@ -106,6 +106,35 @@ def test_good_clip_returns_bpm() -> None:
     assert result.alternates is not None
 
 
+@pytest.mark.parametrize("played_bpm", [80.0, 120.0, 135.0, 150.0, 180.0, 208.0])
+def test_a_fast_steady_pulse_is_heard_at_its_own_tempo(played_bpm: float) -> None:
+    """**The detector's window was left at its cap, ±464 ms, and nothing
+    faster than about 129 BPM survived it.**
+
+    With no score there was no written gap to size the window from, so every
+    quarter closer than 464 ms to a louder one was suppressed. Measured on
+    bowed notes before this: 150 BPM read as **49.7**, 180 as 60.1, 208 as
+    83.4, and 135 was refused as inconsistent — a steady pulse heard every
+    second or third note. And 120 read as 117.5, the median snapping to the
+    23 ms frame grid.
+    """
+    from app.tests.audio_helpers import synth_bowed_note
+
+    beat = 60.0 / played_bpm
+    times = [0.3 + i * beat for i in range(int(3.8 / beat) + 1)]
+    y = np.zeros(int(4.5 * SR), dtype=np.float32)
+    for i, t0 in enumerate(times):
+        note = synth_bowed_note(440.0 * 2 ** ((i % 3) / 12), beat * 0.9, rise_s=0.02)
+        start = int(t0 * SR)
+        y[start : start + note.size] += note[: max(0, min(note.size, y.size - start))]
+    y = (y * 0.5 + np.random.default_rng(3).normal(0, 0.002, y.size)).astype(np.float32)
+
+    result = calibrate(y, SR)
+
+    assert result.ok, result.code
+    assert result.bpm == pytest.approx(played_bpm, abs=1.0)
+
+
 def test_uneven_spacing_is_inconsistent() -> None:
     # Irregular gaps (0.5, 1.2, 0.6s) — all wider than the ~0.46s onset
     # merge window, so they survive detection, but variable enough that
