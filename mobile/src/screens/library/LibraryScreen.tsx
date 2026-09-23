@@ -11,19 +11,19 @@ import {
   IconButton,
   ScreenContainer,
   SearchHeader,
-  SectionHeader,
 } from '../../components/primitives';
 import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
 import { Text } from '../../components/primitives/Text';
 import { describeLoadError } from '../../data/describeLoadError';
+import { useInsights } from '../../data/hooks/useInsights';
 import { prefetchPieceHistory } from '../../data/hooks/useLatestTake';
 import {
   useDeletePiece,
   useLibrary,
   useRetranscribe,
 } from '../../data/hooks/usePieces';
-import type { Piece } from '../../data/types';
-import { spacing } from '../../design';
+import type { Piece, PieceInsight } from '../../data/types';
+import { BORDER_WIDTH, colors, spacing } from '../../design';
 import { groupByRecency, searchLibrary } from '../../lib/library';
 import type {
   TabScreenNavigation,
@@ -39,6 +39,14 @@ export function LibraryScreen() {
   const navigation = useNavigation<TabScreenNavigation<'Library'>>();
   const queryClient = useQueryClient();
   const library = useLibrary();
+  // Each tile's tempo rail: how this piece has sat against the beat across
+  // the insights window. Shared cache with the Insights tab, and a tile with
+  // no takes in the window simply draws no rail.
+  const insights = useInsights();
+  const insightByPiece = useMemo(
+    () => new Map((insights.data?.pieces ?? []).map((entry) => [entry.pieceId, entry])),
+    [insights.data],
+  );
 
   async function refresh() {
     await library.refetch();
@@ -107,6 +115,7 @@ export function LibraryScreen() {
           <IconButton
             icon={Plus}
             label="Add piece"
+            variant="bare"
             onPress={() => setAddSheetVisible(true)}
           />
         }
@@ -142,6 +151,7 @@ export function LibraryScreen() {
           navigation.navigate('PieceDetail', { pieceId: piece.id });
         }}
         busyPieceId={busyPieceId}
+        insightByPiece={insightByPiece}
         onReadAgain={(piece) => {
           setActionError(null);
           readAgain.mutate(piece.id, {
@@ -208,6 +218,7 @@ interface LibraryContentProps {
   onDiscard: (piece: Piece) => void;
   /** The one piece with something running, if any. */
   busyPieceId: string | null;
+  insightByPiece: ReadonlyMap<string, PieceInsight>;
 }
 
 function LibraryContent({
@@ -223,6 +234,7 @@ function LibraryContent({
   onReadAgain,
   onDiscard,
   busyPieceId,
+  insightByPiece,
 }: LibraryContentProps) {
   if (load === 'loading') {
     return (
@@ -325,7 +337,7 @@ function LibraryContent({
     <View style={styles.section}>
       {groups.map((group) => (
         <View key={group.key} style={styles.group}>
-          <SectionHeader label={group.label} />
+          <GroupHeading label={group.label} count={group.pieces.length} />
           {/*
             **A shelf, two across.** The rows identified a piece by its name
             alone, which is correct for an index and wrong for the thing a
@@ -345,6 +357,7 @@ function LibraryContent({
               <FadeIn key={piece.id} index={row++} style={styles.slot}>
                 <PieceTile
                   piece={piece}
+                  insight={insightByPiece.get(piece.id) ?? null}
                   onPress={() => onOpenPiece(piece)}
                   onReadAgain={() => onReadAgain(piece)}
                   onDiscard={() => onDiscard(piece)}
@@ -362,26 +375,69 @@ function LibraryContent({
   );
 }
 
+/**
+ * "This week", its count, and a hairline under both
+ * (`redesign/Library.dc.html`).
+ *
+ * **Sentence case in ink, where the app's `SectionHeader` is an uppercase
+ * eyebrow.** On a shelf the heading is the only type between rows of pages,
+ * and it is read as a date — "Earlier this month" — rather than as a category
+ * label. The count is the one number a shelf cannot show at a glance once it
+ * runs past the screen.
+ */
+function GroupHeading({ label, count }: { label: string; count: number }) {
+  return (
+    <View style={styles.heading} accessibilityRole="header">
+      <Text variant="sectionLabel" color="textPrimary" style={styles.headingLabel}>
+        {label}
+      </Text>
+      <Text
+        variant="caption"
+        color="textTertiary"
+        style={styles.headingCount}
+        accessibilityLabel={`${count} ${count === 1 ? 'piece' : 'pieces'}`}
+      >
+        {count}
+      </Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  heading: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 10,
+    paddingBottom: spacing.sm,
+    borderBottomWidth: BORDER_WIDTH,
+    borderBottomColor: colors.border,
+  },
+  headingLabel: {
+    flex: 1,
+  },
+  headingCount: {
+    fontSize: 12,
+    fontVariant: ['tabular-nums'],
+  },
   actionError: {
     marginTop: spacing.md,
   },
   section: {
-    marginTop: spacing['2xl'],
+    marginTop: 26,
   },
   group: {
     // The gap between groups is what a heading needs to belong to the rows
     // below it rather than float between two blocks.
-    marginBottom: spacing['2xl'],
+    marginBottom: 28,
   },
   shelf: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginTop: spacing.md,
+    marginTop: spacing.lg,
     // Row gap larger than column gap: two tiles side by side are one shelf and
     // the rows above and below are different ones, so the vertical rhythm has
     // to be the louder of the two.
-    rowGap: spacing.xl,
+    rowGap: 22,
     columnGap: spacing.md,
   },
   slot: {

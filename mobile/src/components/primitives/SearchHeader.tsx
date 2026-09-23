@@ -157,6 +157,7 @@ export function SearchHeader({
                 */
                 <IconButton
                   icon={Search}
+                  variant="bare"
                   label="Search"
                   onPress={() => {
                     impact(ImpactFeedbackStyle.Light);
@@ -220,7 +221,9 @@ const styles = StyleSheet.create({
   },
   actions: {
     flexDirection: 'row',
-    gap: spacing.sm,
+    // Bare glyphs in 44pt squares, side by side: the squares are the spacing
+    // (`redesign/Library.dc.html`), and the last glyph sits on the gutter.
+    marginRight: -10,
   },
   searchLayer: {
     position: 'absolute',
