@@ -5,11 +5,11 @@ import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import { Camera, FileMusic, Images, Mic, Settings } from '../../components/icons';
 import { Avatar, Input, Text } from '../../components/primitives';
 import { InstrumentChoice } from '../../components/profile/InstrumentChoice';
-import type { PickedPhoto } from '../../data/onboardingDraft';
 import { preferences, usePreferences } from '../../data/preferences';
 import type { Instrument } from '../../data/types';
 import { BORDER_WIDTH, colors, fontFamily, MIN_TOUCH_TARGET, spacing, ICON_SIZE, ICON_STROKE_WIDTH } from '../../design';
 import { requestMicrophoneAccess } from '../../lib/audioRecorder';
+import type { PickedPhoto } from '../../lib/onboarding';
 import {
   canContinue,
   FOUND_VIA_CHOICES,
@@ -25,7 +25,7 @@ import { ListeningIllustration } from './ListeningIllustration';
 import { OnboardingWelcome } from './OnboardingWelcome';
 import { StepFrame, type StepAction } from './StepFrame';
 
-/** The answers that go to the account, or to the draft that waits for one. */
+/** The answers that go to the account. */
 export interface OnboardingAnswers {
   /** As typed, untrimmed — trimming belongs to `lib/onboarding`. */
   name: string;
@@ -35,14 +35,10 @@ export interface OnboardingAnswers {
 }
 
 export interface OnboardingFlowProps {
-  /** What to open with — the account's answers, or an unfinished draft. */
+  /** What to open with: whatever the account already has. */
   initial: OnboardingAnswers;
   /** A photograph already on the account, shown when nothing is chosen. */
   storedPhotoUrl?: string | null;
-  /** The last step's button: "Finish" on an account, "Next" before one. */
-  finishLabel: string;
-  /** Welcome's "I already have an account", given the answers so far. */
-  onHaveAccount?: (answers: OnboardingAnswers) => void;
   busy?: boolean;
   /** Why finishing did not go through, shown on the last step. */
   error?: string | null;
@@ -57,11 +53,11 @@ type Place = 'welcome' | OnboardingStep;
  * instrument, learning or teaching, the microphone, where you heard of us, a
  * photograph.
  *
- * **One flow, two callers**, as the single form before it was:
- * `SignUpOnboardingScreen` keeps the answers in a device draft and moves on
- * to creating the account, and `OnboardingScreen` sends them to an account
- * that already exists. What happens to the answers is theirs; everything a
- * musician sees is here.
+ * **After the account, not before it** (owner's call, 2026-09-23, reversing
+ * 2026-09-08 — `DECISIONS.md`): the questions are what a new account sees once
+ * its confirmation link is opened, and `OnboardingScreen` sends the answers to
+ * it. What happens to the answers is that screen's; everything a musician
+ * sees is here.
  *
  * **Where each answer goes.** The name and the instrument are the account's,
  * and the two onboarding requires. The photograph is the account's too, and
@@ -78,8 +74,6 @@ type Place = 'welcome' | OnboardingStep;
 export function OnboardingFlow({
   initial,
   storedPhotoUrl = null,
-  finishLabel,
-  onHaveAccount,
   busy = false,
   error = null,
   onFinish,
@@ -137,10 +131,7 @@ export function OnboardingFlow({
 
   if (place === 'welcome') {
     return (
-      <OnboardingWelcome
-        onNext={() => go('name', 'forward')}
-        onHaveAccount={onHaveAccount ? () => onHaveAccount(current()) : undefined}
-      />
+      <OnboardingWelcome onNext={() => go('name', 'forward')} />
     );
   }
 
@@ -317,7 +308,7 @@ export function OnboardingFlow({
         <StepFrame
           {...frame}
           title="Add a photo"
-          primary={{ label: finishLabel, onPress: () => onFinish(current()), loading: busy }}
+          primary={{ label: 'Finish', onPress: () => onFinish(current()), loading: busy }}
           secondary={
             shown
               ? undefined

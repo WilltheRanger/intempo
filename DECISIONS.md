@@ -1,5 +1,44 @@
 # InTempo Decisions
 
+## 2026-09-23 — The account first, then the questions
+
+**Context.** Since 2026-09-08 "Create an account" opened onboarding, the
+answers waited on the device (`onboardingDraft`), and only then came the
+account form; `useApplyOnboardingDraft` put them on the account once a
+confirmation link produced a session. This morning's entry kept that order and
+rejected the prototype's (Sign in → Create account → Welcome) because nobody
+had asked for it. The owner has now: from sign in, the form and the wash fade
+to the bare photograph, it holds "like 2 seconds", the sign-up form fades in,
+and once the email and password are in and the confirmation link is opened,
+"it shows you let's get started".
+
+**Decision.** Account first. "Create an account" is a change of form on
+`AuthScreen` — the photograph beat, now 2 s — and the questions are what a new
+account meets after its link: `RootNavigator` already holds `OnboardingScreen`
+in front of any account with `onboarded === false`, and its first screen is
+the Welcome, "Let's get you set up". The Welcome's "I already have an account"
+is gone, since there always is one. So is everything that carried answers
+across the confirmation email: `SignedOutFlow`, `SignUpOnboardingScreen`,
+`data/onboardingDraft.ts`, `useApplyOnboardingDraft`, and `draftUpdateFor` /
+`draftIsWorthSending` in `lib/onboarding.ts`.
+
+**Alternatives considered.**
+- *Ask the questions while the email is unconfirmed* ("Check your email", then
+  the Welcome). It keeps the draft and its failure modes — a link opened on
+  another device or browser, where the draft never existed, asks everything
+  again — to save one screen's wait that the inbox imposes anyway.
+- *Keep the draft machinery for accounts caught mid-way by the deploy.* A
+  musician who answered, then left for their inbox before this shipped, is
+  asked the questions again after the link. That is one repeat of six quick
+  questions, against keeping an 800-line pathway whose only producer is gone.
+
+**Trade-offs accepted.** Credentials are asked for before the app has asked
+anything — the thing 2026-09-08 set out to avoid, and the owner's call to
+accept. A draft already written on a device stays in its storage under
+`intempo.onboardingDraft.v1`, unread. The role and "how did you find us" are
+still device preferences, now written after the account exists rather than
+before.
+
 ## 2026-09-23 — Onboarding asks one question a screen, and the photograph is optional
 
 **Context.** The redesign (`redesign/Onboard*.dc.html`) replaces the single
@@ -24,6 +63,8 @@ nowhere to put: whether the musician teaches, and where they heard of us.
 - **The order stays as 2026-09-08 set it**: answers before credentials.
   "Create an account" opens the Welcome, the steps run, and then the account
   form. The Welcome's "I already have an account" is the way back.
+  *(Reversed the same day at the owner's request — see "The account first,
+  then the questions" above.)*
 - **Done is shown once, from memory** (`data/arrival.ts`), the first time the
   account is through, and Today fades in once after it. The prototype carried
   this in `sessionStorage`; the handoff lists that as a stand-in.

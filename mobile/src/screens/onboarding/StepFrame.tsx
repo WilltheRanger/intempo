@@ -191,11 +191,11 @@ function StepEntrance({
 }
 
 /**
- * The second, quieter way out of a screen: "Not now", "Do this later",
- * "I already have an account". Text at a full touch target, under the button,
- * so the button stays the one thing to do.
+ * The second, quieter way out of a step: "Not now", "Do this later". Text at
+ * a full touch target, under the button, so the button stays the one thing to
+ * do.
  */
-export function QuietAction({ label, onPress, disabled = false }: StepAction) {
+function QuietAction({ label, onPress, disabled = false }: StepAction) {
   return (
     <Pressable
       onPress={onPress}

@@ -5,39 +5,33 @@ import { spacing } from '../../design';
 import { ONBOARDING_STEPS } from '../../lib/onboardingSteps';
 import { CentredScreen } from './CentredScreen';
 import { ScanIllustration } from './ScanIllustration';
-import { QuietAction } from './StepFrame';
 
 /** "Six", from the list, so the promise and the progress bar cannot disagree. */
 const COUNT_WORDS = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight'];
 
 export interface OnboardingWelcomeProps {
   onNext: () => void;
-  /** "I already have an account" — only before there is one. */
-  onHaveAccount?: () => void;
 }
 
 /**
  * Before the first question (`redesign/OnboardWelcome.dc.html`): what the app
  * does, shown rather than said — a photographed page being read and its tempo
- * found — and how long the questions will take.
+ * found — and how long the questions will take. It is the first thing a new
+ * account sees once its confirmation link is opened.
+ *
+ * The prototype's "I already have an account" is not drawn: the questions come
+ * after the account now, so there is always one.
  *
  * The three-foot test: the page being read first, "Let's get you set up"
  * second, Next third. The illustration is allowed to lead because it is the
  * product; the title under it is the invitation.
  */
-export function OnboardingWelcome({ onNext, onHaveAccount }: OnboardingWelcomeProps) {
+export function OnboardingWelcome({ onNext }: OnboardingWelcomeProps) {
   const count = COUNT_WORDS[ONBOARDING_STEPS.length] ?? String(ONBOARDING_STEPS.length);
 
   return (
     <CentredScreen
-      footer={
-        <>
-          <PrimaryButton label="Next" onPress={onNext} />
-          {onHaveAccount ? (
-            <QuietAction label="I already have an account" onPress={onHaveAccount} />
-          ) : null}
-        </>
-      }
+      footer={<PrimaryButton label="Next" onPress={onNext} />}
     >
       <ScanIllustration />
       <Text variant="displayTitle" accessibilityRole="header" style={styles.title}>

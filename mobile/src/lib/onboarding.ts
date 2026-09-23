@@ -13,6 +13,12 @@ import type { Instrument, Musician } from '../data/types';
  * screen is shown at all.
  */
 
+/** A photograph chosen from the library, before it has been uploaded. */
+export interface PickedPhoto {
+  uri: string;
+  mimeType: string;
+}
+
 /** What onboarding collected. A name and an instrument are required. */
 export interface OnboardingAnswers {
   /** As typed, untrimmed. Trimming is this module's job, not the screen's. */
@@ -20,12 +26,6 @@ export interface OnboardingAnswers {
   instrument: Instrument | null;
   /** The object key from `useUploadAvatar`, once the upload has finished. */
   avatarKey: string | null;
-  /**
-   * Whether a local photograph is ready to upload when onboarding finishes.
-   * Optional, like the photograph itself; it only decides whether a draft is
-   * worth sending (`draftIsWorthSending`).
-   */
-  photoSelected?: boolean;
 }
 
 /**
@@ -86,52 +86,6 @@ export function profileUpdateFor(answers: OnboardingAnswers): UpdateMeInput {
     ...(answers.instrument ? { instrument: answers.instrument } : {}),
     ...(answers.avatarKey ? { avatar_key: answers.avatarKey } : {}),
   };
-}
-
-/**
- * The PATCH body for answers given **before** the account existed.
- *
- * The same fields as `profileUpdateFor`, with one difference that matters:
- * `onboarded` is claimed only when the required answers are actually present.
- *
- * `PATCH /v1/me` **refuses** `onboarded: true` against a row still missing
- * one — a 400 naming what is absent — so a draft that lost its instrument on
- * the way through a confirmation link would fail the request outright and land
- * nothing, including the name it *did* carry. Sending what there is leaves the
- * account un-onboarded on purpose: the gate opens with what was answered
- * already filled.
- */
-export function draftUpdateFor(answers: OnboardingAnswers): UpdateMeInput {
-  const name = answers.name.trim();
-  const complete = missingFromOnboarding(answers).length === 0;
-  return {
-    ...(complete ? { onboarded: true } : {}),
-    ...(name ? { display_name: name } : {}),
-    ...(answers.instrument ? { instrument: answers.instrument } : {}),
-    ...(answers.avatarKey ? { avatar_key: answers.avatarKey } : {}),
-  };
-}
-
-/**
- * Whether a draft is worth sending at all.
- *
- * Nothing answered means nothing to apply, and the difference is visible: a
- * request that sets no fields would still cost a round trip in front of
- * someone waiting for the app to open, and `PATCH /v1/me` reads an empty body
- * as a 400 rather than a no-op.
- *
- * A photograph on its own counts, and counts before it has been uploaded —
- * `photoSelected`, not `avatarKey`. It is the answer with the real cost, and
- * the upload has not happened yet at the moment this is asked: reading only
- * the key would decide there was nothing to send and throw the picture away.
- */
-export function draftIsWorthSending(answers: OnboardingAnswers): boolean {
-  return Boolean(
-    answers.name.trim() ||
-      answers.instrument ||
-      answers.avatarKey ||
-      answers.photoSelected,
-  );
 }
 
 /**
