@@ -429,8 +429,8 @@ def lead_finding(insights: Insights, target_bpm: float) -> Finding | None:
                 # The number they set is named, because the finding is the gap
                 # between two tempi and one of them is theirs.
                 text=(
-                    f"You played this at {insights.played_bpm:.0f}, "
-                    f"not the {target_bpm:.0f} you set."
+                    f"You played at {insights.played_bpm:.0f}, "
+                    f"not {target_bpm:.0f}."
                 ),
                 weight=weight,
             )
@@ -443,7 +443,7 @@ def lead_finding(insights: Insights, target_bpm: float) -> Finding | None:
         candidates.append(
             Finding(
                 kind="drift",
-                text=f"You {direction} by {abs(drift):.0f} BPM across the take.",
+                text=f"You {direction} by {abs(drift):.0f} BPM.",
                 weight=weight,
             )
         )
@@ -463,9 +463,9 @@ def lead_finding(insights: Insights, target_bpm: float) -> Finding | None:
             Finding(
                 kind="note_value",
                 text=(
-                    f"Your {name} ran ahead of the rest."
+                    f"Your {name} ran ahead."
                     if gap < 0
-                    else f"Your {name} lagged behind the rest."
+                    else f"Your {name} lagged."
                 ),
                 weight=abs(gap) / NOTE_VALUE_STANDOUT_PCT,
             )
@@ -476,7 +476,7 @@ def lead_finding(insights: Insights, target_bpm: float) -> Finding | None:
         candidates.append(
             Finding(
                 kind="steadiness",
-                text="Your tempo was right on average, but note to note it moved.",
+                text="Right on average, uneven note to note.",
                 weight=spread / NOTABLE_STEADINESS_PCT,
             )
         )

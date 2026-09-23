@@ -98,8 +98,8 @@ def test_a_legato_passage_played_fast_is_told_the_tempo_it_was_played_at() -> No
     assert result.verdict_direction.value == "rush"
     assert result.insights.played_bpm == pytest.approx(SLUR_BPM * 1.03, abs=0.5)
     # Before: "You rushed across measures 2–4 by an average of 57 BPM."
-    assert "by an average of 57" not in result.verdict
-    assert "by an average of 2 BPM" in result.verdict or "by an average of 3 BPM" in result.verdict
+    assert "by 57" not in result.verdict
+    assert "by 2 BPM" in result.verdict or "by 3 BPM" in result.verdict
 
 
 def test_slurred_notes_the_detector_did_not_hear_are_not_missed() -> None:

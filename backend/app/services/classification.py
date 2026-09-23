@@ -467,7 +467,7 @@ def describe_tempo_change(
     # No figure. The page did not say how much to slow, so there is no target
     # to be a number away from — the only honest claim is that it lurched, and
     # where.
-    return f"Your {marking} lurched at {where} rather than flowing."
+    return f"Your {marking} lurched at {where}."
 
 
 def generate_verdict(
@@ -498,7 +498,7 @@ def generate_verdict(
     # remember which ones actually use it is worse than an ignored argument.
     judged = [d for d in deltas if not d.is_slur_interior]
     if not judged:
-        return Verdict(text="Not enough clear notes to judge your timing.", direction=Direction.on)
+        return Verdict(text="Not enough clear notes to judge.", direction=Direction.on)
     timed = [d for d in judged if d.timed]
 
     # Sign per note: +1 rushing, -1 dragging, 0 within tolerance.
@@ -536,14 +536,11 @@ def generate_verdict(
             # noticed the page at all.
             marking = tempo_spans[0].text.strip() or "tempo change"
             return Verdict(
-                text=(
-                    "Steady tempo, and your "
-                    f"{marking} flowed evenly."
-                ),
+                text=f"Steady, and your {marking} flowed.",
                 direction=Direction.on,
             )
         return Verdict(
-            text="Steady tempo. You held it right across the piece.",
+            text="Steady all the way through.",
             direction=Direction.on,
         )
 
@@ -564,12 +561,12 @@ def generate_verdict(
     end_m = run[-1].measure_number
     verb = "rushed" if rushing else "dragged"
 
-    if start_m == end_m:
-        where = f"in measure {start_m}"
-    else:
-        where = f"across measures {start_m}–{end_m}"
+    # Short, because it is read under a title that already says which way:
+    # "You rushed in the middle" over "You rushed bars 5–8 by 4 BPM". "Bars",
+    # because every screen of the app says bars.
+    where = f"bar {start_m}" if start_m == end_m else f"bars {start_m}–{end_m}"
     text = (
-        f"You {verb} {where} by an average of {bpm_delta} BPM."
+        f"You {verb} {where} by {bpm_delta} BPM."
         if bpm_delta is not None
         else f"You {verb} {where}."
     )

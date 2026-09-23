@@ -40,7 +40,7 @@ describe('with a piece to continue', () => {
     const hero = heroContentFor({
       piece: piece(),
       workingBpm: 92,
-      lastTakeHeadline: 'You rushed across measures 5 to 8.',
+      lastTakeHeadline: 'You rushed bars 5–8 by 4 BPM.',
     });
 
     expect(hero.label).toBe('Recommended');
@@ -48,7 +48,7 @@ describe('with a piece to continue', () => {
     expect(hero.meta).toContain('J. S. Bach');
     expect(hero.meta).toContain('I. Adagio');
     expect(hero.meta).toContain('92');
-    expect(hero.detail).toBe('You rushed across measures 5 to 8.');
+    expect(hero.detail).toBe('You rushed bars 5–8 by 4 BPM.');
     expect(hero.action).toBe('continue');
   });
 
@@ -140,7 +140,7 @@ describe('with nothing in the library', () => {
       heroContentFor({
         piece: null,
         workingBpm: 0,
-        lastTakeHeadline: 'You rushed across measures 5 to 8.',
+        lastTakeHeadline: 'You rushed bars 5–8 by 4 BPM.',
       }).detail ?? '',
     ).not.toContain('rushed');
   });

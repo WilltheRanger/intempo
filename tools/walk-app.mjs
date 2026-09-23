@@ -667,7 +667,7 @@ else pass(`a piece being read names the stage the worker reached: "${stageOnPiec
 
 await tapTo(
   'the reading row',
-  /Reading this page/i,
+  /Reading the page/i,
   /^\/pieces\/fixture-reading-in-progress\/score$/,
 );
 
@@ -720,16 +720,18 @@ else pass('a failed page shows the reason the server wrote, word for word');
 // Three ways on, and none of them a dead end: read it again with the pages
 // already stored, photograph it again, or pick different files. A failure
 // screen with no route out is where a piece goes to be abandoned.
-const waysOn = [/Try reading it again/i, /Take new photographs/i, /Choose different images/i];
+const waysOn = [/^Try again$/i, /^Retake photos$/i, /^Choose other photos$/i];
 const missing = waysOn.filter((w) => !failedScore.some((l) => w.test(l)));
 if (missing.length > 0) fail(`a failed page offers no ${missing.join(', ')}`);
-else pass('and offers three ways on: read it again · new photographs · different images');
+else pass('and offers three ways on: try again · retake photos · other photos');
 
-// The piece survives the failure. Losing the title and tempo because the
-// notation could not be read would throw away everything the musician typed.
-if (!failedScore.some((l) => /still in your library/i.test(l)))
-  fail('a failed page does not say the piece is still in the library');
-else pass('and says the piece itself is still there');
+// The piece survives the failure. Losing the title because the notation could
+// not be read would throw away what the musician typed. Checked by the title
+// being on the screen rather than by a sentence promising it: the sentence was
+// cut with the rest of the app's filler (2026-09-23), the title was not.
+if (!failedScore.some((l) => /Concerto in A minor/.test(l)))
+  fail('a failed page lost the piece it belongs to');
+else pass('and the piece itself is still there, by name');
 
 console.log('\n## Repairing a bar the reader got wrong');
 
@@ -752,12 +754,12 @@ await open('pieces/fixture-clef-change-study/bars/3');
 const barOpened = await leaves();
 if (!barOpened.some((l) => /^4 of 4 beats$/.test(l)))
   fail(`the bar editor opened without a beat count: ${JSON.stringify(barOpened.slice(0, 10))}`);
-else if (!barOpened.some((l) => /adds up/i.test(l)))
-  fail('a bar that adds up does not say so');
-else pass('a bar that adds up opens saying "4 of 4 beats" and so');
+else if (barOpened.some((l) => /Tap a note to change it/i.test(l)))
+  fail('a bar that adds up still asks for a change');
+else pass('a bar that adds up opens on "4 of 4 beats", asking for nothing');
 
 // Lengthening the selected note. **Both halves asserted**: a count that moves
-// while the sentence beside it still says the bar adds up is the same
+// while the screen still asks for nothing is the same
 // screen-contradicts-itself fault the agreement checks above exist for.
 await page.getByRole('button', { name: 'Half', exact: true }).first().click();
 await waitFor('the beat count to follow the edit', async () =>
@@ -766,9 +768,9 @@ await waitFor('the beat count to follow the edit', async () =>
 const lengthened = await leaves();
 if (!lengthened.some((l) => /^5 of 4 beats$/.test(l)))
   fail('lengthening a note did not change the beat count');
-else if (lengthened.some((l) => /adds up/i.test(l)))
-  fail('the bar says it adds up at 5 of 4 beats');
-else pass('lengthening a note reads 5 of 4 beats, and it stops saying it adds up');
+else if (!lengthened.some((l) => /Tap a note to change it/i.test(l)))
+  fail('the bar asks for nothing at 5 of 4 beats');
+else pass('lengthening a note reads 5 of 4 beats, and it asks for a change');
 
 await page.getByRole('button', { name: 'Delete this note' }).first().click();
 await waitFor('the beat count to follow the delete', async () =>
@@ -1338,7 +1340,7 @@ console.log('\n## A take that records');
     // its own — its Tempo row is right there above the button — so the check
     // passed without the take going anywhere, including under a mutation that
     // stopped the worklet delivering a single sample.
-    const verdict = await awaitLine((l) => /across the take|measure by measure/i.test(l), 20000);
+    const verdict = await awaitLine((l) => /across the take|bar by bar/i.test(l), 20000);
     if (verdict) pass('a real take is accepted and comes back with a reading');
     else fail('a real take produced neither a complaint nor a result');
   }

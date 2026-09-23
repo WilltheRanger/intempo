@@ -444,7 +444,7 @@ async function checkCameraRefused(browser) {
   await page.goto(`${BASE}/scan`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(3000);
   const screen = await page.evaluate(() => document.body.innerText || '');
-  if (/needs your camera/i.test(screen)) pass('says the camera is needed and why');
+  if (/camera.*photograph/i.test(screen)) pass('says the camera is needed and why');
   else fail('says the camera is needed and why', screen.slice(0, 160).replace(/\n/g, ' / '));
   await context.close();
 }

@@ -1249,7 +1249,7 @@ const FIXTURE_TAKE_STATES: Record<string, Partial<TakeResult>> = {
   },
   'fixture-take-silent': {
     status: 'no_onsets',
-    headline: 'No sound reached the microphone. Check that nothing is muting it.',
+    headline: 'No sound reached the microphone. Is it muted?',
   },
   /**
    * **A passage, not a whole page** — which is what practice looks like and
@@ -1265,11 +1265,11 @@ const FIXTURE_TAKE_STATES: Record<string, Partial<TakeResult>> = {
    */
   'fixture-take-passage': {
     headline:
-      'You held the tempo through this passage, with a little push at the end.',
+      'Steady, with a push at the end.',
   },
   'fixture-take-unmatched': {
     status: 'alignment_failed',
-    headline: 'Only 18 of 76 notes came through. Move the microphone closer.',
+    headline: 'Only 18 of 76 notes came through. Move the mic closer.',
   },
 };
 
@@ -1427,7 +1427,7 @@ function buildFixtureTake(): TakeResult | null {
      */
     finding: {
       kind: 'note_value' as const,
-      text: 'Your sixteenth notes ran ahead of the rest.',
+      text: 'Your sixteenth notes ran ahead.',
       weight: 2.0,
     },
     // The sample take always succeeds. A failed run is a live-only outcome —
@@ -1436,7 +1436,7 @@ function buildFixtureTake(): TakeResult | null {
     failure: null,
     status: 'ok',
     // The pipeline writes this sentence; the screen shows it verbatim.
-    headline: 'You rushed across measures 5 to 8, then pulled it back.',
+    headline: 'You rushed bars 5–8 by 4 BPM.',
     direction: 'rush',
     verdict: verdictFor('rush_drag', 'rush'),
     lowConfidence: false,
