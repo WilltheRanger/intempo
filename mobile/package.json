@@ -38,8 +38,7 @@
     "react-native-screens": "^4.27.0",
     "react-native-svg": "^15.15.5",
     "react-native-url-polyfill": "^4.0.0",
-    "spessasynth_core": "4.3.22",
-    "zod": "^4.6.5"
+    "spessasynth_core": "4.3.22"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

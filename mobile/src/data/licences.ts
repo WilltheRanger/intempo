@@ -61,5 +61,4 @@ export const LICENCES: Licence[] = [
   { name: 'typescript', version: '6.0.3', licence: 'Apache-2.0' },
   { name: 'typescript-eslint', version: '8.69.0', licence: 'MIT' },
   { name: 'vitest', version: '4.1.11', licence: 'MIT' },
-  { name: 'zod', version: '4.6.5', licence: 'MIT' },
 ];
