@@ -1,5 +1,37 @@
 # InTempo Decisions
 
+## 2026-09-23 — Each take reports what the microphone applied, and the report can never refuse it
+
+**Context.** The web recorder asks for raw audio — auto-gain, noise
+suppression and echo cancellation off — because each moves an attack and
+attacks are what the analysis measures. Nothing read the track's settings
+back. A refused request retries with `{ audio: true }`, the browser's
+defaults, and left no mark; an accepted request may still be processed. So
+whether any take was captured raw was unknowable, while every real take so far
+detects far more attacks than its page writes — a fault processing could cause.
+Modelling it a sixth time would not settle it; asking the device will.
+
+**Decision.** `lib/audio/capture.ts` turns `getSettings()` plus a `fellBack`
+flag into a report that rides on `Recording`, through the offline queue, and
+into `POST /v1/analyses` as `capture`, stored in `analyses.capture jsonb`
+(migration 026). `null` on a flag means the device did not say; it is never
+written as `false`. Nothing in the pipeline reads it.
+
+**Alternatives considered.**
+- *Six typed columns.* Nothing queries by field, and the shape is the
+  client's to extend; a migration per field buys nothing.
+- *Refuse the take on a deployment without the column,* as `from_measure`
+  does. That rule exists because judging from bar 1 is a wrong verdict. A lost
+  report changes no verdict, so the insert drops the key and logs instead.
+- *Validate the report strictly, request-wide.* The request forbids unknown
+  keys; the report ignores them, so a newer client adding a field is not
+  turned away. The queue re-reads a stored report through `describeCapture`
+  and drops one that is not an object rather than let it block a drain.
+
+**Trade-offs accepted.** The native recorder and picked files report nothing
+(absent, not all-null). Settings are read once at open; a device that changed
+processing mid-take would be misdescribed.
+
 ## 2026-09-22 — The take decides how the page was played
 
 **Context.** The analysis built one timeline per page — the page exactly as

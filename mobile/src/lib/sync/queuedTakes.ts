@@ -1,5 +1,6 @@
 import type { TakeSubmissionState } from '../../data/practice/submitTake';
 import type { MetronomeMode } from '../../data/types';
+import type { CaptureReport } from '../audio/capture';
 import { deviceTakeStore } from './takeQueue.store';
 import {
   enqueue,
@@ -46,7 +47,12 @@ function idFor(filename: string): string {
 
 /** Hold a take that could not be sent, so an app kill does not lose it. */
 export async function keepTakeForLater(
-  recording: { audio: Blob; filename: string; resume?: TakeSubmissionState },
+  recording: {
+    audio: Blob;
+    filename: string;
+    resume?: TakeSubmissionState;
+    capture?: CaptureReport;
+  },
   context: TakeContext,
   lastError: string,
 ): Promise<void> {
@@ -60,6 +66,7 @@ export async function keepTakeForLater(
         filename: recording.filename,
         resume: recording.resume ?? {},
         audio: recording.audio,
+        ...(recording.capture ? { capture: recording.capture } : {}),
       },
       Date.now(),
       id,
@@ -92,6 +99,7 @@ export interface RestoredTake {
   filename: string;
   resume: TakeSubmissionState;
   lastError: string | null;
+  capture?: CaptureReport;
 }
 
 /**
@@ -119,6 +127,7 @@ export async function restoreQueuedTake(
           filename: take.filename,
           resume: take.resume,
           lastError: take.lastError,
+          capture: take.capture,
         };
       }
       await remove(deviceTakeStore, take.id);

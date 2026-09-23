@@ -9,6 +9,7 @@ is sent — so the request stays well under the 500ms DoD.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 from urllib.parse import urlparse
 from uuid import UUID
@@ -40,6 +41,41 @@ from app.routers.upload import AUDIO_BUCKET
 from app.workers.dispatch import start_analysis
 
 router = APIRouter(prefix="/analyses", tags=["analyses"])
+
+logger = logging.getLogger("intempo.analysis")
+
+
+class CaptureReport(BaseModel):
+    """What the phone's microphone applied to a take, as the device reported it.
+
+    The app asks for raw audio — auto-gain, noise suppression and echo
+    cancellation all off, because each one moves an attack and attacks are
+    what this service measures. Until this existed nothing checked whether the
+    device honoured that, so a take captured through voice processing and one
+    captured raw were indistinguishable after the fact. Every real take so far
+    reads far more attacks than its page writes, and processing is one of the
+    causes that could not be ruled in or out.
+
+    **Diagnostic only.** Nothing in the pipeline reads it, and it must never
+    be the reason a take is refused: fields are all optional, unknown ones are
+    ignored so a newer client is not turned away, and the insert below drops it
+    rather than fail on a deployment without the column.
+
+    ``None`` on a flag is "the device did not say", which is not "off".
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    auto_gain_control: bool | None = None
+    noise_suppression: bool | None = None
+    echo_cancellation: bool | None = None
+    #: What the microphone track ran at — not necessarily the file's rate,
+    #: which is the audio graph's.
+    sample_rate: float | None = Field(default=None, gt=0)
+    channel_count: int | None = Field(default=None, ge=1)
+    #: The raw request was refused and the browser's defaults were taken,
+    #: which ordinarily means its voice processing is on.
+    fell_back: bool = False
 
 
 class CreateAnalysisRequest(BaseModel):
@@ -93,6 +129,9 @@ class CreateAnalysisRequest(BaseModel):
     #: database, because this router is where they belong and also where a
     #: wrong `.eq()` lives.
     assignment_id: UUID | None = None
+    #: What the microphone applied to this take. Absent from an older client,
+    #: from a picked file, and from the native recorder, which cannot ask.
+    capture: CaptureReport | None = None
 
     @model_validator(mode="after")
     def _one_audio_reference(self) -> "CreateAnalysisRequest":
@@ -270,6 +309,28 @@ _WITHOUT_RESULT = ", ".join(
 )
 
 
+def _insert_analysis(client: Any, payload: dict[str, Any]) -> Any:
+    """Insert the row, dropping the capture report if the table cannot hold it.
+
+    **A diagnostic must not cost a take.** Migration 026 is applied by hand
+    like every other, so there is a window in which the API sends a key the
+    table does not have. `from_measure` refuses the take in that window
+    because judging it from bar 1 would be wrong; losing a capture report
+    changes no verdict, so the take goes in without it and the gap is logged.
+    """
+    try:
+        return client.table("analyses").insert(payload).execute()
+    except Exception as exc:  # noqa: BLE001 — re-raised unless it is the one key
+        if "capture" not in payload or "capture" not in str(exc):
+            raise
+        logger.warning(
+            "analyses.capture is missing (migration 026); storing the take "
+            "without its capture report"
+        )
+        without = {key: value for key, value in payload.items() if key != "capture"}
+        return client.table("analyses").insert(without).execute()
+
+
 def _row_to_response(row: dict[str, Any]) -> AnalysisResponse:
     return AnalysisResponse(
         id=row["id"],
@@ -427,8 +488,10 @@ def create_analysis(
     # for is the one this file already reasons in.
     if body.assignment_id is not None:
         insert_payload["assignment_id"] = str(body.assignment_id)
+    if body.capture is not None:
+        insert_payload["capture"] = body.capture.model_dump()
     try:
-        inserted = client.table("analyses").insert(insert_payload).execute()
+        inserted = _insert_analysis(client, insert_payload)
     except Exception as exc:  # noqa: BLE001 — see below for the one case kept
         # **A deployment that has not run migration 015 must refuse the bar,
         # not the take, and must say so in words a musician can act on.** The

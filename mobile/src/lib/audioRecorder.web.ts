@@ -6,6 +6,7 @@ import {
   type Recorder,
   type Recording,
 } from './audio/types';
+import { describeCapture } from './audio/capture';
 import { capturedNothing, createPeakMeter } from './audio/level';
 import {
   microphoneFailure,
@@ -124,6 +125,8 @@ export async function startRecording(): Promise<Recorder> {
   await prepareForCapture();
 
   let media: MediaStream;
+  /** Set when the raw request was refused and the defaults were taken. */
+  let fellBack = false;
   {
     // Raw and unprocessed, because the analysis measures attacks as played and
     // every one of these processors moves them. A **preference**, not a
@@ -145,6 +148,7 @@ export async function startRecording(): Promise<Recorder> {
         // take with echo cancellation on beats no take at all.
         try {
           media = await navigator.mediaDevices.getUserMedia({ audio: true });
+          fellBack = true;
         } catch (retryError) {
           // No take is starting, so the capture category has nothing to do:
           // give the page back the one it is audible under.
@@ -160,6 +164,19 @@ export async function startRecording(): Promise<Recorder> {
       }
     }
   }
+
+  /**
+   * What the device says it applied, read back rather than assumed.
+   *
+   * Once, at open: the constraints were settled by the request, and a take
+   * whose processing changed mid-way would be a stranger thing than this can
+   * describe. The stream holds the one audio track it was asked for. Optional
+   * chained because an old WebView may have no `getSettings`, and a missing
+   * report must not cost the take.
+   */
+  const capture = describeCapture(media.getTracks()[0]?.getSettings?.(), {
+    fellBack,
+  });
 
   /** Release the device. Every failure past this point owes the mic back. */
   const releaseMicrophone = () =>
@@ -409,6 +426,7 @@ export async function startRecording(): Promise<Recorder> {
           sampleRate,
           seconds,
           truncated,
+          capture,
         };
       },
       discardCapturedSoFar() {

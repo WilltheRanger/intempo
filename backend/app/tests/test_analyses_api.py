@@ -1116,3 +1116,131 @@ def test_a_take_from_the_start_still_works_on_a_pre_015_database(
 
     assert res.status_code == 202
     assert len(fake.table("analyses").rows) == 1
+
+
+# ---------------------------------------------------------------------------
+# What the microphone applied
+#
+# A diagnostic: the app asks for raw audio and now reports whether it got it.
+# Nothing reads it back, so the only rules are that it is stored as sent and
+# that it can never be the reason a take is refused.
+# ---------------------------------------------------------------------------
+
+
+_PROCESSED = {
+    "auto_gain_control": True,
+    "noise_suppression": None,
+    "echo_cancellation": False,
+    "sample_rate": 48000,
+    "channel_count": 1,
+    "fell_back": True,
+}
+
+
+def _fake_with_score(user_id: UUID, score_id: UUID) -> FakeSupabase:
+    fake = FakeSupabase()
+    fake.seed(
+        "scores",
+        [{"id": str(score_id), "user_id": str(user_id), "score_json": GOOD_SCORE_JSON}],
+    )
+    return fake
+
+
+def test_the_capture_report_is_stored_with_the_take(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """Stored field for field — including a `None`, which is "the device did
+    not say" and must not come back as `False`."""
+    user_id = uuid4()
+    score_id = uuid4()
+    fake = _fake_with_score(user_id, score_id)
+    _install(monkeypatch, fake)
+    monkeypatch.setattr(analyses_module, "start_analysis", lambda *_: None)
+
+    res = _post_take(
+        client, make_token(sub=user_id), user_id, score_id, capture=_PROCESSED
+    )
+
+    assert res.status_code == 202, res.text
+    assert fake.table("analyses").rows[0]["capture"] == _PROCESSED
+
+
+def test_a_take_without_a_capture_report_writes_no_key(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """A picked file, the native recorder and every older client report
+    nothing, and "not asked" stays distinguishable from a report."""
+    user_id = uuid4()
+    score_id = uuid4()
+    fake = _fake_with_score(user_id, score_id)
+    _install(monkeypatch, fake)
+    monkeypatch.setattr(analyses_module, "start_analysis", lambda *_: None)
+
+    res = _post_take(client, make_token(sub=user_id), user_id, score_id)
+
+    assert res.status_code == 202, res.text
+    assert "capture" not in fake.table("analyses").rows[0]
+
+
+def test_a_newer_client_reporting_more_is_not_turned_away(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """The request model forbids unknown keys; the report deliberately does
+    not, because a diagnostic field this server has not heard of is not a
+    reason to refuse a take."""
+    user_id = uuid4()
+    score_id = uuid4()
+    fake = _fake_with_score(user_id, score_id)
+    _install(monkeypatch, fake)
+    monkeypatch.setattr(analyses_module, "start_analysis", lambda *_: None)
+
+    res = _post_take(
+        client,
+        make_token(sub=user_id),
+        user_id,
+        score_id,
+        capture={**_PROCESSED, "voice_isolation": True},
+    )
+
+    assert res.status_code == 202, res.text
+    assert "voice_isolation" not in fake.table("analyses").rows[0]["capture"]
+
+
+def test_a_take_is_kept_when_the_table_cannot_hold_its_capture_report(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """**A diagnostic must not cost a take.** On a deployment without
+    migration 026 the insert names a column the table lacks; the take goes in
+    without the report rather than fail at submit — the opposite of
+    `from_measure`, because losing a report changes no verdict."""
+    user_id = uuid4()
+    score_id = uuid4()
+    fake = _fake_with_score(user_id, score_id)
+    _install(monkeypatch, fake)
+    monkeypatch.setattr(analyses_module, "start_analysis", lambda *_: None)
+
+    table = fake.table("analyses")
+    real_insert = table.insert
+
+    def insert(payload):
+        if isinstance(payload, dict) and "capture" in payload:
+
+            class _Boom:
+                def execute(self):
+                    raise RuntimeError(
+                        'column "capture" of relation "analyses" does not exist'
+                    )
+
+            return _Boom()
+        return real_insert(payload)
+
+    monkeypatch.setattr(table, "insert", insert)
+
+    res = _post_take(
+        client, make_token(sub=user_id), user_id, score_id, capture=_PROCESSED
+    )
+
+    assert res.status_code == 202, res.text
+    rows = fake.table("analyses").rows
+    assert len(rows) == 1
+    assert "capture" not in rows[0]

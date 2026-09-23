@@ -47,6 +47,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { File as FSFile } from 'expo-file-system';
 import { ACCEPTED_LABEL, describePickedTake } from '../../lib/record/pickedTake';
 import { playheadAt } from '../../lib/record/playhead';
+import type { CaptureReport } from '../../lib/audio/capture';
 import { readTakeFailure } from '../../lib/audio/takeFailure';
 import { heldTakeUrl, releaseHeldTake } from '../../lib/audio/heldTake';
 import { HeldTakePlayer } from './HeldTakePlayer';
@@ -292,6 +293,7 @@ export function RecordScreen() {
     audio: Blob;
     filename: string;
     resume?: TakeSubmissionState;
+    capture?: CaptureReport;
   } | null>(null);
   const [pendingTake, setPendingTake] = useState(false);
   /**
@@ -652,6 +654,8 @@ export function RecordScreen() {
     /** Absent for a recorded take, which is always the WAV the app wrote. */
     contentType?: string;
     resume?: TakeSubmissionState;
+    /** What the microphone applied. Absent for a picked file. */
+    capture?: CaptureReport;
   }) {
     // Hold the bytes before the first awaited upload step. This is not yet a
     // visible retry state, but it makes both navigation and browser-exit guards
@@ -677,6 +681,7 @@ export function RecordScreen() {
         // response, so the row is the only thing that survives to say which
         // bar was played first.
         fromMeasure: startFrom,
+        capture: recording.capture,
       }, { onStage: setAnalysisStage });
       unsent.current = null;
       setPendingTake(false);
@@ -995,6 +1000,7 @@ export function RecordScreen() {
         audio: restored.audio,
         filename: restored.filename,
         resume: restored.resume,
+        capture: restored.capture,
       };
       setPendingTake(true);
       holdForListening(restored.audio);

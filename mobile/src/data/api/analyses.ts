@@ -107,6 +107,22 @@ export interface CreateAnalysisInput {
    * misaligned at every onset.
    */
   from_measure?: number;
+  /**
+   * What the microphone applied to this take, as the device reported it.
+   *
+   * Diagnostic only — nothing in the pipeline reads it. The app asks for raw
+   * audio, and this is whether it got it: `null` on a flag is "the device did
+   * not say", `fell_back` is "the raw request was refused and the browser's
+   * defaults were taken". Omitted when there is no report at all.
+   */
+  capture?: {
+    auto_gain_control: boolean | null;
+    noise_suppression: boolean | null;
+    echo_cancellation: boolean | null;
+    sample_rate: number | null;
+    channel_count: number | null;
+    fell_back: boolean;
+  };
 }
 
 /**

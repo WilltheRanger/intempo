@@ -79,6 +79,7 @@ async function drainNow(): Promise<DrainReport | null> {
           resume: take.resume,
           skipLongRests: take.skipLongRests,
           fromMeasure: take.fromMeasure,
+          capture: take.capture,
         });
       },
       read: (error) => readTakeFailure(error, Platform.OS),
