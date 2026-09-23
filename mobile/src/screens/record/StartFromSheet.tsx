@@ -22,12 +22,21 @@ export function StartFromSheet({
   startFrom,
   onPick,
   onClose,
+  onChoose,
+  chooseHint = 'Tap any bar above',
 }: {
   visible: boolean;
   options: StartOption[];
   startFrom: number;
   onPick: (bar: number) => void;
   onClose: () => void;
+  /**
+   * What "Choose on the score" does. On Record the score is right there, so
+   * it only closes the sheet onto it (the default). A screen with no score on
+   * it opens a bar picker instead, and says so in `chooseHint`.
+   */
+  onChoose?: () => void;
+  chooseHint?: string;
 }) {
   return (
     <BottomSheet visible={visible} onClose={onClose} title="Start from" showClose={false}>
@@ -59,9 +68,9 @@ export function StartFromSheet({
         );
       })}
       <Pressable
-        onPress={onClose}
+        onPress={onChoose ?? onClose}
         accessibilityRole="button"
-        accessibilityLabel="Choose on the score. Tap any bar above"
+        accessibilityLabel={`Choose on the score. ${chooseHint}`}
         style={({ pressed }) => [styles.option, pressed && styles.pressed]}
       >
         <View style={styles.text}>
@@ -69,7 +78,7 @@ export function StartFromSheet({
             Choose on the score
           </Text>
           <Text variant="caption" color="textTertiary" style={styles.sub}>
-            Tap any bar above
+            {chooseHint}
           </Text>
         </View>
       </Pressable>

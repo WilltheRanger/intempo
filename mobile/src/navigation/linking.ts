@@ -74,6 +74,7 @@ export const screenConfig: LinkingOptions<RootStackParamList>['config'] = {
       ProofRead: 'pieces/:pieceId/check',
       Record: 'pieces/:pieceId/record',
       Tempo: 'pieces/:pieceId/tempo',
+      UploadRecording: 'pieces/:pieceId/upload',
       Verdict: 'analyses/:analysisId',
       Warmup: 'warmup',
 

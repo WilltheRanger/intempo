@@ -36,7 +36,10 @@ describe('the entry bar on the record screen', () => {
   it('sends the chosen bar with the take', () => {
     const [, source] = record[0];
 
-    expect(source).toContain('fromMeasure: startFrom');
+    // `entryBar` is the start bar, unless the Upload screen chose one for a
+    // picked file — see `send`.
+    expect(source).toContain('const entryBar = recording.fromMeasure ?? startFrom;');
+    expect(source).toContain('fromMeasure: entryBar');
   });
 
   it('tells the picker it governs the take, so the label says so', () => {

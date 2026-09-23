@@ -1,7 +1,12 @@
-import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import {
+  useFocusEffect,
+  useNavigation,
+  useRoute,
+  type RouteProp,
+} from '@react-navigation/native';
 import { useQueryClient } from '@tanstack/react-query';
 import { Mic, MoreVertical, Square } from '../../components/icons';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Linking,
@@ -42,9 +47,12 @@ import {
   MicrophonePermissionError,
   type Recorder,
 } from '../../lib/audio/types';
-import * as DocumentPicker from 'expo-document-picker';
-import { File as FSFile } from 'expo-file-system';
-import { ACCEPTED_LABEL, describePickedTake } from '../../lib/record/pickedTake';
+import { ACCEPTED_LABEL } from '../../lib/record/pickedTake';
+import {
+  stagePickedFile,
+  takeQueuedPickedFile,
+} from '../../data/practice/pickedTake';
+import { chooseAudioFile } from './chooseAudioFile';
 import { playheadAt } from '../../lib/record/playhead';
 import type { CaptureReport } from '../../lib/audio/capture';
 import { readTakeFailure } from '../../lib/audio/takeFailure';
@@ -288,8 +296,10 @@ export function RecordScreen() {
   const unsent = useRef<{
     audio: Blob;
     filename: string;
+    contentType?: string;
     resume?: TakeSubmissionState;
     capture?: CaptureReport;
+    fromMeasure?: number;
   } | null>(null);
   const [pendingTake, setPendingTake] = useState(false);
   /**
@@ -569,73 +579,25 @@ export function RecordScreen() {
   }
 
   /**
-   * Send a recording the musician already has, instead of playing one now.
+   * Upload a recording the musician already has.
    *
-   * **The take a musician cares most about is often already on their phone.**
-   * A lesson, a run-through caught on a voice memo, a performance — none of
-   * which can be played again for the app's benefit. Everything downstream of
-   * the upload is identical to a recorded take, so this joins `send` rather
-   * than building a second path to the same place.
-   *
-   * Two checks before the bytes move, and they are different in kind.
-   * `describePickedTake` is local and instant, so an obviously wrong file
-   * costs no data and no waiting. The real guard is
-   * `backend/app/services/audio_intake.py`, which reads the bytes; this one
-   * is a courtesy and is documented as such, because a client check protects
-   * nobody.
+   * **The picker opens here, from the tap**, because a browser refuses a file
+   * picker that a tap did not open — the Upload screen could not open it on
+   * arrival. The file is held for that screen (`data/practice/pickedTake`),
+   * which shows it and hands it back through `sendQueuedUpload` below.
    */
-  async function pickTake() {
+  async function openUpload() {
     if (recording || isStarting || phase === 'analysing') {
       return;
     }
     setProblem(null);
-    let asset: DocumentPicker.DocumentPickerAsset | undefined;
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        // A hint to the picker, not a guarantee: every platform treats this
-        // differently and some ignore it, which is why the name is checked
-        // afterwards rather than trusted.
-        type: 'audio/*',
-        multiple: false,
-        copyToCacheDirectory: true,
-      });
-      if (result.canceled) {
-        return;
-      }
-      asset = result.assets?.[0];
-    } catch {
-      setProblem('That file could not be opened. Try choosing it again.');
-      return;
+    const chosen = await chooseAudioFile();
+    if (chosen.kind === 'picked') {
+      stagePickedFile(params.pieceId, chosen.file);
+      navigation.navigate('UploadRecording', { pieceId: params.pieceId });
+    } else if (chosen.kind === 'failed') {
+      setProblem(chosen.message);
     }
-    if (!asset) {
-      setProblem('Nothing was selected.');
-      return;
-    }
-
-    const picked = describePickedTake({
-      name: asset.name,
-      size: asset.size ?? null,
-    });
-    if (!picked.ok) {
-      setProblem(picked.message);
-      return;
-    }
-
-    let audio: Blob;
-    try {
-      // Web hands back a Blob, native a URI. Both read the same way — the
-      // same two lines `ImportFile` uses for a score.
-      audio = asset.file ?? (new FSFile(asset.uri) as unknown as Blob);
-    } catch {
-      setProblem('That file could not be read. Try choosing it again.');
-      return;
-    }
-
-    await send({
-      audio,
-      filename: picked.filename,
-      contentType: picked.contentType,
-    });
   }
 
   /**
@@ -652,7 +614,14 @@ export function RecordScreen() {
     resume?: TakeSubmissionState;
     /** What the microphone applied. Absent for a picked file. */
     capture?: CaptureReport;
+    /**
+     * The bar the recording starts on, when it was chosen somewhere other
+     * than this screen — the Upload screen's "Start at". A recorded take
+     * starts where this screen says.
+     */
+    fromMeasure?: number;
   }) {
+    const entryBar = recording.fromMeasure ?? startFrom;
     // Hold the bytes before the first awaited upload step. This is not yet a
     // visible retry state, but it makes both navigation and browser-exit guards
     // truthful during the vulnerable gap before the server accepts the take.
@@ -676,7 +645,7 @@ export function RecordScreen() {
         // Sent, not just applied on the phone: the analysis happens after the
         // response, so the row is the only thing that survives to say which
         // bar was played first.
-        fromMeasure: startFrom,
+        fromMeasure: entryBar,
         capture: recording.capture,
       }, { onStage: setAnalysisStage });
       unsent.current = null;
@@ -722,7 +691,7 @@ export function RecordScreen() {
             targetBpm,
             metronomeMode,
             skipLongRests: skipRests,
-            fromMeasure: startFrom,
+            fromMeasure: entryBar,
           },
           failure.message,
         );
@@ -832,6 +801,33 @@ export function RecordScreen() {
   const [pickingStart, setPickingStart] = useState(false);
   /** Bumped when the sheet picks a bar, so the score scrolls it into view. */
   const [revealStart, setRevealStart] = useState(0);
+
+  /**
+   * A file the Upload screen queued with "Send for analysis", sent the moment
+   * this screen is back in focus — through `send`, the one path every take
+   * takes, so the wait, the failures and "Send it again" are the same for an
+   * uploaded file as for a recorded one. `takeQueuedPickedFile` gives it up
+   * once, so a second focus cannot send it twice.
+   */
+  const sendRef = useRef<typeof send | null>(null);
+  useFocusEffect(
+    useCallback(() => {
+      const queued = takeQueuedPickedFile(params.pieceId);
+      if (!queued) {
+        return;
+      }
+      setChosenStartFrom(queued.fromMeasure);
+      void sendRef.current?.({
+        audio: queued.file.audio,
+        filename: queued.file.filename,
+        contentType: queued.file.contentType,
+        fromMeasure: queued.fromMeasure,
+      });
+    }, [params.pieceId]),
+  );
+  // `send` is a function declaration, so it exists here; the ref is how the
+  // focus callback above reaches the current render's copy.
+  sendRef.current = send;
 
   /** The first bar with a note in it, which is what the pre-flight compares to. */
   const firstSoundingBar = startable[0] ?? null;
@@ -1545,7 +1541,7 @@ export function RecordScreen() {
           divided={false}
           onPress={() => {
             setShowMore(false);
-            void pickTake();
+            void openUpload();
           }}
           hint={`Choose an audio file you already have. ${ACCEPTED_LABEL} all work.`}
         />

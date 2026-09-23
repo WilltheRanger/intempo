@@ -78,3 +78,29 @@ export function describeReachedAnalysisLimit(
     usage.limit === 1 ? 'your free analysis' : `all ${usage.limit} free analyses`;
   return `You've used ${allowance} this month. Recording returns ${whenAnalysisAllowanceResets(usage.resets_at)}. You can still listen to the score and practise with the metronome.`;
 }
+
+/**
+ * The line under "Send for analysis" on the Upload screen: what sending costs.
+ *
+ * From the redesign (`redesign/UploadRecording.dc.html`): "This uses one of
+ * your 3 free analyses this month." Said before the press, because an upload
+ * is a choice made at a desk rather than mid-practice, and a musician choosing
+ * which file to spend a free analysis on deserves to know that is the choice.
+ *
+ * The last one says so, in the same words Record uses; a spent allowance is
+ * `describeReachedAnalysisLimit`'s to say; an unlimited plan costs nothing
+ * worth a line.
+ */
+export function describeAnalysisCost(
+  usage: UsageResponse | null | undefined,
+): string | null {
+  if (!usage || usage.limit === null || analysisLimitReached(usage)) {
+    return null;
+  }
+  if (usage.remaining === 1) {
+    return describeLastFreeAnalysis(usage);
+  }
+  return usage.limit === 1
+    ? 'This uses your free analysis this month.'
+    : `This uses one of your ${usage.limit} free analyses this month.`;
+}

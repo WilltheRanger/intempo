@@ -145,8 +145,9 @@ describe('the corpus this reads', () => {
   });
 
   it('found the sound paths there are', () => {
-    // Six, today: the two players, the two metronomes, the take playback on
-    // the verdict screen, and the held-take playback on the record screen.
+    // Seven, today: the two players, the two metronomes, the take playback on
+    // the verdict screen, the held-take playback on the record screen, and the
+    // picked-file preview on the upload screen (redesign, 2026-09-23).
     // Named rather than counted, so a path that *disappears* is as loud as one
     // that appears — a player deleted in a refactor and rebuilt somewhere else
     // is exactly how this check would come to be guarding nothing.
@@ -166,6 +167,7 @@ describe('the corpus this reads', () => {
       'src/lib/scorePlayer.ts',
       'src/lib/scorePlayer.web.ts',
       'src/screens/record/HeldTakePlayer.web.tsx',
+      'src/screens/upload/usePreviewPlayback.web.ts',
       'src/screens/verdict/TakePlayback.tsx',
     ]);
   });
