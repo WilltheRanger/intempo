@@ -137,8 +137,8 @@ export function TranscribeScreen() {
       <ScreenContainer>
         <EmptyState
           fill
-          title="Transcription needs the backend"
-          description="Sample mode can’t read photos. Add a piece by hand instead."
+          title="Can’t read photos in sample mode"
+          description="Add a piece by hand instead."
           actionLabel="Back to pages"
           onActionPress={goBack}
         />

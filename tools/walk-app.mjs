@@ -395,9 +395,9 @@ else fail(`adding a word did not narrow: ${bach} → ${bachAdagio}`);
 // gets. Both halves are asserted: no rows, and a reason.
 const none = await searchCount('zzzznotapiece');
 const nothingText = await leaves();
-if (none === null && nothingText.some((line) => /Nothing in your library matches/.test(line)))
+if (none === null && nothingText.some((line) => /Nothing matches/.test(line)))
   pass('a search with no matches explains itself');
-else fail(`a search with no matches: rows ${none}, explanation ${nothingText.some((l) => /Nothing in your library matches/.test(l))}`);
+else fail(`a search with no matches: rows ${none}, explanation ${nothingText.some((l) => /Nothing matches/.test(l))}`);
 
 // And the way back is a control, not a re-typed field.
 await page.getByRole('button', { name: 'Clear search' }).first().click({ timeout: 10000 });
@@ -622,9 +622,9 @@ console.log('\n## Photographing a piece');
       // No backend in this build, so the honest outcome is a refusal that names
       // something a musician can actually do instead.
       const sending = await leaves(scan);
-      const said = sending.find((l) => /needs the backend|could not|sample data/i.test(l));
+      const said = sending.find((l) => /needs the backend|could not|sample (data|mode)/i.test(l));
       if (!said) fail('sending pages without a backend said nothing');
-      else if (!sending.some((l) => /manual/i.test(l)))
+      else if (!sending.some((l) => /manual|by hand/i.test(l)))
         fail(`the refusal names no route that exists: "${said.slice(0, 60)}"`);
       else if (!sending.some((l) => /Back to pages/i.test(l)))
         fail('the refusal offers no way back to the pages just photographed');
