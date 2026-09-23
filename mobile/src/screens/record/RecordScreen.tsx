@@ -64,6 +64,7 @@ import {
   BORDER_WIDTH,
   colors,
   disabledOpacity,
+  fontFamily,
   ICON_SIZE,
   ICON_STROKE_WIDTH,
   MIN_TOUCH_TARGET,
@@ -1119,57 +1120,55 @@ export function RecordScreen() {
         contentStyle={styles.countInScreen}
       >
         {/*
-          **Inverted, and the only phase of this screen that is.**
+          **The whole display, and nothing on it but the count**
+          (`redesign/RecordCountIn.dc.html`). This is read from across a room
+          by someone with an instrument already up, so everything that is not
+          the count goes and the numeral is the largest thing in the app.
 
-          The Counting In frame's argument: this is the one moment the screen
-          has to be read from across a room, by someone with an instrument
-          already up who is not going to look twice. So it takes the whole
-          display, drops everything that is not the count, and inverts — which
-          is also what stops a lit phone on a stand being a distraction in a
-          dark practice room.
-
-          `darkBg` and `onDark` rather than the appearance's own ink: this is
-          dark in *both* palettes, the same way the Today hero and the camera
-          viewfinder are, because what makes it dark is the moment and not the
-          setting.
+          **Light, where it used to invert.** The Counting In frame made this
+          the one dark moment on the screen; the redesign draws it on the
+          page's own ivory, and the owner pinned the app light (2026-09-23).
+          The numeral's size does the work the inversion did.
         */}
         <View style={styles.countIn}>
           <Text
             variant="sectionLabel"
+            color="textTertiary"
             style={styles.countInLabel}
             accessibilityElementsHidden
           >
             {perBar === null ? 'Four-beat count-in' : 'One-bar count-in'}
           </Text>
-          <Text
-            variant="heroTitle"
-            style={styles.countInNumber}
-            accessibilityLiveRegion="polite"
-          >
+          <Text style={styles.countInNumber} accessibilityLiveRegion="polite">
             {counted}
           </Text>
-          <BeatIndicator beat={metronome.beat} perBar={perBar} onDark />
+          <BeatIndicator beat={metronome.beat} perBar={perBar} variant="count" />
           <Text variant="body" style={styles.countInCopy}>
             {perBar === null ? 'Start after the count' : 'Start on the next downbeat'}
           </Text>
           {metronome.silent ? (
-            <Text variant="metadataSmall" style={styles.countInNote}>
+            <Text variant="metadataSmall" color="textTertiary" style={styles.countInCopy}>
               Haptics are off. Follow the visual count.
             </Text>
           ) : null}
         </View>
 
         {/*
-          One way out, and it is the only control on the screen. The header
-          goes: a back chevron and a cancel button are two ways to do the same
-          thing, and this is not a screen to read twice.
+          One way out, and it is the only control on the screen: small and
+          low, because it is the thing *not* to press. A back chevron and a
+          cancel button would be two ways to do the same thing.
         */}
-        <View style={styles.countInFooter}>
-          <SecondaryButton
-            label="Cancel count-in"
+        <View style={[styles.countInFooter, { paddingBottom: 36 + insets.bottom }]}>
+          <Pressable
             onPress={cancelCountIn}
-            onDark
-          />
+            accessibilityRole="button"
+            accessibilityLabel="Cancel count-in"
+            style={({ pressed }) => [styles.countInCancel, pressed && styles.countInCancelPressed]}
+          >
+            <Text variant="metadata" style={styles.countInCancelLabel}>
+              Cancel count-in
+            </Text>
+          </Pressable>
         </View>
       </ScreenContainer>
     );
@@ -1284,7 +1283,11 @@ export function RecordScreen() {
             >
               <MoreVertical size={20} strokeWidth={2.4} color={colors.textSecondary} />
             </Pressable>
-          ) : null}
+          ) : (
+            // The slot stays, empty, so the title does not re-wrap — and move
+            // the music under it — the moment a take begins.
+            <View style={styles.more} />
+          )}
         </View>
       </View>
 
@@ -1825,47 +1828,50 @@ const styles = StyleSheet.create({
   centred: {
     justifyContent: 'center',
   },
-  /**
-   * The count-in's ground: dark in both appearances, like the Today hero and
-   * the camera viewfinder, because what makes it dark is the moment and not
-   * the setting.
-   */
+  /** The count-in: the page's own ground, the count centred on it. */
   countInScreen: {
     flex: 1,
-    backgroundColor: colors.darkBg,
+    paddingBottom: 0,
   },
   countIn: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: spacing.xl,
+    gap: 26,
+    paddingHorizontal: spacing['2xl'],
   },
   countInLabel: {
-    color: colors.onDarkMuted,
+    letterSpacing: 0.6,
   },
+  // The largest thing in the app, and the only thing on the screen that
+  // size: it is read from a music stand.
   countInNumber: {
-    marginTop: spacing.md,
-    marginBottom: spacing['3xl'],
-    color: colors.onDark,
-    // Half the display, per the frame: this is read from a music stand, and
-    // `heroTitle` at its own size is a number you have to look for.
-    fontSize: 148,
-    lineHeight: 148,
+    fontFamily: fontFamily.serifRegular,
+    fontSize: 132,
+    lineHeight: 120,
+    letterSpacing: -4,
+    color: colors.textPrimary,
     fontVariant: ['tabular-nums'],
   },
   countInCopy: {
-    marginTop: spacing['2xl'],
-    color: colors.onDarkMuted,
-    textAlign: 'center',
-  },
-  countInNote: {
-    marginTop: spacing.md,
-    color: colors.onDarkMuted,
     textAlign: 'center',
   },
   countInFooter: {
-    paddingHorizontal: spacing.xl,
-    paddingBottom: spacing['3xl'],
+    alignItems: 'center',
+  },
+  countInCancel: {
+    height: MIN_TOUCH_TARGET,
+    paddingHorizontal: 18,
+    borderRadius: MIN_TOUCH_TARGET / 2,
+    borderWidth: BORDER_WIDTH,
+    borderColor: colors.borderStrong,
+    justifyContent: 'center',
+  },
+  countInCancelPressed: {
+    backgroundColor: colors.surfacePressed,
+  },
+  countInCancelLabel: {
+    fontFamily: fontFamily.sansMedium,
   },
   restCue: {
     width: '100%',
