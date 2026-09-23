@@ -181,9 +181,11 @@ with `migrations/`. Neither the name nor the ref is written down here.
    something is measurably slow — measure, then optimise.
 4. **No `print`/`console.log` debug shipped.** Real logger from day one —
    **which here means stdlib `logging` in the backend and no ad-hoc event
-   logging in `mobile/`.** Release builds send unhandled crashes to Sentry when
-   `EXPO_PUBLIC_SENTRY_DSN` is configured; that owner-authorized crash path is
-   not a general application logger. The rule used to name `loguru` for Python
+   logging in `mobile/`.** Native release builds send unhandled crashes to
+   Sentry when `EXPO_PUBLIC_SENTRY_DSN` is configured; that owner-authorized
+   crash path is not a general application logger. The web build carries no
+   reporter at all (`lib/crashReporting.web.ts`) — the SDK was a third of the
+   page's weight. The rule used to name `loguru` for Python
    and `pino` for JS, and
    **neither is in this repository**: not in `pyproject.toml`, not in `uv.lock`,
    not in `package.json`, not in a single source file, and neither appears in

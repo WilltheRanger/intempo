@@ -1,8 +1,8 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
-import * as Sentry from '@sentry/react-native';
 
 import { colors, spacing } from '../design';
+import { reportRenderCrash } from '../lib/crashReporting';
 import { PrimaryButton } from './primitives/PrimaryButton';
 import { ScreenContainer } from './primitives/ScreenContainer';
 import { Text } from './primitives/Text';
@@ -40,12 +40,8 @@ export class ErrorBoundary extends Component<
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    if (!__DEV__ && process.env.EXPO_PUBLIC_SENTRY_DSN) {
-      Sentry.captureException(error, {
-        contexts: { react: { componentStack: info.componentStack } },
-      });
-    }
-    // Release builds report this to Sentry above. The console copy remains for
+    reportRenderCrash(error, info);
+    // Native release builds report this to Sentry above. The console copy remains for
     // local development and for builds whose release DSN is deliberately
     // absent; neither path includes application analytics or routine events.
     //

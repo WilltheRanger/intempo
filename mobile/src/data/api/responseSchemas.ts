@@ -19,6 +19,9 @@ const analysis = z.object({
   created_at: z.string(),
   updated_at: z.string(),
   finished_at: z.string().nullable(),
+  // Added after this schema was written (migration 025). Defaulted rather
+  // than required, so a server predating it reads as "no stage to show".
+  stage: z.string().nullable().default(null),
 }).passthrough();
 
 const usage = z.object({
