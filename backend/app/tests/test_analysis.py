@@ -563,7 +563,7 @@ def test_an_empty_transcription_is_not_blamed_on_the_playing(tmp_path) -> None:
 
     for result in (played, silent):
         assert result.status == "no_onsets"
-        assert "transcription" in result.verdict
+        assert "score" in result.verdict
         assert "microphone" not in result.verdict
 
 

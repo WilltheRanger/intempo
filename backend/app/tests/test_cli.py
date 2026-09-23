@@ -47,7 +47,7 @@ def test_the_verdict_is_printed_verbatim(capsys) -> None:
     A tool that flatters its input is useless for looking at a pipeline.
     """
     main([str(_a_clip())])
-    assert "Steady tempo" in capsys.readouterr().out
+    assert "Steady all the way through" in capsys.readouterr().out
 
 
 def test_the_json_is_the_result_itself(capsys) -> None:

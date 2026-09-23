@@ -299,7 +299,10 @@ def _why_alignment_failed(
         return "More notes than the page has. Check its slurs."
 
     if _take_is_much_longer_than_the_page(onsets, expected):
-        return "Your take is longer than the page. Check its repeats and rests."
+        return (
+            "Your take is longer than this page. Check its repeats, and any "
+            "rest bar with a number over it."
+        )
 
     # Far fewer attacks than the page writes. A take that is simply *short* no
     # longer arrives here — `align_dtw` matches a passage against the passage
