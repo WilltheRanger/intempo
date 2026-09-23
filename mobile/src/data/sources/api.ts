@@ -3,7 +3,15 @@ import { submitTake, TakeSubmissionError, waitForAnalysis } from '../practice/su
 import { rememberPendingAnalysis } from '../practice/pendingAnalysis';
 import { newestReadable, type Readable } from '../practice/newestReadable';
 import { getMe } from '../api/me';
-import { createScore, deleteScore, getScore, listScores, updateScore } from '../api/scores';
+import { ApiError } from '../api/client';
+import {
+  createScore,
+  deleteScore,
+  getCurrentScore,
+  getScore,
+  listScores,
+  updateScore,
+} from '../api/scores';
 import { getAuthAvatarUrl } from '../auth/session';
 import { stableImage } from '../../lib/imageSource';
 import { verdictFor } from '../../lib/tempo';
@@ -182,6 +190,19 @@ export const apiPieceSource: PieceSource = {
   },
 
   async getCurrentPiece() {
+    // One request where the server has the endpoint. An API not yet on the
+    // build that added it answers 404, and the two-step lookup below is the
+    // same rule worked out here — so the app and the API can deploy in either
+    // order.
+    try {
+      const current = await getCurrentScore();
+      return current.score ? toPiece(current.score, current.last_practiced_at) : null;
+    } catch (cause) {
+      if (!(cause instanceof ApiError) || cause.status !== 404) {
+        throw cause;
+      }
+    }
+
     // The piece to continue is the one most recently *played*, not the one
     // most recently added — so the newest analysis names it. A library with no
     // analyses yet falls back to the newest score, which is the only sensible

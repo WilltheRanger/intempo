@@ -281,7 +281,7 @@ export function ProfileScreen() {
         />
       ) : null}
 
-      <RuledHeading label="Account" rule="borderStrong" style={styles.section} />
+      <RuledHeading label="Account" rule="borderStrong" style={styles.firstSection} />
       {/*
         **A band, not a floating card, and the alignment is why.** Keeping one
         surface for Account was the right call — it groups a set of related
@@ -574,8 +574,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  /*
+    **Small, because the rows are ruled on top.** A section's last row has no
+    line under it, so the space before the next heading's rule is read as that
+    row's own height: at 26pt "Password" looked half as tall again as "Email"
+    above it (owner, 2026-09-23: "why is password so big"). At 8pt the next
+    heading's heavier rule closes the row where a hairline would have, and the
+    heading's own padding does the separating.
+  */
   section: {
-    marginTop: 26,
+    marginTop: spacing.sm,
+  },
+  /** After the photograph and name, not after a row: that block needs room. */
+  firstSection: {
+    marginTop: spacing.xl,
   },
   settingCaveat: {
     marginTop: spacing.sm,

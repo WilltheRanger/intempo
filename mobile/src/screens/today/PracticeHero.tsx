@@ -1,6 +1,13 @@
 import { Image } from 'expo-image';
-import { useState } from 'react';
-import { StyleSheet, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import {
+  Animated,
+  Platform,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+  type LayoutChangeEvent,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
@@ -11,7 +18,8 @@ import { Text } from '../../components/primitives/Text';
 import { SCREEN_GUTTER } from '../../components/primitives/ScreenContainer';
 import { PressableScale } from '../../components/motion';
 import { useTabBarHeight } from '../../navigation/tabBarMetrics';
-import { colors, spacing } from '../../design';
+import { EASE_OUT, colors, motion, spacing } from '../../design';
+import { useReducedMotion } from '../../lib/useReducedMotion';
 import type { HeroContent, PendingLine } from './heroContent';
 import { FALL_START, fallStops } from './heroFall';
 import { TrailingChevron } from '../../components/primitives/TrailingChevron';
@@ -135,6 +143,31 @@ export function PracticeHero({
     set(value);
   };
 
+  /*
+    **The copy arrives; it does not cut in.** When the piece is still coming
+    the hero is the photograph alone, and the title and the Practice button
+    used to appear in a single frame when it landed — "just appear all of a
+    sudden" (owner, 2026-09-23). A short fade and an 8pt settle, on the scene
+    timing, so it reads as arriving rather than as a layout jump. Copy that is
+    there on the first render (a cached piece) does not animate at all.
+  */
+  const reduceMotion = useReducedMotion();
+  const arrival = useRef(new Animated.Value(content === null ? 0 : 1)).current;
+  const hasContent = content !== null;
+  useEffect(() => {
+    if (!hasContent) {
+      return;
+    }
+    const animation = Animated.timing(arrival, {
+      toValue: 1,
+      duration: reduceMotion ? 0 : motion.push,
+      easing: EASE_OUT,
+      useNativeDriver: Platform.OS !== 'web',
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [arrival, hasContent, reduceMotion]);
+
   const recent =
     pending && onPending
       ? { label: pending.label, onPress: onPending }
@@ -209,7 +242,15 @@ export function PracticeHero({
 
         <View style={styles.bottom} onLayout={measure(setBottomY, 'y')}>
           {content === null ? null : (
-            <View onLayout={measure(setBlockY, 'y')}>
+            <Animated.View
+              onLayout={measure(setBlockY, 'y')}
+              style={{
+                opacity: arrival,
+                transform: [
+                  { translateY: arrival.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) },
+                ],
+              }}
+            >
               <Text variant="eyebrow" color="textSecondary" style={styles.label}>
                 {content.label}
               </Text>
@@ -244,7 +285,7 @@ export function PracticeHero({
                 </Text>
                 <TrailingChevron />
               </PressableScale>
-            </View>
+            </Animated.View>
           )}
         </View>
       </View>

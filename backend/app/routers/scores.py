@@ -1228,6 +1228,71 @@ def list_scores(
     return _with_image_urls(response.data or [])
 
 
+class CurrentScoreResponse(BaseModel):
+    """The piece Today offers, and when it was last played."""
+
+    score: ScoreResponse | None
+    #: When the newest take of it was recorded; null for a piece never played.
+    last_practiced_at: datetime | None = None
+
+
+@router.get("/current", response_model=CurrentScoreResponse)
+def current_score(user_id: UUID = Depends(current_user_id)) -> CurrentScoreResponse:
+    """The piece to continue, in one request.
+
+    **The app used to work this out itself in two sequential requests** — the
+    newest take, then the score it names — and only after `/v1/me` had
+    answered, so Today's title and Practice button waited on three round trips
+    in a row after signing in. The owner saw it: "they take like 2 seconds to
+    load and just appear all of a sudden" (2026-09-23). Here it is two indexed
+    reads next to the database instead of two trips across the internet.
+
+    The rule is the app's own, unchanged: the piece most recently *played*
+    (`analyses(user_id, created_at DESC)`, indexed), falling back to the newest
+    score for someone who has never recorded, or to nothing for an empty
+    library. A take whose score has since been deleted falls back the same way.
+
+    **Declared before `/{score_id}`**, which would otherwise take the path and
+    refuse "current" as a malformed UUID.
+    """
+    client = require_service_client()
+    latest = (
+        client.table("analyses")
+        .select("score_id,created_at")
+        .eq("user_id", str(user_id))
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    ).data or []
+    if latest and latest[0].get("score_id"):
+        played = (
+            client.table("scores")
+            .select("*")
+            .eq("id", str(latest[0]["score_id"]))
+            .eq("user_id", str(user_id))
+            .limit(1)
+            .execute()
+        ).data or []
+        if played:
+            return CurrentScoreResponse(
+                score=_with_image_urls(played, all_pages=True)[0],
+                last_practiced_at=latest[0].get("created_at"),
+            )
+
+    newest = (
+        client.table("scores")
+        .select("*")
+        .eq("user_id", str(user_id))
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    ).data or []
+    return CurrentScoreResponse(
+        score=_with_image_urls(newest, all_pages=True)[0] if newest else None,
+        last_practiced_at=None,
+    )
+
+
 @router.get("/{score_id}", response_model=ScoreResponse)
 def get_score(
     score_id: UUID,

@@ -36,6 +36,24 @@ export function listScores({
   return apiFetch<ScoreResponse[]>(`/v1/scores?${query}`);
 }
 
+/** What `GET /v1/scores/current` answers. */
+export interface CurrentScoreResponse {
+  /** The piece to continue; null for an empty library. */
+  score: ScoreResponse | null;
+  /** When its newest take was recorded; null for a piece never played. */
+  last_practiced_at: string | null;
+}
+
+/**
+ * GET /v1/scores/current — the piece Today offers, in one request.
+ *
+ * It was two requests in a row (the newest take, then its score) that could
+ * only start after `/v1/me`; the server now does both next to the database.
+ */
+export function getCurrentScore(): Promise<CurrentScoreResponse> {
+  return apiFetch<CurrentScoreResponse>('/v1/scores/current');
+}
+
 /** GET /v1/scores/:id */
 export function getScore(id: string): Promise<ScoreResponse> {
   return apiFetch<ScoreResponse>(`/v1/scores/${id}`);

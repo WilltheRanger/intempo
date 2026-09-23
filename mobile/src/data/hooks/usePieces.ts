@@ -40,6 +40,26 @@ export function useLibrary() {
 }
 
 /** The piece the Today screen leads with. */
+/**
+ * Ask for Today's piece as soon as there is a session, alongside `/v1/me`
+ * rather than after it.
+ *
+ * The app is held behind the account (`RootNavigator`'s gate) until `/v1/me`
+ * answers, and Today only mounts — and only then asks for its piece — once it
+ * has. Two waits in a row, and the owner watched the title and the Practice
+ * button "take like 2 seconds to load and just appear" after signing in
+ * (2026-09-23). Started here, the piece is usually in by the time the gate
+ * opens; `useCurrentPiece` then joins this request or reads its answer.
+ */
+export function prefetchCurrentPiece(client: QueryClient): void {
+  void client
+    .prefetchQuery({
+      queryKey: pieceKeys.current(),
+      queryFn: () => pieceSource.getCurrentPiece(),
+    })
+    .catch(() => {});
+}
+
 export function useCurrentPiece() {
   return useQuery<Piece | null>({
     queryKey: pieceKeys.current(),

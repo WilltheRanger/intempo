@@ -18,9 +18,9 @@ import {
   entrySheetTitle,
   type EntryScope,
 } from '../../lib/score/entryCopy';
-import { ChevronRight } from '../icons';
+import { TrailingChevron } from '../primitives/TrailingChevron';
 import type { ScoreJson } from '../../data/types';
-import { ICON_SIZE, ICON_STROKE_WIDTH, colors } from '../../design';
+import { colors } from '../../design';
 import { BottomSheet } from '../overlays/BottomSheet';
 import { StartBarPicker } from './StartBarPicker';
 import { TempoStepper } from '../practice/TempoStepper';
@@ -72,19 +72,6 @@ export interface PlaybackSettingsProps {
    */
   entry?: EntryScope;
   disabled?: boolean;
-  /**
-   * How these rows draw themselves.
-   *
-   * `panel` is the score reader: a bounded group of its own, set off from the
-   * content above it by a margin and closed with a bottom rule, because
-   * nothing else on that screen shares its rhythm.
-   *
-   * `row` is the record panel, where this is one of five settings in a single
-   * list and the group treatment is exactly what makes it look like a second
-   * list. It takes `rowMetrics`' padding and drops the margin and the closing
-   * rule, so the hairline above it is the same divider every neighbour draws.
-   */
-  density?: 'panel' | 'row';
 }
 
 /**
@@ -111,9 +98,7 @@ export function PlaybackSettings({
   entry = 'listen',
   score = null,
   disabled = false,
-  density = 'panel',
 }: PlaybackSettingsProps) {
-  const inList = density === 'row';
   const [pickingBar, setPickingBar] = useState(false);
   const [pickingTempo, setPickingTempo] = useState(false);
 
@@ -178,41 +163,27 @@ export function PlaybackSettings({
       and the value touching. Measured: "Listen fromBar 1" on a 290pt row
       inside a 390pt screen.
     */
-    <View style={inList ? styles.settingsInList : styles.settings}>
+    <View style={styles.settings}>
       {canPickBar ? (
         <Pressable
           onPress={() => setPickingBar(true)}
           disabled={disabled}
           accessibilityRole="button"
           accessibilityLabel={entryAccessibilityLabel(entry, fromMeasure)}
-          style={({ pressed }) => [
-            styles.settingRow,
-            inList && styles.settingRowInList,
-            pressed && (inList ? styles.pressedInList : styles.pressed),
-          ]}
+          style={({ pressed }) => [styles.row, pressed && styles.pressed]}
         >
           {/* The words depend on what the bar governs — see `entryCopy`. */}
           <Text
-            variant={inList ? 'button' : 'body'}
+            variant="rowLabel"
             color={disabled ? 'textTertiary' : 'textPrimary'}
-            style={inList ? undefined : styles.rowText}
+            style={styles.label}
           >
             {entryRowLabel(entry)}
           </Text>
-          <View style={styles.settingValue}>
-            <Text
-              variant={inList ? 'metadata' : 'body'}
-              color={disabled || inList ? 'textTertiary' : 'textSecondary'}
-              style={inList ? undefined : styles.rowText}
-            >
-              Bar {fromMeasure}
-            </Text>
-            <ChevronRight
-              size={ICON_SIZE.sm}
-              strokeWidth={ICON_STROKE_WIDTH}
-              color={disabled ? colors.textTertiary : colors.textSecondary}
-            />
-          </View>
+          <Text variant="rowLabel" color={disabled ? 'textTertiary' : 'textSecondary'}>
+            Bar {fromMeasure}
+          </Text>
+          <TrailingChevron />
         </Pressable>
       ) : null}
 
@@ -222,7 +193,7 @@ export function PlaybackSettings({
           disabled={disabled}
           accessibilityRole="button"
           accessibilityLabel={`Playback tempo ${formatTempo(bpm, beatUnit)}. Change.`}
-          style={({ pressed }) => [styles.settingRow, pressed && styles.pressed]}
+          style={({ pressed }) => [styles.row, pressed && styles.pressed]}
         >
           {/*
             "Listen at", not "Tempo". The number beside it is the *playback*
@@ -231,26 +202,16 @@ export function PlaybackSettings({
             the confusion `tempoBeatUnit` already exists to prevent.
           */}
           <Text
-            variant="body"
+            variant="rowLabel"
             color={disabled ? 'textTertiary' : 'textPrimary'}
-            style={styles.rowText}
+            style={styles.label}
           >
             Listen at
           </Text>
-          <View style={styles.settingValue}>
-            <Text
-              variant="body"
-              color={disabled ? 'textTertiary' : 'textSecondary'}
-              style={styles.rowText}
-            >
-              {formatTempo(bpm, beatUnit)}
-            </Text>
-            <ChevronRight
-              size={ICON_SIZE.sm}
-              strokeWidth={ICON_STROKE_WIDTH}
-              color={disabled ? colors.textTertiary : colors.textSecondary}
-            />
-          </View>
+          <Text variant="rowLabel" color={disabled ? 'textTertiary' : 'textSecondary'}>
+            {formatTempo(bpm, beatUnit)}
+          </Text>
+          <TrailingChevron />
         </Pressable>
       ) : null}
 
@@ -291,76 +252,36 @@ export function PlaybackSettings({
 
 const styles = StyleSheet.create({
   /**
-   * The redesign's row type (`redesign/PieceScore.dc.html`): the name in ink
-   * and the value it is set to in secondary, both at 15 — the name is what
-   * the row is, the value is what it currently says.
-   */
-  rowText: {
-    fontSize: 15,
-    lineHeight: 20,
-  },
-  /*
-    `target` and `row` are gone with the line form they dressed. `target`
-    padded an 18pt line of `metadataSmall` out to a real touch target — a note
-    worth keeping because it is why the rows below carry `MIN_TOUCH_TARGET`
-    rather than trusting their text to be tall enough, and because padding is
-    in the layout and can be measured where `hitSlop` cannot.
-  */
-  pressed: {
-    opacity: 0.6,
-  },
-  /**
-   * The same acknowledgement `LinkRow` gives, for the row form.
+   * The app's list row (`rowMetrics`, `typography.rowLabel`, `TrailingChevron`),
+   * the same as the score's own action rows under it.
    *
-   * Not `pressed`'s flat 0.6: a row that only dims reads as going *away* under
-   * the finger, where a row that also takes the pressed surface reads as being
-   * held. Design law "a tap gets an immediate response".
+   * **These were their own row until 2026-09-23**: 44pt with a 16pt chevron,
+   * in a group closed by a bottom rule and set off by a margin — so on the
+   * score screen "Listen from" and "Listen at" sat in a shorter list of their
+   * own above "See every bar" and "Change the clef", with a gap between the
+   * two. The owner: "Why not evenly spaced". One list now, one rhythm.
    */
-  pressedInList: {
-    backgroundColor: colors.surfacePressed,
-    opacity: 0.88,
-  },
-  /** No margin, no closing rule: the list around it owns both. */
-  settingsInList: {
+  settings: {
     alignSelf: 'stretch',
+    marginTop: spacing.lg,
   },
-  settingRowInList: {
+  row: {
+    // **Full width, whatever the parent centres.** A `space-between` row that
+    // is only as wide as its content puts the name and the value touching.
+    alignSelf: 'stretch',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    minHeight: MIN_TOUCH_TARGET,
     paddingVertical: ROW_PADDING_VERTICAL,
     borderTopWidth: BORDER_WIDTH,
     borderTopColor: colors.border,
   },
-  settings: {
-    alignSelf: 'stretch',
-    /*
-      **The group is bounded, not each row.** Every row carrying a rule top and
-      bottom drew two hairlines with a gap between them wherever two rows
-      stacked — visible the moment the score screen gained a second setting.
-      A top rule per row and one bottom rule on the group is the same shape the
-      screen's action rows use, and it reads as a list rather than as two
-      separate boxes.
-    */
-    marginTop: spacing.lg,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
+  label: {
+    flex: 1,
   },
-  settingRow: {
-    // **Full width, whatever the parent centres.** The Record screen's control
-    // column centres its children, and a `space-between` row that is only as
-    // wide as its content puts "Start at" and "Bar 1" touching. A setting row
-    // spans the screen the way every other setting row in the app does.
-    alignSelf: 'stretch',
-    minHeight: MIN_TOUCH_TARGET,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: spacing.sm,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
-  },
-  settingValue: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
+  pressed: {
+    opacity: 0.6,
   },
   tempoSheet: {
     paddingBottom: spacing.lg,

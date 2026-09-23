@@ -30,9 +30,22 @@ export function chevronOutset(size: number, strokeWidth: number): number {
  */
 const SIZE = 22;
 
+/**
+ * The row's text line. The chevron's 22pt box is taller than it, and left in
+ * the layout it made every row with a chevron 2pt taller than the row beside
+ * it without one — Profile's "Email" under "Analyses". A negative margin of
+ * the difference keeps the glyph where it is and out of the row's height.
+ */
+const ROW_LINE = 20;
+
 export function TrailingChevron() {
   return (
-    <View style={{ marginRight: -chevronOutset(SIZE, ICON_STROKE_WIDTH) }}>
+    <View
+      style={{
+        marginRight: -chevronOutset(SIZE, ICON_STROKE_WIDTH),
+        marginVertical: (ROW_LINE - SIZE) / 2,
+      }}
+    >
       <ChevronRight size={SIZE} strokeWidth={ICON_STROKE_WIDTH} color={colors.textTertiary} />
     </View>
   );
