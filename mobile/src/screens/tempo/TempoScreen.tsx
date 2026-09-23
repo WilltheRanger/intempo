@@ -159,9 +159,6 @@ export function TempoScreen() {
     >
       {setup ? (
         <View style={styles.head}>
-          <Text variant="eyebrow" color="textTertiary" style={styles.eyebrow}>
-            Step 3 of 3
-          </Text>
           <Text variant="screenTitle" accessibilityRole="header" style={styles.title}>
             Set your tempo
           </Text>
@@ -169,9 +166,6 @@ export function TempoScreen() {
       ) : (
         <View style={styles.head}>
           <BackLink label="Back" onPress={goBack} />
-          <Text variant="eyebrow" color="textTertiary" style={styles.eyebrow} numberOfLines={1}>
-            {piece.title}
-          </Text>
           <Text variant="screenTitle" accessibilityRole="header" style={styles.title}>
             Tempo
           </Text>
@@ -296,10 +290,6 @@ export function TempoScreen() {
 const styles = StyleSheet.create({
   head: {
     paddingTop: spacing.md,
-  },
-  eyebrow: {
-    marginTop: spacing.xs,
-    textTransform: 'uppercase',
   },
   title: {
     marginTop: 6,

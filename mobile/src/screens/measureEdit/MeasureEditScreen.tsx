@@ -310,9 +310,6 @@ export function MeasureEditScreen() {
       */}
       <View style={styles.head}>
         <BackLink label="Back to score" onPress={goBack} />
-        <Text variant="eyebrow" color="textTertiary" numberOfLines={1} style={styles.eyebrow}>
-          {piece.title}
-        </Text>
         <View style={styles.barLine} accessibilityRole="header">
           <Text style={styles.barName}>Bar {params.measureNumber}</Text>
           <Text color="textTertiary" style={styles.barName}>
@@ -745,11 +742,6 @@ const styles = StyleSheet.create({
   },
   head: {
     paddingTop: spacing.md,
-  },
-  eyebrow: {
-    textTransform: 'uppercase',
-    marginTop: spacing.xs,
-    marginBottom: 6,
   },
   barLine: {
     flexDirection: 'row',

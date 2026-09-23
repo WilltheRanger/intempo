@@ -11,7 +11,6 @@ import { BORDER_WIDTH, colors, spacing } from '../../design';
 import type { PreflightCheck } from '../../lib/record/preflight';
 
 interface PracticeSetupProps {
-  title: string;
   /** What the app can actually tell about this take, warnings first. */
   checks: PreflightCheck[];
   onBack: () => void;
@@ -44,7 +43,6 @@ interface PracticeSetupProps {
  * is the kind that stays wrong quietly.
  */
 export function PracticeSetup({
-  title,
   checks,
   onBack,
   onContinue,
@@ -59,15 +57,12 @@ export function PracticeSetup({
       }
     >
       {/*
-        **The checks are the subject; the piece is the context.**
-
-        This had the piece as the screen title *and* a second heading of the
-        same weight under it — two competing focal points (§3 law 4). At 320pt
-        with a real repertoire title that was four lines of serif before the
-        actual subject of the screen.
+        **The checks are the subject.** This had the piece as the screen title
+        and a second heading under it — two competing focal points (§3 law 4)
+        — and then the piece as a grey line over the title, which the owner
+        cut with every other one (2026-09-23). The back link names it.
       */}
       <PageHeader
-        eyebrow={title}
         title="Ready when you are"
         onBack={onBack}
         backLabel="Back to the piece"

@@ -156,7 +156,6 @@ export function ProofReadScreen() {
       }
     >
       <PageHeader
-        eyebrow={piece.title}
         title="Check the reading"
         onBack={goBack}
         backLabel="Back to score"

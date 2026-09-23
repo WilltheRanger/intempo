@@ -18,8 +18,6 @@ export interface PageHeaderProps {
    * the 32x44 back button comes back.
    */
   title?: string;
-  /** Small line above the title — a date, a count. Omitted when null. */
-  eyebrow?: string | null;
   /**
    * Optional control aligned with the title, for a screen-level action that
    * shouldn't span the full width. Keep it compact — the title leads.
@@ -52,10 +50,19 @@ export interface PageHeaderProps {
   titleSize?: 'screen' | 'hero';
 }
 
-/** The serif screen title, with an optional line of context above it. */
+/**
+ * The serif screen title, under a back control when the screen was pushed.
+ *
+ * **No line of context above the title** (owner, 2026-09-23: "remove this
+ * subtitle from everything that has something like it. Makes it look
+ * crowded"). Pushed screens stacked a back link, a small grey line — the
+ * piece's name, a composer, a step count, a version — and the title: three
+ * lines before any content, and the middle one restated where the back link
+ * had just come from. The prop is gone rather than unused, so it does not
+ * come back one screen at a time.
+ */
 export function PageHeader({
   title,
-  eyebrow,
   action,
   onBack,
   backLabel = 'Back',
@@ -80,12 +87,6 @@ export function PageHeader({
           */}
           <IconButton icon={ChevronLeft} label={backLabel} onPress={onBack} />
         </View>
-      ) : null}
-
-      {eyebrow ? (
-        <Text variant="metadata" color="textTertiary" style={styles.eyebrow}>
-          {eyebrow}
-        </Text>
       ) : null}
 
       {title || action ? (
@@ -121,9 +122,6 @@ const styles = StyleSheet.create({
     // than sitting indented by its own padding. On the row because putting it
     // on the button costs the button 12pt of touch target — see above.
     marginLeft: -spacing.md,
-  },
-  eyebrow: {
-    marginBottom: spacing.sm,
   },
   titleRow: {
     flexDirection: 'row',

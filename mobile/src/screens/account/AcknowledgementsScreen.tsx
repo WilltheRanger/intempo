@@ -34,7 +34,6 @@ export function AcknowledgementsScreen() {
         what the screen actually holds, and is the term the stores use.
       */}
       <PageHeader
-        eyebrow={`${LICENCES.length} packages`}
         title="Open source"
         onBack={goBack}
         backLabel="Back to profile"

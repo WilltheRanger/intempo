@@ -333,7 +333,6 @@ export function PieceScoreScreen() {
     return (
       <ScreenContainer>
         <PageHeader
-          eyebrow={piece.composer}
           title={piece.title}
           titleSize="hero"
           onBack={goBack}
@@ -351,7 +350,6 @@ export function PieceScoreScreen() {
     return (
       <ScreenContainer>
         <PageHeader
-          eyebrow={piece.composer}
           title={piece.title}
           titleSize="hero"
           onBack={goBack}

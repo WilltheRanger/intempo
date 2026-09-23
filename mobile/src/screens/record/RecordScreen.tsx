@@ -1065,7 +1065,6 @@ export function RecordScreen() {
   if (showSetup) {
     return (
       <PracticeSetup
-        title={piece.title}
         checks={checks}
         onResolve={(to) => {
           // Both remedies live on the recording screen, so the way to offer

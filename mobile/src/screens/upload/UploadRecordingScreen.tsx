@@ -201,9 +201,6 @@ export function UploadRecordingScreen() {
     >
       <View style={styles.head}>
         <BackLink label="Back to recording" onPress={leave} />
-        <Text variant="eyebrow" color="textTertiary" style={styles.eyebrow} numberOfLines={1}>
-          {piece.title}
-        </Text>
         <Text variant="heroTitle" accessibilityRole="header">
           Upload a recording
         </Text>
@@ -360,11 +357,6 @@ const styles = StyleSheet.create({
   head: {
     paddingTop: spacing.xs,
     paddingBottom: 34,
-  },
-  eyebrow: {
-    marginTop: 2,
-    marginBottom: spacing.xs,
-    textTransform: 'uppercase',
   },
   // Full width: the band cancels the screen's gutter and puts it back inside.
   band: {

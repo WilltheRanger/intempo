@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useGoBack } from '../../navigation/useGoBack';
 
-import appConfig from '../../../app.json';
 import {
   Card,
   PageHeader,
@@ -107,7 +106,6 @@ export function HelpScreen() {
   return (
     <ScreenContainer>
       <PageHeader
-        eyebrow={`Version ${appConfig.expo.version}`}
         title="Help & connection"
         onBack={goBack}
         backLabel="Back to profile"
