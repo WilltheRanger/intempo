@@ -42,7 +42,7 @@ from fastapi import HTTPException
 import pytest
 
 from app.models.user import MeResponse, UpdateMeRequest, UsageResponse
-from app.routers.analyses import AnalysisResponse, CreateAnalysisRequest
+from app.routers.analyses import AnalysisResponse, CaptureReport, CreateAnalysisRequest
 from app.routers.corrections import Correction
 from app.routers.scores import (
     AttachScorePagesRequest,
@@ -63,6 +63,10 @@ BACKEND_APP = REPO / "backend" / "app"
 #: (file under `mobile/src`, TypeScript interface, the model it is sent to).
 PAIRS: tuple[tuple[str, str, type], ...] = (
     ("data/api/analyses.ts", "CreateAnalysisInput", CreateAnalysisRequest),
+    # Nested under `capture`. The model ignores unknown keys rather than
+    # forbidding them, so a misspelt field would be dropped in silence rather
+    # than refused — which is exactly why it is held here.
+    ("data/api/analyses.ts", "CaptureReportBody", CaptureReport),
     ("data/api/me.ts", "UpdateMeInput", UpdateMeRequest),
     ("data/api/scores.ts", "TranscribedScoreInput", CreateScoreRequest),
     ("data/api/scores.ts", "HandEnteredScoreInput", CreateScoreRequest),
