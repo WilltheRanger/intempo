@@ -341,9 +341,14 @@ export function VerdictScreen() {
         />
       }
     >
+      {/*
+        `popTo`, not `navigate`: a verdict is reached *from* the piece, and
+        `navigate` pushed a second copy of it on top of this one — whose own
+        back then came here again (see `useGoBack`).
+      */}
       <BackLink
         label="Back to the piece"
-        onPress={() => navigation.navigate('PieceDetail', { pieceId: take.pieceId })}
+        onPress={() => navigation.popTo('PieceDetail', { pieceId: take.pieceId })}
       />
       <Text variant="screenTitle" accessibilityRole="header">
         {take.lowConfidence ? 'Timing is uncertain' : formatTakeVerdict(take.measures)}

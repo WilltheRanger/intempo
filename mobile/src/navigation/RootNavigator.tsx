@@ -1,12 +1,14 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useIsFocused } from '@react-navigation/native';
+import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { Animated, Platform, StyleSheet, View, type ViewStyle } from 'react-native';
 
 import { useArrival } from '../data/arrival';
 import { useAuthStatus } from '../data/auth/useAuthStatus';
 import { useMe } from '../data/hooks/useMe';
+import { prefetchCurrentPiece } from '../data/hooks/usePieces';
 import { preferences } from '../data/preferences';
 import { EASE_OUT, colors, motion } from '../design';
 import { shouldOnboard } from '../lib/onboarding';
@@ -257,6 +259,14 @@ function SignedInApp() {
     preferences.adoptAccountInstrument(me?.instrument);
   }, [me?.instrument]);
 
+  // Today's piece, asked for alongside the account rather than after the gate
+  // below opens (`prefetchCurrentPiece`). Once per sign-in: this component
+  // mounts with the session and unmounts when it ends.
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    prefetchCurrentPiece(queryClient);
+  }, [queryClient]);
+
   const arrived = useArrival();
 
   // Restore the account before mounting any tab. A failed /v1/me used to open
@@ -322,7 +332,16 @@ function SignedInApp() {
         name="TranscriptionReview"
         component={TranscriptionReviewScreen}
       />
-      <Stack.Screen name="PieceDetail" component={PieceDetailScreen} />
+      {/*
+        One entry per piece, known by its id, so `popTo('PieceDetail', …)`
+        returns to *this* piece's screen rather than to whichever piece is
+        nearest in the stack.
+      */}
+      <Stack.Screen
+        name="PieceDetail"
+        component={PieceDetailScreen}
+        getId={({ params }) => params?.pieceId}
+      />
       <Stack.Screen name="PieceScore" component={PieceScoreScreen} />
       <Stack.Screen name="MeasureEdit" component={MeasureEditScreen} />
       <Stack.Screen name="ProofRead" component={ProofReadScreen} />

@@ -43,18 +43,26 @@ export function useGoBack(fallback: BackTarget): () => void {
       navigation.goBack();
       return;
     }
+    /*
+      **`popTo`, never `navigate`.** In React Navigation 7, `navigate` to a
+      screen that is not the current one *pushes* a new copy of it — so on a
+      screen with nothing behind it (a reload on the web rebuilds the stack
+      from the URL, and a deep link starts one) "back" put the destination on
+      top of the screen being left. The destination's own back then returned
+      here, which pushed it again: the owner found exactly that loop between a
+      piece and its score (2026-09-23). `popTo` goes back to the destination
+      if it is in the stack and otherwise *replaces* this screen with it,
+      which is what back means.
+    */
     if ('tab' in fallback) {
-      // Through `Tabs`, because a tab is not a route on the root stack. Passing
-      // the tab as a nested screen also *replaces* rather than stacking, which
-      // is what "back" should do — arriving at Today with a back arrow to a
-      // screen you were never on is its own kind of wrong.
-      navigation.navigate('Tabs', { screen: fallback.tab } as never);
+      // Through `Tabs`, because a tab is not a route on the root stack.
+      navigation.popTo('Tabs', { screen: fallback.tab } as never);
       return;
     }
-    // The union of every route and its own params is exactly what
-    // `navigate` accepts, and exactly what TypeScript cannot narrow across a
-    // mapped type. Cast once, here, rather than at twenty call sites.
-    (navigation.navigate as (route: string, params?: object) => void)(
+    // The union of every route and its own params is exactly what `popTo`
+    // accepts, and exactly what TypeScript cannot narrow across a mapped type.
+    // Cast once, here, rather than at twenty call sites.
+    (navigation.popTo as (route: string, params?: object) => void)(
       fallback.route,
       fallback.params as object | undefined,
     );

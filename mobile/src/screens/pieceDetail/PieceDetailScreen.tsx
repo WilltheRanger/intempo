@@ -10,7 +10,6 @@ import {
 } from '../../components/icons';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { useGoBack } from '../../navigation/useGoBack';
 import { ComposerField } from '../../components/pieces/ComposerField';
 
 import { BottomSheet } from '../../components/overlays/BottomSheet';
@@ -73,7 +72,18 @@ const OPENING_HEIGHT = 150;
  */
 export function PieceDetailScreen() {
   const navigation = useNavigation<RootNavigation>();
-  const goBack = useGoBack({ tab: 'Library' });
+  /**
+   * "Back to library" goes to the Library, whatever is under this screen.
+   *
+   * It was `goBack`, which goes to *whatever is under this screen* — and a
+   * piece is opened from its score, its takes and its verdicts as well as from
+   * the shelf. With any of those beneath it, "Back to library" went back to
+   * that screen, whose own "Back to the piece" came here again: the owner
+   * found the loop between a piece, its score and Practice (2026-09-23).
+   * `popTo` unwinds to the tabs and shows the Library, or replaces this screen
+   * with them when it is the only one (a reload on the web).
+   */
+  const goBack = () => navigation.popTo('Tabs', { screen: 'Library' } as never);
   const { params } = useRoute<RouteProp<RootStackParamList, 'PieceDetail'>>();
   const { data: piece, isError } = usePiece(params.pieceId);
   // **Not part of `load`.** A piece whose history fails to arrive is still a

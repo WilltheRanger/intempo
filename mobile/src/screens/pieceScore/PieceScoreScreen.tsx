@@ -25,6 +25,7 @@ import {
   SecondaryButton,
   SegmentedControl,
   Text,
+  ToggleRow,
 } from '../../components/primitives';
 import { BottomSheet } from '../../components/overlays/BottomSheet';
 import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
@@ -465,6 +466,20 @@ export function PieceScoreScreen() {
   const proposals = proposalsFor(piece.score, instrument);
   const showToggle = hasNotation && hasPages;
   const showing: ScoreView = showToggle ? view : hasNotation ? 'notation' : 'original';
+  // The listening rows are drawn and nothing is written between them and the
+  // action rows, so the action rows continue their list. A note about the
+  // reading in between (what was left out, how sure the reader was, an unread
+  // clef) is a break, and the actions start a list of their own after it.
+  const listening = showing === 'notation' && hasNotation && stave !== null;
+  const noteBetween =
+    listening &&
+    Boolean(
+      describeOmissions(stave) ||
+        (reading && !piece.transcriptionAccepted && describeConfidence(reading.confidence)) ||
+        reading?.notes ||
+        !piece.score?.clef,
+    );
+  const continuesList = listening && !noteBetween;
 
   return (
     <ScreenContainer key={showing}>
@@ -690,32 +705,17 @@ export function PieceScoreScreen() {
               anybody can answer.
             */}
           {skippable > 0 ? (
-            <Pressable
-              accessibilityRole="switch"
-              // The ARIA props, not `accessibilityState`: react-native-web
-              // drops `checked` entirely, so the web build would announce a
-              // switch with no on or off. Same reasoning as the metronome
-              // toggle on the record screen.
-              aria-checked={skipRests}
-              accessibilityLabel="Skip long rests"
-              onPress={() => setSkipRests((on) => !on)}
-              style={({ pressed }) => [styles.skipToggle, pressed && styles.pressed]}
-            >
-              {/*
-                Not gold when on. At 13px the accent is 3.54:1, under the
-                4.5:1 floor — the record screen learned this and `audit-a11y`
-                holds the line. The words carry the state; the weight of the
-                colour says whether the line does anything.
-              */}
-              <Text
-                variant="metadataSmall"
-                color={skipRests ? 'textPrimary' : 'textTertiary'}
-              >
-                {skipRests
-                  ? `Skipping ${skippable} bars of rest`
-                  : `Skip ${skippable} bars of rest`}
-              </Text>
-            </Pressable>
+            /*
+              A switch row in the same list as "Listen from" and "Listen at",
+              rather than a line of small type under it: it is a listening
+              setting like them, and a third rhythm in one list is what the
+              owner called not "evenly spaced" (2026-09-23).
+            */
+            <ToggleRow
+              label={skipRests ? `Skipping ${skippable} bars of rest` : `Skip ${skippable} bars of rest`}
+              value={skipRests}
+              onChange={setSkipRests}
+            />
           ) : null}
         </>
       ) : null}
@@ -792,11 +792,17 @@ export function PieceScoreScreen() {
             uses for its destinations, and a chevron means it opens, which
             these do (§3 — a drawn affordance does the thing it depicts).
           */}
-          <View style={styles.actions}>
+          {/*
+            **The same list as the listening rows, not a second one.** It had
+            its own margin and an unruled first row, under a group that closed
+            itself with a bottom rule — two lists, two rhythms, a gap between.
+            Now every row is ruled on top, and the margin is there only when
+            there is no list directly above to continue (`continuesList`).
+          */}
+          <View style={continuesList ? undefined : styles.actions}>
             {piece.score && piece.score.measures.length > 0 ? (
               <ScoreAction
                 label="See every bar"
-                divided={false}
                 onPress={() => setPickingMeasure(true)}
               />
             ) : null}
