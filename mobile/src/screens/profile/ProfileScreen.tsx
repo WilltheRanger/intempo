@@ -323,7 +323,7 @@ export function ProfileScreen() {
 
       <RuledHeading label="Practice" rule="borderStrong" style={styles.section} />
       <View style={[styles.setting, styles.settingFirst]}>
-        <Text variant="body" style={styles.settingTitle}>
+        <Text variant="rowLabel" style={styles.settingTitle}>
           Instrument
         </Text>
         <SegmentedControl
@@ -335,7 +335,7 @@ export function ProfileScreen() {
       </View>
 
       <View style={styles.setting}>
-        <Text variant="body" style={styles.settingTitle}>
+        <Text variant="rowLabel" style={styles.settingTitle}>
           Metronome
         </Text>
         <SegmentedControl
@@ -552,8 +552,6 @@ const styles = StyleSheet.create({
     borderTopWidth: 0,
   },
   settingTitle: {
-    fontSize: 15,
-    lineHeight: 20,
     marginBottom: 10,
   },
   /**

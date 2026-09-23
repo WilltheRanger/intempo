@@ -53,6 +53,7 @@ import { chooseAudioFile } from '../record/chooseAudioFile';
 import { StartFromSheet } from '../record/StartFromSheet';
 import { usePreviewPlayback } from './usePreviewPlayback';
 import { TrailingChevron } from '../../components/primitives/TrailingChevron';
+import { ROW_PADDING_VERTICAL } from '../../components/rowMetrics';
 
 /** The waveform's bars: 2pt wide on a 5.1pt step, as the prototype draws. */
 const BAR_WIDTH = 2;
@@ -281,10 +282,10 @@ export function UploadRecordingScreen() {
 
       <View style={styles.rows}>
         <View style={styles.row}>
-          <Text variant="sectionLabel" style={styles.rowLabel}>
+          <Text variant="rowLabel" style={styles.rowLabel}>
             Piece
           </Text>
-          <Text variant="body" color="textSecondary" numberOfLines={1} style={styles.rowValue}>
+          <Text variant="rowLabel" color="textSecondary" numberOfLines={1} style={styles.rowValue}>
             {piece.title}
           </Text>
         </View>
@@ -294,10 +295,10 @@ export function UploadRecordingScreen() {
           accessibilityLabel={`Start at bar ${startFrom}. Change where the recording begins.`}
           style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
         >
-          <Text variant="sectionLabel" style={styles.rowLabel}>
+          <Text variant="rowLabel" style={styles.rowLabel}>
             Start at
           </Text>
-          <Text variant="body" color="textSecondary" style={styles.rowValue}>
+          <Text variant="rowLabel" color="textSecondary" style={styles.rowValue}>
             Bar {startFrom}
           </Text>
           <TrailingChevron />
@@ -308,10 +309,10 @@ export function UploadRecordingScreen() {
           accessibilityLabel={`Target tempo ${displayTempoBpm(targetBpm, unit)} ${tempoUnitLabel(unit)}. Change it`}
           style={({ pressed }) => [styles.row, styles.lastRow, pressed && styles.rowPressed]}
         >
-          <Text variant="sectionLabel" style={styles.rowLabel}>
+          <Text variant="rowLabel" style={styles.rowLabel}>
             Target tempo
           </Text>
-          <Text variant="body" color="textSecondary" style={styles.rowValue}>
+          <Text variant="rowLabel" color="textSecondary" style={styles.rowValue}>
             {displayTempoBpm(targetBpm, unit)} {tempoUnitLabel(unit)}
           </Text>
           <TrailingChevron />
@@ -447,7 +448,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.md,
     minHeight: 44,
-    paddingVertical: 14,
+    paddingVertical: ROW_PADDING_VERTICAL,
     borderTopWidth: BORDER_WIDTH,
     borderTopColor: colors.border,
   },
@@ -463,8 +464,6 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   rowValue: {
-    fontSize: 15,
-    lineHeight: 20,
     flexShrink: 1,
   },
   cost: {

@@ -38,8 +38,6 @@ import {
 import {
   BORDER_WIDTH,
   colors,
-  ICON_SIZE,
-  ICON_STROKE_WIDTH,
   MIN_TOUCH_TARGET,
   pressedOpacity,
   radii,
@@ -1134,16 +1132,10 @@ function ScoreAction({
       ]}
     >
       <View style={styles.actionCopy}>
-        <Text variant="body" style={styles.actionLabel}>
-          {label}
-        </Text>
+        <Text variant="rowLabel">{label}</Text>
       </View>
       {/* A chevron means it opens, and each of these opens something. */}
-      <TrailingChevron
-        size={ICON_SIZE.md}
-        strokeWidth={ICON_STROKE_WIDTH}
-        color={colors.textTertiary}
-      />
+      <TrailingChevron />
     </Pressable>
   );
 }
@@ -1157,10 +1149,6 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
     fontSize: 26,
     lineHeight: 31,
-  },
-  actionLabel: {
-    fontSize: 15,
-    lineHeight: 20,
   },
   /*
     Every tappable thing on this screen acknowledges the touch. These were bare

@@ -6,8 +6,6 @@ import type { Piece } from '../../data/types';
 import {
   BORDER_WIDTH,
   colors,
-  ICON_SIZE,
-  ICON_STROKE_WIDTH,
   MIN_TOUCH_TARGET,
   radii,
   spacing,
@@ -109,11 +107,7 @@ export function PieceRow({ piece, onPress, divided = false }: PieceRowProps) {
         opens. It is the only mark on the row, and it replaces the thumbnail as
         the thing that tells the eye where one entry ends and the next begins.
       */}
-      <TrailingChevron
-        size={ICON_SIZE.md}
-        strokeWidth={ICON_STROKE_WIDTH}
-        color={colors.textTertiary}
-      />
+      <TrailingChevron />
     </PressableScale>
   );
 }

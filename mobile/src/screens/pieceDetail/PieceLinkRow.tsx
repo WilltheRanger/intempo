@@ -2,7 +2,8 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { type LucideIcon } from '../../components/icons';
 import { Text } from '../../components/primitives/Text';
-import { BORDER_WIDTH, colors, MIN_TOUCH_TARGET, ICON_SIZE, ICON_STROKE_WIDTH } from '../../design';
+import { ROW_PADDING_VERTICAL } from '../../components/rowMetrics';
+import { BORDER_WIDTH, colors, MIN_TOUCH_TARGET, ICON_SIZE, ICON_STROKE_WIDTH, spacing } from '../../design';
 import { TrailingChevron } from '../../components/primitives/TrailingChevron';
 
 /**
@@ -10,8 +11,10 @@ import { TrailingChevron } from '../../components/primitives/TrailingChevron';
  * name, one line saying what is behind it, and a chevron — "Digital score",
  * "Original pages", "Rename".
  *
- * The glyph is tertiary and thin: it tells the rows apart at a glance and
- * then gets out of the way of the words. Every row has its own top hairline.
+ * The glyph is secondary, not tertiary. It was the redesign's 19pt at a 1.5
+ * stroke in the faintest grey, which beside a 15pt label in full ink read as a
+ * watermark rather than as part of the row (the owner circled these on
+ * 2026-09-23). Every row has its own top hairline.
  */
 export function PieceLinkRow({
   icon: Icon,
@@ -32,9 +35,9 @@ export function PieceLinkRow({
       accessibilityHint={description ?? undefined}
       style={({ pressed }) => [styles.row, pressed && styles.pressed]}
     >
-      <Icon size={ICON_SIZE.md} strokeWidth={ICON_STROKE_WIDTH} color={colors.textTertiary} />
+      <Icon size={ICON_SIZE.md} strokeWidth={ICON_STROKE_WIDTH} color={colors.textSecondary} />
       <View style={styles.text}>
-        <Text style={styles.label}>{label}</Text>
+        <Text variant="rowLabel">{label}</Text>
         {description ? (
           <Text variant="metadataSmall" color="textTertiary" style={styles.description}>
             {description}
@@ -50,9 +53,9 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 13,
+    gap: spacing.md,
     minHeight: MIN_TOUCH_TARGET,
-    paddingVertical: 13,
+    paddingVertical: ROW_PADDING_VERTICAL,
     borderTopWidth: BORDER_WIDTH,
     borderTopColor: colors.border,
   },
@@ -62,10 +65,6 @@ const styles = StyleSheet.create({
   text: {
     flex: 1,
     minWidth: 0,
-  },
-  label: {
-    fontSize: 15,
-    lineHeight: 20,
   },
   description: {
     marginTop: 2,

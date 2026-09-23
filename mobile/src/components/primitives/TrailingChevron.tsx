@@ -1,7 +1,7 @@
 import { View } from 'react-native';
 
 import { ChevronRight } from '../icons';
-import { colors } from '../../design';
+import { colors, ICON_STROKE_WIDTH } from '../../design';
 
 /**
  * The chevron at the end of a row, on the same right edge as everything else.
@@ -20,18 +20,20 @@ export function chevronOutset(size: number, strokeWidth: number): number {
   return (size * 9) / 24 - strokeWidth / 2;
 }
 
-export function TrailingChevron({
-  size = 17,
-  strokeWidth = 1.6,
-  color = colors.textTertiary,
-}: {
-  size?: number;
-  strokeWidth?: number;
-  color?: string;
-}) {
+/**
+ * **One size, set by the label** (2026-09-23). Rows drew it at 17 on some
+ * screens and 20 on others, and at 17 its ink was 8pt tall and hairline-thin
+ * beside a 15pt label — the rows the owner circled on Piece detail. iOS draws
+ * a disclosure chevron about as tall as its label's capitals; lucide's spans
+ * half its box, so a 22 box is an 11pt chevron beside 15pt Inter's 10.9pt caps,
+ * at the stroke every other icon uses.
+ */
+const SIZE = 22;
+
+export function TrailingChevron() {
   return (
-    <View style={{ marginRight: -chevronOutset(size, strokeWidth) }}>
-      <ChevronRight size={size} strokeWidth={strokeWidth} color={color} />
+    <View style={{ marginRight: -chevronOutset(SIZE, ICON_STROKE_WIDTH) }}>
+      <ChevronRight size={SIZE} strokeWidth={ICON_STROKE_WIDTH} color={colors.textTertiary} />
     </View>
   );
 }

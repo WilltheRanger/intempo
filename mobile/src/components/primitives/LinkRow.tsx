@@ -6,8 +6,6 @@ import {
   BORDER_WIDTH,
   colors,
   disabledOpacity,
-  ICON_SIZE,
-  ICON_STROKE_WIDTH,
   MIN_TOUCH_TARGET,
   spacing,
 } from '../../design';
@@ -77,7 +75,7 @@ export function LinkRow({
         disabled && styles.disabled,
       ]}
     >
-      <Text variant="button" color={disabled ? 'textTertiary' : 'textPrimary'} style={styles.label}>
+      <Text variant="rowLabel" color={disabled ? 'textTertiary' : 'textPrimary'} style={styles.label}>
         {label}
       </Text>
 
@@ -92,11 +90,7 @@ export function LinkRow({
             {value}
           </Text>
         ) : null}
-        <TrailingChevron
-          size={ICON_SIZE.md}
-          strokeWidth={ICON_STROKE_WIDTH}
-          color={colors.textTertiary}
-        />
+        <TrailingChevron />
       </View>
     </PressableScale>
   );
