@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
-import { persistQueryClient } from '@tanstack/react-query-persist-client';
+import { persistQueryClient, type PersistedClient } from '@tanstack/react-query-persist-client';
 import type { QueryClient } from '@tanstack/react-query';
 
 import { IS_LIVE_BACKEND } from '../environment';
@@ -10,6 +10,7 @@ import {
   CACHE_KEY,
   MAX_AGE_MS,
   busterFor,
+  deserializeFromDisk,
   serializeForDisk,
   shouldPersist,
 } from './persistCache';
@@ -41,6 +42,9 @@ const persister = createAsyncStoragePersister({
   // The whole client, not a query's data: every rule turns on which query it
   // is, and the library's own `serializeData` hook is handed data with no key.
   serialize: (client) => serializeForDisk(client),
+  // Readings past their shelf life are judged here, on the way in — see
+  // `deserializeFromDisk` for why the way out cannot.
+  deserialize: (raw) => deserializeFromDisk(raw, Date.now()) as PersistedClient,
 });
 
 let stop: (() => void) | null = null;

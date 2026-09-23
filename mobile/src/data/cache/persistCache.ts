@@ -1,7 +1,8 @@
-import type { Piece } from '../types';
+import type { Musician, Piece } from '../types';
 
 /**
- * What of the library is written to the device, and what is thrown away.
+ * What of the library — and, since 2026-09-23, the account and the latest
+ * readings — is written to the device, and what is thrown away.
  *
  * **The app queues takes offline and could not read a note offline.** A take
  * recorded out of signal is kept and sent later (`lib/sync/takeDrainer`), which
@@ -70,19 +71,49 @@ export function busterFor(accountId: string): string {
   return `${CACHE_SHAPE}:${accountId}`;
 }
 
-type Kind = 'list' | 'current' | 'detail';
+type Kind = 'me' | 'list' | 'current' | 'detail' | 'insights' | 'takes';
+
+/**
+ * How long a kept reading is still worth showing: a day.
+ *
+ * Takes and the insights built from them are figures about the musician's
+ * playing, and a figure read back from last week with nothing saying so is the
+ * thing the original allow-list refused to write. A day old, it is what the
+ * screen said last night, shown for the second it takes the refetch to land —
+ * which is the whole of what the owner asked for ("stuff that still takes time
+ * to load", 2026-09-23). Older than that it is dropped on the way in
+ * (`deserializeFromDisk`) and the screen waits for the network as it did.
+ */
+export const READING_SHELF_LIFE_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Whether a query is one of the ones kept, and which kind it is.
  *
- * **An allow-list, not a deny-list.** Everything else in the cache either
- * expires (a signed recording URL), is cheap to refetch (the profile row), or
- * is a number that would be wrong the moment it was read back (this week's
- * practice minutes). Persisting a screen's worth of stale figures with nothing
- * saying they are stale is worse than the skeleton it replaces; a piece of
- * music is not, which is the whole distinction this list encodes.
+ * **An allow-list, not a deny-list.** It was pieces only: the account row was
+ * "cheap to refetch" and readings were "a number that would be wrong the
+ * moment it was read back". Both costs turned out to be paid on every launch
+ * — the whole app waits behind `/v1/me` (`RootNavigator`'s account gate), and
+ * Insights opened on a spinner — so the account and the latest readings are
+ * kept too, the account without its signed photo URL and the readings for a
+ * day (`READING_SHELF_LIFE_MS`). Every one of them refetches on mount; this
+ * decides only what is on screen while it does.
+ *
+ * A piece's take history (`['takes', 'history', id]`) is still not kept: it is
+ * per piece, grows without bound, and the piece screen already prefetches it
+ * on the way in.
  */
 export function persistedKind(queryKey: readonly unknown[]): Kind | null {
+  if (queryKey.length === 1 && queryKey[0] === 'me') {
+    return 'me';
+  }
+  if (queryKey.length === 1 && queryKey[0] === 'insights') {
+    return 'insights';
+  }
+  if (queryKey[0] === 'takes') {
+    const latest = queryKey.length === 2 && queryKey[1] === 'latest';
+    const recent = queryKey.length === 3 && queryKey[1] === 'recent';
+    return latest || recent ? 'takes' : null;
+  }
   if (queryKey[0] !== 'pieces') {
     return null;
   }
@@ -98,7 +129,7 @@ export function persistedKind(queryKey: readonly unknown[]): Kind | null {
   return null;
 }
 
-/** Successful piece queries, and nothing else. */
+/** Successful queries of the kinds above, and nothing else. */
 export function shouldPersist(queryKey: readonly unknown[], status: string): boolean {
   return status === 'success' && persistedKind(queryKey) !== null;
 }
@@ -129,7 +160,25 @@ export function pieceForDisk(piece: Piece, keepNotation: boolean): Piece {
   };
 }
 
+/**
+ * The account, without the one field that cannot survive the trip.
+ *
+ * `avatarUrl` is signed for an hour, like a piece's thumbnail, and a restored
+ * one is a broken image in the one circle every launch shows. `null` draws the
+ * initial, which is what the Profile avatar already draws before a photo
+ * exists; the refetch puts the photograph back a moment later.
+ */
+export function musicianForDisk(musician: Musician): Musician {
+  return { ...musician, avatarUrl: null };
+}
+
 function dataForDisk(kind: Kind, data: unknown): unknown {
+  if (kind === 'insights' || kind === 'takes') {
+    return data;
+  }
+  if (kind === 'me') {
+    return data && typeof data === 'object' ? musicianForDisk(data as Musician) : data;
+  }
   if (kind === 'list') {
     return Array.isArray(data) ? data.map((piece) => pieceForDisk(piece as Piece, false)) : data;
   }
@@ -152,8 +201,12 @@ interface StoredClient {
   clientState: { mutations: unknown[]; queries: StoredQuery[] };
 }
 
-/** Listing and today's piece first, then the pieces opened most recently. */
-const ORDER: Record<Kind, number> = { list: 0, current: 1, detail: 2 };
+/**
+ * The account first — it is small and the whole app waits on it — then the
+ * listing and today's piece, then the readings, then the pieces opened most
+ * recently, which are the ones a tight budget trims.
+ */
+const ORDER: Record<Kind, number> = { me: 0, list: 1, current: 2, insights: 3, takes: 4, detail: 5 };
 
 function inPriorityOrder(queries: StoredQuery[]): { kind: Kind; query: StoredQuery }[] {
   const kept = queries.flatMap((query) => {
@@ -210,4 +263,31 @@ export function serializeForDisk(client: StoredClient, budget = BUDGET_CHARS): s
   }
 
   return JSON.stringify({ ...empty, clientState: { mutations: [], queries } });
+}
+
+/**
+ * The stored cache as it comes back, with readings past their shelf life
+ * removed.
+ *
+ * On the way in rather than the way out, because the way out only runs when
+ * something in the cache changes: an app left closed for a week writes nothing
+ * in that week, and its last write would come back holding last week's
+ * readings. Anything that does not parse is passed through untouched — the
+ * library's own restore discards a malformed client, and this is not the place
+ * to decide otherwise.
+ */
+export function deserializeFromDisk(raw: string, now: number): StoredClient {
+  const client = JSON.parse(raw) as StoredClient;
+  const queries = client?.clientState?.queries;
+  if (!Array.isArray(queries)) {
+    return client;
+  }
+  const fresh = queries.filter((query) => {
+    const kind = persistedKind(query.queryKey);
+    if (kind !== 'insights' && kind !== 'takes') {
+      return true;
+    }
+    return now - (query.state.dataUpdatedAt ?? 0) <= READING_SHELF_LIFE_MS;
+  });
+  return { ...client, clientState: { ...client.clientState, queries: fresh } };
 }

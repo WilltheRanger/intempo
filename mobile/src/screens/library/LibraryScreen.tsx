@@ -18,6 +18,7 @@ import { describeLoadError } from '../../data/describeLoadError';
 import { useInsights } from '../../data/hooks/useInsights';
 import { prefetchPieceHistory } from '../../data/hooks/useLatestTake';
 import {
+  prefetchPiece,
   useDeletePiece,
   useLibrary,
   useRetranscribe,
@@ -143,10 +144,16 @@ export function LibraryScreen() {
         onClearSearch={() => setQuery('')}
         onRetry={() => void refresh()}
         retrying={library.isFetching}
+        onTouchPiece={(piece) => {
+          // From the moment the finger lands, not when it lifts: the piece
+          // and its history are usually in before the screen that needs them
+          // has drawn. See `prefetchPiece`.
+          prefetchPiece(queryClient, piece.id);
+          prefetchPieceHistory(queryClient, piece.id);
+        }}
         onOpenPiece={(piece) => {
-          // One tap earlier than the screen that needs it, so the history
-          // card is usually there on the first frame instead of dropping in
-          // afterwards. See `prefetchPieceHistory`.
+          // Again on the tap itself, for a keyboard, which presses without a
+          // finger landing first. Both are no-ops once the data is in.
           prefetchPieceHistory(queryClient, piece.id);
           navigation.navigate('PieceDetail', { pieceId: piece.id });
         }}
@@ -209,6 +216,7 @@ interface LibraryContentProps {
   query: string;
   onClearSearch: () => void;
   onOpenPiece: (piece: Piece) => void;
+  onTouchPiece: (piece: Piece) => void;
   /** Fetch again after a failure — see the comment on the error state below. */
   onRetry: () => void;
   retrying: boolean;
@@ -229,6 +237,7 @@ function LibraryContent({
   query,
   onClearSearch,
   onOpenPiece,
+  onTouchPiece,
   onRetry,
   retrying,
   onReadAgain,
@@ -323,6 +332,7 @@ function LibraryContent({
               piece={piece}
               divided={rowDivided(index)}
               onPress={() => onOpenPiece(piece)}
+              onPressIn={() => onTouchPiece(piece)}
             />
           </FadeIn>
         ))}
@@ -359,6 +369,7 @@ function LibraryContent({
                   piece={piece}
                   insight={insightByPiece.get(piece.id) ?? null}
                   onPress={() => onOpenPiece(piece)}
+                  onPressIn={() => onTouchPiece(piece)}
                   onReadAgain={() => onReadAgain(piece)}
                   onDiscard={() => onDiscard(piece)}
                   busy={busyPieceId === piece.id}

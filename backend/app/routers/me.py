@@ -13,7 +13,7 @@ from typing import Any
 from urllib.parse import unquote, urlparse
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, status
 
 from app.services import pending_uploads
 from app.auth import current_jwt_payload
@@ -31,6 +31,7 @@ from app.services.score_pages import pages_of
 from app.services.tier_limits import usage_for
 from app.services.training import may_keep_corrections
 from app.routers.upload import AUDIO_BUCKET, SCORE_BUCKET
+from app.services.avatar_shrink import shrink_if_oversized
 from app.services.avatar_urls import signed_avatar_url
 
 router = APIRouter(tags=["me"])
@@ -87,7 +88,10 @@ def _provision_user(client: Any, user_id: UUID, email: str) -> dict[str, Any]:
 
 
 @router.get("/me", response_model=MeResponse)
-def get_me(payload: dict[str, Any] = Depends(current_jwt_payload)) -> MeResponse:
+def get_me(
+    background: BackgroundTasks,
+    payload: dict[str, Any] = Depends(current_jwt_payload),
+) -> MeResponse:
     sub = payload.get("sub")
     email = payload.get("email")
     if not sub or not email:
@@ -124,6 +128,13 @@ def get_me(payload: dict[str, Any] = Depends(current_jwt_payload)) -> MeResponse
         )
     except Exception:  # noqa: BLE001
         analyses = None
+
+    # After the response, and once per picture per process: an avatar the
+    # phone could not shrink before uploading (or uploaded before it tried) is
+    # re-encoded here, so Profile stops waiting on megabytes for a 76pt circle.
+    # This answer still names the old picture; the next one names the new.
+    if row.get("avatar_key"):
+        background.add_task(shrink_if_oversized, client, user_id, str(row["avatar_key"]))
 
     return _to_response(client, user_id, row, tier, analyses)
 
