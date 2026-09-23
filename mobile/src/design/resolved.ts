@@ -1,6 +1,11 @@
 import { Appearance } from 'react-native';
 
-import { paletteFor, type ColorScheme, type Palette } from './colors';
+import {
+  paletteFor,
+  pinnedScheme,
+  type ColorScheme,
+  type Palette,
+} from './colors';
 
 /**
  * The palette this launch is running, decided once, at import.
@@ -27,7 +32,8 @@ import { paletteFor, type ColorScheme, type Palette } from './colors';
  * So: this follows the device. Turn the phone dark, relaunch, the app is dark.
  */
 export const scheme: ColorScheme =
-  Appearance.getColorScheme() === 'dark' ? 'dark' : 'light';
+  pinnedScheme ??
+  (Appearance.getColorScheme() === 'dark' ? 'dark' : 'light');
 
 /**
  * The resolved palette, exported under the name every screen already imports.

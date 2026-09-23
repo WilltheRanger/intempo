@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import appJson from '../../app.json';
-import { lightColors as colors } from './colors';
+import { lightColors as colors, pinnedScheme } from './colors';
 
 /**
  * The colours in `app.json`, against the tokens they are copies of.
@@ -30,13 +30,13 @@ const config = appJson.expo as {
 };
 
 describe('app.json colours', () => {
-  it('lets the operating system tell the app it is dark', () => {
-    // This was `"light"`, which pinned the app to one appearance: iOS reports
-    // `light` from `Appearance.getColorScheme()` regardless of the device
-    // setting, so `resolved.ts` would choose the ivory palette on a dark phone
-    // and dark mode would simply never appear. Nothing else would look wrong,
-    // which is why it is asserted rather than remembered.
-    expect(config.userInterfaceStyle).toBe('automatic');
+  it('asks iOS for the appearance the app is pinned to, or for the device\'s', () => {
+    // `"light"` makes iOS report `light` from `Appearance.getColorScheme()`
+    // whatever the device is set to. That is exactly right while
+    // `pinnedScheme` is `'light'` — the system chrome then agrees with the
+    // palette — and exactly wrong once it is un-pinned: dark mode would never
+    // appear and nothing else would look wrong. So the two are held together.
+    expect(config.userInterfaceStyle).toBe(pinnedScheme ?? 'automatic');
   });
 
   it('paints the same paper the app does', () => {

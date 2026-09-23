@@ -405,6 +405,21 @@ export const darkColors: Palette = {
 
 export type ColorScheme = 'light' | 'dark';
 
+/**
+ * The appearance every build runs in, whatever the device is set to — or
+ * `null` to follow the device.
+ *
+ * **Pinned to light by the owner on 2026-09-23**, for the redesign: "ignore
+ * dark mode for now … make sure all versions are light mode". The dark palette
+ * below is kept, not deleted, so un-pinning is this one line.
+ *
+ * One switch, read by everything that has an appearance: `resolved.ts` (the
+ * palette), `app.json`'s `userInterfaceStyle` (iOS system chrome, held by
+ * `appConfig.test.ts`), and `public/index.html` (the web page's own ground and
+ * `theme-color`, held by `scripts/flatten-vendor-assets.mjs`).
+ */
+export const pinnedScheme: ColorScheme | null = 'light';
+
 /** The palette for a scheme. The only place either object is chosen. */
 export function paletteFor(scheme: ColorScheme): Palette {
   return scheme === 'dark' ? darkColors : lightColors;

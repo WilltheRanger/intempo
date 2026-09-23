@@ -32,14 +32,16 @@
       query matches — so the dark rule goes first and the unqualified light one
       stays last as the answer for everything that does not understand either.
 
+      **While `pinnedScheme` in `src/design/colors.ts` is `'light'` there is
+      only the light one**, because the app is light on every device and a
+      dark strip above it would be the same defect the other way round.
+
       These hexes are the one place in the app allowed to repeat a design
       token, and only because an HTML file cannot import one. They mirror
-      `bg` in the light and dark palettes of `src/design/colors.ts`, and
-      `scripts/flatten-vendor-assets.mjs` fails the build if any of the four
-      drift apart — drift here is invisible in code review and obvious on a
-      phone.
+      `bg` in the palettes of `src/design/colors.ts`, and
+      `scripts/flatten-vendor-assets.mjs` fails the build if they drift apart
+      — drift here is invisible in code review and obvious on a phone.
     -->
-    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#14110E" />
     <meta name="theme-color" content="#F7F2E9" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -63,14 +65,13 @@
     <style id="expo-reset">
       /*
        * **`color-scheme` first, and it is doing real work.** It tells the
-       * browser this document has a dark appearance, which is what makes the
+       * browser which appearances this document has, which decides the
        * scrollbars, the form controls and — on iOS — the rubber-band
-       * overscroll behind the app come back dark instead of light. Without it
-       * the declaration below repaints the page and the platform furniture
-       * around it stays white.
+       * overscroll behind the app. `light` only while the app is pinned to
+       * light (`pinnedScheme`); `light dark` when it follows the device.
        */
       html {
-        color-scheme: light dark;
+        color-scheme: light;
       }
 
       /* These styles make the body full-height */
@@ -81,19 +82,13 @@
       }
 
       /*
-       * The same ground the app resolves for itself at boot.
-       *
-       * `src/design/resolved.ts` reads the system setting and picks a palette;
-       * this is the half of it that lives outside React, and it has to agree
-       * or the strip behind the status bar and the overscroll region are the
-       * wrong appearance's page. Mirrors `darkColors.bg`.
+       * **Light only, for now** — `pinnedScheme` in `src/design/colors.ts`.
+       * The dark `theme-color`, the dark page ground and `color-scheme: light
+       * dark` come back together when it is un-pinned, and
+       * `scripts/flatten-vendor-assets.mjs` refuses a page that has them
+       * while it is pinned: an ivory app under a near-black status strip is
+       * the defect this file's comments were written about.
        */
-      @media (prefers-color-scheme: dark) {
-        html,
-        body {
-          background-color: #14110E;
-        }
-      }
       /* These styles disable body scrolling if you are using <ScrollView> */
       body {
         overflow: hidden;
