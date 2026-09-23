@@ -700,6 +700,19 @@ nothing else covers `backend/`. Named here rather than left to be found.
 - **Cancel cancels.** `uploadToSignedUrl` takes an `AbortSignal`; the flag that
   used to "cancel" only made the *result* be ignored while the transfer kept the
   phone's entire uplink, so cancelling a slow upload made the app slower.
+- **An analysis in this process takes the process with it, and the first one
+  in a new process was two minutes of compiling** (2026-09-23). librosa's
+  numba code compiled on the first take after every deploy or wake, because
+  the cache numba wrote belonged to the container. While it ran, the app's
+  status polls, normally about 4 s apart, showed gaps of 25–27 s, most likely
+  from the same starved CPU. The images now compile it at build time
+  (`workers/warmup.py`,
+  `DECISIONS.md` 2026-09-23). Two things are easy to undo without noticing,
+  and both leave every verdict correct and slow. The first is
+  `NUMBA_CPU_NAME=generic`: without it the cache is keyed on the builder's CPU
+  and misses on every server. The second is a new librosa code path the
+  warm-up does not walk. `test_warmup.py` catches both, and it is slow on
+  purpose.
 
 ## The recording path (2026-09-02) — level is not the signal you think it is
 

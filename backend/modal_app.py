@@ -74,13 +74,32 @@ image = (
         "soundfile==0.14.0",
         "soxr==1.1.0",
     )
+    # **librosa's compiled code, built into the image.** librosa compiles its
+    # inner loops with numba the first time a process needs them, and every
+    # container here is a first time: measured, that was 16 s of a whole core
+    # before a take was decoded, and far more on the eighth of a core Modal
+    # gives by default. The warm-up below compiles them at build time into
+    # `NUMBA_CACHE_DIR`, and a container reads them back in about a second.
+    #
+    # `generic`, because numba keys that cache on the CPU that compiled it, and
+    # the machine that builds this image is not the one that runs it. Without
+    # it every entry misses and each container compiles anyway, with nothing to
+    # say so. `workers/warmup.py` has the measurements; `test_warmup.py` holds
+    # both halves.
+    .env({"NUMBA_CACHE_DIR": "/opt/numba-cache", "NUMBA_CPU_NAME": "generic"})
     # The application code, minus the parts a worker has no business running.
+    #
+    # **Copied, not mounted**, which is what `copy=True` means: Modal otherwise
+    # attaches these files when a container starts, and the warm-up has to run
+    # them while the image is built.
     .add_local_dir(
         "app",
         remote_path="/root/app",
         ignore=["**/tests/**", "**/__pycache__/**", "**/routers/**"],
+        copy=True,
     )
-    .add_local_file("config.toml", remote_path="/root/config.toml")
+    .add_local_file("config.toml", remote_path="/root/config.toml", copy=True)
+    .run_commands("cd /root && python -m app.workers.warmup")
 )
 
 app = modal.App(APP_NAME, image=image)
@@ -114,10 +133,20 @@ secrets = [modal.Secret.from_name("intempo-backend")]
     # Long enough for the slowest measured analysis several times over. The
     # work itself is seconds; this is a backstop against a hang, not a budget.
     timeout=600,
-    # A cold start is a second or two of import. Keeping one warm would cost
-    # money to save that on the first take of a session, and the take is
-    # already asynchronous — the musician is watching a progress screen, not a
-    # spinner on a request.
+    # **A whole core, not Modal's default eighth.** Every container here is
+    # cold, and a cold one imports numpy, scipy and librosa and reads the
+    # compiled cache before it hears a note — about 2.5 s of one core,
+    # measured, and up to twenty on an eighth that gets nothing spare. CPU is
+    # billed by the core-second, so finishing sooner on more of it costs about
+    # the same; the 2 GB of memory, billed for as long as it is held, costs
+    # less.
+    cpu=1.0,
+    # **This said a cold start was "a second or two of import", and it was
+    # two minutes**: numba compiling librosa inside every container, because
+    # nothing had compiled it into the image. The image does now, so the
+    # sentence is closer to true — and the reason not to keep one warm stands:
+    # it would cost money around the clock to save that on the first take of a
+    # session, which the musician watches on a progress screen.
     min_containers=0,
 )
 def run_analysis(analysis_id: str) -> None:

@@ -1,5 +1,70 @@
 # InTempo Decisions
 
+## 2026-09-23 — librosa is compiled when the image is built, not on a musician's take
+
+**Context.** The owner: "the recording processing takes way too long". The
+live project's finished analyses had a median of **152 s**, and the fast ones
+(2–7 s) were only ever the take right after another. A take watched on
+2026-09-23 was downloaded and checked in 1.3 s, then spent **123 s in
+`decoding`** and **38 s in `listening`** on a twelve-second WAV. Supabase's
+request log showed who ran it: the row's creation, every stage write and the
+app's polls all came from one address, the API host. Takes run in-process
+there; nothing reaches Modal.
+
+The work itself is a quarter of a second. Profiled in a fresh process, the
+first decode was 15.7 s and the first listen 3.2 s, and all of it was numba
+compiling librosa: twenty ufuncs when `librosa.load` imports
+`librosa.util.utils` to mix to mono, then the DTW functions. librosa asks numba
+to cache them to disk, and the disk was the container's, so every deploy and
+every wake from the free plan's sleep started from nothing. Production ran the
+compile about eight times slower than a development machine.
+
+**Decision.**
+- **Both images compile it at build time.** `python -m app.workers.warmup`
+  runs a whole take, half a take and a single note through the real
+  `load_audio_bytes` and `analyze`, into `NUMBA_CACHE_DIR=/opt/numba-cache`,
+  with `NUMBA_CPU_NAME=generic`. Measured on the API image: 19.2 s of build.
+  In a fresh process with that cache, the first take's decode + listen went
+  from 18.9 s to 1.4 s.
+- **The API reads the cache back at boot**, on a daemon thread, when analyses
+  run in it (`ANALYSIS_WARMUP`, on unless `0`), so that 1.4 s is not the first
+  take's either.
+- **Modal's analysis function asks for a whole core** (`cpu=1.0`) rather than
+  the default eighth. It is not the path in use today, but the day it becomes
+  the path, every take there is a cold container.
+
+**Alternatives considered.**
+- *Host-tuned code, the numba default.* Numba keys its cache on the CPU model
+  and features, and the builder is not the server. Measured: a process run
+  without `generic` against a `generic`-built cache missed and rewrote all 59
+  files. `generic` gave byte-identical results on all six corpus clips, and ran
+  them in 2.07 s against 2.29 s.
+- *A persistent volume for the cache.* Render's free plan has none. On Modal a
+  volume would still compile once per CPU type, and concurrent containers
+  would write to it.
+- *Keeping a process warm.* `min_containers=1` on Modal, or a paid Render plan
+  that does not sleep, both cost money around the clock, and both would still
+  compile after every deploy.
+- *A hand-written list of librosa calls to warm.* That would be a second
+  description of the pipeline, and it would miss the first call someone added
+  to the real one. `test_warmup.py` runs the corpus after the warm-up and fails
+  if anything compiles. That is how the single-note take got in: a one-row cost
+  matrix is the only slice that comes out contiguous, and numba compiles it as a
+  separate variant.
+
+**Trade-offs accepted.** About 20 s more on every image build; 3 MB of cache
+in each image; about 1.4 s of one core at every API boot, spent even when no
+take follows; and code built for no particular CPU extension, which measured
+no slower here.
+
+**Still the owner's.** The API host's CPU. The compile ran about eight times
+slower there than locally, which matches the free plan's tenth of a core, and
+everything that is left, including the analysis itself, is scaled by that.
+`ANALYSIS_RUNTIME=modal` plus the two token halves would take analyses off the
+API entirely. While the compile ran, the app's status polls, normally about
+4 s apart, reached the database with gaps of 25–27 s. That is most likely the
+same starved CPU, shared with every other request the API was serving.
+
 ## 2026-09-23 — Presses land on touch-down, and nothing waits for a first visit
 
 **Context.** The owner: taps did not feel instant, and "a lot of places …

@@ -28,6 +28,7 @@ from app.services import pending_uploads
 from app.services import reading_rate
 from app.services import score_archive
 from app.services import take_archive
+from app.workers import dispatch, warmup
 from app.workers.transcription_runner import sweep_stuck_transcriptions
 
 log = logging.getLogger("intempo")
@@ -143,6 +144,13 @@ async def lifespan(_app: FastAPI):
         sweep_stuck_transcriptions()
     except Exception:  # noqa: BLE001 — never let recovery block startup
         log.exception("stuck-transcription sweep failed on startup")
+
+    # The first take in a fresh process used to wait two minutes on numba
+    # compiling librosa. The image carries that compiled code now (see the
+    # Dockerfile); this reads it back while the musician is still opening the
+    # app rather than after they press stop. Only where takes actually run.
+    if settings.ANALYSIS_WARMUP and dispatch.ANALYSIS_RUNTIME == "inprocess":
+        warmup.warm_in_background()
 
     sweeper = asyncio.create_task(_sweep_periodically())
     try:

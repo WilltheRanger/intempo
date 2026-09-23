@@ -34,6 +34,23 @@ COPY app ./app
 # the image that has been in production all along had nothing.
 COPY config.toml ./config.toml
 
+# **librosa's compiled code, built into the image — the two minutes a take
+# used to wait.** librosa compiles its inner loops with numba the first time a
+# process needs them, and caches the result on disk. On this service that disk
+# was the container's, so every deploy and every wake from sleep started with
+# nothing: measured on 2026-09-23, a twelve-second take spent 123 s decoding
+# and 38 s listening, against a quarter of a second for the same take in a
+# process that had done one before.
+#
+# So the warm-up runs one here, while the image is built, and the cache it
+# writes ships in the image. `generic` because numba keys the cache on the CPU
+# that compiled it, and the builder is not the machine that serves: without it
+# every entry misses and the first take compiles anyway, silently.
+# `app/workers/warmup.py` has the measurements; `test_warmup.py` holds both.
+ENV NUMBA_CACHE_DIR=/opt/numba-cache \
+    NUMBA_CPU_NAME=generic
+RUN python -m app.workers.warmup
+
 
 EXPOSE 8000
 
