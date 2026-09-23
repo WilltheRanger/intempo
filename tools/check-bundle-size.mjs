@@ -40,8 +40,15 @@ const WEB = join(ROOT, 'mobile', 'dist', '_expo', 'static', 'js', 'web');
  * 560 against a measured 515 — about 9% of headroom. Wide enough that an
  * ordinary feature does not trip it and narrow enough that re-importing an
  * icon barrel does, which is the specific regression it was written for.
+ *
+ * **Raised to 580 on 2026-09-23, at a measured 563.** The redesign rebuilt
+ * every screen from `redesign/` in five batches, and the last one added the
+ * onboarding flow with three drawn illustrations (the page scan, the staff,
+ * the waveform) and the photographic Sign in. That is the app growing, not a
+ * regression: no new dependency, no barrel import. 580 still trips on the
+ * ~180 KB an icon barrel costs.
  */
-const BUDGET_KB = 560;
+const BUDGET_KB = 580;
 
 function mainBundle() {
   if (!existsSync(WEB)) {
