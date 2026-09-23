@@ -194,14 +194,16 @@ export function PlaybackSettings({
           {/* The words depend on what the bar governs — see `entryCopy`. */}
           <Text
             variant={inList ? 'button' : 'body'}
-            color={disabled ? 'textTertiary' : inList ? 'textPrimary' : 'textSecondary'}
+            color={disabled ? 'textTertiary' : 'textPrimary'}
+            style={inList ? undefined : styles.rowText}
           >
             {entryRowLabel(entry)}
           </Text>
           <View style={styles.settingValue}>
             <Text
               variant={inList ? 'metadata' : 'body'}
-              color={disabled || inList ? 'textTertiary' : 'textPrimary'}
+              color={disabled || inList ? 'textTertiary' : 'textSecondary'}
+              style={inList ? undefined : styles.rowText}
             >
               Bar {fromMeasure}
             </Text>
@@ -228,11 +230,19 @@ export function PlaybackSettings({
             lines up; two rows both called tempo, with different numbers, is
             the confusion `tempoBeatUnit` already exists to prevent.
           */}
-          <Text variant="body" color={disabled ? 'textTertiary' : 'textSecondary'}>
+          <Text
+            variant="body"
+            color={disabled ? 'textTertiary' : 'textPrimary'}
+            style={styles.rowText}
+          >
             Listen at
           </Text>
           <View style={styles.settingValue}>
-            <Text variant="body" color={disabled ? 'textTertiary' : 'textPrimary'}>
+            <Text
+              variant="body"
+              color={disabled ? 'textTertiary' : 'textSecondary'}
+              style={styles.rowText}
+            >
               {formatTempo(bpm, beatUnit)}
             </Text>
             <ChevronRight
@@ -280,6 +290,15 @@ export function PlaybackSettings({
 }
 
 const styles = StyleSheet.create({
+  /**
+   * The redesign's row type (`redesign/PieceScore.dc.html`): the name in ink
+   * and the value it is set to in secondary, both at 15 — the name is what
+   * the row is, the value is what it currently says.
+   */
+  rowText: {
+    fontSize: 15,
+    lineHeight: 20,
+  },
   /*
     `target` and `row` are gone with the line form they dressed. `target`
     padded an 18pt line of `metadataSmall` out to a real touch target — a note

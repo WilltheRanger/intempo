@@ -19,6 +19,7 @@ import { TranscribingPanel } from '../../components/score/TranscribingPanel';
 import {
   EmptyState,
   LoadingState,
+  BackLink,
   PageHeader,
   ScreenContainer,
   SecondaryButton,
@@ -474,13 +475,17 @@ export function PieceScoreScreen() {
 
   return (
     <ScreenContainer key={showing}>
-      <PageHeader
-        eyebrow={piece.composer}
-        title={piece.title}
-        titleSize="hero"
-        onBack={goBack}
-        backLabel="Back to piece"
-      />
+      {/*
+        The redesign's head (`redesign/PieceScore.dc.html`), the same as the
+        piece's own: a way back in words, then the title. The composer is on
+        the piece, one step back.
+      */}
+      <View style={styles.head}>
+        <BackLink label="Back to the piece" onPress={goBack} />
+        <Text variant="heroTitle" accessibilityRole="header" style={styles.title}>
+          {piece.title}
+        </Text>
+      </View>
 
       {showToggle ? (
         <SegmentedControl
@@ -1140,7 +1145,9 @@ function ScoreAction({
       ]}
     >
       <View style={styles.actionCopy}>
-        <Text variant="button">{label}</Text>
+        <Text variant="body" style={styles.actionLabel}>
+          {label}
+        </Text>
         <Text variant="metadataSmall" color="textTertiary" style={styles.actionDetail}>
           {detail}
         </Text>
@@ -1156,6 +1163,19 @@ function ScoreAction({
 }
 
 const styles = StyleSheet.create({
+  head: {
+    paddingTop: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  title: {
+    marginTop: spacing.xs,
+    fontSize: 26,
+    lineHeight: 31,
+  },
+  actionLabel: {
+    fontSize: 15,
+    lineHeight: 20,
+  },
   /*
     Every tappable thing on this screen acknowledges the touch. These were bare
     `Pressable`s with a static style, so a tap produced no response at all until
@@ -1313,6 +1333,8 @@ const styles = StyleSheet.create({
   },
   actionDetail: {
     marginTop: 2,
+    fontSize: 12,
+    lineHeight: 17,
   },
   fixCue: {
     marginTop: spacing.xs,
