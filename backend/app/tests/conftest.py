@@ -17,6 +17,9 @@ from uuid import UUID, uuid4
 os.environ.setdefault("SUPABASE_URL", "https://test.supabase.invalid")
 os.environ.setdefault("SUPABASE_KEY", "test-anon-key")
 os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "test-service-role-key")
+# Entering the app's lifespan would otherwise analyse a synthetic take on a
+# thread behind whatever the test is doing. `test_warmup.py` turns it on.
+os.environ.setdefault("ANALYSIS_WARMUP", "0")
 
 import jwt  # noqa: E402  (env vars must land before app imports)
 import pytest  # noqa: E402

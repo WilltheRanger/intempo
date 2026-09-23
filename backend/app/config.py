@@ -144,6 +144,12 @@ class Settings:
     #: `ANALYSIS_RUNTIME=modal`, where each take gets its own container.
     ANALYSIS_MAX_CONCURRENT: int = int(os.getenv("ANALYSIS_MAX_CONCURRENT", "1"))
 
+    #: Load the analysis pipeline at boot, so the first take after a deploy or
+    #: a wake from sleep does not wait for it. See `workers/warmup.py`. On
+    #: unless set to `0` — the tests set it, so entering the app's lifespan
+    #: does not start analysing a synthetic take behind them.
+    ANALYSIS_WARMUP: bool = os.getenv("ANALYSIS_WARMUP", "1").strip() != "0"
+
 
     STRIPE_SECRET_KEY: str = os.getenv("STRIPE_SECRET_KEY", "")
     STRIPE_WEBHOOK_SECRET: str = os.getenv("STRIPE_WEBHOOK_SECRET", "")
