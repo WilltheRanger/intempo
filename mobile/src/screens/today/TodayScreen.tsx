@@ -1,7 +1,7 @@
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useState } from 'react';
-import { StyleSheet } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
 
 import { AddPieceSheet } from '../../components/pieces/AddPieceSheet';
 import {
@@ -26,6 +26,7 @@ import { RiseIn } from './RiseIn';
 import { heroContentFor, pendingLineFor } from './heroContent';
 import { useAddPieceOption } from '../../navigation/useAddPieceOption';
 import { loadStateFor } from '../../lib/loadState';
+import { shouldWarmTabs, warmTabs } from '../../lib/warmTabs';
 
 /**
  * Today is one screen, and it does not scroll.
@@ -60,10 +61,6 @@ export function TodayScreen() {
   // `ScreenContainer` needs that in points to tell the floating chrome which
   // material to wear. The bar sits on the ivory, so it wears the light one.
   const heroHeight = useHeroHeight();
-  // The status bar sits on the photograph, so it is light while Today is the
-  // screen — and only then: tabs stay mounted, and a light status bar left
-  // behind would vanish on the ivory of every other tab.
-  const focused = useIsFocused();
   const currentPiece = useCurrentPiece();
   // Only to name the piece a pending take belongs to. Shared cache with the
   // Library tab, so this is a read rather than a second fetch.
@@ -156,6 +153,31 @@ export function TodayScreen() {
     hasData: currentPiece.data !== undefined,
   });
 
+  // Build the other tabs, and so fetch their data, once this one has drawn —
+  // so a first visit to Profile is as quick as a second (`lib/warmTabs.ts`).
+  // Above the early return below, like every hook here.
+  const drawn = load !== 'loading';
+  useEffect(() => {
+    if (!drawn) {
+      return;
+    }
+    const connection =
+      Platform.OS === 'web'
+        ? (globalThis.navigator as { connection?: { saveData?: boolean } } | undefined)
+            ?.connection
+        : undefined;
+    if (!shouldWarmTabs(connection)) {
+      return;
+    }
+    return warmTabs(
+      (tab) => navigation.preload(tab),
+      (run, ms) => {
+        const timer = setTimeout(run, ms);
+        return () => clearTimeout(timer);
+      },
+    );
+  }, [drawn, navigation]);
+
   if (load === 'unavailable') {
     return (
       // The one composition on this tab that is not the photograph: there is
@@ -192,7 +214,7 @@ export function TodayScreen() {
       darkGround={heroHeight}
       contentStyle={styles.page}
     >
-      {focused ? <StatusBar style="light" /> : null}
+      <LightStatusBarWhileFocused />
       <RiseIn>
         <PracticeHero
           /*
@@ -252,3 +274,19 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
 });
+
+/**
+ * The status bar sits on the photograph, so it is light while Today is the
+ * screen — and only then: tabs stay mounted, and a light status bar left
+ * behind would vanish on the ivory of every other tab.
+ *
+ * **Its own component so the focus lives here and not in `TodayScreen`.**
+ * `useIsFocused` re-renders whatever calls it on every change of tab, and it
+ * was called at the top of the screen — so leaving Today and coming back redrew
+ * the hero, photograph included, to flip one status bar. Here it redraws
+ * nothing but the status bar.
+ */
+function LightStatusBarWhileFocused() {
+  const focused = useIsFocused();
+  return focused ? <StatusBar style="light" /> : null;
+}

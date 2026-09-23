@@ -248,6 +248,45 @@ def test_the_avatar_is_signed_fresh_and_never_stored_as_a_url(
     assert sb.storage.from_.call_args.args[0] == "avatars"
 
 
+def test_an_avatar_is_checked_for_size_after_the_response(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """Profile waited on a 5.2 MB picture drawn in a 76pt circle (measured
+    2026-09-23). `/v1/me` hands every avatar it names to the shrink, which
+    decides; the response itself is not held up by it."""
+    from app.routers import me as me_module
+
+    calls: list[tuple[Any, str]] = []
+    monkeypatch.setattr(
+        me_module, "shrink_if_oversized", lambda _c, uid, key: calls.append((uid, key))
+    )
+    user_id = uuid4()
+    key = f"{user_id}/face.jpg"
+    sb = _profile_mock(row=_row(id=str(user_id), avatar_key=key))
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
+
+    res = client.get("/v1/me", headers={"Authorization": f"Bearer {make_token(sub=user_id)}"})
+
+    assert res.status_code == 200
+    assert calls == [(user_id, key)]
+
+
+def test_no_avatar_means_nothing_to_check(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    from app.routers import me as me_module
+
+    calls: list[Any] = []
+    monkeypatch.setattr(me_module, "shrink_if_oversized", lambda *args: calls.append(args))
+    user_id = uuid4()
+    sb = _profile_mock(row=_row(id=str(user_id), avatar_key=None))
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
+
+    client.get("/v1/me", headers={"Authorization": f"Bearer {make_token(sub=user_id)}"})
+
+    assert calls == []
+
+
 def test_storage_being_down_does_not_fail_the_call_that_provisions_an_account(
     monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
 ) -> None:

@@ -1,5 +1,55 @@
 # InTempo Decisions
 
+## 2026-09-23 — Presses land on touch-down, and nothing waits for a first visit
+
+**Context.** The owner: taps did not feel instant, and "a lot of places …
+still take time to load such as profile". Measured at 4x CPU slowdown in
+Chromium: 109–139ms from touch-down to a control visibly pressing, 292–304ms to
+open Profile or Library the first time against ~150ms after, and on the live
+project the four avatars in use were 1.1 MB, 5.2 MB, 401 kB and 12 kB.
+
+**Decision.**
+- **`patch-package` on `react-native-web`'s `PressResponder`:**
+  `DEFAULT_PRESS_DELAY_MS` 50 → 0 and `DEFAULT_LONG_PRESS_DELAY_MS` 450 → 500
+  (so a long press still fires at 500ms). Every `Pressable` on the web held its
+  pressed state back 50ms; now the press shows on the next frame (14–27ms at
+  4x). Native is untouched — the App Store build does not run this library.
+- **The server shrinks oversized avatars** (`services/avatar_shrink.py`): the
+  first `/v1/me` in a process that names a picture over 200 kB re-encodes it to
+  512px after the response, under a new key, moving the row only if it still
+  names the old one. The app has resized before uploading since 2026-09-10, but
+  that resize fails open, and two of the four predate it.
+- **The other tabs are built after Today draws** (`lib/warmTabs.ts`,
+  `navigation.preload`), one at a time with room between, Library last. Mounting
+  a tab starts its queries, so this is the data prefetch too.
+- **The persisted cache keeps the account and the latest readings**
+  (`persistCache.ts`): the whole app waited behind `/v1/me` on every launch.
+  The account is kept without its signed photo URL; takes and insights for a
+  day, judged on the way in.
+- **A piece and its history are asked for when a finger lands on it** in the
+  Library, not when it lifts.
+
+**Alternatives considered.**
+- *CSS `:active` for the pressed look on the web.* Faster in principle — no
+  render at all — but once the 50ms wait was gone the render measured one to
+  two frames, and one mechanism for pressed state beats two.
+- *Keep the press delay inside scrolling lists*, as iOS does for its own
+  (~150ms), so a scroll that starts on a row does not flash it. The flash is
+  one frame and is what every web page does with `:active`; the delay was the
+  complaint.
+- *Overwrite the large avatar in place.* Every upload is served `immutable`,
+  which is safe only because keys are never reused; smaller bytes under the old
+  key would leave every browser that has the large ones holding them for a year.
+- *`lazy: false` on the tab navigator.* Builds every tab before Today can draw,
+  which moves the wait to the launch instead of removing it.
+
+**Trade-offs accepted.** A patched dependency must be re-made on every
+`react-native-web` upgrade, and `patch-package` fails the install loudly when
+it no longer applies. A scroll that starts on a Library tile prefetches that
+piece. Readings shown at launch can be up to a day old for the moment it takes
+the refetch to land. The server reads each avatar once per process to learn its
+size.
+
 ## 2026-09-23 — The account first, then the questions
 
 **Context.** Since 2026-09-08 "Create an account" opened onboarding, the

@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
+import { useMutation, useQueryClient, useQuery, type QueryClient } from '@tanstack/react-query';
 import {
   beginOptimistic,
   patchEverywhere,
@@ -57,6 +57,27 @@ export function useCurrentPiece() {
  * detail at all.
  */
 const TRANSCRIPTION_POLL_MS = 3000;
+
+/**
+ * Ask for a piece before its screen does: from the moment a finger lands on
+ * it, rather than when it lifts (2026-09-23, "stuff that still takes time to
+ * load"). The row already holds the title; what the screen waits on is the
+ * notation, and a tap is about a tenth of a second of network the screen gets
+ * for nothing.
+ *
+ * Never worse than not doing it: `prefetchQuery` does nothing while the piece
+ * is fresh, joins a request already in flight, and a failure here is the
+ * query the screen runs anyway. A scroll that starts on a piece asks for that
+ * piece too — one request, kept for the `staleTime`, for a piece in view.
+ */
+export function prefetchPiece(client: QueryClient, id: string): void {
+  void client
+    .prefetchQuery({
+      queryKey: pieceKeys.detail(id),
+      queryFn: () => pieceSource.getPiece(id),
+    })
+    .catch(() => {});
+}
 
 export function usePiece(id: string) {
   const queryClient = useQueryClient();

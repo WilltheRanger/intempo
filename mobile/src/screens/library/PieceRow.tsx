@@ -17,6 +17,8 @@ import { TrailingChevron } from '../../components/primitives/TrailingChevron';
 export interface PieceRowProps {
   piece: Piece;
   onPress: () => void;
+  /** The finger landing, before the tap: where the piece starts loading. */
+  onPressIn?: () => void;
   /**
    * Hairline above the row. Off on the first of a group — see `rowMetrics`.
    *
@@ -66,13 +68,14 @@ export interface PieceRowProps {
  * the page as a full-bleed band, which is one image for the one piece you
  * asked about, and `PieceScoreScreen` still shows every page.
  */
-export function PieceRow({ piece, onPress, divided = false }: PieceRowProps) {
+export function PieceRow({ piece, onPress, onPressIn, divided = false }: PieceRowProps) {
   const age = formatLastPracticedShort(piece.lastPracticedAt);
   const meta = joinMetadata([piece.composer, age]);
 
   return (
     <PressableScale
       onPress={onPress}
+      onPressIn={onPressIn}
       accessibilityRole="button"
       accessibilityLabel={
         piece.composer ? `${piece.title}, ${piece.composer}` : piece.title

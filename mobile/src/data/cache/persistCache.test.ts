@@ -3,13 +3,16 @@ import { describe, expect, it } from 'vitest';
 import {
   BUDGET_CHARS,
   CACHE_SHAPE,
+  READING_SHELF_LIFE_MS,
   busterFor,
+  deserializeFromDisk,
+  musicianForDisk,
   persistedKind,
   pieceForDisk,
   serializeForDisk,
   shouldPersist,
 } from './persistCache';
-import type { Piece } from '../types';
+import type { Musician, Piece } from '../types';
 
 function piece(id: string, notes = 1): Piece {
   return {
@@ -33,6 +36,22 @@ function piece(id: string, notes = 1): Piece {
     transcriptionError: null,
     transcriptionAccepted: true,
     pageImageDiscarded: false,
+  };
+}
+
+function musician(): Musician {
+  return {
+    id: 'u1',
+    email: 'a@example.test',
+    tier: 'free',
+    role: 'student',
+    studioId: null,
+    usage: null,
+    avatarUrl: 'https://storage/avatar.jpg?token=abc',
+    displayName: 'Alex',
+    instrument: 'violin',
+    onboarded: true,
+    trainingConsent: false,
   };
 }
 
@@ -65,13 +84,20 @@ describe('persistedKind', () => {
     expect(persistedKind(['pieces', 'detail', 'p1'])).toBe('detail');
   });
 
+  it('names the account and the latest readings, which every launch waits on', () => {
+    expect(persistedKind(['me'])).toBe('me');
+    expect(persistedKind(['insights'])).toBe('insights');
+    expect(persistedKind(['takes', 'latest'])).toBe('takes');
+    expect(persistedKind(['takes', 'recent', 20])).toBe('takes');
+  });
+
   it('is an allow-list — nothing else is written to the device', () => {
-    // Every one of these is either short-lived, cheap, or a figure that would
-    // read as current when it is a fortnight old.
-    expect(persistedKind(['insights'])).toBeNull();
-    expect(persistedKind(['me'])).toBeNull();
-    expect(persistedKind(['profile'])).toBeNull();
+    // A piece's take history grows without bound and is prefetched on the way
+    // into the piece; the rest are short-lived or not queries this app makes.
+    expect(persistedKind(['takes', 'history', 'p1'])).toBeNull();
     expect(persistedKind(['takes', 'latest', 'p1'])).toBeNull();
+    expect(persistedKind(['takes'])).toBeNull();
+    expect(persistedKind(['profile'])).toBeNull();
     expect(persistedKind(['corrections', 'a1'])).toBeNull();
   });
 
@@ -156,17 +182,32 @@ describe('serializeForDisk', () => {
     expect(out.clientState.queries[0]?.state.data).toBeNull();
   });
 
-  it('leaves out everything that is not a piece query', () => {
+  it('leaves out every query the allow-list does not name', () => {
     const out = read(
       serializeForDisk(
         client([
-          stored(['insights'], { minutes: 40 }),
+          stored(['takes', 'history', 'p1'], { takes: [] }),
+          stored(['corrections', 'a1'], []),
           stored(['pieces', 'list'], [piece('p1')]),
         ]),
       ),
     );
     expect(out.clientState.queries).toHaveLength(1);
     expect(out.clientState.queries[0]?.queryKey).toEqual(['pieces', 'list']);
+  });
+
+  it('writes the account first, and without its signed photo URL', () => {
+    const out = read(
+      serializeForDisk(
+        client([
+          stored(['pieces', 'list'], [piece('p1')]),
+          stored(['me'], musician()),
+        ]),
+      ),
+    );
+    expect(out.clientState.queries[0]?.queryKey).toEqual(['me']);
+    expect(JSON.stringify(out)).not.toContain('token=');
+    expect((out.clientState.queries[0]?.state.data as Musician).displayName).toBe('Alex');
   });
 
   it('never writes mutations, which would replay a take on a future launch', () => {
@@ -227,5 +268,43 @@ describe('serializeForDisk', () => {
     expect(serializeForDisk(client([stored(['pieces', 'list'], [piece('p1')])])).length).toBeLessThan(
       BUDGET_CHARS,
     );
+  });
+});
+
+describe('musicianForDisk', () => {
+  it('drops only the signed photo URL', () => {
+    const kept = musicianForDisk(musician());
+    expect(kept.avatarUrl).toBeNull();
+    expect({ ...kept, avatarUrl: musician().avatarUrl }).toEqual(musician());
+  });
+});
+
+describe('deserializeFromDisk', () => {
+  const NOW = 10 * READING_SHELF_LIFE_MS;
+  const raw = (queries: ReturnType<typeof stored>[]) => JSON.stringify(client(queries));
+
+  it('keeps a reading from within the day', () => {
+    const out = deserializeFromDisk(raw([stored(['insights'], { a: 1 }, NOW - 60_000)]), NOW);
+    expect(out.clientState.queries).toHaveLength(1);
+  });
+
+  it('drops readings older than a day, whatever was last written', () => {
+    // An app left closed for a week writes nothing that week, so the age has
+    // to be judged on the way in.
+    const old = NOW - READING_SHELF_LIFE_MS - 1;
+    const out = deserializeFromDisk(
+      raw([
+        stored(['insights'], { a: 1 }, old),
+        stored(['takes', 'recent', 20], [], old),
+        stored(['me'], musician(), old),
+        stored(['pieces', 'list'], [piece('p1')], old),
+      ]),
+      NOW,
+    );
+    expect(out.clientState.queries.map((q) => q.queryKey[0])).toEqual(['me', 'pieces']);
+  });
+
+  it('passes a client it cannot read through untouched', () => {
+    expect(deserializeFromDisk('{"nope":1}', NOW)).toEqual({ nope: 1 });
   });
 });

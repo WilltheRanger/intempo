@@ -40,6 +40,8 @@ export interface PieceTileProps {
    */
   insight?: PieceInsight | null;
   onPress: () => void;
+  /** The finger landing, before the tap: where the piece starts loading. */
+  onPressIn?: () => void;
   /**
    * Read the page again. Absent where the shelf cannot act — a search result
    * list, a build with no backend — and the tile then says what is wrong
@@ -84,6 +86,7 @@ export function PieceTile({
   piece,
   insight = null,
   onPress,
+  onPressIn,
   onReadAgain,
   onDiscard,
   busy = false,
@@ -113,6 +116,7 @@ export function PieceTile({
   return (
     <PressableScale
       onPress={onPress}
+      onPressIn={onPressIn}
       accessibilityRole="button"
       // The composer and the date are no longer drawn — the redesign's tile is
       // the page, the title and the rail — but they are still worth hearing.
