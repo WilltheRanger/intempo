@@ -24,9 +24,10 @@ import { Platform } from 'react-native';
  * bar you can read straight through. `GlassSurface` therefore composes
  * `url(#…) blur(…) saturate(…)` as a single value on a single node.
  *
- * Where `url()` in `backdrop-filter` is unsupported — Safari and Firefox both
+ * Where `url()` in `backdrop-filter` is not drawn — Safari and Firefox both
  * drop the whole declaration — `cssLens()` returns null and the caller falls
- * back to blur alone.
+ * back to blur alone. Safari has to be recognised by name for that: see
+ * `lensRenders`.
  */
 
 const FILTER_ID = 'intempo-glass-lens';
@@ -112,6 +113,40 @@ function drawMap(): string {
 }
 
 /**
+ * Whether this browser draws a `url()` inside `backdrop-filter`.
+ *
+ * **`CSS.supports` cannot answer this, and trusting it broke the bar on every
+ * iPhone.** WebKit parses `url(#…)` in `backdrop-filter`, so the feature test
+ * passes, and then does not render it — and because the lens has to share one
+ * declaration with the blur (see above), the whole value goes with it. The
+ * bottom bar on an iPhone had no blur at all: 80% tint over sharp text, so the
+ * row scrolling under it read straight through the tab labels. Reported from a
+ * phone on 2026-09-23, "Preferences" legible behind "Today".
+ *
+ * So WebKit is named. Every browser on iOS and iPadOS is WebKit whatever its
+ * name, iPadOS reports a Mac, and desktop Safari is the one Safari token
+ * without a Chromium or Firefox one beside it. Blur alone is the fallback,
+ * which is the material this app shipped before refraction.
+ */
+export function lensRenders(browser: {
+  userAgent: string;
+  platform?: string;
+  maxTouchPoints?: number;
+}): boolean {
+  const { userAgent, platform = '', maxTouchPoints = 0 } = browser;
+  if (/iPhone|iPad|iPod/.test(userAgent)) {
+    return false;
+  }
+  if (platform === 'MacIntel' && maxTouchPoints > 1) {
+    return false;
+  }
+  if (/Firefox\//.test(userAgent)) {
+    return false;
+  }
+  return !(/Safari\//.test(userAgent) && !/Chrome\/|Chromium\/|Edg\/|OPR\//.test(userAgent));
+}
+
+/**
  * Adds the filter to the document once, and answers whether it can be used.
  *
  * Injected from here rather than written into `public/index.html` on purpose:
@@ -130,6 +165,8 @@ export function cssLens(): string | null {
     if (
       typeof document === 'undefined' ||
       typeof CSS === 'undefined' ||
+      typeof navigator === 'undefined' ||
+      !lensRenders(navigator) ||
       // Safari parses this and does not render it, so the check is necessary
       // but not sufficient — the layer below still carries the blur alone.
       !CSS.supports('backdrop-filter', `url(#${FILTER_ID})`)

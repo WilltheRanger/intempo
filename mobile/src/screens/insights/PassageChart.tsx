@@ -3,17 +3,12 @@ import { StyleSheet, View } from 'react-native';
 
 import { Text } from '../../components/primitives';
 import { BORDER_WIDTH, colors } from '../../design';
+import { chartBarWidth } from '../../lib/chartBars';
 import { axisLabels, plotFraction } from '../../lib/insights/sessionTrend';
 import type { PassageDrift } from '../../lib/insights/passageDrift';
 
 /** The left-hand column the axis words sit in. */
 const GUTTER = 48;
-
-/** Share of each slot a bar fills; the rest is the gap. */
-const BAR_SHARE = 0.82;
-
-/** The design's bar width: five passages should read as five bars, not five blocks. */
-const MAX_BAR = 27;
 
 /** The shortest bar drawn, so a passage on the beat is still a mark. */
 const MIN_BAR = 4;
@@ -42,7 +37,7 @@ export function PassageChart({
   const zeroY = yOf(0);
   const plotWidth = Math.max(0, width - GUTTER);
   const slot = passages.length > 0 ? plotWidth / passages.length : 0;
-  const barWidth = Math.min(MAX_BAR, slot * BAR_SHARE);
+  const barWidth = chartBarWidth(slot);
   const labels = axisLabels(
     passages.map((passage) => passage.value),
     range,

@@ -2,7 +2,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ChevronDown, ChevronRight } from '../../components/icons';
 import { Text } from '../../components/primitives';
-import { BORDER_WIDTH, colors, fontFamily, ICON_STROKE_WIDTH } from '../../design';
+import { BORDER_WIDTH, colors, fontFamily, ICON_STROKE_WIDTH, ICON_SIZE } from '../../design';
 
 /**
  * A setting on the Record panel: label on the left, its value in a pill on the
@@ -59,7 +59,7 @@ export function PillRow({
             <Text variant="metadata" style={styles.value}>
               {value}
             </Text>
-            <Chevron size={15} strokeWidth={ICON_STROKE_WIDTH} color={colors.textTertiary} />
+            <Chevron size={ICON_SIZE.sm} strokeWidth={ICON_STROKE_WIDTH} color={colors.textTertiary} />
           </View>
         </>
       )}

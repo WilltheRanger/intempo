@@ -8,7 +8,7 @@ import { InstrumentChoice } from '../../components/profile/InstrumentChoice';
 import type { PickedPhoto } from '../../data/onboardingDraft';
 import { preferences, usePreferences } from '../../data/preferences';
 import type { Instrument } from '../../data/types';
-import { BORDER_WIDTH, colors, fontFamily, MIN_TOUCH_TARGET, spacing } from '../../design';
+import { BORDER_WIDTH, colors, fontFamily, MIN_TOUCH_TARGET, spacing, ICON_SIZE, ICON_STROKE_WIDTH } from '../../design';
 import { requestMicrophoneAccess } from '../../lib/audioRecorder';
 import {
   canContinue,
@@ -335,7 +335,7 @@ export function OnboardingFlow({
               {shown ? (
                 <Avatar source={shown} size={PHOTO} />
               ) : (
-                <Camera size={34} strokeWidth={1.4} color={colors.textTertiary} />
+                <Camera size={ICON_SIZE.xl} strokeWidth={ICON_STROKE_WIDTH} color={colors.textTertiary} />
               )}
             </Pressable>
             <Pressable
@@ -343,7 +343,7 @@ export function OnboardingFlow({
               accessibilityRole="button"
               style={({ pressed }) => [styles.photoButton, pressed && styles.choicePressed]}
             >
-              <Images size={17} strokeWidth={1.6} color={colors.textPrimary} />
+              <Images size={ICON_SIZE.md} strokeWidth={ICON_STROKE_WIDTH} color={colors.textPrimary} />
               <Text variant="metadata" style={styles.photoButtonLabel}>
                 {shown ? 'Change' : 'Choose a photo'}
               </Text>
@@ -359,7 +359,7 @@ export function OnboardingFlow({
 function Fact({ icon: Icon, text }: { icon: typeof Mic; text: string }) {
   return (
     <View style={styles.fact}>
-      <Icon size={18} strokeWidth={1.5} color={colors.textTertiary} />
+      <Icon size={ICON_SIZE.md} strokeWidth={ICON_STROKE_WIDTH} color={colors.textTertiary} />
       <Text variant="metadata" color="textSecondary" style={styles.factText}>
         {text}
       </Text>

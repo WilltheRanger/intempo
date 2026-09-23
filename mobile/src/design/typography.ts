@@ -178,6 +178,18 @@ export const typography = {
     letterSpacing: 0.1,
   },
   /**
+   * The tab bar's labels: a small label under a larger glyph, the proportion
+   * iOS draws its own bar in. They were `sectionLabel`, and 13pt medium under a
+   * 24pt icon weighed as much as the icon did — four words competing with the
+   * four pictures they name, on the one element that is on screen at all times.
+   */
+  tabLabel: {
+    fontFamily: fontFamily.sansMedium,
+    fontSize: 11,
+    lineHeight: 13,
+    letterSpacing: 0.1,
+  },
+  /**
    * The optional action in a section header ("See all").
    *
    * Same size as `sectionLabel` at regular weight, so it stays legible and

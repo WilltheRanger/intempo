@@ -303,7 +303,7 @@ export function ProfileScreen() {
         musician chose at sign-up and cannot change here.
       */}
       <View>
-        <AccountRow label="Plan" value={formatTier(musician.tier)} />
+        <AccountRow label="Plan" value={formatTier(musician.tier)} ruled={false} />
         {/*
           The quota, before it is ever hit. `/v1/me` has carried this all
           along; the only other way to learn about the limit is to be refused
@@ -322,8 +322,8 @@ export function ProfileScreen() {
       </View>
 
       <RuledHeading label="Practice" rule="borderStrong" style={styles.section} />
-      <View style={styles.setting}>
-        <Text variant="button" style={styles.settingTitle}>
+      <View style={[styles.setting, styles.settingFirst]}>
+        <Text variant="body" style={styles.settingTitle}>
           Instrument
         </Text>
         <SegmentedControl
@@ -335,7 +335,7 @@ export function ProfileScreen() {
       </View>
 
       <View style={styles.setting}>
-        <Text variant="button" style={styles.settingTitle}>
+        <Text variant="body" style={styles.settingTitle}>
           Metronome
         </Text>
         <SegmentedControl
@@ -362,6 +362,7 @@ export function ProfileScreen() {
       <RuledHeading label="Preferences" rule="borderStrong" style={styles.section} />
       <ToggleRow
         label="Haptic feedback"
+        divided={false}
         value={settings.haptics}
         onChange={preferences.setHaptics}
       />
@@ -375,6 +376,7 @@ export function ProfileScreen() {
       <View>
           <ToggleRow
             label="Help improve score reading"
+            divided={false}
             description="Keep your corrected bars and their photos to train the reader. Off deletes them."
             value={musician.trainingConsent}
             onChange={(value) => void changeTrainingConsent(value)}
@@ -403,7 +405,7 @@ export function ProfileScreen() {
 
       <RuledHeading label="About" rule="borderStrong" style={styles.section} />
       <View>
-          <AccountRow label="Version" value={appConfig.expo.version} />
+          <AccountRow label="Version" value={appConfig.expo.version} ruled={false} />
           <AccountRow label="Help" onPress={() => navigation.navigate('Help')} />
           <AccountRow
             label="Privacy"
@@ -544,6 +546,10 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderTopWidth: BORDER_WIDTH,
     borderTopColor: colors.border,
+  },
+  /** The first under a heading: the heading's rule is the line above it. */
+  settingFirst: {
+    borderTopWidth: 0,
   },
   settingTitle: {
     fontSize: 15,

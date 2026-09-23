@@ -107,8 +107,13 @@ export function IconButton({
         <View style={[styles.fill, styles.plain, tone === 'onDark' && styles.plainOnDark]} />
       ) : null}
       <View style={styles.glyph}>
+        {/*
+          A disc's glyph is `md`, 45% of the disc. A bare glyph stands alone
+          in a header beside a 34pt title, where `md` read as small ("the add
+          symbol is kind of small"), so it takes `lg`.
+        */}
         <Icon
-          size={ICON_SIZE.md}
+          size={variant === 'bare' ? ICON_SIZE.lg : ICON_SIZE.md}
           strokeWidth={ICON_STROKE_WIDTH}
           color={glyph}
         />

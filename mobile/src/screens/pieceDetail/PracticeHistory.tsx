@@ -3,15 +3,16 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { SessionTrendChart } from '../../components/charts/SessionTrendChart';
-import { ChevronDown, ChevronRight } from '../../components/icons';
+import { ChevronDown } from '../../components/icons';
 import { Text } from '../../components/primitives/Text';
 import type { PieceHistory } from '../../data/sources/types';
-import { BORDER_WIDTH, colors, fontFamily, MIN_TOUCH_TARGET, radii, spacing } from '../../design';
+import { BORDER_WIDTH, colors, fontFamily, MIN_TOUCH_TARGET, radii, spacing, ICON_SIZE, ICON_STROKE_WIDTH } from '../../design';
 import { formatLastPracticedShort, joinMetadata } from '../../lib/format';
 import { historyLabel } from '../../lib/insights/pieceHistory';
 import { sessionTrendFrom } from '../../lib/insights/sessionTrend';
 import { formatVerdict } from '../../lib/tempo';
 import type { RootNavigation } from '../../navigation/types';
+import { TrailingChevron } from '../../components/primitives/TrailingChevron';
 
 export interface PracticeHistoryProps {
   history: PieceHistory;
@@ -59,7 +60,7 @@ export function PracticeHistory({ history }: PracticeHistoryProps) {
               {open ? 'Hide takes' : 'See takes'}
             </Text>
             <View style={open ? styles.turned : undefined}>
-              <ChevronDown size={15} strokeWidth={1.8} color={colors.accentText} />
+              <ChevronDown size={ICON_SIZE.sm} strokeWidth={ICON_STROKE_WIDTH} color={colors.accentText} />
             </View>
           </Pressable>
         ) : null}
@@ -103,7 +104,7 @@ export function PracticeHistory({ history }: PracticeHistoryProps) {
               <Text variant="metadataSmall" color="textSecondary" numberOfLines={1} style={styles.takeFacts}>
                 {joinMetadata([`${take.targetBpm} BPM`, formatVerdict(take.verdict)])}
               </Text>
-              <ChevronRight size={17} strokeWidth={1.6} color={colors.textTertiary} />
+              <TrailingChevron />
             </Pressable>
           ))}
         </View>

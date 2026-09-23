@@ -1,6 +1,5 @@
 import { StyleSheet, View } from 'react-native';
 
-import { ChevronRight } from '../../components/icons';
 import { PressableScale } from '../../components/motion';
 import { Text } from '../../components/primitives/Text';
 import type { Piece } from '../../data/types';
@@ -15,6 +14,7 @@ import {
 } from '../../design';
 import { ROW_PADDING_VERTICAL } from '../../components/rowMetrics';
 import { formatLastPracticedShort, joinMetadata } from '../../lib/format';
+import { TrailingChevron } from '../../components/primitives/TrailingChevron';
 
 export interface PieceRowProps {
   piece: Piece;
@@ -109,7 +109,7 @@ export function PieceRow({ piece, onPress, divided = false }: PieceRowProps) {
         opens. It is the only mark on the row, and it replaces the thumbnail as
         the thing that tells the eye where one entry ends and the next begins.
       */}
-      <ChevronRight
+      <TrailingChevron
         size={ICON_SIZE.md}
         strokeWidth={ICON_STROKE_WIDTH}
         color={colors.textTertiary}

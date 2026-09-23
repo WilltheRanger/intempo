@@ -1,8 +1,9 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { ChevronRight, type LucideIcon } from '../../components/icons';
+import { type LucideIcon } from '../../components/icons';
 import { Text } from '../../components/primitives/Text';
-import { BORDER_WIDTH, colors, MIN_TOUCH_TARGET } from '../../design';
+import { BORDER_WIDTH, colors, MIN_TOUCH_TARGET, ICON_SIZE, ICON_STROKE_WIDTH } from '../../design';
+import { TrailingChevron } from '../../components/primitives/TrailingChevron';
 
 /**
  * One of the piece's doors (`redesign/PieceDetail.dc.html`): a quiet glyph, a
@@ -31,7 +32,7 @@ export function PieceLinkRow({
       accessibilityHint={description ?? undefined}
       style={({ pressed }) => [styles.row, pressed && styles.pressed]}
     >
-      <Icon size={19} strokeWidth={1.5} color={colors.textTertiary} />
+      <Icon size={ICON_SIZE.md} strokeWidth={ICON_STROKE_WIDTH} color={colors.textTertiary} />
       <View style={styles.text}>
         <Text style={styles.label}>{label}</Text>
         {description ? (
@@ -40,7 +41,7 @@ export function PieceLinkRow({
           </Text>
         ) : null}
       </View>
-      <ChevronRight size={17} strokeWidth={1.6} color={colors.textTertiary} />
+      <TrailingChevron />
     </Pressable>
   );
 }

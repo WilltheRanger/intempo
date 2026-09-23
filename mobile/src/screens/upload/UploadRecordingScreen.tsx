@@ -2,7 +2,7 @@ import { useNavigation, useRoute, type RouteProp } from '@react-navigation/nativ
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 
-import { ChevronRight, FileMusic, Pause, Play } from '../../components/icons';
+import { FileMusic, Pause, Play } from '../../components/icons';
 import { BottomSheet } from '../../components/overlays/BottomSheet';
 import {
   BackLink,
@@ -32,6 +32,7 @@ import {
   ICON_STROKE_WIDTH,
   radii,
   spacing,
+  ICON_SIZE,
 } from '../../design';
 import {
   describeAnalysisCost,
@@ -51,6 +52,7 @@ import { useGoBack } from '../../navigation/useGoBack';
 import { chooseAudioFile } from '../record/chooseAudioFile';
 import { StartFromSheet } from '../record/StartFromSheet';
 import { usePreviewPlayback } from './usePreviewPlayback';
+import { TrailingChevron } from '../../components/primitives/TrailingChevron';
 
 /** The waveform's bars: 2pt wide on a 5.1pt step, as the prototype draws. */
 const BAR_WIDTH = 2;
@@ -210,7 +212,7 @@ export function UploadRecordingScreen() {
       <View style={styles.band}>
         <View style={styles.fileRow}>
           <View style={styles.fileIcon}>
-            <FileMusic size={20} strokeWidth={1.5} color={colors.textSecondary} />
+            <FileMusic size={ICON_SIZE.md} strokeWidth={ICON_STROKE_WIDTH} color={colors.textSecondary} />
           </View>
           <View style={styles.fileText}>
             <Text variant="body" numberOfLines={1} style={styles.fileName}>
@@ -261,9 +263,9 @@ export function UploadRecordingScreen() {
               style={({ pressed }) => [styles.action, styles.play, pressed && styles.pressed]}
             >
               {playback.playing ? (
-                <Pause size={14} strokeWidth={ICON_STROKE_WIDTH} color={colors.textPrimary} fill={colors.textPrimary} />
+                <Pause size={ICON_SIZE.sm} strokeWidth={ICON_STROKE_WIDTH} color={colors.textPrimary} fill={colors.textPrimary} />
               ) : (
-                <Play size={14} strokeWidth={ICON_STROKE_WIDTH} color={colors.textPrimary} fill={colors.textPrimary} />
+                <Play size={ICON_SIZE.sm} strokeWidth={ICON_STROKE_WIDTH} color={colors.textPrimary} fill={colors.textPrimary} />
               )}
               <Text variant="metadataSmall">{playback.playing ? 'Pause' : 'Play'}</Text>
             </Pressable>
@@ -298,7 +300,7 @@ export function UploadRecordingScreen() {
           <Text variant="body" color="textSecondary" style={styles.rowValue}>
             Bar {startFrom}
           </Text>
-          <ChevronRight size={18} strokeWidth={1.6} color={colors.textTertiary} />
+          <TrailingChevron />
         </Pressable>
         <Pressable
           onPress={() => navigation.navigate('Tempo', { pieceId: params.pieceId })}
@@ -312,7 +314,7 @@ export function UploadRecordingScreen() {
           <Text variant="body" color="textSecondary" style={styles.rowValue}>
             {displayTempoBpm(targetBpm, unit)} {tempoUnitLabel(unit)}
           </Text>
-          <ChevronRight size={18} strokeWidth={1.6} color={colors.textTertiary} />
+          <TrailingChevron />
         </Pressable>
       </View>
 

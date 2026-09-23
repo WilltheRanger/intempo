@@ -1,4 +1,3 @@
-import { ChevronRight } from '../icons';
 import { StyleSheet, View } from 'react-native';
 
 import { PressableScale } from '../motion';
@@ -14,6 +13,7 @@ import {
 } from '../../design';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import { ROW_PADDING_VERTICAL } from '../rowMetrics';
+import { TrailingChevron } from './TrailingChevron';
 
 export interface LinkRowProps {
   label: string;
@@ -92,7 +92,7 @@ export function LinkRow({
             {value}
           </Text>
         ) : null}
-        <ChevronRight
+        <TrailingChevron
           size={ICON_SIZE.md}
           strokeWidth={ICON_STROKE_WIDTH}
           color={colors.textTertiary}

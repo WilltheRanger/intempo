@@ -1,5 +1,5 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
-import { Camera, ChevronRight, Images } from '../../components/icons';
+import { Camera, Images } from '../../components/icons';
 import { useGoBack } from '../../navigation/useGoBack';
 import { useMemo, useState } from 'react';
 import {
@@ -77,6 +77,7 @@ import { loadStateFor } from '../../lib/loadState';
 import { barCells, barGridSummary } from '../../lib/notation/barGrid';
 import { proposalsFor, proposalsSummary } from '../../lib/notation/proposals';
 import { usePreferences } from '../../data/preferences';
+import { TrailingChevron } from '../../components/primitives/TrailingChevron';
 
 /** Read from a stand, not glanced at — the same size the warmup page uses. */
 const STAVE_SCALE = 1.25;
@@ -1138,7 +1139,7 @@ function ScoreAction({
         </Text>
       </View>
       {/* A chevron means it opens, and each of these opens something. */}
-      <ChevronRight
+      <TrailingChevron
         size={ICON_SIZE.md}
         strokeWidth={ICON_STROKE_WIDTH}
         color={colors.textTertiary}

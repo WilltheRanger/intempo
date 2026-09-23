@@ -1279,7 +1279,7 @@ export function RecordScreen() {
               accessibilityLabel="More"
               style={({ pressed }) => [styles.more, pressed && styles.morePressed]}
             >
-              <MoreVertical size={20} strokeWidth={2.4} color={colors.textSecondary} />
+              <MoreVertical size={ICON_SIZE.lg} strokeWidth={ICON_STROKE_WIDTH} color={colors.textSecondary} />
             </Pressable>
           ) : (
             // The slot stays, empty, so the title does not re-wrap — and move
@@ -1733,8 +1733,8 @@ function RecordButton({
               />
             ) : (
               <Mic
-                size={30}
-                strokeWidth={1.6}
+                size={ICON_SIZE.xl}
+                strokeWidth={ICON_STROKE_WIDTH}
                 color={colors.actionText}
               />
             )}

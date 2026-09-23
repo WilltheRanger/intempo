@@ -10,12 +10,19 @@
  * So the fall keeps the prototype's shape and follows the copy: it is moved up
  * until it has settled by the copy's first line, and never lower than the
  * prototype put it.
+ *
+ * **Its run is shorter than the prototype's**, because following the copy
+ * with the prototype's 28% took the wash up to about a quarter of the way
+ * down the screen, and the owner's answer (2026-09-23) was that it "creeps up
+ * too high". The copy's first line still needs settled ivory, so the fall
+ * cannot start later; it can finish sooner, and a 20% run leaves the room in
+ * the photograph about 70pt deeper for the same contrast under the label.
  */
 
 /** The prototype's `fadeStart`, as a fraction of the height. */
 export const FALL_START = 0.47;
-/** The prototype's run from `fadeStart` to `fadeEnd`, as a fraction. */
-export const FALL_SPAN = 0.28;
+/** The run from where the fall starts to where it is fully ivory, as a fraction. */
+export const FALL_SPAN = 0.2;
 
 /**
  * The prototype's curve: along the run (0 to 1), how much ivory is laid over
