@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Welcome to InTempo</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
+<style>
+body { margin: 0; background: #F7F2E9; font-family: 'Inter',system-ui,sans-serif; -webkit-font-smoothing: antialiased; }
+* { box-sizing: border-box; }
+a { color: #7F6541; text-decoration: none; }
+a:hover { color: #14110E; }
+
+html, body { height: 100%; overflow: hidden; }
+.in { animation: arrive 820ms cubic-bezier(.2,.7,.3,1); }
+.in-2 { animation-duration: 1040ms; }
+.in-3 { animation-duration: 1260ms; }
+@keyframes arrive { from { opacity: 0; transform: translateY(14px); } }
+/* Every element is complete at rest: the one-shot keyframes only say where each part
+   comes from, and the looping ones only ever pass back through the resting look. */
+.st0 { stroke-dasharray: 260; animation: draw0 1700ms cubic-bezier(.4,0,.2,1); }
+@keyframes draw0 { 0%, 0% { stroke-dashoffset: 260; } 40% { stroke-dashoffset: 0; } }
+.st1 { stroke-dasharray: 260; animation: draw1 1700ms cubic-bezier(.4,0,.2,1); }
+@keyframes draw1 { 0%, 7% { stroke-dashoffset: 260; } 47% { stroke-dashoffset: 0; } }
+.st2 { stroke-dasharray: 260; animation: draw2 1700ms cubic-bezier(.4,0,.2,1); }
+@keyframes draw2 { 0%, 14% { stroke-dashoffset: 260; } 54% { stroke-dashoffset: 0; } }
+.st3 { stroke-dasharray: 260; animation: draw3 1700ms cubic-bezier(.4,0,.2,1); }
+@keyframes draw3 { 0%, 21% { stroke-dashoffset: 260; } 61% { stroke-dashoffset: 0; } }
+.st4 { stroke-dasharray: 260; animation: draw4 1700ms cubic-bezier(.4,0,.2,1); }
+@keyframes draw4 { 0%, 28% { stroke-dashoffset: 260; } 68% { stroke-dashoffset: 0; } }
+.clef { animation: clef-in 1700ms ease-out; }
+@keyframes clef-in { 0%, 22% { opacity: 0; } 42% { opacity: 1; } }
+.nt1 { color: #14110E; animation: land1 1700ms cubic-bezier(.2,.7,.3,1), glow1 2400ms linear 1700ms infinite; }
+@keyframes land1 { 0%, 44% { opacity: 0; transform: translateY(-12px); } 52% { opacity: 1; transform: translateY(1.5px); } 57% { transform: translateY(0); } }
+@keyframes glow1 { 0%, 11.2% { color: #14110E; } 13.2% { color: #9A7B4F; } 25.7%, 100% { color: #14110E; } }
+.nt2 { color: #14110E; animation: land2 1700ms cubic-bezier(.2,.7,.3,1), glow2 2400ms linear 1700ms infinite; }
+@keyframes land2 { 0%, 55% { opacity: 0; transform: translateY(-12px); } 63% { opacity: 1; transform: translateY(1.5px); } 68% { transform: translateY(0); } }
+@keyframes glow2 { 0%, 27.9% { color: #14110E; } 29.9% { color: #9A7B4F; } 42.4%, 100% { color: #14110E; } }
+.nt3 { color: #14110E; animation: land3 1700ms cubic-bezier(.2,.7,.3,1), glow3 2400ms linear 1700ms infinite; }
+@keyframes land3 { 0%, 66% { opacity: 0; transform: translateY(-12px); } 74% { opacity: 1; transform: translateY(1.5px); } 79% { transform: translateY(0); } }
+@keyframes glow3 { 0%, 56.2% { color: #14110E; } 58.2% { color: #9A7B4F; } 70.7%, 100% { color: #14110E; } }
+.nt4 { color: #14110E; animation: land4 1700ms cubic-bezier(.2,.7,.3,1), glow4 2400ms linear 1700ms infinite; }
+@keyframes land4 { 0%, 77% { opacity: 0; transform: translateY(-12px); } 85% { opacity: 1; transform: translateY(1.5px); } 90% { transform: translateY(0); } }
+@keyframes glow4 { 0%, 73.8% { color: #14110E; } 75.8% { color: #9A7B4F; } 88.3%, 100% { color: #14110E; } }
+.ph { opacity: 0; animation: sweep 2400ms linear 1700ms infinite; }
+@keyframes sweep { 0% { opacity: 0; transform: translateX(0); } 4% { opacity: 1; } 90% { opacity: 1; transform: translateX(184px); } 100% { opacity: 0; transform: translateX(184px); } }
+@media (prefers-reduced-motion: reduce) {
+  .st0, .st1, .st2, .st3, .st4, .clef, .nt1, .nt2, .nt3, .nt4, .ph { animation: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .in { animation: none; }
+}
+button { font: inherit; color: inherit; background: none; border: none; padding: 0; text-align: left; cursor: pointer; }
+</style>
+</helmet>
+<div style="width:390px;height:844px;position:relative;overflow:hidden;background:#F7F2E9;color:#14110E;font-family:'Inter',system-ui,sans-serif;"><div style="position:absolute;left:0;right:0;top:0;bottom:0;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:0 24px;text-align:center;"><div><svg viewBox="0 0 250 96" width="250" height="96" style="display:block;overflow:visible;" role="img" aria-label="A bar of music being written out, then read back on the beat"><line class="st st0" x1="0" y1="26.0" x2="250" y2="26.0" stroke="#5C564D" stroke-width="1" opacity="0.85"/><line class="st st1" x1="0" y1="35.0" x2="250" y2="35.0" stroke="#5C564D" stroke-width="1" opacity="0.85"/><line class="st st2" x1="0" y1="44.0" x2="250" y2="44.0" stroke="#5C564D" stroke-width="1" opacity="0.85"/><line class="st st3" x1="0" y1="53.0" x2="250" y2="53.0" stroke="#5C564D" stroke-width="1" opacity="0.85"/><line class="st st4" x1="0" y1="62.0" x2="250" y2="62.0" stroke="#5C564D" stroke-width="1" opacity="0.85"/><line class="st st4" x1="249" y1="26.0" x2="249" y2="62.0" stroke="#5C564D" stroke-width="1.6"/><g class="clef"><g fill="none" stroke="#14110E" stroke-width="2.16" stroke-linecap="round"><path d="M 24.21 18.29 C 16.50 24.71 13.29 35.00 15.86 43.36 C 17.91 50.17 22.93 55.57 24.60 62.00 C 26.40 68.94 22.54 74.09 17.40 72.80 C 13.80 71.90 12.77 67.14 15.60 65.34"/><path d="M 24.21 18.29 C 30.64 23.43 31.93 33.71 25.50 40.79 C 20.36 46.57 12.64 48.50 11.49 54.03 C 10.59 58.91 14.83 62.77 19.46 60.97 C 23.31 59.43 24.34 54.80 22.03 51.71"/></g></g><g class="nt nt1"><ellipse cx="84.0" cy="53.0" rx="5.94" ry="4.23" transform="rotate(-21 84.0 53.0)" fill="currentColor"/><line x1="89.58" y1="53.0" x2="89.58" y2="23.3" stroke="currentColor" stroke-width="1.53" stroke-linecap="round"/></g><g class="nt nt2"><ellipse cx="118.0" cy="44.0" rx="5.94" ry="4.23" transform="rotate(-21 118.0 44.0)" fill="currentColor"/><line x1="123.58" y1="44.0" x2="123.58" y2="14.3" stroke="currentColor" stroke-width="1.53" stroke-linecap="round"/><ellipse cx="140.0" cy="48.5" rx="5.94" ry="4.23" transform="rotate(-21 140.0 48.5)" fill="currentColor"/><line x1="145.58" y1="48.5" x2="145.58" y2="18.8" stroke="currentColor" stroke-width="1.53" stroke-linecap="round"/><path d="M 123.58 14.30 L 145.58 18.80 L 145.58 23.03 L 123.58 18.53 Z" fill="currentColor"/></g><g class="nt nt3"><ellipse cx="176.0" cy="39.5" rx="5.94" ry="4.23" transform="rotate(-21 176.0 39.5)" fill="currentColor"/><line x1="170.42" y1="39.5" x2="170.42" y2="69.2" stroke="currentColor" stroke-width="1.53" stroke-linecap="round"/></g><g class="nt nt4"><ellipse cx="212.0" cy="30.5" rx="5.94" ry="4.23" transform="rotate(-21 212.0 30.5)" fill="currentColor"/><line x1="206.42" y1="30.5" x2="206.42" y2="60.2" stroke="currentColor" stroke-width="1.53" stroke-linecap="round"/></g><line class="ph" x1="60.0" y1="14" x2="60.0" y2="76" stroke="#9A7B4F" stroke-width="2" stroke-linecap="round"/></svg></div><div style="height:30px;"></div><div class="in in-2"><h1 style="margin:0;font-family:'Newsreader',Georgia,serif;font-size:40px;font-weight:400;line-height:46px;letter-spacing:-1px;color:#14110E;">Welcome to InTempo</h1></div><div style="height:14px;"></div><div class="in in-3" style="max-width:280px;"><p style="margin:0;font-family:'Inter',system-ui,sans-serif;font-size:16px;font-weight:400;line-height:24px;color:#5C564D;margin:0;">Everything is set. Photograph a piece and play it.</p></div></div><div class="in in-3" style="position:absolute;left:0;right:0;bottom:0;padding:16px 24px 34px;"><a href="{{todayHref}}" onClick="{{handOver}}" style="display:flex;width:100%;height:52px;border-radius:26px;background:#1A1714;color:#FBFAF7;font-size:16px;font-weight:500;align-items:center;justify-content:center;text-decoration:none;">Start practicing</a></div></div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+// Which Today the app opens depends on the theme the viewer is in, the same
+// way the app itself would pick its light or dark home screen.
+function todayHref(logic) {
+  var theme = logic && logic.state && logic.state.theme;
+  if (theme !== 'light' && theme !== 'dark') {
+    try {
+      var attr = document.documentElement.getAttribute('data-theme');
+      if (attr === 'light' || attr === 'dark') { theme = attr; }
+      else {
+        var q = new URLSearchParams(window.location.search).get('theme');
+        theme = q === 'dark' ? 'dark' : 'light';
+      }
+    } catch (e) { theme = 'light'; }
+  }
+  return theme === 'dark' ? 'Today.dc.html' : 'TodayLight.dc.html';
+}
+
+class Component extends DCLogic {
+  componentDidMount() {
+    var self = this;
+    this.__theme = function (e) {
+      var d = e && e.data;
+      if (d && d.type === '__dc_theme' && (d.theme === 'light' || d.theme === 'dark')) {
+        self.setState({ theme: d.theme });
+      }
+    };
+    try { window.addEventListener('message', this.__theme); } catch (e) {}
+  }
+
+  componentWillUnmount() {
+    try { window.removeEventListener('message', this.__theme); } catch (e) {}
+  }
+
+  renderVals() {
+    return {
+      todayHref: todayHref(this),
+      // Leave a one-shot note so Today knows it is being opened from here and
+      // can rise in. The link navigates normally either way.
+      handOver: function () {
+        try { window.sessionStorage.setItem('intempo:from-welcome', '1'); } catch (e) {}
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>

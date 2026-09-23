@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Insights</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
+<style>
+body { margin: 0; background: #F7F2E9; font-family: 'Inter',system-ui,sans-serif; -webkit-font-smoothing: antialiased; }
+* { box-sizing: border-box; }
+a { color: #7F6541; text-decoration: none; }
+a:hover { color: #14110E; }
+html, body { height: 100%; overflow: hidden; }
+.piece-list { display: none; }
+.show-all .piece-list { display: block; }
+.lbl-less { display: none; }
+.show-all .lbl-more { display: none; }
+.show-all .lbl-less { display: inline; }
+.chev { transition: transform 200ms ease; }
+.show-all .chev { transform: rotate(180deg); }
+/* The chart is right at rest; the keyframes only say where it came from, so
+   nothing here can leave the screen blank if the animation never runs. */
+.band { animation: band-in 900ms ease-out; }
+@keyframes band-in { from { opacity: 0; } }
+.line { stroke-dasharray: 453.3; stroke-dashoffset: 0;
+        animation: draw 1500ms cubic-bezier(.4,0,.15,1); }
+@keyframes draw { from { stroke-dashoffset: 453.3; } }
+.area { animation: area-in 1500ms ease-out; }
+@keyframes area-in { 0%, 34% { opacity: 0; } 100% { opacity: 0.10; } }
+.dot { transform-origin: 334.0px 35.26px; animation: dot-in 1500ms ease-out; }
+@keyframes dot-in { 0%, 76% { opacity: 0; transform: scale(0.3); }
+                    100% { opacity: 1; transform: scale(1); } }
+.takes { animation: takes-in 1500ms ease-out; }
+@keyframes takes-in { 0%, 40% { opacity: 0; } 100% { opacity: 0.85; } }
+.ins-scroll { scrollbar-width: none; -ms-overflow-style: none; }
+.ins-scroll::-webkit-scrollbar { width: 0; height: 0; display: none; }
+@media (prefers-reduced-motion: reduce) { .band, .line, .area, .dot, .takes { animation: none; } }
+button { font: inherit; color: inherit; background: none; border: none; padding: 0; text-align: left; cursor: pointer; }
+</style>
+</helmet>
+<div class="{{mode}}" style="width:390px;height:844px;position:relative;overflow:hidden;background:#F7F2E9;color:#14110E;font-family:'Inter',system-ui,sans-serif;"><div class="ins-scroll" style="position:absolute;left:0;right:0;top:0;bottom:0;overflow-y:auto;padding:0 24px 116px;"><div style="height:20px;"></div><div style="font-size:11px;font-weight:500;line-height:14px;letter-spacing:0.9px;color:#756E63;">YOUR LAST 14 TAKES</div><div style="height:6px;"></div><h1 style="margin:0;font-family:'Newsreader',Georgia,serif;font-size:36px;font-weight:400;line-height:42px;letter-spacing:-0.6px;color:#14110E;">You tend to rush</h1><div style="height:22px;"></div><svg viewBox="0 0 342 190" width="342" height="190" style="display:block;" role="img" aria-label="Your last 14 takes, one point each, drifting from on the beat to well ahead of it"><rect class="band" x="50.0" y="115.38" width="290.0" height="51.7" fill="#E6E2DA" opacity="0.5"/><line x1="50.0" y1="141.23" x2="334.0" y2="141.23" stroke="#D8D2C6" stroke-width="1"/><text x="0" y="18.0" font-family="'Inter',system-ui,sans-serif" font-size="11" fill="#756E63">Ahead</text><text x="0" y="145.23" font-family="'Inter',system-ui,sans-serif" font-size="11" fill="#756E63">On beat</text><polygon class="area" points="50.0,130.89 71.85,156.74 93.69,107.63 115.54,117.97 137.38,136.06 159.23,86.95 181.08,99.88 202.92,68.86 224.77,92.12 246.62,55.94 268.46,45.6 290.31,66.28 312.15,27.51 334.0,35.26 334.0,141.23 50.0,141.23" fill="#9A7B4F" opacity="0.10"/><polyline class="line" points="50.0,130.89 71.85,156.74 93.69,107.63 115.54,117.97 137.38,136.06 159.23,86.95 181.08,99.88 202.92,68.86 224.77,92.12 246.62,55.94 268.46,45.6 290.31,66.28 312.15,27.51 334.0,35.26" fill="none" stroke="#9A7B4F" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/><g class="takes" opacity="0.85"><circle cx="50.0" cy="130.89" r="2.9" fill="#9A7B4F"/><circle cx="71.85" cy="156.74" r="2.9" fill="#9A7B4F"/><circle cx="93.69" cy="107.63" r="2.9" fill="#9A7B4F"/><circle cx="115.54" cy="117.97" r="2.9" fill="#9A7B4F"/><circle cx="137.38" cy="136.06" r="2.9" fill="#9A7B4F"/><circle cx="159.23" cy="86.95" r="2.9" fill="#9A7B4F"/><circle cx="181.08" cy="99.88" r="2.9" fill="#9A7B4F"/><circle cx="202.92" cy="68.86" r="2.9" fill="#9A7B4F"/><circle cx="224.77" cy="92.12" r="2.9" fill="#9A7B4F"/><circle cx="246.62" cy="55.94" r="2.9" fill="#9A7B4F"/><circle cx="268.46" cy="45.6" r="2.9" fill="#9A7B4F"/><circle cx="290.31" cy="66.28" r="2.9" fill="#9A7B4F"/><circle cx="312.15" cy="27.51" r="2.9" fill="#9A7B4F"/></g><circle class="dot" cx="334.0" cy="35.26" r="5.5" fill="#9A7B4F" stroke="#F7F2E9" stroke-width="2.4"/></svg><div style="display:flex;justify-content:space-between;margin-top:5px;font-size:11px;color:#756E63;padding-left:50px;"><span>Take 1</span><span>Take 14</span></div><div style="height:24px;"></div><div style="border:1px solid #E6E2DA;border-radius:16px;background:#FFFFFF;padding:16px;"><div style="font-size:11px;font-weight:500;line-height:14px;letter-spacing:0.9px;color:#756E63;">WORTH A LOOK</div><div style="height:7px;"></div><div style="font-family:'Newsreader',Georgia,serif;font-size:19px;font-weight:500;letter-spacing:-0.2px;color:#14110E;">Elegy in D minor</div><div style="height:14px;"></div><svg viewBox="0 0 306 90" width="306" height="90" style="display:block;" role="img" aria-label="Drift line by line: steady through the first five lines, then further and further ahead"><rect x="48.0" y="52.0" width="258.0" height="20.0" fill="#E6E2DA" opacity="0.6"/><line x1="48.0" y1="62.0" x2="306.0" y2="62.0" stroke="#D8D2C6" stroke-width="1"/><text x="0" y="66.0" font-family="'Inter',system-ui,sans-serif" font-size="11" fill="#756E63">On beat</text><text x="0" y="14" font-family="'Inter',system-ui,sans-serif" font-size="11" fill="#756E63">Ahead</text><rect x="48.0" y="58.0" width="27.0" height="4.0" rx="2" fill="#968D80"/><rect x="81.0" y="62.0" width="27.0" height="4.0" rx="2" fill="#968D80"/><rect x="114.0" y="57.0" width="27.0" height="5.0" rx="2" fill="#968D80"/><rect x="147.0" y="51.0" width="27.0" height="11.0" rx="2" fill="#9A7B4F"/><rect x="180.0" y="53.0" width="27.0" height="9.0" rx="2" fill="#968D80"/><rect x="213.0" y="38.0" width="27.0" height="24.0" rx="2" fill="#9A7B4F"/><rect x="246.0" y="24.0" width="27.0" height="38.0" rx="2" fill="#9A7B4F"/><rect x="279.0" y="11.0" width="27.0" height="51.0" rx="2" fill="#9A7B4F"/></svg><div style="display:flex;justify-content:space-between;margin-top:5px;font-size:11px;color:#756E63;padding-left:48px;"><span>First line</span><span>Last line</span></div><div style="height:12px;"></div><div style="font-size:14px;line-height:20px;color:#5C564D;">You speed up towards the last line.</div><div style="height:14px;"></div><a href="RecordReady.dc.html" style="display:flex;width:100%;height:48px;border-radius:24px;background:#1A1714;color:#FBFAF7;font-size:15px;font-weight:500;align-items:center;justify-content:center;text-decoration:none;">Practice the last line</a></div><div style="height:10px;"></div><button type="button" onClick="{{toggle}}" style="display:inline-flex;align-items:center;gap:6px;min-height:44px;font-size:14px;font-weight:500;color:#7F6541;"><span class="lbl-more">See all 4 pieces</span><span class="lbl-less">Show less</span><svg class="chev" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#7F6541" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:block;flex-shrink:0;"><path d="M5.2 9.2 12 16l6.8-6.8"></path></svg></button><div class="piece-list"><div style="height:14px;"></div><div style="font-size:11px;font-weight:500;line-height:14px;letter-spacing:0.9px;color:#756E63;">YOUR PIECES</div><div style="height:7px;"></div><button type="button" style="display:flex;align-items:center;gap:10px;width:100%;border-top:1px solid #E6E2DA;padding:7px 0;min-height:34px;text-align:left;"><span style="width:120px;flex-shrink:0;font-size:13px;color:#14110E;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Elegy in D minor</span><span style="flex:1;position:relative;height:14px;"><span style="position:absolute;left:0;right:0;top:6px;height:2px;background:#E6E2DA;border-radius:999px;"></span><span style="position:absolute;left:50%;width:35.00%;top:6px;height:2px;background:#9A7B4F;border-radius:999px;"></span><span style="position:absolute;left:50%;top:1px;width:1px;height:12px;background:#D8D2C6;"></span></span><span style="width:84px;flex-shrink:0;text-align:right;font-size:11px;color:#8F681C;white-space:nowrap;">rushing</span></button><button type="button" style="display:flex;align-items:center;gap:10px;width:100%;border-top:1px solid #E6E2DA;padding:7px 0;min-height:34px;text-align:left;"><span style="width:120px;flex-shrink:0;font-size:13px;color:#14110E;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Caprice No. 24</span><span style="flex:1;position:relative;height:14px;"><span style="position:absolute;left:0;right:0;top:6px;height:2px;background:#E6E2DA;border-radius:999px;"></span><span style="position:absolute;left:50%;width:16.67%;top:6px;height:2px;background:#9A7B4F;border-radius:999px;"></span><span style="position:absolute;left:50%;top:1px;width:1px;height:12px;background:#D8D2C6;"></span></span><span style="width:84px;flex-shrink:0;text-align:right;font-size:11px;color:#5C564D;white-space:nowrap;">a little ahead</span></button><button type="button" style="display:flex;align-items:center;gap:10px;width:100%;border-top:1px solid #E6E2DA;padding:7px 0;min-height:34px;text-align:left;"><span style="width:120px;flex-shrink:0;font-size:13px;color:#14110E;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Suite No. 1 · Prélude</span><span style="flex:1;position:relative;height:14px;"><span style="position:absolute;left:0;right:0;top:6px;height:2px;background:#E6E2DA;border-radius:999px;"></span><span style="position:absolute;left:50%;width:2.50%;top:6px;height:2px;background:#9A7B4F;border-radius:999px;"></span><span style="position:absolute;left:50%;top:1px;width:1px;height:12px;background:#D8D2C6;"></span></span><span style="width:84px;flex-shrink:0;text-align:right;font-size:11px;color:#1D7F46;white-space:nowrap;">steady</span></button><button type="button" style="display:flex;align-items:center;gap:10px;width:100%;border-top:1px solid #E6E2DA;padding:7px 0;min-height:34px;text-align:left;"><span style="width:120px;flex-shrink:0;font-size:13px;color:#14110E;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Sonata No. 1 in G minor</span><span style="flex:1;position:relative;height:14px;"><span style="position:absolute;left:0;right:0;top:6px;height:2px;background:#E6E2DA;border-radius:999px;"></span><span style="position:absolute;right:50%;width:9.17%;top:6px;height:2px;background:#9A7B4F;border-radius:999px;"></span><span style="position:absolute;left:50%;top:1px;width:1px;height:12px;background:#D8D2C6;"></span></span><span style="width:84px;flex-shrink:0;text-align:right;font-size:11px;color:#8F681C;white-space:nowrap;">dragging</span></button></div></div><div style="position:absolute;left:0;right:0;bottom:0;height:120px;pointer-events:none;background:linear-gradient(180deg,rgba(247,242,233,0) 0%,rgba(247,242,233,0.94) 55%,#F7F2E9 100%);"></div><nav aria-label="Main" style="position:absolute;left:16px;right:16px;bottom:22px;height:62px;border-radius:31px;background:#FAF8F2;border:1px solid rgba(20,17,14,0.14);display:flex;align-items:center;"><a href="{{todayHref}}" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;height:100%;text-decoration:none;"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="#5C564D" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:block;flex-shrink:0;"><path d="M3 10.6 12 3.2l9 7.4V20a1 1 0 0 1-1 1h-5.2v-6.2H9.2V21H4a1 1 0 0 1-1-1z"/></svg><span style="font-size:12px;font-weight:500;color:#5C564D;">Today</span></a><a href="Library.dc.html" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;height:100%;text-decoration:none;"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="#5C564D" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:block;flex-shrink:0;"><path d="M4 4.5v15M8.6 4.5v15M13.4 5.6l4.4 14.3"/></svg><span style="font-size:12px;font-weight:500;color:#5C564D;">Library</span></a><a href="Insights.dc.html" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;height:100%;text-decoration:none;"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="#9A7B4F" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:block;flex-shrink:0;"><path d="M3.2 3.2v17.6h17.6M7 14.4l4.1-4.3 3 2.9 5.1-6.2"/></svg><span style="font-size:12px;font-weight:500;color:#14110E;">Insights</span></a><a href="Profile.dc.html" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;height:100%;text-decoration:none;"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="#5C564D" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:block;flex-shrink:0;"><path d="M12 11.2a4.1 4.1 0 1 0 0-8.2 4.1 4.1 0 0 0 0 8.2zM4.2 21a7.8 7.8 0 0 1 15.6 0"/></svg><span style="font-size:12px;font-weight:500;color:#5C564D;">Profile</span></a></nav></div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+// Which Today the app opens depends on the theme the viewer is in, the same
+// way the app itself would pick its light or dark home screen.
+function todayHref(logic) {
+  var theme = logic && logic.state && logic.state.theme;
+  if (theme !== 'light' && theme !== 'dark') {
+    try {
+      var attr = document.documentElement.getAttribute('data-theme');
+      if (attr === 'light' || attr === 'dark') { theme = attr; }
+      else {
+        var q = new URLSearchParams(window.location.search).get('theme');
+        theme = q === 'dark' ? 'dark' : 'light';
+      }
+    } catch (e) { theme = 'light'; }
+  }
+  return theme === 'dark' ? 'Today.dc.html' : 'TodayLight.dc.html';
+}
+
+class Component extends DCLogic {
+  componentDidMount() {
+    var self = this;
+    this.__theme = function (e) {
+      var d = e && e.data;
+      if (d && d.type === '__dc_theme' && (d.theme === 'light' || d.theme === 'dark')) {
+        self.setState({ theme: d.theme });
+      }
+    };
+    try { window.addEventListener('message', this.__theme); } catch (e) {}
+  }
+
+  componentWillUnmount() {
+    try { window.removeEventListener('message', this.__theme); } catch (e) {}
+  }
+
+  renderVals() {
+    var self = this;
+    var open = !!(this.state && this.state.open);
+    return {
+      todayHref: todayHref(this),
+      mode: open ? 'show-all' : '',
+      toggle: function () {
+        self.setState({ open: !open });
+        if (!open) {
+          setTimeout(function () {
+            try {
+              var el = document.querySelector('.ins-scroll');
+              if (el) { el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }); }
+            } catch (x) {}
+          }, 30);
+        }
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>

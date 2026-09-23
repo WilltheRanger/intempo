@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Today, light</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&amp;family=Newsreader:opsz,wght@6..72,400;6..72,500&amp;display=swap" rel="stylesheet">
+<style>
+body { margin: 0; background: #F7F2E9; font-family: 'Inter',system-ui,sans-serif; -webkit-font-smoothing: antialiased; }
+* { box-sizing: border-box; }
+a { color: #7F6541; text-decoration: none; }
+a:hover { color: #14110E; }
+html, body { height: 100%; overflow: hidden; }
+/* Only when opened straight from the welcome screen does it rise in. Reached
+   any other way it is simply here. No fill-mode, so the base state is visible. */
+.rise-in { animation: rise-in 620ms ease-out; }
+@keyframes rise-in { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .rise-in { animation: none; } }
+button { font: inherit; color: inherit; background: none; border: none; padding: 0; text-align: left; cursor: pointer; }
+</style>
+</helmet>
+<div style="width:390px;height:844px;position:relative;overflow:hidden;background:#F7F2E9;color:#14110E;font-family:'Inter',system-ui,sans-serif;"><div class="{{enter}}" style="position:absolute;left:0;right:0;top:0;bottom:0;overflow:hidden;background:#F7F2E9;"><img src="/_blob/bc8386e305687366da680596679d8c52" alt="" style="position:absolute;left:0;top:0;width:100%;height:100%;object-fit:cover;object-position:56% 40%;"></div><div class="{{enter}}" style="position:absolute;left:0;right:0;top:0;bottom:0;background:{{fall}};"></div><div class="{{enter}}" style="position:absolute;left:0;right:0;top:0;height:{{scrimDepth}}px;background:{{scrim}};"></div><div class="{{enter}}" style="position:absolute;left:0;right:0;top:0;bottom:0;display:flex;flex-direction:column;padding:20px 24px 114px;"><div style="display:flex;align-items:flex-start;gap:8px;"><div style="flex:1;"><h1 style="margin:0;font-family:'Newsreader',Georgia,serif;font-size:36px;font-weight:400;line-height:42px;letter-spacing:-0.6px;color:#FBFAF7;">Good evening</h1><div style="margin:0;font-family:'Inter',system-ui,sans-serif;font-size:13px;font-weight:400;line-height:18px;color:#FBFAF7;margin-top:4px;">Arya</div></div><div style="margin-right:-10px;"><button type="button" aria-label="Add a piece" style="width:44px;height:44px;display:flex;align-items:center;justify-content:center;"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#FBFAF7" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:block;flex-shrink:0;"><path d="M12 5.2v13.6M5.2 12h13.6"></path></svg></button></div></div><div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;padding-bottom:18px;"><div style="margin:0;font-family:'Inter',system-ui,sans-serif;font-size:11px;font-weight:500;line-height:14px;letter-spacing:0.9px;color:#5C564D;">RECOMMENDED</div><div style="height:6px;"></div><h1 style="margin:0;font-family:'Newsreader',Georgia,serif;font-size:42px;font-weight:400;line-height:46px;letter-spacing:-1px;color:#14110E;">Elegy in D minor</h1><div style="height:10px;"></div><div style="height:8px;"></div><div style="height:20px;"></div><button type="button" style="width:100%;height:52px;border-radius:26px;background:#1A1714;color:#FBFAF7;font-family:'Inter',system-ui,sans-serif;font-size:16px;font-weight:500;display:flex;align-items:center;justify-content:center;">Continue practice</button><a href="Insights.dc.html" style="display:flex;align-items:center;gap:8px;min-height:44px;width:100%;margin-top:14px;text-decoration:none;"><span style="flex:1;font-size:14px;color:#5C564D;">Recent results</span><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="#756E63" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:block;flex-shrink:0;"><path d="M9.2 5.2 16 12l-6.8 6.8"></path></svg></a></div></div><nav class="{{enter}}" aria-label="Main" style="position:absolute;left:16px;right:16px;bottom:22px;height:62px;border-radius:31px;background:#FAF8F2;border:1px solid rgba(20,17,14,0.14);display:flex;align-items:center;"><a href="{{todayHref}}" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;height:100%;text-decoration:none;"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="#9A7B4F" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:block;flex-shrink:0;"><path d="M3 10.6 12 3.2l9 7.4V20a1 1 0 0 1-1 1h-5.2v-6.2H9.2V21H4a1 1 0 0 1-1-1z"></path></svg><span style="font-size:12px;font-weight:500;color:#14110E;">Today</span></a><a href="Library.dc.html" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;height:100%;text-decoration:none;"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="#5C564D" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:block;flex-shrink:0;"><path d="M4 4.5v15M8.6 4.5v15M13.4 5.6l4.4 14.3"></path></svg><span style="font-size:12px;font-weight:500;color:#5C564D;">Library</span></a><a href="Insights.dc.html" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;height:100%;text-decoration:none;"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="#5C564D" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:block;flex-shrink:0;"><path d="M3.2 3.2v17.6h17.6M7 14.4l4.1-4.3 3 2.9 5.1-6.2"></path></svg><span style="font-size:12px;font-weight:500;color:#5C564D;">Insights</span></a><a href="Profile.dc.html" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;height:100%;text-decoration:none;"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="#5C564D" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:block;flex-shrink:0;"><path d="M12 11.2a4.1 4.1 0 1 0 0-8.2 4.1 4.1 0 0 0 0 8.2zM4.2 21a7.8 7.8 0 0 1 15.6 0"></path></svg><span style="font-size:12px;font-weight:500;color:#5C564D;">Profile</span></a></nav></div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;fadeStart&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:47,&quot;min&quot;:0,&quot;max&quot;:80,&quot;step&quot;:1,&quot;unit&quot;:&quot;%&quot;,&quot;section&quot;:&quot;Ivory fall&quot;},&quot;fadeEnd&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:75,&quot;min&quot;:40,&quot;max&quot;:100,&quot;step&quot;:1,&quot;unit&quot;:&quot;%&quot;,&quot;section&quot;:&quot;Ivory fall&quot;},&quot;maxWash&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:100,&quot;min&quot;:40,&quot;max&quot;:100,&quot;step&quot;:1,&quot;unit&quot;:&quot;%&quot;,&quot;section&quot;:&quot;Ivory fall&quot;},&quot;topScrim&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:31,&quot;min&quot;:0,&quot;max&quot;:100,&quot;step&quot;:1,&quot;unit&quot;:&quot;%&quot;,&quot;section&quot;:&quot;Top scrim&quot;},&quot;scrimDepth&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:195,&quot;min&quot;:60,&quot;max&quot;:400,&quot;step&quot;:5,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Top scrim&quot;},&quot;$preview&quot;:{&quot;width&quot;:390,&quot;height&quot;:844}}">
+// Which Today the app opens depends on the theme the viewer is in, the same
+// way the app itself would pick its light or dark home screen.
+function todayHref(logic) {
+  var theme = logic && logic.state && logic.state.theme;
+  if (theme !== 'light' && theme !== 'dark') {
+    try {
+      var attr = document.documentElement.getAttribute('data-theme');
+      if (attr === 'light' || attr === 'dark') { theme = attr; }
+      else {
+        var q = new URLSearchParams(window.location.search).get('theme');
+        theme = q === 'dark' ? 'dark' : 'light';
+      }
+    } catch (e) { theme = 'light'; }
+  }
+  return theme === 'dark' ? 'Today.dc.html' : 'TodayLight.dc.html';
+}
+
+class Component extends DCLogic {
+  componentDidMount() {
+    var self = this;
+    this.__theme = function (e) {
+      var d = e && e.data;
+      if (d && d.type === '__dc_theme' && (d.theme === 'light' || d.theme === 'dark')) {
+        self.setState({ theme: d.theme });
+      }
+    };
+    try { window.addEventListener('message', this.__theme); } catch (e) {}
+  }
+
+  componentWillUnmount() {
+    try { window.removeEventListener('message', this.__theme); } catch (e) {}
+  }
+
+  renderVals() {
+    var p = this.props;
+    var start = p.fadeStart == null ? 32 : Number(p.fadeStart);
+    var end = p.fadeEnd == null ? 92 : Number(p.fadeEnd);
+    var peak = (p.maxWash == null ? 96 : Number(p.maxWash)) / 100;
+    if (end <= start) { end = start + 1; }
+    var span = end - start;
+    // the shape of the fall, as fractions of the run between start and end
+    var curve = [[0, 0], [0.18, 0.31], [0.38, 0.75], [0.60, 0.865], [0.80, 0.94], [1, 0.984]];
+    var parts = ['rgba(247,242,233,0) 0%'];
+    for (var i = 0; i < curve.length; i++) {
+      parts.push('rgba(247,242,233,' + (peak * curve[i][1]).toFixed(3) + ') '
+        + (start + span * curve[i][0]).toFixed(1) + '%');
+    }
+    parts.push('rgba(247,242,233,' + peak.toFixed(3) + ') 100%');
+
+    var ts = (p.topScrim == null ? 68 : Number(p.topScrim)) / 100;
+    var d = p.scrimDepth == null ? 195 : Number(p.scrimDepth);
+    var scrim = 'linear-gradient(180deg,rgba(26,23,20,' + ts.toFixed(3) + ') 0px,'
+      + 'rgba(26,23,20,' + (ts * 0.853).toFixed(3) + ') ' + Math.round(d * 0.359) + 'px,'
+      + 'rgba(26,23,20,' + (ts * 0.5).toFixed(3) + ') ' + Math.round(d * 0.677) + 'px,'
+      + 'rgba(26,23,20,0) ' + d + 'px)';
+
+    if (this.__entered === undefined) {
+      var fromWelcome = false;
+      try {
+        fromWelcome = window.sessionStorage.getItem('intempo:from-welcome') === '1';
+        if (fromWelcome) window.sessionStorage.removeItem('intempo:from-welcome');
+      } catch (e) { fromWelcome = false; }
+      this.__entered = fromWelcome;
+    }
+
+    return {
+      todayHref: todayHref(this),
+      enter: this.__entered ? 'rise-in' : '',
+      fall: 'linear-gradient(180deg,' + parts.join(',') + ')',
+      scrim: scrim,
+      scrimDepth: d
+    };
+  }
+}
+</script>
+</body>
+</html>

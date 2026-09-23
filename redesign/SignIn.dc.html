@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sign in</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&amp;family=Newsreader:opsz,wght@6..72,400;6..72,500&amp;display=swap" rel="stylesheet">
+<style>
+body { margin: 0; background: #F7F2E9; font-family: 'Inter',system-ui,sans-serif; -webkit-font-smoothing: antialiased; }
+* { box-sizing: border-box; }
+a { color: #7F6541; text-decoration: none; }
+a:hover { color: #14110E; }
+html, body { height: 100%; overflow: hidden; }
+/* Sign in, with the ivory wash over the photograph, is what shows when no
+   class is applied, so the screen is right even if nothing ever toggles.
+   In the held beat the form AND the wash go, leaving the bare photograph. */
+.panel, .wash, .brand { transition: opacity 360ms ease; }
+.p-signup { opacity: 0; pointer-events: none; }
+.show-signup .p-signin { opacity: 0; pointer-events: none; }
+.show-gap .p-signin, .show-gap .p-signup { opacity: 0; pointer-events: none; }
+.show-gap .wash, .show-gap .brand { opacity: 0; }
+.show-signin .wash, .show-signup .wash,
+.show-signin .brand, .show-signup .brand { transition: opacity 420ms ease; }
+.show-signup .p-signup { opacity: 1; pointer-events: auto; transition: opacity 460ms ease 260ms; }
+.show-signin .p-signin { transition: opacity 460ms ease 260ms; }
+@media (prefers-reduced-motion: reduce) {
+  .panel, .wash, .brand { transition: opacity 140ms linear; }
+  .show-signup .p-signup, .show-signin .p-signin { transition: opacity 140ms linear 100ms; }
+}
+button { font: inherit; color: inherit; background: none; border: none; padding: 0; text-align: left; cursor: pointer; }
+</style>
+</helmet>
+<div class="{{mode}}" style="width:390px;height:844px;position:relative;overflow:hidden;background:#F7F2E9;color:#14110E;font-family:'Inter',system-ui,sans-serif;"><div style="position:absolute;left:0;right:0;top:0;bottom:0;overflow:hidden;"><img src="/_blob/a9a5557211ad97c0561ff75c2394de31" alt="" style="position:absolute;left:0;top:0;width:100%;height:100%;object-fit:cover;object-position:50% 50%;"><div class="wash" style="position:absolute;left:0;right:0;top:0;bottom:0;background:linear-gradient(180deg,rgba(247,242,233,0) 0%,rgba(247,242,233,0.06) 12%,rgba(247,242,233,0.30) 21%,rgba(247,242,233,0.68) 28%,rgba(247,242,233,0.92) 33%,#F7F2E9 38%,#F7F2E9 100%);"></div></div><div style="position:absolute;left:0;right:0;bottom:0;padding:0 24px 40px;"><div class="brand" style="font-family:'Newsreader',Georgia,serif;font-size:22px;font-weight:500;letter-spacing:-0.2px;color:#14110E;">InTempo</div><div style="height:26px;"></div><div style="position:relative;height:452px;">
+
+<div class="panel p-signin" style="position:absolute;left:0;right:0;bottom:0;"><h1 style="margin:0;font-family:'Newsreader',Georgia,serif;font-size:36px;font-weight:400;line-height:42px;letter-spacing:-0.6px;color:#14110E;">Welcome back</h1><div style="height:8px;"></div><p style="margin:0;font-family:'Inter',system-ui,sans-serif;font-size:16px;font-weight:400;line-height:24px;color:#5C564D;">Your library and your practice history are where you left them.</p><div style="height:24px;"></div><div style="margin-bottom:16px;"><label for="si-email" style="display:block;font-size:12px;letter-spacing:0.8px;text-transform:uppercase;color:#756E63;margin-bottom:7px;">Email</label><input id="si-email" type="text" value="arya@example.com" style="width:100%;height:48px;border-radius:12px;border:1px solid #E6E2DA;background:#FFFFFF;padding:0 14px;font-size:16px;color:#14110E;"></div><div style="margin-bottom:16px;"><label for="si-pass" style="display:block;font-size:12px;letter-spacing:0.8px;text-transform:uppercase;color:#756E63;margin-bottom:7px;">Password</label><div style="position:relative;"><input id="si-pass" type="text" value="••••••••••" style="width:100%;height:48px;border-radius:12px;border:1px solid #E6E2DA;background:#FFFFFF;padding:0 14px;font-size:16px;color:#14110E;"><button type="button" style="position:absolute;right:12px;top:0;height:48px;font-size:13px;font-weight:500;color:#7F6541;">Show</button></div></div><div style="display:flex;gap:24px;margin:-2px 0 20px;"><a href="#link" style="min-height:44px;display:flex;align-items:center;font-size:14px;">Email me a link</a><a href="#reset" style="min-height:44px;display:flex;align-items:center;font-size:14px;">Forgot your password?</a></div><button type="button" style="width:100%;height:52px;border-radius:26px;background:#1A1714;color:#FBFAF7;font-family:'Inter',system-ui,sans-serif;font-size:16px;font-weight:500;display:flex;align-items:center;justify-content:center;">Sign in</button><div style="margin-top:22px;text-align:center;font-size:14px;color:#5C564D;">New to InTempo? <button type="button" onClick="{{toSignUp}}" style="font-weight:500;color:#7F6541;">Create an account</button></div></div>
+
+<div class="panel p-signup" style="position:absolute;left:0;right:0;bottom:0;"><h1 style="margin:0;font-family:'Newsreader',Georgia,serif;font-size:36px;font-weight:400;line-height:42px;letter-spacing:-0.6px;color:#14110E;">Create your account</h1><div style="height:26px;"></div><div style="margin-bottom:16px;"><label for="su-email" style="display:block;font-size:12px;letter-spacing:0.8px;text-transform:uppercase;color:#756E63;margin-bottom:7px;">Email</label><input id="su-email" type="text" value="arya@example.com" style="width:100%;height:48px;border-radius:12px;border:1px solid #E6E2DA;background:#FFFFFF;padding:0 14px;font-size:16px;color:#14110E;"></div><div style="margin-bottom:16px;"><label for="su-pass" style="display:block;font-size:12px;letter-spacing:0.8px;text-transform:uppercase;color:#756E63;margin-bottom:7px;">Password</label><div style="position:relative;"><input id="su-pass" type="text" value="••••••••••" style="width:100%;height:48px;border-radius:12px;border:1px solid #E6E2DA;background:#FFFFFF;padding:0 14px;font-size:16px;color:#14110E;"><button type="button" style="position:absolute;right:12px;top:0;height:48px;font-size:13px;font-weight:500;color:#7F6541;">Show</button></div></div><div style="font-size:12px;line-height:17px;color:#756E63;margin:-2px 0 18px;">Creating an account means you accept the <a href="#terms">terms of use</a> and the <a href="#privacy">privacy policy</a>.</div><a href="OnboardWelcome.dc.html" style="display:flex;width:100%;height:52px;border-radius:26px;background:#1A1714;color:#FBFAF7;font-size:16px;font-weight:500;align-items:center;justify-content:center;text-decoration:none;">Create account</a><div style="margin-top:22px;text-align:center;font-size:14px;color:#5C564D;">Already have an account? <button type="button" onClick="{{toSignIn}}" style="font-weight:500;color:#7F6541;">Sign in</button></div></div>
+
+</div></div></div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var self = this;
+    var m = (this.state && this.state.mode) || 'signin';
+    var cls = m === 'signup' ? 'show-signup' : (m === 'gap' ? 'show-gap' : 'show-signin');
+
+    // Out, then a held beat on the bare photograph, then in.
+    function go(next) {
+      self.setState({ mode: 'gap' });
+      setTimeout(function () { self.setState({ mode: next }); }, 1500);
+    }
+
+    return {
+      mode: cls,
+      toSignUp: function () { go('signup'); },
+      toSignIn: function () { go('signin'); }
+    };
+  }
+}
+</script>
+</body>
+</html>

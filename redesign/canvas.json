@@ -1,0 +1,309 @@
+{
+ "attachments": {},
+ "boards": {
+  "Insights.dc.html": {
+   "h": 844,
+   "radius": 28,
+   "title": "Insights",
+   "w": 390,
+   "x": 0,
+   "y": 3908,
+   "is_interactive": true
+  },
+  "Library.dc.html": {
+   "h": 844,
+   "radius": 28,
+   "title": "Library",
+   "w": 390,
+   "x": 940,
+   "y": 1460
+  },
+  "Main.dc.html": {
+   "h": 1020,
+   "radius": 16,
+   "title": "Foundations",
+   "w": 1280,
+   "x": 0,
+   "y": 0
+  },
+  "MeasureEdit.dc.html": {
+   "h": 844,
+   "radius": 28,
+   "title": "Measure edit",
+   "w": 390,
+   "x": 2350,
+   "y": 2684
+  },
+  "NamePiece.dc.html": {
+   "h": 844,
+   "radius": 28,
+   "title": "Name this piece",
+   "w": 390,
+   "x": 940,
+   "y": 2684
+  },
+  "OnboardDone.dc.html": {
+   "h": 844,
+   "is_interactive": true,
+   "radius": 28,
+   "title": "Welcome to InTempo",
+   "w": 390,
+   "x": 3290,
+   "y": 5132
+  },
+  "OnboardInstrument.dc.html": {
+   "h": 844,
+   "radius": 28,
+   "title": "2 · Instrument",
+   "w": 390,
+   "x": 940,
+   "y": 5132
+  },
+  "OnboardMic.dc.html": {
+   "h": 844,
+   "radius": 28,
+   "title": "4 · Microphone",
+   "w": 390,
+   "x": 1880,
+   "y": 5132
+  },
+  "OnboardName.dc.html": {
+   "h": 844,
+   "radius": 28,
+   "title": "1 · Name",
+   "w": 390,
+   "x": 470,
+   "y": 5132
+  },
+  "OnboardPhoto.dc.html": {
+   "h": 844,
+   "radius": 28,
+   "title": "6 · Photo",
+   "w": 390,
+   "x": 2820,
+   "y": 5132
+  },
+  "OnboardRole.dc.html": {
+   "h": 844,
+   "radius": 28,
+   "title": "3 · Role",
+   "w": 390,
+   "x": 1410,
+   "y": 5132
+  },
+  "OnboardSource.dc.html": {
+   "h": 844,
+   "radius": 28,
+   "title": "5 · How did you find us",
+   "w": 390,
+   "x": 2350,
+   "y": 5132
+  },
+  "OnboardWelcome.dc.html": {
+   "h": 844,
+   "radius": 28,
+   "title": "Welcome",
+   "w": 390,
+   "x": 0,
+   "y": 5132
+  },
+  "PieceDetail.dc.html": {
+   "h": 844,
+   "radius": 28,
+   "title": "Piece detail",
+   "w": 390,
+   "x": 470,
+   "y": 3908,
+   "is_interactive": true
+  },
+  "PieceScore.dc.html": {
+   "h": 844,
+   "radius": 28,
+   "title": "Piece score",
+   "w": 390,
+   "x": 1880,
+   "y": 2684
+  },
+  "Profile.dc.html": {
+   "h": 844,
+   "radius": 28,
+   "title": "Profile",
+   "w": 390,
+   "x": 1410,
+   "y": 3908
+  },
+  "RecordCountIn.dc.html": {
+   "h": 844,
+   "radius": 28,
+   "title": "Record — count-in",
+   "w": 390,
+   "x": 2350,
+   "y": 1460
+  },
+  "RecordReady.dc.html": {
+   "h": 844,
+   "radius": 28,
+   "title": "Record — ready",
+   "w": 390,
+   "x": 1410,
+   "y": 1460,
+   "is_interactive": true
+  },
+  "ReviewPages.dc.html": {
+   "h": 844,
+   "radius": 28,
+   "title": "Review pages",
+   "w": 390,
+   "x": 470,
+   "y": 2684
+  },
+  "Scanner.dc.html": {
+   "h": 844,
+   "radius": 28,
+   "title": "Scanner",
+   "w": 390,
+   "x": 0,
+   "y": 2684
+  },
+  "SetTempo.dc.html": {
+   "h": 844,
+   "radius": 28,
+   "title": "Set your working tempo",
+   "w": 390,
+   "x": 1410,
+   "y": 2684
+  },
+  "SignIn.dc.html": {
+   "h": 844,
+   "is_interactive": true,
+   "radius": 28,
+   "title": "Sign in / Create account",
+   "w": 390,
+   "x": 940,
+   "y": 3908
+  },
+  "Today.dc.html": {
+   "h": 844,
+   "radius": 28,
+   "title": "Today — dark hero",
+   "w": 390,
+   "x": 0,
+   "y": 1460
+  },
+  "TodayLight.dc.html": {
+   "h": 844,
+   "radius": 28,
+   "title": "Today — light",
+   "w": 390,
+   "x": 470,
+   "y": 1460
+  },
+  "UploadRecording.dc.html": {
+   "h": 844,
+   "radius": 28,
+   "title": "Upload a recording",
+   "w": 390,
+   "x": 2820,
+   "y": 1460
+  },
+  "Verdict.dc.html": {
+   "h": 844,
+   "radius": 28,
+   "title": "Verdict",
+   "w": 390,
+   "x": 3290,
+   "y": 1460
+  },
+  "Tempo.dc.html": {
+   "h": 844,
+   "radius": 28,
+   "title": "Record — tempo",
+   "w": 390,
+   "x": 1880,
+   "y": 1460,
+   "is_interactive": true
+  }
+ },
+ "createdOnFiles": {
+  "at": "2026-09-22T02:38:02Z",
+  "v": 1
+ },
+ "designSystems": [],
+ "launch": {
+  "view": "canvas"
+ },
+ "notes": {
+  "n1": {
+   "kind": "title1",
+   "maxW": 1280,
+   "text": "Foundations",
+   "w": 240,
+   "x": 0,
+   "y": -260
+  },
+  "n2": {
+   "kind": "title1",
+   "maxW": 3680,
+   "text": "The core loop",
+   "w": 240,
+   "x": 0,
+   "y": 1200
+  },
+  "n3": {
+   "kind": "title1",
+   "maxW": 2740,
+   "text": "Capture and the score",
+   "w": 240,
+   "x": 0,
+   "y": 2424
+  },
+  "n4": {
+   "kind": "title1",
+   "maxW": 2270,
+   "text": "Insights, the piece, and signing in",
+   "w": 240,
+   "x": 0,
+   "y": 3648
+  },
+  "n5": {
+   "kind": "title1",
+   "maxW": 3680,
+   "text": "Setting up, step by step",
+   "w": 240,
+   "x": 0,
+   "y": 4872
+  }
+ },
+ "order": [
+  "Main.dc.html",
+  "Today.dc.html",
+  "TodayLight.dc.html",
+  "Library.dc.html",
+  "RecordReady.dc.html",
+  "Tempo.dc.html",
+  "RecordCountIn.dc.html",
+  "UploadRecording.dc.html",
+  "Verdict.dc.html",
+  "Scanner.dc.html",
+  "ReviewPages.dc.html",
+  "NamePiece.dc.html",
+  "SetTempo.dc.html",
+  "PieceScore.dc.html",
+  "MeasureEdit.dc.html",
+  "Insights.dc.html",
+  "PieceDetail.dc.html",
+  "SignIn.dc.html",
+  "Profile.dc.html",
+  "OnboardWelcome.dc.html",
+  "OnboardName.dc.html",
+  "OnboardInstrument.dc.html",
+  "OnboardRole.dc.html",
+  "OnboardMic.dc.html",
+  "OnboardSource.dc.html",
+  "OnboardPhoto.dc.html",
+  "OnboardDone.dc.html"
+ ],
+ "pages": [],
+ "title": "InTempo Redesign",
+ "v": 3
+}
