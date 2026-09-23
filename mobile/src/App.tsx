@@ -23,7 +23,6 @@ import { formatDocumentTitle } from './lib/documentTitle';
 import { hydratePracticeTempos } from './data/practiceTempo';
 import { hydratePreferences } from './data/preferences';
 import { hydratePendingAnalysis } from './data/practice/pendingAnalysis';
-import { hydrateOnboardingDraft } from './data/onboardingDraft';
 import * as SystemUI from 'expo-system-ui';
 
 import { colors, fontsToLoad, scheme } from './design';
@@ -113,10 +112,6 @@ export default function App() {
     // Restore a take the server accepted before the browser or app was closed.
     // Today turns this tiny hand-off into a visible, resumable result.
     void hydratePendingAnalysis();
-    // The onboarding answers given before there was an account to put them on.
-    // A confirmation link relaunches the app, so this restore is the whole
-    // reason they were written down: without it the questions are asked twice.
-    void hydrateOnboardingDraft();
     // Ask iOS to let this app be heard on a phone that is on silent, once, at
     // launch. Every player asserts it again before it makes a sound — the
     // recorder takes the session away and does not give it back in a state

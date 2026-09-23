@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Animated,
   Easing,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -54,8 +55,6 @@ type Sent = 'confirmation' | 'reset' | 'maybeExisting' | 'magicLink';
 /**
  * The redesign's words for each form (`redesign/SignIn.dc.html`). It drew
  * two; the link and the reset forms are the same frame with their own verb.
- * "Create your account" has no lede in the prototype — the questions before
- * it have already said what the app is.
  */
 const COPY: Record<AuthMode, { title: string; lede: string | null; submit: string }> = {
   signIn: {
@@ -89,31 +88,16 @@ const COPY: Record<AuthMode, { title: string; lede: string | null; submit: strin
  *
  * The gate above this decides when it appears; it doesn't navigate anywhere on
  * success. Supabase emits the new session, `useAuthStatus` hears it, and the
- * app replaces this screen with the tabs. Nothing here has to know that.
+ * app replaces this screen with the tabs — or, for an account that has not
+ * answered the questions yet, with "Let's get you set up". Nothing here has to
+ * know that.
+ *
+ * **The account comes first** (owner's call, 2026-09-23, reversing
+ * 2026-09-08): "Create an account" is a change of form on this screen, not a
+ * detour through onboarding, and the questions follow the confirmation link.
  */
-export interface AuthScreenProps {
-  /**
-   * Which form to open on. `signUp` is how `SignedOutFlow` comes back from
-   * onboarding — the questions are answered, so the account form is what is
-   * left, not the sign-in one somebody would have to switch away from again.
-   */
-  initialMode?: AuthMode;
-  /**
-   * Called instead of switching to the sign-up form.
-   *
-   * Onboarding runs **before** creating an account (2026-09-08), and this
-   * screen is where that is asked for — so the flow above it takes the tap and
-   * decides what comes first. Absent, the switch works as it always did, which
-   * keeps this screen usable on its own.
-   */
-  onRequestSignUp?: () => void;
-}
-
-export function AuthScreen({
-  initialMode = 'signIn',
-  onRequestSignUp,
-}: AuthScreenProps = {}) {
-  const [mode, setMode] = useState<AuthMode>(initialMode);
+export function AuthScreen() {
+  const [mode, setMode] = useState<AuthMode>('signIn');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [revealed, setRevealed] = useState(false);
@@ -139,6 +123,9 @@ export function AuthScreen({
 
   /** Between signing in and creating an account: the other door. */
   function switchPanel(next: 'signIn' | 'signUp') {
+    // The photograph is the whole screen for the next two seconds; a keyboard
+    // left up would cover half of it.
+    Keyboard.dismiss();
     clearAuthRedirectNotice();
     setBeat(true);
     setMode(next);
@@ -407,37 +394,36 @@ export function AuthScreen({
       {mode === 'signUp' ? (
         <SwitchLine action="Sign in instead" onPress={() => switchPanel('signIn')} />
       ) : (
-        <SwitchLine action="Create an account"
-          onPress={() => {
-            if (onRequestSignUp) {
-              clearAuthRedirectNotice();
-              onRequestSignUp();
-              return;
-            }
-            switchPanel('signUp');
-          }}
-        />
+        <SwitchLine action="Create an account" onPress={() => switchPanel('signUp')} />
       )}
     </SignInFrame>
   );
 }
 
-/** How long the bare photograph holds between sign in and sign up. */
-const BEAT_MS = 1500;
-/** The form and the wash going. */
-const OUT_MS = 360;
-/** And coming back, a moment after the wash. */
-const IN_MS = 460;
+/**
+ * How long the bare photograph holds between sign in and sign up: the owner's
+ * "wait like 2 seconds" (2026-09-23). It was 1.5, and nobody saw it, because
+ * "Create an account" did not come this way at all — see `AuthScreen`.
+ */
+const BEAT_MS = 2000;
+/** The form and the wash going. Slow enough to read as a fade, not a cut. */
+const OUT_MS = 480;
+/** The wash coming back over the photograph. */
+const WASH_IN_MS = 480;
+/** And the form, a moment after the wash has started. */
+const IN_MS = 520;
+const IN_DELAY_MS = 240;
 
 /**
  * The photograph, the ivory wash over it, the name, and a form standing on
  * the wash (`redesign/SignIn.dc.html`).
  *
  * **Switching between signing in and creating an account holds a beat on the
- * bare photograph**: the form and the wash go, the turntable is there alone
- * for a moment, and the other form arrives. The prototype's own choreography,
- * and deliberate — the one moment the app shows its picture uncovered is the
- * moment the musician changes their mind about which door they came in by.
+ * bare photograph**: the form, the name and the wash fade out together, the
+ * photograph is there alone for two seconds, and the other form fades in over
+ * a returning wash. The prototype's own choreography, and the owner's
+ * description of it — the one moment the app shows its picture uncovered is
+ * the moment the musician changes which door they came in by.
  * Every other change of form (a link instead of a password, a reset) is a
  * plain crossfade: they are the same door. Reduce Motion gets quick fades and
  * no beat.
@@ -497,8 +483,8 @@ function SignInFrame({
       }
       setShown({ key: panelKey, children });
       Animated.parallel([
-        ...(holding ? [fade(wash, 1, 420)] : []),
-        fade(panel, 1, IN_MS, holding ? 260 : 0),
+        ...(holding ? [fade(wash, 1, WASH_IN_MS)] : []),
+        fade(panel, 1, IN_MS, holding ? IN_DELAY_MS : 0),
       ]).start();
     });
     return () => sequence.stop();
@@ -552,8 +538,14 @@ function SignInFrame({
             <Animated.View style={{ opacity: wash }}>
               <Text style={styles.brand}>InTempo</Text>
             </Animated.View>
+            {/*
+              Untouchable while it changes: the outgoing form is still laid
+              out at opacity 0 through the whole beat, and a tap that lands on
+              a field nobody can see would submit or focus the wrong form.
+            */}
             <Animated.View
               style={[styles.panel, { opacity: panel }]}
+              pointerEvents={shown.key === panelKey ? 'auto' : 'none'}
               onLayout={(event) => setPanelTop(event.nativeEvent.layout.y)}
             >
               {current}

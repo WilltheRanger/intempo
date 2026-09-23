@@ -92,7 +92,7 @@ export function ToggleRow({
           setting's name is read, not pressed like a button's, and the switch
           beside it is what says it is a control.
         */}
-        <Text variant="body" style={styles.label}>{label}</Text>
+        <Text variant="rowLabel">{label}</Text>
         {description ? (
           <Text
             variant="metadataSmall"
@@ -146,10 +146,6 @@ const styles = StyleSheet.create({
   },
   text: {
     flexShrink: 1,
-  },
-  label: {
-    fontSize: 15,
-    lineHeight: 20,
   },
   description: {
     marginTop: 2,

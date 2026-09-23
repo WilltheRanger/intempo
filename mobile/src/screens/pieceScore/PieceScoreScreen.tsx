@@ -1,5 +1,5 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
-import { Camera, ChevronRight, Images } from '../../components/icons';
+import { Camera, Images } from '../../components/icons';
 import { useGoBack } from '../../navigation/useGoBack';
 import { useMemo, useState } from 'react';
 import {
@@ -38,8 +38,6 @@ import {
 import {
   BORDER_WIDTH,
   colors,
-  ICON_SIZE,
-  ICON_STROKE_WIDTH,
   MIN_TOUCH_TARGET,
   pressedOpacity,
   radii,
@@ -77,6 +75,7 @@ import { loadStateFor } from '../../lib/loadState';
 import { barCells, barGridSummary } from '../../lib/notation/barGrid';
 import { proposalsFor, proposalsSummary } from '../../lib/notation/proposals';
 import { usePreferences } from '../../data/preferences';
+import { TrailingChevron } from '../../components/primitives/TrailingChevron';
 
 /** Read from a stand, not glanced at — the same size the warmup page uses. */
 const STAVE_SCALE = 1.25;
@@ -334,7 +333,6 @@ export function PieceScoreScreen() {
     return (
       <ScreenContainer>
         <PageHeader
-          eyebrow={piece.composer}
           title={piece.title}
           titleSize="hero"
           onBack={goBack}
@@ -352,7 +350,6 @@ export function PieceScoreScreen() {
     return (
       <ScreenContainer>
         <PageHeader
-          eyebrow={piece.composer}
           title={piece.title}
           titleSize="hero"
           onBack={goBack}
@@ -1133,16 +1130,10 @@ function ScoreAction({
       ]}
     >
       <View style={styles.actionCopy}>
-        <Text variant="body" style={styles.actionLabel}>
-          {label}
-        </Text>
+        <Text variant="rowLabel">{label}</Text>
       </View>
       {/* A chevron means it opens, and each of these opens something. */}
-      <ChevronRight
-        size={ICON_SIZE.md}
-        strokeWidth={ICON_STROKE_WIDTH}
-        color={colors.textTertiary}
-      />
+      <TrailingChevron />
     </Pressable>
   );
 }
@@ -1156,10 +1147,6 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
     fontSize: 26,
     lineHeight: 31,
-  },
-  actionLabel: {
-    fontSize: 15,
-    lineHeight: 20,
   },
   /*
     Every tappable thing on this screen acknowledges the touch. These were bare

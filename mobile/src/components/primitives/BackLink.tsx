@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet } from 'react-native';
 
-import { colors, ICON_STROKE_WIDTH, MIN_TOUCH_TARGET } from '../../design';
+import { colors, ICON_STROKE_WIDTH, MIN_TOUCH_TARGET, ICON_SIZE } from '../../design';
 import { ChevronLeft } from '../icons';
 import { Text } from './Text';
 
@@ -30,7 +30,7 @@ export function BackLink({
       style={({ pressed }) => [styles.link, pressed && styles.pressed]}
     >
       <ChevronLeft
-        size={18}
+        size={ICON_SIZE.md}
         strokeWidth={ICON_STROKE_WIDTH}
         color={colors.textSecondary}
       />

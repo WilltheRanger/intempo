@@ -171,9 +171,6 @@ export function TranscriptionReviewScreen() {
       {/* The redesign's head (`redesign/NamePiece.dc.html`). */}
       <View style={styles.head}>
         <BackLink label="Back to pages" onPress={goBack} />
-        <Text variant="eyebrow" color="textTertiary" style={styles.eyebrow}>
-          {attachmentPieceId ? 'Step 2 of 2' : 'Step 2 of 3'}
-        </Text>
         <Text variant="screenTitle" accessibilityRole="header">
           {attachmentPieceId ? 'Attach sheet music' : 'Name this piece'}
         </Text>
@@ -267,11 +264,6 @@ const styles = StyleSheet.create({
   head: {
     paddingTop: spacing.md,
     marginBottom: spacing.sm,
-  },
-  eyebrow: {
-    textTransform: 'uppercase',
-    marginTop: spacing.xs,
-    marginBottom: 6,
   },
   lede: {
     marginTop: spacing.md,

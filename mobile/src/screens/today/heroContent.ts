@@ -7,10 +7,10 @@ import { formatWorkingTempo } from '../../lib/tempo';
  *
  * **The screen is a photograph with five lines of type on it**, and every one
  * of those lines is a decision: which piece, what to call the thing you are
- * about to do, whether there is a sentence about the last take, what the
- * button says when there is no piece at all. There is no React Native testing
- * library here (`DECISIONS.md`, 2026-08-24), so a rule written inside
- * `PracticeHero.tsx` is a rule nothing checks — which is why it is here.
+ * about to do, what the button says when there is no piece at all. There is
+ * no React Native testing library here (`DECISIONS.md`, 2026-08-24), so a rule
+ * written inside `PracticeHero.tsx` is a rule nothing checks — which is why it
+ * is here.
  *
  * `CLAUDE.md` §3 states this as doctrine and files it under the capture path
  * "because that is where it was learned"; it applies to every screen, and a
@@ -31,11 +31,13 @@ export interface HeroContent {
   /** Composer and tempo, or null when there is no piece yet. */
   meta: string | null;
   /**
-   * One sentence under the metadata.
+   * One line under the metadata, only while the piece is still being read.
    *
-   * The pipeline's own verdict when there is a take of this piece, and an
-   * explanation of what the button does when there is not — so the space is
-   * never empty and never filled with something invented.
+   * **It used to carry the last take's verdict too, and the owner cut it**
+   * (2026-09-23): "don't need it and it takes time to load". Both halves were
+   * true. The verdict is the Verdict screen's and Insights' to say, and it came
+   * from a second request that landed after the title had drawn, so the block
+   * rose by a line and the fall moved with it a moment after arrival.
    */
   detail: string | null;
   actionLabel: string;
@@ -47,16 +49,6 @@ export interface HeroInput {
   piece: Piece | null;
   /** The tempo this piece is worked at, from `practiceTempo`. */
   workingBpm: number;
-  /**
-   * How the last take of *this piece* went.
-   *
-   * Only ever this piece's — `getCurrentPiece` resolves through the newest
-   * analysis, so the piece being continued and the piece last recorded are the
-   * same by construction. A fixture or a deleted score can disagree, and a
-   * verdict about a different piece under this title would be a lie, so the
-   * caller passes null unless it has checked.
-   */
-  lastTakeHeadline: string | null;
 }
 
 /**
@@ -76,11 +68,7 @@ const NOTHING_YET: HeroContent = {
   action: 'add',
 };
 
-export function heroContentFor({
-  piece,
-  workingBpm,
-  lastTakeHeadline,
-}: HeroInput): HeroContent {
+export function heroContentFor({ piece, workingBpm }: HeroInput): HeroContent {
   if (!piece) {
     return NOTHING_YET;
   }
@@ -104,13 +92,9 @@ export function heroContentFor({
       piece.movement,
       formatWorkingTempo(workingBpm, piece.markedBpm, piece.score?.tempo_beat_unit),
     ]),
-    // **Three states, and the middle one is why this is not `?? null`.** A
-    // piece still being read has no verdict and never will until it is read,
-    // so saying nothing would leave a musician looking at a title and a button
-    // with no clue that the app is mid-way through something. A piece that has
-    // simply never been recorded gets nothing, which is honest: there is no
-    // sentence to write about a take that does not exist.
-    detail: reading ? 'Reading your photo…' : lastTakeHeadline,
+    // A piece still being read would otherwise be a title and a button with
+    // no clue that the app is mid-way through something.
+    detail: reading ? 'Reading your photo…' : null,
     // The button says what happens, and what happens depends on whether there
     // is notation to record against — `TodayScreen.openPractice` sends a piece
     // with no measures to its detail screen instead of to the recorder, so a

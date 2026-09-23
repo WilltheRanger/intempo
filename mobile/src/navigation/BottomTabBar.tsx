@@ -221,8 +221,8 @@ export function BottomTabBar({
                 color={focused ? palette.accent : palette.textSecondary}
               />
               <Text
-                variant="sectionLabel"
-                // Ink rather than gold: at 13px the accent is 3.54:1, under
+                variant="tabLabel"
+                // Ink rather than gold: at 11px the accent is 3.54:1, under
                 // the 4.5:1 floor. The active tab is still marked twice — the
                 // gold icon above, and full-strength ink against grey here.
                 //

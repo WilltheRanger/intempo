@@ -224,7 +224,6 @@ export function VerdictScreen() {
           title of the piece.
         */}
         <PageHeader
-          eyebrow={take.pieceTitle}
           onBack={goBack}
           backLabel="Back to the piece"
         />
@@ -280,7 +279,6 @@ export function VerdictScreen() {
       >
         {/* Centred for the same reason as the branch above. */}
         <PageHeader
-          eyebrow={take.pieceTitle}
           onBack={goBack}
           backLabel="Back to the piece"
         />
@@ -347,9 +345,6 @@ export function VerdictScreen() {
         label="Back to the piece"
         onPress={() => navigation.navigate('PieceDetail', { pieceId: take.pieceId })}
       />
-      <Text variant="eyebrow" color="textTertiary" style={styles.eyebrow} numberOfLines={1}>
-        {take.pieceTitle}
-      </Text>
       <Text variant="screenTitle" accessibilityRole="header">
         {take.lowConfidence ? 'Timing is uncertain' : formatTakeVerdict(take.measures)}
       </Text>
@@ -458,11 +453,6 @@ function noteLabel(count: number): string {
 }
 
 const styles = StyleSheet.create({
-  eyebrow: {
-    marginTop: spacing.xs,
-    marginBottom: 6,
-    textTransform: 'uppercase',
-  },
   headline: {
     marginTop: 10,
   },

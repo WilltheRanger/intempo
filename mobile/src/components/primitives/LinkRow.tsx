@@ -1,4 +1,3 @@
-import { ChevronRight } from '../icons';
 import { StyleSheet, View } from 'react-native';
 
 import { PressableScale } from '../motion';
@@ -7,13 +6,12 @@ import {
   BORDER_WIDTH,
   colors,
   disabledOpacity,
-  ICON_SIZE,
-  ICON_STROKE_WIDTH,
   MIN_TOUCH_TARGET,
   spacing,
 } from '../../design';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import { ROW_PADDING_VERTICAL } from '../rowMetrics';
+import { TrailingChevron } from './TrailingChevron';
 
 export interface LinkRowProps {
   label: string;
@@ -77,7 +75,7 @@ export function LinkRow({
         disabled && styles.disabled,
       ]}
     >
-      <Text variant="button" color={disabled ? 'textTertiary' : 'textPrimary'} style={styles.label}>
+      <Text variant="rowLabel" color={disabled ? 'textTertiary' : 'textPrimary'} style={styles.label}>
         {label}
       </Text>
 
@@ -92,11 +90,7 @@ export function LinkRow({
             {value}
           </Text>
         ) : null}
-        <ChevronRight
-          size={ICON_SIZE.md}
-          strokeWidth={ICON_STROKE_WIDTH}
-          color={colors.textTertiary}
-        />
+        <TrailingChevron />
       </View>
     </PressableScale>
   );

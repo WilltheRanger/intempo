@@ -22,6 +22,8 @@ import {
   pressedOpacity,
   radii,
   spacing,
+  ICON_SIZE,
+  ICON_STROKE_WIDTH,
 } from '../../design';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import {
@@ -308,9 +310,6 @@ export function MeasureEditScreen() {
       */}
       <View style={styles.head}>
         <BackLink label="Back to score" onPress={goBack} />
-        <Text variant="eyebrow" color="textTertiary" numberOfLines={1} style={styles.eyebrow}>
-          {piece.title}
-        </Text>
         <View style={styles.barLine} accessibilityRole="header">
           <Text style={styles.barName}>Bar {params.measureNumber}</Text>
           <Text color="textTertiary" style={styles.barName}>
@@ -556,7 +555,7 @@ export function MeasureEditScreen() {
             accessibilityLabel="Lower this note"
             style={({ pressed }) => [styles.stepButton, pressed && styles.pressed]}
           >
-            <Minus size={20} strokeWidth={1.6} color={colors.textPrimary} />
+            <Minus size={ICON_SIZE.md} strokeWidth={ICON_STROKE_WIDTH} color={colors.textPrimary} />
           </Pressable>
           <Pressable
             onPress={() => change({ pitch: cycleAccidental(current.pitch) })}
@@ -572,7 +571,7 @@ export function MeasureEditScreen() {
             accessibilityLabel="Raise this note"
             style={({ pressed }) => [styles.stepButton, pressed && styles.pressed]}
           >
-            <Plus size={20} strokeWidth={1.6} color={colors.textPrimary} />
+            <Plus size={ICON_SIZE.md} strokeWidth={ICON_STROKE_WIDTH} color={colors.textPrimary} />
           </Pressable>
         </View>
       ) : null}
@@ -743,11 +742,6 @@ const styles = StyleSheet.create({
   },
   head: {
     paddingTop: spacing.md,
-  },
-  eyebrow: {
-    textTransform: 'uppercase',
-    marginTop: spacing.xs,
-    marginBottom: 6,
   },
   barLine: {
     flexDirection: 'row',

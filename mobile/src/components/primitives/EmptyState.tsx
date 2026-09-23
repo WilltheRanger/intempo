@@ -88,7 +88,7 @@ export function EmptyState({
     <View style={[styles.container, fill && styles.filled]}>
       {Icon ? (
         <Icon
-          size={ICON_SIZE.lg}
+          size={ICON_SIZE.xl}
           strokeWidth={ICON_STROKE_WIDTH}
           color={colors.textTertiary}
           style={styles.icon}

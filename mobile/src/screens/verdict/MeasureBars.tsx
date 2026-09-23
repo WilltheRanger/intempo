@@ -10,13 +10,12 @@ import {
 import { Text } from '../../components/primitives';
 import type { MeasureVerdict } from '../../data/types';
 import { BORDER_WIDTH, colors } from '../../design';
+import { chartBarWidth } from '../../lib/chartBars';
 import { barIndexAt, measureChartBars, type ChartBar } from '../../lib/verdict/measureChart';
 import { readMeasure } from '../../lib/verdict/measureReading';
 
 const HEIGHT = 68;
 const HALF = HEIGHT / 2;
-const MAX_BAR = 9;
-const MAX_GAP = 4;
 
 /**
  * "Measure by measure" as one chart (`redesign/Verdict.dc.html`): a bar per
@@ -93,7 +92,7 @@ export function MeasureBars({
   }
 
   const step = bars.length > 0 ? width / bars.length : 0;
-  const barWidth = Math.max(1.5, Math.min(MAX_BAR, step - Math.min(MAX_GAP, step * 0.3)));
+  const barWidth = chartBarWidth(step);
   const current = at >= 0 ? measures[at] : null;
 
   return (

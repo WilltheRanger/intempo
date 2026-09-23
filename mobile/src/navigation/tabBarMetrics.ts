@@ -10,11 +10,17 @@ import { ICON_SIZE, MIN_TOUCH_TARGET, spacing, typography } from '../design';
  */
 export const TAB_BAR_ROW_HEIGHT = Math.max(
   MIN_TOUCH_TARGET,
-  ICON_SIZE.lg + spacing.xs + typography.sectionLabel.lineHeight,
+  ICON_SIZE.lg + spacing.xs + typography.tabLabel.lineHeight,
 );
 
-/** Padding above the icons. */
-export const TAB_BAR_PADDING_TOP = spacing.md;
+/**
+ * Padding above the icons, and below the labels.
+ *
+ * `sm`, not `md`: with the smaller label the row is the 44pt target and no
+ * more, and 12pt round it made a 68pt capsule — the bar reading as a panel
+ * rather than furniture. 60pt is about the height iOS draws its own.
+ */
+export const TAB_BAR_PADDING_TOP = spacing.sm;
 
 /** How far the floating capsule sits in from the left and right edges. */
 export const TAB_BAR_FLOAT_INSET = spacing.md;

@@ -87,7 +87,6 @@ export function ChangeEmailScreen() {
     >
       <ScreenContainer>
         <PageHeader
-          eyebrow={musician ? `Currently ${musician.email}` : null}
           title="Change email"
           onBack={goBack}
           backLabel="Back to profile"
@@ -98,7 +97,9 @@ export function ChangeEmailScreen() {
             label="New email"
             value={email}
             onChangeText={setEmail}
-            placeholder="you@example.com"
+            // The address being replaced, where the header's "Currently …"
+            // line used to say it: the thing this field replaces.
+            placeholder={musician?.email ?? 'you@example.com'}
             keyboardType="email-address"
             autoCapitalize="none"
             autoComplete="email"

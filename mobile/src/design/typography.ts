@@ -178,6 +178,29 @@ export const typography = {
     letterSpacing: 0.1,
   },
   /**
+   * The name on a list row — "Digital score", "Email", "Start at" — and the
+   * value across from it. One size for every row in the app: they were 13
+   * medium on Upload, 15 regular on Profile and Piece detail, 16 medium in the
+   * Record sheet, and the same kind of line changed size from screen to screen.
+   */
+  rowLabel: {
+    fontFamily: fontFamily.sansRegular,
+    fontSize: 15,
+    lineHeight: 20,
+  },
+  /**
+   * The tab bar's labels: a small label under a larger glyph, the proportion
+   * iOS draws its own bar in. They were `sectionLabel`, and 13pt medium under a
+   * 24pt icon weighed as much as the icon did — four words competing with the
+   * four pictures they name, on the one element that is on screen at all times.
+   */
+  tabLabel: {
+    fontFamily: fontFamily.sansMedium,
+    fontSize: 11,
+    lineHeight: 13,
+    letterSpacing: 0.1,
+  },
+  /**
    * The optional action in a section header ("See all").
    *
    * Same size as `sectionLabel` at regular weight, so it stays legible and

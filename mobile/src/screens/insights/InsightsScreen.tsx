@@ -18,7 +18,7 @@ import { useInsights } from '../../data/hooks/useInsights';
 import { useLibrary } from '../../data/hooks/usePieces';
 import { useRecentTakes } from '../../data/hooks/useLatestTake';
 import { describeLoadError } from '../../data/describeLoadError';
-import { BORDER_WIDTH, colors, fontFamily, radii, spacing } from '../../design';
+import { BORDER_WIDTH, colors, fontFamily, radii, spacing, ICON_SIZE, ICON_STROKE_WIDTH } from '../../design';
 import { readTendency } from '../../lib/insights/tendency';
 import { sessionTrendFrom } from '../../lib/insights/sessionTrend';
 import { barsLabel, worthALook } from '../../lib/insights/passageDrift';
@@ -246,7 +246,7 @@ export function InsightsScreen() {
             </Text>
             {/* Turned on a wrapper: a transform on the icon itself is lost on web. */}
             <View style={showAll ? styles.chevronOpen : undefined}>
-              <ChevronDown size={15} strokeWidth={1.8} color={colors.accentText} />
+              <ChevronDown size={ICON_SIZE.sm} strokeWidth={ICON_STROKE_WIDTH} color={colors.accentText} />
             </View>
           </Pressable>
           {showAll ? (

@@ -4,7 +4,7 @@ import { StyleSheet, View, useWindowDimensions, type LayoutChangeEvent } from 'r
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
-import { ChevronRight, Plus } from '../../components/icons';
+import { Plus } from '../../components/icons';
 import { IconButton } from '../../components/primitives/IconButton';
 import { PrimaryButton } from '../../components/primitives/PrimaryButton';
 import { Text } from '../../components/primitives/Text';
@@ -14,6 +14,7 @@ import { useTabBarHeight } from '../../navigation/tabBarMetrics';
 import { colors, spacing } from '../../design';
 import type { HeroContent, PendingLine } from './heroContent';
 import { FALL_START, fallStops } from './heroFall';
+import { TrailingChevron } from '../../components/primitives/TrailingChevron';
 
 /**
  * Today, light (`redesign/TodayLight.dc.html`): a rehearsal-room photograph
@@ -35,11 +36,10 @@ import { FALL_START, fallStops } from './heroFall';
  *    of the room behind them.
  *  - **Everything else is ink on the ivory fall.** The fall follows the copy
  *    rather than a fixed height (`heroFall.ts`): the prototype's sample is a
- *    one-line title with nothing under it, and a real piece is a two-line
- *    title, its composer and last take's sentence — which, against a fixed
- *    47%, put the label and the title on the photograph. So the copy block is
- *    measured and the fall is moved up until it has settled by the block's
- *    first line.
+ *    one-line title with nothing under it, and a real piece is a two- or
+ *    three-line title and its composer — which, against a fixed 47%, put the
+ *    label and the title on the photograph. So the copy block is measured and
+ *    the fall is moved up until it has settled by the block's first line.
  *
  * The fall is `colors.bg` at rising opacity, not a decorative gradient: take it
  * away and the title is ink on a dark photograph. That is the §3 law 6 test —
@@ -242,7 +242,7 @@ export function PracticeHero({
                 <Text variant="metadata" color="textSecondary" numberOfLines={1} style={styles.recentLabel}>
                   {recent.label}
                 </Text>
-                <ChevronRight size={17} strokeWidth={1.6} color={colors.textTertiary} />
+                <TrailingChevron />
               </PressableScale>
             </View>
           )}

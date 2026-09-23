@@ -69,11 +69,32 @@ export const CONTROL_HEIGHT = 52;
  */
 export const BORDER_WIDTH = 1;
 
-/** Icon sizes. One family (Lucide), one stroke weight, three sizes. */
+/**
+ * Icon sizes. One family (Lucide), one stroke weight, and a size for each kind
+ * of place an icon stands — set by the type beside it, not chosen per screen.
+ *
+ * **Why it is a scale of places** (2026-09-23, "icons and bars are not big
+ * enough or too big… with most screens"). Measured before this: the header's
+ * "+" and search were 20 beside a 34pt title — smaller than the redesign's 22
+ * — while the tab bar's were 24 over a 13pt label, and fifteen more places
+ * typed a size of their own anywhere from 14 to 38. Each was defensible alone
+ * and together they had no proportion. A literal size in a screen is now the
+ * exception that needs its reason written beside it (an illustration, a badge).
+ */
 export const ICON_SIZE = {
+  /** Beside 11–13pt type: a pill's chevron, Play inside a pill. */
   sm: 16,
+  /** Beside 14–17pt type — a row's icon, a button's — and centred in a 44pt disc. */
   md: 20,
-  lg: 24,
+  /**
+   * Standing alone: a header's actions beside a 34pt title, and the tab bar.
+   * 26 rather than 24 because Lucide draws inside a 24 grid with room to
+   * spare — its "+" spans 14 of the 24 — so at 24 the add button's cross was
+   * 14pt beside a greeting whose capitals are 23.
+   */
+  lg: 26,
+  /** The one glyph a surface is about: an empty state, the record button. */
+  xl: 32,
 } as const;
 
 export const ICON_STROKE_WIDTH = 1.75;

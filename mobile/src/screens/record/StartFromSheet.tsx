@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { Check } from '../../components/icons';
 import { BottomSheet } from '../../components/overlays/BottomSheet';
 import { Text } from '../../components/primitives';
-import { BORDER_WIDTH, colors } from '../../design';
+import { BORDER_WIDTH, colors, ICON_SIZE } from '../../design';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import type { StartOption } from '../../lib/record/startOptions';
 
@@ -63,7 +63,7 @@ export function StartFromSheet({
                 Bar {option.bar}
               </Text>
             </View>
-            {on ? <Check size={18} strokeWidth={2} color={colors.accent} /> : null}
+            {on ? <Check size={ICON_SIZE.md} strokeWidth={2} color={colors.accent} /> : null}
           </Pressable>
         );
       })}

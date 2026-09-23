@@ -2,7 +2,7 @@ import { useNavigation, useRoute, type RouteProp } from '@react-navigation/nativ
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 
-import { ChevronRight, FileMusic, Pause, Play } from '../../components/icons';
+import { FileMusic, Pause, Play } from '../../components/icons';
 import { BottomSheet } from '../../components/overlays/BottomSheet';
 import {
   BackLink,
@@ -32,6 +32,7 @@ import {
   ICON_STROKE_WIDTH,
   radii,
   spacing,
+  ICON_SIZE,
 } from '../../design';
 import {
   describeAnalysisCost,
@@ -51,6 +52,8 @@ import { useGoBack } from '../../navigation/useGoBack';
 import { chooseAudioFile } from '../record/chooseAudioFile';
 import { StartFromSheet } from '../record/StartFromSheet';
 import { usePreviewPlayback } from './usePreviewPlayback';
+import { TrailingChevron } from '../../components/primitives/TrailingChevron';
+import { ROW_PADDING_VERTICAL } from '../../components/rowMetrics';
 
 /** The waveform's bars: 2pt wide on a 5.1pt step, as the prototype draws. */
 const BAR_WIDTH = 2;
@@ -198,9 +201,6 @@ export function UploadRecordingScreen() {
     >
       <View style={styles.head}>
         <BackLink label="Back to recording" onPress={leave} />
-        <Text variant="eyebrow" color="textTertiary" style={styles.eyebrow} numberOfLines={1}>
-          {piece.title}
-        </Text>
         <Text variant="heroTitle" accessibilityRole="header">
           Upload a recording
         </Text>
@@ -210,7 +210,7 @@ export function UploadRecordingScreen() {
       <View style={styles.band}>
         <View style={styles.fileRow}>
           <View style={styles.fileIcon}>
-            <FileMusic size={20} strokeWidth={1.5} color={colors.textSecondary} />
+            <FileMusic size={ICON_SIZE.md} strokeWidth={ICON_STROKE_WIDTH} color={colors.textSecondary} />
           </View>
           <View style={styles.fileText}>
             <Text variant="body" numberOfLines={1} style={styles.fileName}>
@@ -261,9 +261,9 @@ export function UploadRecordingScreen() {
               style={({ pressed }) => [styles.action, styles.play, pressed && styles.pressed]}
             >
               {playback.playing ? (
-                <Pause size={14} strokeWidth={ICON_STROKE_WIDTH} color={colors.textPrimary} fill={colors.textPrimary} />
+                <Pause size={ICON_SIZE.sm} strokeWidth={ICON_STROKE_WIDTH} color={colors.textPrimary} fill={colors.textPrimary} />
               ) : (
-                <Play size={14} strokeWidth={ICON_STROKE_WIDTH} color={colors.textPrimary} fill={colors.textPrimary} />
+                <Play size={ICON_SIZE.sm} strokeWidth={ICON_STROKE_WIDTH} color={colors.textPrimary} fill={colors.textPrimary} />
               )}
               <Text variant="metadataSmall">{playback.playing ? 'Pause' : 'Play'}</Text>
             </Pressable>
@@ -279,10 +279,10 @@ export function UploadRecordingScreen() {
 
       <View style={styles.rows}>
         <View style={styles.row}>
-          <Text variant="sectionLabel" style={styles.rowLabel}>
+          <Text variant="rowLabel" style={styles.rowLabel}>
             Piece
           </Text>
-          <Text variant="body" color="textSecondary" numberOfLines={1} style={styles.rowValue}>
+          <Text variant="rowLabel" color="textSecondary" numberOfLines={1} style={styles.rowValue}>
             {piece.title}
           </Text>
         </View>
@@ -292,13 +292,13 @@ export function UploadRecordingScreen() {
           accessibilityLabel={`Start at bar ${startFrom}. Change where the recording begins.`}
           style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
         >
-          <Text variant="sectionLabel" style={styles.rowLabel}>
+          <Text variant="rowLabel" style={styles.rowLabel}>
             Start at
           </Text>
-          <Text variant="body" color="textSecondary" style={styles.rowValue}>
+          <Text variant="rowLabel" color="textSecondary" style={styles.rowValue}>
             Bar {startFrom}
           </Text>
-          <ChevronRight size={18} strokeWidth={1.6} color={colors.textTertiary} />
+          <TrailingChevron />
         </Pressable>
         <Pressable
           onPress={() => navigation.navigate('Tempo', { pieceId: params.pieceId })}
@@ -306,13 +306,13 @@ export function UploadRecordingScreen() {
           accessibilityLabel={`Target tempo ${displayTempoBpm(targetBpm, unit)} ${tempoUnitLabel(unit)}. Change it`}
           style={({ pressed }) => [styles.row, styles.lastRow, pressed && styles.rowPressed]}
         >
-          <Text variant="sectionLabel" style={styles.rowLabel}>
+          <Text variant="rowLabel" style={styles.rowLabel}>
             Target tempo
           </Text>
-          <Text variant="body" color="textSecondary" style={styles.rowValue}>
+          <Text variant="rowLabel" color="textSecondary" style={styles.rowValue}>
             {displayTempoBpm(targetBpm, unit)} {tempoUnitLabel(unit)}
           </Text>
-          <ChevronRight size={18} strokeWidth={1.6} color={colors.textTertiary} />
+          <TrailingChevron />
         </Pressable>
       </View>
 
@@ -357,11 +357,6 @@ const styles = StyleSheet.create({
   head: {
     paddingTop: spacing.xs,
     paddingBottom: 34,
-  },
-  eyebrow: {
-    marginTop: 2,
-    marginBottom: spacing.xs,
-    textTransform: 'uppercase',
   },
   // Full width: the band cancels the screen's gutter and puts it back inside.
   band: {
@@ -445,7 +440,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.md,
     minHeight: 44,
-    paddingVertical: 14,
+    paddingVertical: ROW_PADDING_VERTICAL,
     borderTopWidth: BORDER_WIDTH,
     borderTopColor: colors.border,
   },
@@ -461,8 +456,6 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   rowValue: {
-    fontSize: 15,
-    lineHeight: 20,
     flexShrink: 1,
   },
   cost: {

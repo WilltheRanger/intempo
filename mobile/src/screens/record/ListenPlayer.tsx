@@ -13,7 +13,7 @@ import { Pause, Play } from '../../components/icons';
 import { Text } from '../../components/primitives';
 import { usePreferences } from '../../data/preferences';
 import type { ScoreJson } from '../../data/types';
-import { colors, ICON_STROKE_WIDTH, MIN_TOUCH_TARGET, radii } from '../../design';
+import { colors, ICON_STROKE_WIDTH, MIN_TOUCH_TARGET, radii, ICON_SIZE } from '../../design';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import {
   scheduleScore,
@@ -182,7 +182,7 @@ export function ListenPlayer({
   }
 
   const glyphProps = {
-    size: 16,
+    size: ICON_SIZE.md,
     strokeWidth: ICON_STROKE_WIDTH,
     color: colors.textPrimary,
     fill: colors.textPrimary,

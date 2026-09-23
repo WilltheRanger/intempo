@@ -7,30 +7,19 @@ import { profileUpdateFor, reusableAvatarKey } from '../../lib/onboarding';
 import { OnboardingFlow, type OnboardingAnswers } from './OnboardingFlow';
 
 /**
- * Onboarding for an account that already exists.
+ * Onboarding, for an account that exists and has not answered yet.
  *
- * The questions are `OnboardingFlow`, shared with the screen that asks them
- * *before* the account does — this one is only what happens to the answers:
- * the photograph, if there is one, goes to the avatars bucket and the key is
- * saved with the rest of the profile.
+ * **The main path again** (owner's call, 2026-09-23 — `DECISIONS.md`): an
+ * account is created first, and opening its confirmation link lands here, on
+ * "Let's get you set up". From 2026-09-08 the questions ran before the sign-up
+ * form and waited on the device for a session; that draft and the hook that
+ * applied it are gone with the order that needed them.
  *
- * ## It is a fallback now, not the main path
- *
- * Since 2026-09-08 onboarding runs ahead of the sign-up form, and
- * `useApplyOnboardingDraft` lands those answers the moment a session appears.
- * This screen is what is left when that could not happen:
- *
- * - the confirmation link was opened on **another device or browser**, where
- *   the draft never existed;
- * - somebody reached `PATCH /v1/me` without this app at all.
- *
- * (A relaunch between answering and confirming used to be a third: it loses
- * the photograph on purpose, and the photograph was required. It is optional
- * since 2026-09-23, so the name and instrument alone now finish onboarding.)
- *
- * All three want the same thing: ask for whatever the account is still
- * missing. `me` supplies the answers it already has, which is why nothing here
- * starts from blank.
+ * The questions are `OnboardingFlow`; this is only what happens to the
+ * answers: the photograph, if there is one, goes to the avatars bucket and the
+ * key is saved with the rest of the profile. `me` supplies whatever the
+ * account already has — a name that landed on an earlier try, say — which is
+ * why nothing here starts from blank.
  *
  * ## Two requests, one visible action
  *
@@ -120,7 +109,6 @@ export function OnboardingScreen() {
         photo: null,
       }}
       storedPhotoUrl={me?.avatarUrl ?? null}
-      finishLabel="Finish"
       busy={save.isPending || upload.isPending}
       error={error}
       onFinish={(answers) => void finish(answers)}

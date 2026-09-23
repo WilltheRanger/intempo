@@ -23,10 +23,9 @@ export type ArrivalEvent = 'onboarded' | 'started' | 'settled';
 /**
  * Only forward, and only one step at a time.
  *
- * `onboarded` from anything but `none` is ignored, because the answers are
- * saved from two places — `useApplyOnboardingDraft` and the gate's own
- * Continue — and a second save arriving after Today has already been reached
- * must not put the welcome back in front of it.
+ * `onboarded` from anything but `none` is ignored: a second save — a retried
+ * Finish, say — arriving after Today has already been reached must not put the
+ * welcome back in front of it.
  */
 export function nextArrival(current: Arrival, event: ArrivalEvent): Arrival {
   if (event === 'onboarded') {

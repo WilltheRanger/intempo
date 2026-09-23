@@ -142,7 +142,6 @@ export function SearchHeader({
           // **No count.** A number the content already shows is furniture
           // (§3 law 10), and the one case where it said something — how many a
           // search matched — is answered by the results themselves.
-          eyebrow={null}
           title={title}
           action={
             <View style={styles.actions}>

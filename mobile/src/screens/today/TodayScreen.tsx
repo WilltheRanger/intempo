@@ -9,7 +9,6 @@ import {
   PageHeader,
   ScreenContainer,
 } from '../../components/primitives';
-import { useRecentTakes } from '../../data/hooks/useLatestTake';
 import { useMe } from '../../data/hooks/useMe';
 import { useCurrentPiece, useLibrary } from '../../data/hooks/usePieces';
 import { practiceTempo, usePracticeTempos } from '../../data/practiceTempo';
@@ -45,8 +44,8 @@ import { loadStateFor } from '../../lib/loadState';
  * the repertoire queue was a ranking over the Library; the warmup is a row in
  * Profile's Practice section now.
  *
- * What is left is what the screen is for: which piece to play, how it went
- * last time, one button that starts a take, and a way to add a piece. One
+ * What is left is what the screen is for: which piece to play, one button
+ * that starts a take, and a way to add a piece. One
  * dominant focal point (§3 law 4), and the thumb zone belongs to the action
  * rather than to a list (§3 law 7).
  *
@@ -69,8 +68,6 @@ export function TodayScreen() {
   // Only to name the piece a pending take belongs to. Shared cache with the
   // Library tab, so this is a read rather than a second fetch.
   const library = useLibrary();
-  // One, because one is all the hero says anything about.
-  const recentTakes = useRecentTakes(1);
   const me = useMe();
   const [addSheetVisible, setAddSheetVisible] = useState(false);
   const pendingAnalysis = usePendingAnalysis();
@@ -135,7 +132,6 @@ export function TodayScreen() {
     // Dispatch first. If the app closes on the exact boundary, leaving the
     // hand-off behind is harmless and preferable to losing the result.
     void forgetPendingAnalysis(pendingAnalysis.analysisId);
-    void recentTakes.refetch();
   }
 
   // Straight to a take: what someone means by "continue practicing" is
@@ -154,8 +150,6 @@ export function TodayScreen() {
   const handleSelectOption = useAddPieceOption(() =>
     setAddSheetVisible(false),
   );
-
-  const take = recentTakes.data?.[0] ?? null;
 
   const load = loadStateFor({
     isError: currentPiece.isError,
@@ -184,10 +178,6 @@ export function TodayScreen() {
   }
 
   const workingBpm = piece ? practiceTempo.for(piece.id, piece.markedBpm) : 0;
-  // Only when it is genuinely this piece's take. Against the API it always is;
-  // a fixture or a deleted score could disagree, and a verdict about a
-  // different piece under this title would be a lie.
-  const headline = piece && take?.pieceId === piece.id ? take.headline : null;
 
   return (
     /*
@@ -215,11 +205,7 @@ export function TodayScreen() {
           content={
             load === 'loading'
               ? null
-              : heroContentFor({
-                  piece,
-                  workingBpm,
-                  lastTakeHeadline: headline,
-                })
+              : heroContentFor({ piece, workingBpm })
           }
           greeting={getGreeting()}
           name={me.data?.displayName ?? null}
