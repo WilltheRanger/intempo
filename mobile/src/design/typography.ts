@@ -190,6 +190,27 @@ export const typography = {
     lineHeight: 18,
     letterSpacing: 0.1,
   },
+  /**
+   * The smallest running text: a clock under a scrubber, the line under a
+   * setting's label. From the redesign, which sets both at 11. Regular weight
+   * and no tracking, which is what separates it from `eyebrow`.
+   */
+  caption: {
+    fontFamily: fontFamily.sansRegular,
+    fontSize: 11,
+    lineHeight: 14,
+  },
+  /**
+   * The title of a bottom sheet — "Start from", "Marking the beat". From the
+   * redesign, one step under `heroTitle`, so a sheet over a screen never
+   * out-shouts the screen's own title.
+   */
+  sheetTitle: {
+    fontFamily: fontFamily.serifRegular,
+    fontSize: 24,
+    lineHeight: 30,
+    letterSpacing: -0.3,
+  },
   /** Control labels. */
   button: {
     fontFamily: fontFamily.sansMedium,

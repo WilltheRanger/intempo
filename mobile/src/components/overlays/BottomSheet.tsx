@@ -12,7 +12,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { X } from '../icons';
 
-import { BORDER_WIDTH, colors, EASE_OUT, motion, radii, spacing, SPRING } from '../../design';
+import { colors, EASE_OUT, motion, radii, spacing, SPRING } from '../../design';
 import {
   dragOffset,
   isDragGesture,
@@ -46,6 +46,16 @@ export interface BottomSheetProps {
    * header rather than needing a height of its own.
    */
   expand?: boolean;
+  /**
+   * Draw the ✕. On by default, because the scrim is deliberately not a
+   * keyboard or screen-reader target (see the backdrop below), which makes the
+   * ✕ the accessible way out.
+   *
+   * Off only for a sheet whose own last row already closes it — the redesign's
+   * "Start from" ends on "Choose on the score", which does exactly that — so
+   * the sheet is not drawn with two ways to do one thing.
+   */
+  showClose?: boolean;
   children: ReactNode;
 }
 
@@ -64,6 +74,7 @@ export function BottomSheet({
   onClose,
   title,
   expand = false,
+  showClose = true,
   children,
 }: BottomSheetProps) {
   const insets = useSafeAreaInsets();
@@ -293,14 +304,18 @@ export function BottomSheet({
           <View {...pan.panHandlers}>
             <View style={styles.handle} />
 
-            <View style={styles.header}>
-              {title ? (
-                <Text variant="pieceTitle" style={styles.title}>
-                  {title}
-                </Text>
-              ) : null}
-              <IconButton icon={X} label="Close" onPress={onClose} />
-            </View>
+            {title || showClose ? (
+              <View style={styles.header}>
+                {title ? (
+                  <Text variant="sheetTitle" style={styles.title}>
+                    {title}
+                  </Text>
+                ) : null}
+                {showClose ? (
+                  <IconButton icon={X} label="Close" onPress={onClose} />
+                ) : null}
+              </View>
+            ) : null}
           </View>
 
           {/*
@@ -333,14 +348,17 @@ const styles = StyleSheet.create({
     left: 0,
     backgroundColor: colors.scrim,
   },
+  /*
+    **The redesign's sheet** (2026-09-23): the page's own ivory rather than a
+    white card, the larger `sheet` curve, and no top rule — over the scrim the
+    ground change is the edge.
+  */
   sheet: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: radii.lg,
-    borderTopRightRadius: radii.lg,
-    borderTopWidth: BORDER_WIDTH,
-    borderTopColor: colors.border,
-    paddingTop: spacing.md,
-    paddingHorizontal: spacing.xl,
+    backgroundColor: colors.bg,
+    borderTopLeftRadius: radii.sheet,
+    borderTopRightRadius: radii.sheet,
+    paddingTop: 10,
+    paddingHorizontal: spacing['2xl'],
   },
   expanded: {
     // Fills the container, which is the screen. The margin above it is the
@@ -356,15 +374,17 @@ const styles = StyleSheet.create({
     width: 36,
     height: 4,
     borderRadius: radii.pill,
-    backgroundColor: colors.border,
+    // `borderStrong`: on ivory, `border` all but vanishes, and a handle nobody
+    // can see is not an affordance.
+    backgroundColor: colors.borderStrong,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
     gap: spacing.md,
-    marginTop: spacing.md,
-    marginBottom: spacing.xs,
+    marginTop: spacing.lg,
+    marginBottom: spacing.sm,
   },
   title: {
     flex: 1,

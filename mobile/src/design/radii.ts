@@ -1,5 +1,5 @@
 /**
- * Corner radii. Four values, no others.
+ * Corner radii. Five values, no others.
  *
  * `pill` is reserved for elements where the shape carries meaning (a progress
  * track, a status chip). It is not a default for buttons — the brief calls out
@@ -10,8 +10,14 @@ export const radii = {
   sm: 8,
   /** Cards, buttons, inputs. The workhorse. */
   md: 12,
-  /** Major surfaces: sheets, modals, the featured card. */
+  /** Major surfaces: modals, the featured card. */
   lg: 16,
+  /**
+   * The top corners of a bottom sheet — the redesign's (2026-09-23), which
+   * draws every sheet at 22. Larger than `lg` because a sheet is the one
+   * surface that rises over the whole screen, and its curve is what says so.
+   */
+  sheet: 22,
   /** Fully rounded. Progress tracks and similar. */
   pill: 999,
 } as const;

@@ -32,6 +32,7 @@ import { ProofReadScreen } from '../screens/proofRead/ProofReadScreen';
 import { OnboardingScreen } from '../screens/onboarding/OnboardingScreen';
 import { PieceScoreScreen } from '../screens/pieceScore/PieceScoreScreen';
 import { RecordScreen } from '../screens/record/RecordScreen';
+import { TempoScreen } from '../screens/tempo/TempoScreen';
 import { ProfileScreen } from '../screens/profile/ProfileScreen';
 import { ScannerScreen } from '../screens/scanner/ScannerScreen';
 import { TodayScreen } from '../screens/today/TodayScreen';
@@ -341,6 +342,7 @@ function SignedInApp() {
         component={AcknowledgementsScreen}
       />
       <Stack.Screen name="Record" component={RecordScreen} />
+      <Stack.Screen name="Tempo" component={TempoScreen} />
       <Stack.Screen name="Warmup" component={WarmupScreen} />
       <Stack.Screen name="Verdict" component={VerdictScreen} />
     </Stack.Navigator>

@@ -88,6 +88,8 @@ export type RootStackParamList = {
   Help: undefined;
   Acknowledgements: undefined;
   Record: { pieceId: string };
+  /** The practice tempo for a piece, chosen on its own screen from Record. */
+  Tempo: { pieceId: string };
   /** The daily warmup. Reads the instrument from preferences, so no params. */
   Warmup: undefined;
   /** The analysis to show. Everything else comes from the API. */

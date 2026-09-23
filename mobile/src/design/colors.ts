@@ -121,6 +121,16 @@ export const lightColors = {
   actionBgPressed: '#332E28',
   surfacePressed: '#F5F2EC',
 
+  /**
+   * The practice panel under the score on Record — from the redesign
+   * (`redesign/RecordReady.dc.html`), which drew it and had no token for it. A
+   * step warmer than a card and a step lighter than the page, so the score's
+   * white band above it reads as the one bright thing.
+   */
+  panel: '#FAF8F2',
+  /** A filled round control on that panel: the Listen button. */
+  controlFill: '#E9E2D4',
+
   // -------------------------------------------------------------------------
   // Glass — the floating control layer, and nothing else.
   //
@@ -356,6 +366,10 @@ export const darkColors: Palette = {
 
   actionBgPressed: '#E8E3D9',
   surfacePressed: '#2A241E',
+
+  /** Not yet designed for dark (the app is pinned light); a raised dark ground. */
+  panel: '#211D19',
+  controlFill: '#2F2923',
 
   /**
    * Dark glass. Same 0.80 opacity as the light material and for the same

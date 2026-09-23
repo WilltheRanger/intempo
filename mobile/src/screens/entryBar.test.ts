@@ -43,8 +43,10 @@ describe('the entry bar on the record screen', () => {
     const [, source] = record[0];
 
     // `entryCopy.test.ts` holds the words; this holds the fact that this
-    // screen asks for them.
-    expect(source).toContain('entry="take"');
+    // screen asks for them. It asked through `PlaybackSettings entry="take"`
+    // until the redesign (2026-09-23) moved the row onto the Record panel.
+    expect(source).toContain("entryRowLabel('take')");
+    expect(source).toContain("entryAccessibilityLabel('take', startFrom)");
   });
 
   it('measures the rest cues from the bar the take starts at', () => {

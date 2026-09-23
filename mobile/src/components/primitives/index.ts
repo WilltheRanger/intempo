@@ -6,6 +6,7 @@ export {
   type ScreenContainerProps,
 } from './ScreenContainer';
 export { PageHeader, type PageHeaderProps } from './PageHeader';
+export { BackLink } from './BackLink';
 export { SectionHeader, type SectionHeaderProps } from './SectionHeader';
 export { Card, type CardProps } from './Card';
 export { DragSheet, HANDLE_HEIGHT, type DragSheetProps } from './DragSheet';
