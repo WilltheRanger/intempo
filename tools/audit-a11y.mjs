@@ -90,9 +90,9 @@ const ROUTES = [
   // in the library, so this is where the page caption and the pager exist at
   // all — the other pieces render a single image and no control.
   ['Original pages', 'pieces/fixture-wohlfahrt-01/score?view=original'],
-  // What this route renders on a fresh page: target tempo with its steppers,
-  // the metronome control, Listen, the start-at picker, the timer and Start
-  // recording. Eight controls, on the screen where a take is made.
+  // What this route renders on a fresh page (`redesign/RecordReady.dc.html`):
+  // the score, the listen player, the Tempo, Start at and Metronome rows, ⋮
+  // and Start recording — on the screen where a take is made.
   //
   // **It used to render the pre-flight checks here instead**, for every
   // musician who had not dismissed them, so this entry — which has said
@@ -100,7 +100,14 @@ const ROUTES = [
   // never once the controls. No seed now, because the controls are what the
   // route is.
   ['Record — tempo and controls', 'pieces/fixture-bach-bwv1001/record', {
-    expect: 'Target tempo',
+    expect: 'Metronome',
+  }],
+  // The two screens Record pushes. Tempo's slider, tap button and quick picks
+  // are the controls a take is judged by; Upload is reached by route with no
+  // file staged, which is the state it opens in from "Choose a file" too.
+  ['Tempo', 'pieces/fixture-bach-bwv1001/tempo', { expect: 'Tap tempo' }],
+  ['Upload a recording', 'pieces/fixture-bach-bwv1001/upload', {
+    expect: 'No recording chosen',
   }],
   // The pre-flight checks, which step in front of the controls only when one
   // of them is `warn`. Reached by seeding the metronome mode that warns —

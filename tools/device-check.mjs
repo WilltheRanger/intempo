@@ -140,62 +140,31 @@ async function clearFirstTakeGate(page) {
 }
 
 /**
- * Drag the record sheet open, so the setup rows are on screen.
+ * Check the setup rows are on screen, above the record button.
  *
- * **The rows are reachable by dragging and by nothing else, and this check
- * used to reach them by accident.** The sheet lowers by `translateY`, and a
- * translated absolutely-positioned element still counts toward the document's
- * scrollable overflow: the page measured `scrollHeight` 1219 against an
- * `innerHeight` of 844, so Playwright's own "scroll into view if needed"
- * scrolled the page and the row arrived under the cursor. React Native clips
- * that on device, so the scroll never existed on a phone — the check was
- * passing on a bug.
- *
- * With `overflow: 'hidden'` on the screen root the scroll is gone, and a
- * `Metronome` row at y 719..774 sits under the take bar's record button at
- * 700..820 forever. Measured on the built bundle at 390x844, before and after
- * this drag:
- *
- *     Metronome   719..774  ->  348..403
- *     Start at    774..829  ->  403..458
- *     Listen      829..884  ->  458..513
- *     More        884..939  ->  513..568
- *
- * **Touch events, not the mouse.** `DragSheet` takes the gesture through
- * `PanResponder`, which on web reads touches; a synthetic mouse drag leaves
- * the sheet exactly where it was, which is what made this look like an app
- * defect rather than a check that had stopped driving the app the way a
- * thumb does.
+ * **They were behind a drag until 2026-09-23**, in a sheet that started
+ * lowered, and this drove the drag with CDP touch events. The redesign
+ * (`redesign/RecordReady.dc.html`) puts them in a fixed panel between the
+ * score and the record button, so there is nothing to open. What is still
+ * worth asserting is the thing the drag used to hide: that the row is inside
+ * the viewport and not under the button, because a row the check can click
+ * and a thumb cannot reach would be the same accident as before — this check
+ * once passed on a page scroll no phone had.
  */
-async function openControlPanel(context, page) {
-  const before = await page
-    .locator('[aria-label^="Metronome,"]')
+async function controlsOnScreen(page) {
+  const row = await page
+    .locator('[aria-label^="Metronome "]')
     .first()
     .boundingBox()
     .catch(() => null);
-  if (!before) return false;
-
-  const cdp = await context.newCDPSession(page);
-  const x = 195;
-  const from = 600;
-  const touch = (y) => [{ x, y, radiusX: 3, radiusY: 3, force: 1, id: 1 }];
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: touch(from) });
-  for (let i = 1; i <= 24; i += 1) {
-    await cdp.send('Input.dispatchTouchEvent', {
-      type: 'touchMove',
-      touchPoints: touch(from - (380 * i) / 24),
-    });
-    await page.waitForTimeout(16);
-  }
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-  await page.waitForTimeout(800);
-
-  const after = await page
-    .locator('[aria-label^="Metronome,"]')
+  const button = await page
+    .locator('[aria-label="Start recording"]')
     .first()
     .boundingBox()
     .catch(() => null);
-  return Boolean(after && after.y < before.y - 100);
+  const viewport = page.viewportSize();
+  if (!row || !button || !viewport) return false;
+  return row.y >= 0 && row.y + row.height <= button.y && button.y + button.height <= viewport.height;
 }
 
 async function checkMicrophone(browser) {
@@ -514,18 +483,16 @@ async function checkAudioOut(browser) {
   await page.waitForTimeout(1200);
   await clearFirstTakeGate(page);
 
-  // The setup rows live in the sheet, and the sheet starts lowered. Opening it
-  // is the app's own gesture rather than a scroll, and it is asserted rather
-  // than assumed: a drag that silently did nothing would leave every check
-  // below testing a row nobody can see.
-  if (!(await openControlPanel(context, page))) {
-    fail('the control panel opens to the drag', 'the sheet did not rise');
+  // Asserted rather than assumed: a row off the screen or under the button
+  // would leave every check below testing a control nobody can reach.
+  if (!(await controlsOnScreen(page))) {
+    fail('the setup rows sit on screen above the record button', 'a row is off screen or under the button');
     await context.close();
     return;
   }
-  pass('the control panel opens to the drag');
+  pass('the setup rows sit on screen above the record button');
 
-  const listen = page.locator('text=Listen').first();
+  const listen = page.locator('[aria-label^="Listen from bar"]').first();
   if (await listen.count()) {
     await listen.click();
     await page.waitForTimeout(3000);
@@ -543,7 +510,7 @@ async function checkAudioOut(browser) {
   // on Profile. Choosing the silent one has to actually stay silent on the
   // hardware, which is the half no Chromium gate can answer for.
   await page.evaluate(() => { window.__started = 0; });
-  const metronome = page.locator('[aria-label^="Metronome,"]').first();
+  const metronome = page.locator('[aria-label^="Metronome "]').first();
   if (await metronome.count()) {
     await metronome.click();
     await page.waitForTimeout(600);

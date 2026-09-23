@@ -799,8 +799,21 @@ console.log('\n## Telling the app it got a bar wrong');
   await open('analyses/fixture-take-1');
 
   // Measure 5 is one the app called rushing. Measure 11 is "Not timed".
-  const judged = page.getByRole('button', { name: /Measure 5/ }).first();
-  await judged.click({ timeout: 15000 });
+  // The measures are one chart now — a slider to assistive tech, stepped by
+  // the arrow keys on the web — so a measure is selected by stepping it there
+  // rather than by clicking a row.
+  const chart = page.getByRole('slider', { name: /^Measure \d+ of/ }).first();
+  const selectMeasure = async (n) => {
+    await chart.focus({ timeout: 15000 });
+    for (let i = 0; i < 40; i += 1) {
+      const now = Number(await chart.getAttribute('aria-valuenow'));
+      if (now === n) return true;
+      await page.keyboard.press(now < n ? 'ArrowRight' : 'ArrowLeft');
+    }
+    return false;
+  };
+  if (await selectMeasure(5)) pass('the measure chart steps to measure 5 from the keyboard');
+  else fail('the measure chart could not be stepped to measure 5');
 
   const asked = await page
     .getByText('What actually happened?')
@@ -820,16 +833,15 @@ console.log('\n## Telling the app it got a bar wrong');
   // A bar under a written change was never judged, so there is nothing to
   // agree or disagree with — asking would be asking a musician to adjudicate a
   // measurement that was never made.
-  const untimed = page.getByRole('button', { name: /Measure 11/ }).first();
-  const untimedIsAButton = await untimed.count().then((n) => n > 0).catch(() => false);
-  if (!untimedIsAButton) {
-    pass('an untimed bar is not a button, so it cannot be asked about');
-  } else {
-    await untimed.click({ timeout: 5000 }).catch(() => {});
-    const stillOne = (await leaves()).filter((l) => l === 'What actually happened?');
-    if (stillOne.length <= 1) pass('an untimed bar does not ask the question');
-    else fail('an untimed bar offered the correction question');
-  }
+  await selectMeasure(11);
+  const label = (await chart.getAttribute('aria-label')) ?? '';
+  const askedOfUntimed = (await leaves()).includes('What actually happened?');
+  if (!/Not timed/i.test(label)) fail(`measure 11 read as "${label}", not "Not timed"`);
+  else if (askedOfUntimed) fail('an untimed bar offered the correction question');
+  else pass('an untimed bar does not ask the question');
+
+  // Back to the judged one for the answer below.
+  await selectMeasure(5);
 
   // The fixture build has no account to attach a correction to, so this must
   // say so rather than acknowledging something it did not record.
@@ -941,68 +953,66 @@ console.log('\n## Setting up a take');
  * they did not choose, with nothing on screen disagreeing.
  */
 /**
- * Pull the setup sheet up, and check it actually came.
+ * The tempo a take is judged at, as the record screen's Tempo row reads it.
  *
- * **The record screen opens on the music, with the setup lowered**, so every
- * control below the handle is off the bottom of the display until this runs.
- * That was true before 2026-09-20 as well and this step did not exist — the
- * lowered sheet used to push the page 375 points past the bottom of the
- * document, so Playwright's "scroll into view" reached the controls through a
- * page scroll that no musician could have used and that the screen was never
- * meant to have. Clipping the stage fixed the scroll and took the accident
- * with it.
- *
- * Asserted rather than assumed: a handle that does not raise the sheet is
- * exactly the drawn-affordance-that-does-nothing defect `CLAUDE.md` §3 exists
- * for, and it would otherwise show up here as an unrelated click timing out.
+ * **Its own screen since the redesign** (`redesign/Tempo.dc.html`): the row
+ * shows the number and opens the Tempo screen, where the slider and tap tempo
+ * set it. So the check is the round trip — change it there, and the row the
+ * take is started from must then say the same number, because that is the
+ * number the take sends. Until 2026-09-23 this was a Faster/Slower stepper in
+ * a sheet that had to be raised first; both are gone.
  */
-const raiseControls = async (target = page) => {
-  const handle = target.getByRole('button', { name: 'Practice controls' }).first();
-  await handle.click({ timeout: 10000 });
-  await target
-    .getByRole('button', { name: /^Target tempo/i })
-    .first()
-    .waitFor({ state: 'visible', timeout: 10000 })
-    .catch(() => {});
-  // The stepper is what the settings are for; if the sheet did not move, this
-  // is the control still sitting under the take bar.
-  await target.getByRole('button', { name: 'Faster' }).first().waitFor({ timeout: 10000 });
+const tempoRow = () => page.getByRole('button', { name: /^Tempo \d+/ }).first();
+const targetBpm = async () => {
+  const name = (await tempoRow().getAttribute('aria-label').catch(() => null)) ?? '';
+  return name.match(/^Tempo (\d+)/)?.[1] ?? null;
 };
 
 await open('pieces/fixture-bach-bwv1001/record');
-await waitForText('the recording controls', (l) => /Target tempo/i.test(l));
+await tempoRow().waitFor({ timeout: 20000 });
 if ((await leaves()).some((l) => l.includes(PRACTICE_SETUP_HEADING)))
   fail('a first take with nothing wrong still opened on a screen of ticks');
 else pass('a first take with nothing wrong opens on the controls');
-
-await raiseControls();
-pass('the handle raises the setup sheet');
-
-/** The number beside the BPM label, which is what the take is judged against. */
-const targetBpm = async () => {
-  const lines = await leaves();
-  const at = lines.indexOf('BPM');
-  return at > 0 ? lines[at - 1] : null;
-};
 
 const opened = await targetBpm();
 if (!opened) fail('the recording screen shows no target tempo');
 else pass(`the controls carry a target tempo, at ${opened} BPM`);
 
-await page.getByRole('button', { name: 'Faster' }).first().click();
+/**
+ * Open the Tempo screen, step its slider `delta` from the keyboard, and come
+ * back with Done. Answers the number the Tempo screen was showing.
+ */
+const stepTempo = async (delta) => {
+  await tempoRow().click({ timeout: 10000 });
+  const slider = page.getByRole('slider', { name: /^Tempo/ }).first();
+  await slider.focus({ timeout: 10000 });
+  for (let i = 0; i < Math.abs(delta); i += 1) {
+    await page.keyboard.press(delta > 0 ? 'ArrowRight' : 'ArrowLeft');
+  }
+  const shown = await slider.getAttribute('aria-valuenow');
+  await page.getByRole('button', { name: 'Done' }).first().click({ timeout: 10000 });
+  await tempoRow().waitFor({ timeout: 10000 });
+  return shown;
+};
+
+const shownFaster = await stepTempo(1);
 await waitFor('the tempo to rise', async () => (await targetBpm()) !== opened);
 const faster = await targetBpm();
-await page.getByRole('button', { name: 'Slower' }).first().click();
+await stepTempo(-1);
 await waitFor('the tempo to fall back', async () => (await targetBpm()) !== faster);
 const back = await targetBpm();
 
-if (Number(faster) <= Number(opened)) fail(`Faster took ${opened} to ${faster}`);
+if (shownFaster !== faster)
+  // The failure this exists for: a screen that showed one number while the
+  // take went out at another, with nothing on screen disagreeing.
+  fail(`the Tempo screen set ${shownFaster} and the record screen came back with ${faster}`);
+else if (Number(faster) <= Number(opened)) fail(`a step up took ${opened} to ${faster}`);
 else if (back !== opened)
-  // The same step in both directions. A stepper that rose by two and fell by
+  // The same step in both directions. A control that rose by two and fell by
   // one would drift the target every time a musician changed their mind, and
   // the number on screen would still look deliberate.
-  fail(`Slower did not undo Faster: ${opened} → ${faster} → ${back}`);
-else pass(`the tempo steps evenly both ways: ${opened} → ${faster} → ${back}`);
+  fail(`a step down did not undo a step up: ${opened} → ${faster} → ${back}`);
+else pass(`the Tempo screen sets the take's tempo, evenly both ways: ${opened} → ${faster} → ${back}`);
 
 /*
  * The start-at picker. `from_measure` reached `main` once and refused every
@@ -1013,14 +1023,13 @@ else pass(`the tempo steps evenly both ways: ${opened} → ${faster} → ${back}
  * `leaves()` here reads the whole document rather than the app container. A
  * probe scoped to `#root` reported this control doing nothing at all.
  */
-const beforePicker = (await leaves()).length;
 await page.getByRole('button', { name: /Start at bar/i }).first().click();
-await waitFor('the start-at sheet to open', async () =>
-  (await leaves()).some((l) => /Start the take at/i.test(l)),
-);
-if ((await leaves()).length <= beforePicker)
-  fail('the start-at control opened nothing');
-else pass('the start-at picker opens and says what the bar governs');
+if (
+  await waitFor('the start-at sheet to open', async () =>
+    (await leaves()).some((l) => l === 'Choose on the score'),
+  )
+)
+  pass('the start-at sheet opens, with a way to choose any bar on the score');
 await page.keyboard.press('Escape');
 await page.waitForTimeout(400);
 
@@ -1035,19 +1044,17 @@ await page.waitForTimeout(400);
  * a second way in.
  */
 await open('pieces/fixture-bach-bwv1001/record');
-await raiseControls();
 /*
- * **Behind "More" since 2026-09-20.** The panel holds five rows, and these two
- * — this and "Upload a recording" — are the ones nobody passes through on the
- * way to playing. Six rows in the column took it past the height it is capped
- * at and gave the setup a scrollbar; five do not.
+ * **Behind ⋮ ("More").** This and "Upload a recording" are the two things
+ * nobody passes through on the way to playing, so the redesign keeps them off
+ * the panel.
  */
-await page.getByRole('button', { name: 'More' }).first().click();
+await page.getByRole('button', { name: 'More' }).first().click({ timeout: 15000 });
 await page.waitForTimeout(400);
 await page.getByRole('button', { name: PRACTICE_SETUP_REOPEN }).first().click();
 await waitForText('the pre-flight to reopen', (l) => l.includes(PRACTICE_SETUP_HEADING));
 await page.getByRole('button', { name: /Back to the piece/i }).first().click();
-await waitForText('the controls to come back', (l) => /Target tempo/i.test(l));
+await tempoRow().waitFor({ timeout: 15000 });
 if ((await path()).endsWith('/record'))
   pass('reopening the checks comes back to the controls, not out of the flow');
 else fail(`closing the reopened checks left for ${await path()}`);
@@ -1311,7 +1318,7 @@ console.log('\n## A take that records');
   else {
     // Matched on something **only the verdict screen says**. This was
     // `/measures|tempo|rushed|dragged/`, which the record screen satisfies on
-    // its own — "Target tempo" is right there above the button — so the check
+    // its own — its Tempo row is right there above the button — so the check
     // passed without the take going anywhere, including under a mutation that
     // stopped the worklet delivering a single sample.
     const verdict = await awaitLine((l) => /across the take|measure by measure/i.test(l), 20000);
