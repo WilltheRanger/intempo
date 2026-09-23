@@ -90,7 +90,6 @@ export function TempoScreen() {
       <ScreenContainer>
         <EmptyState
           title="Couldn't open this piece"
-          description="It may have been removed from your library."
           actionLabel="Back"
           onActionPress={goBack}
         />
@@ -150,7 +149,7 @@ export function TempoScreen() {
           // The score is where a new piece goes next: its reading is checked
           // there, and it is where the notation appears when the reading ends.
           <PrimaryButton
-            label="Save and open the score"
+            label="Save"
             onPress={() => navigation.replace('PieceScore', { pieceId: params.pieceId })}
           />
         ) : (
@@ -164,7 +163,7 @@ export function TempoScreen() {
             Step 3 of 3
           </Text>
           <Text variant="screenTitle" accessibilityRole="header" style={styles.title}>
-            Set your working tempo
+            Set your tempo
           </Text>
         </View>
       ) : (
@@ -274,7 +273,7 @@ export function TempoScreen() {
         <View style={styles.listen}>
           <ListenButton score={piece.score} bpm={quarter} />
           <Text variant="metadata" color="textTertiary" style={styles.listenHint}>
-            Hear bar 1 at this tempo
+            Hear bar 1
           </Text>
         </View>
       ) : null}

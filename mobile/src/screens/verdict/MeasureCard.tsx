@@ -11,7 +11,7 @@ import { DeviationBar } from '../insights/DeviationBar';
 /**
  * The measure the chart has selected (`redesign/Verdict.dc.html`): its number,
  * where it sat against the beat, the word for it, how far off in shares of a
- * beat, and — where the app made a claim — "What actually happened?".
+ * beat, and — where the app made a claim — "What did you hear?".
  *
  * **A card, and the one on this screen that earns it** (§3 law 3): it is a
  * detail about one measure sitting under a chart of all of them, and the box

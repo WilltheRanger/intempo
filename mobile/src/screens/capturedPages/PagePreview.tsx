@@ -87,8 +87,7 @@ export function PagePreview({ page, position, total, onClose }: PagePreviewProps
           // review screen still offers Retake on the row behind this.
           <View style={styles.missing}>
             <Text variant="body" color="onDarkMuted" style={styles.missingText}>
-              This photograph is no longer on the device. Retake the page to
-              replace it.
+              This photo is gone. Retake the page.
             </Text>
           </View>
         )}

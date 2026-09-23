@@ -134,9 +134,7 @@ export function TranscribingPanel({ piece }: TranscribingPanelProps) {
         on exactly the pages that take longest.
       */}
       <Text variant="metadataSmall" color="textTertiary" style={styles.caption}>
-        Reading a page usually takes under a minute, longer for a dense one. You
-        can leave this screen — it carries on without you, and the piece is
-        already in your library.
+        Usually under a minute. You can leave; it keeps going.
       </Text>
     </View>
   );

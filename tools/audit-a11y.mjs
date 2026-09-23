@@ -110,7 +110,7 @@ const ROUTES = [
   // marked tick and Listen — reached here on a piece that has notation, which
   // is the state it reaches once the reading finishes.
   ['Set your working tempo', 'pieces/fixture-bach-bwv1001/set-tempo', {
-    expect: 'Set your working tempo',
+    expect: 'Set your tempo',
   }],
   ['Upload a recording', 'pieces/fixture-bach-bwv1001/upload', {
     expect: 'No recording chosen',

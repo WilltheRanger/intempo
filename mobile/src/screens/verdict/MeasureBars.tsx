@@ -105,8 +105,8 @@ export function MeasureBars({
         role="slider"
         aria-label={
           current
-            ? `Measure ${current.measure} of ${bars.length}: ${readMeasure(current).label}`
-            : 'Measure by measure'
+            ? `Bar ${current.measure} of ${bars.length}: ${readMeasure(current).label}`
+            : 'Bar by bar'
         }
         aria-valuemin={1}
         aria-valuemax={bars.length}
@@ -157,7 +157,7 @@ export function MeasureBars({
       </View>
       <View style={styles.ends}>
         <Text variant="caption" color="textTertiary" style={styles.number}>
-          Measure {bars[0]?.measure ?? ''}
+          Bar {bars[0]?.measure ?? ''}
         </Text>
         <Text variant="caption" color="textTertiary" style={styles.number}>
           {bars[bars.length - 1]?.measure ?? ''}

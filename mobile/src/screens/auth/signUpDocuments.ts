@@ -13,6 +13,6 @@ export const SIGN_UP_DOCUMENTS: ReadonlyArray<{
   id: LegalDocument['id'];
   label: string;
 }> = [
-  { id: 'terms', label: 'terms of use' },
+  { id: 'terms', label: 'terms' },
   { id: 'privacy', label: 'privacy policy' },
 ];

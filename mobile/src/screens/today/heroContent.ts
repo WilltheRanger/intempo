@@ -71,7 +71,7 @@ const NOTHING_YET: HeroContent = {
   label: 'Start here',
   title: 'Add your first piece',
   meta: null,
-  detail: 'Photograph a page, import a score, or enter one by hand.',
+  detail: null,
   actionLabel: 'Add a piece',
   action: 'add',
 };
@@ -110,13 +110,13 @@ export function heroContentFor({
     // with no clue that the app is mid-way through something. A piece that has
     // simply never been recorded gets nothing, which is honest: there is no
     // sentence to write about a take that does not exist.
-    detail: reading ? 'Reading the notation from your photograph…' : lastTakeHeadline,
+    detail: reading ? 'Reading your photo…' : lastTakeHeadline,
     // The button says what happens, and what happens depends on whether there
     // is notation to record against — `TodayScreen.openPractice` sends a piece
     // with no measures to its detail screen instead of to the recorder, so a
     // button promising "Continue practice" there would be describing a screen
     // the tap does not open.
-    actionLabel: hasNotation(piece) ? 'Continue practice' : 'Open the piece',
+    actionLabel: hasNotation(piece) ? 'Practice' : 'Open',
     action: 'continue',
   };
 }
@@ -178,8 +178,8 @@ export function pendingLineFor(
       // only thing that went wrong is this question, and the line says so
       // because the alternative is a musician re-recording something that is
       // safe.
-      return { label: 'Couldn\u2019t check your last take. Tap to retry', ready: false };
+      return { label: 'Couldn\u2019t check your last take. Retry', ready: false };
     case 'working':
-      return { label: `Still listening to your last take${named}`, ready: false };
+      return { label: `Analysing your last take${named}`, ready: false };
   }
 }

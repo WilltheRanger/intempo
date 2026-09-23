@@ -121,9 +121,7 @@ export function ProofReadScreen() {
         <EmptyState
           fill
           title="Nothing looks off"
-          description={proposalsSummary(0)}
-          hint="This checks pitches the instrument cannot play and bars that read a note twice. It cannot see the page, so it cannot catch everything."
-          actionLabel="Back to the reading"
+          actionLabel="Back to score"
           actionTone="primary"
           onActionPress={goBack}
         />
@@ -141,10 +139,10 @@ export function ProofReadScreen() {
           <PrimaryButton
             label={
               fixing === 0
-                ? 'Keep the reading as it is'
+                ? 'Keep as is'
                 : fixing === 1
-                  ? 'Save one correction'
-                  : `Save ${fixing} corrections`
+                  ? 'Save 1 fix'
+                  : `Save ${fixing} fixes`
             }
             onPress={save}
             disabled={correct.isPending}
@@ -183,10 +181,7 @@ export function ProofReadScreen() {
         bar is not read as a clean bill of health. The app cannot see the page.
       */}
       <Text variant="metadataSmall" color="textTertiary" style={styles.scope}>
-        This checks pitches the instrument cannot play and bars that read a note
-        twice. {answered === proposals.length
-          ? 'Everything here has an answer.'
-          : `${proposals.length - answered} still to answer.`}
+        {answered === proposals.length ? 'All answered.' : `${proposals.length - answered} left.`}
       </Text>
     </ScreenContainer>
   );

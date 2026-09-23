@@ -138,7 +138,7 @@ export function TranscribeScreen() {
         <EmptyState
           fill
           title="Transcription needs the backend"
-          description="This build runs on sample data, so there is nothing to read your photograph. Add a piece manually instead."
+          description="Sample mode can’t read photos. Add a piece by hand instead."
           actionLabel="Back to pages"
           onActionPress={goBack}
         />
@@ -168,9 +168,7 @@ export function TranscribeScreen() {
         </Text>
 
         <Text variant="body" color="textSecondary" style={styles.subtitle}>
-          {total === 1
-            ? 'Uploading the photograph. Reading the notation comes next, once you have named the piece.'
-            : 'Uploading every page in order. Reading the notation comes next, once you have named the piece.'}
+          Next, you name it.
         </Text>
 
         {/*

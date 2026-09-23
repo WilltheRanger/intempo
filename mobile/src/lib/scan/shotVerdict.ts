@@ -86,9 +86,7 @@ export function shotVerdict(
       // Stated without the negation it used to carry. It read "rather than a
       // bad photograph", and a musician skimming a reassurance sees the word
       // "bad" next to their page. The test holds this.
-      body:
-        'This one could not be measured, which usually just means an unusual '
-        + 'layout. It will be read with the rest.',
+      body: 'It will be read with the rest.',
       keepLabel: 'Keep it',
       retakeLabel: 'Take it again',
       primary: 'keep',
@@ -99,7 +97,7 @@ export function shotVerdict(
   return {
     tone: 'good',
     headline: 'The notes are clear',
-    body: 'There is enough detail here to read the staves.',
+    body: 'Clear enough to read.',
     keepLabel: 'Keep it',
     retakeLabel: 'Take it again',
     primary: 'keep',
@@ -122,14 +120,14 @@ export function shotVerdict(
  */
 export function viewfinderGuide(last: ShotVerdict | null): string {
   if (!last) {
-    return 'Fill the frame · keep the page flat · avoid shadows';
+    return 'Fill the frame · flat · no shadows';
   }
   if (last.tone === 'good') {
-    return 'The last page read well · same distance again';
+    return 'Same distance again';
   }
   return last.retake === 'cameraApp'
-    ? 'This camera struggles at any distance · the camera app reads better'
-    : 'The last page was too far away · move in until one page fills the frame';
+    ? 'Try the camera app'
+    : 'Move closer'
 }
 
 /** Re-exported so a screen can name the floor without importing two modules. */

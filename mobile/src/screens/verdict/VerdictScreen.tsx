@@ -124,7 +124,7 @@ export function VerdictScreen() {
               message:
                 error instanceof Error
                   ? error.message
-                  : 'That feedback could not be sent. Try again.',
+                  : 'Couldn’t send. Try again.',
             },
           })),
       },
@@ -161,7 +161,6 @@ export function VerdictScreen() {
         <EmptyState
           fill
           title="Couldn't load this take"
-          description="It may have been removed, or the analysis never finished."
           actionLabel="Back"
           onActionPress={goBack}
         />
@@ -254,8 +253,8 @@ export function VerdictScreen() {
             refused
               ? refused.description
               : take.failure.recoverable
-                ? "Your playing wasn't the problem. Recording it again usually works."
-                : "Your playing wasn't the problem. Record it again when you have a moment."
+                ? 'Not your playing. Try again.'
+                : 'Not your playing. Record it again.'
           }
         />
         {take.recordingAvailable ? (
@@ -357,7 +356,7 @@ export function VerdictScreen() {
 
       <Text variant="body" color="textSecondary" style={styles.headline}>
         {take.lowConfidence
-          ? 'The recording was hard to follow, so this timing read may be inaccurate. Listen to your take, then record again in a quieter room or closer to the microphone.'
+          ? 'Hard to hear. Try a quieter room, closer to the mic.'
           : take.headline}
       </Text>
       {/*
@@ -402,7 +401,7 @@ export function VerdictScreen() {
         accessibilityLabel={describeTrendRange(firstMeasure, lastMeasure)}
       />
 
-      <RuledHeading label="Measure by measure" style={styles.ruled} />
+      <RuledHeading label="Bar by bar" style={styles.ruled} />
       <MeasureBars
         measures={take.measures}
         selected={chosen?.measure ?? null}

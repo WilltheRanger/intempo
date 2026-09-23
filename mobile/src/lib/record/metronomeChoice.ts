@@ -38,21 +38,21 @@ export interface MetronomeChoice {
 const CHOICES: Record<MetronomeMode, Omit<MetronomeChoice, 'mode'>> = {
   off: {
     label: 'Off',
-    detail: 'Nothing marks the beat. Only your playing reaches the microphone.',
+    detail: 'Nothing marks the beat.',
   },
   visual: {
     label: 'Visual',
-    detail: 'A pulse on screen. Silent, so it cannot reach the recording.',
+    detail: 'A silent pulse on screen.',
   },
   haptic: {
     label: 'Haptic',
-    detail: 'A tap you feel. Silent, and needs haptics turned on in your profile.',
+    detail: 'A silent tap. Needs haptics on in Profile.',
   },
   audio_with_headphones: {
     label: 'Audio',
     // The condition is in the sentence because it is the whole of the risk:
     // a click through a speaker lands in the take as notes nobody played.
-    detail: 'A click in headphones. Through a speaker it would reach the microphone and be counted as playing.',
+    detail: 'A click in headphones, so it can’t reach the mic.',
   },
 };
 

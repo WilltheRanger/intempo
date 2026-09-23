@@ -157,15 +157,14 @@ export function OnboardingFlow({
       return (
         <StepFrame
           {...frame}
-          title="What should we call you?"
-          lede="It is how the app greets you, and nothing else."
+          title="What’s your name?"
           primary={next}
         >
           <Input
             label="Name"
             value={name}
             onChangeText={setName}
-            placeholder="Your first name"
+            placeholder="First name"
             serif
             large
             autoCapitalize="words"
@@ -186,7 +185,6 @@ export function OnboardingFlow({
         <StepFrame
           {...frame}
           title="What do you play?"
-          lede="It sets how your playing is read, and the sound you hear on Listen."
           primary={next}
         >
           <InstrumentChoice label="Instrument" value={instrument} onChange={setInstrument} />
@@ -197,8 +195,7 @@ export function OnboardingFlow({
       return (
         <StepFrame
           {...frame}
-          title="Learning, or teaching?"
-          lede="You can change this later in your profile."
+          title="Learning or teaching?"
           primary={{
             ...next,
             onPress: () => {
@@ -207,7 +204,7 @@ export function OnboardingFlow({
             },
           }}
         >
-          <View accessibilityRole="radiogroup" accessibilityLabel="Learning, or teaching?">
+          <View accessibilityRole="radiogroup" accessibilityLabel="Learning or teaching?">
             {ROLE_CHOICES.map((choice) => {
               const selected = role === choice.value;
               return (
@@ -245,7 +242,6 @@ export function OnboardingFlow({
         <StepFrame
           {...frame}
           title="InTempo listens while you play"
-          lede="Records only when your take is running."
           primary={{
             label: 'Allow microphone',
             loading: asking,
@@ -263,15 +259,11 @@ export function OnboardingFlow({
         >
           <ListeningIllustration />
           <View style={styles.facts}>
-            <Fact icon={Mic} text="Only while a take is running" />
-            <Fact icon={FileMusic} text="Kept with the piece until you delete it" />
+            <Fact icon={Mic} text="Only while you record" />
+            <Fact icon={FileMusic} text="Saved with the piece" />
             <Fact
               icon={Settings}
-              text={
-                Platform.OS === 'web'
-                  ? 'Switch it off any time in your browser'
-                  : 'Switch it off any time in Settings'
-              }
+              text={Platform.OS === 'web' ? 'Turn it off in your browser' : 'Turn it off in Settings'}
             />
           </View>
         </StepFrame>
@@ -282,7 +274,6 @@ export function OnboardingFlow({
         <StepFrame
           {...frame}
           title="How did you find us?"
-          lede="It tells us where to turn up next. Pick one, or skip it."
           primary={{
             ...next,
             label: source ? 'Next' : 'Skip',
@@ -326,7 +317,6 @@ export function OnboardingFlow({
         <StepFrame
           {...frame}
           title="Add a photo"
-          lede="Optional, and only you ever see it."
           primary={{ label: finishLabel, onPress: () => onFinish(current()), loading: busy }}
           secondary={
             shown
@@ -355,7 +345,7 @@ export function OnboardingFlow({
             >
               <Images size={17} strokeWidth={1.6} color={colors.textPrimary} />
               <Text variant="metadata" style={styles.photoButtonLabel}>
-                {shown ? 'Choose another' : 'Choose a photo'}
+                {shown ? 'Change' : 'Choose a photo'}
               </Text>
             </Pressable>
           </View>

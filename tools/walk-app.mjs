@@ -269,7 +269,7 @@ else fail(`a take under the piece's chart → ${await path()}, expected an analy
   further down.
 */
 await tab('Today');
-await tapTo('Today hero action', /Continue practice/, /\/record$/);
+await tapTo('Today hero action', /^Practice$/, /\/record$/);
 
 // A deep link has no history behind it; back must still reach the parent.
 await open('pieces/fixture-clef-change-study/bars/3');
@@ -562,7 +562,7 @@ console.log('\n## Photographing a piece');
   await scan.waitForTimeout(1500);
 
   const chooser = scan.waitForEvent('filechooser', { timeout: 15000 }).catch(() => null);
-  await scan.getByText('Choose images').first().click({ timeout: 15000 });
+  await scan.getByText('Choose photos').first().click({ timeout: 15000 });
   const picker = await chooser;
 
   if (!picker) {
@@ -784,7 +784,7 @@ else fail('deleting a note did not change the beat count');
  * throw out every correction they had just made, and there is nowhere to get
  * them back from.
  */
-await page.getByRole('button', { name: 'Save this bar' }).first().click();
+await page.getByRole('button', { name: 'Save', exact: true }).first().click();
 await waitForText('the save to be answered', (l) =>
   /needs the backend|sample data/i.test(l),
 );
@@ -819,7 +819,7 @@ console.log('\n## Telling the app it got a bar wrong');
   // The measures are one chart now — a slider to assistive tech, stepped by
   // the arrow keys on the web — so a measure is selected by stepping it there
   // rather than by clicking a row.
-  const chart = page.getByRole('slider', { name: /^Measure \d+ of/ }).first();
+  const chart = page.getByRole('slider', { name: /^Bar \d+ of/ }).first();
   const selectMeasure = async (n) => {
     await chart.focus({ timeout: 15000 });
     for (let i = 0; i < 40; i += 1) {
@@ -833,7 +833,7 @@ console.log('\n## Telling the app it got a bar wrong');
   else fail('the measure chart could not be stepped to measure 5');
 
   const asked = await page
-    .getByText('What actually happened?')
+    .getByText('What did you hear?')
     .first()
     .isVisible()
     .catch(() => false);
@@ -852,7 +852,7 @@ console.log('\n## Telling the app it got a bar wrong');
   // measurement that was never made.
   await selectMeasure(11);
   const label = (await chart.getAttribute('aria-label')) ?? '';
-  const askedOfUntimed = (await leaves()).includes('What actually happened?');
+  const askedOfUntimed = (await leaves()).includes('What did you hear?');
   if (!/Not timed/i.test(label)) fail(`measure 11 read as "${label}", not "Not timed"`);
   else if (askedOfUntimed) fail('an untimed bar offered the correction question');
   else pass('an untimed bar does not ask the question');

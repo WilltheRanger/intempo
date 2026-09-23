@@ -714,7 +714,7 @@ export function RecordScreen() {
       await Linking.openSettings();
     } catch {
       setProblem(
-        'Open your device Settings, choose InTempo, and allow Microphone. Then return and press Start again.',
+        'Open Settings and allow Microphone for InTempo.',
       );
     }
   }
@@ -1038,7 +1038,6 @@ export function RecordScreen() {
       <ScreenContainer>
         <EmptyState
           title="Couldn't open this piece"
-          description="It may have been removed from your library."
           actionLabel="Back"
           onActionPress={goBack}
         />
@@ -1053,12 +1052,7 @@ export function RecordScreen() {
     return (
       <ScreenContainer>
         <EmptyState
-          title={reading ? 'Sheet music is still being read' : 'Add sheet music before recording'}
-          description={
-            reading
-              ? 'Practice recording will be ready as soon as the notation appears.'
-              : 'InTempo needs the written notes and rests to align your take and produce an accurate analysis.'
-          }
+          title={reading ? 'Still reading the music' : 'Add the sheet music first'}
           actionLabel="Open piece"
           onActionPress={() =>
             navigation.replace('PieceDetail', { pieceId: piece.id })
@@ -1142,18 +1136,18 @@ export function RecordScreen() {
             style={styles.countInLabel}
             accessibilityElementsHidden
           >
-            {perBar === null ? 'Four-beat count-in' : 'One-bar count-in'}
+            Count-in
           </Text>
           <Text style={styles.countInNumber} accessibilityLiveRegion="polite">
             {counted}
           </Text>
           <BeatIndicator beat={metronome.beat} perBar={perBar} variant="count" />
           <Text variant="body" style={styles.countInCopy}>
-            {perBar === null ? 'Start after the count' : 'Start on the next downbeat'}
+            {perBar === null ? 'Play after four' : 'Play on the next downbeat'}
           </Text>
           {metronome.silent ? (
             <Text variant="metadataSmall" color="textTertiary" style={styles.countInCopy}>
-              Haptics are off. Follow the visual count.
+              Haptics are off. Watch the count.
             </Text>
           ) : null}
         </View>
@@ -1171,7 +1165,7 @@ export function RecordScreen() {
             style={({ pressed }) => [styles.countInCancel, pressed && styles.countInCancelPressed]}
           >
             <Text variant="metadata" style={styles.countInCancelLabel}>
-              Cancel count-in
+              Cancel
             </Text>
           </Pressable>
         </View>
@@ -1206,7 +1200,7 @@ export function RecordScreen() {
           <Text variant="heroTitle">Listening back</Text>
           <Text variant="body" color="textSecondary" style={styles.subtitle}>
             {truncated
-              ? `Only the first ${Math.floor(keptSeconds / 60)} minutes were kept. ${label}.`
+              ? `First ${Math.floor(keptSeconds / 60)} minutes kept. ${label}.`
               : `${label}.`}
           </Text>
           {through === null ? null : (
@@ -1240,8 +1234,7 @@ export function RecordScreen() {
               color="textTertiary"
               style={styles.subtitle}
             >
-              Still going. A long take and a busy server both look like this.
-              Your recording is safe either way.
+              Still going. Your take is safe.
             </Text>
           ) : null}
         </View>
@@ -1343,7 +1336,6 @@ export function RecordScreen() {
             <PillRow
               // The words say the bar governs the take — `entryCopy`.
               label={entryRowLabel('take')}
-              sub="Or tap a bar in the score"
               value={`Bar ${startFrom}`}
               chevron="down"
               onPress={() => setPickingStart(true)}
@@ -1381,8 +1373,7 @@ export function RecordScreen() {
             */}
             {metronome.silent ? (
               <Text variant="caption" color="textTertiary" style={styles.note}>
-                Haptics are turned off in your profile, so nothing is marking the
-                beat.
+                Haptics are off in Profile, so nothing marks the beat.
               </Text>
             ) : null}
           </>
@@ -1552,7 +1543,7 @@ export function RecordScreen() {
             setShowMore(false);
             void openUpload();
           }}
-          hint={`Choose an audio file you already have. ${ACCEPTED_LABEL} all work.`}
+          hint={ACCEPTED_LABEL}
         />
         <LinkRow
           label="Before you record"
@@ -1560,7 +1551,7 @@ export function RecordScreen() {
             setShowMore(false);
             setShowSetup(true);
           }}
-          hint="Opens what the app can tell about this take"
+          hint="Checks for this take"
         />
       </BottomSheet>
 
@@ -1571,7 +1562,7 @@ export function RecordScreen() {
       <BottomSheet
         visible={pickingMetronome}
         onClose={() => setPickingMetronome(false)}
-        title="Marking the beat"
+        title="Metronome"
       >
         {/*
           **Rows that give, like every other choice list in the app.** These

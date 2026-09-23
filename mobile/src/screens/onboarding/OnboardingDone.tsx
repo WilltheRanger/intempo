@@ -40,7 +40,7 @@ export function OnboardingDone() {
       </Arrive>
       <Arrive over={1260}>
         <Text variant="body" color="textSecondary" style={styles.lede}>
-          Everything is set. Photograph a piece and play it.
+          Photograph a piece and play it.
         </Text>
       </Arrive>
     </CentredScreen>

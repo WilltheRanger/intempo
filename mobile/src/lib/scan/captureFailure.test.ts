@@ -34,7 +34,7 @@ describe('captureFailure', () => {
    */
   it('states the finding before the reassurance', () => {
     expect(failure.body.indexOf('gave nothing back')).toBeLessThan(
-      failure.body.indexOf('clears on its own'),
+      failure.body.indexOf('Try again'),
     );
   });
 

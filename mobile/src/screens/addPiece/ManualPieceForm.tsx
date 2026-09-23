@@ -88,13 +88,13 @@ export function ManualPieceForm() {
   async function submit() {
     const trimmedTitle = title.trim();
     if (!trimmedTitle) {
-      setError('A title, at least. It is how you will find this again.');
+      setError('Add a title.');
       return;
     }
 
     const trimmedSignature = timeSignature.trim();
     if (trimmedSignature && !looksLikeAMetre(trimmedSignature)) {
-      setError('Time signature looks like 4/4 or 6/8.');
+      setError('Use a time signature like 4/4.');
       return;
     }
 
@@ -201,9 +201,7 @@ export function ManualPieceForm() {
         the one this now names.
       */}
       <Text variant="metadataSmall" color="textTertiary" style={styles.caveat}>
-        A piece added this way keeps its title and intended tempo, but there are
-        no notes behind it yet. Photograph the music to listen, record, and get
-        timing verdicts.
+        Photograph the music to listen, record, and get timing.
       </Text>
     </ScreenContainer>
   );

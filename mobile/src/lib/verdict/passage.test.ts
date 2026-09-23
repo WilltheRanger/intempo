@@ -21,8 +21,8 @@ describe('passageLabel', () => {
    * contrast against, and reads as a caveat where there is none.
    */
   it('keeps the count for a take that opens the page', () => {
-    expect(passageLabel(bars(1, 2, 3))).toBe('3 measures');
-    expect(passageLabel(bars(1))).toBe('1 measure');
+    expect(passageLabel(bars(1, 2, 3))).toBe('3 bars');
+    expect(passageLabel(bars(1))).toBe('1 bar');
   });
 
   it('does not write a range for one bar', () => {

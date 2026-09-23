@@ -17,13 +17,13 @@ describe('failed transcription recovery', () => {
   });
 
   it('offers both ways to replace an unreadable photograph', () => {
-    expect(scoreScreen).toContain('Take new photographs instead');
-    expect(scoreScreen).toContain('Choose different images');
+    expect(scoreScreen).toContain('Retake photos');
+    expect(scoreScreen).toContain('Choose other photos');
   });
 
   it('does not promise practice features before the piece has notes', () => {
     expect(manualPiece).toContain(
-      'Photograph the music to listen, record, and get',
+      'Photograph the music to listen, record, and get timing',
     );
     expect(manualPiece).not.toContain('your practice history');
   });

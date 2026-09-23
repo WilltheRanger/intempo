@@ -40,7 +40,7 @@ const ACCEPTED: Record<string, string> = {
 };
 
 /** The names, for a sentence that tells a musician what does work. */
-export const ACCEPTED_LABEL = 'WAV, MP3, M4A, FLAC and OGG';
+export const ACCEPTED_LABEL = 'WAV, MP3, M4A, FLAC or OGG';
 
 /**
  * The bucket's own cap, so the refusal happens before the upload rather than
@@ -84,7 +84,7 @@ export function describePickedTake({
   if (!extension) {
     return {
       ok: false,
-      message: `That file has no extension, so we can’t tell what it is. ${ACCEPTED_LABEL} all work.`,
+      message: `Can’t tell what this file is. Use ${ACCEPTED_LABEL}.`,
     };
   }
 
@@ -94,7 +94,7 @@ export function describePickedTake({
     // instead of exporting the one they have.
     return {
       ok: false,
-      message: `WebM recordings can’t be read. Export it as ${ACCEPTED_LABEL.replace(' and ', ' or ')} and try again.`,
+      message: `Can’t read WebM. Export it as ${ACCEPTED_LABEL}.`,
     };
   }
 
@@ -102,7 +102,7 @@ export function describePickedTake({
   if (!contentType) {
     return {
       ok: false,
-      message: `We can’t read .${extension} files. ${ACCEPTED_LABEL} all work.`,
+      message: `Can’t read .${extension} files. Use ${ACCEPTED_LABEL}.`,
     };
   }
 
@@ -121,7 +121,7 @@ export function describePickedTake({
         // the cap, and "That file is 50 MB and the limit is 50 MB" reads as
         // the app being broken rather than as a limit. Rounding up overstates
         // by less than a megabyte and can never report the two as equal.
-        message: `That file is ${Math.ceil(size / 1_048_576)} MB and the limit is ${MAX_UPLOAD_BYTES / 1_048_576} MB. A shorter recording, or one saved as MP3 rather than WAV, will fit.`,
+        message: `That file is ${Math.ceil(size / 1_048_576)} MB. The limit is ${MAX_UPLOAD_BYTES / 1_048_576} MB.`,
       };
     }
   }

@@ -23,7 +23,7 @@ export interface CorrectionPromptProps {
 }
 
 /**
- * "What actually happened?", under a revealed measure.
+ * "What did you hear?", under a revealed bar.
  *
  * **Inside the reveal, never on every row.** Thirteen copies of a question
  * nobody asked would make the list a form, and the list is the part of this
@@ -61,7 +61,7 @@ export function CorrectionPrompt({
   return (
     <View style={styles.block}>
       <Text variant="metadataSmall" color="textTertiary" style={styles.question}>
-        What actually happened?
+        What did you hear?
       </Text>
 
       <View style={styles.choices}>

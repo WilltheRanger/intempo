@@ -121,7 +121,7 @@ export function ImportFileScreen() {
       const xml = readMusicXML(await bytesOf(asset));
       if (!/<score-partwise|<score-timewise/i.test(xml)) {
         setError(
-          `${asset.name} isn't a MusicXML score. Export one from MuseScore, Sibelius or Finale and try again.`,
+          `${asset.name} isn't a MusicXML file.`,
         );
         return;
       }
@@ -156,7 +156,7 @@ export function ImportFileScreen() {
     }
     const trimmed = title.trim();
     if (!trimmed) {
-      setError('A title, at least. It is how you will find this again.');
+      setError('Add a title.');
       return;
     }
 
@@ -185,7 +185,7 @@ export function ImportFileScreen() {
   return (
     <ScreenContainer>
       <PageHeader
-        title="Open a notation file"
+        title="Open a score file"
         onBack={goBack}
         backLabel="Back"
       />
@@ -193,9 +193,7 @@ export function ImportFileScreen() {
       {chosen === null ? (
         <>
           <Text variant="body" color="textSecondary" style={styles.lede}>
-            A MusicXML file from MuseScore, Sibelius or Finale. The notes come
-            through exactly as written, so nothing has to be read from a
-            photograph.
+            From MuseScore, Sibelius or Finale.
           </Text>
 
           <PrimaryButton
@@ -214,8 +212,7 @@ export function ImportFileScreen() {
           />
 
           <Text variant="metadataSmall" color="textTertiary" style={styles.caveat}>
-            Compressed .mxl files are fine. A score with several parts will ask
-            which one you play.
+            .mxl files work too.
           </Text>
         </>
       ) : (

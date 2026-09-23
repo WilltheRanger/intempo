@@ -47,7 +47,7 @@ describe('the scanner with no camera', () => {
     const native = cameraFallback({ granted: false, canAskAgain: false, os: 'ios' });
     expect(native?.actions).toEqual([
       { label: 'Open Settings', route: 'settings' },
-      { label: 'Choose images instead', route: 'import' },
+      { label: 'Choose photos', route: 'import' },
     ]);
     expect(native?.message).toContain('Settings');
   });

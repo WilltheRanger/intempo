@@ -35,10 +35,10 @@ describe('speakerBleed', () => {
     expect(speakerBleed(mode).tone).toBe('ok');
   });
 
-  /** Off and silent are both quiet, and they are quiet for different reasons. */
-  it('says why it is quiet, which differs between off and silent', () => {
-    expect(speakerBleed('off').detail).toContain('off');
-    expect(speakerBleed('haptic').detail).toContain('silent');
+  /** A clear check is a title and nothing else: there is nothing to do. */
+  it('says nothing more when nothing needs doing', () => {
+    expect(speakerBleed('off').detail).toBeUndefined();
+    expect(speakerBleed('haptic').detail).toBeUndefined();
   });
 });
 
@@ -105,7 +105,7 @@ describe('bowedAttack', () => {
     const check = bowedAttack('double_bass');
 
     expect(check?.title).toMatch(/double.bass/i);
-    expect(check?.detail).toMatch(/attack/i);
+    expect(check?.detail).toMatch(/bowed note/i);
   });
 
   /**

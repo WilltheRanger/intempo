@@ -170,13 +170,13 @@ export function CapturedPagesScreen() {
           // was photographed, and this is the one moment the app has a
           // musician's attention before they take the first one. One sentence,
           // and it is the one most likely to save a failed transcription.
-          hint="Flat on a table, in daylight, with the whole page in frame reads best."
+          hint="Flat, in daylight, whole page in frame."
           actionLabel={everHeld ? 'Add page' : 'Photograph a page'}
           actionTone="primary"
           onActionPress={addPage}
           // The second route, which was behind the button above: both ways of
           // getting a page in are named, on the screen that has neither.
-          secondaryLabel="Choose existing images"
+          secondaryLabel="Choose photos"
           onSecondaryPress={addFromLibrary}
         />
 
@@ -268,7 +268,7 @@ export function CapturedPagesScreen() {
       <ConfirmDialog
         visible={pendingDelete !== null}
         title={`Delete page ${pendingPosition}?`}
-        message="The photo goes with it. You'd have to shoot the page again."
+        message="You’d have to photograph it again."
         confirmLabel="Delete"
         onConfirm={() => {
           if (pendingDelete) {

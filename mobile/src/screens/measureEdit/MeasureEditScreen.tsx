@@ -149,8 +149,8 @@ export function MeasureEditScreen() {
   const keyDescription = workingKey
     ? describeKeySignature(workingKey)
     : isFirstBar
-      ? 'Unknown. Choose what the page shows'
-      : `No new signature · ${describeKeySignature(keyBefore)} continues`;
+      ? 'Unknown'
+      : 'No change';
   /*
     **The metre in force at this bar, not the page's opening metre.** A part
     that turns 3/4 at bar 3 has correct three-beat bars after it, and judging
@@ -176,8 +176,8 @@ export function MeasureEditScreen() {
   const clefDescription = workingClef
     ? describeClef(workingClef)
     : isFirstBar
-      ? 'Unknown. Choose what the page shows'
-      : `No new clef · ${describeClef(clefBefore)} continues`;
+      ? 'Unknown'
+      : 'No change';
 
   function change(patch: Partial<ScoreNote>) {
     if (!working) {
@@ -285,7 +285,7 @@ export function MeasureEditScreen() {
             </Text>
           ) : null}
           <PrimaryButton
-            label="Save this bar"
+            label="Save"
             onPress={() => void save()}
             loading={correct.isPending}
             disabled={
@@ -319,19 +319,15 @@ export function MeasureEditScreen() {
           <Text style={[styles.barName, !beats.balanced && styles.beatsOff]}>{beats.text}</Text>
         </View>
       </View>
-      <Text variant="metadataSmall" color="textTertiary">
-        {beats.expected === null
-          ? 'No time signature was read for this piece, so there is nothing to check against.'
-          : beats.pickup
-            ? // Not "this bar adds up" — it does not, and saying so under a
-              // headline that has just called it a pickup contradicts it. A
-              // musician who opened this bar because it looked short deserves
-              // to be told why it is allowed to be.
-              'An opening bar may be short if the piece starts on an upbeat. Save it, or keep adjusting.'
-            : beats.balanced
-              ? 'This bar adds up. Save it, or keep adjusting.'
-              : 'Tap a note, then choose what it should be.'}
-      </Text>
+      {/*
+        Only when there is something to do. A bar that adds up, or a pickup,
+        says so in the beat count above; a sentence repeating it was noise.
+      */}
+      {beats.expected !== null && !beats.pickup && !beats.balanced ? (
+        <Text variant="metadataSmall" color="textTertiary">
+          Tap a note to change it.
+        </Text>
+      ) : null}
 
 
       {/*
@@ -355,11 +351,6 @@ export function MeasureEditScreen() {
       >
         <View style={styles.keyCopy}>
           <Text variant="body" style={styles.settingValue}>{keyDescription}</Text>
-          {!isFirstBar && workingKey === null ? (
-            <Text variant="metadataSmall" color="textTertiary">
-              Choose a signature only if a new one is printed at this bar.
-            </Text>
-          ) : null}
         </View>
         <Text variant="metadata" color="accentText" style={styles.change}>
           Change

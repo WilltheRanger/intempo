@@ -32,7 +32,8 @@ export interface StepFrameProps {
   /** Which way the musician arrived, so the step slides in from that side. */
   direction: SceneDirection;
   title: string;
-  lede: string;
+  /** One short line under the question, only where the question needs it. */
+  lede?: string;
   onBack: () => void;
   primary: StepAction;
   /** The quiet line under the button: "Not now", "Do this later". */
@@ -103,9 +104,11 @@ export function StepFrame({
           <Text variant="screenTitle" accessibilityRole="header" style={styles.title}>
             {title}
           </Text>
-          <Text variant="body" color="textSecondary" style={styles.lede}>
-            {lede}
-          </Text>
+          {lede ? (
+            <Text variant="body" color="textSecondary" style={styles.lede}>
+              {lede}
+            </Text>
+          ) : null}
           <View style={styles.answer}>{children}</View>
           {error ? (
             <Text variant="metadataSmall" color="textSecondary" style={styles.error}>

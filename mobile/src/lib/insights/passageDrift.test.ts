@@ -56,7 +56,7 @@ describe('passageDrift', () => {
   it('says a piece that speeds up towards the end does, and offers the last passage', () => {
     const values = [0, 1, 0, 2, 1, 3, 6, 9, 12, 14, 16, 18];
     const drift = passageDrift([take(values)], 'p1', TOLERANCE);
-    expect(drift?.sentence).toBe('You speed up towards the end.');
+    expect(drift?.sentence).toBe('You speed up at the end.');
     expect(drift?.practice).toMatchObject({ from: 11, to: 12 });
   });
 
@@ -69,7 +69,7 @@ describe('passageDrift', () => {
 
   it('says so when every passage was on the beat, and offers nothing to fix', () => {
     const drift = passageDrift([take([1, -1, 2, 0, 1, -2])], 'p1', TOLERANCE);
-    expect(drift?.sentence).toBe('Steady from the first bar to the last.');
+    expect(drift?.sentence).toBe('Steady all the way through.');
     expect(drift?.practice).toBeNull();
   });
 

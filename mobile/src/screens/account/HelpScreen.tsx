@@ -27,37 +27,37 @@ function copyFor(report: ConnectionReport | null, checking: boolean): Copy {
   if (checking) {
     return {
       title: 'Checking the connection',
-      detail: 'Waking the practice service and checking your account.',
+      detail: 'Checking the server and your account.',
     };
   }
   if (!IS_LIVE_BACKEND) {
     return {
       title: 'Sample mode',
-      detail: 'This build is using sample data and is not connected to an account service.',
+      detail: 'Sample data. Not connected.',
     };
   }
   if (!report) {
     return {
       title: 'Not checked yet',
-      detail: 'Run a check to test both the practice service and your signed-in account.',
+      detail: 'Check the server and your account.',
     };
   }
   if (report.kind === 'connected') {
     return {
       title: 'Everything is connected',
-      detail: 'InTempo reached the practice service and opened your account.',
+      detail: 'Server and account are working.',
     };
   }
   if (report.kind === 'session_ended') {
     return {
       title: 'Your sign-in has expired',
-      detail: 'InTempo will return you to sign in so your account can reconnect safely.',
+      detail: 'Sign in again to reconnect.',
     };
   }
   if (report.kind === 'service_unreachable') {
     return {
-      title: 'The practice service could not be reached',
-      detail: `${report.message} If the app has been idle, wait a moment and check again.`,
+      title: 'Couldn’t reach the server',
+      detail: `${report.message} Wait a moment and check again.`,
     };
   }
   if (report.kind === 'service_unready') {
@@ -133,15 +133,15 @@ export function HelpScreen() {
           <Tip
             first
             title="Place the phone nearby"
-            detail="Keep the microphone uncovered and away from a music stand that can rattle. For double bass, clear bowed or plucked attacks are easier to follow than a distant room recording."
+            detail="Mic uncovered, away from anything that rattles."
           />
           <Tip
-            title="Use headphones for an audible click"
-            detail="During the take, a metronome over the speaker enters the recording and can be mistaken for your attacks; visual and haptic modes do not. The count-in is the exception: it always ticks out loud, and those seconds are discarded before the take is sent."
+            title="Use headphones for the click"
+            detail="A click through the speaker gets recorded. The count-in is cut before sending."
           />
           <Tip
             title="Count-in and long rests"
-            detail="Every take starts with one full bar, counted out loud and in your hand whatever the metronome is set to. During a long rest, InTempo shows the measure you return in and counts the final pulses to your entrance."
+            detail="Every take starts with a one-bar count-in. Long rests count down to your entry."
           />
         </View>
       </Card>
@@ -150,13 +150,13 @@ export function HelpScreen() {
       <Card padded={false}>
         <View style={styles.rows}>
           <Tip
-            title="Fill the frame with the page"
-            detail="Use even light, keep the page flat, and include every staff edge. Review and reorder multi-page scans before sending them."
+            title="Fill the frame"
+            detail="Even light, page flat, every staff in view."
             first
           />
           <Tip
-            title="Check uncertain measures"
-            detail="InTempo names bars whose timing or notation could not be verified. Correct those bars before relying on a practice verdict."
+            title="Fix flagged bars"
+            detail="Fix them before trusting a verdict."
           />
         </View>
       </Card>

@@ -129,7 +129,6 @@ export function UploadRecordingScreen() {
       <ScreenContainer>
         <EmptyState
           title="Couldn't open this piece"
-          description="It may have been removed from your library."
           actionLabel="Back"
           onActionPress={backToRecord}
         />
@@ -218,7 +217,7 @@ export function UploadRecordingScreen() {
               {file ? file.name : 'No recording chosen'}
             </Text>
             <Text variant="caption" color="textTertiary" style={styles.fileMeta}>
-              {meta || 'WAV, MP3, M4A, FLAC and OGG all work'}
+              {meta || 'WAV, MP3, M4A, FLAC or OGG'}
             </Text>
           </View>
         </View>

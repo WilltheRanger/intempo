@@ -136,7 +136,7 @@ export function barsLabel(passage: Pick<Passage, 'from' | 'to'>): string {
 
 function sentenceFor(passages: readonly Passage[], practice: Passage | null): string {
   if (practice === null) {
-    return 'Steady from the first bar to the last.';
+    return 'Steady all the way through.';
   }
   const rush = practice.value > 0;
   const index = passages.indexOf(practice);
@@ -148,7 +148,7 @@ function sentenceFor(passages: readonly Passage[], practice: Passage | null): st
   const builds = rush ? closing > opening : closing < opening;
 
   if (index === passages.length - 1 && builds) {
-    return rush ? 'You speed up towards the end.' : 'You slow down towards the end.';
+    return rush ? 'You speed up at the end.' : 'You slow down at the end.';
   }
   if (index === 0) {
     return rush ? 'You rush at the start.' : 'You drag at the start.';

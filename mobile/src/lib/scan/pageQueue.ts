@@ -48,8 +48,8 @@ export function doubtfulCount(pages: CapturedPage[]): number {
 export function queueSummary(pages: CapturedPage[]): string {
   const order =
     pages.length === 1
-      ? 'This is the page InTempo will read.'
-      : 'InTempo uploads and reads every page in this order.';
+      ? 'This page will be read.'
+      : 'Pages are read in this order.';
 
   const doubtful = doubtfulCount(pages);
   if (doubtful === 0) {

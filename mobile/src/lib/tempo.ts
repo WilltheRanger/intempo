@@ -247,7 +247,7 @@ export function formatWorkingTempo(
   if (markedBpm === null || markedBpm === workingBpm) {
     return `${working} ${label}`;
   }
-  return `Working at ${working}  ·  marked ${displayTempoBpm(markedBpm, unit)} ${label}`;
+  return `${working} ${label}  ·  marked ${displayTempoBpm(markedBpm, unit)}`;
 }
 
 const VERDICT_LABELS: Record<Verdict, string> = {

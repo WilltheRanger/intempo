@@ -19,9 +19,8 @@ nowhere to put: whether the musician teaches, and where they heard of us.
   instrument stay required. A chosen photograph is still uploaded and saved
   exactly as before.
 - **The role and the source are kept on the device** (`preferences.practiceRole`,
-  `preferences.foundVia`). Nothing reads either yet. Profile gains a Learning /
-  Teaching control, because the role step tells the musician they can change it
-  there.
+  `preferences.foundVia`). Nothing reads either yet, so nothing in Profile
+  shows them: a control that changes nothing is clutter.
 - **The order stays as 2026-09-08 set it**: answers before credentials.
   "Create an account" opens the Welcome, the steps run, and then the account
   form. The Welcome's "I already have an account" is the way back.

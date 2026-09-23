@@ -41,12 +41,8 @@ export interface StepAnswers {
 }
 
 export const ROLE_CHOICES: ReadonlyArray<{ value: PracticeRole; title: string; detail: string }> = [
-  { value: 'learning', title: "I'm learning", detail: 'Personal (No one sees your takes)' },
-  {
-    value: 'teaching',
-    title: 'I teach',
-    detail: "Set up a studio and follow your students' practice.",
-  },
+  { value: 'learning', title: "I'm learning", detail: 'Only you see your takes' },
+  { value: 'teaching', title: 'I teach', detail: 'Follow your students’ practice' },
 ];
 
 export const FOUND_VIA_CHOICES: ReadonlyArray<{ value: FoundVia; label: string }> = [

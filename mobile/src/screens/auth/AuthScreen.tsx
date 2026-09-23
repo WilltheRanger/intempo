@@ -60,7 +60,7 @@ type Sent = 'confirmation' | 'reset' | 'maybeExisting' | 'magicLink';
 const COPY: Record<AuthMode, { title: string; lede: string | null; submit: string }> = {
   signIn: {
     title: 'Welcome back',
-    lede: 'Your library and your practice history are where you left them.',
+    lede: null,
     submit: 'Sign in',
   },
   signUp: {
@@ -69,14 +69,14 @@ const COPY: Record<AuthMode, { title: string; lede: string | null; submit: strin
     submit: 'Create account',
   },
   reset: {
-    title: 'Reset your password',
-    lede: "Enter your address and we'll send a link to set a new password.",
-    submit: 'Send reset link',
+    title: 'Reset password',
+    lede: 'We’ll email you a link.',
+    submit: 'Send link',
   },
   magicLink: {
-    title: 'Sign in with a link',
-    lede: "Enter your address and we'll send a link that signs you in. No password needed.",
-    submit: 'Email me a link',
+    title: 'Sign in by email',
+    lede: 'No password needed.',
+    submit: 'Send link',
   },
 };
 
@@ -257,12 +257,12 @@ export function AuthScreen({
         </Text>
         <Text variant="body" color="textSecondary" style={styles.lede}>
           {sent === 'magicLink'
-            ? `A link that signs you in is on its way to ${email.trim()}. It expires in an hour, and opening it on this device is the quickest way back.`
+            ? `We sent a sign-in link to ${email.trim()}.`
             : sent === 'reset'
-              ? `If there's an account for ${email.trim()}, a link to set a new password is on its way.`
+              ? `If ${email.trim()} has an account, a reset link is on its way.`
               : sent === 'maybeExisting'
-                ? `If ${email.trim()} is new, a confirmation link is on its way. If it already has an account, no mail is sent. Sign in instead, or reset the password.`
-                : `We sent a confirmation link to ${email.trim()}. Follow it and you'll be signed in.`}
+                ? `If ${email.trim()} is new, we sent a link. If not, sign in.`
+                : `Tap the link we sent to ${email.trim()}.`}
         </Text>
 
         {error ? (
@@ -277,9 +277,7 @@ export function AuthScreen({
         */}
         {sent === 'confirmation' ? (
           <Text variant="metadataSmall" color="textTertiary" style={styles.note}>
-            {resent
-              ? 'Sent again. It can take a minute to arrive.'
-              : "Didn't get it? Check spam, or send it again."}
+            {resent ? 'Sent again.' : 'Nothing yet? Check spam.'}
           </Text>
         ) : null}
 
@@ -292,9 +290,7 @@ export function AuthScreen({
           />
         ) : null}
 
-        <SwitchLine
-          lead=""
-          action="Back to sign in"
+        <SwitchLine action="Back to sign in"
           onPress={() => {
             setSent(null);
             setResent(false);
@@ -361,7 +357,7 @@ export function AuthScreen({
         // a link instead of a password, and a link because you have forgotten it.
         <View style={styles.signInLinks}>
           <TextLink label="Email me a link" onPress={() => go('magicLink')} />
-          <TextLink label="Forgot your password?" onPress={() => go('reset')} />
+          <TextLink label="Forgot password?" onPress={() => go('reset')} />
         </View>
       ) : null}
 
@@ -372,14 +368,14 @@ export function AuthScreen({
       */}
       {mode === 'magicLink' || mode === 'reset' ? (
         <View style={styles.signInLinks}>
-          <TextLink label="Use a password instead" onPress={() => go('signIn')} />
+          <TextLink label="Use a password" onPress={() => go('signIn')} />
         </View>
       ) : null}
 
       {mode === 'signUp' ? (
         <View style={styles.legal} accessibilityRole="text">
           <Text variant="caption" color="textTertiary" style={styles.legalText}>
-            Creating an account means you accept the{' '}
+            You agree to the{' '}
           </Text>
           {SIGN_UP_DOCUMENTS.map((document, index) => (
             <View key={document.id} style={styles.legalPiece}>
@@ -409,11 +405,9 @@ export function AuthScreen({
       />
 
       {mode === 'signUp' ? (
-        <SwitchLine lead="Already have an account? " action="Sign in" onPress={() => switchPanel('signIn')} />
+        <SwitchLine action="Sign in instead" onPress={() => switchPanel('signIn')} />
       ) : (
-        <SwitchLine
-          lead="New to InTempo? "
-          action="Create an account"
+        <SwitchLine action="Create an account"
           onPress={() => {
             if (onRequestSignUp) {
               clearAuthRedirectNotice();
@@ -609,23 +603,10 @@ function InlineLink({ label, onPress }: { label: string; onPress: () => void }) 
   );
 }
 
-/** "New to InTempo? Create an account", and its opposite. */
-function SwitchLine({
-  lead,
-  action,
-  onPress,
-}: {
-  lead: string;
-  action: string;
-  onPress: () => void;
-}) {
+/** The other door: "Create an account", "Sign in instead", "Back to sign in". */
+function SwitchLine({ action, onPress }: { action: string; onPress: () => void }) {
   return (
     <View style={styles.switch}>
-      {lead ? (
-        <Text variant="metadata" color="textSecondary">
-          {lead}
-        </Text>
-      ) : null}
       <Pressable
         onPress={onPress}
         accessibilityRole="button"

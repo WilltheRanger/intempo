@@ -39,7 +39,7 @@ export const ATTEMPT_DEADLINE_MS = 20_000;
 
 /** Said when the call never came back and no session appeared either. */
 export const ATTEMPT_STALLED =
-  'That took too long to finish. Check your connection and try again.';
+  'That took too long. Try again.';
 
 export type Settled<T> =
   /** The call returned. Its own answer is the outcome. */

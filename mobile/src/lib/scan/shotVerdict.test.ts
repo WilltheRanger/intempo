@@ -22,7 +22,7 @@ describe('shotVerdict', () => {
     const v = shotVerdict({ verdict: 'tooSmall', spacing: 3 }, MIN_PAGE_ROWS * 4);
     expect(v.tone).toBe('doubtful');
     expect(v.retake).toBe('retake');
-    expect(v.body).toContain('fills the frame');
+    expect(v.body).toContain('Fill the frame');
   });
 
   /**
@@ -33,7 +33,7 @@ describe('shotVerdict', () => {
   it('sends a capped camera to the camera app rather than back a step', () => {
     const v = shotVerdict({ verdict: 'tooSmall', spacing: 3 }, MIN_PAGE_ROWS - 1);
     expect(v.retake).toBe('cameraApp');
-    expect(v.headline).toContain('cannot see');
+    expect(v.headline).toContain('can’t see');
   });
 
   /**
@@ -104,7 +104,7 @@ describe('viewfinderGuide', () => {
 
   it('stops repeating it once a page has read well', () => {
     const guide = viewfinderGuide(shotVerdict({ verdict: 'ok', spacing: 12 }));
-    expect(guide).toContain('read well');
+    expect(guide).toContain('Same distance');
     expect(guide).not.toContain('Fill the frame');
   });
 
@@ -112,14 +112,14 @@ describe('viewfinderGuide', () => {
     const guide = viewfinderGuide(
       shotVerdict({ verdict: 'tooSmall', spacing: 3 }, MIN_PAGE_ROWS * 4),
     );
-    expect(guide).toContain('move in');
+    expect(guide).toContain('Move closer');
   });
 
   it('does not say "move in" when moving in cannot help', () => {
     const guide = viewfinderGuide(
       shotVerdict({ verdict: 'tooSmall', spacing: 3 }, MIN_PAGE_ROWS - 1),
     );
-    expect(guide).not.toContain('move in');
+    expect(guide).not.toContain('Move closer');
     expect(guide).toContain('camera app');
   });
 });

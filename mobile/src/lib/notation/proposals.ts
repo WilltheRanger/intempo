@@ -130,7 +130,7 @@ function outOfRange(
         // A typographic apostrophe, like the rest of the app's copy. It is in
         // the font subset (`tools/subset-text-fonts.py`) and a straight quote
         // beside curly ones in the same paragraph is visible.
-        why: `${note.pitch} is below a ${INSTRUMENT_NAMES[instrument]}\u2019s lowest string, and an octave up fits the staff`,
+        why: `Too low for ${INSTRUMENT_NAMES[instrument]}`,
         keepLabel: `Keep ${note.pitch}`,
         fixLabel: `Use ${up}`,
         apply: (current) =>
@@ -171,7 +171,7 @@ function repeatedNote(score: ScoreJson): Proposal[] {
         where: `Bar ${measure.measure_number}`,
         from: `${trimBeats(actual)} beats`,
         to: `${trimBeats(expected)} beats`,
-        why: `Two ${what}s in a row read as one note twice. Dropping the repeat makes the bar add up`,
+        why: `Looks like one ${what} read twice`,
         keepLabel: 'Leave it',
         fixLabel: 'Drop the repeat',
         apply: (current) =>
@@ -216,9 +216,9 @@ export function proposalsFor(
 /** The line under the heading: how many, and what they are. */
 export function proposalsSummary(count: number): string {
   if (count === 0) {
-    return 'Nothing looks off. The reading is yours to use.';
+    return 'Nothing looks off.';
   }
   return count === 1
-    ? 'One thing looks off. Keep it or fix it.'
-    : `${count} things look off. Keep or fix each one.`;
+    ? '1 thing looks off.'
+    : `${count} things look off.`;
 }

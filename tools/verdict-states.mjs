@@ -27,16 +27,16 @@ export const VERDICT_STATES = [
     // Changed 2026-09-16 with the headings. The body used to open by
     // restating the heading, so what it matches on now is the part that only
     // this state says: whether trying again is worth the time.
-    says: /Recording it again usually works/i,
-    needle: 'Recording it again usually works',
+    says: /Not your playing\. Try again/i,
+    needle: 'Not your playing. Try again',
     offers: /^Try again$/i,
   },
   {
     id: 'fixture-take-unrecoverable',
     what: 'a failure that will not come back',
     label: 'Verdict — failed for good',
-    says: /Record it again when you have a moment/i,
-    needle: 'Record it again when you have a moment',
+    says: /Not your playing\. Record it again/i,
+    needle: 'Not your playing. Record it again',
     offers: /^Record again$/i,
   },
   {

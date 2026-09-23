@@ -24,7 +24,6 @@ import { useUpdateProfile, useUploadAvatar } from '../../data/hooks/useProfile';
 import type { Musician } from '../../data/types';
 import { preferences, usePreferences } from '../../data/preferences';
 import type { Instrument, MetronomeMode } from '../../data/types';
-import type { PracticeRole } from '../../lib/onboardingSteps';
 import { describeLoadError } from '../../data/describeLoadError';
 import { metronomeChoices } from '../../lib/record/metronomeChoice';
 import {
@@ -327,9 +326,6 @@ export function ProfileScreen() {
         <Text variant="button" style={styles.settingTitle}>
           Instrument
         </Text>
-        <Text variant="metadataSmall" color="textTertiary" style={styles.settingNote}>
-          Sets the instrument sound for Listen, and the warmup.
-        </Text>
         <SegmentedControl
           label="Instrument"
           options={INSTRUMENT_OPTIONS}
@@ -342,9 +338,6 @@ export function ProfileScreen() {
         <Text variant="button" style={styles.settingTitle}>
           Metronome
         </Text>
-        <Text variant="metadataSmall" color="textTertiary" style={styles.settingNote}>
-          How the beat is marked while you record.
-        </Text>
         <SegmentedControl
           label="Metronome"
           options={METRONOME_OPTIONS}
@@ -353,31 +346,9 @@ export function ProfileScreen() {
         />
         {settings.metronomeMode === 'audio_with_headphones' ? (
           <Text variant="metadataSmall" color="textTertiary" style={styles.settingCaveat}>
-            Use headphones — a metronome over the speaker ends up in the
-            recording and throws the analysis off. This is the take only; the
-            count-in always ticks, and is discarded before anything is sent.
+            Use headphones, or the click ends up in the recording.
           </Text>
         ) : null}
-      </View>
-
-      {/*
-        Onboarding asks "Learning, or teaching?" and tells the musician they
-        can change it here, so here is where it changes. Device-kept, like the
-        answer itself (`preferences.practiceRole`) — the API has no role to set.
-      */}
-      <View style={styles.setting}>
-        <Text variant="button" style={styles.settingTitle}>
-          Learning or teaching
-        </Text>
-        <Text variant="metadataSmall" color="textTertiary" style={styles.settingNote}>
-          Kept on this device, for when teacher studios arrive.
-        </Text>
-        <SegmentedControl
-          label="Learning or teaching"
-          options={ROLE_OPTIONS}
-          value={settings.practiceRole ?? 'learning'}
-          onChange={(role: PracticeRole) => preferences.setPracticeRole(role)}
-        />
       </View>
 
       {/*
@@ -396,9 +367,6 @@ export function ProfileScreen() {
       />
       <ToggleRow
         label="Reduce motion"
-        // The label says what it does. What it cannot say is that the device
-        // may already have asked for it, which is the only part worth keeping.
-        description="Already on if your device asks for it."
         value={settings.reduceMotion}
         onChange={preferences.setReduceMotion}
       />
@@ -407,7 +375,7 @@ export function ProfileScreen() {
       <View>
           <ToggleRow
             label="Help improve score reading"
-            description="Allow corrected bars and their sheet-music photos to be kept for improving the reader. Turning this off deletes what was kept."
+            description="Keep your corrected bars and their photos to train the reader. Off deletes them."
             value={musician.trainingConsent}
             onChange={(value) => void changeTrainingConsent(value)}
             disabled={saveConsent.isPending}
@@ -436,7 +404,7 @@ export function ProfileScreen() {
       <RuledHeading label="About" rule="borderStrong" style={styles.section} />
       <View>
           <AccountRow label="Version" value={appConfig.expo.version} />
-          <AccountRow label="Help & connection" onPress={() => navigation.navigate('Help')} />
+          <AccountRow label="Help" onPress={() => navigation.navigate('Help')} />
           <AccountRow
             label="Privacy"
             onPress={() => navigation.navigate('Legal', { document: 'privacy' })}
@@ -505,11 +473,6 @@ const INSTRUMENT_OPTIONS = [
   { value: 'viola' as const, label: 'Viola' },
   { value: 'cello' as const, label: 'Cello' },
   { value: 'double_bass' as const, label: 'Bass' },
-];
-
-const ROLE_OPTIONS = [
-  { value: 'learning' as const, label: 'Learning' },
-  { value: 'teaching' as const, label: 'Teaching' },
 ];
 
 /**
@@ -585,6 +548,7 @@ const styles = StyleSheet.create({
   settingTitle: {
     fontSize: 15,
     lineHeight: 20,
+    marginBottom: 10,
   },
   /**
    * The camera badge on the avatar.
@@ -608,12 +572,6 @@ const styles = StyleSheet.create({
   },
   section: {
     marginTop: 26,
-  },
-  settingNote: {
-    marginTop: 3,
-    marginBottom: 11,
-    fontSize: 12,
-    lineHeight: 17,
   },
   settingCaveat: {
     marginTop: spacing.sm,

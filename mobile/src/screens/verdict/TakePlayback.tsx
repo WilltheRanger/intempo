@@ -112,7 +112,7 @@ export function TakePlayback({ analysisId }: TakePlaybackProps) {
       player.play();
     } catch {
       if (generation.current === requestedGeneration)
-        setPlayError('This recording could not be played.');
+        setPlayError('Can’t play this recording.');
     } finally {
       starting.current = false;
     }
@@ -176,15 +176,14 @@ export function TakePlayback({ analysisId }: TakePlaybackProps) {
     <View style={styles.section}>
       <SectionHeader label="Your recording" />
       {recording.isPending ? (
-        <LoadingState layout="inline" label="Preparing your recording…" />
+        <LoadingState layout="inline" label="Loading…" />
       ) : unavailable ? (
         <View style={styles.errorBlock}>
           <Text variant="body" color="textSecondary">
-            The recording is temporarily unavailable. Your timing result is
-            still safe.
+            Can’t load the recording right now.
           </Text>
           <SecondaryButton
-            label="Try playback again"
+            label="Try again"
             onPress={() => void retry()}
             style={styles.action}
           />

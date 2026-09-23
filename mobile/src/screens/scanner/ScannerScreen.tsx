@@ -382,7 +382,7 @@ export function ScannerScreen() {
         await Linking.openSettings();
       } catch {
         setError(
-          'Open your device Settings, choose InTempo, and allow Camera. Then return to this screen.',
+          'Open Settings and allow Camera for InTempo.',
         );
       }
       return;
@@ -593,7 +593,7 @@ export function ScannerScreen() {
 
         {error || (!retaking && pages.length >= MAX_SCAN_PAGES) ? (
           <Text variant="metadataSmall" color="onDarkMuted" style={styles.error}>
-            {error ?? `Maximum of ${MAX_SCAN_PAGES} pages reached. Tap Done to continue.`}
+            {error ?? `${MAX_SCAN_PAGES} pages is the limit.`}
           </Text>
         ) : null}
       </View>

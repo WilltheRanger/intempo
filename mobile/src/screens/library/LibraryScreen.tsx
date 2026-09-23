@@ -80,7 +80,7 @@ export function LibraryScreen() {
     null;
 
   function describe(cause: unknown): string {
-    return cause instanceof Error ? cause.message : 'That could not be done. Try again.';
+    return cause instanceof Error ? cause.message : 'That didn’t work. Try again.';
   }
 
   /**
@@ -181,7 +181,7 @@ export function LibraryScreen() {
         title="Discard this scan?"
         message={
           discarding
-            ? `${discarding.title} and the photograph of it will be permanently deleted. Nothing was read from the page.`
+            ? `${discarding.title} and its photo will be deleted.`
             : ''
         }
         confirmLabel="Discard"
@@ -276,7 +276,7 @@ function LibraryContent({
       <EmptyState
         icon={Search}
         title="No matches"
-        description={`Nothing in your library matches “${query.trim()}”.`}
+        description={`Nothing matches “${query.trim()}”.`}
         actionLabel="Clear search"
         onActionPress={onClearSearch}
       />

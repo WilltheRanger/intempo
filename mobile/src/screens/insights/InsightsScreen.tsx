@@ -151,7 +151,7 @@ export function InsightsScreen() {
       */}
       <Text variant="eyebrow" color="textTertiary" style={styles.eyebrow}>
         {sessionTrend
-          ? `Your last ${sessionTrend.points.length} takes`
+          ? `Last ${sessionTrend.points.length} takes`
           : windowLabel(insights.windowDays)}
       </Text>
       <Text variant="screenTitle" accessibilityRole="header">

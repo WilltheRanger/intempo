@@ -8,7 +8,7 @@ import { ScanIllustration } from './ScanIllustration';
 import { QuietAction } from './StepFrame';
 
 /** "Six", from the list, so the promise and the progress bar cannot disagree. */
-const COUNT_WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight'];
+const COUNT_WORDS = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight'];
 
 export interface OnboardingWelcomeProps {
   onNext: () => void;
@@ -44,7 +44,7 @@ export function OnboardingWelcome({ onNext, onHaveAccount }: OnboardingWelcomePr
         Let’s get you set up
       </Text>
       <Text variant="body" color="textSecondary" style={styles.lede}>
-        First, {count} quick questions, then we’ll help you photograph your first piece.
+        {count} quick questions, then your first piece.
       </Text>
     </CentredScreen>
   );

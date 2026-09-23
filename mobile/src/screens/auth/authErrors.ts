@@ -74,16 +74,16 @@ export function describeAuthError(error: unknown): string {
     return "That email and password don't match an account.";
   }
   if (message.includes('email not confirmed')) {
-    return 'Confirm your email address first. Check your inbox for the link.';
+    return 'Confirm your email first.';
   }
   if (message.includes('user already registered')) {
-    return 'There is already an account with that address. Sign in instead.';
+    return 'That email already has an account.';
   }
   if (message.includes('same as the old password')) {
-    return 'That is already your password. Choose a different one.';
+    return 'That’s your current password.';
   }
   if (message.includes('rate limit') || message.includes('too many')) {
-    return 'Too many attempts. Wait a minute and try again.';
+    return 'Too many tries. Wait a minute.';
   }
   if (message.includes('network') || message.includes('fetch')) {
     return "Couldn't reach the server. Check your connection.";

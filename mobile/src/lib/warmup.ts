@@ -91,7 +91,7 @@ const VIOLIN: Warmup[] = [
   {
     id: 'violin-d-major',
     name: 'D major, one octave',
-    focus: 'Even bow distribution and a settled first position.',
+    focus: 'Even bow, settled first position.',
     notes: scale(['D4', 'E4', 'F#4', 'G4', 'A4', 'B4', 'C#5', 'D5']),
     bpm: 72,
     clef: 'treble',
@@ -99,7 +99,7 @@ const VIOLIN: Warmup[] = [
   {
     id: 'violin-string-crossing',
     name: 'Open-string crossings',
-    focus: 'The bow arm alone, with no left hand to hide behind.',
+    focus: 'Bow arm only.',
     notes: crossings('D4', 'A4', ['G3', 'D4'], 'D4'),
     bpm: 66,
     clef: 'treble',
@@ -107,7 +107,7 @@ const VIOLIN: Warmup[] = [
   {
     id: 'violin-a-major-broken',
     name: 'A major, broken thirds',
-    focus: 'Finger independence: the third finger stays down.',
+    focus: 'Keep the third finger down.',
     notes: [
       q('A4', true), q('C#5'), q('B4'), q('D5'),
       q('C#5', true), q('E5'), q('D5'), q('F#5'),
@@ -125,7 +125,7 @@ const VIOLA: Warmup[] = [
   {
     id: 'viola-g-major',
     name: 'G major, one octave',
-    focus: 'Even bow distribution across the middle two strings.',
+    focus: 'Even bow on the middle strings.',
     notes: scale(['G3', 'A3', 'B3', 'C4', 'D4', 'E4', 'F#4', 'G4']),
     bpm: 72,
     clef: 'alto',
@@ -133,7 +133,7 @@ const VIOLA: Warmup[] = [
   {
     id: 'viola-string-crossing',
     name: 'Open-string crossings',
-    focus: 'The bow arm alone, with no left hand to hide behind.',
+    focus: 'Bow arm only.',
     notes: crossings('G3', 'D4', ['C3', 'G3'], 'G3'),
     bpm: 66,
     clef: 'alto',
@@ -141,7 +141,7 @@ const VIOLA: Warmup[] = [
   {
     id: 'viola-c-major-broken',
     name: 'C major, broken thirds',
-    focus: 'Finger independence on the lower strings.',
+    focus: 'Finger independence, lower strings.',
     notes: [
       q('C3', true), q('E3'), q('D3'), q('F3'),
       q('E3', true), q('G3'), q('F3'), q('A3'),
@@ -159,7 +159,7 @@ const CELLO: Warmup[] = [
   {
     id: 'cello-d-major',
     name: 'D major, one octave',
-    focus: 'Even bow distribution and a settled first position.',
+    focus: 'Even bow, settled first position.',
     notes: scale(['D3', 'E3', 'F#3', 'G3', 'A3', 'B3', 'C#4', 'D4']),
     bpm: 72,
     clef: 'bass',
@@ -167,7 +167,7 @@ const CELLO: Warmup[] = [
   {
     id: 'cello-string-crossing',
     name: 'Open-string crossings',
-    focus: 'The bow arm alone, with no left hand to hide behind.',
+    focus: 'Bow arm only.',
     notes: crossings('G2', 'D3', ['C2', 'G2'], 'G2'),
     bpm: 66,
     clef: 'bass',
@@ -175,7 +175,7 @@ const CELLO: Warmup[] = [
   {
     id: 'cello-g-major-broken',
     name: 'G major, broken thirds',
-    focus: 'Finger independence: extensions stay quiet.',
+    focus: 'Quiet extensions.',
     notes: [
       q('G2', true), q('B2'), q('A2'), q('C3'),
       q('B2', true), q('D3'), q('C3'), q('E3'),
@@ -197,7 +197,7 @@ const DOUBLE_BASS: Warmup[] = [
   {
     id: 'bass-g-major',
     name: 'G major, one octave',
-    focus: 'Even bow distribution and a settled first position.',
+    focus: 'Even bow, settled first position.',
     notes: scale(['G2', 'A2', 'B2', 'C3', 'D3', 'E3', 'F#3', 'G3']),
     bpm: 66,
     clef: 'bass',
@@ -205,7 +205,7 @@ const DOUBLE_BASS: Warmup[] = [
   {
     id: 'bass-string-crossing',
     name: 'Open-string crossings',
-    focus: 'The bow arm alone, with no left hand to hide behind.',
+    focus: 'Bow arm only.',
     notes: crossings('A2', 'D3', ['E2', 'A2'], 'A2'),
     bpm: 60,
     clef: 'bass',
@@ -213,7 +213,7 @@ const DOUBLE_BASS: Warmup[] = [
   {
     id: 'bass-d-major-broken',
     name: 'D major, broken thirds',
-    focus: 'Shifting weight between fingers without gripping.',
+    focus: 'Shift weight without gripping.',
     notes: [
       q('D3', true), q('F#3'), q('E3'), q('G3'),
       q('F#3', true), q('A3'), q('G3'), q('B3'),

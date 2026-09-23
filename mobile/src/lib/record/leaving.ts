@@ -65,8 +65,8 @@ export function leavingRecord({
       // Names the piece when the screen knows it, because the dialog covers
       // the header that was saying so.
       message: pieceTitle
-        ? `You are still recording ${pieceTitle}. Leaving throws away what you have played.`
-        : 'You are still recording. Leaving throws away what you have played.',
+        ? `You’re still recording ${pieceTitle}.`
+        : 'You’re still recording.',
       confirmLabel: 'Discard',
       // Not "Cancel". Half the words on this screen are already about
       // cancelling something, and the button that keeps the take should say
@@ -82,7 +82,7 @@ export function leavingRecord({
       // The screen is offering "Send it again" at this moment; the dialog has
       // to say that leaving is the end of that offer.
       message:
-        'This take has not reached the server yet. Leaving is the last chance to send it.',
+        'It hasn’t been sent yet.',
       confirmLabel: 'Discard',
       cancelLabel: 'Stay',
     };

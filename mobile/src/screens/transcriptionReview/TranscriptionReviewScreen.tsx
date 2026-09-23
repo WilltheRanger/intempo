@@ -94,14 +94,14 @@ export function TranscriptionReviewScreen() {
     if (saving.current) return;
     if (pages.length === 0 || imageKeys.length !== pages.length) {
       setError(
-        'The uploaded pages are incomplete. Go back and send them again.',
+        'Some pages didn’t upload. Go back and resend.',
       );
       return;
     }
 
     const trimmed = title.trim();
     if (!attachmentPieceId && !trimmed) {
-      setError('Give the piece a title. It is how you will find it again.');
+      setError('Add a title.');
       return;
     }
 
@@ -185,8 +185,7 @@ export function TranscriptionReviewScreen() {
       */}
       {attachmentPieceId ? (
         <Text variant="body" color="textSecondary" style={styles.lede}>
-          Check the page order. InTempo will read these into the piece already in
-          your library.
+          Check the page order.
         </Text>
       ) : (
         <>

@@ -56,14 +56,6 @@ const BANNER_HEIGHT = 116;
 /** Room for the opening two systems of the piece, as the prototype draws. */
 const OPENING_HEIGHT = 150;
 
-/** "4 photographs, in order." — the pages the reading came from. */
-function photographCount(pages: number): string | null {
-  if (pages <= 0) {
-    return null;
-  }
-  return pages === 1 ? 'One photograph.' : `${pages} photographs, in order.`;
-}
-
 /**
  * A saved piece.
  *
@@ -158,7 +150,6 @@ export function PieceDetailScreen() {
         <EmptyState
           fill
           title="Couldn't open this piece"
-          description="It may have been removed from your library."
           actionLabel="Back"
           onActionPress={goBack}
         />
@@ -166,16 +157,6 @@ export function PieceDetailScreen() {
     );
   }
 
-  /**
-   * Whether this piece has been recorded before.
-   *
-   * One fact, answering two questions: whether the button says "Continue" and
-   * whether there is any history to show. It used to be two — `started` read
-   * `progress > 0`, a field with no backing column that `sources/api.ts` maps
-   * to null, so against the live API every piece said "Start practice" forever,
-   * including one recorded fifty times.
-   */
-  const played = piece.lastPracticedAt !== null;
   const measureCount = piece.score?.measures.length ?? 0;
   const hasNotation = measureCount > 0;
   const hasPages = piece.thumbnail !== null;
@@ -191,7 +172,7 @@ export function PieceDetailScreen() {
   return (
     /*
       **The action is the footer, not a row in the middle of the page.**
-      "Continue practice" is the one thing this screen is for, and §3 law 7 puts
+      "Practice" is the one thing this screen is for, and §3 law 7 puts
       the primary action where a thumb reaches. It used to sit at about a third
       of the way down, inside a card, level with the score band — so the screen
       opened with two things competing to be looked at first.
@@ -200,7 +181,7 @@ export function PieceDetailScreen() {
       footer={
         canPractice ? (
           <PrimaryButton
-            label={played ? 'Continue practice' : 'Start practice'}
+            label="Practice"
             onPress={() => navigation.navigate('Record', { pieceId: piece.id })}
           />
         ) : undefined
@@ -335,12 +316,6 @@ export function PieceDetailScreen() {
         if it comes back at all.
       */}
 
-      {stillReading ? (
-        <Text variant="metadataSmall" color="textSecondary" style={styles.facts}>
-          Reading the sheet music before practice can begin.
-        </Text>
-      ) : null}
-
       {/*
         No Listen here any more: the redesign puts it on the Record screen's
         panel, beside the tempo it plays at and the bar it starts from, which is
@@ -360,18 +335,10 @@ export function PieceDetailScreen() {
       {needsNotation ? (
         <Card style={styles.notationCard}>
           <Text variant="sectionLabel" color="textSecondary">
-            Add sheet music before recording
-          </Text>
-          <Text
-            variant="body"
-            color="textSecondary"
-            style={styles.notationCopy}
-          >
-            InTempo needs the written notes and rests to follow your playing,
-            count long rests, and explain where the tempo changed.
+            Add the sheet music to record
           </Text>
           <PrimaryButton
-            label="Photograph sheet music"
+            label="Photograph it"
             icon={Camera}
             onPress={() =>
               navigation.navigate('Scanner', { attachToPieceId: piece.id })
@@ -379,7 +346,7 @@ export function PieceDetailScreen() {
             style={styles.notationPrimary}
           />
           <SecondaryButton
-            label="Choose existing images"
+            label="Choose photos"
             icon={Images}
             onPress={() =>
               navigation.navigate('AddPiece', {
@@ -407,15 +374,15 @@ export function PieceDetailScreen() {
         {stillReading || readingFailed ? (
           <PieceLinkRow
             icon={FileMusic}
-            label={stillReading ? 'Reading this page' : "This page couldn't be read"}
+            label={stillReading ? 'Reading the page' : "Couldn't read the page"}
             description={
               stillReading
-                ? piece.transcriptionStage ?? 'Transcribing the notation.'
+                ? piece.transcriptionStage ?? null
                 : // **Deliberately not `piece.transcriptionError`**, unlike
                   // `PieceScoreScreen`, which does print the server's reason.
                   // Owner's call, 2026-09-04 — `DECISIONS.md`. Do not "fix"
                   // this in passing.
-                  'Photograph it again to try once more.'
+                  'Photograph it again'
             }
             onPress={() => navigation.navigate('PieceScore', { pieceId: piece.id })}
           />
@@ -429,7 +396,6 @@ export function PieceDetailScreen() {
           <PieceLinkRow
             icon={FileMusic}
             label="Digital score"
-            description="The notation read from your pages."
             onPress={() =>
               navigation.navigate('PieceScore', { pieceId: piece.id, view: 'notation' })
             }
@@ -444,7 +410,6 @@ export function PieceDetailScreen() {
           <PieceLinkRow
             icon={Layers}
             label="Original pages"
-            description={photographCount(piece.pages.length)}
             onPress={() =>
               navigation.navigate('PieceScore', { pieceId: piece.id, view: 'original' })
             }
@@ -453,7 +418,6 @@ export function PieceDetailScreen() {
         <PieceLinkRow
           icon={PencilLine}
           label="Rename"
-          description="Title, composer and movement."
           onPress={() => startEditing(piece)}
         />
       </View>
@@ -466,12 +430,8 @@ export function PieceDetailScreen() {
         <SheetOptionRow
           icon={Trash2}
           divided={false}
-          label="Remove from library"
-          description={
-            piece.lastPracticedAt
-              ? 'Also removes its practice history and recordings.'
-              : 'Permanently removes this piece from your library.'
-          }
+          label="Delete piece"
+          description={piece.lastPracticedAt ? 'And all its takes' : undefined}
           onPress={() => {
             setMenuVisible(false);
             setError(null);
@@ -485,8 +445,8 @@ export function PieceDetailScreen() {
         title="Delete this piece?"
         message={
           piece.lastPracticedAt
-            ? `${piece.title}, its practice history, and its recordings will be permanently deleted.`
-            : `${piece.title} will be permanently deleted from your library.`
+            ? `${piece.title} and all its takes will be deleted.`
+            : `${piece.title} will be deleted.`
         }
         confirmLabel="Delete piece"
         onConfirm={() => void confirmDelete()}
@@ -549,18 +509,14 @@ const styles = StyleSheet.create({
     borderTopWidth: BORDER_WIDTH,
     borderTopColor: colors.border,
   },
-  facts: {
-    marginTop: spacing.lg,
-  },
+
   listen: {
     marginTop: spacing.lg,
   },
   notationCard: {
     marginTop: spacing.xl,
   },
-  notationCopy: {
-    marginTop: spacing.md,
-  },
+
   notationPrimary: {
     marginTop: spacing.lg,
   },
