@@ -600,6 +600,83 @@ describe('startRecording (web)', () => {
   });
 
   /**
+   * **Asked for raw audio, and now it checks it got it.** Constraints are a
+   * request; the track's own settings are the answer, and until this nothing
+   * read them — so whether a take went through the phone's voice processing
+   * was unknowable after the fact, while being a plausible cause of every
+   * take reading more attacks than the page writes.
+   */
+  it('carries what the microphone reported applying on the take', async () => {
+    vi.stubGlobal('navigator', {
+      mediaDevices: {
+        getUserMedia: async () => ({
+          getTracks: () => [
+            {
+              stop() {},
+              getSettings: () => ({
+                autoGainControl: true,
+                noiseSuppression: false,
+                echoCancellation: true,
+                sampleRate: 48000,
+                channelCount: 1,
+              }),
+            },
+          ],
+        }),
+      },
+    });
+
+    const recorder = await startRecording();
+    node.deliver(silenceWith(64, 5000));
+    const take = await recorder.stop();
+
+    expect(take.capture).toEqual({
+      autoGainControl: true,
+      noiseSuppression: false,
+      echoCancellation: true,
+      sampleRate: 48000,
+      channelCount: 1,
+      fellBack: false,
+    });
+  });
+
+  /**
+   * The fallback is the route the settings cannot show: the refused request
+   * leaves nothing on the track that replaced it, so the take has to say so.
+   */
+  it('marks a take recorded after the raw request was refused', async () => {
+    let asked = 0;
+    vi.stubGlobal('navigator', {
+      mediaDevices: {
+        getUserMedia: async () => {
+          asked += 1;
+          if (asked === 1) {
+            throw new DOMException('not allowed here', 'InvalidStateError');
+          }
+          return { getTracks: () => [{ stop() {} }] };
+        },
+      },
+    });
+
+    const recorder = await startRecording();
+    node.deliver(silenceWith(64, 5000));
+    const take = await recorder.stop();
+
+    expect(take.capture?.fellBack).toBe(true);
+    // A track with no `getSettings` reported nothing, and nothing is recorded
+    // as "off".
+    expect(take.capture?.autoGainControl).toBeNull();
+  });
+
+  it('does not mark a take whose raw request was granted', async () => {
+    const recorder = await startRecording();
+    node.deliver(silenceWith(64, 5000));
+    const take = await recorder.stop();
+
+    expect(take.capture?.fellBack).toBe(false);
+  });
+
+  /**
    * **The muted-microphone take**, and the reason this file exists.
    *
    * A muted input delivers samples like any other — they are simply all zero —

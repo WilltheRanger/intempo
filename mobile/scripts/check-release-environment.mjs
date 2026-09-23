@@ -20,6 +20,16 @@ export function releaseProblems(env) {
     } catch { problems.push('The Supabase key must be a publishable key or anon JWT.'); }
   }
   if (env.EXPO_PUBLIC_FIXTURES) problems.push('Remove EXPO_PUBLIC_FIXTURES from store builds.');
+  try {
+    const dsn = new URL(env.EXPO_PUBLIC_SENTRY_DSN);
+    if (dsn.protocol !== 'https:' || !dsn.hostname || !dsn.username) throw new Error();
+  } catch { problems.push('EXPO_PUBLIC_SENTRY_DSN must be a valid HTTPS Sentry DSN.'); }
+  if (!env.SENTRY_AUTH_TOKEN?.trim()) {
+    problems.push('SENTRY_AUTH_TOKEN is required for release source maps.');
+  }
+  if (!env.SENTRY_ORG?.trim() || !env.SENTRY_PROJECT?.trim()) {
+    problems.push('SENTRY_ORG and SENTRY_PROJECT are required for release source maps.');
+  }
   return problems;
 }
 

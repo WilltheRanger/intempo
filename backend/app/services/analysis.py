@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
 
@@ -23,9 +23,13 @@ from pydantic import BaseModel, Field
 
 from app.services import audio as audio_svc
 from app.services.alignment import (
+    MIN_TEMPO_RATIO,
+    MIN_TRIM_GAIN,
+    align_dtw,
     align_take,
     attacks_outnumber_the_music,
     AlignmentResult,
+    AnchoredAlignment,
     apply_fuzzy_match,
     build_timeline,
     CleanedAlignment,
@@ -33,6 +37,9 @@ from app.services.alignment import (
     is_alignment_broken,
     closest_expected_gap,
     collapse_double_attacks,
+    _clamp_ratio,
+    to_timeline_base,
+    typical_gap,
 )
 from app.services.audio_config import AudioConfig, load_audio_config
 from app.services.insights import Insights, insights_for
@@ -254,6 +261,7 @@ def _why_alignment_failed(
     expected: np.ndarray,
     *,
     optional: np.ndarray | None = None,
+    reclaimable: np.ndarray | None = None,
 ) -> str:
     """Say which failure this is, when it can be told apart.
 
@@ -281,7 +289,9 @@ def _why_alignment_failed(
     validator flagged nothing. Sending that musician to look for the wrong
     piece is sending them to look in the wrong place.
     """
-    cleaned = apply_fuzzy_match(raw, onsets, expected, optional=optional)
+    cleaned = apply_fuzzy_match(
+        raw, onsets, expected, optional=optional, reclaimable=reclaimable
+    )
     heard_everything = not cleaned.missed_expected and bool(cleaned.matched)
     far_too_many = len(cleaned.extra_detected) > len(cleaned.matched)
 
@@ -421,7 +431,8 @@ def prepare_for_alignment(
     score: ScoreJson,
     target_bpm: float,
     *,
-    double_bass: bool,
+    instrument: str | None = None,
+    double_bass: bool = False,
     config: AudioConfig,
 ) -> Heard:
     """Decode, filter, read the score, and detect — the steps before aligning.
@@ -443,8 +454,17 @@ def prepare_for_alignment(
         y, sr = audio
     else:
         y, sr = audio_svc.load_audio(audio, sr=config.onset.sr)
-    if double_bass:
-        y = audio_svc.high_pass(y, sr, config.onset.double_bass_highpass_hz)
+    # **The filter and the threshold come from one entry.** They were two
+    # decisions before — this function chose whether to high-pass and
+    # `detect_onsets` chose the threshold — so a caller could get a bass's
+    # peak-pick threshold with a violin's (absent) filter. A viola's open C is
+    # 131 Hz and a cello's is 65 Hz, and neither was ever given a cutoff of
+    # its own; the table says so explicitly now rather than a boolean hiding
+    # it. See `[onset.instrument]` in config.toml.
+    named = instrument or ("double_bass" if double_bass else None)
+    settings = audio_svc.onset_settings_for(config, named)
+    if settings.highpass_hz > 0:
+        y = audio_svc.high_pass(y, sr, settings.highpass_hz)
 
     # The score is read *before* the audio, so the detector can be told how
     # close together the notes it is looking for actually are. Nothing about
@@ -457,13 +477,24 @@ def prepare_for_alignment(
     # readings the page did not choose between. Built here because the detector
     # is sized from it too — see `closest_expected_gap`.
     grace = np.array([n.is_grace_note for n in timeline.notes], dtype=bool)
+    # **The detector is sized from every note the page prints, slurred or
+    # not.** Sized from the bow changes alone, a page of four-note slurs looked
+    # like a page of half notes: the window widened to ±464 ms and the
+    # detector kept whichever slurred pitch change was loudest in each window,
+    # rather than the bow change the timeline expected. Whether those notes
+    # are heard is decided later, by the reading the take fits best — see
+    # `readings_of` — and a window narrow enough to hear them costs nothing
+    # when they are silent. A page with no slurs builds the same timeline
+    # twice and nothing moves.
+    every_note = build_timeline(score, target_bpm, legato=True)
+    every_grace = np.array([n.is_grace_note for n in every_note.notes], dtype=bool)
 
     onsets = audio_svc.detect_onsets(
         audio_svc.pre_emphasis(y, config=config),
         sr,
-        double_bass=double_bass,
+        instrument=named,
         config=config,
-        min_gap_s=closest_expected_gap(expected, optional=grace),
+        min_gap_s=closest_expected_gap(every_note.onsets, optional=every_grace),
     )
     # **One attack reported twice is not two notes**, and until this line it
     # could out-vote the machinery for a partial take: `subsequence` is gated
@@ -472,16 +503,19 @@ def prepare_for_alignment(
     # as a wrong piece. The detector's own `wait_ms` is a fact about how fast a
     # string can be re-attacked; this is a fact about what is on the stand, and
     # they are different claims. See `collapse_double_attacks`.
-    onsets = collapse_double_attacks(onsets, expected, optional=grace)
+    onsets = collapse_double_attacks(onsets, every_note.onsets, optional=every_grace)
     return Heard(
-        y=y, sr=sr, timeline=timeline, expected=expected, grace=grace, onsets=onsets
+        y=y,
+        sr=sr,
+        timeline=timeline,
+        expected=expected,
+        grace=grace,
+        onsets=onsets,
     )
-
 
 
 # The two recovery thresholds live in `[onset.recovery]` in config.toml,
 # like every other tunable number in this pipeline (`CLAUDE.md` §1 rule 7).
-
 
 
 def _recover_missed_onsets(
@@ -516,14 +550,13 @@ def _recover_missed_onsets(
     if predicted.size == 0:
         return np.array([], dtype=float)
 
-    strength = audio_svc.onset_envelope(
-        audio_svc.pre_emphasis(heard.y, config=config), heard.sr
-    )
+    emphasised = audio_svc.pre_emphasis(heard.y, config=config)
+    strength = audio_svc.onset_envelope(emphasised, heard.sr)
     search = (min_gap_s or 0.0) * config.onset.recovery_search_share
     if search <= 0:
         return np.array([], dtype=float)
 
-    return recover_onsets(
+    found = recover_onsets(
         strength,
         hop_length=audio_svc.HOP_LENGTH,
         sr=heard.sr,
@@ -536,6 +569,326 @@ def _recover_missed_onsets(
         # disagree about what counts as one attack.
         min_separation_s=config.onset.wait_ms / 1000.0,
     )
+    # **Only where the recording is actually sounding.** Until the clock fix
+    # above, every take with a lead-in searched the wrong seconds, and this pass
+    # had never been asked about a note that was really not played. Asked, it
+    # answered wrongly: a note dropped from the varied page was "recovered" off
+    # the log-spectral wiggle of room tone — at 4.9% of the envelope's peak,
+    # above the 1.5% floor, and at 1.6 times its neighbourhood, which is
+    # *more* prominent than some genuine quiet notes under reverb (1.2–1.5).
+    # Prominence cannot tell them apart; level can. Room tone sits at the take's
+    # noise floor, and a quiet note swallowed by a live room is still tens of
+    # decibels above it. See `[onset.recovery]` in config.toml.
+    if found.size:
+        loud_enough = (
+            audio_svc.level_above_floor_db(heard.y, heard.sr, found)
+            >= config.onset.recovery_min_level_db
+        )
+        found = found[loud_enough]
+    # Placed on the same fine grid as everything the first pass reported, so a
+    # recovered note is not the one note in the take still sitting on a frame.
+    return audio_svc.refine_onset_times(emphasised, heard.sr, found)
+
+
+# ---------------------------------------------------------------------------
+# Readings: the ways a take may have been played from one page
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Reading:
+    """One way the musician may have played this page, as a timeline.
+
+    **The page was assumed to be played exactly one way, and practice is not
+    played that way.** Measured end to end, each of these was refused with
+    "Check you're on the right piece" on a take in which every note was on
+    time:
+
+      * a printed repeat, not taken — quality 0.000;
+      * stopping in bar 6 and starting again from bar 5 — 0.134;
+      * a slurred passage whose notes the detector heard — 0.385.
+
+    None is a wrong piece. Each is the page read another way, and which way is
+    something only the take can say — so each is built as a timeline, the take
+    is aligned against every one, and the page as written is kept unless
+    another fits clearly better (`MIN_READING_GAIN`).
+    """
+
+    #: What was done differently from the page as written, for the log.
+    name: str
+    timeline: ExpectedTimeline
+
+    @property
+    def expected(self) -> np.ndarray:
+        return self.timeline.onsets
+
+    @property
+    def steady(self) -> np.ndarray:
+        """The onsets a steady tempo is supposed to account for.
+
+        Notes under a `rit.` are not among them: the page has said the beat
+        will not be steady there. An ornament is not steady either, and for a
+        stronger reason: its written time is `ORNAMENT_SHARE` splitting the
+        difference between two readings an engraver may have meant, and the
+        note it decorates is in the same position.
+        """
+        return np.array(
+            [
+                not n.under_tempo_change
+                and not n.is_grace_note
+                and not n.after_grace_note
+                for n in self.timeline.notes
+            ],
+            dtype=bool,
+        )
+
+    @property
+    def optional(self) -> np.ndarray:
+        """The onsets it is not a mistake to miss: ornaments, and slurred notes
+        in the reading where they may be heard. The note an ornament decorates
+        is certainly played — only its *time* is in doubt — and forgiving it
+        would forgive a genuinely skipped note."""
+        return np.array(
+            [n.is_grace_note or n.under_slur for n in self.timeline.notes], dtype=bool
+        )
+
+    @property
+    def grace(self) -> np.ndarray:
+        """The ornaments. The only optional onsets whose detection the next
+        note may take back (see `apply_fuzzy_match`), and the only ones left
+        out when sizing a window from the page's closest notes (see
+        `closest_expected_gap`)."""
+        return np.array([n.is_grace_note for n in self.timeline.notes], dtype=bool)
+
+    @property
+    def reclaimable(self) -> np.ndarray:
+        return self.grace
+
+
+#: How much better another reading must fit before it replaces the page as
+#: written. The same margin, for the same reason, as `MIN_TRIM_GAIN`: a looser
+#: reading can only ever fit at least as well, so a margin of zero would trade
+#: the page for a rounding difference.
+MIN_READING_GAIN = MIN_TRIM_GAIN
+
+
+def readings_of(score: ScoreJson, target_bpm: float) -> list[Reading]:
+    """The page as written, then each way of playing it that differs.
+
+    As written comes first and is the default. The others are only built where
+    the page makes them possible — a page with no slurs has no legato reading —
+    and a reading that comes out identical to one already listed is dropped,
+    so a page with neither slurs nor repeats is aligned exactly once, exactly
+    as before.
+    """
+    has_repeat = any(r.type == "repeat" for r in score.repeats)
+    variants = [("as written", {})]
+    variants.append(("legato", {"legato": True}))
+    if has_repeat:
+        variants.append(("repeats not taken", {"take_repeats": False}))
+        variants.append(
+            ("legato, repeats not taken", {"legato": True, "take_repeats": False})
+        )
+    out: list[Reading] = []
+    for name, options in variants:
+        timeline = build_timeline(score, target_bpm, **options)
+        if any(
+            timeline.onsets.size == r.expected.size
+            and np.array_equal(timeline.onsets, r.expected)
+            for r in out
+        ):
+            continue
+        out.append(Reading(name=name, timeline=timeline))
+    return out
+
+
+def _align_reading(
+    onsets: np.ndarray, reading: Reading, target_bpm: float, config: AudioConfig
+) -> AnchoredAlignment:
+    return align_take(
+        onsets,
+        reading.expected,
+        target_bpm=target_bpm,
+        config=config,
+        steady=reading.steady,
+        optional=reading.optional,
+    )
+
+
+def _best_reading(
+    onsets: np.ndarray,
+    readings: list[Reading],
+    target_bpm: float,
+    config: AudioConfig,
+) -> tuple[Reading, AnchoredAlignment]:
+    """The first reading, unless another fits by more than `MIN_READING_GAIN`."""
+    scored = [(r, _align_reading(onsets, r, target_bpm, config)) for r in readings]
+    chosen = scored[0]
+    rivals = scored[1:]
+    if rivals:
+        best = max(rivals, key=lambda pair: pair[1].alignment.quality)
+        if best[1].alignment.quality > chosen[1].alignment.quality + MIN_READING_GAIN:
+            chosen = best
+    return chosen
+
+
+#: The shortest silence that can be a stop rather than part of the music.
+#:
+#: The other bound is derived: a gap longer than the longest the page writes,
+#: at the slowest tempo the matcher will believe (`MIN_TEMPO_RATIO`), cannot be
+#: a performance of it. This floor is for pages of quick notes, where that
+#: bound falls under the time it takes to stop, look back, and start again.
+PAUSE_FLOOR_S = 1.0
+
+#: How many bars back a restart is looked for, before the bar where the take
+#: stopped. Musicians go back to the start of the phrase, or to the top, and
+#: the top is always tried as well.
+RESTART_BARS_BACK = 8
+
+#: How far either side of the note-count estimate the last note played before
+#: a stop is looked for — room for a missed or doubled detection, and for the
+#: noise `align_take` may trim from the front.
+RESTART_SLACK_NOTES = 3
+
+#: At most this many stops are examined in one take.
+MAX_RESTARTS = 3
+
+
+def _pauses(onsets: np.ndarray, expected: np.ndarray) -> list[int]:
+    """Indices of the detections a stop follows. See `PAUSE_FLOOR_S`."""
+    if onsets.size < 2 or expected.size < 2:
+        return []
+    longest = float(np.max(np.diff(expected)))
+    threshold = max(PAUSE_FLOOR_S, longest / MIN_TEMPO_RATIO)
+    return [int(i) for i in np.flatnonzero(np.diff(onsets) > threshold)]
+
+
+def _restarted(
+    reading: Reading, last: int, again: int, pause_written_s: float
+) -> Reading:
+    """`reading` played to note `last`, then again from note `again`.
+
+    `again` may be `last + 1`: a stop, then carrying on. The stop is written in
+    as a rest as long as the one the musician took, so the note they came back
+    in on is on time by construction rather than judged against a silence the
+    page never wrote.
+    """
+    notes = reading.timeline.notes
+    onsets = reading.expected
+    head_notes, tail_notes = notes[: last + 1], notes[again:]
+    shift = float(onsets[last]) + pause_written_s - float(onsets[again])
+    joined = [*head_notes, *tail_notes]
+    times = np.concatenate([onsets[: last + 1], onsets[again:] + shift])
+    renumbered = [
+        replace(note, global_index=index, onset_s=float(times[index]))
+        for index, note in enumerate(joined)
+    ]
+    bar = notes[again].measure_number
+    what = "paused" if again == last + 1 else f"restarted at bar {bar}"
+    return Reading(
+        name=f"{reading.name}, {what}",
+        timeline=ExpectedTimeline(onsets=times, notes=renumbered),
+    )
+
+
+def _with_restarts(
+    onsets: np.ndarray,
+    chosen: tuple[Reading, AnchoredAlignment],
+    target_bpm: float,
+    config: AudioConfig,
+) -> tuple[Reading, AnchoredAlignment]:
+    """The chosen reading, with the stops and starts a practice take has in it.
+
+    **Only for a take the page as read cannot explain** — one under
+    `warn_quality`. A take that already fits is never re-read, so nothing that
+    reads today can move.
+
+    At each stop, the candidates are every bar start up to
+    `RESTART_BARS_BACK` before the note the take stopped on, and the top of
+    the page, crossed with a few guesses at which note that was. Each is scored
+    once; the best is kept if it beats what came before by
+    `MIN_READING_GAIN`. Among candidates that fit equally — a page of
+    identical bars, where the rhythm cannot say which bar was repeated — the
+    latest bar is taken, because the nearest phrase is where musicians go
+    back to.
+    """
+    reading, anchored = chosen
+    if anchored.alignment.quality >= config.alignment.warn_quality:
+        return chosen
+    based = to_timeline_base(onsets)
+    for pause in _pauses(onsets, reading.expected)[:MAX_RESTARTS]:
+        notes = reading.timeline.notes
+        expected = reading.expected
+        # Which note the stop came after: the count of detections before it,
+        # give or take a few.
+        estimate = min(pause, expected.size - 1)
+        lasts = range(
+            max(0, estimate - RESTART_SLACK_NOTES),
+            min(expected.size - 1, estimate + RESTART_SLACK_NOTES) + 1,
+        )
+        bar_starts = [
+            j
+            for j in range(expected.size)
+            if j == 0 or notes[j].measure_number != notes[j - 1].measure_number
+        ]
+        # The pause in written seconds, at the pace the take was played before
+        # it — the same bounded ratio the matcher believes.
+        before = onsets[: pause + 1]
+        played_gap = typical_gap(np.diff(before)) if before.size >= 2 else 0.0
+        best: tuple[float, int, int, Reading] | None = None
+        for last in lasts:
+            written_gap = (
+                typical_gap(np.diff(expected[: last + 1])) if last >= 1 else 0.0
+            )
+            ratio = (
+                _clamp_ratio(written_gap / played_gap)
+                if played_gap > 0 and written_gap > 0
+                else 1.0
+            )
+            pause_written = float(onsets[pause + 1] - onsets[pause]) * ratio
+            starts = [j for j in bar_starts if j <= last]
+            # Carrying on from the next note is a candidate too, and it has to
+            # be: a stop to turn a page is the commonest stop there is, and
+            # without it the nearest restart would win by default and invent
+            # the notes it replays as missed. Measured: a two-second pause
+            # mid-take read as a restart with four notes missed. It is never
+            # *chosen* — see below.
+            onward = {last + 1} if last + 1 < expected.size else set()
+            for again in {0, *starts[-RESTART_BARS_BACK - 1 :], *onward}:
+                candidate = _restarted(reading, last, again, pause_written)
+                quality = align_dtw(
+                    based,
+                    candidate.expected,
+                    target_bpm=target_bpm,
+                    config=config,
+                    steady=candidate.steady,
+                    optional=candidate.optional,
+                ).quality
+                key = (quality, again, last)
+                if best is None or key > best[:3]:
+                    best = (quality, again, last, candidate)
+        # **A stop that carried on is scored, and never chosen.** It has to be
+        # a candidate — without it the nearest restart wins by default and
+        # invents the notes it replays as missed. But as a reading it would
+        # also absorb something that must not be absorbed: eight bars of rest
+        # the transcription never read look exactly like a musician pausing,
+        # and those must still be refused with "look for a rest bar with a
+        # number over it" (`test_a_page_shorter_than_the_take_says_bars_are_
+        # missing`). A pause already reads as a hesitation on the page as
+        # written, so keeping that reading loses nothing a musician needs.
+        if best is None or best[1] == best[2] + 1:
+            continue
+        candidate = best[3]
+        realigned = _align_reading(onsets, candidate, target_bpm, config)
+        if realigned.alignment.quality > anchored.alignment.quality + MIN_READING_GAIN:
+            log.info(
+                "analysis: read as %r, quality %.3f -> %.3f",
+                candidate.name,
+                anchored.alignment.quality,
+                realigned.alignment.quality,
+            )
+            reading, anchored = candidate, realigned
+    return reading, anchored
 
 
 def analyze(
@@ -543,6 +896,7 @@ def analyze(
     score: ScoreJson,
     target_bpm: float,
     *,
+    instrument: str | None = None,
     double_bass: bool = False,
     config: AudioConfig | None = None,
 ) -> AnalysisResult:
@@ -558,61 +912,51 @@ def analyze(
     """
     cfg = config or load_audio_config()
     heard = prepare_for_alignment(
-        audio, score, target_bpm, double_bass=double_bass, config=cfg
+        audio,
+        score,
+        target_bpm,
+        instrument=instrument,
+        double_bass=double_bass,
+        config=cfg,
     )
-    timeline = heard.timeline
-    expected = heard.expected
-    grace_onsets = heard.grace
     onsets = heard.onsets
 
-    if onsets.size == 0 or expected.size == 0:
+    if onsets.size == 0 or heard.expected.size == 0:
         return AnalysisResult(
             status="no_onsets",
             quality=0.0,
             tolerance=Tolerance.of(cfg),
-            verdict=_why_nothing_to_compare(expected),
+            verdict=_why_nothing_to_compare(heard.expected),
             n_detected_onsets=int(onsets.size),
-            n_expected_onsets=int(expected.size),
+            n_expected_onsets=int(heard.expected.size),
         )
 
     # Both sequences on the same clock before anything is compared, and the
-    # origin chosen by evidence rather than by position. Without the first, a
-    # perfect take with a five-second lead-in aligns at 0.053 and the musician
-    # is told to check they are on the right piece. Without the second, a bow
-    # settling on the string before the first note becomes the downbeat, and
-    # the same perfect take is told it dragged; without it at the other end, a
-    # bow going down afterwards costs enough confidence to trigger a caveat.
-    # Which written onsets a steady tempo is supposed to account for. Notes
-    # under a `rit.` are not among them: the page has said the beat will not be
-    # steady there, so they can say nothing about whether a steady-tempo
-    # alignment is trustworthy.
+    # origin chosen by evidence rather than by position — `align_take`. Without
+    # the first, a perfect take with a five-second lead-in aligns at 0.053 and
+    # the musician is told to check they are on the right piece. Without the
+    # second, a bow settling on the string before the first note becomes the
+    # downbeat, and the same perfect take is told it dragged; without it at the
+    # other end, a bow going down afterwards costs enough confidence to trigger
+    # a caveat.
     #
-    # An ornament is not steady either, and for a stronger reason than a
-    # `rit.`: its written time is not a claim the page made, it is
-    # `ORNAMENT_SHARE` splitting the difference between the two readings an
-    # engraver may have meant. A number this file invented can say nothing
-    # about whether the alignment is trustworthy — and the note the ornament
-    # decorates is in the same position, because the two readings put its
-    # attack the better part of a beat apart.
-    steady = np.array(
-        [
-            not n.under_tempo_change and not n.is_grace_note and not n.after_grace_note
-            for n in timeline.notes
-        ],
-        dtype=bool,
-    )
-    # Which onsets it is not a mistake to miss. Only the grace notes: the note
-    # they decorate is certainly played, it is only its *time* that is in
-    # doubt, and forgiving it would forgive a genuinely skipped note.
-    optional = grace_onsets
-    anchored = align_take(
+    # Against every way this page may have been played, not only the one it
+    # prints — see `Reading`. As written comes first and is kept unless another
+    # reading fits clearly better, and a take the chosen reading still cannot
+    # explain is read once more for stops and restarts.
+    reading, anchored = _with_restarts(
         onsets,
-        expected,
-        target_bpm=target_bpm,
-        config=cfg,
-        steady=steady,
-        optional=optional,
+        _best_reading(onsets, readings_of(score, target_bpm), target_bpm, cfg),
+        target_bpm,
+        cfg,
     )
+    if reading.name != "as written":
+        log.info("analysis: read as %r", reading.name)
+    timeline = reading.timeline
+    expected = reading.expected
+    steady = reading.steady
+    optional = reading.optional
+    reclaimable = reading.reclaimable
     onsets = anchored.onsets
     raw = anchored.alignment
 
@@ -628,17 +972,27 @@ def analyze(
     # and asking it again below changes nothing. A badly broken alignment
     # gives a nonsense line to predict from, and that is safe by construction:
     # the search finds no peak at a nonsense time, so nothing is added.
-    probe = apply_fuzzy_match(raw, onsets, expected, optional=optional)
+    probe = apply_fuzzy_match(
+        raw, onsets, expected, optional=optional, reclaimable=reclaimable
+    )
+    # **On the recording's clock, not the take's.** `onsets` count from the
+    # first note kept; the envelope counts from the moment recording began.
+    # The pass predicted on one and searched the other, so any lead-in moved
+    # every search window by its own length — two seconds of settling before
+    # the first note, and the pass looked two seconds early for every note it
+    # was meant to find. It went unnoticed because the only take that
+    # exercised it began its first note at 0.0 s.
+    origin = float(heard.onsets[anchored.trimmed_lead])
     recovered = _recover_missed_onsets(
         heard,
         probe,
-        onsets,
+        onsets + origin,
         expected,
         # The same gap the detector was sized from, so the search window and
         # the peak-pick window are derived from one number rather than two.
-        min_gap_s=closest_expected_gap(expected, optional=optional),
+        min_gap_s=closest_expected_gap(expected, optional=reading.grace),
         config=cfg,
-    )
+    ) - origin
     if recovered.size:
         log.info(
             "analysis: recovered %d onset(s) the first pass did not report",
@@ -684,12 +1038,16 @@ def analyze(
             status="alignment_failed",
             quality=round(raw.quality, 3),
             tolerance=Tolerance.of(cfg),
-            verdict=_why_alignment_failed(raw, onsets, expected, optional=optional),
+            verdict=_why_alignment_failed(
+                raw, onsets, expected, optional=optional, reclaimable=reclaimable
+            ),
             n_detected_onsets=raw.n_detected,
             n_expected_onsets=raw.n_expected,
         )
 
-    cleaned = apply_fuzzy_match(raw, onsets, expected, optional=optional)
+    cleaned = apply_fuzzy_match(
+        raw, onsets, expected, optional=optional, reclaimable=reclaimable
+    )
     deltas = compute_deltas(cleaned, onsets, timeline, target_bpm, config=cfg)
     trend = rolling_trend(deltas, config=cfg)
     verdict = generate_verdict(
@@ -735,7 +1093,9 @@ def analyze(
             # The same deltas the verdict is built from, so a musician cannot
             # be told the spread of one set of numbers and the average of
             # another.
-            [d.delta_pct for d in deltas if d.timed],
+            # Not the slurred notes: their timing is the player's, which is
+            # why the verdict and the trend leave them out too.
+            [d.delta_pct for d in deltas if d.timed and not d.is_slur_interior],
             # Paired with the written length of the note each delta belongs
             # to, so the take can be grouped by what was on the page. The
             # lookup is by `global_index` because `deltas` is already filtered
@@ -743,7 +1103,9 @@ def analyze(
             [
                 (timeline.notes[d.global_index].beats, d.delta_pct)
                 for d in deltas
-                if d.timed and 0 <= d.global_index < len(timeline.notes)
+                if d.timed
+                and not d.is_slur_interior
+                and 0 <= d.global_index < len(timeline.notes)
             ],
             target_bpm_for_lead=target_bpm,
         ),

@@ -1,4 +1,10 @@
-import { createAnalysis, getAnalysis } from '../api/analyses';
+import type { CaptureReport } from '../../lib/audio/capture';
+import {
+  createAnalysis,
+  getAnalysis,
+  type CreateAnalysisInput,
+} from '../api/analyses';
+import { ApiError } from '../api/client';
 import { requestAudioUpload, uploadToSignedUrl } from '../api/upload';
 import { preferences } from '../preferences';
 import type { AnalysisResponse, MetronomeMode } from '../types';
@@ -71,10 +77,60 @@ export interface SubmitTakeInput {
    * thirty-nine to be told anything about it.
    */
   fromMeasure?: number | null;
+  /**
+   * What the microphone applied, when the recorder could ask. Absent for a
+   * picked file and for the native recorder.
+   */
+  capture?: CaptureReport;
+  /** Offline drain only: fail closed if sign-in changes during submission. */
+  assertOwner?: () => Promise<void>;
 }
 
 export interface SubmittedTakeState extends TakeSubmissionState {
   analysisId: string;
+}
+
+/**
+ * Enqueue the take, and if the server refused only its capture report, enqueue
+ * it again without one.
+ *
+ * **A diagnostic must not cost a take, and that includes across a deploy.** The
+ * API forbids request keys it does not know, so a server older than `capture`
+ * answers 422 to every take that carries one: this build against the deployed
+ * API before the backend half ships, and the window after a merge when the
+ * site is live before the API is. A 422 is validation, before any row is
+ * written or any quota spent, so asking again without the key is safe.
+ *
+ * Only a refusal that names `capture` is retried. Any other 422 is a real
+ * problem with the take and goes to the musician as before.
+ */
+async function createAnalysisKeepingTheTake(
+  input: CreateAnalysisInput,
+): Promise<{ analysis_id: string; status: string }> {
+  try {
+    return await createAnalysis(input);
+  } catch (error) {
+    if (!input.capture || !refusedTheCaptureReport(error)) {
+      throw error;
+    }
+    const { capture: _refused, ...withoutReport } = input;
+    return createAnalysis(withoutReport);
+  }
+}
+
+/** FastAPI's 422 lists each rejected field with its path in `loc`. */
+function refusedTheCaptureReport(error: unknown): boolean {
+  if (!(error instanceof ApiError) || error.status !== 422) {
+    return false;
+  }
+  const { detail } = error;
+  return (
+    Array.isArray(detail) &&
+    detail.some((problem: unknown) => {
+      const loc = (problem as { loc?: unknown } | null)?.loc;
+      return Array.isArray(loc) && loc.includes('capture');
+    })
+  );
 }
 
 /**
@@ -94,23 +150,28 @@ export async function submitTake({
   resume = {},
   skipLongRests = false,
   fromMeasure = null,
+  capture,
+  assertOwner,
 }: SubmitTakeInput): Promise<SubmittedTakeState> {
   const state: TakeSubmissionState = { ...resume };
 
   try {
+    await assertOwner?.();
     if (state.analysisId) {
       return { ...state, analysisId: state.analysisId };
     }
 
     if (!state.audioKey) {
       const upload = await requestAudioUpload(filename);
+      await assertOwner?.();
       await uploadToSignedUrl(upload.upload_url, audio, contentType, {
         subject: 'recording',
       });
       state.audioKey = upload.object_key;
     }
 
-    const { analysis_id } = await createAnalysis({
+    await assertOwner?.();
+    const { analysis_id } = await createAnalysisKeepingTheTake({
       score_id: scoreId,
       audio_key: state.audioKey,
       target_bpm: targetBpm,
@@ -132,6 +193,20 @@ export async function submitTake({
       // is nullable so the row can say "from the beginning" rather than
       // claim a choice nobody made.
       ...(fromMeasure && fromMeasure > 1 ? { from_measure: fromMeasure } : {}),
+      // Omitted when there is no report, so "not asked" stays distinguishable
+      // on the row from a report whose every field is unknown.
+      ...(capture
+        ? {
+            capture: {
+              auto_gain_control: capture.autoGainControl,
+              noise_suppression: capture.noiseSuppression,
+              echo_cancellation: capture.echoCancellation,
+              sample_rate: capture.sampleRate,
+              channel_count: capture.channelCount,
+              fell_back: capture.fellBack,
+            },
+          }
+        : {}),
     });
     state.analysisId = analysis_id;
     return { ...state, analysisId: analysis_id };
@@ -197,8 +272,11 @@ export async function waitForAnalysis(
   {
     signal,
     onStage,
+    assertOwner,
   }: {
     signal?: AbortSignal;
+    /** Offline drain only: fail closed if sign-in changes while waiting. */
+    assertOwner?: () => Promise<void>;
     /**
      * Called with each stage the run reports, so a caller can show where it
      * has got to. Called on every poll rather than only on a change: the
@@ -216,6 +294,7 @@ export async function waitForAnalysis(
     if (signal?.aborted) {
       throw new Error('Cancelled');
     }
+    await assertOwner?.();
     const analysis = await getAnalysis(analysisId);
     if (onStage) {
       try {

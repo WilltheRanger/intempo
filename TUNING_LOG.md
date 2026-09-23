@@ -6,6 +6,241 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-09-22 — An audit of what the analysis gets wrong, and eight fixes
+
+**Every number below is from synthetic takes.** The six corpus clips are still
+unrecorded (`fixtures/audio/README.md`), so nothing here is tuned against a real
+instrument in a real room. What these changes do is remove readings that were
+wrong *by construction* — arithmetic, clocks, a matcher tie — which no
+recording would have made right. Each repro below ran against the commit before
+this one and against this one.
+
+### Regression — the six clips
+
+    clip                    quality (before -> after)   status   direction   notes
+    01_detache_clean          0.988 -> 0.999              ok        on         32
+    02_detache_rushing        0.988 -> 0.999              ok        rush       32
+    03_detache_dragging       0.988 -> 0.999              ok        drag       32
+    04_slurred                0.990 -> 0.998              ok        on          8
+    05_open_e_long            1.000 -> 1.000              ok        on          1
+    06_pizzicato              0.990 -> 0.999              ok        on         16
+
+Status, direction and note count identical on every clip. Quality rises from
+onset placement (below). **The rushing clip's verdict changed and it is the
+point of the first fix:** before, "You rushed across measures 2–8 by an average
+of **9 BPM**"; after, "You rushed across measures 2–8." That clip drifts 8 ms a
+beat at 60 BPM, which is **60.5 BPM** — half a BPM fast, which rounds to no
+figure. The 9 was a position read as a tempo. Dragging: the same.
+
+Full backend suite: 2568 passed, 2 skipped, 2 xfailed (was 2525 passed; the
+difference is the new tests).
+
+### 1. The verdict's "BPM" figure is a tempo now
+
+`target_bpm × mean(|delta_pct|) / 100` → the pace across the run: the slope of
+the drift against written time over the run and the note before it
+(`classification.run_tempo_difference`). No figure when it rounds to zero or
+points the other way from the verb.
+
+    played (target 60)   before                     after
+    63 steady            "by an average of 48 BPM"  "by an average of 3 BPM"
+    61.5 steady          25                         1
+    57 steady            52                         3
+
+### 2. The origin is several notes, not the first one
+
+`pulse_anchors` read each stretch's level from one note. Now: the median of the
+first `LEVEL_NOTES` = 6 usable notes, each projected to the stretch's start
+along a Theil–Sen pace over `PACE_NOTES` = 8 notes. Perfect take at 120 BPM with
+only the first note 40 ms late: before, 27 of 32 notes `slight` and "You rushed
+across measures 1–4 by an average of 9 BPM"; after, "Steady tempo".
+
+`PACE_NOTES` sweep, level error at the start of a steadily accelerating take
+(the late-first-note and jitter cases read identically at every value):
+
+    PACE_NOTES     8     12     16     64
+    level error   25 ms  53 ms  78 ms  102 ms
+
+A median of consecutive intervals was tried first and was worse than one note:
+it snaps to one side of the frame grid's 21/22-frame alternation, a 2.5% pace
+error, and a steady player was told they drifted on 34 of 40 seeds.
+
+### 3. A drift needs four notes, or two far out
+
+`MIN_VERDICT_RUN` = 4 consecutive same-direction notes, or 2 all past the
+middle band. No drift, each note independently jittered, 40 seeds at 120 BPM:
+
+    jitter sd          8 ms    12 ms    18 ms
+    told they drifted  2 -> 0  13 -> 1  30 -> 3
+
+**The one to revisit with real recordings**: it was set against simulated
+spread, and how a real player's timing wanders is what a recording knows.
+
+### 4–5. Readings: slurs, repeats, restarts
+
+See `DECISIONS.md`. Before → after, every note on time:
+
+    legato slurs, slurred notes heard            0.376 refused  -> 0.996 ok
+    legato slurs, 3% fast                        "dragged by 31 BPM" -> "rushed by 2 BPM"
+    random half of slurred notes heard (12 seeds) 0/12 clean    -> 12/12
+    printed repeat not taken                     0.000 refused  -> 0.998 ok
+    stop in bar 6, restart from bar 5            0.134 refused  -> 0.997 ok
+    stop in bar 5, restart from bar 3            0.000 refused  -> 0.997 ok
+
+The mixed slur case needed three matcher changes, each measured on it:
+intervals measured back across unheard optional notes (0.512, two bow changes
+missed → no misses), the path's cost of crossing an optional note capped at
+the position cap (one detection swept six slurred notes and past a bow change →
+fixed), and the set tempo and the take's span tried as paces when the page has
+optional notes (median gap 2.6× the written one, ratio clamped at 0.6 → 12/12).
+
+### 6. `highpass_hz` changes no onset — declared, not moved
+
+Envelope correlation, bowed bass with a 58 Hz room mode, with and without:
+
+    waveform high-pass 80 Hz              0.9999   onsets identical
+    cutoff as the lowest mel band, 80 Hz  0.9999 dry, 0.9993 in a 0.9 s room
+    50 Hz notes, bands from 150 Hz        8/8 still found (leakage)
+    45–60 Hz boom at 5x note peak         not detected with no filter at all
+
+The band floor was built, measured and reverted. `config.toml` says so beside
+the knob.
+
+### 7. Onsets placed on a 2.9 ms grid
+
+`audio.refine_onset_times`. Bowed notes, 90 BPM, rise 5–120 ms:
+
+                           spread across rise    spread within one
+    violin, dry            34.8 -> 12.6 ms        6.9 ->  1.4 ms
+    violin, 0.8 s room     29.0 -> 13.5 ms        8.1 ->  2.1 ms
+    bass, dry              19.3 ->  6.3 ms        8.7 ->  4.0 ms
+    bass, 0.8 s room       50.3 -> 32.2 ms       11.0 -> 12.7 ms
+
+**And it exposed a matcher tie the frame grid had been breaking by luck.**
+After a bar held exactly one beat long, seven notes of a later bar of eighths
+paired two ahead; the correct path cost 4.057 and the slid one 3.969. New knob,
+`STEP_PENALTY_CAPS` (a sideways DTW step, in position caps), swept on the
+varied page's five attribution cases:
+
+    STEP_PENALTY_CAPS   0    1    1.5   2    3    4    6
+    held bar wrong      7    7    0     0    0    0    0
+    hurried bar wrong   10   0    0     0    0    0    0
+    clean/drop/add      0    0    0     0    0    0    0
+
+Three: the middle of the flat region. **Two readings changed with it, and both
+were wrong before:**
+
+- An unmarked `rit.` (60 → 45 BPM) was read "low confidence, dragged across
+  5–8" with **25 of its 32 notes paired to the wrong written note** — the path
+  slid through the slowing bars to shrink the residuals. Paired honestly, a
+  steady-tempo alignment cannot explain it: refused at 0.324, "check the tempo".
+- Straight eighths played 2:1 swung were refused at 0.100 — by the same slide.
+  Paired one to one they score 0.677 and are analysed, the side of the line
+  `test_long_takes.py` already put 3:1 swing on deliberately.
+
+The penalty also let the trim search drop four real notes to turn an even take
+into a "passage" scoring 1.000 with bars misnamed; a trimmed candidate may no
+longer switch into passage mode the untrimmed take was not in.
+
+### 8. Calibration
+
+Window sized from `bpm_max` instead of left at the ±464 ms cap; typical gap
+instead of median. Bowed notes:
+
+    played   120     135            150    180    208
+    before   117.5   out_of_range   49.7   60.1   103.4
+    after    120.0   135.0          149.9  179.8  207.7
+
+(No client calls `/v1/calibration` today.)
+
+### And a bug found on the way: the second look searched the wrong clock
+
+`_recover_missed_onsets` predicted on the take's clock and searched the
+recording's, so a lead-in moved every search by its own length. On the room
+take with a 2 s lead-in its recoveries sat 0.2–0.4 s from any note on the
+page. With the clock fixed it then "recovered" a dropped note from room tone,
+so it now also requires the recording to be sounding there:
+
+    [onset.recovery] min_level_db   (new)   10.0
+
+Room tone sits at the take's floor (5th percentile of frame RMS); the quiet
+notes it exists for are 30+ dB above it. Ten is a margin in that gap.
+
+### What this does NOT do
+
+Nothing here was checked by ear or against a real instrument. `MIN_VERDICT_RUN`,
+`[onset.recovery] min_level_db` and the restart search's reach
+(`RESTART_BARS_BACK` = 8) are the values a session with the corpus should look
+at first.
+
+## 2026-09-22 — Per-instrument onset settings, seeded at today's values
+
+**No threshold changed.** The six clips are **identical** — quality, status,
+direction and per-note count, clip by clip. This is a restructuring, logged
+here because it touches `[onset]` and because it is the thing that has to exist
+before any of the tuning below can be done at all.
+
+### What was wrong
+
+The analysis could tell a double bass from "everything else" and nothing
+finer. `analysis_runner` collapsed the instrument to a boolean before calling
+`analyze()`, so violin, viola and cello shared the path whose `delta = 0.07`
+was chosen for a violin:
+
+    instrument     high-pass   delta      open strings
+    violin              none    0.07      G3 196 · D4 294 · A4 440 · E5 659
+    viola               none    0.07      C3 131 · G3 196 · D4 294 · A4 440
+    cello               none    0.07      C2  65 · G2  98 · D3 147 · A3 220
+    double bass        80 Hz    0.05      E1  41 · A1  55 · D2  73 · G2  98
+
+A cello's lowest fundamental sits below the cutoff only the bass was given, and
+its attack envelope has far more in common with a bass than with a violin. None
+of that could be acted on, because the analysis was never told.
+
+### The change
+
+`[onset.instrument.<name>]` per instrument, resolved once by
+`audio.onset_settings_for`. Seeded with exactly the values each instrument was
+already getting, so violin, viola and cello are identical rows today. That is
+deliberate and it is not a claim that they should be.
+
+### Regression — the six clips
+
+    clip                    quality (before -> after)   status   direction   notes
+    01_detache_clean          0.988 -> 0.988              ok        on         32
+    02_detache_rushing        0.988 -> 0.988              ok        rush       32
+    03_detache_dragging       0.988 -> 0.988              ok        drag       32
+    04_slurred                0.990 -> 0.990              ok        on          8
+    05_open_e_long            1.000 -> 1.000              ok        on          1
+    06_pizzicato              0.990 -> 0.990              ok        on         16
+
+Identical, by construction: every instrument resolves to the number it
+resolved to before, and the corpus is all one instrument anyway.
+
+Full backend suite: 2523 passed.
+
+### What this does NOT do, and what it is owed
+
+**It does not improve any instrument's reading.** Viola and cello are still
+read with a violin's threshold and no high-pass. Whether either should have its
+own is precisely the question this repository cannot answer yet:
+`fixtures/audio/README.md` records that none of the six clips is recorded, and
+"only a real instrument in a real room can answer that". Values invented for a
+cello here would be the failure that file exists to prevent.
+
+**What the corpus now needs is four times over.** The six clips were specified
+for one instrument. Splitting `[onset.instrument]` apart honestly needs the
+same passage recorded on each instrument that is going to get its own row —
+same room, same mic placement, per the README's own rule about not tuning
+against the room.
+
+**A cello is the first one worth recording.** It is the instrument furthest
+from the settings it currently gets: bass clef, a 65 Hz open C under an 80 Hz
+cutoff it does not receive, and a bowed attack closer to a bass's than to a
+violin's.
+
+---
+
 ## 2026-09-21 — One attack reported twice is not two notes
 
 **No threshold changed, and nothing was added to `config.toml`.** The floor

@@ -1,5 +1,6 @@
 import type { AnalysisResponse, Instrument, MetronomeMode } from '../types';
 import { apiFetch } from './client';
+import { parseAnalysis, parseAnalyses } from './responseSchemas';
 
 export interface ListAnalysesParams {
   scoreId?: string;
@@ -48,12 +49,12 @@ export function listAnalyses({
   if (status) {
     query.set('status', status);
   }
-  return apiFetch<AnalysisResponse[]>(`/v1/analyses?${query}`);
+  return apiFetch<unknown>(`/v1/analyses?${query}`).then(parseAnalyses);
 }
 
 /** GET /v1/analyses/:id — poll one take while it runs. */
 export function getAnalysis(id: string): Promise<AnalysisResponse> {
-  return apiFetch<AnalysisResponse>(`/v1/analyses/${id}`);
+  return apiFetch<unknown>(`/v1/analyses/${id}`).then(parseAnalysis);
 }
 
 export interface RecordingPlaybackResponse {
@@ -107,6 +108,30 @@ export interface CreateAnalysisInput {
    * misaligned at every onset.
    */
   from_measure?: number;
+  /** What the microphone applied. Omitted when there is no report at all. */
+  capture?: CaptureReportBody;
+}
+
+/**
+ * What the microphone applied to a take, as the device reported it.
+ *
+ * Diagnostic only — nothing in the pipeline reads it. The app asks for raw
+ * audio, and this is whether it got it: `null` on a flag is "the device did
+ * not say", `fell_back` is "the raw request was refused and the browser's
+ * defaults were taken".
+ *
+ * **Named rather than inline** so `test_client_body_fields.py` can hold it
+ * against the server's `CaptureReport`. That model ignores keys it does not
+ * know, so that a newer client is never refused over a diagnostic — which
+ * also means a misspelt field here would be dropped in silence.
+ */
+interface CaptureReportBody {
+  auto_gain_control: boolean | null;
+  noise_suppression: boolean | null;
+  echo_cancellation: boolean | null;
+  sample_rate: number | null;
+  channel_count: number | null;
+  fell_back: boolean;
 }
 
 /**

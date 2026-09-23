@@ -1,5 +1,6 @@
 import type { TakeSubmissionState } from '../../data/practice/submitTake';
 import type { MetronomeMode } from '../../data/types';
+import { describeCapture, type CaptureReport } from '../audio/capture';
 
 /**
  * Takes recorded and not yet accepted by the server.
@@ -27,6 +28,8 @@ import type { MetronomeMode } from '../../data/types';
 export interface QueuedTake {
   /** Local, ours, and stable across restarts. Not the analysis id. */
   id: string;
+  /** Supabase auth user id. Never submit under a different session. */
+  accountId: string;
   scoreId: string;
   targetBpm: number;
   metronomeMode: MetronomeMode;
@@ -34,6 +37,12 @@ export interface QueuedTake {
   filename: string;
   skipLongRests: boolean;
   fromMeasure: number | null;
+  /**
+   * What the microphone applied, carried so a take sent later reports it the
+   * same as one sent at once. Optional: a picked file has none, and neither
+   * does an entry written before this field existed.
+   */
+  capture?: CaptureReport;
   /**
    * Progress from an earlier attempt, and the reason this queue can be drained
    * safely.
@@ -121,6 +130,7 @@ function valid(value: unknown): value is QueuedTake {
   const t = value as Partial<QueuedTake>;
   return (
     typeof t.id === 'string' && t.id.length > 0 &&
+    typeof t.accountId === 'string' && t.accountId.length > 0 &&
     typeof t.scoreId === 'string' && t.scoreId.length > 0 &&
     typeof t.targetBpm === 'number' && Number.isFinite(t.targetBpm) &&
     typeof t.filename === 'string' && t.filename.length > 0 &&
@@ -157,8 +167,34 @@ export async function load(store: TakeStore): Promise<LoadedQueue> {
   if (!Array.isArray(raw)) {
     return { takes: [], unreadable: 0 };
   }
-  const takes = raw.filter(valid);
+  const takes = raw.filter(valid).map(withReadableCapture);
   return { takes, unreadable: raw.length - takes.length };
+}
+
+/**
+ * A stored capture report, read again rather than trusted.
+ *
+ * **Deliberately not part of `valid`.** An entry that fails `valid` is a take
+ * the musician loses; a malformed report is a diagnostic the server would
+ * refuse, and a take that cannot drain because of one is the same loss by a
+ * longer route. So the report is put back through `describeCapture` — the
+ * report's own keys are the track-settings keys it was built from — and one
+ * that is not an object at all is dropped, leaving the take.
+ */
+function withReadableCapture(take: QueuedTake): QueuedTake {
+  const stored: unknown = take.capture;
+  if (stored === undefined) {
+    return take;
+  }
+  if (!stored || typeof stored !== 'object') {
+    const { capture: _dropped, ...rest } = take;
+    return rest;
+  }
+  const report = stored as Record<string, unknown>;
+  return {
+    ...take,
+    capture: describeCapture(report, { fellBack: report.fellBack === true }),
+  };
 }
 
 /**

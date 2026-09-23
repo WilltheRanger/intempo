@@ -28,7 +28,8 @@
         {
           "photosPermission": "InTempo reads photos of sheet music you choose, so they can be transcribed."
         }
-      ]
+      ],
+      "@sentry/react-native"
     ],
     "ios": {
       "bundleIdentifier": "com.intempo.app",

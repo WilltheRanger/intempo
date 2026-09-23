@@ -1,6 +1,8 @@
 import type { TakeSubmissionState } from '../../data/practice/submitTake';
 import type { MetronomeMode } from '../../data/types';
-import { deviceTakeStore } from './takeQueue.store';
+import type { CaptureReport } from '../audio/capture';
+import { getActiveAccountId } from '../../data/auth/session';
+import { deviceTakeStoreFor } from './takeQueue.store';
 import {
   enqueue,
   load,
@@ -46,20 +48,30 @@ function idFor(filename: string): string {
 
 /** Hold a take that could not be sent, so an app kill does not lose it. */
 export async function keepTakeForLater(
-  recording: { audio: Blob; filename: string; resume?: TakeSubmissionState },
+  recording: {
+    audio: Blob;
+    filename: string;
+    resume?: TakeSubmissionState;
+    capture?: CaptureReport;
+  },
   context: TakeContext,
   lastError: string,
 ): Promise<void> {
   try {
+    const accountId = await getActiveAccountId();
+    if (!accountId) return;
+    const deviceTakeStore = deviceTakeStoreFor(accountId);
     const id = idFor(recording.filename);
     await remove(deviceTakeStore, id);
     const queued = await enqueue(
       deviceTakeStore,
       {
         ...context,
+        accountId,
         filename: recording.filename,
         resume: recording.resume ?? {},
         audio: recording.audio,
+        ...(recording.capture ? { capture: recording.capture } : {}),
       },
       Date.now(),
       id,
@@ -79,6 +91,9 @@ export async function keepTakeForLater(
 /** The server has it. Drop the copy. */
 export async function takeWasAccepted(filename: string): Promise<void> {
   try {
+    const accountId = await getActiveAccountId();
+    if (!accountId) return;
+    const deviceTakeStore = deviceTakeStoreFor(accountId);
     await remove(deviceTakeStore, idFor(filename));
   } catch {
     // A stale entry is recovered by the next restore, which reads the bytes
@@ -92,6 +107,7 @@ export interface RestoredTake {
   filename: string;
   resume: TakeSubmissionState;
   lastError: string | null;
+  capture?: CaptureReport;
 }
 
 /**
@@ -107,6 +123,9 @@ export async function restoreQueuedTake(
   scoreId: string,
 ): Promise<RestoredTake | null> {
   try {
+    const accountId = await getActiveAccountId();
+    if (!accountId) return null;
+    const deviceTakeStore = deviceTakeStoreFor(accountId);
     const { takes } = await load(deviceTakeStore);
     const mine = takes
       .filter((take: QueuedTake) => take.scoreId === scoreId)
@@ -119,6 +138,7 @@ export async function restoreQueuedTake(
           filename: take.filename,
           resume: take.resume,
           lastError: take.lastError,
+          capture: take.capture,
         };
       }
       await remove(deviceTakeStore, take.id);
@@ -138,6 +158,9 @@ export async function restoreQueuedTake(
  */
 export async function forgetTakesFor(scoreId: string): Promise<void> {
   try {
+    const accountId = await getActiveAccountId();
+    if (!accountId) return;
+    const deviceTakeStore = deviceTakeStoreFor(accountId);
     await removeForScore(deviceTakeStore, scoreId);
   } catch {
     // See the module docstring: never at the cost of the thing it is attached

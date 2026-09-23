@@ -1,5 +1,186 @@
 # InTempo Decisions
 
+## 2026-09-23 — Each take reports what the microphone applied, and the report can never refuse it
+
+**Context.** The web recorder asks for raw audio — auto-gain, noise
+suppression and echo cancellation off — because each moves an attack and
+attacks are what the analysis measures. Nothing read the track's settings
+back. A refused request retries with `{ audio: true }`, the browser's
+defaults, and left no mark; an accepted request may still be processed. So
+whether any take was captured raw was unknowable, while every real take so far
+detects far more attacks than its page writes — a fault processing could cause.
+Modelling it a sixth time would not settle it; asking the device will.
+
+**Decision.** `lib/audio/capture.ts` turns `getSettings()` plus a `fellBack`
+flag into a report that rides on `Recording`, through the offline queue, and
+into `POST /v1/analyses` as `capture`, stored in `analyses.capture jsonb`
+(migration 026). `null` on a flag means the device did not say; it is never
+written as `false`. Nothing in the pipeline reads it.
+
+**Alternatives considered.**
+- *Six typed columns.* Nothing queries by field, and the shape is the
+  client's to extend; a migration per field buys nothing.
+- *Refuse the take on a deployment without the column,* as `from_measure`
+  does. That rule exists because judging from bar 1 is a wrong verdict. A lost
+  report changes no verdict, so the insert drops the key and logs instead.
+- *Validate the report strictly, request-wide.* The request forbids unknown
+  keys; the report ignores them, so a newer client adding a field is not
+  turned away. The queue re-reads a stored report through `describeCapture`
+  and drops one that is not an object rather than let it block a drain.
+
+**Trade-offs accepted.** The native recorder and picked files report nothing
+(absent, not all-null). Settings are read once at open; a device that changed
+processing mid-take would be misdescribed.
+
+## 2026-09-22 — The take decides how the page was played
+
+**Context.** The analysis built one timeline per page — the page exactly as
+printed — and a take that did not follow it was refused as a wrong piece.
+Measured end to end on takes with every note on time:
+
+    slurred passage, slurred notes heard by the detector    0.385  refused
+    printed repeat, not taken                               0.000  refused
+    stopped in bar 6, went back to bar 5                    0.134  refused
+
+None of these is a mistake, and two of them are most of what practice is.
+
+**Decision.** *Build each plausible reading of the page as a timeline, align the
+take against every one, and keep the page as written unless another fits by
+more than `MIN_READING_GAIN` (the trim search's margin, for its reason).*
+`analysis.Reading`, `readings_of`, `_with_restarts`. Legato and repeats-not-taken
+are built only where the page has slurs or repeats; restarts are only looked
+for on a take the chosen reading scores under `warn_quality`. A stop that
+carried on from where it stopped is scored as a candidate — without it the
+nearest restart wins by default and invents missed notes — but is never
+chosen: it is indistinguishable from bars of rest the transcription missed,
+which must still be refused with the hint to look for them. A page with
+neither slurs nor repeats is aligned exactly once, as before, and a take that
+already reads is never re-read — so nothing that reads today can move.
+
+**Alternatives considered.**
+
+- *Ask the musician* — a "took the repeat" switch, a "slurred notes sound"
+  switch. Rejected: it is UI (the §2 gate), it is a question they would answer
+  wrongly as often as not about their own playing, and the take already holds
+  the answer.
+- *Always use the legato reading.* Rejected: a slurred note the detector does
+  not hear would then be expected and missing, and the matcher is measurably
+  weaker when most of the page is optional (see the three matcher changes this
+  needed in `TUNING_LOG.md`). The page as written stays the default.
+- *Segment the take at every silence and align each piece as a subsequence.*
+  Rejected after reasoning it through: on a page of uniform rhythm a short
+  segment fits anywhere, and the restart point is exactly what the rhythm
+  cannot tell. Building "played to note k, then from bar c" as a timeline lets
+  the whole take vote, and ties go to the latest bar — the nearest phrase is
+  where musicians go back to.
+
+**Trade-offs accepted.** More alignments per take: up to four static readings,
+and on a weak take roughly seventy candidate restarts per stop, each one DTW.
+Measured end to end on a take that stopped and went back: the restart search
+takes 0.07 s on 40 onsets and 0.41 s on 256, of a whole analysis of 1.4 s. A
+restart that repeats bars averages both passes in `PerMeasure`, as a taken
+repeat already does. A musician who restarts without stopping — no silence —
+is not recognised.
+
+## 2026-09-22 — Onsets are found on the coarse grid and placed on a fine one
+
+**Context.** Every onset time sat on the 23.2 ms analysis hop. A metronomic take
+at 120 BPM read ±12 ms of alternation — half the inner tolerance band before
+the musician did anything — and where on an attack the onset landed moved 35 ms
+between a 5 ms and a 120 ms bow rise.
+
+**Decision.** *Detection is unchanged; each detected onset is then placed on a
+2.9 ms grid* (`audio.refine_onset_times`: 1024-point window, 64-sample hop,
+the half-rise point of the flux). Within-note jitter 6.9 → 1.4 ms on bowed
+violin, spread across attack shapes 34.8 → 12.6 ms.
+
+**Alternatives considered.** *A finer hop for the detector itself.* Rejected:
+every tuned number — `delta`, the peak-pick window, `wait_ms`, the recovery
+floor — is in frames or relative to a frame-rate envelope, so changing the hop
+re-tunes all of it at once with no corpus to tune against. *`backtrack=True`.*
+Rejected: it rolls back to the preceding energy minimum, still on the coarse
+grid, and on a sustained line the minimum can sit far before the attack.
+
+**Trade-offs accepted.** A second, local spectrogram per onset — a few
+milliseconds each. And it exposed a matcher weakness the coarse grid had been
+hiding by luck (`STEP_PENALTY_CAPS`, `TUNING_LOG.md`).
+
+## 2026-09-22 — The bass's high-pass is declared inert rather than moved
+
+**Context.** `highpass_hz` filters the waveform before detection, and the
+detector reads *log*-spectral flux, which cancels any fixed filter: envelope
+correlation 0.9999 with and without it.
+
+**Decision.** *Say so beside the knob and in `audio.high_pass`, pin it in
+`test_onset_placement.py`, and leave the waveform filter for the dashboard.*
+
+**Alternatives considered.** *Move the cutoff into the detector as the lowest
+mel band.* Built and measured: 0.9999 dry, 0.9993 in a live room, and 50 Hz
+notes all still found with the bands starting at 150 Hz — leakage sixty
+decibels down makes the same log-flux as the note. Reverted, because a
+mechanism that measures as nothing is a claim the code would be making falsely.
+What made that acceptable is the third measurement: a 45–60 Hz boom at five
+times the notes' peak is not detected even with no filter at all, so the risk
+the filter was written for does not arise in this detector.
+
+## 2026-09-22 — The pipeline is told which instrument it is hearing
+
+**Context.** This app is for four string instruments and the analysis could
+distinguish two things: a double bass, and everything else.
+`analysis_runner` computed `instrument == Instrument.double_bass.value` and
+handed `analyze()` a boolean, so violin, viola and cello shared one path — the
+one whose peak-pick threshold was chosen for a violin. A viola's open C is
+131 Hz and a cello's is 65 Hz, the latter below the 80 Hz high-pass only the
+bass was given, and the analysis had no way to know which of the three it was
+reading. A row whose `instrument` column predated the feature also resolved to
+that path, so a cellist could be analysed as a violinist twice over.
+
+The settings were decided in three places as well: `detect_onsets` chose the
+threshold, `prepare_for_alignment` chose whether to filter, and the runner
+decided what counted as a bass. Three decisions that had to agree, and nothing
+made them.
+
+**Decision.** *Pass the instrument, not a boolean about one of them, and
+resolve both settings in one place.*
+
+`[onset.instrument.<name>]` in `config.toml` holds a `delta` and a
+`highpass_hz` per instrument; `audio.onset_settings_for(config, instrument)`
+is the single resolver. **Every instrument is seeded with exactly the value it
+was already getting**, so no reading changes: the six corpus clips are
+identical, quality, status, direction and per-note count.
+
+**Alternatives considered.**
+
+*Add a `cello` boolean beside `double_bass`.* Where the existing shape leads,
+and it does not scale past the next instrument — nor does it fix the three
+scattered decisions, it adds a fourth.
+
+*Put the resolver on `OnsetConfig` as a method.* Where it was first written,
+and it silently blinded `test_tuning_knobs.py`: that file proves every value
+in `config.toml` reaches something that reads it, by looking for attribute
+access in the pipeline modules *excluding the loader* — because the loader
+writes every field and counting it would make the proof vacuous. A resolver on
+the dataclass is a read inside the loader, so four knobs stopped being
+provably live the moment it went there. The resolver belongs in the pipeline;
+the loader loads.
+
+*Give viola and cello their own thresholds now.* The change this is really
+for, and it cannot be made here. `TUNING_LOG.md` reserves onset thresholds for
+the six-clip corpus and `fixtures/audio/README.md` records that none of it is
+recorded yet — "only a real instrument in a real room can answer that". Values
+invented for a cello would be the exact failure that file warns about.
+
+**Trade-offs accepted.** The three treble rows in the new table are identical,
+which reads like duplication and is the point: it is what they are today, not
+what is right. `test_the_instrument_decides_the_onset_settings` names viola and
+cello explicitly so that the day either gets its own numbers the test fails and
+says so.
+
+`double_bass` survives as a keyword on `detect_onsets`, `prepare_for_alignment`
+and `analyze` because twenty-eight tests assert bass behaviour through it;
+rewriting them all to say the same thing differently is a diff nobody would
+review (§5). `instrument` wins where both are given.
+
 ## 2026-09-21 — The page decides how close two notes can be
 
 **Context.** A musician played the first half of a 25-bar part from bar 1 and

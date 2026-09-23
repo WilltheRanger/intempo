@@ -987,6 +987,57 @@ nothing else covers `backend/`. Named here rather than left to be found.
     applied within a quarter of the closest written gap of a time the page and
     the take's own fitted pace agree on.
 
+- **That second pass searched the wrong clock, and every fixture hid it
+  (2026-09-22).** It predicted a missed note on the *take's* clock — seconds
+  since the first note — and searched the envelope on the *recording's*. The
+  only take that exercised it started its first note at 0.0 s, where the two
+  agree. On any take with a lead-in, which is every real one, it searched that
+  many seconds early and handed back whatever peak it found there as the
+  missed note: 0.2–0.4 s from any note on the page, read as though real. Fixed
+  and pinned by a test that hides one clear note from the first pass.
+
+  **Fixing it surfaced the guard it had never needed.** Searching the right
+  place, it "recovered" a genuinely dropped note from the log-flux wiggle of
+  room tone — and that wiggle was *more* prominent than some real quiet notes
+  under reverb (1.6× its neighbourhood against 1.2–1.5×), so no prominence
+  threshold separates them. Level does: room tone sits at the take's noise
+  floor, a note lost in a live room is still 30+ dB above it.
+  `[onset.recovery] min_level_db`. **When a pass has only ever run on
+  fixtures that start at zero, ask whether it has ever run at all.**
+
+- **A log-spectral detector cannot be filtered (2026-09-22).** The flux
+  differences *log* mel spectra, so any fixed filter on the waveform is a
+  constant per band that the difference removes: the bass's 80 Hz high-pass
+  and the pre-emphasis both measure at envelope correlation 0.998–0.9999, and
+  `highpass_hz` changes no onset. Moving the cutoff into the detector's own
+  bands was built and measured no better — leakage sixty decibels down makes
+  the same log-flux as the note. And the room boom it was meant to stop is not
+  detected with no filter at all, because it moves two or three of 128 bands.
+  `config.toml` says so beside the knob; `test_onset_placement.py` holds it.
+
+- **The 23 ms frame grid was hiding a matcher bug (2026-09-22).** Placing onsets
+  on a 2.9 ms grid (`audio.refine_onset_times`) made seven notes of a varied page
+  mis-pair after a bar held exactly one beat long — the take then sits exactly
+  two eighths behind, a two-note slide through a bar of equal eighths is
+  perfect by position, and a sideways DTW step cost nothing extra. The coarse
+  grid's jitter had been breaking that tie the right way by luck.
+  `STEP_PENALTY_CAPS` prices a sideways step; swept flat from 2 to 6. **When
+  more precise input makes a result worse, the precision found a bug.**
+
+- **A page is not always played as printed (2026-09-22).** Slurred notes the
+  detector hears, a printed repeat not taken, stopping and going back two bars
+  — each was refused as a wrong piece on a take with every note on time.
+  `analysis.Reading` builds each as a timeline and keeps the page as written
+  unless another fits by `MIN_READING_GAIN`; restarts are only looked for on a
+  take under `warn_quality`, so nothing that reads today can move. A stop that
+  simply carried on is *scored* but never *chosen*: it looks exactly like bars
+  of rest the transcription missed, and those must still be refused. The slur reading needed three matcher changes before a
+  *mixture* of heard and unheard slurred notes read cleanly — measuring an
+  interval back across unheard optional notes, capping what crossing one
+  costs the path, and trying the set tempo when the gaps cannot give a pace.
+  The pure cases passed long before the mixed one did, and the mixed one is
+  the real one.
+
 - **The pipeline already knew three things about every take and said none of
   them (2026-09-19).** `_residuals` fits `rate, offset = np.polyfit(...)` on
   every analysis and returns only the residuals. `services/insights.py` now

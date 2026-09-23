@@ -1,3 +1,5 @@
+import type { CaptureReport } from './capture';
+
 /**
  * The recorder contract, shared by the native and web implementations.
  *
@@ -13,6 +15,14 @@ export interface Recording {
   seconds: number;
   /** True when the take hit `MAX_TAKE_SECONDS` and the tail was dropped. */
   truncated: boolean;
+  /**
+   * The processing the microphone applied, as the device reports it.
+   *
+   * Optional because only the web recorder can read it: the native one has no
+   * `getSettings` to ask. Absent means "not asked", which is different from a
+   * report whose every field is `null`.
+   */
+  capture?: CaptureReport;
 }
 
 export interface Recorder {

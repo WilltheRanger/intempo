@@ -12,6 +12,7 @@ up, at times we control exactly.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from itertools import pairwise
 from pathlib import Path
 
 import numpy as np
@@ -194,6 +195,59 @@ def bass_scale(n: int, *, root_hz: float = OPEN_E1) -> list[float]:
 # chosen against the easy case. `docs/subsystems.md` records what that costs:
 # a change tuned on a pure sine read the *opposite* way on a bowed string.
 # These three are the axes a phone recording actually moves along.
+
+
+def synth_legato_line(
+    note_times_s: Sequence[float],
+    freqs_hz: Sequence[float],
+    bow_changes_s: Sequence[float],
+    *,
+    sr: int = 22050,
+    glide_s: float = 0.012,
+    tail_s: float = 1.0,
+) -> np.ndarray:
+    """A slurred line: one continuous bowed tone that changes pitch at every
+    note and changes bow only where `bow_changes_s` says.
+
+    **The fixture the slur logic never had.** `04_slurred` models a note under
+    a slur as silence — "the honest worst case" — which is the one case the
+    old timeline was right about. A real legato line keeps sounding and moves
+    its partials to a new pitch, and a spectral-flux detector hears new energy
+    in new bands whether the bow changed or not.
+
+    Phase-continuous, so a pitch change is not a click: the frequency glides
+    over `glide_s` and the waveform never jumps. The amplitude dips and rises
+    only at a bow change, and a little vibrato keeps the sustain from being a
+    flat line a detector could never fire on.
+    """
+    n = int(((max(note_times_s) if note_times_s else 0.0) + tail_s) * sr)
+    t = np.arange(n) / sr
+    f = np.full(n, float(freqs_hz[0]))
+    for index in range(1, len(note_times_s)):
+        start = int(note_times_s[index] * sr)
+        glide = int(glide_s * sr)
+        ramp = np.linspace(freqs_hz[index - 1], freqs_hz[index], glide)
+        f[start : start + glide] = ramp[: max(0, min(glide, n - start))]
+        f[start + glide :] = freqs_hz[index]
+    f = f * (1 + 0.004 * np.sin(2 * np.pi * 5.5 * t))
+    phase = 2 * np.pi * np.cumsum(f) / sr
+    y = np.zeros(n)
+    for partial in range(1, 30):
+        if partial * max(freqs_hz) < 0.45 * sr:
+            y += np.sin(partial * phase) / partial
+    envelope = np.zeros(n)
+    edges = [int(b * sr) for b in bow_changes_s] + [n]
+    for a, b in pairwise(edges):
+        segment = np.ones(b - a)
+        rise = min(int(0.035 * sr), b - a)
+        segment[:rise] = 0.5 * (1 - np.cos(np.linspace(0, np.pi, rise)))
+        release = min(int(0.02 * sr), b - a)
+        segment[-release:] *= np.linspace(1, 0.15, release)
+        envelope[a:b] = segment
+    y = y * envelope
+    y = y / max(1e-9, float(np.abs(y).max())) * 0.5
+    noise = np.random.default_rng(5).normal(0, MIC_NOISE_FLOOR, n)
+    return (y + noise).astype(np.float32)
 
 
 def add_noise_at_snr(y: np.ndarray, snr_db: float, *, seed: int = 7) -> np.ndarray:

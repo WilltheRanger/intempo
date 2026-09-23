@@ -122,8 +122,48 @@ def test_a_perfect_take_does_not_read_as_all_disturbance() -> None:
     jitter = rng.normal(0, 0.012, 40)  # ±12 ms, a good player
     deltas = _deltas(list(np.cumsum(jitter)))
 
-    # Nothing re-anchored: the deltas are the running sum, untouched.
-    assert deltas == pytest.approx(np.cumsum(jitter) * 1000.0 - jitter[0] * 1000.0)
+    # Nothing re-anchored: one reference for the whole take, so every interval
+    # between two deltas is the interval the musician played. (Where that one
+    # reference sits is read from several notes rather than the first — see
+    # the origin tests below — so the running sum is shifted, not reshaped.)
+    assert np.diff(deltas) == pytest.approx(np.diff(np.cumsum(jitter)) * 1000.0)
+
+
+def test_one_late_first_note_is_not_copied_onto_every_other_note() -> None:
+    """**The reference used to be the first note, and one note is not a pulse.**
+
+    A bow starting from silence speaks tens of milliseconds later than one
+    already moving. Measured end to end, a take played exactly on the grid at
+    120 BPM with only its first note 40 ms late: 27 of 32 notes `slight`, and
+    "You rushed across measures 1–4 by an average of 9 BPM". The other
+    thirty-one notes were perfect.
+    """
+    deltas = _deltas([0.04] + [0.0] * 19)
+
+    assert deltas[0] == pytest.approx(40.0), "the late note is the one that was late"
+    assert np.all(np.abs(deltas[1:]) < 1e-6), "the others were blamed for it"
+
+
+def test_one_early_first_note_is_not_copied_onto_every_other_note() -> None:
+    deltas = _deltas([-0.04] + [0.0] * 19)
+
+    assert deltas[0] == pytest.approx(-40.0)
+    assert np.all(np.abs(deltas[1:]) < 1e-6)
+
+
+def test_the_origin_reads_through_a_varied_rhythm() -> None:
+    """Projected along written time, not note count: a steady 5% rush through
+    quarters and eighths is still a straight ramp in time, and the first note
+    still sits exactly on it."""
+    written = np.cumsum([0.0, 1.0, 0.5, 0.5, 1.0, 0.5, 0.5, 1.0, 1.0, 0.5, 0.5])
+    offsets = -0.05 * written
+    offsets[0] += 0.03  # and the first note alone a little late
+    deltas = (
+        offsets - _pulse_anchors(offsets, BEAT_S, positions=written)
+    ) * 1000.0
+
+    assert deltas[0] == pytest.approx(30.0, abs=1e-6)
+    assert deltas[1:] == pytest.approx(-50.0 * written[1:], abs=1e-6)
 
 
 def test_an_empty_take_does_not_raise() -> None:
@@ -231,7 +271,7 @@ class TestConfidenceAsksTheSameQuestionAsTheVerdict:
 
     @pytest.mark.parametrize(
         "name",
-        ["every other note", "a rhythm of its own"],
+        ["every other note", "note values drawn at random"],
     )
     def test_the_takes_that_must_be_refused_still_are(self, name: str) -> None:
         """Both of these span the whole page and neither is the music on it.
@@ -241,19 +281,24 @@ class TestConfidenceAsksTheSameQuestionAsTheVerdict:
         is the defect that made every one of the first eight real takes fail —
         the same reason the test above gives for not refusing a first half.
         What is left here are the two takes that are *not* passages: one plays
-        every other note of the page, the other a rhythm the page never wrote,
-        and both still score under `broken_quality`.
+        every other note of the page, the other note values the page never
+        wrote, and both still score under `broken_quality`.
         """
         expected = self._expected()
         detected = {
             "first half": expected[: expected.size // 2],
             "every other note": expected[::2],
             "last third": expected[2 * expected.size // 3 :],
-            "a rhythm of its own": np.concatenate(
+            # Was a 2:1 swing, which is now analysed rather than refused — see
+            # `test_long_takes.py`, where the reason is pinned. Values drawn at
+            # random are the rhythm the page never wrote that still is refused.
+            "note values drawn at random": np.concatenate(
                 [
                     [0.0],
                     np.cumsum(
-                        np.array([0.55, 0.28] * expected.size)[: expected.size - 1]
+                        np.random.default_rng(1).choice(
+                            [0.21, 0.42, 0.83, 1.25], expected.size - 1
+                        )
                     ),
                 ]
             ),

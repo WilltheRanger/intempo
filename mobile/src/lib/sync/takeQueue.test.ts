@@ -81,6 +81,7 @@ const T0 = 1_770_000_000_000;
 
 function aTake(overrides: Partial<NewTake> = {}): NewTake {
   return {
+    accountId: 'account-a',
     scoreId: 'score-1',
     targetBpm: 92,
     metronomeMode: 'off',
@@ -298,6 +299,58 @@ describe('reading storage written by an older build', () => {
     };
 
     await expect(load(store)).resolves.toEqual({ takes: [], unreadable: 0 });
+  });
+
+  it('carries the capture report through a restart', async () => {
+    const capture = {
+      autoGainControl: true,
+      noiseSuppression: null,
+      echoCancellation: false,
+      sampleRate: 48000,
+      channelCount: 1,
+      fellBack: true,
+    };
+    await enqueue(store, aTake({ capture }), T0, 'local-1');
+
+    expect((await load(store)).takes[0].capture).toEqual(capture);
+  });
+
+  /**
+   * **A diagnostic must not cost a take.** A report the server would refuse is
+   * a take that can never drain, which is the same loss as dropping it by a
+   * longer route — so the report is re-read, and one that is not a report at
+   * all is dropped while the take is kept.
+   */
+  it('keeps a take whose stored capture report is unreadable', async () => {
+    await enqueue(store, aTake(), T0, 'local-1');
+    const [kept] = (await load(store)).takes;
+    store.corrupt([
+      { ...kept, id: 'not-an-object', capture: 'processed' },
+      {
+        ...kept,
+        id: 'bad-fields',
+        capture: { autoGainControl: 'yes', sampleRate: -1, fellBack: 1 },
+      },
+    ]);
+
+    const loaded = await load(store);
+
+    expect(loaded.unreadable).toBe(0);
+    expect(loaded.takes[0]).not.toHaveProperty('capture');
+    expect(loaded.takes[1].capture).toEqual({
+      autoGainControl: null,
+      noiseSuppression: null,
+      echoCancellation: null,
+      sampleRate: null,
+      channelCount: null,
+      fellBack: false,
+    });
+  });
+
+  it('adds no report to an entry that never had one', async () => {
+    await enqueue(store, aTake(), T0, 'local-1');
+
+    expect((await load(store)).takes[0]).not.toHaveProperty('capture');
   });
 });
 

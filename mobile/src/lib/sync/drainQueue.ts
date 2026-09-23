@@ -35,6 +35,7 @@ import {
 
 export interface DrainDeps {
   store: TakeStore;
+  accountId: string;
   /** Send one take. Resolves only once the server has it. */
   submit(take: QueuedTake, audio: Blob): Promise<void>;
   /**
@@ -61,7 +62,9 @@ export type DrainStop =
   /** An attempt failed in a way another attempt could fix. */
   | 'failed'
   /** An attempt failed in a way another attempt cannot fix — the quota. */
-  | 'blocked';
+  | 'blocked'
+  /** A malformed or migrated entry claims a different owner. Never send it. */
+  | 'account-mismatch';
 
 export interface DrainReport {
   /** Takes the server accepted in this pass. */
@@ -113,7 +116,7 @@ function resumeFrom(error: unknown): TakeSubmissionState | undefined {
  * this line; this draws the same one.
  */
 export async function drainTakes(deps: DrainDeps): Promise<DrainReport> {
-  const { store, submit, read, now } = deps;
+  const { store, accountId, submit, read, now } = deps;
   let sent = 0;
   let discarded = 0;
   /**
@@ -143,6 +146,10 @@ export async function drainTakes(deps: DrainDeps): Promise<DrainReport> {
       };
     }
     handled.add(take.id);
+
+    if (take.accountId !== accountId) {
+      return { sent, discarded, stopped: 'account-mismatch', nextDueAt: null };
+    }
 
     const audio = await store.getAudio(take.audioName);
     if (!audio) {

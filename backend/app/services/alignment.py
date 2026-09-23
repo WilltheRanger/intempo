@@ -118,6 +118,24 @@ class ExpectedNote:
     #: half the written value late, and the page does not choose. So it is not
     #: banded, exactly as `after_fermata` is not.
     after_grace_note: bool = False
+    #: A note under a slur — no bow change — in the reading where it is heard.
+    #:
+    #: **The timeline assumed a slurred note makes no onset, and a detector
+    #: that reads spectral flux hears a pitch change.** A new note is energy
+    #: arriving in new bands whether or not the bow changed. On a synthetic
+    #: legato line — one bow per four eighths, the pitch stepping at every note
+    #: — the detector fired on all 24 of 24 slurred pitch changes. The page's
+    #: timeline held only the 8 bow changes, the detector's window was sized
+    #: from *their* spacing (±464 ms), and it kept whichever pitch change
+    #: happened to be loudest in each window: a perfectly played slurred
+    #: passage was refused with "Check you're on the right piece".
+    #:
+    #: Whether a given slurred note is heard depends on the instrument, the
+    #: interval, the room and the player, so neither reading can be assumed.
+    #: Both are built and the take chooses (`analysis.readings_of`). In this
+    #: one the note is **optional** — like a grace note, not hearing it is not
+    #: a mistake — and it is not timed, exactly as a slurred note never was.
+    under_slur: bool = False
 
 
 @dataclass(frozen=True)
@@ -149,8 +167,14 @@ def _beats(duration: str) -> float:
         ) from None
 
 
-def expand_repeats(score: ScoreJson) -> list[Measure]:
+def expand_repeats(score: ScoreJson, *, take_repeats: bool = True) -> list[Measure]:
     """The measures in playing order, with repeated sections written out twice.
+
+    `take_repeats=False` is the other way a page is played — straight through,
+    the way most people practise a passage with a repeat in it. Each section is
+    played once, and where it has a second ending the player skips the first
+    and takes the second, which is what that bracket is for. A section with no
+    second ending is played once as written. See `analysis.readings_of`.
 
     **`build_timeline` walked `score.measures` once and ignored
     `score.repeats` entirely.** A musician who takes an eight-bar repeat plays
@@ -290,8 +314,19 @@ def expand_repeats(score: ScoreJson) -> list[Measure]:
             written = play(body, inside)
             firsts = bracketed(first_brackets, span, body)
             seconds = bracketed(second_brackets, span, body)
-            out.extend(n for n in written if n not in seconds)
-            out.extend(n for n in written if n not in firsts)
+            if take_repeats:
+                out.extend(n for n in written if n not in seconds)
+                out.extend(n for n in written if n not in firsts)
+            elif seconds or (
+                firsts
+                and stop + 1 < len(numbers)
+                and any(start == numbers[stop + 1] for start, _ in second_brackets)
+            ):
+                # Straight through: the second time bar is the way on, whether
+                # it was read inside the span or, as usual, just after it.
+                out.extend(n for n in written if n not in firsts)
+            else:
+                out.extend(n for n in written if n not in seconds)
             position = stop + 1
         return out
 
@@ -331,7 +366,13 @@ def expand_repeats(score: ScoreJson) -> list[Measure]:
 ORNAMENT_SHARE = 0.15
 
 
-def build_timeline(score: ScoreJson, target_bpm: float) -> ExpectedTimeline:
+def build_timeline(
+    score: ScoreJson,
+    target_bpm: float,
+    *,
+    legato: bool = False,
+    take_repeats: bool = True,
+) -> ExpectedTimeline:
     """Walk the score, accumulating time, emitting one entry per *sounded* onset.
 
     - Rests advance the clock but produce no onset.
@@ -340,7 +381,11 @@ def build_timeline(score: ScoreJson, target_bpm: float) -> ExpectedTimeline:
     - Slur interiors are marked so classification can suppress per-note
       timing there (musical license within one bow; §4 layer 2).
     - **Repeated sections are written out twice**, because the musician plays
-      them twice. See `expand_repeats`.
+      them twice. See `expand_repeats`; `take_repeats=False` is the reading
+      where they did not.
+
+    `legato=True` is the other reading of a slur: the notes under the bow
+    *are* heard. See `ExpectedNote.under_slur`.
     """
     under_tempo_change = measures_under_tempo_change(score)
     if target_bpm <= 0:
@@ -362,7 +407,7 @@ def build_timeline(score: ScoreJson, target_bpm: float) -> ExpectedTimeline:
     #: into is the one between *sounds*.
     last_onset_beats: float | None = None
 
-    played = expand_repeats(score)
+    played = expand_repeats(score, take_repeats=take_repeats)
     # Read over the *played* order, not the written one: a repeat plays the
     # measures again, and a tie across the repeat's seam is a tie in that pass.
     ties = read_ties(played)
@@ -416,6 +461,31 @@ def build_timeline(score: ScoreJson, target_bpm: float) -> ExpectedTimeline:
             # two different pitches deleted an onset the musician had actually
             # attacked, and every note after it aligned against the wrong one.
             sounded = not is_rest and not ties.absorbed[position] and not under_the_bow
+            if legato and under_the_bow and not is_rest and not ties.absorbed[position]:
+                # The same note, heard: an onset the page places exactly, that
+                # nobody may be faulted for not producing and nobody is timed
+                # on. No ornament is placed before it — an ornament under a
+                # slur is the rare case, and inventing an attack for one in
+                # the reading that exists to *allow* attacks would be the one
+                # place this could add a note the page does not print.
+                onsets.append(elapsed_beats * sec_per_beat)
+                notes.append(
+                    ExpectedNote(
+                        onset_s=elapsed_beats * sec_per_beat,
+                        measure_number=measure.measure_number,
+                        note_index_in_measure=i,
+                        global_index=global_index,
+                        is_slur_interior=True,
+                        is_slur_boundary=False,
+                        under_tempo_change=(
+                            measure.measure_number in under_tempo_change
+                        ),
+                        beats=_beats(note.duration),
+                        under_slur=True,
+                    )
+                )
+                last_onset_beats = elapsed_beats
+                global_index += 1
             if sounded:
                 # **The ornament first, because it is played first.**
                 #
@@ -612,14 +682,124 @@ POSITION_WEIGHT = 0.5
 #:     no cap          48 wrong
 POSITION_CAP_GAPS = 0.15
 
+#: What a path pays to merge or skip a note, beyond the cell it lands on, in
+#: units of the most that position can ever cost one cell.
+#:
+#: **Without it a sideways step was nearly free, and a hold of a whole beat
+#: made sliding sideways the cheaper answer.** A step off the diagonal cost
+#: only the cell it landed on, and in a run of equal intervals that cell is
+#: nearly zero. After a bar held exactly one beat long the take sits exactly
+#: two eighths behind the grid, so pairing each eighth of a later bar with the
+#: note two ahead is *perfect* by position and equal by interval — and the
+#: correct path paid the position cap on every one of those cells while the
+#: slid one paid two cheap sideways cells. Measured on the varied page: the
+#: correct path cost 4.057 and the slid one 3.969, and seven notes were paired
+#: wrongly. It had been hidden by the 23 ms frame grid, whose jitter happened
+#: to break the plateau the other way; it surfaced the moment onsets were
+#: placed precisely.
+#:
+#: Priced against the position cap because that is exactly what a slide buys:
+#: at most one cap per cell it straightens. Swept on the varied page's five
+#: attribution cases — clean, a bar held, a bar hurried, a note dropped, a note
+#: added: 0 and 1 mis-pair the held bar (7 notes) and 0 the hurried one (10);
+#: from 2 to 6 every case pairs every note correctly. Three is the middle of
+#: that flat region, not a tuned point. See `TUNING_LOG.md`, 2026-09-22.
+STEP_PENALTY_CAPS = 3.0
+
 
 def _clamp_ratio(ratio: float) -> float:
     """Hold a tempo rescale inside what a musician plausibly did."""
     return min(max(ratio, MIN_TEMPO_RATIO), MAX_TEMPO_RATIO)
 
 
+#: How many notes the level a stretch of playing sits at is read from.
+#:
+#: See `_settled_level`. Six is enough for a median to shrug off two bad notes
+#: and short enough that projecting across it with a straight line stays
+#: faithful to a take that is changing pace.
+LEVEL_NOTES = 6
+
+#: The fewest notes a stretch needs before its level is read from more than
+#: one of them. Below this there is no majority to consult, so the single note
+#: the stretch starts on is used, exactly as before this existed.
+MIN_LEVEL_NOTES = 3
+
+#: How many notes the stretch's pace is read from, to project the level along.
+#:
+#: **A Theil–Sen slope, not a median of intervals — the first version was the
+#: latter and made things worse.** Onset times sit on the analysis hop, so a
+#: steady quarter at 120 BPM is detected 21 and 22 frames apart in turn, a
+#: ±12 ms alternation, and a median of five consecutive intervals snaps to one
+#: side of it: a 2.5% pace error, projected across six notes into a 30 ms
+#: level error. A perfect take with a late first note still read 27 notes
+#: `slight`, and a steady player was told they drifted on 34 of 40 seeds.
+#: Pairwise slopes span several intervals and the alternation averages out.
+#:
+#: Short, because the slope is extrapolated back to the stretch's start: on a
+#: take that is steadily accelerating, a pace read from further in is faster
+#: than the opening's and moves the level. Measured on the accelerating case
+#: in `test_pulse_anchor.py`, the level moves 25 ms at 8 notes, 53 at 12, 78
+#: at 16 and 102 at 64, while the late-first-note and jitter cases read
+#: identically at every one of them.
+PACE_NOTES = 8
+
+
+def _settled_level(
+    offsets: np.ndarray,
+    positions: np.ndarray,
+    usable: np.ndarray,
+    start: int,
+    stop: int,
+) -> float:
+    """Where a stretch of playing sits against the grid, read from several notes.
+
+    **The reference used to be one note, and one note is not a pulse.** Every
+    delta in a take was measured from the offset of its first note, so any
+    error on that one note — a bow starting from silence speaks tens of
+    milliseconds later than one already moving, and the detector reports the
+    peak of an attack rather than its start — was copied onto every note after
+    it. Measured on a take played exactly on the grid at 120 BPM with only its
+    first note 40 ms late: 27 of 32 notes banded `slight`, and "You rushed
+    across measures 1–4 by an average of 9 BPM".
+
+    So the level is read from the first `LEVEL_NOTES` usable notes of the
+    stretch, each projected back to where the stretch starts along the
+    stretch's own pace, and the median taken. A straight ramp — steady
+    rushing — projects every note onto exactly the offset of the first, so it
+    reads exactly as it did; a single odd note is outvoted.
+
+    The pace is a Theil–Sen slope — the median of the slopes between every
+    pair — over up to `PACE_NOTES` notes, for the reason that constant gives.
+
+    `stop` is exclusive and is where the next disturbance begins: a level is
+    never read across a break in the pulse, because the notes on the far side
+    of one sit at a different level by definition.
+    """
+    stretch = [j for j in range(start, stop) if usable[j]][:PACE_NOTES]
+    if len(stretch) < MIN_LEVEL_NOTES:
+        return float(offsets[start])
+    at = np.asarray(positions[stretch], dtype=float)
+    level = np.asarray(offsets[stretch], dtype=float)
+    first, second = np.triu_indices(at.size, k=1)
+    spans = at[second] - at[first]
+    ok = spans > 0
+    rate = (
+        float(np.median((level[second] - level[first])[ok] / spans[ok]))
+        if ok.any()
+        else 0.0
+    )
+    near = slice(0, LEVEL_NOTES)
+    projected = level[near] - rate * (at[near] - float(positions[start]))
+    return float(np.median(projected))
+
+
 def pulse_anchors(
-    offsets: np.ndarray, beat_s: float, *, config: AudioConfig | None = None
+    offsets: np.ndarray,
+    beat_s: float,
+    *,
+    config: AudioConfig | None = None,
+    positions: np.ndarray | None = None,
+    usable: np.ndarray | None = None,
 ) -> np.ndarray:
     """The reference each note's drift is measured from, note by note.
 
@@ -649,11 +829,23 @@ def pulse_anchors(
     after note, while a bar held a quarter longer moves an interval by 208 ms —
     so neither sits near a decision, and both are starting values that want a
     real recording and an ear.
+
+    **Each anchor is a level read from several notes, not one note's offset** —
+    see `_settled_level`. `positions` are the notes' written times, so the
+    projection follows the take's pace through a varied rhythm; without them
+    notes are taken as evenly spaced. `usable` marks the notes whose written
+    time the page actually states, the only ones a level may be read from — an
+    ornament's time is an assumption this module made, and a note after a
+    fermata is late by the page's own instruction.
     """
     cfg = config or load_audio_config()
     anchors = np.empty(offsets.size, dtype=float)
     if offsets.size == 0:
         return anchors
+    if positions is None:
+        positions = np.arange(offsets.size, dtype=float)
+    if usable is None:
+        usable = np.ones(offsets.size, dtype=bool)
     steps = np.diff(offsets, prepend=offsets[0])
     # The take's own habit, robustly: what a typical interval error looks like
     # here, immune to the handful that are the disturbance.
@@ -665,13 +857,20 @@ def pulse_anchors(
     )
     disturbed = np.abs(steps - centre) > limit
 
-    anchor = offsets[0]
+    def next_break(after: int) -> int:
+        """The first disturbed note after `after`, or the end of the take."""
+        for j in range(after + 1, offsets.size):
+            if disturbed[j]:
+                return j
+        return offsets.size
+
+    anchor = _settled_level(offsets, positions, usable, 0, next_break(0))
     for i in range(offsets.size):
         anchors[i] = anchor
         # Re-anchor once the run ends, so the last note of the disturbance
         # still carries it and the next note starts from where the player is.
         if disturbed[i] and (i + 1 >= offsets.size or not disturbed[i + 1]):
-            anchor = offsets[i]
+            anchor = _settled_level(offsets, positions, usable, i, next_break(i))
     return anchors
 
 
@@ -818,6 +1017,7 @@ MAX_TEMPO_RATIO = 1.7
 #: exactly right: `expected` is built at `target_bpm`, the tempo the musician
 #: set.
 MIN_ONSETS_TO_ESTIMATE_TEMPO = 7
+
 
 
 def closest_expected_gap(
@@ -1157,6 +1357,18 @@ def align_take(
                         # — and `MIN_TRIM_GAIN` is a comparison between them.
                         steady=steady,
                         optional=optional,
+                        # **Trimming drops noise at the edges; it may not turn
+                        # the take into a passage.** A take that is not part
+                        # of the page untrimmed could become one by losing a
+                        # few notes — the span shrinks under the passage test —
+                        # and a passage's coverage is counted over the span it
+                        # lands in, so it loses nothing by the notes it threw
+                        # away. Measured on a page of one bar, four bars' rest
+                        # and two bars, played with the rest skipped: twelve
+                        # even quarters, trimmed by one and three into eight
+                        # that "were" bars 6–7, quality 1.000, bar 1's notes
+                        # named as bar 6's. The untrimmed take decides.
+                        subsequence_allowed=untrimmed.alignment.subsequence,
                     ),
                 )
             )
@@ -1183,6 +1395,7 @@ def align_dtw(
     config: AudioConfig | None = None,
     steady: np.ndarray | None = None,
     optional: np.ndarray | None = None,
+    subsequence_allowed: bool = True,
 ) -> AlignmentResult:
     """Align detected onsets to expected onsets with a constrained DTW.
 
@@ -1338,7 +1551,46 @@ def align_dtw(
         # so index 0 is comparable rather than a special case.
         played_gaps = np.diff(played, prepend=played[0] - (played[1] - played[0]))
         written_gaps = np.diff(written, prepend=written[0] - (written[1] - written[0]))
-        return np.abs(played_gaps[:, None] - written_gaps[None, :]) + (
+        interval = np.abs(played_gaps[:, None] - written_gaps[None, :])
+        # **Nothing precedes the first onset on either side**, so there is no
+        # interval into it to compare. The borrowed one stood in, and it is
+        # fine while the first two sounds are the first two notes — the corner
+        # the path is pinned to anyway. It is not fine when they are not: a
+        # slurred line whose second and third notes went unheard borrows a gap
+        # three notes long, every cell on the first row then costs two notes'
+        # worth of mismatch, and the path leaves that row at the first chance
+        # and pairs the next sound with the wrong note. Position decides there
+        # instead, and position is what the corner means.
+        interval[0, :] = 0.0
+        interval[:, 0] = 0.0
+        # **An optional note that was not heard does not end the interval.**
+        # The interval into a note was only ever measured from the note written
+        # just before it, so when that note is an ornament or a slurred note
+        # the musician did not sound, the true interval — from the last note
+        # that *was* heard — was compared against a fraction of itself. With
+        # every other slur heard the matching held; with a random half of the
+        # slurred notes heard it did not — quality 0.512 and two bow changes
+        # called missed, on a take with no note out of place. So a written
+        # interval may also be measured back across any run of optional notes,
+        # and the closest of those is the one compared.
+        if optional is not None and optional.size == written.size and optional.any():
+            skippable = np.asarray(optional, dtype=bool)
+            back = 2
+            reach = np.zeros(written.size, dtype=bool)
+            reach[1:] = skippable[:-1]  # the note just before j is optional
+            while reach.any() and back <= written.size - 1:
+                across = np.full(written.size, np.inf)
+                across[back:] = written[back:] - written[:-back]
+                across[~reach] = np.inf
+                interval = np.minimum(
+                    interval, np.abs(played_gaps[:, None] - across[None, :])
+                )
+                # Further back only while every note skipped over is optional.
+                step = np.zeros(written.size, dtype=bool)
+                step[back:] = skippable[:-back]
+                reach &= step
+                back += 1
+        return interval + (
             POSITION_WEIGHT * np.minimum(position, POSITION_CAP_GAPS * gap)
         )
 
@@ -1379,25 +1631,70 @@ def align_dtw(
     take_span = float(detected[-1] - detected[0]) if detected.size >= 2 else 0.0
     page_span = float(expected[-1] - expected[0]) if expected.size >= 2 else 0.0
     subsequence = (
-        detected.size < expected.size
+        subsequence_allowed
+        and detected.size < expected.size
         and take_span > 0.0
         and take_span * MAX_TEMPO_RATIO < page_span
     )
 
+    # **What a merged or skipped note costs the path, on top of its cell.**
+    # See `STEP_PENALTY_CAPS`. Diagonal steps are free; the other two carry
+    # the penalty. Every path makes the same *net* number of them — one per
+    # written note more than was detected — so this charges only the extra
+    # pairs a path takes to slide sideways, never the notes it has to skip.
+    written_span = expected - (expected[0] if expected.size else 0.0)
+    #: The most position can add to one cell — the unit both of the next two
+    #: are priced in.
+    position_cap = (
+        POSITION_WEIGHT * POSITION_CAP_GAPS * typical_gap(np.diff(written_span))
+        if expected.size >= 2
+        else 0.0
+    )
+    step_penalty = STEP_PENALTY_CAPS * position_cap
+    passable = (
+        np.asarray(optional, dtype=bool)
+        if optional is not None and optional.size == expected.size
+        else np.zeros(expected.size, dtype=bool)
+    )
+    steps = {
+        "step_sizes_sigma": np.array([[1, 1], [0, 1], [1, 0]]),
+        "weights_add": np.array([0.0, step_penalty, step_penalty]),
+        "weights_mul": np.array([1.0, 1.0, 1.0]),
+    }
+
     def _match(ratio: float) -> list[tuple[int, int]]:
         """Run DTW at one scale and return one written note per detection."""
         cost = _cost_matrix(ratio)
+        # **Passing an optional note costs no more than a note out of place.**
+        # A path crosses an unheard optional note by sitting on it with some
+        # detection, and paid that detection's interval mismatch for it — a
+        # number that says nothing, since the note was not heard at all. The
+        # cheapest crossing was therefore by whichever detection's interval
+        # happened to fit every optional note, and on a slurred line with half
+        # the slurred notes heard one detection swept across six of them and
+        # past the bow change it belonged to. Capped at `position_cap`, what a
+        # well-timed but misplaced note costs, crossing is cheap by any
+        # detection and the bow change goes to the one that fits it.
+        #
+        # The cap shapes the *path* only. Which written note a detection is
+        # given is still read from the true cost below, so a capped cell can
+        # never outbid the note a detection actually fits.
+        path_cost = cost
+        if passable.any():
+            path_cost = cost.copy()
+            path_cost[:, passable] = np.minimum(path_cost[:, passable], position_cap)
         try:
             if subsequence:
-                _, wp = librosa.sequence.dtw(C=cost, subseq=True)
+                _, wp = librosa.sequence.dtw(C=path_cost, subseq=True, **steps)
             else:
                 _, wp = librosa.sequence.dtw(
-                    C=cost,
+                    C=path_cost,
                     global_constraints=True,
                     band_rad=cfg.alignment.sakoe_chiba_band,
+                    **steps,
                 )
         except Exception:  # noqa: BLE001 — band too tight for the size ratio, etc.
-            _, wp = librosa.sequence.dtw(C=cost)
+            _, wp = librosa.sequence.dtw(C=path_cost, **steps)
 
         # librosa returns the path from end → start; flip to ascending.
         # Collapse to one expected index per detected index: keep the cheapest
@@ -1420,6 +1717,7 @@ def align_dtw(
 
     ratio = _initial_ratio(detected, expected)
     mapping = _match(ratio)
+
 
     # A page with a written tempo change has no single pace, and the *played*
     # side cannot be masked before matching — which notes were played under the
@@ -1465,93 +1763,129 @@ def align_dtw(
     # alignment be trusted" should turn on. The tempo difference itself is not
     # discarded — it is the verdict, and `compute_deltas` computes it from real
     # seconds further down.
-    residuals = _residuals(
-        mapping,
-        detected,
-        expected,
-        sec_per_beat=sec_per_beat,
-        config=cfg,
-        steady=steady,
-    )
-    total_cost = float(residuals.sum())
-    timing_quality = _quality_from_cost(total_cost, len(residuals), sec_per_beat)
+    def _scored(mapping: list[tuple[int, int]]) -> AlignmentResult:
+        residuals = _residuals(
+            mapping,
+            detected,
+            expected,
+            sec_per_beat=sec_per_beat,
+            config=cfg,
+            steady=steady,
+        )
+        total_cost = float(residuals.sum())
+        timing_quality = _quality_from_cost(total_cost, len(residuals), sec_per_beat)
 
-    # Timing quality alone is blind to *coverage*: one perfectly-placed
-    # onset against an 8-note score scores 1.0 on timing while 7 notes
-    # went unheard. Weight by the fraction of expected notes actually
-    # matched so a "played two bars then stopped / wrong page" take is
-    # correctly flagged as broken rather than "steady".
+        # Timing quality alone is blind to *coverage*: one perfectly-placed
+        # onset against an 8-note score scores 1.0 on timing while 7 notes
+        # went unheard. Weight by the fraction of expected notes actually
+        # matched so a "played two bars then stopped / wrong page" take is
+        # correctly flagged as broken rather than "steady".
+        #
+        # `optional` marks expected onsets that may legitimately not be heard, and
+        # they are dropped from **both** halves of that fraction. Grace notes are
+        # the case: the page prints the ornament, so the onset belongs in the
+        # timeline, but whether a separate attack is *reported* is a coin toss —
+        # an acciaccatura can sit sixty milliseconds from the note it decorates,
+        # inside the onset detector's own resolution, and a musician may simply
+        # not play it. Counting those as unheard notes made a **perfectly played**
+        # take of four ornamented bars fall from quality 1.000 to 0.350, under the
+        # cutoff that tells the musician to record it again. Left in the numerator
+        # they would also be free credit for onsets nobody required.
+        covered_all = {e for _, e in mapping}
+        required = (
+            np.ones(expected.size, dtype=bool)
+            if optional is None
+            else ~np.asarray(optional, dtype=bool)
+        )
+        # **Over the passage the take covers, not over the page.**
+        #
+        # Coverage asks "of the notes this take was supposed to contain, how many
+        # were heard". With the whole page as the denominator it silently asks
+        # something else — "how much of the page did you record" — and answers a
+        # musician practising four bars of a long part with 0.07 however well they
+        # played them. Every early take of this app was refused that way: the
+        # ceiling `n_detected / n_expected` sat under `broken_quality` before a
+        # single note was compared, so no performance could have passed.
+        #
+        # The passage is the written span the match actually lands in, first
+        # matched note to last — and **only when the take cannot be the whole
+        # page**, which is the same test `subsequence` is taken on. Two reasons,
+        # and the second is not obvious:
+        #
+        #  - Where the take does cover the page, the page *is* the passage, so the
+        #    two denominators agree and the narrower one only adds risk.
+        #  - `align_take` competes trim candidates on quality. A denominator that
+        #    shrinks with the span is one a trim can never lose by: cutting a real
+        #    note off either end removes it from the numerator and the denominator
+        #    together, so coverage holds while the take gets shorter. Applied
+        #    unconditionally this quietly taught the trim search to eat the last
+        #    note of every take — `test_ornaments_the_musician_did_not_play_are_not
+        #    _missed_notes` reported one missed note against a complete
+        #    performance, which is how it was found.
+        #
+        # And only once there are enough matches to believe the span at all: below
+        # `MIN_ONSETS_TO_ESTIMATE_TEMPO` a handful of stray detections could
+        # nominate any two notes as the ends and score themselves against those
+        # two — the same crossover, and the same reason, as the tempo estimate.
+        in_span = required.copy()
+        if subsequence and len(covered_all) >= MIN_ONSETS_TO_ESTIMATE_TEMPO:
+            first, last = min(covered_all), max(covered_all)
+            in_span[:first] = False
+            in_span[last + 1 :] = False
+        denominator = int(in_span.sum())
+        if denominator:
+            covered = sum(1 for e in covered_all if in_span[e])
+        else:
+            # Every expected onset is optional — vanishingly unlikely, and the old
+            # fraction is a better answer than dividing by zero.
+            covered, denominator = len(covered_all), expected.size
+        coverage = covered / denominator if denominator else 0.0
+        quality = timing_quality * coverage
+        return AlignmentResult(
+            mapping=mapping,
+            cost=total_cost,
+            quality=quality,
+            n_detected=int(detected.size),
+            n_expected=int(expected.size),
+            timing_quality=timing_quality,
+            coverage=coverage,
+            subsequence=subsequence,
+        )
+
+    result = _scored(mapping)
+
+    # **Where notes may go unheard, the pace cannot be read from the gaps.**
+    # `_initial_ratio` compares the typical played gap with the typical written
+    # one, which assumes the take sounds about as many notes as the page
+    # writes. A slurred line with half its slurred notes unheard sounds gaps of
+    # two and three written notes: the ratio read 0.38, the clamp held it at
+    # 0.6, and six bow changes were called missed on a take with no note out of
+    # place.
     #
-    # `optional` marks expected onsets that may legitimately not be heard, and
-    # they are dropped from **both** halves of that fraction. Grace notes are
-    # the case: the page prints the ornament, so the onset belongs in the
-    # timeline, but whether a separate attack is *reported* is a coin toss —
-    # an acciaccatura can sit sixty milliseconds from the note it decorates,
-    # inside the onset detector's own resolution, and a musician may simply
-    # not play it. Counting those as unheard notes made a **perfectly played**
-    # take of four ornamented bars fall from quality 1.000 to 0.350, under the
-    # cutoff that tells the musician to record it again. Left in the numerator
-    # they would also be free credit for onsets nobody required.
-    covered_all = {e for _, e in mapping}
-    required = (
-        np.ones(expected.size, dtype=bool)
-        if optional is None
-        else ~np.asarray(optional, dtype=bool)
-    )
-    # **Over the passage the take covers, not over the page.**
+    # So where the page has optional notes, two more paces are tried: the
+    # tempo the musician set, which is what `expected` is built at, and — when
+    # the path is pinned corner to corner anyway — the one the take's span
+    # implies. The best-scoring match is kept.
     #
-    # Coverage asks "of the notes this take was supposed to contain, how many
-    # were heard". With the whole page as the denominator it silently asks
-    # something else — "how much of the page did you record" — and answers a
-    # musician practising four bars of a long part with 0.07 however well they
-    # played them. Every early take of this app was refused that way: the
-    # ceiling `n_detected / n_expected` sat under `broken_quality` before a
-    # single note was compared, so no performance could have passed.
-    #
-    # The passage is the written span the match actually lands in, first
-    # matched note to last — and **only when the take cannot be the whole
-    # page**, which is the same test `subsequence` is taken on. Two reasons,
-    # and the second is not obvious:
-    #
-    #  - Where the take does cover the page, the page *is* the passage, so the
-    #    two denominators agree and the narrower one only adds risk.
-    #  - `align_take` competes trim candidates on quality. A denominator that
-    #    shrinks with the span is one a trim can never lose by: cutting a real
-    #    note off either end removes it from the numerator and the denominator
-    #    together, so coverage holds while the take gets shorter. Applied
-    #    unconditionally this quietly taught the trim search to eat the last
-    #    note of every take — `test_ornaments_the_musician_did_not_play_are_not
-    #    _missed_notes` reported one missed note against a complete
-    #    performance, which is how it was found.
-    #
-    # And only once there are enough matches to believe the span at all: below
-    # `MIN_ONSETS_TO_ESTIMATE_TEMPO` a handful of stray detections could
-    # nominate any two notes as the ends and score themselves against those
-    # two — the same crossover, and the same reason, as the tempo estimate.
-    in_span = required.copy()
-    if subsequence and len(covered_all) >= MIN_ONSETS_TO_ESTIMATE_TEMPO:
-        first, last = min(covered_all), max(covered_all)
-        in_span[:first] = False
-        in_span[last + 1 :] = False
-    denominator = int(in_span.sum())
-    if denominator:
-        covered = sum(1 for e in covered_all if in_span[e])
-    else:
-        # Every expected onset is optional — vanishingly unlikely, and the old
-        # fraction is a better answer than dividing by zero.
-        covered, denominator = len(covered_all), expected.size
-    coverage = covered / denominator if denominator else 0.0
-    quality = timing_quality * coverage
-    return AlignmentResult(
-        mapping=mapping,
-        cost=total_cost,
-        quality=quality,
-        n_detected=int(detected.size),
-        n_expected=int(expected.size),
-        timing_quality=timing_quality,
-        coverage=coverage,
-        subsequence=subsequence,
-    )
+    # **Only there.** Trying them on every take the first match could not
+    # explain was built and reverted: it let the wrong reading win. A take
+    # that skipped a printed repeat found a pace at which the page *with* the
+    # repeat scored well, and was read that way with 21 notes called missed,
+    # beating the straight-through reading that fit it exactly. A page with
+    # nothing optional on it never reaches here, so nothing it reads can move.
+    if passable.any():
+        tried = {round(ratio, 6)}
+        others = [1.0]
+        if not subsequence and take_span > 0 and page_span > 0:
+            others.append(_clamp_ratio(page_span / take_span))
+        for other in others:
+            if round(other, 6) in tried:
+                continue
+            tried.add(round(other, 6))
+            candidate = _scored(_match(other))
+            if candidate.quality > result.quality:
+                result = candidate
+    return result
 
 
 def apply_fuzzy_match(
@@ -1560,6 +1894,7 @@ def apply_fuzzy_match(
     expected: np.ndarray,
     *,
     optional: np.ndarray | None = None,
+    reclaimable: np.ndarray | None = None,
 ) -> CleanedAlignment:
     """Resolve count mismatches DTW leaves behind (§7).
 
@@ -1574,6 +1909,13 @@ def apply_fuzzy_match(
     it as one reaches the musician twice: `n_missed_notes` on the result, and
     `_why_alignment_failed`, which tells a take with any missed note to check
     it is the right piece rather than naming the real problem.
+
+    `reclaimable` is the narrower set whose detection a required note may take
+    back — see below. It defaults to `optional`, which is what it was when the
+    only optional onsets were ornaments. A slurred note (`under_slur`) is
+    optional but not reclaimable: it sits a whole written note from the next
+    one, so a detection on it is that note, not a misplaced ornament, and
+    handing it on would report the next note a whole note early.
     """
     detected = np.asarray(detected, dtype=float)
     expected = np.asarray(expected, dtype=float)
@@ -1622,14 +1964,15 @@ def apply_fuzzy_match(
     # which, and `pulse_anchors` reads every matched pair — and because the
     # rule is far easier to reason about stated in full than inferred from the
     # loop that happens to make half of it redundant.
+    lendable = skippable if reclaimable is None else np.asarray(reclaimable, dtype=bool)
     held: dict[int, int] = {exp_i: det_i for det_i, exp_i in matched}
     for exp_i in range(expected.size):
         if skippable[exp_i] or exp_i in held:
             continue
         back = exp_i - 1
-        while back >= 0 and skippable[back] and back not in held:
+        while back >= 0 and lendable[back] and back not in held:
             back -= 1
-        if back >= 0 and skippable[back] and back in held:
+        if back >= 0 and lendable[back] and back in held:
             held[exp_i] = held.pop(back)
     matched = sorted((det_i, exp_i) for exp_i, det_i in held.items())
 

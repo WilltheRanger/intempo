@@ -136,11 +136,20 @@ def test_clipping_does_not_lose_notes(clean_take, headroom_db):
 def test_the_lag_grows_with_degradation_but_the_jitter_does_not(clean_take):
     """**The measurement that reframed this whole file.**
 
-    Degradation delays the detected onset; it does not scatter it. Lag rises by
-    about half again, jitter stays where it was — and `_residuals` fits offset
-    and rate per take, so the lag is paid for and the jitter is what is left.
-    A take recorded across a room is judged on the same timing evidence as one
-    recorded up close.
+    Degradation delays the detected onset; it barely scatters it. Lag rises by
+    about a third — and `_residuals` fits offset and rate per take, so the lag
+    is paid for and the jitter is what is left. A take recorded across a room
+    is judged on nearly the same timing evidence as one recorded up close.
+
+    **Re-based 2026-09-22, when onsets stopped sitting on the 23 ms hop.** This
+    asserted degraded jitter under 1.6x the clean take's, which held while both
+    were dominated by the frame grid — 6.85 ms clean, 6.75 degraded. Placed on
+    a 2.9 ms grid (`audio._REFINE_N_FFT`) they are **0.91 and 2.52**: the room
+    now shows through where the grid used to hide it, and the degraded figure
+    is still well under half of what the clean take used to be. A ratio against
+    a baseline near zero measures nothing, so the claim is held in the units a
+    tolerance band is written in: a few milliseconds, far inside the 5% of a
+    beat — 33 ms here — that the inner band allows.
     """
     y, truth = clean_take
     worst = apply_clipping(
@@ -151,8 +160,9 @@ def test_the_lag_grows_with_degradation_but_the_jitter_does_not(clean_take):
 
     assert degraded["recall"] == 1.0
     assert degraded["mean_error_ms"] > clean["mean_error_ms"] + 10, "expected more lag"
-    # The number that survives the fit. Allowed to move a little, not to double.
-    assert degraded["jitter_ms"] < clean["jitter_ms"] * 1.6
+    # The number that survives the fit.
+    assert clean["jitter_ms"] < 2.0
+    assert degraded["jitter_ms"] < 4.0
 
 
 def _alternating_dynamics(span_db: float) -> tuple[np.ndarray, list[float]]:
@@ -305,6 +315,57 @@ def test_a_take_the_room_swallowed_is_read_instead_of_refused():
     )
     assert with_recovery.status == "ok"
     assert with_recovery.quality > without.quality
+
+
+@pytest.mark.parametrize("lead_in_s", [0.0, 2.0])
+def test_the_second_look_searches_the_recording_not_the_take(monkeypatch, lead_in_s):
+    """**A lead-in moved every search window by its own length.**
+
+    The pass predicted where a missed note belongs on the *take's* clock —
+    seconds since the first note — and searched the envelope on the
+    *recording's*, seconds since tapping record. The only take that exercised
+    it began its first note at 0.0 s, where the two agree. With two seconds of
+    room tone first, every search looked two seconds early and handed back
+    whatever peak it found there — measured on the room take above, recovered
+    onsets 0.2 to 0.4 s from any note the page writes.
+
+    Controlled here: one clear note is hidden from the first pass, so the only
+    way it is read is the second look finding it where it was played.
+    """
+    from app.services import analysis as analysis_module
+    from app.services.analysis import analyze
+    from app.services.score_schema import Measure, Note, ScoreJson
+    from app.tests.audio_helpers import synth_click_track
+
+    beat = 0.6
+    notes = [lead_in_s + 0.5 + i * beat for i in range(16)]
+    y = synth_click_track(notes)
+    y = (y + np.random.default_rng(4).normal(0, 1e-3, y.size)).astype(np.float32)
+    hidden = notes[9]
+
+    first_pass = analysis_module.audio_svc.detect_onsets
+
+    def missing_one(*args, **kwargs):
+        found = first_pass(*args, **kwargs)
+        return found[np.abs(found - hidden) > 0.1]
+
+    monkeypatch.setattr(analysis_module.audio_svc, "detect_onsets", missing_one)
+    score = ScoreJson(
+        clef="treble",
+        time_signature="4/4",
+        ocr_confidence=0.9,
+        measures=[
+            Measure(measure_number=m + 1, notes=[Note(pitch="A4", duration="quarter")] * 4)
+            for m in range(4)
+        ],
+    )
+
+    result = analyze((y, SR), score, 100.0)
+
+    assert result.status == "ok"
+    assert result.n_missed_notes == 0, "the second look did not find the hidden note"
+    recovered = next(n for n in result.per_note if n.global_index == 9)
+    assert abs(recovered.delta_ms) < 15, "it was found, but not where it was played"
 
 
 def test_a_take_that_needed_no_help_is_untouched():

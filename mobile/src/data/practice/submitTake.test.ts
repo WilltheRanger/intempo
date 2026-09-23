@@ -12,6 +12,14 @@ const { createAnalysis, getAnalysis, requestAudioUpload, uploadToSignedUrl, curr
 vi.mock('../api/analyses', () => ({ createAnalysis, getAnalysis }));
 vi.mock('../api/upload', () => ({ requestAudioUpload, uploadToSignedUrl }));
 vi.mock('../preferences', () => ({ preferences: { current } }));
+// `ApiError` lives in `client.ts`, which reaches react-native through the
+// session module — the same stand-in `client.test.ts` uses.
+vi.mock('../auth/session', () => ({
+  getAccessToken: () => Promise.resolve('token'),
+  signOut: async () => {},
+}));
+
+import { ApiError } from '../api/client';
 
 import { submitTake, waitForAnalysis } from './submitTake';
 
@@ -94,6 +102,102 @@ describe('submitTake', () => {
       bpm_source: 'manual',
       metronome_mode: 'off',
     });
+  });
+
+  /**
+   * The recorder reads back what the microphone applied; the API speaks
+   * snake_case. Every field maps, and a `null` — "the device did not say" —
+   * stays `null` rather than becoming "off" on the way.
+   */
+  it('sends what the microphone applied, in the API\'s spelling', async () => {
+    await submitTake({
+      ...TAKE,
+      capture: {
+        autoGainControl: true,
+        noiseSuppression: null,
+        echoCancellation: false,
+        sampleRate: 48000,
+        channelCount: 1,
+        fellBack: true,
+      },
+    });
+
+    expect(createAnalysis.mock.calls[0][0].capture).toEqual({
+      auto_gain_control: true,
+      noise_suppression: null,
+      echo_cancellation: false,
+      sample_rate: 48000,
+      channel_count: 1,
+      fell_back: true,
+    });
+  });
+
+  describe('against a server older than the capture report', () => {
+    /** What FastAPI answers for a key a model with `extra="forbid"` lacks. */
+    const refusedKey = (key: string) =>
+      new ApiError(422, '/v1/analyses', 'Request failed', [
+        {
+          type: 'extra_forbidden',
+          loc: ['body', key],
+          msg: 'Extra inputs are not permitted',
+        },
+      ]);
+
+    // A queued once-value survives `clearAllMocks`, so a test that leaves one
+    // unconsumed would answer the next test's first call.
+    beforeEach(() => {
+      createAnalysis.mockReset();
+    });
+
+    const REPORT = {
+      autoGainControl: false,
+      noiseSuppression: false,
+      echoCancellation: false,
+      sampleRate: 48000,
+      channelCount: 1,
+      fellBack: false,
+    };
+
+    it('sends the take again without the report, rather than lose it', async () => {
+      createAnalysis
+        .mockRejectedValueOnce(refusedKey('capture'))
+        .mockResolvedValueOnce({ analysis_id: 'analysis-9' });
+
+      const result = await submitTake({ ...TAKE, capture: REPORT });
+
+      expect(result.analysisId).toBe('analysis-9');
+      expect(createAnalysis).toHaveBeenCalledTimes(2);
+      expect(createAnalysis.mock.calls[0][0]).toHaveProperty('capture');
+      expect(createAnalysis.mock.calls[1][0]).not.toHaveProperty('capture');
+      // Everything else the take needs is still sent.
+      expect(createAnalysis.mock.calls[1][0]).toMatchObject({
+        score_id: 'score-1',
+        audio_key: 'user-1/take.wav',
+        target_bpm: 88,
+      });
+    });
+
+    it('does not retry a refusal of anything else', async () => {
+      createAnalysis.mockRejectedValue(refusedKey('target_bpm'));
+
+      await expect(submitTake({ ...TAKE, capture: REPORT })).rejects.toThrow();
+      expect(createAnalysis).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not retry a take that sent no report', async () => {
+      createAnalysis.mockRejectedValue(refusedKey('capture'));
+
+      await expect(submitTake(TAKE)).rejects.toThrow();
+      expect(createAnalysis).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('sends no report for a take that has none', async () => {
+    // A picked file or the native recorder: "not asked", which the row keeps
+    // distinguishable from a report whose every field is unknown.
+    await submitTake(TAKE);
+
+    expect(createAnalysis.mock.calls[0][0]).not.toHaveProperty('capture');
   });
 
   it('does not create a row when the upload failed', async () => {

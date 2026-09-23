@@ -21,6 +21,7 @@ export const LICENCES: Licence[] = [
   { name: '@react-navigation/bottom-tabs', version: '7.18.16', licence: 'MIT' },
   { name: '@react-navigation/native', version: '7.3.16', licence: 'MIT' },
   { name: '@react-navigation/native-stack', version: '7.18.8', licence: 'MIT' },
+  { name: '@sentry/react-native', version: '7.11.0', licence: 'MIT' },
   { name: '@supabase/supabase-js', version: '2.112.3', licence: 'MIT' },
   { name: '@tanstack/query-async-storage-persister', version: '5.102.8', licence: 'MIT' },
   { name: '@tanstack/react-query', version: '5.102.8', licence: 'MIT' },

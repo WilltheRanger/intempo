@@ -18,6 +18,15 @@ the exception worth knowing about: its comment says it was *"chosen against two
 synthetic takes and no real recording, which is the honest limit on it"*, so it
 is a value the tuning session should look at and it is not in this file.
 
+Added 2026-09-22, each beside its measurement and each structure rather than a
+knob: `STEP_PENALTY_CAPS` (flat from 2 to 6), `LEVEL_NOTES` / `PACE_NOTES` /
+`MIN_LEVEL_NOTES` (`alignment.py`), the `_REFINE_*` onset-placement constants
+(`audio.py`), `MIN_VERDICT_RUN` (`classification.py`), and `MIN_READING_GAIN`,
+`PAUSE_FLOOR_S`, `RESTART_BARS_BACK`, `RESTART_SLACK_NOTES`, `MAX_RESTARTS`
+(`analysis.py`). `MIN_VERDICT_RUN` is the one a tuning session with real
+recordings should revisit: it was set against simulated timing spread, and how
+much a real player's timing wanders is exactly what a real recording knows.
+
 Two fields here turn nothing at all; `test_tuning_knobs.py` names them and
 `config.toml` says so beside each.
 
@@ -30,12 +39,25 @@ to load an alternate file.
 from __future__ import annotations
 
 import tomllib
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
 # backend/config.toml — two parents up from app/services/.
 CONFIG_PATH = Path(__file__).resolve().parents[2] / "config.toml"
+
+
+@dataclass(frozen=True)
+class InstrumentOnset:
+    """The two onset settings that depend on which instrument was played.
+
+    `highpass_hz` of 0 means no filter, which is what the three treble
+    instruments get today.
+    """
+
+    delta: float
+    highpass_hz: float
 
 
 @dataclass(frozen=True)
@@ -46,13 +68,24 @@ class OnsetConfig:
     post_max: int
     wait_ms: int
     pre_emphasis_coef: float
-    # double-bass overrides
+    # The older spelling of the bass row, kept because a deployment's
+    # remote-config row may still send only this. `instruments` is what the
+    # pipeline reads; this seeds the bass entry when the table is absent.
     double_bass_delta: float
     double_bass_highpass_hz: float
+    #: Per instrument, keyed by the `Instrument` enum's values.
+    #:
+    #: **Empty is a valid config and not an error.** A remote-config row
+    #: written before this table existed sends no `[onset.instrument]`, and
+    #: such a deployment must keep reading takes exactly as it did — so
+    #: `for_instrument` falls back to the flat `delta` and the bass override,
+    #: which is precisely the old behaviour.
+    instruments: Mapping[str, InstrumentOnset] = field(default_factory=dict)
     #: See `[onset.recovery]` in config.toml. Defaulted so a deployment whose
     #: remote-config row predates them keeps loading.
     recovery_search_share: float = 0.25
     recovery_floor_ratio: float = 0.015
+    recovery_min_level_db: float = 10.0
 
 
 @dataclass(frozen=True)
@@ -133,8 +166,17 @@ def _parse(raw: dict) -> AudioConfig:
             pre_emphasis_coef=float(onset["pre_emphasis_coef"]),
             double_bass_delta=float(dbl.get("delta", onset["delta"])),
             double_bass_highpass_hz=float(dbl.get("highpass_hz", 80.0)),
+            instruments={
+                name: InstrumentOnset(
+                    delta=float(row.get("delta", onset["delta"])),
+                    highpass_hz=float(row.get("highpass_hz", 0.0)),
+                )
+                for name, row in (onset.get("instrument") or {}).items()
+                if isinstance(row, dict)
+            },
             recovery_search_share=float(rec.get("search_share", 0.25)),
             recovery_floor_ratio=float(rec.get("floor_ratio", 0.015)),
+            recovery_min_level_db=float(rec.get("min_level_db", 10.0)),
         ),
         tolerance=ToleranceConfig(
             rushing_inner_pct=float(tol["rushing_inner_pct"]),

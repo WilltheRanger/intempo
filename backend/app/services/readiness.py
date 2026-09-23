@@ -143,6 +143,12 @@ REQUIRED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     # defect this was written to fix, and that is precisely the confusion
     # worth being able to look up rather than re-diagnose.
     ("analyses", "stage", "025"),
+    # 026. What the microphone applied to a take. Degrades quietly by
+    # construction — the insert drops the key and logs rather than refuse a
+    # take over a diagnostic — which is exactly why it is listed: a deployment
+    # missing it records nothing and looks, from the table, like a fleet of
+    # clients that never reported.
+    ("analyses", "capture", "026"),
     # 013. All three degrade quietly on purpose — every caller narrows its
     # select or retries its write without them, because the alternative was a
     # save that 500s and a scan that sits `reading` forever during the window

@@ -104,9 +104,12 @@ as one marker among four. What separates them is `run_duration_ms` — about
 `list_workflow_jobs` timings, rounded up per job, rather than read off a
 billing number.
 
-**Minutes are still finite**, and `app-walk` — two web builds, the walk, the
-devices and two accessibility sweeps — is most of the cost of a run. Preflight
-first; push when you believe it is green.
+**The repository is public as of 2026-09-18**, so the private-repository minute
+allowance described above is historical rather than the current gate. Actions
+is running again. A first workflow from a fork can still stop at
+`action_required` until a maintainer approves it; that is an approval gate, not
+the five-second billing refusal above. `app-walk` remains the longest job.
+Preflight first; push when you believe it is green.
 
 **Its first working run failed two jobs, and both were defects in checks rather
 than in the app**: `check-brand-assets.py` could not tell "the art is wrong"
@@ -177,8 +180,13 @@ with `migrations/`. Neither the name nor the ref is written down here.
    than was asked for. Speed is the one thing still worth leaving alone until
    something is measurably slow — measure, then optimise.
 4. **No `print`/`console.log` debug shipped.** Real logger from day one —
-   **which here means stdlib `logging` in the backend and nothing at all in
-   `mobile/`.** The rule used to name `loguru` for Python and `pino` for JS, and
+   **which here means stdlib `logging` in the backend and no ad-hoc event
+   logging in `mobile/`.** Native release builds send unhandled crashes to
+   Sentry when `EXPO_PUBLIC_SENTRY_DSN` is configured; that owner-authorized
+   crash path is not a general application logger. The web build carries no
+   reporter at all (`lib/crashReporting.web.ts`) — the SDK was a third of the
+   page's weight. The rule used to name `loguru` for Python
+   and `pino` for JS, and
    **neither is in this repository**: not in `pyproject.toml`, not in `uv.lock`,
    not in `package.json`, not in a single source file, and neither appears in
    any manifest or source file across the 98 commits a session's shallow clone
@@ -189,12 +197,13 @@ with `migrations/`. Neither the name nor the ref is written down here.
    `logging.getLogger("intempo.<area>")` — `intempo.analysis`, `intempo.ocr`,
    `intempo.scores`, `intempo.me`, `intempo.transcription`, `intempo.training`
    — so a new log line joins that hierarchy rather than starting a second one.
-   `mobile/` has no logging facility and the two `console` calls below are the
-   whole of it, which is deliberate rather than a gap.
+   Outside the release crash reporter, the two `console` calls below are the
+   whole of mobile logging, which is deliberate rather than a gap.
    Enforced in `mobile/` since 2026-09-03 (`no-console`, error). Two lines are
    exempt with a written reason: `App.tsx`'s boot line naming whether the build
-   is on fixtures, and `ErrorBoundary.componentDidCatch` — the only record a
-   crash leaves. **The app had no linter at all until then**, while six files
+   is on fixtures, and `ErrorBoundary.componentDidCatch` — the local fallback
+   when a release crash cannot reach Sentry. **The app had no linter at all
+   until then**, while six files
    carried `eslint-disable` directives for one; `react-hooks/rules-of-hooks` is
    the rule it was worth installing for, since a hook below an early return is
    React error #310, which this project has shipped and which compiles,
