@@ -344,6 +344,16 @@ function SignedInApp() {
       />
       <Stack.Screen name="Record" component={RecordScreen} />
       <Stack.Screen name="Tempo" component={TempoScreen} />
+      {/*
+        Step 3 of adding a piece: one component, two routes, told apart by
+        `route.name`. No swipe back — the piece is saved by now, and back is
+        the naming step it has already left.
+      */}
+      <Stack.Screen
+        name="SetTempo"
+        component={TempoScreen}
+        options={{ gestureEnabled: false }}
+      />
       <Stack.Screen name="UploadRecording" component={UploadRecordingScreen} />
       <Stack.Screen name="Warmup" component={WarmupScreen} />
       <Stack.Screen name="Verdict" component={VerdictScreen} />

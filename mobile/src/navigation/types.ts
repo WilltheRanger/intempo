@@ -94,6 +94,11 @@ export type RootStackParamList = {
   Record: { pieceId: string; startAt?: number };
   /** The practice tempo for a piece, chosen on its own screen from Record. */
   Tempo: { pieceId: string };
+  /**
+   * The same screen as step 3 of adding a piece (`redesign/SetTempo.dc.html`):
+   * the working tempo, set once, before the score opens for the first time.
+   */
+  SetTempo: { pieceId: string };
   /** A recording the musician already has, looked at before it is sent. */
   UploadRecording: { pieceId: string };
   /** The daily warmup. Reads the instrument from preferences, so no params. */

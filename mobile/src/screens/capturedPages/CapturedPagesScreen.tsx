@@ -2,13 +2,14 @@ import { useNavigation } from '@react-navigation/native';
 import { Camera, Images, Layers, Plus } from '../../components/icons';
 import { useGoBack } from '../../navigation/useGoBack';
 import { useState } from 'react';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { BottomSheet } from '../../components/overlays/BottomSheet';
 import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
 import { SheetOptionRow } from '../../components/overlays/SheetOptionRow';
 import {
   EmptyState,
+  BackLink,
   PageHeader,
   PrimaryButton,
   ScreenContainer,
@@ -24,8 +25,7 @@ import { spacing } from '../../design';
 import type { RootNavigation } from '../../navigation/types';
 import { DraggablePageList } from './DraggablePageList';
 import { PagePreview } from './PagePreview';
-import { pageCountLabel } from '../../lib/format';
-import { queueSummary } from '../../lib/scan/pageQueue';
+import { doubtfulCount, queueSummary } from '../../lib/scan/pageQueue';
 
 /**
  * Review of the pages just captured, before transcription.
@@ -218,22 +218,30 @@ export function CapturedPagesScreen() {
         />
       }
     >
-      <PageHeader
-        eyebrow={pageCountLabel(pages.length)}
-        title="Review pages"
-        onBack={goBack}
-        // It said "Back to the scanner" on a route with no scanner on it.
-        backLabel={scannerBelow ? 'Back to the scanner' : 'Back'}
-      />
+      {/*
+        The redesign's head (`redesign/ReviewPages.dc.html`): a way back in
+        words and the title. The count is on the button at the bottom, which is
+        where it is a promise ("Continue with 4 pages") rather than a caption.
+      */}
+      <View style={styles.head}>
+        {/* It said "Back to the scanner" on a route with no scanner on it. */}
+        <BackLink label={scannerBelow ? 'Back to the scanner' : 'Back'} onPress={goBack} />
+        <Text variant="screenTitle" accessibilityRole="header" style={styles.title}>
+          Review pages
+        </Text>
+      </View>
 
       {/*
-        The order, and the caveat when there is one. Both live in
-        `pageQueue.ts` — a rule in a `.tsx` is a rule nothing checks, and
-        "does this warn when it should" is the kind that stays wrong quietly.
+        The caveat, only when there is one: a page worth another look before
+        the scan is sent. The order sentence it used to lead with is what the
+        numbered rows already say. Both live in `pageQueue.ts` — a rule in a
+        `.tsx` is a rule nothing checks.
       */}
-      <Text variant="metadataSmall" color="textTertiary" style={styles.hint}>
-        {queueSummary(pages)}
-      </Text>
+      {doubtfulCount(pages) > 0 ? (
+        <Text variant="metadataSmall" color="textSecondary" style={styles.hint}>
+          {queueSummary(pages)}
+        </Text>
+      ) : null}
 
       <DraggablePageList
         pages={pages}
@@ -253,7 +261,7 @@ export function CapturedPagesScreen() {
           label="Add page"
           icon={Plus}
           onPress={addPage}
-          style={styles.addPage}
+          style={[styles.addPage, styles.addPagePill]}
         />
       )}
 
@@ -309,10 +317,24 @@ export function CapturedPagesScreen() {
 }
 
 const styles = StyleSheet.create({
+  head: {
+    paddingTop: spacing.md,
+    marginBottom: spacing['2xl'],
+  },
+  title: {
+    marginTop: spacing.xs,
+  },
   hint: {
-    marginBottom: spacing.md,
+    marginTop: -spacing.md,
+    marginBottom: spacing.lg,
   },
   addPage: {
     marginTop: spacing.xl,
+  },
+  // The size of its words, at the start of the column: adding a page is
+  // something you might do, not the thing this screen is for.
+  addPagePill: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: spacing.xl,
   },
 });

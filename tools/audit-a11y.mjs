@@ -106,6 +106,12 @@ const ROUTES = [
   // are the controls a take is judged by; Upload is reached by route with no
   // file staged, which is the state it opens in from "Choose a file" too.
   ['Tempo', 'pieces/fixture-bach-bwv1001/tempo', { expect: 'Tap tempo' }],
+  // The same screen as step 3 of adding a piece, with the opening system, the
+  // marked tick and Listen — reached here on a piece that has notation, which
+  // is the state it reaches once the reading finishes.
+  ['Set your working tempo', 'pieces/fixture-bach-bwv1001/set-tempo', {
+    expect: 'Set your working tempo',
+  }],
   ['Upload a recording', 'pieces/fixture-bach-bwv1001/upload', {
     expect: 'No recording chosen',
   }],

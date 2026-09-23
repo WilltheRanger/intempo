@@ -13,7 +13,6 @@ import {
 import {
   BORDER_WIDTH,
   colors,
-  MIN_TOUCH_TARGET,
   radii,
   spacing,
   typography,
@@ -97,7 +96,12 @@ export function Input({
   return (
     <View style={style}>
       <View style={styles.labelRow}>
-        <Text variant="sectionLabel" color="textSecondary">
+        {/*
+          The redesign's field label (`redesign/NamePiece.dc.html`,
+          `SignIn.dc.html`): small, uppercase, tertiary — a name for the box
+          rather than a heading over it, so the eye goes to what is typed.
+        */}
+        <Text variant="caption" color="textTertiary" style={styles.label}>
           {label}
         </Text>
         {action}
@@ -147,11 +151,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: spacing.sm,
+    marginBottom: 7,
+  },
+  label: {
+    fontSize: 12,
+    lineHeight: 16,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
   },
   field: {
-    minHeight: MIN_TOUCH_TARGET,
-    paddingHorizontal: spacing.md,
+    minHeight: 48,
+    paddingHorizontal: 14,
     paddingVertical: spacing.sm,
     backgroundColor: colors.surface,
     borderRadius: radii.md,
@@ -161,9 +171,11 @@ const styles = StyleSheet.create({
   },
   sansText: {
     ...typography.body,
+    fontSize: 17,
   },
   serifText: {
     ...typography.pieceTitle,
+    fontSize: 17,
   },
   focused: {
     borderColor: colors.accent,

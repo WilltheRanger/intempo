@@ -273,7 +273,14 @@ await tapTo('Today hero action', /Continue practice/, /\/record$/);
 
 // A deep link has no history behind it; back must still reach the parent.
 await open('pieces/fixture-clef-change-study/bars/3');
-await page.getByRole('button', { name: /back/i }).first().click({ timeout: 10000 });
+// A link since the redesign (`BackLink`, "‹ Back to score"): it only goes
+// somewhere. Either role is accepted, so a screen still on the round back
+// button walks the same way.
+await page
+  .getByRole('link', { name: /back/i })
+  .or(page.getByRole('button', { name: /back/i }))
+  .first()
+  .click({ timeout: 10000 });
 await waitFor('back out of the bar editor', async () => (await path()).endsWith('/score'));
 if ((await path()).endsWith('/score')) pass('deep-linked bar editor → back to the score');
 else fail(`deep-linked bar editor → back went to ${await path()}`);
@@ -578,7 +585,9 @@ console.log('\n## Photographing a piece');
     const numbered = onReview.filter((l) => /^Page \d+$/.test(l));
     const inOrder = numbered.join(',') === 'Page 1,Page 2';
     if (!inOrder) fail(`the review list read ${JSON.stringify(numbered)}`);
-    else if (!onReview.some((l) => /^2 pages$/.test(l)))
+    // The count is on the button now (`redesign/ReviewPages.dc.html`),
+    // where it is what Continue will send.
+    else if (!onReview.some((l) => /^Continue with 2 pages$/.test(l)))
       fail('the review screen does not say how many pages it has');
     else pass('two imported pages arrive in order, and the count agrees');
 

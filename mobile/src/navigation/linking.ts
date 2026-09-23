@@ -79,6 +79,7 @@ export const screenConfig: LinkingOptions<RootStackParamList>['config'] = {
         parse: { startAt: (value: string) => Number(value) },
       },
       Tempo: 'pieces/:pieceId/tempo',
+      SetTempo: 'pieces/:pieceId/set-tempo',
       UploadRecording: 'pieces/:pieceId/upload',
       Verdict: 'analyses/:analysisId',
       Warmup: 'warmup',

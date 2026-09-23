@@ -116,6 +116,14 @@ export const lightColors = {
    * and leaves the label at about 8:1.
    */
   onDarkFill: 'rgba(251, 250, 247, 0.16)',
+  /**
+   * Supporting copy on a dark ground where it has to be read, not glanced at
+   * (`redesign/Scanner.dc.html`, the shot's verdict): the reason a page will or
+   * will not read. `onDarkMuted` is for captions; this is for sentences.
+   */
+  onDarkSecondary: 'rgba(251, 250, 247, 0.78)',
+  /** A panel lifted off a dark ground by the faintest wash of ivory. */
+  onDarkWash: 'rgba(251, 250, 247, 0.07)',
 
   /** Pressed states. */
   actionBgPressed: '#332E28',
@@ -369,6 +377,8 @@ export const darkColors: Palette = {
   onDark: '#FBFAF7',
   onDarkMuted: 'rgba(251, 250, 247, 0.55)',
   onDarkFill: 'rgba(251, 250, 247, 0.16)',
+  onDarkSecondary: 'rgba(251, 250, 247, 0.78)',
+  onDarkWash: 'rgba(251, 250, 247, 0.07)',
 
   actionBgPressed: '#E8E3D9',
   surfacePressed: '#2A241E',

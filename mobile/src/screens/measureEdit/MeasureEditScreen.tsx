@@ -6,7 +6,7 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import {
   EmptyState,
   LoadingState,
-  PageHeader,
+  BackLink,
   PrimaryButton,
   ScreenContainer,
   Text,
@@ -14,9 +14,11 @@ import {
 import { BottomSheet } from '../../components/overlays/BottomSheet';
 import { useCorrectScore, usePiece } from '../../data/hooks/usePieces';
 import type { Clef, ScoreJson, ScoreNote } from '../../data/types';
+import { Minus, Plus } from '../../components/icons';
 import {
   BORDER_WIDTH,
   colors,
+  fontFamily,
   pressedOpacity,
   radii,
   spacing,
@@ -294,37 +296,29 @@ export function MeasureEditScreen() {
         </View>
       }
     >
-      <PageHeader
-        eyebrow={piece.title}
-        title={`Bar ${params.measureNumber}`}
-        onBack={goBack}
-        backLabel="Back to score"
-      />
-
       {/*
-        The focal point. It is the only thing on screen that answers "am I
-        done", so it is the only thing set in the display face — and it turns
-        from the accent to ordinary ink the moment the bar balances, which is
-        feedback that needs no label.
+        The redesign's head (`redesign/MeasureEdit.dc.html`): which piece, then
+        one line — "Bar 12 · 3 of 4 beats" — where the count is the part that
+        changes. It turns from the accent to ordinary ink the moment the bar
+        balances, which is feedback that needs no label.
 
-        **It used to turn from `verdictBad`, which is a token this screen may
-        not use.** `colors.ts` quarantines that trio to surfaces reporting how
-        a *take* went, in as many words, and tells everything else to reach for
-        the accent — and a bar whose durations do not sum is not a performance,
-        it is arithmetic about a photograph. The distinction matters beyond
-        tidiness: red here and red on a verdict would teach a musician that the
-        colour means one thing when it means two.
-
-        Nothing is lost by the swap, because the colour was never carrying the
-        meaning. The headline reads "3 of 4 beats" and the line under it says
-        what to do; the colour only says which of the two states you are in.
+        **Not `verdictBad`**, which this screen may not use: `colors.ts`
+        quarantines that trio to surfaces reporting how a *take* went, and a
+        bar whose durations do not sum is arithmetic about a photograph.
       */}
-      <Text
-        variant="heroTitle"
-        style={[styles.beats, !beats.balanced && styles.beatsOff]}
-      >
-        {beats.text}
-      </Text>
+      <View style={styles.head}>
+        <BackLink label="Back to score" onPress={goBack} />
+        <Text variant="eyebrow" color="textTertiary" numberOfLines={1} style={styles.eyebrow}>
+          {piece.title}
+        </Text>
+        <View style={styles.barLine} accessibilityRole="header">
+          <Text style={styles.barName}>Bar {params.measureNumber}</Text>
+          <Text color="textTertiary" style={styles.barName}>
+            {' · '}
+          </Text>
+          <Text style={[styles.barName, !beats.balanced && styles.beatsOff]}>{beats.text}</Text>
+        </View>
+      </View>
       <Text variant="metadataSmall" color="textTertiary">
         {beats.expected === null
           ? 'No time signature was read for this piece, so there is nothing to check against.'
@@ -350,8 +344,8 @@ export function MeasureEditScreen() {
         invite spellings the engraver cannot read, so this opens the complete
         set of fifteen printed signatures.
       */}
-      <Text variant="sectionLabel" color="textSecondary" style={styles.keyLabel}>
-        {isFirstBar ? 'Opening key signature' : 'Key signature at this bar'}
+      <Text variant="caption" color="textTertiary" style={styles.keyLabel}>
+        {isFirstBar ? 'Opening key' : 'Key'}
       </Text>
       <Pressable
         onPress={() => setPickingKey(true)}
@@ -360,14 +354,14 @@ export function MeasureEditScreen() {
         style={({ pressed }) => [styles.keySetting, pressed && styles.pressed]}
       >
         <View style={styles.keyCopy}>
-          <Text variant="metadata">{keyDescription}</Text>
+          <Text variant="body" style={styles.settingValue}>{keyDescription}</Text>
           {!isFirstBar && workingKey === null ? (
             <Text variant="metadataSmall" color="textTertiary">
               Choose a signature only if a new one is printed at this bar.
             </Text>
           ) : null}
         </View>
-        <Text variant="metadataSmall" color="accentText">
+        <Text variant="metadata" color="accentText" style={styles.change}>
           Change
         </Text>
       </Pressable>
@@ -380,8 +374,8 @@ export function MeasureEditScreen() {
         a sixth off — so a misread one had to be correctable without
         re-scanning the page.
       */}
-      <Text variant="sectionLabel" color="textSecondary" style={styles.keyLabel}>
-        {isFirstBar ? 'Opening clef' : 'Clef at this bar'}
+      <Text variant="caption" color="textTertiary" style={styles.keyLabel}>
+        {isFirstBar ? 'Opening clef' : 'Clef'}
       </Text>
       <Pressable
         onPress={() => setPickingClef(true)}
@@ -390,14 +384,14 @@ export function MeasureEditScreen() {
         style={({ pressed }) => [styles.keySetting, pressed && styles.pressed]}
       >
         <View style={styles.keyCopy}>
-          <Text variant="metadata">{clefDescription}</Text>
+          <Text variant="body" style={styles.settingValue}>{clefDescription}</Text>
           {!isFirstBar && workingClef === null ? (
             <Text variant="metadataSmall" color="textTertiary">
               Choose a clef only if a new one is printed at this bar.
             </Text>
           ) : null}
         </View>
-        <Text variant="metadataSmall" color="accentText">
+        <Text variant="metadata" color="accentText" style={styles.change}>
           Change
         </Text>
       </Pressable>
@@ -471,82 +465,87 @@ export function MeasureEditScreen() {
         for a rest, so getting it wrong adds or removes a phantom note and
         shifts everything after it. Pitch, below, is read by nothing in the
         analysis at all.
+
+        Rest and tie share one row (`redesign/MeasureEdit.dc.html`): the two
+        marks that change the timeline rather than the note's length.
       */}
-      <Pressable
-        onPress={() =>
-          change(
-            current?.pitch === 'rest'
-              ? { pitch: original?.notes[selected]?.pitch ?? 'C4' }
-              : // **A rest cannot be tied.** `readTies` already ignores a tie
-                // on a rest, so nothing misreads it — but leaving the flag set
-                // stores a tie the page never had, and it would reappear the
-                // moment the rest was turned back into a note.
-                { pitch: 'rest', tied_to_next: false },
-          )
-        }
-        accessibilityRole="switch"
-        // **Both spellings.** react-native-web emits `aria-checked` and does
-        // not derive it from `accessibilityState`, so on the web this switch
-        // announced its label and never whether it was on. Two other screens
-        // already knew this and said so in their own comments; this one did not.
-        accessibilityState={{ checked: current?.pitch === 'rest' }}
-        aria-checked={current?.pitch === 'rest'}
-        style={({ pressed }) => [
-          styles.chip,
-          styles.restToggle,
-          current?.pitch === 'rest' && styles.chipOn,
-          pressed && styles.pressed,
-        ]}
-      >
-        <Text
-          variant="metadataSmall"
-          color={current?.pitch === 'rest' ? 'actionText' : 'textPrimary'}
-        >
-          Rest
-        </Text>
-      </Pressable>
-
-      {/*
-        **A tie, because the app flags a broken one and could not fix it.**
-
-        `validate.py` reports a tie between two different pitches — a slur
-        written as a tie, or a misread notehead — and the score screen sends the
-        musician here to correct it. The editor could change the *pitch*, which
-        fixes one of those two readings, and had no way at all to say "that is
-        not a tie". A screen that names a fault and offers no way to repair it
-        is a dead end with directions on it.
-
-        It is also the same argument that put pitch here: a tie removes an
-        onset. `scheduleScore` folds a tied note into one sound and
-        `alignment.py` expects one attack, so a tie the page never had costs the
-        musician a note the analysis is waiting for.
-
-        Beside the rest toggle rather than with the pitch controls, because
-        those two are the marks that change the *timeline*; pitch below is read
-        by nothing in the analysis.
-      */}
-      {current && current.pitch !== 'rest' ? (
+      <View style={styles.markRow}>
         <Pressable
-          onPress={() => change({ tied_to_next: !current.tied_to_next })}
+          onPress={() =>
+            change(
+              current?.pitch === 'rest'
+                ? { pitch: original?.notes[selected]?.pitch ?? 'C4' }
+                : // **A rest cannot be tied.** `readTies` already ignores a tie
+                  // on a rest, so nothing misreads it — but leaving the flag set
+                  // stores a tie the page never had, and it would reappear the
+                  // moment the rest was turned back into a note.
+                  { pitch: 'rest', tied_to_next: false },
+            )
+          }
           accessibilityRole="switch"
-          accessibilityLabel="Tie to the next note"
-          accessibilityState={{ checked: current.tied_to_next === true }}
-          aria-checked={current.tied_to_next === true}
+          // **Both spellings.** react-native-web emits `aria-checked` and does
+          // not derive it from `accessibilityState`, so on the web this switch
+          // announced its label and never whether it was on. Two other screens
+          // already knew this and said so in their own comments; this one did not.
+          accessibilityState={{ checked: current?.pitch === 'rest' }}
+          aria-checked={current?.pitch === 'rest'}
           style={({ pressed }) => [
             styles.chip,
             styles.restToggle,
-            current.tied_to_next && styles.chipOn,
+            current?.pitch === 'rest' && styles.chipOn,
             pressed && styles.pressed,
           ]}
         >
           <Text
             variant="metadataSmall"
-            color={current.tied_to_next ? 'actionText' : 'textPrimary'}
+            color={current?.pitch === 'rest' ? 'actionText' : 'textPrimary'}
           >
-            Tie to next
+            Rest
           </Text>
         </Pressable>
-      ) : null}
+
+        {/*
+          **A tie, because the app flags a broken one and could not fix it.**
+
+          `validate.py` reports a tie between two different pitches — a slur
+          written as a tie, or a misread notehead — and the score screen sends the
+          musician here to correct it. The editor could change the *pitch*, which
+          fixes one of those two readings, and had no way at all to say "that is
+          not a tie". A screen that names a fault and offers no way to repair it
+          is a dead end with directions on it.
+
+          It is also the same argument that put pitch here: a tie removes an
+          onset. `scheduleScore` folds a tied note into one sound and
+          `alignment.py` expects one attack, so a tie the page never had costs the
+          musician a note the analysis is waiting for.
+
+          Beside the rest toggle rather than with the pitch controls, because
+          those two are the marks that change the *timeline*; pitch below is read
+          by nothing in the analysis.
+        */}
+        {current && current.pitch !== 'rest' ? (
+          <Pressable
+            onPress={() => change({ tied_to_next: !current.tied_to_next })}
+            accessibilityRole="switch"
+            accessibilityLabel="Tie to the next note"
+            accessibilityState={{ checked: current.tied_to_next === true }}
+            aria-checked={current.tied_to_next === true}
+            style={({ pressed }) => [
+              styles.chip,
+              styles.restToggle,
+              current.tied_to_next && styles.chipOn,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text
+              variant="metadataSmall"
+              color={current.tied_to_next ? 'actionText' : 'textPrimary'}
+            >
+              Tie to next
+            </Text>
+          </Pressable>
+        ) : null}
+      </View>
 
       {/*
         Pitch, one row below the durations and deliberately quieter.
@@ -556,30 +555,33 @@ export function MeasureEditScreen() {
         and F → F♯ is the accidental button, not the same control.
       */}
       {current && current.pitch !== 'rest' ? (
-        <View style={styles.pitchRow}>
+        // The redesign's stepper (`redesign/MeasureEdit.dc.html`): lower and
+        // raise either side of the note's name, and the name itself cycles
+        // the accidental.
+        <View style={styles.pitchStepper}>
           <Pressable
             onPress={() => change({ pitch: stepPitch(current.pitch, -1) })}
             accessibilityRole="button"
             accessibilityLabel="Lower this note"
-            style={({ pressed }) => [styles.chip, pressed && styles.pressed]}
+            style={({ pressed }) => [styles.stepButton, pressed && styles.pressed]}
           >
-            <Text variant="metadataSmall">Down</Text>
+            <Minus size={20} strokeWidth={1.6} color={colors.textPrimary} />
           </Pressable>
           <Pressable
             onPress={() => change({ pitch: cycleAccidental(current.pitch) })}
             accessibilityRole="button"
-            accessibilityLabel="Change the accidental"
-            style={({ pressed }) => [styles.chip, pressed && styles.pressed]}
+            accessibilityLabel={`${current.pitch}. Change the accidental`}
+            style={({ pressed }) => [styles.pitchName, pressed && styles.pressed]}
           >
-            <Text variant="metadataSmall">{current.pitch}</Text>
+            <Text style={styles.pitchText}>{prettyPitch(current.pitch)}</Text>
           </Pressable>
           <Pressable
             onPress={() => change({ pitch: stepPitch(current.pitch, 1) })}
             accessibilityRole="button"
             accessibilityLabel="Raise this note"
-            style={({ pressed }) => [styles.chip, pressed && styles.pressed]}
+            style={({ pressed }) => [styles.stepButton, pressed && styles.pressed]}
           >
-            <Text variant="metadataSmall">Up</Text>
+            <Plus size={20} strokeWidth={1.6} color={colors.textPrimary} />
           </Pressable>
         </View>
       ) : null}
@@ -592,25 +594,29 @@ export function MeasureEditScreen() {
         correction, it is a hole, and `validate.py` reports an empty bar as a
         sign that something which was not a measure was counted as one.
       */}
-      <View style={styles.pitchRow}>
+      {/* Words, not chips: two actions on the bar, not two more choices. */}
+      <View style={styles.noteActions}>
         <Pressable
           onPress={addNote}
           accessibilityRole="button"
           accessibilityLabel="Add a note after this one"
-          style={({ pressed }) => [styles.chip, pressed && styles.pressed]}
+          style={({ pressed }) => [styles.noteAction, pressed && styles.pressed]}
         >
-          <Text variant="metadataSmall">Add note</Text>
+          <Text variant="body" style={styles.noteActionText}>
+            Add note
+          </Text>
         </Pressable>
         <Pressable
           onPress={deleteNote}
           disabled={working.length <= 1}
           accessibilityRole="button"
           accessibilityLabel="Delete this note"
-          style={({ pressed }) => [styles.chip, working.length <= 1 && styles.chipOff, pressed && styles.pressed]}
+          style={({ pressed }) => [styles.noteAction, pressed && styles.pressed]}
         >
           <Text
-            variant="metadataSmall"
-            color={working.length <= 1 ? 'textTertiary' : 'textPrimary'}
+            variant="body"
+            color={working.length <= 1 ? 'borderStrong' : 'textTertiary'}
+            style={styles.noteActionText}
           >
             Delete note
           </Text>
@@ -744,8 +750,29 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: pressedOpacity,
   },
-  beats: {
-    marginTop: spacing.xl,
+  head: {
+    paddingTop: spacing.md,
+  },
+  eyebrow: {
+    textTransform: 'uppercase',
+    marginTop: spacing.xs,
+    marginBottom: 6,
+  },
+  barLine: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'baseline',
+  },
+  barName: {
+    fontSize: 17,
+    lineHeight: 22,
+  },
+  settingValue: {
+    fontSize: 17,
+    lineHeight: 22,
+  },
+  change: {
+    fontSize: 15,
   },
   beatsOff: {
     // `accentText`, not `accent`: this is type on the ivory ground, where the
@@ -754,6 +781,10 @@ const styles = StyleSheet.create({
   },
   keyLabel: {
     marginTop: spacing['2xl'],
+    fontSize: 12,
+    lineHeight: 16,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
   },
   keySetting: {
     minHeight: 56,
@@ -840,14 +871,55 @@ const styles = StyleSheet.create({
   },
   restToggle: {
     alignSelf: 'flex-start',
-    marginTop: spacing.md,
   },
-  pitchRow: {
+  markRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: spacing.sm,
     marginTop: spacing.md,
   },
-  chipOff: {
-    opacity: 0.4,
+  pitchStepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: spacing['2xl'],
+  },
+  stepButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: BORDER_WIDTH,
+    borderColor: colors.borderStrong,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pitchName: {
+    minWidth: 96,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pitchText: {
+    fontFamily: fontFamily.serifRegular,
+    fontSize: 22,
+    lineHeight: 28,
+    color: colors.textPrimary,
+  },
+  noteActions: {
+    flexDirection: 'row',
+    gap: spacing['2xl'],
+    marginTop: spacing.lg,
+  },
+  noteAction: {
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  noteActionText: {
+    fontSize: 15,
   },
 });
+
+/** "F#3" as it is printed: the sharp and flat signs rather than "#" and "b". */
+function prettyPitch(pitch: string): string {
+  return pitch.replace('#', '\u266F').replace(/^([A-G])b/, '$1\u266D');
+}

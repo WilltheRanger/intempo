@@ -31,11 +31,18 @@ export function TempoSlider({
   bpm,
   bounds,
   unitLabel,
+  marked = null,
   onChange,
 }: {
   bpm: number;
   bounds: { min: number; max: number };
   unitLabel: string;
+  /**
+   * The tempo printed on the page, drawn as a tick on the rail with its number
+   * over it (`redesign/SetTempo.dc.html`): where "as written" is, while the
+   * thumb says where you are. Null draws nothing.
+   */
+  marked?: number | null;
   onChange: (bpm: number) => void;
 }) {
   const [width, setWidth] = useState(0);
@@ -112,6 +119,17 @@ export function TempoSlider({
         {...pan.panHandlers}
       >
         <View style={styles.rail} pointerEvents="none" />
+        {marked !== null && marked >= bounds.min && marked <= bounds.max ? (
+          <View
+            pointerEvents="none"
+            style={[styles.markedAt, { left: `${fractionOf(marked, bounds) * 100}%` }]}
+          >
+            <Text variant="caption" color="textTertiary" style={styles.markedLabel}>
+              marked {marked}
+            </Text>
+            <View style={styles.markedTick} />
+          </View>
+        ) : null}
         <View style={[styles.fill, { width: at }]} pointerEvents="none" />
         <View style={[styles.thumb, { left: at }]} pointerEvents="none" />
       </View>
@@ -159,6 +177,26 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderWidth: BORDER_WIDTH * 2,
     borderColor: colors.accent,
+  },
+  // The tick and its label, centred on the marked tempo and standing above the
+  // rail so the thumb can pass over the tick without hiding the number.
+  markedAt: {
+    position: 'absolute',
+    bottom: HEIGHT - 15,
+    width: 80,
+    marginLeft: -40,
+    alignItems: 'center',
+  },
+  markedLabel: {
+    fontSize: 11,
+    lineHeight: 14,
+    marginBottom: 4,
+  },
+  markedTick: {
+    width: BORDER_WIDTH,
+    height: 12,
+    marginBottom: -8,
+    backgroundColor: colors.textTertiary,
   },
   ends: {
     flexDirection: 'row',

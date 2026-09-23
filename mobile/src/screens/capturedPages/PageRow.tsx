@@ -7,6 +7,7 @@ import { Text } from '../../components/primitives/Text';
 import type { CapturedPage } from '../../data/captureSession';
 import { pageNote } from '../../lib/scan/pageQueue';
 import {
+  BORDER_WIDTH,
   colors,
   ICON_SIZE,
   ICON_STROKE_WIDTH,
@@ -165,8 +166,12 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
     gap: spacing.sm,
   },
+  // A page, edged like one (`redesign/ReviewPages.dc.html`): the photograph
+  // is mostly white paper, and without an edge it bled into the white card.
   thumbnailPress: {
-    borderRadius: radii.sm,
+    borderRadius: 6,
+    borderWidth: BORDER_WIDTH,
+    borderColor: colors.border,
     overflow: 'hidden',
   },
   // A tap gets an immediate response, before the sheet it opens arrives —

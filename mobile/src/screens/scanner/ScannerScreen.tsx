@@ -32,7 +32,9 @@ import {
   useCapturedPages,
 } from '../../data/captureSession';
 import {
+  BORDER_WIDTH,
   colors,
+  fontFamily,
   ICON_SIZE,
   ICON_STROKE_WIDTH,
   MIN_TOUCH_TARGET,
@@ -717,9 +719,11 @@ function FallbackAction({
  * tap here and a failed transcription several screens and several minutes
  * later, with the music already back in its case.
  *
- * **Not a card** (§3 law 3). It is type on the screen's own ground — headline,
- * then why, then the pair of controls — and the only filled thing on it is the
- * one control the verdict actually recommends. Which one that is flips with
+ * **A card, since the redesign** (`redesign/Scanner.dc.html`): a faint ivory
+ * wash on the dark ground, headline, then why, then the pair of controls. It
+ * earns the box by being the one thing on the screen about a *particular*
+ * photograph — the frame above is the next one — and the only filled thing in
+ * it is the one control the verdict actually recommends. Which one that is flips with
  * the verdict and is decided in `lib/scan/shotVerdict.ts`, where a test can see
  * it; a screen that filled "Keep it" unconditionally would put its weight
  * behind keeping the one page the app has just said it cannot read.
@@ -768,7 +772,7 @@ function ShotPanel({
       >
         {verdict.headline}
       </Text>
-      <Text variant="metadataSmall" color="onDarkMuted" style={styles.shotBody}>
+      <Text variant="metadataSmall" color="onDarkSecondary" style={styles.shotBody}>
         {verdict.body}
       </Text>
       {/* Recommended one first, so reading order and weight agree. */}
@@ -798,7 +802,11 @@ function PanelAction({
         pressed && styles.pressed,
       ]}
     >
-      <Text variant="metadata" color={filled ? 'darkBg' : 'onDark'}>
+      <Text
+        variant="metadata"
+        color={filled ? 'darkBg' : 'onDark'}
+        style={filled ? styles.shotActionLabelFilled : undefined}
+      >
         {label}
       </Text>
     </Pressable>
@@ -826,13 +834,13 @@ const styles = StyleSheet.create({
   },
   readout: {
     // The verdict's own height, measured at 390pt with the longest of the four
-    // bodies: headline, three lines of reason, and the pair of controls.
-    // `minHeight`, so a longer body grows the slot rather than being clipped —
-    // it is the *shrinking* that moved the frame.
-    minHeight: 148,
+    // bodies: the card's padding, headline, three lines of reason, and the
+    // pair of controls. `minHeight`, so a longer body grows the slot rather
+    // than being clipped — it is the *shrinking* that moved the frame.
+    minHeight: 172,
     alignSelf: 'stretch',
     alignItems: 'center',
-    marginTop: spacing.lg,
+    marginTop: spacing.xl,
   },
   guide: {
     textAlign: 'center',
@@ -844,15 +852,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
   },
   shot: {
-    paddingHorizontal: spacing.xl,
-    alignItems: 'center',
+    alignSelf: 'stretch',
+    marginHorizontal: spacing['2xl'],
+    padding: spacing.lg,
+    borderRadius: 14,
+    borderWidth: BORDER_WIDTH,
+    borderColor: colors.onDarkFill,
+    backgroundColor: colors.onDarkWash,
   },
   shotHeadline: {
-    textAlign: 'center',
+    fontSize: 16,
   },
   shotBody: {
-    marginTop: spacing.xs,
-    textAlign: 'center',
+    marginTop: 6,
     // The body is the reason, and a reason that runs the full width of a phone
     // reads as a paragraph rather than as a caption on the page above it.
     maxWidth: 300,
@@ -860,22 +872,30 @@ const styles = StyleSheet.create({
   shotActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
-    marginTop: spacing.md,
+    gap: 10,
+    marginTop: 14,
   },
   shotAction: {
     // Both axes, like Done below: "Keep it" measures under 44pt wide.
     minHeight: MIN_TOUCH_TARGET,
     minWidth: MIN_TOUCH_TARGET,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.xl,
     alignItems: 'center',
     justifyContent: 'center',
     // `md`, not `pill`. `radii.ts` reserves the pill for shapes that carry
     // meaning and says in as many words that it is not a default for buttons.
     borderRadius: radii.md,
+    // The unrecommended one keeps an edge, so it still reads as a control
+    // beside the filled one rather than as a caption.
+    borderWidth: BORDER_WIDTH,
+    borderColor: colors.onDarkFill,
   },
   shotActionFilled: {
     backgroundColor: colors.onDark,
+    borderColor: colors.onDark,
+  },
+  shotActionLabelFilled: {
+    fontFamily: fontFamily.sansMedium,
   },
   captureDisabled: {
     opacity: 0.4,

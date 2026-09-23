@@ -1,4 +1,4 @@
-import { useRoute, type RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Pressable, StyleSheet, View } from 'react-native';
 
@@ -10,6 +10,9 @@ import {
   ScreenContainer,
   Text,
 } from '../../components/primitives';
+import { ListenButton } from '../../components/score/ListenButton';
+import { ScoreBand } from '../../components/score/ScoreBand';
+import { SCREEN_GUTTER } from '../../components/primitives/ScreenContainer';
 import { usePiece } from '../../data/hooks/usePieces';
 import { practiceTempo, usePracticeTempos } from '../../data/practiceTempo';
 import { BORDER_WIDTH, colors, fontFamily, radii, spacing } from '../../design';
@@ -31,7 +34,7 @@ import {
 } from '../../lib/tempo';
 import { bpmForMarking } from '../../lib/tempoMarking';
 import { useReducedMotion } from '../../lib/useReducedMotion';
-import type { RootStackParamList } from '../../navigation/types';
+import type { RootNavigation, RootStackParamList } from '../../navigation/types';
 import { useGoBack } from '../../navigation/useGoBack';
 import { TempoSlider } from './TempoSlider';
 
@@ -53,7 +56,13 @@ import { TempoSlider } from './TempoSlider';
  * quarter-note clock only when stored.
  */
 export function TempoScreen() {
-  const { params } = useRoute<RouteProp<RootStackParamList, 'Tempo'>>();
+  const route = useRoute<RouteProp<RootStackParamList, 'Tempo' | 'SetTempo'>>();
+  const { params } = route;
+  // **Step 3 of adding a piece** (`redesign/SetTempo.dc.html`) is this screen
+  // on its own route: the working tempo set once, straight after the piece is
+  // named, before its score opens for the first time.
+  const setup = route.name === 'SetTempo';
+  const navigation = useNavigation<RootNavigation>();
   const goBack = useGoBack({ route: 'Record', params: { pieceId: params.pieceId } });
   const { data: piece, isError } = usePiece(params.pieceId);
   usePracticeTempos();
@@ -131,20 +140,56 @@ export function TempoScreen() {
 
   const tapping = taps.length > 0;
 
+  const hasNotation = (piece.score?.measures.length ?? 0) > 0;
+
   return (
     <ScreenContainer
-      scrollable={false}
-      footer={<PrimaryButton label="Done" onPress={goBack} />}
+      scrollable={setup}
+      footer={
+        setup ? (
+          // The score is where a new piece goes next: its reading is checked
+          // there, and it is where the notation appears when the reading ends.
+          <PrimaryButton
+            label="Save and open the score"
+            onPress={() => navigation.replace('PieceScore', { pieceId: params.pieceId })}
+          />
+        ) : (
+          <PrimaryButton label="Done" onPress={goBack} />
+        )
+      }
     >
-      <View style={styles.head}>
-        <BackLink label="Back" onPress={goBack} />
-        <Text variant="eyebrow" color="textTertiary" style={styles.eyebrow} numberOfLines={1}>
-          {piece.title}
-        </Text>
-        <Text variant="screenTitle" accessibilityRole="header" style={styles.title}>
-          Tempo
-        </Text>
-      </View>
+      {setup ? (
+        <View style={styles.head}>
+          <Text variant="eyebrow" color="textTertiary" style={styles.eyebrow}>
+            Step 3 of 3
+          </Text>
+          <Text variant="screenTitle" accessibilityRole="header" style={styles.title}>
+            Set your working tempo
+          </Text>
+        </View>
+      ) : (
+        <View style={styles.head}>
+          <BackLink label="Back" onPress={goBack} />
+          <Text variant="eyebrow" color="textTertiary" style={styles.eyebrow} numberOfLines={1}>
+            {piece.title}
+          </Text>
+          <Text variant="screenTitle" accessibilityRole="header" style={styles.title}>
+            Tempo
+          </Text>
+        </View>
+      )}
+
+      {/*
+        The opening of the piece, so the tempo is chosen against the music it
+        is for — once there is music. A piece that has just been named is
+        usually still being read, and then the band waits rather than stands
+        in as an empty box.
+      */}
+      {setup && hasNotation && piece.score ? (
+        <View style={styles.band}>
+          <ScoreBand score={piece.score} />
+        </View>
+      ) : null}
 
       <View style={styles.readout}>
         <Text style={styles.bpm} accessibilityLiveRegion="polite">
@@ -157,6 +202,7 @@ export function TempoScreen() {
         bpm={bpm}
         bounds={bounds}
         unitLabel={unitLabel}
+        marked={setup ? marked : null}
         onChange={(next) => {
           setTaps([]);
           set(next);
@@ -217,6 +263,19 @@ export function TempoScreen() {
               </Pressable>
             );
           })}
+        </View>
+      ) : null}
+
+      {/*
+        Hear the opening at the tempo on the screen, before committing to it —
+        in setup only, and only once there is notation to play.
+      */}
+      {setup && hasNotation && piece.score ? (
+        <View style={styles.listen}>
+          <ListenButton score={piece.score} bpm={quarter} />
+          <Text variant="metadata" color="textTertiary" style={styles.listenHint}>
+            Hear bar 1 at this tempo
+          </Text>
         </View>
       ) : null}
 
@@ -323,5 +382,21 @@ const styles = StyleSheet.create({
   note: {
     marginTop: spacing.lg,
     textAlign: 'center',
+  },
+  // The opening system, edge to edge like the piece's own band.
+  band: {
+    marginTop: spacing.xl,
+    marginHorizontal: -SCREEN_GUTTER,
+    borderTopWidth: BORDER_WIDTH,
+    borderTopColor: colors.border,
+  },
+  listen: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.lg,
+    marginTop: 36,
+  },
+  listenHint: {
+    flex: 1,
   },
 });
