@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { UsageResponse } from '../data/types';
 import {
   analysisLimitReached,
+  describeAnalysisCost,
   describeLastFreeAnalysis,
   describeReachedAnalysisLimit,
   whenAnalysisAllowanceResets,
@@ -124,5 +125,32 @@ describe('describeReachedAnalysisLimit', () => {
 
   it('says nothing while there is allowance left', () => {
     expect(describeReachedAnalysisLimit(usage())).toBeNull();
+  });
+});
+
+describe('describeAnalysisCost', () => {
+  it('says what sending costs, in the allowance the account has', () => {
+    expect(describeAnalysisCost(usage({ used: 0, remaining: 3 }))).toBe(
+      'This uses one of your 3 free analyses this month.',
+    );
+  });
+
+  it('names the last one as the last one', () => {
+    expect(describeAnalysisCost(usage())).toContain('Last free analysis');
+  });
+
+  it('leaves a spent allowance to the refusal', () => {
+    expect(describeAnalysisCost(usage({ used: 3, remaining: 0 }))).toBeNull();
+  });
+
+  it('says nothing on an unlimited plan or with no account read yet', () => {
+    expect(describeAnalysisCost(usage({ limit: null, remaining: null }))).toBeNull();
+    expect(describeAnalysisCost(null)).toBeNull();
+  });
+
+  it('does not pluralise a single free analysis', () => {
+    expect(describeAnalysisCost(usage({ used: 0, limit: 1, remaining: 1 }))).toContain(
+      'Last free analysis',
+    );
   });
 });

@@ -30,7 +30,7 @@ export function passageLabel(measures: { measure: number }[]): string | null {
   // A take that opens the page. The count is what a musician expects there,
   // and it is what this screen has always said.
   if (first <= 1) {
-    return measures.length === 1 ? '1 measure' : `${measures.length} measures`;
+    return measures.length === 1 ? '1 bar' : `${measures.length} bars`;
   }
 
   // One bar is not a range, and "Bars 9 to 9" reads as a fault in the sentence

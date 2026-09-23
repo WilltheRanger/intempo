@@ -102,10 +102,10 @@ describe('the provider’s errors, reworded', () => {
       "That email and password don't match an account.",
     );
     expect(describeAuthError(new Error('Email not confirmed'))).toBe(
-      'Confirm your email address first. Check your inbox for the link.',
+      'Confirm your email first.',
     );
     expect(describeAuthError(new Error('Over email rate limit'))).toBe(
-      'Too many attempts. Wait a minute and try again.',
+      'Too many tries. Wait a minute.',
     );
   });
 

@@ -142,10 +142,6 @@ export function WarmupScreen() {
           />
         )}
 
-        <Text variant="metadataSmall" color="textTertiary" style={styles.note}>
-          Change your instrument in your profile and tomorrow’s warmup follows
-          it.
-        </Text>
       </View>
     </ScreenContainer>
   );
@@ -202,12 +198,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: spacing.md,
   },
-  note: {
-    // Pushed to the foot of the plate: it is a footnote about the page, and on
-    // a short warmup there is paper between it and the music.
-    marginTop: 'auto',
-    paddingTop: spacing.xl,
-  },
+
   controls: {
     gap: spacing.lg,
   },

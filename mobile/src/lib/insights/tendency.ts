@@ -191,6 +191,32 @@ export function readPieceWord(piece: {
   return tempoWanders(piece) ? 'Uneven' : VERDICT_WORDS[piece.verdict];
 }
 
+/**
+ * The colour a piece's word is set in, in Insights' list of pieces
+ * (`redesign/Insights.dc.html`): the on-tempo green for on the beat, the
+ * mid verdict hue for rushing, dragging and uneven, and plain secondary ink for
+ * the slight ones — a slight rush is worth reading, not worth flagging.
+ */
+export function pieceWordTone(piece: {
+  meanDeviationPct: number;
+  spreadPct: number;
+  tolerance: Tolerance | null;
+  verdict: Verdict;
+}): 'verdictOn' | 'verdictMid' | 'textSecondary' {
+  if (tempoWanders(piece)) {
+    return 'verdictMid';
+  }
+  switch (piece.verdict) {
+    case 'on_tempo':
+      return 'verdictOn';
+    case 'slight_rush':
+    case 'slight_drag':
+      return 'textSecondary';
+    default:
+      return 'verdictMid';
+  }
+}
+
 const VERDICT_WORDS: Record<Verdict, string> = {
   on_tempo: 'On tempo',
   slight_rush: 'Slight rush',

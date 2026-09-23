@@ -4,6 +4,7 @@ import { useIsFocused } from '@react-navigation/native';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { Animated, Platform, StyleSheet, View, type ViewStyle } from 'react-native';
 
+import { useArrival } from '../data/arrival';
 import { useAuthStatus } from '../data/auth/useAuthStatus';
 import { useMe } from '../data/hooks/useMe';
 import { preferences } from '../data/preferences';
@@ -29,9 +30,12 @@ import { LibraryScreen } from '../screens/library/LibraryScreen';
 import { PieceDetailScreen } from '../screens/pieceDetail/PieceDetailScreen';
 import { MeasureEditScreen } from '../screens/measureEdit/MeasureEditScreen';
 import { ProofReadScreen } from '../screens/proofRead/ProofReadScreen';
+import { OnboardingDone } from '../screens/onboarding/OnboardingDone';
 import { OnboardingScreen } from '../screens/onboarding/OnboardingScreen';
 import { PieceScoreScreen } from '../screens/pieceScore/PieceScoreScreen';
 import { RecordScreen } from '../screens/record/RecordScreen';
+import { TempoScreen } from '../screens/tempo/TempoScreen';
+import { UploadRecordingScreen } from '../screens/upload/UploadRecordingScreen';
 import { ProfileScreen } from '../screens/profile/ProfileScreen';
 import { ScannerScreen } from '../screens/scanner/ScannerScreen';
 import { TodayScreen } from '../screens/today/TodayScreen';
@@ -263,6 +267,7 @@ function SignedInApp() {
    * as the effect above it.
    */
   const applyingDraft = useApplyOnboardingDraft(me);
+  const arrived = useArrival();
 
   // Restore the account before mounting any tab. A failed /v1/me used to open
   // the app anyway, so Today, Library, Insights and Profile each rendered a
@@ -297,6 +302,13 @@ function SignedInApp() {
 
   if (shouldOnboard(me)) {
     return <OnboardingScreen />;
+  }
+
+  // "Welcome to InTempo", once, the first time the account is through — held
+  // in front of the app like the gate before it, so it is not a route anybody
+  // can come back to. "Start practicing" moves `arrival` on and Today fades in.
+  if (arrived === 'welcome') {
+    return <OnboardingDone />;
   }
 
   return (
@@ -341,6 +353,18 @@ function SignedInApp() {
         component={AcknowledgementsScreen}
       />
       <Stack.Screen name="Record" component={RecordScreen} />
+      <Stack.Screen name="Tempo" component={TempoScreen} />
+      {/*
+        Step 3 of adding a piece: one component, two routes, told apart by
+        `route.name`. No swipe back — the piece is saved by now, and back is
+        the naming step it has already left.
+      */}
+      <Stack.Screen
+        name="SetTempo"
+        component={TempoScreen}
+        options={{ gestureEnabled: false }}
+      />
+      <Stack.Screen name="UploadRecording" component={UploadRecordingScreen} />
       <Stack.Screen name="Warmup" component={WarmupScreen} />
       <Stack.Screen name="Verdict" component={VerdictScreen} />
     </Stack.Navigator>

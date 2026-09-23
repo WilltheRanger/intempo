@@ -81,7 +81,7 @@ export function cameraFallback({
     // The system prompt is still coming. Anything offered here would be a
     // second decision on top of the one already on screen.
     return {
-      message: 'InTempo needs your camera to photograph sheet music.',
+      message: 'Allow the camera to photograph music.',
       actions: [],
     };
   }
@@ -91,7 +91,7 @@ export function cameraFallback({
       // Named as the browser's refusal, not the app's failure, because that is
       // what it is and because it tells them where to change it if they want to.
       message:
-        'Your browser is not letting InTempo use the camera. Your phone’s camera app can still photograph the page.',
+        'Your browser is blocking the camera. Use the camera app instead.',
       // **No Settings control on the web, and that is not an omission.** Site
       // permissions live behind the address bar, in browser chrome no page can
       // open — the same distinction `microphonePermissionRecovery` draws. The
@@ -103,10 +103,10 @@ export function cameraFallback({
 
   return {
     message:
-      'InTempo does not have camera access. You can turn it on in Settings, or use photographs you have already taken.',
+      'Camera access is off. Turn it on in Settings, or choose photos.',
     actions: [
       { label: 'Open Settings', route: 'settings' },
-      { label: 'Choose images instead', route: 'import' },
+      { label: 'Choose photos', route: 'import' },
     ],
   };
 }

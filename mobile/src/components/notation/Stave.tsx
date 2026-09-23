@@ -506,20 +506,31 @@ export function Stave({
             ? system.measureSpans
                 .filter((span) => span.measureNumber === highlightMeasure)
                 .map((span, index) => (
-                  <Rect
-                    key={`playhead-${index}`}
-                    x={span.from}
-                    y={system.staffLines[0] - lineGap}
-                    width={span.to - span.from}
-                    height={lineGap * 6}
-                    // **The accent, at a tint.** §3 law 5: ochre marks active
-                    // states and progress — which is exactly what a playhead
-                    // is — and must never become a surface. Low opacity is how
-                    // it can be both: a wash the eye reads as "here", not a
-                    // gold panel competing with the notes.
-                    fill={colors.accent}
-                    opacity={0.14}
-                  />
+                  <G key={`playhead-${index}`}>
+                    <Rect
+                      x={span.from}
+                      y={system.staffLines[0] - lineGap}
+                      width={span.to - span.from}
+                      height={lineGap * 6}
+                      // **The accent, at a tint.** §3 law 5: ochre marks active
+                      // states and progress — which is exactly what a playhead
+                      // is — and must never become a surface. Low opacity is
+                      // how it can be both: a wash the eye reads as "here", not
+                      // a gold panel competing with the notes.
+                      fill={colors.accent}
+                      opacity={0.14}
+                    />
+                    {/* The redesign's edge (2026-09-23): a 2pt rule down the
+                        bar's leading side, full strength, so the start reads
+                        as a place the take begins rather than a tinted area. */}
+                    <Rect
+                      x={span.from}
+                      y={system.staffLines[0] - lineGap}
+                      width={2}
+                      height={lineGap * 6}
+                      fill={colors.accent}
+                    />
+                  </G>
                 ))
             : null}
 

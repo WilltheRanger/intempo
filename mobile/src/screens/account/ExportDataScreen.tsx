@@ -52,8 +52,7 @@ export function ExportDataScreen() {
       />
 
       <Text variant="body" color="textSecondary" style={styles.lede}>
-        Get a portable JSON copy of the information InTempo keeps about your
-        account.
+        A JSON copy of your account data.
       </Text>
 
       <Card emphasis style={styles.card}>
@@ -67,8 +66,7 @@ export function ExportDataScreen() {
       </Card>
 
       <Text variant="metadataSmall" color="textTertiary" style={styles.note}>
-        Uploaded photos and audio are counted in the export but are not embedded
-        in the JSON file. No storage access tokens are included.
+        Photos and audio aren’t included.
       </Text>
 
       <PrimaryButton

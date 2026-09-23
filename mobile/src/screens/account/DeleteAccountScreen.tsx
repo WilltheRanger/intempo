@@ -58,7 +58,7 @@ export function DeleteAccountScreen() {
       />
 
       <Text variant="body" color="textSecondary" style={styles.lede}>
-        This permanently removes your InTempo account and cannot be undone.
+        This can’t be undone.
       </Text>
 
       <Card emphasis style={styles.card}>
@@ -86,17 +86,13 @@ export function DeleteAccountScreen() {
       ) : null}
 
       <PrimaryButton
-        label="Delete account permanently"
+        label="Delete account"
         onPress={() => setConfirming(true)}
         disabled={!ready || deleting}
         loading={deleting}
         style={styles.delete}
       />
 
-      <Text variant="metadataSmall" color="textTertiary" style={styles.note}>
-        Signing out does not delete anything. Use the button above only when
-        you want the account and its data removed.
-      </Text>
 
       <ConfirmDialog
         visible={confirming}
@@ -150,8 +146,5 @@ const styles = StyleSheet.create({
   delete: {
     marginTop: spacing['2xl'],
   },
-  note: {
-    marginTop: spacing.md,
-    textAlign: 'center',
-  },
+
 });

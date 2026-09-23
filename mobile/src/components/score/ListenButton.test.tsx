@@ -33,6 +33,7 @@ vi.mock('../../design', () => ({
   BORDER_WIDTH: 1,
   ICON_SIZE: { sm: 16 },
   ICON_STROKE_WIDTH: 1,
+  CONTROL_HEIGHT: 52,
   MIN_TOUCH_TARGET: 44,
   colors: {},
   disabledOpacity: 0.4,

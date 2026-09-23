@@ -18,15 +18,16 @@ import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
 import { SheetOptionRow } from '../../components/overlays/SheetOptionRow';
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
 import { ScoreBand } from '../../components/score/ScoreBand';
+import { PieceLinkRow } from './PieceLinkRow';
 import { PracticeHistory } from './PracticeHistory';
 import { usePieceHistory } from '../../data/hooks/useLatestTake';
 import {
+  BackLink,
   Card,
   EmptyState,
   IconButton,
   Input,
   LoadingState,
-  PageHeader,
   PrimaryButton,
   SCREEN_GUTTER,
   ScreenContainer,
@@ -39,10 +40,8 @@ import {
   useUpdatePiece,
 } from '../../data/hooks/usePieces';
 import type { Piece } from '../../data/types';
-import { practiceTempo, usePracticeTempos } from '../../data/practiceTempo';
 import { BORDER_WIDTH, colors, spacing } from '../../design';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
-import { ListenButton } from '../../components/score/ListenButton';
 import { loadStateFor } from '../../lib/loadState';
 
 /**
@@ -53,6 +52,9 @@ import { loadStateFor } from '../../lib/loadState';
  * — see the band itself.
  */
 const BANNER_HEIGHT = 116;
+
+/** Room for the opening two systems of the piece, as the prototype draws. */
+const OPENING_HEIGHT = 150;
 
 /**
  * A saved piece.
@@ -134,11 +136,6 @@ export function PieceDetailScreen() {
     }
   }
 
-  // The tempo this piece was last practised at, which is the tempo it should
-  // be heard at — the same value the record screen and Today read.
-  usePracticeTempos();
-  const bpm = piece ? practiceTempo.for(piece.id, piece.markedBpm) : 0;
-
   if (load === 'loading') {
     return (
       <ScreenContainer>
@@ -153,7 +150,6 @@ export function PieceDetailScreen() {
         <EmptyState
           fill
           title="Couldn't open this piece"
-          description="It may have been removed from your library."
           actionLabel="Back"
           onActionPress={goBack}
         />
@@ -161,16 +157,6 @@ export function PieceDetailScreen() {
     );
   }
 
-  /**
-   * Whether this piece has been recorded before.
-   *
-   * One fact, answering two questions: whether the button says "Continue" and
-   * whether there is any history to show. It used to be two — `started` read
-   * `progress > 0`, a field with no backing column that `sources/api.ts` maps
-   * to null, so against the live API every piece said "Start practice" forever,
-   * including one recorded fifty times.
-   */
-  const played = piece.lastPracticedAt !== null;
   const measureCount = piece.score?.measures.length ?? 0;
   const hasNotation = measureCount > 0;
   const hasPages = piece.thumbnail !== null;
@@ -186,7 +172,7 @@ export function PieceDetailScreen() {
   return (
     /*
       **The action is the footer, not a row in the middle of the page.**
-      "Continue practice" is the one thing this screen is for, and §3 law 7 puts
+      "Practice" is the one thing this screen is for, and §3 law 7 puts
       the primary action where a thumb reaches. It used to sit at about a third
       of the way down, inside a card, level with the score band — so the screen
       opened with two things competing to be looked at first.
@@ -195,38 +181,34 @@ export function PieceDetailScreen() {
       footer={
         canPractice ? (
           <PrimaryButton
-            label={played ? 'Continue practice' : 'Start practice'}
+            label="Practice"
             onPress={() => navigation.navigate('Record', { pieceId: piece.id })}
           />
         ) : undefined
       }
     >
       {/*
-        **The composer sits above the title, as it does everywhere else.**
-        This screen used to put it underneath, in its own `Text` block, while
-        `PieceScoreScreen` and `RecordScreen` both pass it as the eyebrow — so
-        opening a piece and then its score flipped the composer from under the
-        title to over it, on the same piece. `PageHeader` always draws the
-        eyebrow above (there is no option to invert it), so the majority wins
-        and this screen joins them.
-
-        The movement went with it, into the facts row below the score band:
-        it is a fact about the piece like the tempo and the measure count, and
-        it was the second of two stray lines between the header and the image.
+        The redesign's head (`redesign/PieceDetail.dc.html`): a way back in
+        words, the title, and the piece's options as a bare glyph beside it.
+        The composer is no longer written here — the piece is recognised by
+        its title and by the music under it, and the composer is one tap away
+        under Rename.
       */}
-      <PageHeader
-        eyebrow={piece.composer}
-        title={piece.title}
-        onBack={goBack}
-        backLabel="Back to library"
-        action={
+      <View style={styles.head}>
+        <BackLink label="Back to library" onPress={goBack} />
+        <View style={styles.titleRow}>
+          <Text variant="heroTitle" accessibilityRole="header" style={styles.title}>
+            {piece.title}
+          </Text>
           <IconButton
             icon={MoreVertical}
             label="Piece options"
+            variant="bare"
             onPress={() => setMenuVisible(true)}
+            style={styles.options}
           />
-        }
-      />
+        </View>
+      </View>
 
       {/*
         Correcting the name in place, the same shape `TranscriptionReviewScreen`
@@ -305,7 +287,8 @@ export function PieceDetailScreen() {
       */}
       {hasNotation && piece.score ? (
         <View style={styles.engravedBand}>
-          <ScoreBand score={piece.score} />
+          {/* The opening two systems, where the prototype draws two lines. */}
+          <ScoreBand score={piece.score} viewport={OPENING_HEIGHT} />
         </View>
       ) : hasPages ? (
         // Nothing has been read yet — a scan still in the worker, or a reading
@@ -333,26 +316,11 @@ export function PieceDetailScreen() {
         if it comes back at all.
       */}
 
-      {stillReading ? (
-        <Text variant="metadataSmall" color="textSecondary" style={styles.facts}>
-          Reading the sheet music before practice can begin.
-        </Text>
-      ) : null}
-
       {/*
-        Hearing the piece belongs with the piece, not with the decision to
-        practise — so it stays in the flow while the footer holds the one
-        action. Choosing a tempo and a starting bar lives on the score screen,
-        where you can see the bars you would be choosing between.
+        No Listen here any more: the redesign puts it on the Record screen's
+        panel, beside the tempo it plays at and the bar it starts from, which is
+        where a musician deciding how to play the piece reaches for it.
       */}
-      {measureCount > 0 ? (
-        <View style={styles.listen}>
-          <ListenButton
-            score={piece.score}
-            bpm={bpm}
-          />
-        </View>
-      ) : null}
 
       {/*
         **What happened last time, and how it has gone.** This screen knew
@@ -367,18 +335,10 @@ export function PieceDetailScreen() {
       {needsNotation ? (
         <Card style={styles.notationCard}>
           <Text variant="sectionLabel" color="textSecondary">
-            Add sheet music before recording
-          </Text>
-          <Text
-            variant="body"
-            color="textSecondary"
-            style={styles.notationCopy}
-          >
-            InTempo needs the written notes and rests to follow your playing,
-            count long rests, and explain where the tempo changed.
+            Add the sheet music to record
           </Text>
           <PrimaryButton
-            label="Photograph sheet music"
+            label="Photograph it"
             icon={Camera}
             onPress={() =>
               navigation.navigate('Scanner', { attachToPieceId: piece.id })
@@ -386,7 +346,7 @@ export function PieceDetailScreen() {
             style={styles.notationPrimary}
           />
           <SecondaryButton
-            label="Choose existing images"
+            label="Choose photos"
             icon={Images}
             onPress={() =>
               navigation.navigate('AddPiece', {
@@ -400,82 +360,67 @@ export function PieceDetailScreen() {
       ) : null}
 
       {/*
-        **Ruled rows on the page, not a card.** Two destinations with a label
-        and a line each — the library's own `PieceRow` separates forty of these
-        with a hairline apiece, and a box around two of them groups nothing that
-        the rule between them does not already say (§3 law 3).
+        **Ruled rows on the page, not a card**, each a glyph, a name and one
+        line about what is behind it (`redesign/PieceDetail.dc.html`). Rename is
+        one of them now rather than a line in the options sheet: it is the
+        thing done to a piece most often after a scan, and it was two taps deep.
       */}
-      {hasNotation || hasPages || stillReading || readingFailed ? (
-        <View style={styles.accessRows}>
-            {/*
-              A scan in flight, or one that failed, needs a way back to the
-              screen that says so. Without this the only route to it was the
-              one time the app navigated there itself, right after saving — so
-              backing out of a page being read meant losing sight of it, on a
-              piece that gives no other sign anything is happening.
-            */}
-            {stillReading || readingFailed ? (
-              <SheetOptionRow
-                icon={FileMusic}
-                label={stillReading ? 'Reading this page' : "This page couldn't be read"}
-                description={
-                  stillReading
-                    ? piece.transcriptionStage ?? 'Transcribing the notation.'
-                    : // **Deliberately not `piece.transcriptionError`**, unlike
-                      // the branch above and unlike `PieceScoreScreen`, which
-                      // does print the server's reason. Owner's call,
-                      // 2026-09-04 — `DECISIONS.md`. The cost is stated there:
-                      // a fault on our side reads here as something to fix
-                      // with the camera. Do not "fix" this in passing.
-                      'Photograph it again to try once more.'
-                }
-                divided={false}
-                onPress={() =>
-                  navigation.navigate('PieceScore', { pieceId: piece.id })
-                }
-              />
-            ) : null}
-            {/*
-              Both rows carry this piece's id. They used to push routes that
-              read the shared *scan session* instead, so every piece in the
-              library opened whatever was last photographed — and, because the
-              captured-pages screen has a live "Continue" footer, you could
-              walk from any piece into the transcription flow and save a
-              hardcoded fixture over it.
-            */}
-            {hasNotation && !stillReading && !readingFailed ? (
-              <SheetOptionRow
-                icon={FileMusic}
-                label="Digital score"
-                divided={false}
-                onPress={() =>
-                  navigation.navigate('PieceScore', {
-                    pieceId: piece.id,
-                    view: 'notation',
-                  })
-                }
-              />
-            ) : null}
-            {/*
-              Absent for a piece typed in by hand: there are no photos it was
-              transcribed from, because it never was. A row promising them
-              would open an empty screen.
-            */}
-            {hasPages ? (
-              <SheetOptionRow
-                icon={Layers}
-                label="Original pages"
-                divided={hasNotation || stillReading || readingFailed}
-                onPress={() =>
-                  navigation.navigate('PieceScore', {
-                    pieceId: piece.id,
-                    view: 'original',
-                  })
-                }
-              />
-          ) : null}
-        </View>
-      ) : null}
+      <View style={styles.accessRows}>
+        {/*
+          A scan in flight, or one that failed, needs a way back to the screen
+          that says so. Without this the only route to it was the one time the
+          app navigated there itself, right after saving.
+        */}
+        {stillReading || readingFailed ? (
+          <PieceLinkRow
+            icon={FileMusic}
+            label={stillReading ? 'Reading the page' : "Couldn't read the page"}
+            description={
+              stillReading
+                ? piece.transcriptionStage ?? null
+                : // **Deliberately not `piece.transcriptionError`**, unlike
+                  // `PieceScoreScreen`, which does print the server's reason.
+                  // Owner's call, 2026-09-04 — `DECISIONS.md`. Do not "fix"
+                  // this in passing.
+                  'Photograph it again'
+            }
+            onPress={() => navigation.navigate('PieceScore', { pieceId: piece.id })}
+          />
+        ) : null}
+        {/*
+          Both rows carry this piece's id. They used to push routes that read
+          the shared *scan session* instead, so every piece in the library
+          opened whatever was last photographed.
+        */}
+        {hasNotation && !stillReading && !readingFailed ? (
+          <PieceLinkRow
+            icon={FileMusic}
+            label="Digital score"
+            onPress={() =>
+              navigation.navigate('PieceScore', { pieceId: piece.id, view: 'notation' })
+            }
+          />
+        ) : null}
+        {/*
+          Absent for a piece typed in by hand: there are no photos it was
+          transcribed from, and a row promising them would open an empty
+          screen.
+        */}
+        {hasPages ? (
+          <PieceLinkRow
+            icon={Layers}
+            label="Original pages"
+            onPress={() =>
+              navigation.navigate('PieceScore', { pieceId: piece.id, view: 'original' })
+            }
+          />
+        ) : null}
+        <PieceLinkRow
+          icon={PencilLine}
+          label="Rename"
+          onPress={() => startEditing(piece)}
+        />
+      </View>
 
       <BottomSheet
         visible={menuVisible}
@@ -483,22 +428,10 @@ export function PieceDetailScreen() {
         title={piece.title}
       >
         <SheetOptionRow
-          icon={PencilLine}
-          label="Rename"
-          divided={false}
-          onPress={() => {
-            setMenuVisible(false);
-            startEditing(piece);
-          }}
-        />
-        <SheetOptionRow
           icon={Trash2}
-          label="Remove from library"
-          description={
-            piece.lastPracticedAt
-              ? 'Also removes its practice history and recordings.'
-              : 'Permanently removes this piece from your library.'
-          }
+          divided={false}
+          label="Delete piece"
+          description={piece.lastPracticedAt ? 'And all its takes' : undefined}
           onPress={() => {
             setMenuVisible(false);
             setError(null);
@@ -512,8 +445,8 @@ export function PieceDetailScreen() {
         title="Delete this piece?"
         message={
           piece.lastPracticedAt
-            ? `${piece.title}, its practice history, and its recordings will be permanently deleted.`
-            : `${piece.title} will be permanently deleted from your library.`
+            ? `${piece.title} and all its takes will be deleted.`
+            : `${piece.title} will be deleted.`
         }
         confirmLabel="Delete piece"
         onConfirm={() => void confirmDelete()}
@@ -576,18 +509,14 @@ const styles = StyleSheet.create({
     borderTopWidth: BORDER_WIDTH,
     borderTopColor: colors.border,
   },
-  facts: {
-    marginTop: spacing.lg,
-  },
+
   listen: {
     marginTop: spacing.lg,
   },
   notationCard: {
     marginTop: spacing.xl,
   },
-  notationCopy: {
-    marginTop: spacing.md,
-  },
+
   notationPrimary: {
     marginTop: spacing.lg,
   },
@@ -595,8 +524,26 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   accessRows: {
-    marginTop: spacing['2xl'],
-    borderTopWidth: BORDER_WIDTH,
-    borderTopColor: colors.border,
+    marginTop: 14,
+  },
+  head: {
+    paddingTop: spacing.md,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  title: {
+    flex: 1,
+    fontSize: 26,
+    lineHeight: 31,
+  },
+  // A 44pt target whatever the title does. Not pulled out to the gutter line
+  // as the prototype draws it: this screen's column clips at the gutter on
+  // the web, and a pulled glyph lost ten points of its target to the clip.
+  options: {
+    flexShrink: 0,
   },
 });

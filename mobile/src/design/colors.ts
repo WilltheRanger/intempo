@@ -116,10 +116,48 @@ export const lightColors = {
    * and leaves the label at about 8:1.
    */
   onDarkFill: 'rgba(251, 250, 247, 0.16)',
+  /**
+   * Supporting copy on a dark ground where it has to be read, not glanced at
+   * (`redesign/Scanner.dc.html`, the shot's verdict): the reason a page will or
+   * will not read. `onDarkMuted` is for captions; this is for sentences.
+   */
+  onDarkSecondary: 'rgba(251, 250, 247, 0.78)',
+  /** A panel lifted off a dark ground by the faintest wash of ivory. */
+  onDarkWash: 'rgba(251, 250, 247, 0.07)',
+  /**
+   * The gold on a dark ground (`redesign/OnboardWelcome.dc.html`, the tempo the
+   * scan found): `accent` lifted until it reads against ink as it does on ivory.
+   */
+  accentOnDark: '#C4A172',
 
   /** Pressed states. */
   actionBgPressed: '#332E28',
   surfacePressed: '#F5F2EC',
+
+  /**
+   * The practice panel under the score on Record — from the redesign
+   * (`redesign/RecordReady.dc.html`), which drew it and had no token for it. A
+   * step warmer than a card and a step lighter than the page, so the score's
+   * white band above it reads as the one bright thing.
+   */
+  panel: '#FAF8F2',
+  /** A filled round control on that panel: the Listen button. */
+  controlFill: '#E9E2D4',
+  /**
+   * A chart bar that is on the beat (`redesign/Insights.dc.html`, the
+   * handoff's "Steady (neutral chart bars)"): drawn, so the passage is there,
+   * and grey, so the gold bars beside it are the ones that are read.
+   */
+  steady: '#968D80',
+  /**
+   * A photographed page before it has been read (`redesign/OnboardWelcome.dc.html`):
+   * the paper, its notation gone grey, and its staff lines fainter still. The
+   * illustration draws the same page again in ink as the scan reads it, so the
+   * difference between these and `textPrimary` is the whole picture.
+   */
+  paper: '#FBF9F4',
+  photoInk: '#8C857B',
+  photoRule: '#A8A196',
 
   // -------------------------------------------------------------------------
   // Glass — the floating control layer, and nothing else.
@@ -353,9 +391,24 @@ export const darkColors: Palette = {
   onDark: '#FBFAF7',
   onDarkMuted: 'rgba(251, 250, 247, 0.55)',
   onDarkFill: 'rgba(251, 250, 247, 0.16)',
+  onDarkSecondary: 'rgba(251, 250, 247, 0.78)',
+  onDarkWash: 'rgba(251, 250, 247, 0.07)',
+  /**
+   * The gold on a dark ground (`redesign/OnboardWelcome.dc.html`, the tempo the
+   * scan found): `accent` lifted until it reads against ink as it does on ivory.
+   */
+  accentOnDark: '#C4A172',
 
   actionBgPressed: '#E8E3D9',
   surfacePressed: '#2A241E',
+
+  /** Not yet designed for dark (the app is pinned light); a raised dark ground. */
+  panel: '#211D19',
+  controlFill: '#2F2923',
+  steady: '#6E665C',
+  paper: '#FBF9F4',
+  photoInk: '#8C857B',
+  photoRule: '#A8A196',
 
   /**
    * Dark glass. Same 0.80 opacity as the light material and for the same
@@ -404,6 +457,21 @@ export const darkColors: Palette = {
 } as const;
 
 export type ColorScheme = 'light' | 'dark';
+
+/**
+ * The appearance every build runs in, whatever the device is set to — or
+ * `null` to follow the device.
+ *
+ * **Pinned to light by the owner on 2026-09-23**, for the redesign: "ignore
+ * dark mode for now … make sure all versions are light mode". The dark palette
+ * below is kept, not deleted, so un-pinning is this one line.
+ *
+ * One switch, read by everything that has an appearance: `resolved.ts` (the
+ * palette), `app.json`'s `userInterfaceStyle` (iOS system chrome, held by
+ * `appConfig.test.ts`), and `public/index.html` (the web page's own ground and
+ * `theme-color`, held by `scripts/flatten-vendor-assets.mjs`).
+ */
+export const pinnedScheme: ColorScheme | null = 'light';
 
 /** The palette for a scheme. The only place either object is chosen. */
 export function paletteFor(scheme: ColorScheme): Palette {

@@ -159,7 +159,7 @@ export function ImportPagesScreen({
       footer={
         <>
           <PrimaryButton
-            label="Choose images"
+            label="Choose photos"
             icon={Images}
             onPress={() => void pick()}
             loading={busy}
@@ -193,8 +193,7 @@ export function ImportPagesScreen({
       />
 
       <Text variant="body" color="textSecondary" style={styles.lede}>
-        Choose photographs of the music you want transcribed. You can pick
-        several at once, and reorder them before saving.
+        Pick one photo per page.
       </Text>
 
       {/*
@@ -202,8 +201,7 @@ export function ImportPagesScreen({
         the lede does not have room to say, and a footer is for controls.
       */}
       <Text variant="metadataSmall" color="textTertiary" style={styles.caveat}>
-        Choose up to {MAX_SCAN_PAGES} pages. InTempo keeps their order and reads
-        all of them.
+        Up to {MAX_SCAN_PAGES} pages.
       </Text>
 
       {error ? (

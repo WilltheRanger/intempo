@@ -82,7 +82,7 @@ export function fullScaleFor(
  * today is also what `backend/config.toml` ships, and it does not follow the
  * config when the bands are tuned.
  */
-const FALLBACK_INNER_PCT = 5;
+export const FALLBACK_INNER_PCT = 5;
 
 /**
  * Which band one signed deviation falls in, by the thresholds it was judged by.
@@ -247,7 +247,7 @@ export function formatWorkingTempo(
   if (markedBpm === null || markedBpm === workingBpm) {
     return `${working} ${label}`;
   }
-  return `Working at ${working}  ·  marked ${displayTempoBpm(markedBpm, unit)} ${label}`;
+  return `${working} ${label}  ·  marked ${displayTempoBpm(markedBpm, unit)}`;
 }
 
 const VERDICT_LABELS: Record<Verdict, string> = {

@@ -117,7 +117,7 @@ export function TrendLine({
           the line can be found in the list below. */}
       <View style={styles.xAxis}>
         <Text variant="metadataSmall" color="textTertiary">
-          Measure {firstMeasure}
+          Bar {firstMeasure}
         </Text>
         <Text variant="metadataSmall" color="textTertiary">
           {lastMeasure}

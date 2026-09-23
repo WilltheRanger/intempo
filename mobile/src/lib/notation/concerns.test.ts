@@ -182,7 +182,7 @@ describe('what the caveat line claims', () => {
     const line = describeProblemMeasures([3], {
       concerns: [{ measure_number: 3, kind: 'beats', detail: 'measure 3: 5 beats, expected 4 (long)' }],
     });
-    expect(line).toContain("add up to the time signature");
+    expect(line).toContain("doesn't add up");
   });
 
   it('does not claim arithmetic for a fault that is not arithmetic', () => {
@@ -198,7 +198,7 @@ describe('what the caveat line claims', () => {
     const line = describeProblemMeasures([1, 2], {
       concerns: [tieConcern, { ...tieConcern, measure_number: 2 }],
     });
-    expect(line).toContain('2 bars need a second look');
+    expect(line).toContain('2 bars look off');
   });
 
   it('drops the advice once the photograph is gone', () => {

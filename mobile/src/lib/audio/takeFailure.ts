@@ -83,7 +83,7 @@ export interface TakeFailure {
  * the take.
  */
 export const GENERIC_TAKE_FAILURE =
-  'Your take is safe on this device. Check your connection and send it again.';
+  'Your take is safe. Check your connection and send it again.';
 
 /**
  * The piece is gone, so there is nothing to attach the take to.
@@ -107,11 +107,11 @@ export const GENERIC_TAKE_FAILURE =
  * rather than on the status.
  */
 export const PIECE_GONE_FAILURE =
-  'That piece isn’t in your library any more, so this take has nowhere to go.';
+  'That piece isn’t in your library any more.';
 
 /** A take that captured nothing at all — every sample zero. */
 export const SILENT_TAKE_FAILURE =
-  'That take came back silent. Check the microphone isn’t muted or covered, then try again.';
+  'That take was silent. Check the mic isn’t muted or covered.';
 
 /** The HTTP status an `ApiError` carries, or null for anything else. */
 function statusOf(error: unknown): number | null {

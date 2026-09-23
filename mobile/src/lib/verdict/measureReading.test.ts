@@ -44,7 +44,7 @@ describe('an ordinary measure', () => {
     expect(reading.showsDeviation).toBe(true);
     expect(reading.revealsFigure).toBe(true);
     expect(reading.tone).toBe('verdictBad');
-    expect(reading.accessibilityLabel).toContain('Measure 7');
+    expect(reading.accessibilityLabel).toContain('Bar 7');
   });
 });
 
@@ -131,7 +131,7 @@ describe('a measure with nothing in it that could be timed', () => {
     expect(reading.label).toBe('Not timed');
     expect(reading.showsDeviation).toBe(false);
     expect(reading.revealsFigure).toBe(false);
-    expect(reading.accessibilityLabel).toContain('timed against the page');
+    expect(reading.accessibilityLabel).toContain('nothing to time');
   });
 
   it('leaves a bar alone when the take predates the count', () => {
@@ -191,7 +191,7 @@ describe('a bar the page said not to judge', () => {
 
     expect(reading.label).toBe('Not timed');
     expect(reading.accessibilityLabel).toContain(
-      'nothing here could be timed against the page',
+      'nothing to time here',
     );
   });
 
@@ -269,14 +269,14 @@ describe('describeTrendRange', () => {
    * "Measure 1 … 10".
    */
   it('names the same two measures the axis prints', () => {
-    expect(describeTrendRange(1, 10)).toBe('Tempo drift from measure 1 to 10');
-    expect(describeTrendRange(4, 27)).toBe('Tempo drift from measure 4 to 27');
+    expect(describeTrendRange(1, 10)).toBe('Tempo drift, bars 1 to 10');
+    expect(describeTrendRange(4, 27)).toBe('Tempo drift, bars 4 to 27');
   });
 
   it('does not read a one-measure take as a range', () => {
     // "from measure 4 to 4" reads as a fault in the sentence rather than as a
     // short take.
-    expect(describeTrendRange(4, 4)).toBe('Tempo drift, measure 4');
+    expect(describeTrendRange(4, 4)).toBe('Tempo drift, bar 4');
   });
 
   it('takes what the axis takes, so the two cannot be given different numbers', () => {
@@ -291,7 +291,7 @@ describe('describeTrendRange', () => {
 
     expect(covered).toEqual({ first: 1, last: 2 });
     expect(describeTrendRange(covered!.first, covered!.last)).toBe(
-      'Tempo drift from measure 1 to 2',
+      'Tempo drift, bars 1 to 2',
     );
   });
 });

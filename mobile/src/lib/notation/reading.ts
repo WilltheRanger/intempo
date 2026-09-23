@@ -241,25 +241,22 @@ export function describeProblemMeasures(
   // the server found, which is already a sentence written for a musician.
   const others = concerns.filter((c) => c.kind !== 'beats');
   if (others.length > 0) {
-    const tail = canCheck ? ' Check it against your copy.' : '';
+    const tail = '';
     return others.length === 1
       ? `${capitalise(others[0].detail)}.${tail}`
-      : `${others.length} bars need a second look. ${capitalise(others[0].detail)}.${tail}`;
+      : `${others.length} bars look off. ${capitalise(others[0].detail)}.${tail}`;
   }
   if (measures.length > NAMED_LIMIT) {
     return canCheck
-      ? `${measures.length} bars don't add up to the time signature. This page may need re-photographing.`
-      : `${measures.length} bars don't add up to the time signature, so timing after them may be off.`;
+      ? `${measures.length} bars don't add up. Try a new photo.`
+      : `${measures.length} bars don't add up.`;
   }
   const list =
     measures.length === 1
       ? `Bar ${measures[0]}`
       : `Bars ${measures.slice(0, -1).join(', ')} and ${measures[measures.length - 1]}`;
   const verb = measures.length === 1 ? "doesn't" : "don't";
-  const tail = canCheck
-    ? `. Check ${measures.length === 1 ? 'it' : 'them'} against your copy.`
-    : ', so timing after that point may be off.';
-  return `${list} ${verb} add up to the time signature${tail}`;
+  return `${list} ${verb} add up.`;
 }
 
 /**

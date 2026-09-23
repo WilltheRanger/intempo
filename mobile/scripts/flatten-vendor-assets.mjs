@@ -135,6 +135,8 @@ async function checkPageBackground() {
     console.error('Could not find `bg` in both palettes of src/design/colors.ts.');
     process.exit(1);
   }
+  // `pinnedScheme`: one appearance on every device, or null to follow it.
+  const pinned = /export const pinnedScheme[^=]*=\s*'(light|dark)'/.exec(tokens)?.[1] ?? null;
 
   const html = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
 
@@ -150,6 +152,36 @@ async function checkPageBackground() {
     source === undefined
       ? []
       : [...source.matchAll(/background-color:\s*(#[0-9A-Fa-f]{3,8});/g)].map((m) => m[1]);
+
+  if (pinned) {
+    // **Pinned: one appearance, and nothing of the other may remain.** A dark
+    // `theme-color` left in while the app is pinned light is an ivory app
+    // under a near-black status strip on every phone in dark mode.
+    const want = pinned === 'light' ? light : dark;
+    const leftovers = [
+      darkBlock && 'a `prefers-color-scheme: dark` page background',
+      themeColor(true).length && 'a dark `theme-color`',
+      !new RegExp(`color-scheme:\\s*${pinned};`).test(html) && `\`color-scheme: ${pinned};\``,
+    ].filter(Boolean);
+    const found = [...themeColor(false), ...pageGround(html)];
+    const off = found.filter((hex) => hex?.toUpperCase() !== want.toUpperCase());
+    if (leftovers.length || off.length || found.length < 2) {
+      console.error(
+        `public/index.html must be ${pinned} only while pinnedScheme is '${pinned}' ` +
+          `(src/design/colors.ts): ` +
+          [...leftovers.map((l) => `remove or fix ${l}`), ...off.map((h) => `${h} is not ${want}`)]
+            .concat(found.length < 2 ? ['theme-color and page background both needed'] : [])
+            .join('; ') +
+          '.',
+      );
+      process.exit(1);
+    }
+    console.log(
+      `flatten-vendor-assets: page background and theme-color match colors.ts, ` +
+        `pinned ${pinned} (${want}).`,
+    );
+    return;
+  }
 
   const expected = [
     ['light theme-color', themeColor(false), light],

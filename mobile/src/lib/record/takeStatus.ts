@@ -54,5 +54,5 @@ export function takeStatus(capturing: boolean, hasSound: boolean): TakeStatus {
   // zero, which is a covered microphone, a revoked permission or an unrouted
   // input — never a soft player. The remedy names the two a musician can
   // actually check from where they are standing.
-  return { line: 'No sound yet. Check nothing is covering the microphone', wrong: true };
+  return { line: 'No sound yet. Is the mic covered?', wrong: true };
 }

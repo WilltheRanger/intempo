@@ -27,13 +27,13 @@ const CAUSES: ReadonlyArray<readonly [readonly string[], string]> = [
   [
     // The only case where "no microphone" is the truth.
     ['NotFoundError', 'DevicesNotFoundError'],
-    'No microphone is available on this device.',
+    'No microphone found.',
   ],
   [
     // The device exists and something else is holding it. On a phone that is
     // usually a call, a voice memo, or another tab still recording.
     ['NotReadableError', 'TrackStartError', 'AbortError'],
-    'The microphone is busy. Close whatever else is using it and try again.',
+    'The mic is busy. Close other apps using it.',
   ],
   [
     // **Reported from a real iPhone on 2026-09-04**, in Safari, on the
@@ -54,13 +54,11 @@ const CAUSES: ReadonlyArray<readonly [readonly string[], string]> = [
     // app there is no chrome. `RELOAD_FIXES` below is the app offering it
     // itself rather than describing where to find it.
     ['InvalidStateError'],
-    'The page needs reloading before it can record. This is the page\'s '
-      + 'state, not your microphone.',
+    'Reload the page to record.',
   ],
   [
     ['SecurityError'],
-    'This page is not allowed to use the microphone. Opening it directly, '
-      + 'rather than inside another app, usually fixes it.',
+    'This page can’t use the mic. Open it in your browser.',
   ],
 ];
 
@@ -119,8 +117,7 @@ export function isHomeScreenApp(): boolean {
 /** The sentence to add when this build is a home-screen app, or ''. */
 export function homeScreenAdvice(standalone: boolean): string {
   return standalone
-    ? ' This is the version saved to your home screen; opening intempo in the '
-      + 'browser instead usually lets the microphone through.'
+    ? ' Opened from the home screen? Try the browser instead.'
     : '';
 }
 

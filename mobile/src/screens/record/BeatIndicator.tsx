@@ -8,13 +8,13 @@ export interface BeatIndicatorProps {
   /** From `beatsPerBar`. Null when the time signature gave us nothing usable. */
   perBar: number | null;
   /**
-   * Drawn on a ground that is dark in both appearances.
-   *
-   * The count-in inverts, and the marks have to invert with it: `borderStrong`
-   * on `darkBg` is a hairline nobody can see from a music stand, which is the
-   * one place this is read from.
+   * `count` is the count-in's row (`redesign/RecordCountIn.dc.html`): larger,
+   * filled marks, the beat being counted in ink and the rest in the spent
+   * tone — read from a music stand, so it is one mark that stands out rather
+   * than a pattern to decode. The count-in used to be dark and this used to
+   * be `onDark`; the redesign draws it light (2026-09-23).
    */
-  onDark?: boolean;
+  variant?: 'take' | 'count';
 }
 
 /**
@@ -33,7 +33,7 @@ export interface BeatIndicatorProps {
  * Nothing animates. The beat is a discrete event and a transition would put
  * the visible change *after* it, which is precisely the error being measured.
  */
-export function BeatIndicator({ beat, perBar, onDark = false }: BeatIndicatorProps) {
+export function BeatIndicator({ beat, perBar, variant = 'take' }: BeatIndicatorProps) {
   // A planned beat names the shape of its own bar, so the row can change from
   // four marks to two at a 4/4 → 6/8 boundary without restarting the clock.
   // Explicit null means this bar's meter is unreadable; do not fall back to the
@@ -60,16 +60,17 @@ export function BeatIndicator({ beat, perBar, onDark = false }: BeatIndicatorPro
         return (
           <View
             key={index}
-            style={[
-              styles.mark,
-              onDark && styles.markOnDark,
-              on &&
-                (index === 0 && currentPerBar !== null
-                  ? onDark
-                    ? styles.downbeatOnDark
-                    : styles.downbeat
-                  : styles.onbeat),
-            ]}
+            style={
+              variant === 'count'
+                ? [styles.count, on && styles.countOn]
+                : [
+                    styles.mark,
+                    on &&
+                      (index === 0 && currentPerBar !== null
+                        ? styles.downbeat
+                        : styles.onbeat),
+                  ]
+            }
           />
         );
       })}
@@ -78,6 +79,7 @@ export function BeatIndicator({ beat, perBar, onDark = false }: BeatIndicatorPro
 }
 
 const MARK = 12;
+const COUNT_MARK = 14;
 
 const styles = StyleSheet.create({
   row: {
@@ -104,16 +106,17 @@ const styles = StyleSheet.create({
     backgroundColor: colors.textPrimary,
     borderColor: colors.textPrimary,
   },
-  markOnDark: {
-    borderColor: colors.onDarkFill,
+  count: {
+    width: COUNT_MARK,
+    height: COUNT_MARK,
+    borderRadius: COUNT_MARK / 2,
+    // `borderStrong` is the redesign's "spent or disabled" tone: a beat that
+    // is not the one being counted.
+    backgroundColor: colors.borderStrong,
+    // 12pt apart, where the take's row is 8.
+    marginHorizontal: (12 - spacing.sm) / 2,
   },
-  /**
-   * Ivory, because on a dark ground ivory is what ink is on a light one: the
-   * strongest value the palette has. The gold on-beat needs no inversion — it
-   * is the same accent against either ground and reads on both.
-   */
-  downbeatOnDark: {
-    backgroundColor: colors.onDark,
-    borderColor: colors.onDark,
+  countOn: {
+    backgroundColor: colors.textPrimary,
   },
 });

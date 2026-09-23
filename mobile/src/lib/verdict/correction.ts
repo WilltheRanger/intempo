@@ -97,6 +97,6 @@ export function appVerdictFor(measure: MeasureVerdict): UserVerdict {
  */
 export function correctionAcknowledgement(choice: UserVerdict): string {
   return choice === 'unsure'
-    ? 'Noted. Thanks for saying.'
+    ? 'Thanks.'
     : `Noted as ${correctionWord(choice).toLowerCase()}.`;
 }

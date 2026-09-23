@@ -1,5 +1,5 @@
 import type { TakeResult, Tolerance } from '../../data/types';
-import { sharedFullScaleFor } from '../tempo';
+import { FALLBACK_INNER_PCT, sharedFullScaleFor } from '../tempo';
 
 /**
  * Recent sessions, as a series a chart can draw.
@@ -30,22 +30,33 @@ export interface TrendPoint {
    * defect this project has already shipped once.
    */
   value: number;
-  /** Drawn with a dot and readable on its own. See `NOTABLE`. */
-  notable: boolean;
+}
+
+/**
+ * The vertical span a take chart draws, in percent of a beat, rush-positive.
+ *
+ * **Fitted to the takes, not centred on the beat** (`redesign/Insights.dc.html`).
+ * A musician who rushes has every point above the line, and a symmetric axis
+ * spent half the chart on "behind the beat" with nothing in it — the drift
+ * the chart exists to show was drawn in the top half at half the size.
+ */
+export interface TrendRange {
+  /** The value at the top edge and at the bottom edge. */
+  top: number;
+  bottom: number;
+  /**
+   * The on-tempo band either side of the beat: the take's own inner
+   * thresholds, so a point inside the band is one the pipeline called on
+   * tempo.
+   */
+  bandTop: number;
+  bandBottom: number;
 }
 
 export interface SessionTrend {
   /** Oldest first, so the line reads left to right as time. */
   points: TrendPoint[];
-  /**
-   * Half the plot's height, in percent of a beat.
-   *
-   * The outer threshold the pipeline judged by — so a point touching the top
-   * of the chart means "severe", not "the tallest thing in this data". One
-   * scale for both directions, unlike `DeviationBar`; `sharedFullScaleFor`
-   * carries that argument.
-   */
-  fullScale: number;
+  range: TrendRange;
 }
 
 /** Two points make a line; one makes a dot pretending to be a trend. */
@@ -56,40 +67,6 @@ function meanOf(values: number[]): number | null {
     return null;
   }
   return values.reduce((total, value) => total + value, 0) / values.length;
-}
-
-/**
- * Which points earn a dot.
- *
- * **Not every point**, which is the difference between a chart and a list of
- * dots joined up. Three earn one, and each answers a question somebody
- * actually has: the **latest** session, because that is the one they just
- * played; and the **furthest either way**, because those are the sessions
- * worth going back to. A point that is more than one of those is still one
- * dot.
- */
-function notableIndices(points: readonly { value: number }[]): Set<number> {
-  const marked = new Set<number>([points.length - 1]);
-
-  let highest = 0;
-  let lowest = 0;
-  points.forEach((point, index) => {
-    if (point.value > points[highest].value) {
-      highest = index;
-    }
-    if (point.value < points[lowest].value) {
-      lowest = index;
-    }
-  });
-
-  // Only when they are genuinely apart. A flat series would otherwise get two
-  // dots on adjacent points and imply a spread that is not there.
-  if (points[highest].value !== points[lowest].value) {
-    marked.add(highest);
-    marked.add(lowest);
-  }
-
-  return marked;
 }
 
 /**
@@ -117,12 +94,35 @@ export function sessionTrendFrom(
     return null;
   }
 
-  const marked = notableIndices(usable);
-
   return {
-    points: usable.map((point, index) => ({ ...point, notable: marked.has(index) })),
-    fullScale: sharedFullScaleFor(tolerance),
+    points: usable,
+    range: trendRange(
+      usable.map((point) => point.value),
+      tolerance,
+    ),
   };
+}
+
+/** Room above the highest point and below the lowest, as a share of the span. */
+const HEADROOM = 0.1;
+
+/** How far past the band the span reaches when no take does: a sliver, so the band has an edge. */
+const BAND_MARGIN = 1.1;
+
+/**
+ * The span for a set of take values: every take and the whole on-tempo band,
+ * with a little room past the extremes, and never wider than half again the
+ * outer threshold — past that a point is off the chart by definition, and one
+ * wild take should not flatten the other thirteen into a line.
+ */
+export function trendRange(values: readonly number[], tolerance: Tolerance | null): TrendRange {
+  const bandTop = tolerance?.rushing_inner_pct ?? FALLBACK_INNER_PCT;
+  const bandBottom = -(tolerance?.dragging_inner_pct ?? FALLBACK_INNER_PCT);
+  const limit = sharedFullScaleFor(tolerance) * 1.5;
+  const high = Math.min(limit, Math.max(bandTop * BAND_MARGIN, ...values));
+  const low = Math.max(-limit, Math.min(bandBottom * BAND_MARGIN, ...values));
+  const room = (high - low) * HEADROOM;
+  return { top: high + room, bottom: low - room, bandTop, bandBottom };
 }
 
 /**
@@ -130,13 +130,27 @@ export function sessionTrendFrom(
  *
  * **Rush-positive goes up**, which means negating: SVG's y grows downward and
  * "ahead of the beat" is the top of every other tempo drawing in this app.
- * Clamped, because a session past the outer threshold is off the chart by
- * definition and a line leaving the box is worse than one touching its edge.
+ * Clamped, because a line leaving the box is worse than one touching its edge.
  */
-export function plotFraction(value: number, fullScale: number): number {
-  if (!(fullScale > 0)) {
+export function plotFraction(value: number, range: TrendRange): number {
+  const span = range.top - range.bottom;
+  if (!(span > 0)) {
     return 0.5;
   }
-  const clamped = Math.max(-1, Math.min(1, value / fullScale));
-  return 0.5 - clamped / 2;
+  return Math.max(0, Math.min(1, (range.top - value) / span));
+}
+
+/**
+ * Which ends of the axis get a word: "Ahead" only when some take was ahead of
+ * the band, "Behind" only when one was behind it. A label over an empty
+ * stretch of axis names a direction nobody played in.
+ */
+export function axisLabels(
+  values: readonly number[],
+  range: TrendRange,
+): { ahead: boolean; behind: boolean } {
+  return {
+    ahead: values.some((value) => value > range.bandTop),
+    behind: values.some((value) => value < range.bandBottom),
+  };
 }

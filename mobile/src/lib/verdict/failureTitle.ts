@@ -75,11 +75,11 @@ export function nothingUsableTitle(status: Exclude<ResultStatus, 'ok'>): string 
 const INTAKE: Record<string, { title: string; description: string }> = {
   audio_too_long: {
     title: 'That recording is too long',
-    description: 'Ten minutes is the limit. Trim it and upload it again.',
+    description: 'Trim it to 10 minutes or less.',
   },
   audio_too_large: {
     title: 'That file is too big',
-    description: 'The limit is 50 MB. A shorter recording, or an MP3, will fit.',
+    description: 'Pick a file under 50 MB.',
   },
   audio_not_recognised: {
     title: 'That isn’t an audio file we can read',
@@ -87,15 +87,15 @@ const INTAKE: Record<string, { title: string; description: string }> = {
   },
   audio_damaged: {
     title: 'That file looks damaged',
-    description: 'Its length could not be read. Export it again.',
+    description: 'Export it again.',
   },
   audio_empty: {
     title: 'That file has no audio in it',
-    description: 'Check it plays on your device, then upload it again.',
+    description: 'Check it plays, then try again.',
   },
   audio_unreadable: {
     title: 'That file could not be read',
-    description: 'Try choosing it again, or pick a different recording.',
+    description: 'Pick another file.',
   },
 };
 

@@ -305,8 +305,14 @@ export function ScreenContainer({
   );
 }
 
-/** The horizontal gutter, exported so full-bleed sections can cancel it out. */
-export const SCREEN_GUTTER = spacing.xl;
+/**
+ * The horizontal gutter, exported so full-bleed sections can cancel it out.
+ *
+ * 24, from the redesign (2026-09-23), which sets every screen at 24 — it was
+ * 20. One margin for the whole app is design law 5, so it moves here rather
+ * than screen by screen.
+ */
+export const SCREEN_GUTTER = spacing['2xl'];
 
 /**
  * How wide the column of content is allowed to get.

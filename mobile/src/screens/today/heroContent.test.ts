@@ -40,7 +40,7 @@ describe('with a piece to continue', () => {
     const hero = heroContentFor({
       piece: piece(),
       workingBpm: 92,
-      lastTakeHeadline: 'You rushed across measures 5 to 8.',
+      lastTakeHeadline: 'You rushed bars 5–8 by 4 BPM.',
     });
 
     expect(hero.label).toBe('Recommended');
@@ -48,7 +48,7 @@ describe('with a piece to continue', () => {
     expect(hero.meta).toContain('J. S. Bach');
     expect(hero.meta).toContain('I. Adagio');
     expect(hero.meta).toContain('92');
-    expect(hero.detail).toBe('You rushed across measures 5 to 8.');
+    expect(hero.detail).toBe('You rushed bars 5–8 by 4 BPM.');
     expect(hero.action).toBe('continue');
   });
 
@@ -76,7 +76,7 @@ describe('with a piece to continue', () => {
         lastTakeHeadline: 'A stale verdict from before the re-read.',
       });
 
-      expect(hero.detail).toMatch(/reading the notation/i);
+      expect(hero.detail).toMatch(/reading/i);
     }
   });
 
@@ -90,12 +90,12 @@ describe('with a piece to continue', () => {
         workingBpm: 92,
         lastTakeHeadline: null,
       }).actionLabel,
-    ).toBe('Open the piece');
+    ).toBe('Open');
 
     expect(
       heroContentFor({ piece: piece(), workingBpm: 92, lastTakeHeadline: null })
         .actionLabel,
-    ).toBe('Continue practice');
+    ).toBe('Practice');
   });
 
   it('leaves out what the piece does not have', () => {
@@ -122,7 +122,7 @@ describe('with nothing in the library', () => {
 
     expect(hero.label).toBeTruthy();
     expect(hero.title).toBe('Add your first piece');
-    expect(hero.detail).toMatch(/photograph|import|hand/i);
+    expect(hero.detail).toBeNull();
     expect(hero.actionLabel).toBe('Add a piece');
     expect(hero.action).toBe('add');
   });
@@ -140,8 +140,8 @@ describe('with nothing in the library', () => {
       heroContentFor({
         piece: null,
         workingBpm: 0,
-        lastTakeHeadline: 'You rushed across measures 5 to 8.',
-      }).detail,
+        lastTakeHeadline: 'You rushed bars 5–8 by 4 BPM.',
+      }).detail ?? '',
     ).not.toContain('rushed');
   });
 });

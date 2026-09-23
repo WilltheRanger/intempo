@@ -114,7 +114,7 @@ describe('printed tempo units', () => {
 
   it('keeps old scores on the quarter-note display they already used', () => {
     expect(formatTempo(80, null)).toBe('80 BPM');
-    expect(formatWorkingTempo(76, 92)).toBe('Working at 76  ·  marked 92 BPM');
+    expect(formatWorkingTempo(76, 92)).toBe('76 BPM  ·  marked 92');
   });
 
   it('derives safe displayed bounds from the quarter-BPM contract', () => {

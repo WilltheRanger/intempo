@@ -5,7 +5,7 @@ import { FadeIn } from '../motion';
 import { rowDivided } from '../rowMetrics';
 import { Skeleton } from '../primitives/Skeleton';
 
-/** Matches `MeasureRow`'s columns so the list doesn't reflow on arrival. */
+/** Rows in the old measure list's columns: a loading shape, not a layout. */
 const NUMBER_COLUMN = 24;
 const VERDICT_COLUMN = 78;
 const ROW_GUTTER = spacing.lg;

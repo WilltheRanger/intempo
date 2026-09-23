@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Tolerance } from '../../data/types';
-import { judgeAggregate, readPieceWord, readTendency, tempoWanders } from './tendency';
+import { judgeAggregate, pieceWordTone, readPieceWord, readTendency, tempoWanders } from './tendency';
 import { bandFor, directionFor } from '../tempo';
 
 /** The shipped defaults from `backend/config.toml`. */
@@ -247,5 +247,25 @@ describe('who is allowed to word a tendency', () => {
         }).title,
       ).toBe(expected);
     }
+  });
+});
+
+describe('pieceWordTone', () => {
+  const piece = (verdict: 'on_tempo' | 'slight_rush' | 'rushing' | 'dragging', spreadPct = 2) => ({
+    meanDeviationPct: 1,
+    spreadPct,
+    tolerance: TOLERANCE,
+    verdict,
+  });
+
+  it('greens on the beat, flags rushing and dragging, and leaves a slight one in ink', () => {
+    expect(pieceWordTone(piece('on_tempo'))).toBe('verdictOn');
+    expect(pieceWordTone(piece('rushing'))).toBe('verdictMid');
+    expect(pieceWordTone(piece('dragging'))).toBe('verdictMid');
+    expect(pieceWordTone(piece('slight_rush'))).toBe('textSecondary');
+  });
+
+  it('flags an uneven piece even when its mean sits on the beat', () => {
+    expect(pieceWordTone(piece('on_tempo', 11.8))).toBe('verdictMid');
   });
 });

@@ -57,7 +57,7 @@ export const screenConfig: LinkingOptions<RootStackParamList>['config'] = {
       // A piece and the things that belong to it.
       PieceDetail: 'pieces/:pieceId',
       PieceScore: 'pieces/:pieceId/score',
-      // **The one route whose parameter is not a string.**
+      // **A parameter that is not a string** (`Record.startAt` below is the other).
       //
       // `MeasureEdit` takes `measureNumber: number`, and a URL parameter always
       // arrives as text — React Navigation does not coerce it. Without `parse`,
@@ -72,7 +72,15 @@ export const screenConfig: LinkingOptions<RootStackParamList>['config'] = {
         stringify: { measureNumber: (value: number) => String(value) },
       },
       ProofRead: 'pieces/:pieceId/check',
-      Record: 'pieces/:pieceId/record',
+      // `startAt` rides as a query parameter (Insights' "Practice bars 7–8")
+      // and arrives as text, like `measureNumber` above.
+      Record: {
+        path: 'pieces/:pieceId/record',
+        parse: { startAt: (value: string) => Number(value) },
+      },
+      Tempo: 'pieces/:pieceId/tempo',
+      SetTempo: 'pieces/:pieceId/set-tempo',
+      UploadRecording: 'pieces/:pieceId/upload',
       Verdict: 'analyses/:analysisId',
       Warmup: 'warmup',
 

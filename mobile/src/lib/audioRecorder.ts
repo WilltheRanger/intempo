@@ -49,6 +49,20 @@ interface StreamBuffer {
   channels: number;
 }
 
+/**
+ * Asks for the microphone without recording anything — onboarding's "Allow
+ * microphone". The system prompt, once; after that the answer in Settings.
+ * Resolves whether access was given, and never throws.
+ */
+export async function requestMicrophoneAccess(): Promise<boolean> {
+  try {
+    const permission = await AudioModule.requestRecordingPermissionsAsync();
+    return permission.granted;
+  } catch {
+    return false;
+  }
+}
+
 export async function startRecording(): Promise<Recorder> {
   const permission = await AudioModule.requestRecordingPermissionsAsync();
   if (!permission.granted) {

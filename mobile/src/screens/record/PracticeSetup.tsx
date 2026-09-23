@@ -55,13 +55,6 @@ export function PracticeSetup({
       footer={
         <View>
           <PrimaryButton label="Set tempo & record" onPress={onContinue} />
-          <Text
-            variant="metadataSmall"
-            color="textTertiary"
-            style={styles.footerNote}
-          >
-            You can reopen this from the recording screen.
-          </Text>
         </View>
       }
     >
@@ -96,10 +89,7 @@ export function PracticeSetup({
         advice. No browser reports where a phone is sitting.
       */}
       <Text variant="metadataSmall" color="textTertiary" style={styles.permission}>
-        Place your device nearby with its microphone uncovered, away from the
-        stand and anything that rattles. Your device will ask for microphone
-        access when you press Start, and InTempo records only until you press
-        Stop or leave this screen.
+        Put the phone nearby, mic uncovered, away from anything that rattles.
       </Text>
     </ScreenContainer>
   );
@@ -138,9 +128,11 @@ function CheckRow({
         <Text variant="button" color={warn ? 'textPrimary' : 'textSecondary'}>
           {check.title}
         </Text>
-        <Text variant="metadata" color="textSecondary" style={styles.checkBody}>
-          {check.detail}
-        </Text>
+        {check.detail ? (
+          <Text variant="metadata" color="textSecondary" style={styles.checkBody}>
+            {check.detail}
+          </Text>
+        ) : null}
         {check.action ? (
           <Pressable
             onPress={() => onResolve(check.action!.to)}
@@ -196,8 +188,5 @@ const styles = StyleSheet.create({
   permission: {
     marginTop: spacing.xl,
   },
-  footerNote: {
-    marginTop: spacing.md,
-    textAlign: 'center',
-  },
+
 });

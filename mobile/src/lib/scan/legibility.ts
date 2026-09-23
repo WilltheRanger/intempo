@@ -365,16 +365,14 @@ export function adviceFor(
       // It has to say *the camera*, not you — and the body has to head off the
       // thing a musician would otherwise try next, which is the advice the
       // other branch gives.
-      headline: 'This camera cannot see the notes',
-      body:
-        "However close you get, this camera can't resolve the staff lines. "
-        + "Your phone's camera app can.",
+      headline: 'This camera can’t see the notes',
+      body: 'Try your phone’s camera app.',
       route: 'cameraApp',
     };
   }
   return {
-    headline: 'Too far away to read the notes',
-    body: 'Move in until one page fills the frame, then take it again.',
+    headline: 'Too far away',
+    body: 'Fill the frame with one page.',
     route: 'retake',
   };
 }

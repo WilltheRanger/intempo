@@ -366,7 +366,7 @@ def update_me(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=(
-                    "onboarding needs a name, an instrument and a photo; "
+                    "onboarding needs a name and an instrument; "
                     f"missing: {', '.join(missing)}"
                 ),
             )
@@ -691,13 +691,19 @@ def delete_me(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-#: What onboarding must have answered before it counts as done.
+#: What finishing onboarding requires: a name and an instrument.
 #:
-#: The owner's call, 2026-08-25: *"dont make name profile and instrument
-#: optional"*. It reversed the skippable screen shipped the same day, so the
-#: rule is written here as well as in the app — a requirement only the client
-#: enforces is a convention, and this endpoint is reachable without it.
-ONBOARDING_REQUIRED_FIELDS = ("display_name", "instrument", "avatar_key")
+#: **The photo was required and is not any more.** The owner's call on
+#: 2026-08-25 was *"dont make name profile and instrument optional"*; the
+#: redesign (`redesign/OnboardPhoto.dc.html`, "Optional, and only you and your
+#: teacher ever see it", with "Do this later") reverses the photo half of it,
+#: and the owner confirmed the reversal on 2026-09-23 — `DECISIONS.md`. Name
+#: and instrument stay required: the greeting and how playing is read depend
+#: on them, and nothing depends on a face.
+#:
+#: Written here as well as in the app: a requirement only the client enforces
+#: is a convention, and this endpoint is reachable without it.
+ONBOARDING_REQUIRED_FIELDS = ("display_name", "instrument")
 
 
 def _missing_for_onboarding(

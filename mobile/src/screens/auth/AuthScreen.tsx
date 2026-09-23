@@ -1,19 +1,26 @@
-import { useState } from 'react';
+import { Image } from 'expo-image';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
+  Animated,
+  Easing,
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   View,
+  useWindowDimensions,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import {
   Input,
   PrimaryButton,
   RevealPasswordAction,
-  ScreenContainer,
   Text,
 } from '../../components/primitives';
+import { SCREEN_GUTTER } from '../../components/primitives/ScreenContainer';
 import {
   type AuthResult,
   hasSession,
@@ -28,7 +35,8 @@ import {
   clearAuthRedirectNotice,
   useAuthRedirectNotice,
 } from '../../data/auth/redirectNotice';
-import { MIN_TOUCH_TARGET, spacing } from '../../design';
+import { colors, fontFamily, MIN_TOUCH_TARGET, spacing } from '../../design';
+import { useReducedMotion } from '../../lib/useReducedMotion';
 import {
   describeAuthError,
   needsPassword,
@@ -38,26 +46,37 @@ import {
 import { LegalDocumentView } from '../legal/LegalScreen';
 import { SIGN_UP_DOCUMENTS } from './signUpDocuments';
 import type { LegalDocument } from '../../lib/legal';
+import { signInWash } from './signInWash';
 
 /** What the screen is waiting on the musician's inbox for. */
 type Sent = 'confirmation' | 'reset' | 'maybeExisting' | 'magicLink';
 
-const COPY: Record<AuthMode, { lede: string; submit: string }> = {
+/**
+ * The redesign's words for each form (`redesign/SignIn.dc.html`). It drew
+ * two; the link and the reset forms are the same frame with their own verb.
+ * "Create your account" has no lede in the prototype — the questions before
+ * it have already said what the app is.
+ */
+const COPY: Record<AuthMode, { title: string; lede: string | null; submit: string }> = {
   signIn: {
-    lede: 'Sign in to reach your library and your practice history.',
+    title: 'Welcome back',
+    lede: null,
     submit: 'Sign in',
   },
   signUp: {
-    lede: 'Create an account to start building a library. We’ll email you a confirmation link.',
+    title: 'Create your account',
+    lede: null,
     submit: 'Create account',
   },
   reset: {
-    lede: "Enter your address and we'll send a link to set a new password.",
-    submit: 'Send reset link',
+    title: 'Reset password',
+    lede: 'We’ll email you a link.',
+    submit: 'Send link',
   },
   magicLink: {
-    lede: "Enter your address and we'll send a link that signs you in. No password needed.",
-    submit: 'Email me a link',
+    title: 'Sign in by email',
+    lede: 'No password needed.',
+    submit: 'Send link',
   },
 };
 
@@ -104,6 +123,8 @@ export function AuthScreen({
   const [resent, setResent] = useState(false);
   const [legalDocument, setLegalDocument] =
     useState<LegalDocument['id'] | null>(null);
+  /** Whether the change of form now under way holds on the photograph. */
+  const [beat, setBeat] = useState(false);
   const redirectNotice = useAuthRedirectNotice();
 
   const showPassword = needsPassword(mode);
@@ -111,6 +132,15 @@ export function AuthScreen({
 
   function go(next: AuthMode) {
     clearAuthRedirectNotice();
+    setBeat(false);
+    setMode(next);
+    setError(null);
+  }
+
+  /** Between signing in and creating an account: the other door. */
+  function switchPanel(next: 'signIn' | 'signUp') {
+    clearAuthRedirectNotice();
+    setBeat(true);
     setMode(next);
     setError(null);
   }
@@ -217,276 +247,411 @@ export function AuthScreen({
 
   if (sent) {
     return (
-      <ScreenContainer contentStyle={[styles.centred, styles.authColumn]}>
-        <View>
-          {/*
-            "Check your email" contradicts the line below it when no mail was
-            sent, which is exactly the case this state exists to describe.
-          */}
-          <Text variant="screenTitle">
-            {sent === 'maybeExisting'
-              ? 'Check your email, or sign in'
-              : 'Check your email'}
-          </Text>
-          <Text variant="body" color="textSecondary" style={styles.lede}>
-            {sent === 'magicLink'
-              ? `A link that signs you in is on its way to ${email.trim()}. It expires in an hour, and opening it on this device is the quickest way back.`
-              : sent === 'reset'
-              ? `If there's an account for ${email.trim()}, a link to set a new password is on its way.`
+      <SignInFrame panelKey={`sent-${sent}`}>
+        {/*
+          "Check your email" contradicts the line below it when no mail was
+          sent, which is exactly the case this state exists to describe.
+        */}
+        <Text variant="screenTitle" accessibilityRole="header">
+          {sent === 'maybeExisting' ? 'Check your email, or sign in' : 'Check your email'}
+        </Text>
+        <Text variant="body" color="textSecondary" style={styles.lede}>
+          {sent === 'magicLink'
+            ? `We sent a sign-in link to ${email.trim()}.`
+            : sent === 'reset'
+              ? `If ${email.trim()} has an account, a reset link is on its way.`
               : sent === 'maybeExisting'
-                ? `If ${email.trim()} is new, a confirmation link is on its way. If it already has an account, no mail is sent. Sign in instead, or reset the password.`
-                : `We sent a confirmation link to ${email.trim()}. Follow it and you'll be signed in.`}
+                ? `If ${email.trim()} is new, we sent a link. If not, sign in.`
+                : `Tap the link we sent to ${email.trim()}.`}
+        </Text>
+
+        {error ? (
+          <Text variant="metadataSmall" color="textSecondary" style={styles.note}>
+            {error}
           </Text>
+        ) : null}
 
-          {error ? (
-            <Text
-              variant="metadataSmall"
-              color="textSecondary"
-              style={styles.error}
-            >
-              {error}
-            </Text>
-          ) : null}
+        {/*
+          The mail that never arrives is the commonest way an account stalls,
+          and there is nowhere else to ask for another one.
+        */}
+        {sent === 'confirmation' ? (
+          <Text variant="metadataSmall" color="textTertiary" style={styles.note}>
+            {resent ? 'Sent again.' : 'Nothing yet? Check spam.'}
+          </Text>
+        ) : null}
 
-          {/*
-            The mail that never arrives is the commonest way an account stalls,
-            and there is nowhere else to ask for another one.
-          */}
-          {sent === 'confirmation' ? (
-            <Text
-              variant="metadataSmall"
-              color="textTertiary"
-              style={styles.error}
-            >
-              {resent
-                ? 'Sent again. It can take a minute to arrive.'
-                : "Didn't get it? Check spam, or send it again."}
-            </Text>
-          ) : null}
-        </View>
+        {sent === 'confirmation' && !resent ? (
+          <PrimaryButton
+            label="Send it again"
+            onPress={() => void resend()}
+            loading={busy}
+            style={styles.submit}
+          />
+        ) : null}
 
-        <View>
-          {sent === 'confirmation' && !resent ? (
-            <PrimaryButton
-              label="Send it again"
-              onPress={() => void resend()}
-              loading={busy}
-              style={styles.submit}
-            />
-          ) : null}
-
-          <Pressable
-            onPress={() => {
-              setSent(null);
-              setResent(false);
-              go('signIn');
-            }}
-            accessibilityRole="button"
-            accessibilityLabel="Back to sign in"
-            style={({ pressed }) => [
-              styles.target,
-              styles.switch,
-              pressed && styles.switchPressed,
-            ]}
-          >
-            <Text variant="sectionAction" color="textPrimary">
-              Back to sign in
-            </Text>
-          </Pressable>
-        </View>
-      </ScreenContainer>
+        <SwitchLine action="Back to sign in"
+          onPress={() => {
+            setSent(null);
+            setResent(false);
+            go('signIn');
+          }}
+        />
+      </SignInFrame>
     );
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      // The form sits low on the screen; without this the password field ends
-      // up under the keyboard on shorter phones.
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScreenContainer contentStyle={[styles.centred, styles.authColumn]}>
-        <View>
-          <Text variant="screenTitle">InTempo</Text>
-          <Text variant="body" color="textSecondary" style={styles.lede}>
-            {copy.lede}
-          </Text>
+    <SignInFrame panelKey={mode} beat={beat}>
+      <Text variant="screenTitle" accessibilityRole="header">
+        {copy.title}
+      </Text>
+      {copy.lede ? (
+        <Text variant="body" color="textSecondary" style={styles.lede}>
+          {copy.lede}
+        </Text>
+      ) : null}
 
-          <Input
-            label="Email"
-            value={email}
-            onChangeText={setEmail}
-            placeholder="you@example.com"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoComplete="email"
-            textContentType="emailAddress"
-            returnKeyType={showPassword ? 'next' : 'go'}
-            onSubmitEditing={showPassword ? undefined : () => void submit()}
-            editable={!busy}
-            style={styles.field}
-          />
+      <Input
+        label="Email"
+        value={email}
+        onChangeText={setEmail}
+        placeholder="you@example.com"
+        keyboardType="email-address"
+        autoCapitalize="none"
+        autoComplete="email"
+        textContentType="emailAddress"
+        returnKeyType={showPassword ? 'next' : 'go'}
+        onSubmitEditing={showPassword ? undefined : () => void submit()}
+        editable={!busy}
+        style={copy.lede ? styles.firstField : styles.firstFieldNoLede}
+      />
 
-          {showPassword ? (
-            <Input
-              label="Password"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry={!revealed}
-              autoCapitalize="none"
-              // Tells the keychain to offer a saved password on sign-in and to
-              // suggest a strong one on sign-up.
-              autoComplete={
-                mode === 'signIn' ? 'current-password' : 'new-password'
-              }
-              textContentType={mode === 'signIn' ? 'password' : 'newPassword'}
-              returnKeyType="go"
-              onSubmitEditing={() => void submit()}
-              editable={!busy}
-              action={
-                <RevealPasswordAction
-                  revealed={revealed}
-                  onPress={() => setRevealed((shown) => !shown)}
-                />
-              }
-              style={styles.field}
+      {showPassword ? (
+        <Input
+          label="Password"
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry={!revealed}
+          autoCapitalize="none"
+          // Tells the keychain to offer a saved password on sign-in and to
+          // suggest a strong one on sign-up.
+          autoComplete={mode === 'signIn' ? 'current-password' : 'new-password'}
+          textContentType={mode === 'signIn' ? 'password' : 'newPassword'}
+          returnKeyType="go"
+          onSubmitEditing={() => void submit()}
+          editable={!busy}
+          actionInside
+          action={
+            <RevealPasswordAction
+              revealed={revealed}
+              onPress={() => setRevealed((shown) => !shown)}
             />
-          ) : null}
+          }
+          style={styles.field}
+        />
+      ) : null}
 
-          {mode === 'signIn' ? (
-            <View style={styles.signInLinks}>
-              <Pressable
-                onPress={() => go('magicLink')}
-                accessibilityRole="button"
-                accessibilityLabel="Email me a sign-in link instead"
-                style={({ pressed }) => [
-                  styles.target,
-                  pressed ? styles.switchPressed : undefined,
-                ]}
-              >
-                <Text variant="sectionAction" color="textPrimary">
-                  Email me a link
-                </Text>
-              </Pressable>
-
-              <Pressable
-                onPress={() => go('reset')}
-                accessibilityRole="button"
-                accessibilityLabel="Forgot your password"
-                style={({ pressed }) => [
-                  styles.target,
-                  pressed ? styles.switchPressed : undefined,
-                ]}
-              >
-                <Text variant="sectionAction" color="textPrimary">
-                  Forgot your password?
-                </Text>
-              </Pressable>
-            </View>
-          ) : null}
-
-          {/*
-            A way back to the password form. Both link modes are reached from
-            sign-in, so without this the only exit is the account switcher at
-            the foot, which says the wrong thing.
-          */}
-          {mode === 'magicLink' || mode === 'reset' ? (
-            <Pressable
-              onPress={() => go('signIn')}
-              accessibilityRole="button"
-              accessibilityLabel="Use a password instead"
-              style={({ pressed }) => [
-                styles.target,
-                styles.forgot,
-                pressed && styles.switchPressed,
-              ]}
-            >
-              <Text variant="sectionAction" color="textPrimary">
-                Use a password instead
-              </Text>
-            </Pressable>
-          ) : null}
-
-          {mode === 'signUp' ? (
-            <View style={styles.legal}>
-              <Text variant="metadataSmall" color="textSecondary">
-                Before creating an account, you can review how InTempo handles
-                your data and the terms for using it.
-              </Text>
-              <View style={styles.legalLinks}>
-                {SIGN_UP_DOCUMENTS.map((document) => (
-                  <Pressable
-                    key={document.id}
-                    onPress={() => setLegalDocument(document.id)}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Read ${document.label}`}
-                    style={({ pressed }) => [
-                      styles.target,
-                      styles.legalLink,
-                      pressed && styles.switchPressed,
-                    ]}
-                  >
-                    <Text variant="sectionAction" color="textPrimary">
-                      {document.label}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-            </View>
-          ) : null}
-
-          {(error ?? redirectNotice) ? (
-            <Text
-              variant="metadataSmall"
-              color="textSecondary"
-              style={styles.error}
-            >
-              {error ?? redirectNotice}
-            </Text>
-          ) : null}
-
-          <PrimaryButton
-            label={copy.submit}
-            onPress={() => void submit()}
-            loading={busy}
-            style={styles.submit}
-          />
+      {mode === 'signIn' ? (
+        // The two things you can ask for from the sign-in form, on one line:
+        // a link instead of a password, and a link because you have forgotten it.
+        <View style={styles.signInLinks}>
+          <TextLink label="Email me a link" onPress={() => go('magicLink')} />
+          <TextLink label="Forgot password?" onPress={() => go('reset')} />
         </View>
+      ) : null}
 
-        <Pressable
+      {/*
+        A way back to the password form. Both link modes are reached from
+        sign-in, so without this the only exit is the switch at the foot, which
+        says the wrong thing.
+      */}
+      {mode === 'magicLink' || mode === 'reset' ? (
+        <View style={styles.signInLinks}>
+          <TextLink label="Use a password" onPress={() => go('signIn')} />
+        </View>
+      ) : null}
+
+      {mode === 'signUp' ? (
+        <View style={styles.legal} accessibilityRole="text">
+          <Text variant="caption" color="textTertiary" style={styles.legalText}>
+            You agree to the{' '}
+          </Text>
+          {SIGN_UP_DOCUMENTS.map((document, index) => (
+            <View key={document.id} style={styles.legalPiece}>
+              <InlineLink
+                label={document.label}
+                onPress={() => setLegalDocument(document.id)}
+              />
+              <Text variant="caption" color="textTertiary" style={styles.legalText}>
+                {index < SIGN_UP_DOCUMENTS.length - 1 ? ' and the ' : '.'}
+              </Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
+      {(error ?? redirectNotice) ? (
+        <Text variant="metadataSmall" color="textSecondary" style={styles.note}>
+          {error ?? redirectNotice}
+        </Text>
+      ) : null}
+
+      <PrimaryButton
+        label={copy.submit}
+        onPress={() => void submit()}
+        loading={busy}
+        style={mode === 'signIn' || mode === 'signUp' ? styles.submitTight : styles.submit}
+      />
+
+      {mode === 'signUp' ? (
+        <SwitchLine action="Sign in instead" onPress={() => switchPanel('signIn')} />
+      ) : (
+        <SwitchLine action="Create an account"
           onPress={() => {
-            if (mode !== 'signUp' && onRequestSignUp) {
+            if (onRequestSignUp) {
               clearAuthRedirectNotice();
               onRequestSignUp();
               return;
             }
-            go(mode === 'signUp' ? 'signIn' : 'signUp');
+            switchPanel('signUp');
           }}
-          accessibilityRole="button"
-          accessibilityLabel={
-            mode === 'signUp' ? 'Sign in instead' : 'Create an account'
-          }
-          style={({ pressed }) => [
-            styles.target,
-            styles.switch,
-            pressed && styles.switchPressed,
-          ]}
-        >
-          <Text variant="metadata" color="textSecondary">
-            {mode === 'signUp'
-              ? 'Already have an account? '
-              : 'New to InTempo? '}
-            <Text variant="metadata" color="textPrimary">
-              {mode === 'signUp' ? 'Sign in' : 'Create an account'}
-            </Text>
-          </Text>
-        </Pressable>
-      </ScreenContainer>
-    </KeyboardAvoidingView>
+        />
+      )}
+    </SignInFrame>
   );
 }
 
+/** How long the bare photograph holds between sign in and sign up. */
+const BEAT_MS = 1500;
+/** The form and the wash going. */
+const OUT_MS = 360;
+/** And coming back, a moment after the wash. */
+const IN_MS = 460;
+
+/**
+ * The photograph, the ivory wash over it, the name, and a form standing on
+ * the wash (`redesign/SignIn.dc.html`).
+ *
+ * **Switching between signing in and creating an account holds a beat on the
+ * bare photograph**: the form and the wash go, the turntable is there alone
+ * for a moment, and the other form arrives. The prototype's own choreography,
+ * and deliberate — the one moment the app shows its picture uncovered is the
+ * moment the musician changes their mind about which door they came in by.
+ * Every other change of form (a link instead of a password, a reset) is a
+ * plain crossfade: they are the same door. Reduce Motion gets quick fades and
+ * no beat.
+ */
+function SignInFrame({
+  panelKey,
+  beat = false,
+  children,
+}: {
+  panelKey: string;
+  beat?: boolean;
+  children: ReactNode;
+}) {
+  const { height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const reduceMotion = useReducedMotion();
+  const [columnTop, setColumnTop] = useState<number | null>(null);
+  const [panelTop, setPanelTop] = useState(0);
+  // The form's title, not the brand over it: the prototype lets the name sit
+  // on the last of the fade and stands the title on solid ground.
+  const formTop = columnTop === null ? null : columnTop + panelTop;
+  const [shown, setShown] = useState<{ key: string; children: ReactNode }>({
+    key: panelKey,
+    children,
+  });
+  const panel = useRef(new Animated.Value(1)).current;
+  const wash = useRef(new Animated.Value(1)).current;
+  const native = Platform.OS !== 'web';
+
+  // The same form re-rendering (typing, an error arriving) passes straight
+  // through; only a change of form is animated.
+  const current = shown.key === panelKey ? children : shown.children;
+
+  useEffect(() => {
+    if (shown.key === panelKey) {
+      return;
+    }
+    const fade = (value: Animated.Value, toValue: number, duration: number, delay = 0) =>
+      Animated.timing(value, {
+        toValue,
+        duration: reduceMotion ? 140 : duration,
+        delay: reduceMotion ? 0 : delay,
+        easing: Easing.inOut(Easing.ease),
+        useNativeDriver: native,
+      });
+    const holding = beat && !reduceMotion;
+    const sequence = Animated.sequence([
+      Animated.parallel([
+        fade(panel, 0, OUT_MS),
+        ...(holding ? [fade(wash, 0, OUT_MS)] : []),
+      ]),
+      ...(holding ? [Animated.delay(BEAT_MS)] : []),
+    ]);
+    sequence.start(({ finished }) => {
+      if (!finished) {
+        return;
+      }
+      setShown({ key: panelKey, children });
+      Animated.parallel([
+        ...(holding ? [fade(wash, 1, 420)] : []),
+        fade(panel, 1, IN_MS, holding ? 260 : 0),
+      ]).start();
+    });
+    return () => sequence.stop();
+    // `children` is read at the moment the old form has gone, not tracked.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [panelKey]);
+
+  const stops = signInWash(height, formTop);
+
+  return (
+    <View style={styles.screen}>
+      <Image
+        source={SIGN_IN_PHOTO}
+        style={StyleSheet.absoluteFill}
+        contentFit="cover"
+        contentPosition="center"
+        accessible={false}
+      />
+      <Animated.View style={[StyleSheet.absoluteFill, { opacity: wash }]} pointerEvents="none">
+        <Svg width="100%" height="100%">
+          <Defs>
+            <LinearGradient id="sign-in-wash" x1="0" y1="0" x2="0" y2="1">
+              {stops.map(([offset, opacity]) => (
+                <Stop key={offset} offset={offset} stopColor={colors.bg} stopOpacity={opacity} />
+              ))}
+            </LinearGradient>
+          </Defs>
+          <Rect x={0} y={0} width="100%" height="100%" fill="url(#sign-in-wash)" />
+        </Svg>
+      </Animated.View>
+
+      <KeyboardAvoidingView
+        style={styles.flex}
+        // The form sits low on the screen; without this the password field
+        // ends up under the keyboard.
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
+          style={styles.flex}
+          contentContainerStyle={[
+            styles.scroll,
+            { paddingTop: insets.top + spacing.lg, paddingBottom: Math.max(insets.bottom, spacing.lg) + spacing.xl },
+          ]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View
+            style={styles.column}
+            onLayout={(event) => setColumnTop(event.nativeEvent.layout.y)}
+          >
+            <Animated.View style={{ opacity: wash }}>
+              <Text style={styles.brand}>InTempo</Text>
+            </Animated.View>
+            <Animated.View
+              style={[styles.panel, { opacity: panel }]}
+              onLayout={(event) => setPanelTop(event.nativeEvent.layout.y)}
+            >
+              {current}
+            </Animated.View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
+  );
+}
+
+/** A link-coloured word at a full touch target: "Email me a link". */
+function TextLink({ label, onPress }: { label: string; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      style={({ pressed }) => [styles.target, pressed && styles.pressed]}
+    >
+      <Text variant="metadata" color="accentText">
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+/**
+ * A link inside a sentence, with a touch target taller than its line.
+ *
+ * The sentence is set at 17pt leading and a target has to be 44, so the
+ * target reaches above and below the line it sits in rather than pushing the
+ * lines apart — which is what the sentence as the redesign drew it needs, and
+ * what `hitSlop` would do on a phone and does not do at all on the web.
+ */
+function InlineLink({ label, onPress }: { label: string; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="link"
+      accessibilityLabel={`Read the ${label}`}
+      style={({ pressed }) => [styles.inlineTarget, pressed && styles.pressed]}
+    >
+      <Text variant="caption" color="accentText" style={styles.legalText}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+/** The other door: "Create an account", "Sign in instead", "Back to sign in". */
+function SwitchLine({ action, onPress }: { action: string; onPress: () => void }) {
+  return (
+    <View style={styles.switch}>
+      <Pressable
+        onPress={onPress}
+        accessibilityRole="button"
+        style={({ pressed }) => [styles.target, pressed && styles.pressed]}
+      >
+        <Text variant="metadata" color="accentText" style={styles.switchAction}>
+          {action}
+        </Text>
+      </Pressable>
+    </View>
+  );
+}
+
+const SIGN_IN_PHOTO = require('../../../assets/hero/signin-hero.jpg');
+
 const styles = StyleSheet.create({
+  flex: {
+    flex: 1,
+  },
+  screen: {
+    flex: 1,
+    backgroundColor: colors.bg,
+  },
+  scroll: {
+    flexGrow: 1,
+    justifyContent: 'flex-end',
+  },
+  // A phone's column, and on a wide window a readable one: the photograph
+  // still fills the screen, and the form stays the width of a hand.
+  column: {
+    width: '100%',
+    maxWidth: 440,
+    alignSelf: 'center',
+    paddingHorizontal: SCREEN_GUTTER,
+  },
+  brand: {
+    fontFamily: fontFamily.serifMedium,
+    fontSize: 22,
+    lineHeight: 28,
+    letterSpacing: -0.2,
+    color: colors.textPrimary,
+  },
+  panel: {
+    marginTop: 26,
+  },
   /**
    * Padded to a real touch target, not `hitSlop`-ed to one.
    *
@@ -500,64 +665,64 @@ const styles = StyleSheet.create({
     minHeight: MIN_TOUCH_TARGET,
     justifyContent: 'center',
   },
-  flex: {
-    flex: 1,
-  },
-  // A readable desktop measure. On phones the available width is smaller than
-  // this, so the screen keeps the normal gutter and loses no space. On web it
-  // stops labels, fields, and the primary action spanning the whole window.
-  authColumn: {
-    width: '100%',
-    maxWidth: 720,
-    alignSelf: 'center',
-  },
-  // The two things you can ask for from the sign-in form, on one line: a link
-  // instead of a password, and a link because you have forgotten it.
-  signInLinks: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: spacing.lg,
-    marginTop: spacing.lg,
-  },
-  // The form is the whole screen; centring stops it clinging to the top.
-  centred: {
-    flexGrow: 1,
+  inlineTarget: {
+    minHeight: MIN_TOUCH_TARGET,
+    // The target's extra height, taken back out of the line: 44 − 17, split.
+    marginVertical: -13.5,
     justifyContent: 'center',
   },
+  pressed: {
+    opacity: 0.6,
+  },
   lede: {
-    marginTop: spacing.md,
-    marginBottom: spacing['3xl'],
+    marginTop: spacing.sm,
+  },
+  firstField: {
+    marginTop: spacing.xl,
+  },
+  firstFieldNoLede: {
+    marginTop: 26,
   },
   field: {
     marginTop: spacing.lg,
   },
-  forgot: {
-    marginTop: spacing.md,
-    alignSelf: 'flex-start',
-  },
-  legal: {
-    marginTop: spacing.xl,
-  },
-  legalLinks: {
+  signInLinks: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.lg,
-    marginTop: spacing.xs,
+    columnGap: spacing.xl,
+    marginTop: spacing.sm,
   },
-  legalLink: {
-    justifyContent: 'center',
+  legal: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    marginTop: 14,
   },
-  error: {
+  legalPiece: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  legalText: {
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  note: {
+    marginTop: spacing.lg,
+  },
+  submitTight: {
     marginTop: spacing.lg,
   },
   submit: {
     marginTop: spacing['2xl'],
   },
   switch: {
-    marginTop: spacing['3xl'],
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
     alignItems: 'center',
+    marginTop: spacing.md,
   },
-  switchPressed: {
-    opacity: 0.6,
+  switchAction: {
+    fontFamily: fontFamily.sansMedium,
   },
 });

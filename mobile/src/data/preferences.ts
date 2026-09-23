@@ -3,6 +3,12 @@ import { useSyncExternalStore } from 'react';
 
 import type { Instrument, MetronomeMode } from './types';
 import { isInstrument } from './instruments';
+import {
+  FOUND_VIA_CHOICES,
+  ROLE_CHOICES,
+  type FoundVia,
+  type PracticeRole,
+} from '../lib/onboardingSteps';
 
 export interface Preferences {
   /**
@@ -46,6 +52,13 @@ export interface Preferences {
    * rather than the musician discovering it twice.
    */
   lastTakeHadSound: boolean | null;
+  /**
+   * Onboarding's "Learning, or teaching?", kept on the device: the API cannot
+   * set a role yet (`lib/onboardingSteps` — `PracticeRole`). Null until asked.
+   */
+  practiceRole: PracticeRole | null;
+  /** Onboarding's "How did you find us?", kept on the device. Null when skipped. */
+  foundVia: FoundVia | null;
 }
 
 const DEFAULTS: Preferences = {
@@ -55,6 +68,8 @@ const DEFAULTS: Preferences = {
   reduceMotion: false,
   practiceSetupSeen: false,
   lastTakeHadSound: null,
+  practiceRole: null,
+  foundVia: null,
 };
 
 const STORAGE_KEY = 'intempo.preferences.v1';
@@ -143,6 +158,12 @@ export async function hydratePreferences(): Promise<void> {
         typeof saved.lastTakeHadSound === 'boolean'
           ? saved.lastTakeHadSound
           : DEFAULTS.lastTakeHadSound,
+      practiceRole: ROLE_CHOICES.some((choice) => choice.value === saved.practiceRole)
+        ? (saved.practiceRole as PracticeRole)
+        : DEFAULTS.practiceRole,
+      foundVia: FOUND_VIA_CHOICES.some((choice) => choice.value === saved.foundVia)
+        ? (saved.foundVia as FoundVia)
+        : DEFAULTS.foundVia,
     };
     listeners.forEach((listener) => listener());
   } catch {
@@ -225,5 +246,13 @@ export const preferences = {
   },
   setPracticeSetupSeen(practiceSetupSeen: boolean): void {
     commit({ ...current, practiceSetupSeen });
+  },
+
+  setPracticeRole(practiceRole: PracticeRole): void {
+    commit({ ...current, practiceRole });
+  },
+
+  setFoundVia(foundVia: FoundVia | null): void {
+    commit({ ...current, foundVia });
   },
 };

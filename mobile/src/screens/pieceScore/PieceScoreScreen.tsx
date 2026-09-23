@@ -19,6 +19,7 @@ import { TranscribingPanel } from '../../components/score/TranscribingPanel';
 import {
   EmptyState,
   LoadingState,
+  BackLink,
   PageHeader,
   ScreenContainer,
   SecondaryButton,
@@ -372,12 +373,12 @@ export function PieceScoreScreen() {
           megabytes to solve a problem the megabytes never caused.
         */}
         <EmptyState
-          title="This page couldn't be read"
+          title="Couldn't read this page"
           description={
             piece.transcriptionError ??
-            'Something went wrong reading this page.'
+            'Something went wrong.'
           }
-          actionLabel={reread.isPending ? 'Reading again…' : 'Try reading it again'}
+          actionLabel={reread.isPending ? 'Reading again…' : 'Try again'}
           // The label said it was working; the button carried on accepting
           // taps, and each one started another reading of the same page. The
           // server refuses the second now, but a musician should not have to
@@ -390,7 +391,7 @@ export function PieceScoreScreen() {
                 setAcceptError(
                   cause instanceof Error
                     ? cause.message
-                    : 'That could not be started. Try again.',
+                    : 'Couldn’t start. Try again.',
                 ),
             });
           }}
@@ -417,7 +418,7 @@ export function PieceScoreScreen() {
           to erase a score that still has usable measures.
         */}
         <SecondaryButton
-          label="Take new photographs instead"
+          label="Retake photos"
           icon={Camera}
           onPress={() =>
             navigation.navigate('Scanner', { attachToPieceId: piece.id })
@@ -426,7 +427,7 @@ export function PieceScoreScreen() {
           style={styles.recoveryAction}
         />
         <SecondaryButton
-          label="Choose different images"
+          label="Choose other photos"
           icon={Images}
           onPress={() =>
             navigation.navigate('AddPiece', {
@@ -449,10 +450,6 @@ export function PieceScoreScreen() {
 
           What is still true, and worth saying, is that the piece is not lost.
         */}
-        <Text variant="metadataSmall" color="textTertiary" style={styles.caveat}>
-          The piece is still in your library, with its title and its tempo.
-          Only the notation is missing.
-        </Text>
         {hasPages ? (
           <ScoreThumbnail source={piece.thumbnail} style={styles.pageWhileReading} />
         ) : null}
@@ -474,13 +471,17 @@ export function PieceScoreScreen() {
 
   return (
     <ScreenContainer key={showing}>
-      <PageHeader
-        eyebrow={piece.composer}
-        title={piece.title}
-        titleSize="hero"
-        onBack={goBack}
-        backLabel="Back to piece"
-      />
+      {/*
+        The redesign's head (`redesign/PieceScore.dc.html`), the same as the
+        piece's own: a way back in words, then the title. The composer is on
+        the piece, one step back.
+      */}
+      <View style={styles.head}>
+        <BackLink label="Back to the piece" onPress={goBack} />
+        <Text variant="heroTitle" accessibilityRole="header" style={styles.title}>
+          {piece.title}
+        </Text>
+      </View>
 
       {showToggle ? (
         <SegmentedControl
@@ -500,7 +501,7 @@ export function PieceScoreScreen() {
       (reading?.problemMeasures.length || proposals.length) ? (
         <View style={styles.reviewFirst}>
           <Text variant="sectionLabel" color="textPrimary">
-            Check before you practice
+            Before you practice
           </Text>
           {reading && reading.problemMeasures.length > 0 ? (
             <Pressable
@@ -536,7 +537,7 @@ export function PieceScoreScreen() {
                 {proposalsSummary(proposals.length)}
               </Text>
               <Text variant="metadataSmall" color="accentText" style={styles.fixCue}>
-                Check the reading
+                Check
               </Text>
             </Pressable>
           ) : null}
@@ -641,7 +642,7 @@ export function PieceScoreScreen() {
       */}
       {showing === 'notation' && hasNotation && stave ? (
         <Text variant="metadataSmall" color="textTertiary" style={styles.tapHint}>
-          Tap a bar to correct it
+          Tap a bar to fix it
         </Text>
       ) : null}
 
@@ -798,7 +799,6 @@ export function PieceScoreScreen() {
             {piece.score && piece.score.measures.length > 0 ? (
               <ScoreAction
                 label="See every bar"
-                detail="With the notes read in each, so an odd one shows."
                 divided={false}
                 onPress={() => setPickingMeasure(true)}
               />
@@ -817,7 +817,6 @@ export function PieceScoreScreen() {
             {piece.score?.clef ? (
               <ScoreAction
                 label="Change the clef"
-                detail="A part can be written in one your instrument does not read."
                 onPress={() => setPickingClef(true)}
               />
             ) : null}
@@ -949,8 +948,7 @@ export function PieceScoreScreen() {
             disabled={accept.isPending}
           />
           <Text variant="metadataSmall" color="textTertiary" style={styles.acceptNote}>
-            Confirms the reading and deletes the photograph it came from, which
-            is most of what this piece takes up.
+            Deletes the photo to save space.
           </Text>
           {acceptError ? (
             <Text variant="metadataSmall" color="textSecondary" style={styles.caveat}>
@@ -1080,12 +1078,12 @@ export function PieceScoreScreen() {
 
       <ConfirmDialog
         visible={confirmingAccept}
-        title="Delete the photograph?"
+        title="Delete the photo?"
         // The consequence, not the verb. Naming what survives matters as much
         // as naming what goes: someone who thinks they are deleting the piece
         // will cancel a thing they actually wanted.
-        message={`The notes stay in your library. The photograph of the page is deleted and cannot be recovered, so check the notation above first.`}
-        confirmLabel="Delete photograph"
+        message="The notes stay. The photo can’t be recovered."
+        confirmLabel="Delete photo"
         onConfirm={() => {
           setConfirmingAccept(false);
           setAcceptError(null);
@@ -1113,18 +1111,13 @@ export function PieceScoreScreen() {
  * the block read as leftovers rather than a list (§3 laws 5 and 8). A rule and
  * a chevron do that work for a pixel each, which is the same call the library's
  * own rows and the piece screen's destinations make.
- *
- * The detail line is what the label cannot say in three words. It is the reason
- * a musician would press it, which is the part that was missing entirely.
  */
 function ScoreAction({
   label,
-  detail,
   divided = true,
   onPress,
 }: {
   label: string;
-  detail: string;
   divided?: boolean;
   onPress: () => void;
 }) {
@@ -1132,7 +1125,7 @@ function ScoreAction({
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`${label}. ${detail}`}
+      accessibilityLabel={label}
       style={({ pressed }) => [
         styles.action,
         divided && styles.actionRuled,
@@ -1140,9 +1133,8 @@ function ScoreAction({
       ]}
     >
       <View style={styles.actionCopy}>
-        <Text variant="button">{label}</Text>
-        <Text variant="metadataSmall" color="textTertiary" style={styles.actionDetail}>
-          {detail}
+        <Text variant="body" style={styles.actionLabel}>
+          {label}
         </Text>
       </View>
       {/* A chevron means it opens, and each of these opens something. */}
@@ -1156,6 +1148,19 @@ function ScoreAction({
 }
 
 const styles = StyleSheet.create({
+  head: {
+    paddingTop: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  title: {
+    marginTop: spacing.xs,
+    fontSize: 26,
+    lineHeight: 31,
+  },
+  actionLabel: {
+    fontSize: 15,
+    lineHeight: 20,
+  },
   /*
     Every tappable thing on this screen acknowledges the touch. These were bare
     `Pressable`s with a static style, so a tap produced no response at all until
@@ -1311,9 +1316,7 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
-  actionDetail: {
-    marginTop: 2,
-  },
+
   fixCue: {
     marginTop: spacing.xs,
   },

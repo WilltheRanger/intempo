@@ -34,7 +34,7 @@ export function RevealPasswordAction({
       accessibilityLabel={revealed ? 'Hide password' : 'Show password'}
       style={({ pressed }) => [styles.target, pressed && styles.pressed]}
     >
-      <Text variant="sectionAction" color="textPrimary">
+      <Text variant="sectionLabel" color="accentText">
         {revealed ? 'Hide' : 'Show'}
       </Text>
     </Pressable>

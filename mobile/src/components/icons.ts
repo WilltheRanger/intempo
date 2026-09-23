@@ -26,6 +26,8 @@
  */
 export { default as Camera } from 'lucide-react-native/icons/camera';
 export { default as ChartLine } from 'lucide-react-native/icons/chart-line';
+export { default as Check } from 'lucide-react-native/icons/check';
+export { default as ChevronDown } from 'lucide-react-native/icons/chevron-down';
 export { default as ChevronLeft } from 'lucide-react-native/icons/chevron-left';
 export { default as ChevronRight } from 'lucide-react-native/icons/chevron-right';
 export { default as FileMusic } from 'lucide-react-native/icons/file-music';
@@ -46,6 +48,7 @@ export { default as Play } from 'lucide-react-native/icons/play';
 export { default as Plus } from 'lucide-react-native/icons/plus';
 export { default as RotateCcw } from 'lucide-react-native/icons/rotate-ccw';
 export { default as Search } from 'lucide-react-native/icons/search';
+export { default as Settings } from 'lucide-react-native/icons/settings';
 export { default as Square } from 'lucide-react-native/icons/square';
 export { default as Trash2 } from 'lucide-react-native/icons/trash-2';
 export { default as User } from 'lucide-react-native/icons/user';

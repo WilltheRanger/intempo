@@ -533,20 +533,26 @@ and the scan flow there works differently as of 2026-08-24:
   browser rather than by any test. Ask through `readTendency`; a third caller
   no longer compiles.
 
-- **Onboarding is one screen, all three answers are required, and the gate
-  fails open.** Name, photograph and instrument — the owner's call on
-  2026-08-25 (*"dont make name profile and instrument optional"*), reversing
-  the skippable version shipped earlier the same day. There is no Skip.
-  The rule is enforced **twice on purpose**: `missingFromOnboarding` shuts the
-  button, and `PATCH /v1/me` refuses to stamp `onboarded_at` unless the
-  **resulting row** carries all three. A requirement only the client checks is
-  a convention, and that endpoint is reachable without the screen. The server
-  reads the resulting row rather than the body, so an answer already stored
-  counts; and a second `{onboarded: true}` on an account already through is a
-  no-op 200, never a re-stamp and never a 400.
-  The photograph is the expensive one and the cost should stay visible: it is
-  the only answer that cannot be given by thinking, so someone signing up away
-  from a picture they like is locked out until they find one.
+- **Onboarding is one question a screen, two answers are required, and the
+  gate fails open.** Name and instrument. The photograph was the third from
+  2026-08-25 (*"dont make name profile and instrument optional"*) until the
+  redesign's step called it optional and the owner confirmed it on 2026-09-23
+  (`DECISIONS.md`). The role and "how did you find us" are device preferences
+  and required by nothing. There is no Skip on the two that count.
+  The rule is enforced **twice on purpose**: `canContinue`
+  (`lib/onboardingSteps.ts`) holds Next shut on those two steps, and
+  `PATCH /v1/me` refuses to stamp `onboarded_at` unless the **resulting row**
+  carries both.
+  A requirement only the client checks is a convention, and that endpoint is
+  reachable without the screen. The server reads the resulting row rather than
+  the body, so an answer already stored counts; and a second
+  `{onboarded: true}` on an account already through is a no-op 200, never a
+  re-stamp and never a 400.
+  The steps are state inside `OnboardingFlow`, not routes: nothing outside the
+  flow opens one, and a route is something a deep link can land on half-way.
+  "Welcome to InTempo" is shown once from `data/arrival.ts`, set *before* the
+  save resolves — the save waits for `/v1/me` to refetch, by which time the
+  gate has fallen, so setting it afterwards would let the tabs render first.
   `users.onboarded_at` records *being asked*. `shouldOnboard` gates only on a
   definite `onboarded === false`: a slow, failed or pre-009 `/v1/me` opens the
   app rather than holding it behind a network request (`DECISIONS.md`,

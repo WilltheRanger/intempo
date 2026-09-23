@@ -59,7 +59,7 @@ describe('leaving the record screen', () => {
 
     expect(answer.kind).toBe('confirm');
     if (answer.kind !== 'confirm') return;
-    expect(answer.message).toContain('send it');
+    expect(answer.message).toContain('sent');
   });
 
   it('does not ask twice about the same audio', () => {

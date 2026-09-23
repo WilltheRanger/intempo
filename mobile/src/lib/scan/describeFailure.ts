@@ -11,5 +11,5 @@ export function describeScanFailure(cause: unknown): string {
   ) {
     return cause.message;
   }
-  return 'The scan could not be sent. Check your connection and try again.';
+  return 'Couldn’t send the scan. Check your connection.';
 }

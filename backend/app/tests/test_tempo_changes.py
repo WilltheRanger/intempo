@@ -247,7 +247,7 @@ def test_an_uneven_change_is_named_at_the_bar_it_lurched() -> None:
 
     uneven = [m.measure_number for m in result.per_measure if m.uneven]
     assert uneven == [7]
-    assert result.verdict == "Your rit. lurched at bar 7 rather than flowing."
+    assert result.verdict == "Your rit. lurched at bar 7."
     # And it is still not called dragging: the bands stay refused under a change.
     assert [m.measure_number for m in result.per_measure if m.worst_band != "on"] == []
 
@@ -255,7 +255,7 @@ def test_an_uneven_change_is_named_at_the_bar_it_lurched() -> None:
 def test_an_even_change_is_named_too() -> None:
     """Saying nothing would read as the app not having noticed the page."""
     result = _analyse(EVEN_RIT, RIT_AT_5)
-    assert result.verdict == "Steady tempo, and your rit. flowed evenly."
+    assert result.verdict == "Steady, and your rit. flowed."
 
 
 def test_the_page_is_quoted_rather_than_paraphrased() -> None:
@@ -309,4 +309,4 @@ def test_a_page_with_no_marking_is_untouched() -> None:
     assert result.quality > 0.95
     assert not any(n.under_tempo_change for n in result.per_note)
     assert not any(m.uneven for m in result.per_measure)
-    assert result.verdict.startswith("Steady tempo. You held it")
+    assert result.verdict == "Steady all the way through."

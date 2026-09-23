@@ -1,4 +1,3 @@
-import type { TakeResult } from '../../data/types';
 import type { PieceHistory } from '../../data/sources/types';
 
 /**
@@ -50,31 +49,4 @@ export function historyLabel(history: PieceHistory): string | null {
   const since = practiceSince(history.since);
   const count = takeCountLabel(history.takes);
   return since ? `${count} ${since}` : count;
-}
-
-export interface LastTakeCue {
-  /** The pipeline's own sentence about that take. */
-  headline: string;
-  /** So the card can offer to open it. */
-  takeId: string;
-}
-
-/**
- * What happened last time, for the card that says what to do next.
- *
- * **Only a take that produced a verdict.** A failed run's every field below
- * `failure` is a placeholder, and a take the pipeline could not use carries a
- * sentence about the recording rather than about the playing — "your recording
- * is completely silent" is not a thing to work on next time, it is a thing
- * that already went wrong.
- *
- * Newest first is what the source returns, so the first usable one is the most
- * recent — not simply `recent[0]`, which would go silent for a whole piece
- * because the last attempt did not upload.
- */
-export function lastTakeCue(recent: readonly TakeResult[]): LastTakeCue | null {
-  const usable = recent.find(
-    (take) => take.failure === null && take.status === 'ok' && take.headline,
-  );
-  return usable ? { headline: usable.headline, takeId: usable.id } : null;
 }

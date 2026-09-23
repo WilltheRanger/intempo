@@ -4,15 +4,17 @@ import { Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-nativ
 import { PressableScale } from '../../components/motion';
 import { Text } from '../../components/primitives/Text';
 import { ScoreBand } from '../../components/score/ScoreBand';
-import type { Piece } from '../../data/types';
+import type { Piece, PieceInsight } from '../../data/types';
 import { BORDER_WIDTH, MIN_TOUCH_TARGET, colors, radii, spacing } from '../../design';
 import { formatLastPracticedShort, joinMetadata } from '../../lib/format';
+import { readPieceWord, tempoWanders } from '../../lib/insights/tendency';
 import {
   DISCARD_LABEL,
   READ_AGAIN_LABEL,
   tileMessage,
   tileState,
 } from '../../lib/library/tileState';
+import { DeviationBar } from '../insights/DeviationBar';
 
 /** Small enough that a tile is a spine, large enough that the notes are notes. */
 const TILE_SCALE = 0.62;
@@ -20,11 +22,23 @@ const TILE_SCALE = 0.62;
 /** Close to a page, without claiming to be one: a shelf of upright objects. */
 const PAGE_ASPECT = 3 / 4;
 
-/** The page's own margin, above the first system and below the last. */
-const MUSIC_PADDING = spacing.sm;
+/**
+ * The page's own margin, above the first system and below the last — the
+ * redesign's 16, where the systems are centred on the page rather than hung
+ * from its top edge (`redesign/Library.dc.html`).
+ */
+const MUSIC_PADDING = spacing.lg;
 
 export interface PieceTileProps {
   piece: Piece;
+  /**
+   * How this piece has sat against the beat across the insights window, drawn
+   * as the rail under the title — the redesign's "one tempo rail drawn at
+   * three scales", at its smallest. Null for a piece with no takes in the
+   * window, which draws no rail rather than a rail at zero: nothing measured
+   * is not the same as on the beat.
+   */
+  insight?: PieceInsight | null;
   onPress: () => void;
   /**
    * Read the page again. Absent where the shelf cannot act — a search result
@@ -68,6 +82,7 @@ export interface PieceTileProps {
  */
 export function PieceTile({
   piece,
+  insight = null,
   onPress,
   onReadAgain,
   onDiscard,
@@ -99,7 +114,11 @@ export function PieceTile({
     <PressableScale
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={meta ? `${piece.title}, ${meta}` : piece.title}
+      // The composer and the date are no longer drawn — the redesign's tile is
+      // the page, the title and the rail — but they are still worth hearing.
+      accessibilityLabel={[piece.title, meta, insight ? readPieceWord(insight) : null]
+        .filter(Boolean)
+        .join(', ')}
       activeScale={0.98}
       style={({ pressed }) => [styles.tile, pressed && styles.pressed]}
     >
@@ -158,15 +177,15 @@ export function PieceTile({
       <Text variant="pieceTitle" numberOfLines={2} style={styles.title}>
         {piece.title}
       </Text>
-      {meta ? (
-        <Text
-          variant="metadataSmall"
-          color="textTertiary"
-          numberOfLines={1}
-          style={styles.meta}
-        >
-          {meta}
-        </Text>
+      {insight && !unreadable ? (
+        <View style={styles.rail}>
+          <DeviationBar
+            deviationPct={insight.meanDeviationPct}
+            spreadPct={tempoWanders(insight) ? insight.spreadPct : undefined}
+            tolerance={insight.tolerance}
+            accessibilityLabel={`${readPieceWord(insight)} across ${piece.title}`}
+          />
+        </View>
       ) : null}
 
       {/*
@@ -231,11 +250,13 @@ const styles = StyleSheet.create({
     borderWidth: BORDER_WIDTH,
     borderColor: colors.border,
     overflow: 'hidden',
-    justifyContent: 'flex-start',
+    // Centred: a short piece is two systems in the middle of a page, as
+    // engraved music is, not two systems at the top of a blank one.
+    justifyContent: 'center',
   },
   music: {
     paddingVertical: MUSIC_PADDING,
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: 11,
   },
   message: {
     // The whole page, so the line sits where the music would have been rather
@@ -267,10 +288,17 @@ const styles = StyleSheet.create({
   actionPressed: {
     opacity: 0.6,
   },
+  // The shelf's serif, a size under `pieceTitle`: a tile is half a screen
+  // wide and a repertoire title gets two narrow lines here.
   title: {
-    marginTop: spacing.sm,
+    marginTop: 11,
+    fontSize: 17,
+    lineHeight: 21,
   },
-  meta: {
-    marginTop: 2,
+  // Pinned to the bottom of the tile, so the rails of two tiles side by side
+  // line up whether their titles took one line or two.
+  rail: {
+    marginTop: 'auto',
+    paddingTop: 11,
   },
 });

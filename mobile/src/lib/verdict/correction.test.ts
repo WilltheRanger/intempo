@@ -130,6 +130,6 @@ describe('what it says afterwards', () => {
 
   it('does not read back "unsure" as a verdict', () => {
     // "Noted as not sure" is not a sentence about the playing.
-    expect(correctionAcknowledgement('unsure')).toBe('Noted. Thanks for saying.');
+    expect(correctionAcknowledgement('unsure')).toBe('Thanks.');
   });
 });

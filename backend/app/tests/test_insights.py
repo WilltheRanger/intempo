@@ -385,7 +385,7 @@ class TestLeadFinding:
             92.0,
         )
 
-        assert out is not None and "lagged behind" in out.text
+        assert out is not None and "lagged" in out.text
 
     def test_drift_is_named_in_the_direction_it_happened(self):
         speeding = lead_finding(self._insights(drift_bpm=12.0), 92.0)

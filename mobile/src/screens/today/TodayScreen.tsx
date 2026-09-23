@@ -1,4 +1,5 @@
-import { useNavigation } from '@react-navigation/native';
+import { useIsFocused, useNavigation } from '@react-navigation/native';
+import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useState } from 'react';
 import { StyleSheet } from 'react-native';
 
@@ -22,6 +23,7 @@ import { readPendingAnalysisStatus } from '../../data/practice/pendingAnalysisSt
 import { getGreeting } from '../../lib/greeting';
 import type { TabScreenNavigation } from '../../navigation/types';
 import { PracticeHero, useHeroHeight } from './PracticeHero';
+import { RiseIn } from './RiseIn';
 import { heroContentFor, pendingLineFor } from './heroContent';
 import { useAddPieceOption } from '../../navigation/useAddPieceOption';
 import { loadStateFor } from '../../lib/loadState';
@@ -55,9 +57,14 @@ import { loadStateFor } from '../../lib/loadState';
  */
 export function TodayScreen() {
   const navigation = useNavigation<TabScreenNavigation<'Today'>>();
-  // The whole screen is the dark ground, and `ScreenContainer` needs that in
-  // points to tell the floating chrome which material to wear.
+  // The photograph above the ivory fall is the dark ground, and
+  // `ScreenContainer` needs that in points to tell the floating chrome which
+  // material to wear. The bar sits on the ivory, so it wears the light one.
   const heroHeight = useHeroHeight();
+  // The status bar sits on the photograph, so it is light while Today is the
+  // screen — and only then: tabs stay mounted, and a light status bar left
+  // behind would vanish on the ivory of every other tab.
+  const focused = useIsFocused();
   const currentPiece = useCurrentPiece();
   // Only to name the piece a pending take belongs to. Shared cache with the
   // Library tab, so this is a read rather than a second fetch.
@@ -195,40 +202,44 @@ export function TodayScreen() {
       darkGround={heroHeight}
       contentStyle={styles.page}
     >
-      <PracticeHero
-        /*
-          Null while the piece is still coming: the same photograph, the same
-          wash, nothing written on it yet — so the screen does not jump when
-          the answer arrives. `heroContentFor` covers the account with no
-          pieces at all, which is a real state of this screen rather than a
-          fallback.
-        */
-        content={
-          load === 'loading'
-            ? null
-            : heroContentFor({
-                piece,
-                workingBpm,
-                lastTakeHeadline: headline,
-              })
-        }
-        greeting={getGreeting()}
-        name={me.data?.displayName ?? null}
-        onAction={() => (piece ? openPractice(piece) : setAddSheetVisible(true))}
-        onAdd={() => setAddSheetVisible(true)}
-        pending={
-          pendingAnalysis && pendingCheck
-            ? pendingLineFor(pendingCheck, pendingPiece?.title ?? null)
-            : null
-        }
-        onPending={
-          pendingCheck === 'ready'
-            ? openPendingVerdict
-            : pendingCheck === 'checking'
-              ? undefined
-              : () => void checkPendingAnalysis()
-        }
-      />
+      {focused ? <StatusBar style="light" /> : null}
+      <RiseIn>
+        <PracticeHero
+          /*
+            Null while the piece is still coming: the same photograph, the same
+            wash, nothing written on it yet — so the screen does not jump when
+            the answer arrives. `heroContentFor` covers the account with no
+            pieces at all, which is a real state of this screen rather than a
+            fallback.
+          */
+          content={
+            load === 'loading'
+              ? null
+              : heroContentFor({
+                  piece,
+                  workingBpm,
+                  lastTakeHeadline: headline,
+                })
+          }
+          greeting={getGreeting()}
+          name={me.data?.displayName ?? null}
+          onAction={() => (piece ? openPractice(piece) : setAddSheetVisible(true))}
+          onAdd={() => setAddSheetVisible(true)}
+          onRecent={() => navigation.navigate('Insights')}
+          pending={
+            pendingAnalysis && pendingCheck
+              ? pendingLineFor(pendingCheck, pendingPiece?.title ?? null)
+              : null
+          }
+          onPending={
+            pendingCheck === 'ready'
+              ? openPendingVerdict
+              : pendingCheck === 'checking'
+                ? undefined
+                : () => void checkPendingAnalysis()
+          }
+        />
+      </RiseIn>
 
       <AddPieceSheet
         visible={addSheetVisible}

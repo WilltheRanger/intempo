@@ -13,7 +13,6 @@ import {
 import {
   BORDER_WIDTH,
   colors,
-  MIN_TOUCH_TARGET,
   radii,
   spacing,
   typography,
@@ -37,6 +36,16 @@ export interface InputProps {
   placeholder?: string;
   /** Serif, for a composition title. Sans for everything else. */
   serif?: boolean;
+  /**
+   * The one field that is a whole screen's question — onboarding's name
+   * (`redesign/OnboardName.dc.html`): taller, and the type at 21.
+   */
+  large?: boolean;
+  /**
+   * Draws `action` inside the field at its right edge instead of beside the
+   * label — the redesign's password "Show" (`redesign/SignIn.dc.html`).
+   */
+  actionInside?: boolean;
   /**
    * Small control on the label's right — a "Show" for a password, say. Keep it
    * to a word; the label leads.
@@ -79,6 +88,8 @@ export function Input({
   onChangeText,
   placeholder,
   serif = false,
+  large = false,
+  actionInside = false,
   action,
   secureTextEntry = false,
   keyboardType,
@@ -97,47 +108,57 @@ export function Input({
   return (
     <View style={style}>
       <View style={styles.labelRow}>
-        <Text variant="sectionLabel" color="textSecondary">
+        {/*
+          The redesign's field label (`redesign/NamePiece.dc.html`,
+          `SignIn.dc.html`): small, uppercase, tertiary — a name for the box
+          rather than a heading over it, so the eye goes to what is typed.
+        */}
+        <Text variant="caption" color="textTertiary" style={styles.label}>
           {label}
         </Text>
-        {action}
+        {actionInside ? null : action}
       </View>
 
-      <TextInput
-        value={value}
-        onChangeText={onChangeText}
-        // **Composed, not replaced.** This field draws its own focus ring, so
-        // a caller's `onFocus` has to run alongside it rather than instead of
-        // it — handing the prop straight to `TextInput` silently removed the
-        // ring from every field that used one.
-        onFocus={(event) => {
-          setFocused(true);
-          onFocus?.(event);
-        }}
-        onBlur={(event) => {
-          setFocused(false);
-          onBlur?.(event);
-        }}
-        placeholder={placeholder}
-        placeholderTextColor={colors.textTertiary}
-        underlineColorAndroid="transparent"
-        accessibilityLabel={label}
-        secureTextEntry={secureTextEntry}
-        keyboardType={keyboardType}
-        autoCapitalize={autoCapitalize}
-        autoComplete={autoComplete}
-        textContentType={textContentType}
-        returnKeyType={returnKeyType}
-        onSubmitEditing={onSubmitEditing}
-        editable={editable}
-        style={[
-          styles.field,
-          serif ? styles.serifText : styles.sansText,
-          focused && styles.focused,
-          !editable && styles.disabled,
-          NO_INNER_OUTLINE,
-        ]}
-      />
+      <View>
+        <TextInput
+          value={value}
+          onChangeText={onChangeText}
+          // **Composed, not replaced.** This field draws its own focus ring, so
+          // a caller's `onFocus` has to run alongside it rather than instead of
+          // it — handing the prop straight to `TextInput` silently removed the
+          // ring from every field that used one.
+          onFocus={(event) => {
+            setFocused(true);
+            onFocus?.(event);
+          }}
+          onBlur={(event) => {
+            setFocused(false);
+            onBlur?.(event);
+          }}
+          placeholder={placeholder}
+          placeholderTextColor={colors.textTertiary}
+          underlineColorAndroid="transparent"
+          accessibilityLabel={label}
+          secureTextEntry={secureTextEntry}
+          keyboardType={keyboardType}
+          autoCapitalize={autoCapitalize}
+          autoComplete={autoComplete}
+          textContentType={textContentType}
+          returnKeyType={returnKeyType}
+          onSubmitEditing={onSubmitEditing}
+          editable={editable}
+          style={[
+            styles.field,
+            serif ? styles.serifText : styles.sansText,
+            large && styles.large,
+            actionInside && action ? styles.roomForAction : null,
+            focused && styles.focused,
+            !editable && styles.disabled,
+            NO_INNER_OUTLINE,
+          ]}
+        />
+        {actionInside && action ? <View style={styles.insideAction}>{action}</View> : null}
+      </View>
     </View>
   );
 }
@@ -147,11 +168,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: spacing.sm,
+    marginBottom: 7,
+  },
+  label: {
+    fontSize: 12,
+    lineHeight: 16,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
   },
   field: {
-    minHeight: MIN_TOUCH_TARGET,
-    paddingHorizontal: spacing.md,
+    minHeight: 48,
+    paddingHorizontal: 14,
     paddingVertical: spacing.sm,
     backgroundColor: colors.surface,
     borderRadius: radii.md,
@@ -161,9 +188,28 @@ const styles = StyleSheet.create({
   },
   sansText: {
     ...typography.body,
+    fontSize: 17,
   },
   serifText: {
     ...typography.pieceTitle,
+    fontSize: 17,
+  },
+  large: {
+    minHeight: 56,
+    paddingHorizontal: spacing.lg,
+    borderRadius: 14,
+    fontSize: 21,
+    lineHeight: 26,
+  },
+  roomForAction: {
+    paddingRight: 64,
+  },
+  insideAction: {
+    position: 'absolute',
+    right: 2,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
   },
   focused: {
     borderColor: colors.accent,

@@ -1,12 +1,6 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import {
-  BORDER_WIDTH,
-  colors,
-  CONTROL_HEIGHT,
-  radii,
-  spacing,
-} from '../../design';
+import { BORDER_WIDTH, colors, spacing } from '../../design';
 import type { Instrument } from '../../data/types';
 import { Text } from '../primitives/Text';
 
@@ -87,7 +81,7 @@ export function InstrumentChoice({ value, onChange, label }: InstrumentChoicePro
             ]}
           >
             <Text
-              variant="button"
+              variant="pieceTitle"
               color={selected ? 'actionText' : 'textPrimary'}
             >
               {instrument.label}
@@ -99,23 +93,26 @@ export function InstrumentChoice({ value, onChange, label }: InstrumentChoicePro
   );
 }
 
+const CELL_HEIGHT = 80;
+const CELL_RADIUS = 14;
+
 const styles = StyleSheet.create({
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     // The gap is the only separation. Borders on adjacent cells would double
     // up into a two-pixel rule between them.
-    gap: spacing.sm,
+    gap: 10,
   },
   cell: {
     // Two per row, minus half the gap each. Not a fixed width: the same
     // control has to sit in a phone column and in Profile.
     flexBasis: '48%',
     flexGrow: 1,
-    // The app's standard control height, not the bare minimum target: four of
-    // these are the substance of the screen, and a 44pt row reads as a list
-    // item rather than as an answer.
-    minHeight: CONTROL_HEIGHT,
+    // The redesign's 80 (`redesign/OnboardInstrument.dc.html`): four of these
+    // are the whole of the screen, and at the standard control height they
+    // read as a list of buttons rather than as the answer being asked for.
+    minHeight: CELL_HEIGHT,
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.md,
     alignItems: 'center',
@@ -123,7 +120,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderWidth: BORDER_WIDTH,
     borderColor: colors.border,
-    borderRadius: radii.sm,
+    borderRadius: CELL_RADIUS,
   },
   selected: {
     backgroundColor: colors.actionBg,

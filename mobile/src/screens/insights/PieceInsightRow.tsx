@@ -1,113 +1,89 @@
-import { StyleSheet } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { PressableScale } from '../../components/motion';
-import { MetadataRow } from '../../components/primitives/MetadataRow';
 import { Text } from '../../components/primitives/Text';
-import { ROW_PADDING_VERTICAL } from '../../components/rowMetrics';
 import type { PieceInsight } from '../../data/types';
-import { BORDER_WIDTH, colors, MIN_TOUCH_TARGET, spacing } from '../../design';
-import { readPieceWord, tempoWanders } from '../../lib/insights/tendency';
-import { DeviationBar } from './DeviationBar';
+import { BORDER_WIDTH, colors, MIN_TOUCH_TARGET } from '../../design';
+import { pieceWordTone, readPieceWord, tempoWanders } from '../../lib/insights/tendency';
 import { sessionLabel } from '../../lib/format';
+import { DeviationBar } from './DeviationBar';
 
 export interface PieceInsightRowProps {
   insight: PieceInsight;
-  /** Opens the piece. A list of your own pieces that does not open them is a table. */
   onPress: () => void;
-  /** Hairline above the row. Off on the first of a group — see `rowMetrics`. */
-  divided?: boolean;
 }
 
 /**
- * One piece's tempo record: what it was, how it went, how often.
+ * One piece in Insights' list, on one line (`redesign/Insights.dc.html`):
+ * its title, the tempo rail, and the word for how it has gone.
  *
- * **Not a card**, for the reason `PieceRow` is not one: this is the same list
- * of the same pieces as the Library, one screen away, and a white rounded box
- * around each entry there and not here would make two lists of one thing look
- * like two things. A rule between rows separates them for a pixel each (§3
- * law 3).
+ * **One line, not a card's worth.** The list sits under "See all pieces" and
+ * is for comparing — which of these is furthest off — so every row puts the
+ * same three things in the same three columns, and the eye runs down the
+ * rails. The composer and the session count went into the spoken label.
  *
- * It also had no `onPress`. A screen that names your pieces, measures them and
- * then does not open them is a report rather than an app — and it is the one
- * place a musician has just been told which piece needs work.
+ * It opens the piece: a screen that names your pieces and measures them and
+ * then does not open them is a report rather than an app.
  */
-export function PieceInsightRow({ insight, onPress, divided = false }: PieceInsightRowProps) {
-  // "Uneven" where a direction would be false — see `readPieceWord`. Without
-  // it a piece a musician plays a long way off the beat on both sides reads
-  // "On tempo" in the row they tap to go and practise it.
-  const verdict = readPieceWord(insight);
-  const wanders = tempoWanders(insight);
+export function PieceInsightRow({ insight, onPress }: PieceInsightRowProps) {
+  // "Uneven" where a direction would be false — see `readPieceWord`.
+  const word = readPieceWord(insight);
 
   return (
-    /*
-      **The styling belongs on the pressable, not on a `View` inside it.** This
-      row had `activeScale={0.99}` and no pressed style at all — a 1% scale on a
-      tall row is close to invisible, so it was the only one of the three piece
-      rows that did not visibly answer a finger. Its two near-twins, `PieceRow`
-      and `TodayRow`, both add `surfacePressed` here.
-
-      The inner `View` that used to carry `row` and `ruled` is gone with it: a
-      pressed background on the wrapper would have painted *outside* the ruled
-      element, which is why the styles had to come up rather than the pressed
-      state go down.
-    */
     <PressableScale
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`${insight.title}. ${verdict} across ${sessionLabel(insight.sessions)}.`}
+      accessibilityLabel={`${insight.title}. ${word} across ${sessionLabel(insight.sessions)}.`}
       activeScale={0.99}
-      style={({ pressed }) => [
-        styles.row,
-        divided && styles.ruled,
-        pressed && styles.pressed,
-      ]}
+      style={({ pressed }) => [styles.row, pressed && styles.pressed]}
     >
-      <Text variant="pieceTitle" numberOfLines={2}>
+      <Text variant="metadata" numberOfLines={1} style={styles.title}>
         {insight.title}
       </Text>
-
-      {insight.composer ? (
-        <Text variant="metadataSmall" color="textSecondary" style={styles.composer}>
-          {insight.composer}
-        </Text>
-      ) : null}
-
-      <DeviationBar
-        deviationPct={insight.meanDeviationPct}
-        spreadPct={wanders ? insight.spreadPct : undefined}
-        tolerance={insight.tolerance}
-        accessibilityLabel={`${verdict} across ${insight.title}`}
-        style={styles.bar}
-      />
-
-      <MetadataRow
-        variant="metadataSmall"
-        items={[verdict, sessionLabel(insight.sessions)]}
-        style={styles.meta}
-      />
+      <View style={styles.rail}>
+        <DeviationBar
+          deviationPct={insight.meanDeviationPct}
+          spreadPct={tempoWanders(insight) ? insight.spreadPct : undefined}
+          tolerance={insight.tolerance}
+          accessibilityLabel={`${word} across ${insight.title}`}
+        />
+      </View>
+      <Text
+        variant="caption"
+        color={pieceWordTone(insight)}
+        numberOfLines={1}
+        style={styles.word}
+      >
+        {word.toLowerCase()}
+      </Text>
     </PressableScale>
   );
 }
 
 const styles = StyleSheet.create({
   row: {
-    paddingVertical: ROW_PADDING_VERTICAL,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
     minHeight: MIN_TOUCH_TARGET,
-  },
-  ruled: {
     borderTopWidth: BORDER_WIDTH,
     borderTopColor: colors.border,
   },
   pressed: {
-    backgroundColor: colors.surfacePressed,
+    opacity: 0.55,
   },
-  composer: {
-    marginTop: 2,
+  title: {
+    width: 120,
+    fontSize: 13,
+    lineHeight: 18,
   },
-  bar: {
-    marginTop: spacing.md,
+  rail: {
+    flex: 1,
   },
-  meta: {
-    marginTop: spacing.sm,
+  word: {
+    width: 84,
+    textAlign: 'right',
+    fontSize: 11,
+    lineHeight: 14,
   },
 });

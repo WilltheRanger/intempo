@@ -29,7 +29,7 @@ export interface AddPieceSheetProps {
 const OPTIONS = [
   { option: 'scan' as const, icon: Camera, label: 'Photograph sheet music' },
   { option: 'import' as const, icon: Images, label: 'Choose photos' },
-  { option: 'notation' as const, icon: FileMusic, label: 'Open a MusicXML file' },
+  { option: 'notation' as const, icon: FileMusic, label: 'Open a score file' },
   { option: 'manual' as const, icon: PencilLine, label: 'Enter it by hand' },
 ];
 

@@ -29,7 +29,7 @@ const unmeasured = (id: string): CapturedPage => ({ id, source: `file:///${id}.j
 
 describe('pageNote', () => {
   it('names the finding on a page worth another look', () => {
-    expect(pageNote(doubtful('a'))).toBe('Too far away to read the notes');
+    expect(pageNote(doubtful('a'))).toBe('Too far away');
   });
 
   it('says nothing about a page that read', () => {
@@ -46,12 +46,12 @@ describe('pageNote', () => {
 describe('queueSummary', () => {
   it('states the order, which is the promise the drag handles exist for', () => {
     expect(queueSummary([clear('a'), clear('b')])).toBe(
-      'InTempo uploads and reads every page in this order.',
+      'Pages are read in this order.',
     );
   });
 
   it('does not talk about order when there is only one page', () => {
-    expect(queueSummary([clear('a')])).toBe('This is the page InTempo will read.');
+    expect(queueSummary([clear('a')])).toBe('This page will be read.');
   });
 
   it('adds the caveat, and counts', () => {

@@ -36,15 +36,20 @@ describe('the entry bar on the record screen', () => {
   it('sends the chosen bar with the take', () => {
     const [, source] = record[0];
 
-    expect(source).toContain('fromMeasure: startFrom');
+    // `entryBar` is the start bar, unless the Upload screen chose one for a
+    // picked file — see `send`.
+    expect(source).toContain('const entryBar = recording.fromMeasure ?? startFrom;');
+    expect(source).toContain('fromMeasure: entryBar');
   });
 
   it('tells the picker it governs the take, so the label says so', () => {
     const [, source] = record[0];
 
     // `entryCopy.test.ts` holds the words; this holds the fact that this
-    // screen asks for them.
-    expect(source).toContain('entry="take"');
+    // screen asks for them. It asked through `PlaybackSettings entry="take"`
+    // until the redesign (2026-09-23) moved the row onto the Record panel.
+    expect(source).toContain("entryRowLabel('take')");
+    expect(source).toContain("entryAccessibilityLabel('take', startFrom)");
   });
 
   it('measures the rest cues from the bar the take starts at', () => {

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
+import { arrival } from '../arrival';
 import { onboardingDraft } from '../onboardingDraft';
 import type { Musician } from '../types';
 import {
@@ -25,19 +26,18 @@ import { useUpdateProfile, useUploadAvatar } from './useProfile';
  * ## Once per launch, and the ref is why
  *
  * Saving invalidates `me`, so this effect re-runs on the answer it caused. A
- * partial draft — the photograph is not persisted, so a relaunch between
- * answering and confirming loses it — comes back *still* un-onboarded, which
- * is exactly the shape of an infinite retry. `attempted` bounds it to one try
+ * partial draft — a name without an instrument, say — comes back *still*
+ * un-onboarded, which is exactly the shape of an infinite retry. `attempted` bounds it to one try
  * per mount; the draft survives a failure and is tried again next launch.
  *
  * ## What a failure costs, and why the upload is not fatal
  *
  * The photograph is uploaded first and its failure is swallowed on purpose: a
- * storage error must not cost the name and the instrument as well, and those
- * two are what stop the gate asking for everything again. `draftUpdateFor`
- * claims `onboarded` only when all three are actually present, so a partial
- * save is a real save — it lands what it has and leaves the account
- * un-onboarded, and the gate opens pre-filled asking only for the picture.
+ * storage error must not cost the name and the instrument as well, and since
+ * 2026-09-23 those two are all onboarding requires — so a lost picture no
+ * longer holds the gate up at all. A draft missing one of the two is still a
+ * real save: it lands what it has, and the gate opens pre-filled asking for
+ * the rest.
  *
  * ## Clearing it is a safety rule, not tidiness
  *
@@ -76,13 +76,19 @@ export function useApplyOnboardingDraft(me: Musician | undefined): boolean {
 
     attempted.current = true;
     setApplying(true);
+    // The first arrival: the welcome stands in front of the app once these
+    // land. Set now rather than after the save for the reason
+    // `OnboardingScreen` gives — and harmlessly early, since the gate is
+    // checked before it and holds until the account is through.
+    arrival.onboarded();
     void (async () => {
       let avatarKey: string | null = null;
       if (draft.photo) {
         try {
           avatarKey = await upload.mutateAsync(draft.photo);
         } catch {
-          // The picture is the only answer lost; the gate will ask for it.
+          // The picture is the only answer lost, and it is optional; Profile
+          // can add one later.
         }
       }
       try {

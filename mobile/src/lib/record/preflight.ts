@@ -24,7 +24,8 @@ export interface PreflightCheck {
   id: 'bleed' | 'start' | 'microphone' | 'attack';
   tone: CheckTone;
   title: string;
-  detail: string;
+  /** Only where there is something to do about it. */
+  detail?: string;
   /** Present when the musician can resolve it from this screen. */
   action?: { label: string; to: 'startBar' | 'metronome' };
 }
@@ -53,21 +54,15 @@ export function speakerBleed(mode: MetronomeMode): PreflightCheck {
     return {
       id: 'bleed',
       tone: 'warn',
-      title: 'The metronome will play out loud',
-      detail:
-        'Without headphones the microphone hears every click, and each one looks '
-        + 'like a note you played. Use headphones, or switch to visual or haptic.',
+      title: 'The click plays out loud',
+      detail: 'Use headphones, or switch to visual or haptic.',
       action: { label: 'Change it', to: 'metronome' },
     };
   }
   return {
     id: 'bleed',
     tone: 'ok',
-    title: 'Nothing will play out loud',
-    detail:
-      mode === 'off'
-        ? 'The metronome is off, so only your playing reaches the microphone.'
-        : 'The metronome is silent, so only your playing reaches the microphone.',
+    title: 'Nothing plays out loud',
   };
 }
 
@@ -87,10 +82,8 @@ export function startBar({
     return {
       id: 'start',
       tone: 'warn',
-      title: `Starting ${bars} ${bars === 1 ? 'bar' : 'bars'} before the first note`,
-      detail:
-        `Bar ${firstSoundingBar} is where this part begins. Starting at ${startFrom} `
-        + 'records the rest as well, and a long silence is harder to line up, not easier.',
+      title: `Starts ${bars} ${bars === 1 ? 'bar' : 'bars'} before the first note`,
+      detail: `Your part begins at bar ${firstSoundingBar}.`,
       action: { label: `Start at bar ${firstSoundingBar}`, to: 'startBar' },
     };
   }
@@ -98,10 +91,6 @@ export function startBar({
     id: 'start',
     tone: 'ok',
     title: `Starting at bar ${startFrom}`,
-    detail:
-      startFrom === firstSoundingBar
-        ? 'The first bar with a note in it.'
-        : 'Counted in for one full bar before it.',
   };
 }
 
@@ -118,15 +107,13 @@ export function microphone(heard: boolean | null): PreflightCheck | null {
     ? {
         id: 'microphone',
         tone: 'ok',
-        title: 'The microphone worked last time',
-        detail: 'Your last take on this device had sound in it.',
+        title: 'The mic worked last time',
       }
     : {
         id: 'microphone',
         tone: 'warn',
-        title: 'Your last take came back silent',
-        detail:
-          'Check the microphone is not muted or covered before you play this one.',
+        title: 'Your last take was silent',
+        detail: 'Check the mic isn’t muted or covered.',
       };
 }
 
@@ -156,10 +143,8 @@ export function bowedAttack(instrument: Instrument): PreflightCheck | null {
   return {
     id: 'attack',
     tone: 'ok',
-    title: 'Double-bass detection is on',
-    detail:
-      'The low strings are read with settings of their own. Give each bowed '
-      + 'attack a clear start and the timing comes back sharper.',
+    title: 'Double bass mode is on',
+    detail: 'Give each bowed note a clear start.',
   };
 }
 

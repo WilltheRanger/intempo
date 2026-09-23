@@ -28,6 +28,13 @@ export interface IconButtonProps {
    * as a control.
    */
   tone?: 'auto' | 'onDark';
+  /**
+   * `bare` draws the glyph alone, as the redesign's headers do (Today's "+",
+   * Library's search and "+"): the header is a row of type, and a disc there
+   * is a container doing work the glyph already does. It still answers the
+   * finger — the whole 44pt square takes the press and dims under it.
+   */
+  variant?: 'disc' | 'bare';
   style?: StyleProp<ViewStyle>;
 }
 
@@ -47,6 +54,7 @@ export function IconButton({
   onPress,
   disabled = false,
   tone = 'auto',
+  variant = 'disc',
   style,
 }: IconButtonProps) {
   const glyph =
@@ -74,7 +82,7 @@ export function IconButton({
       activeScale={0.92}
       style={({ pressed }) => [
         styles.button,
-        pressed && !disabled && styles.pressed,
+        pressed && !disabled && (variant === 'bare' ? styles.barePressed : styles.pressed),
         disabled && styles.disabled,
         style,
       ]}
@@ -95,7 +103,9 @@ export function IconButton({
         the bottom bar alone, so the choice is gone rather than re-defaulted —
         a prop with one value is a prop that invites the other one back.
       */}
-      <View style={[styles.fill, styles.plain, tone === 'onDark' && styles.plainOnDark]} />
+      {variant === 'disc' ? (
+        <View style={[styles.fill, styles.plain, tone === 'onDark' && styles.plainOnDark]} />
+      ) : null}
       <View style={styles.glyph}>
         <Icon
           size={ICON_SIZE.md}
@@ -143,6 +153,10 @@ const styles = StyleSheet.create({
   */
   pressed: {
     opacity: 0.86,
+  },
+  /** No disc to carry the press, so the glyph itself dims further. */
+  barePressed: {
+    opacity: 0.5,
   },
   disabled: {
     opacity: disabledOpacity,

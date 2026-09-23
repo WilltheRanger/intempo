@@ -2,7 +2,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Text } from '../../components/primitives/Text';
 import type { UserVerdict } from '../../data/types';
-import { spacing } from '../../design';
+import { fontFamily, spacing } from '../../design';
 import {
   CORRECTION_CHOICES,
   correctionWord,
@@ -23,7 +23,7 @@ export interface CorrectionPromptProps {
 }
 
 /**
- * "What actually happened?", under a revealed measure.
+ * "What did you hear?", under a revealed bar.
  *
  * **Inside the reveal, never on every row.** Thirteen copies of a question
  * nobody asked would make the list a form, and the list is the part of this
@@ -61,7 +61,7 @@ export function CorrectionPrompt({
   return (
     <View style={styles.block}>
       <Text variant="metadataSmall" color="textTertiary" style={styles.question}>
-        What actually happened?
+        What did you hear?
       </Text>
 
       <View style={styles.choices}>
@@ -90,10 +90,13 @@ export function CorrectionPrompt({
               ]}
             >
               <Text
-                variant="metadataSmall"
+                variant="metadata"
                 color={
                   chosen || isApps ? 'accentText' : busy ? 'textTertiary' : 'textSecondary'
                 }
+                // The app's own reading, weighted as well as coloured: the
+                // redesign marks it both ways, so it is not colour alone.
+                style={chosen || isApps ? styles.appsChoice : undefined}
               >
                 {correctionWord(choice)}
               </Text>
@@ -126,7 +129,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     // Not `space-between`: three words on one line and one on the next would
     // be spread to the edges and read as a different control.
-    columnGap: spacing.lg,
+    columnGap: 18,
     rowGap: spacing.xs,
   },
   choice: {
@@ -137,6 +140,9 @@ const styles = StyleSheet.create({
   },
   choicePressed: {
     opacity: 0.55,
+  },
+  appsChoice: {
+    fontFamily: fontFamily.sansMedium,
   },
   failed: {
     paddingTop: spacing.xs,

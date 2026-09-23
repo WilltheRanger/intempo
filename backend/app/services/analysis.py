@@ -296,12 +296,12 @@ def _why_alignment_failed(
     far_too_many = len(cleaned.extra_detected) > len(cleaned.matched)
 
     if heard_everything and far_too_many:
-        return "More notes came through than the page writes. Check its slurs."
+        return "More notes than the page has. Check its slurs."
 
     if _take_is_much_longer_than_the_page(onsets, expected):
         return (
-            "Your take runs longer than this page. Look for a missing repeat, "
-            "or a rest bar with a number over it."
+            "Your take is longer than this page. Check its repeats, and any "
+            "rest bar with a number over it."
         )
 
     # Far fewer attacks than the page writes. A take that is simply *short* no
@@ -314,7 +314,7 @@ def _why_alignment_failed(
     if raw.coverage < _SPARSE_COVERAGE and raw.n_detected < raw.n_expected:
         return (
             f"Only {raw.n_detected} of {raw.n_expected} notes came through. "
-            "Move the microphone closer."
+            "Move the mic closer."
         )
 
     # **More sound arrived than any performance of this page could make.**
@@ -324,10 +324,7 @@ def _why_alignment_failed(
     # the wrong music. Every take this app has analysed lands here, and every
     # one of them was the right piece — see `attacks_outnumber_the_music`.
     if attacks_outnumber_the_music(onsets, expected):
-        return (
-            "More sound came through than this page writes. Move the "
-            "microphone closer to the instrument, away from anything noisy."
-        )
+        return "Too much sound. Move the mic closer, away from noise."
 
     # **Everything the page writes was heard, and none of it where the page
     # puts it.** That really is the wrong-piece signature, and the advice is
@@ -406,8 +403,8 @@ def _why_nothing_to_compare(expected: np.ndarray) -> str:
     silent one.
     """
     if expected.size == 0:
-        return "This piece has no notes to compare against. Check the transcription."
-    return "No sound reached the microphone. Check that nothing is muting it."
+        return "This piece has no notes. Check the score."
+    return "No sound reached the microphone. Is it muted?"
 
 
 @dataclass(frozen=True)

@@ -75,9 +75,18 @@ for (const pattern of [
   /navigate\(\s*\{\s*name:\s*['"](\w+)['"]/g,
   /\bpush\(\s*['"](\w+)['"]/g,
   /\breplace\(\s*['"](\w+)['"]/g,
-  /routes:\s*\[[\s\S]*?name:\s*['"](\w+)['"]/g,
 ]) {
   for (const match of corpus.matchAll(pattern)) {
+    opened.add(match[1]);
+  }
+}
+// **Every route a `reset` lays down, not only its first.** A reset to
+// `[Tabs, SetTempo]` opens SetTempo, and matching just the first `name:` after
+// `routes: [` read that as opening Tabs and nothing else. The array body is
+// taken whole (one level of nested brackets, for a tab's own `routes`) and
+// every literal name in it counts.
+for (const block of corpus.matchAll(/routes:\s*\[((?:[^[\]]|\[[^[\]]*\])*)\]/g)) {
+  for (const match of block[1].matchAll(/name:\s*['"](\w+)['"]/g)) {
     opened.add(match[1]);
   }
 }

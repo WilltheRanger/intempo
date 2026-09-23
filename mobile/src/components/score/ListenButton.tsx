@@ -10,6 +10,7 @@ import {
   BORDER_WIDTH,
   ICON_SIZE,
   ICON_STROKE_WIDTH,
+  CONTROL_HEIGHT,
   MIN_TOUCH_TARGET,
   colors,
   disabledOpacity,
@@ -316,11 +317,15 @@ const styles = StyleSheet.create({
       rather than a glass pill. Two controls that look adjacent are not one
       control.
     */
-    minHeight: MIN_TOUCH_TARGET,
-    paddingHorizontal: spacing.lg,
-    borderRadius: radii.md,
+    // The redesign's Listen (`redesign/PieceScore.dc.html`): a white pill
+    // at the height of the app's other buttons, with the progress track
+    // inside it along the bottom, clipped by the round ends.
+    minHeight: CONTROL_HEIGHT,
+    paddingHorizontal: spacing['2xl'],
+    borderRadius: radii.pill,
     borderWidth: BORDER_WIDTH,
-    borderColor: colors.border,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.surface,
     overflow: 'hidden',
   },
   pressed: {

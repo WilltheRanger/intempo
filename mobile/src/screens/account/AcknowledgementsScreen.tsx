@@ -47,8 +47,8 @@ export function AcknowledgementsScreen() {
 
       {/*
         **Photography, above the package list rather than buried under it.**
-        One photograph carries a whole screen of this app, and a person took
-        it. The Unsplash Licence does not require attribution, which makes
+        Two photographs carry whole screens of this app, and people took
+        them. The Unsplash Licence does not require attribution, which makes
         this a choice — and a list of three hundred npm packages that omits
         the one human being is the wrong choice.
       */}
@@ -56,8 +56,13 @@ export function AcknowledgementsScreen() {
         Photography
       </Text>
       <Text variant="body" style={styles.credit}>
-        The Today screen&rsquo;s photograph is by GVZ 42, on Unsplash, under
-        the Unsplash Licence.
+        The Today screen&rsquo;s photograph of a rehearsal room is from
+        Unsplash, under the Unsplash Licence. Its photographer was not recorded
+        when it was chosen; if it is yours, tell us and it will be named here.
+      </Text>
+      <Text variant="body" style={styles.credit}>
+        The Sign in screen&rsquo;s photograph of a turntable is by Kevin
+        McCutcheon, on Unsplash, under the Unsplash Licence.
       </Text>
 
       <Text variant="sectionLabel" color="textSecondary" style={styles.heading}>

@@ -40,7 +40,7 @@ describe('a pitch below the instrument', () => {
     expect(only.from).toBe('C3');
     expect(only.to).toBe('C4');
     expect(only.where).toBe('Bar 1, note 1');
-    expect(only.why).toContain('violin\u2019s lowest string');
+    expect(only.why).toContain('Too low for violin');
   });
 
   it('applies to the note it names and nothing else', () => {
@@ -215,7 +215,7 @@ describe('proposalsSummary', () => {
   });
 
   it('reads as English at one', () => {
-    expect(proposalsSummary(1)).toBe('One thing looks off. Keep it or fix it.');
-    expect(proposalsSummary(4)).toBe('4 things look off. Keep or fix each one.');
+    expect(proposalsSummary(1)).toBe('1 thing looks off.');
+    expect(proposalsSummary(4)).toBe('4 things look off.');
   });
 });

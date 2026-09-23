@@ -118,8 +118,8 @@ export function readMeasure(measure: MeasureVerdict): MeasureReading {
       showsDeviation: false,
       revealsFigure: false,
       accessibilityLabel: uneven
-        ? `Measure ${measure.measure}: the written tempo change was uneven here`
-        : `Measure ${measure.measure}: under a written tempo change, not timed`,
+        ? `Bar ${measure.measure}: uneven through the tempo change`
+        : `Bar ${measure.measure}: tempo change, not timed`,
     };
   }
 
@@ -131,7 +131,7 @@ export function readMeasure(measure: MeasureVerdict): MeasureReading {
         tone: 'textTertiary',
         showsDeviation: false,
         revealsFigure: false,
-        accessibilityLabel: `Measure ${measure.measure}: ${named.spoken}`,
+        accessibilityLabel: `Bar ${measure.measure}: ${named.spoken}`,
       };
     }
     // **A `rit.` is not the only way a bar goes unjudged**, and the other two
@@ -150,7 +150,7 @@ export function readMeasure(measure: MeasureVerdict): MeasureReading {
       tone: 'textTertiary',
       showsDeviation: false,
       revealsFigure: false,
-      accessibilityLabel: `Measure ${measure.measure}: nothing here could be timed against the page`,
+      accessibilityLabel: `Bar ${measure.measure}: nothing to time here`,
     };
   }
 
@@ -160,7 +160,7 @@ export function readMeasure(measure: MeasureVerdict): MeasureReading {
     tone: verdictColorFor(measure.band),
     showsDeviation: true,
     revealsFigure: true,
-    accessibilityLabel: `Measure ${measure.measure}: ${label}`,
+    accessibilityLabel: `Bar ${measure.measure}: ${label}`,
   };
 }
 
@@ -233,7 +233,7 @@ export function describeTrendRange(first: number, last: number): string {
   // One measure is not a range, and "from measure 4 to 4" reads as a fault in
   // the sentence rather than as a short take.
   if (first === last) {
-    return `Tempo drift, measure ${first}`;
+    return `Tempo drift, bar ${first}`;
   }
-  return `Tempo drift from measure ${first} to ${last}`;
+  return `Tempo drift, bars ${first} to ${last}`;
 }

@@ -36,7 +36,7 @@ describe('what the app says when the microphone will not start', () => {
       // `startsWith`, not equality: every sentence now carries the browser's
       // own words after it (see `causeOf`). What this test is about is which
       // errors earn *this* sentence, and that is unchanged.
-      expect(failure.message.startsWith('No microphone is available on this device.')).toBe(true);
+      expect(failure.message.startsWith('No microphone found.')).toBe(true);
     }
   });
 
@@ -109,7 +109,7 @@ describe('the home-screen app', () => {
     // …but never onto "no microphone". If the device really has none, Safari
     // will not find one either, and sending someone to try is a wasted trip.
     const none = microphoneFailure(domException('NotFoundError'), true).message;
-    expect(none).toContain('No microphone is available on this device.');
+    expect(none).toContain('No microphone found.');
     expect(none).not.toContain('home screen');
 
     expect(homeScreenAdvice(false)).toBe('');
@@ -197,7 +197,7 @@ describe('a document that cannot capture', () => {
     );
 
     // The advice a musician can act on comes first and is unchanged.
-    expect(failure.message.startsWith('The page needs reloading')).toBe(true);
+    expect(failure.message.startsWith('Reload the page')).toBe(true);
     // The engine's own words come last, in parentheses, for the next report.
     expect(failure.message).toContain('InvalidStateError');
     expect(failure.message).toContain('AudioSession category is not compatible');

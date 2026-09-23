@@ -13,7 +13,7 @@ import type { Instrument, Musician } from '../data/types';
  * screen is shown at all.
  */
 
-/** What onboarding collected. All three are required — see `MISSING_LABELS`. */
+/** What onboarding collected. A name and an instrument are required. */
 export interface OnboardingAnswers {
   /** As typed, untrimmed. Trimming is this module's job, not the screen's. */
   name: string;
@@ -21,67 +21,35 @@ export interface OnboardingAnswers {
   /** The object key from `useUploadAvatar`, once the upload has finished. */
   avatarKey: string | null;
   /**
-   * Whether a local photograph is ready to upload when Continue is pressed.
-   *
-   * Optional so profile-update callers and older tests remain honest: an
-   * existing object key is enough on its own. Onboarding deliberately treats a
-   * local selection as complete before the bytes have moved; sending them is
-   * part of finishing, not part of choosing.
+   * Whether a local photograph is ready to upload when onboarding finishes.
+   * Optional, like the photograph itself; it only decides whether a draft is
+   * worth sending (`draftIsWorthSending`).
    */
   photoSelected?: boolean;
-  /**
-   * The account already has a photograph on it.
-   *
-   * **Because onboarding can be answered across two sittings.** `PATCH /v1/me`
-   * stores what it is given and stamps `onboarded_at` only once the resulting
-   * row carries all three — so someone who chose a photo, was interrupted, and
-   * came back has that photograph on their account and this screen in front of
-   * them again. Asking for it a second time is asking for the one answer that
-   * cannot be given by thinking, twice.
-   */
-  storedPhoto?: boolean;
 }
 
 /**
- * What onboarding still needs, in the order the screen asks for it.
+ * What onboarding requires before it finishes: a name and an instrument.
  *
- * **All three are required.** The owner's call on 2026-08-25 — *"dont make
- * name profile and instrument optional"* — reversing the skippable screen
- * shipped earlier the same day. `PATCH /v1/me` enforces the same rule against
- * the resulting row, because a requirement only the client checks is a
- * convention: the endpoint is reachable without this screen.
+ * **The photograph was the third and is not any more.** The owner's call on
+ * 2026-08-25 was *"dont make name profile and instrument optional"*; the
+ * redesign's photo step ("Optional, and only you and your teacher ever see
+ * it", with "Do this later") reverses the photograph half of it, confirmed by
+ * the owner on 2026-09-23 — `DECISIONS.md`. The greeting and how playing is
+ * read depend on the other two; nothing depends on a face.
  *
- * The photograph is the one with a real cost. It is the only answer that
- * cannot be supplied by thinking — someone signing up away from a picture they
- * are happy with has to stop and find one, and the app is shut until they do.
- * That is the owner's decision to make and it is made; recorded here so it is
- * visible to whoever reads this next rather than only in a commit message.
+ * `PATCH /v1/me` enforces the same rule against the resulting row, because a
+ * requirement only the client checks is a convention: the endpoint is
+ * reachable without this screen.
  */
-export type OnboardingRequirement = 'name' | 'photo' | 'instrument';
-
-/** What each missing answer is called in front of a musician. */
-export const MISSING_LABELS: Record<OnboardingRequirement, string> = {
-  name: 'your name',
-  photo: 'a profile picture',
-  instrument: 'your instrument',
-};
+export type OnboardingRequirement = 'name' | 'instrument';
 
 /**
- * What is still unanswered, in asking order — empty when the screen can finish.
- *
- * A list rather than a boolean so the screen can say *which*. A disabled
- * button with no reason beside it is the interaction this project has already
- * called out elsewhere: it looks like a tap that did nothing.
+ * What is still unanswered, in asking order — empty when onboarding can finish.
  *
  * A name of only spaces is not a name, matching what the server stores: it
  * strips and writes NULL, so accepting one here would let someone through to
  * an account with no name on it.
- *
- * A selected local photograph is enough to enable Continue. The screen uploads
- * it as the first part of finishing and does not save the profile until an
- * object key exists. Requiring the key here would force the old behaviour:
- * uploading as an unrelated side effect of choosing. So is one already on the
- * account — see `storedPhoto`.
  */
 export function missingFromOnboarding(
   answers: OnboardingAnswers,
@@ -90,9 +58,6 @@ export function missingFromOnboarding(
   if (!answers.name.trim()) {
     missing.push('name');
   }
-  if (!answers.avatarKey && !answers.photoSelected && !answers.storedPhoto) {
-    missing.push('photo');
-  }
   if (!answers.instrument) {
     missing.push('instrument');
   }
@@ -100,35 +65,9 @@ export function missingFromOnboarding(
 }
 
 /**
- * What is still needed, as a sentence — or null when nothing is.
- *
- * Here rather than in the screen because the empty case is the one that
- * matters and it is invisible in a component: a disabled button beside the
- * words "Still needed:" and nothing after them is worse than no line at all.
- * Returning null makes "say nothing" the only way to render a satisfied form.
- *
- * Two items are joined with "and", three with a comma and "and" — the shape
- * English uses, not the shape `Array.join` produces.
- */
-export function describeMissing(
-  missing: OnboardingRequirement[],
-): string | null {
-  const labels = missing.map((requirement) => MISSING_LABELS[requirement]);
-  if (labels.length === 0) {
-    return null;
-  }
-  if (labels.length === 1) {
-    return `Still needed: ${labels[0]}.`;
-  }
-  const last = labels[labels.length - 1];
-  return `Still needed: ${labels.slice(0, -1).join(', ')} and ${last}.`;
-}
-
-/**
  * The PATCH body for finishing onboarding.
  *
- * **Only fields that were actually given**, even though all three are now
- * required. The guards are not redundant with `missingFromOnboarding`: they
+ * **Only fields that were actually given**, even though two are required. The guards are not redundant with `missingFromOnboarding`: they
  * guard a different failure. `UpdateMeInput` reads an omitted field as "leave
  * it" and an explicit `null` as "clear it", so a screen bug that called this
  * with a blank name would not merely fail to set one — it would send
@@ -136,7 +75,8 @@ export function describeMissing(
  * request that does too little is recoverable; one that deletes is not.
  *
  * `onboarded: true` is always present. It is what the server stamps, and the
- * server refuses to stamp it unless the resulting row has all three.
+ * server refuses to stamp it unless the resulting row has a name and an
+ * instrument.
  */
 export function profileUpdateFor(answers: OnboardingAnswers): UpdateMeInput {
   const name = answers.name.trim();
@@ -152,14 +92,14 @@ export function profileUpdateFor(answers: OnboardingAnswers): UpdateMeInput {
  * The PATCH body for answers given **before** the account existed.
  *
  * The same fields as `profileUpdateFor`, with one difference that matters:
- * `onboarded` is claimed only when all three answers are actually present.
+ * `onboarded` is claimed only when the required answers are actually present.
  *
  * `PATCH /v1/me` **refuses** `onboarded: true` against a row still missing
- * one — a 400 naming what is absent — so a draft that lost its photograph on
+ * one — a 400 naming what is absent — so a draft that lost its instrument on
  * the way through a confirmation link would fail the request outright and land
- * nothing, including the name and instrument it *did* carry. Sending what
- * there is leaves the account un-onboarded on purpose: the gate opens with
- * those two already filled and asks only for the picture.
+ * nothing, including the name it *did* carry. Sending what there is leaves the
+ * account un-onboarded on purpose: the gate opens with what was answered
+ * already filled.
  */
 export function draftUpdateFor(answers: OnboardingAnswers): UpdateMeInput {
   const name = answers.name.trim();

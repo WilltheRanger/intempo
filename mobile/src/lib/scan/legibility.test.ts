@@ -162,7 +162,7 @@ describe('the verdict', () => {
   it('warns about a page that is plainly too far away', () => {
     const verdict = legibilityOf(ruledPage({ spacing: 4, height: 600, systems: 8 }));
     expect(verdict.verdict).toBe('tooSmall');
-    expect(adviceFor(verdict)?.body).toContain('fills the frame');
+    expect(adviceFor(verdict)?.body).toContain('Fill the frame');
     expect(adviceFor(verdict)?.route).toBe('retake');
   });
 
@@ -185,7 +185,7 @@ describe('the verdict', () => {
       const advice = adviceFor(tooSmall, 1080);
       expect(advice?.route).toBe('cameraApp');
       expect(advice?.body).toContain('camera app');
-      expect(advice?.body).not.toContain('fills the frame');
+      expect(advice?.body).not.toContain('Fill the frame');
       // The finding and the remedy are two strings and neither may repeat the
       // other: the screen draws them one above the other.
       expect(advice?.body).not.toContain(advice!.headline);

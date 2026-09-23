@@ -1,15 +1,15 @@
 import { useNavigation } from '@react-navigation/native';
-import { ChartLine } from '../../components/icons';
+import { ChartLine, ChevronDown } from '../../components/icons';
 import { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { FadeIn } from '../../components/motion';
 import { AddPieceSheet } from '../../components/pieces/AddPieceSheet';
 import {
   EmptyState,
   PageHeader,
+  PrimaryButton,
   ScreenContainer,
-  SectionHeader,
   SecondaryButton,
   Text,
 } from '../../components/primitives';
@@ -18,23 +18,17 @@ import { useInsights } from '../../data/hooks/useInsights';
 import { useLibrary } from '../../data/hooks/usePieces';
 import { useRecentTakes } from '../../data/hooks/useLatestTake';
 import { describeLoadError } from '../../data/describeLoadError';
-import { spacing } from '../../design';
-import {
-  formatLastPracticedShort,
-  joinMetadata,
-} from '../../lib/format';
+import { BORDER_WIDTH, colors, fontFamily, radii, spacing } from '../../design';
 import { readTendency } from '../../lib/insights/tendency';
 import { sessionTrendFrom } from '../../lib/insights/sessionTrend';
-import { compareLatest } from '../../lib/insights/comparison';
-import { formatVerdict } from '../../lib/tempo';
+import { barsLabel, worthALook } from '../../lib/insights/passageDrift';
 import type { TabScreenNavigation } from '../../navigation/types';
-import { TodayRow } from '../today/TodayRow';
 import { SessionTrendChart } from '../../components/charts/SessionTrendChart';
+import { PassageChart } from './PassageChart';
 import { PieceInsightRow } from './PieceInsightRow';
 import { firstStep, focusReason, windowLabel } from './copy';
 import { useAddPieceOption } from '../../navigation/useAddPieceOption';
 import { loadStateFor } from '../../lib/loadState';
-import { rowDivided } from '../../components/rowMetrics';
 
 /**
  * Practice history that explains the pattern and makes it useful.
@@ -62,7 +56,7 @@ import { rowDivided } from '../../components/rowMetrics';
 export function InsightsScreen() {
   const navigation = useNavigation<TabScreenNavigation<'Insights'>>();
   const insightsQuery = useInsights();
-  const [showMoreHistory, setShowMoreHistory] = useState(false);
+  const [showAll, setShowAll] = useState(false);
   const recentTakes = useRecentTakes(20);
   // Shares React Query's cache with the Library tab, so on a phone that has
   // opened the app this costs nothing. It is read for one reason: what to
@@ -135,178 +129,223 @@ export function InsightsScreen() {
     );
   }
 
-  const focus = insights.pieces[0] ?? null;
   const history = recentTakes.data ?? [];
-  const comparison = compareLatest(history);
-  const takes = showMoreHistory ? history : history.slice(0, 5);
-  // Which of the two findings this window is — the direction, or the wandering
-  // that a direction cannot describe. The rule and the words are in
-  // `lib/insights/tendency.ts`, where they can be tested.
   const tendency = readTendency(insights);
-  // Recent sessions as a series. Null when there are fewer than two to join,
-  // which the chart is deliberately not asked to render as an empty axis.
   const sessionTrend = sessionTrendFrom(history, insights.tolerance);
+  const worth = worthALook(insights.pieces, history, insights.tolerance);
+  const focus = worth?.piece ?? null;
+  const drift = worth?.drift ?? null;
+  const others = insights.pieces;
+
+  function practise(pieceId: string, startAt?: number) {
+    navigation.navigate('Record', startAt === undefined ? { pieceId } : { pieceId, startAt });
+  }
 
   return (
     <ScreenContainer onRefresh={refresh}>
-      <PageHeader
-        eyebrow={`Insights · ${windowLabel(insights.windowDays)}`}
-        title={tendency.title}
-      />
-
-      <Text variant="body" color="textSecondary">
-        {tendency.detail}
+      {/*
+        The redesign's composition (`redesign/Insights.dc.html`): how many takes
+        this is about, then what they say, then the takes themselves. No screen
+        title — the tab bar already says Insights — so the finding is the
+        heading.
+      */}
+      <Text variant="eyebrow" color="textTertiary" style={styles.eyebrow}>
+        {sessionTrend
+          ? `Last ${sessionTrend.points.length} takes`
+          : windowLabel(insights.windowDays)}
+      </Text>
+      <Text variant="screenTitle" accessibilityRole="header">
+        {tendency.title}
       </Text>
 
       {/*
-        **The window as a line, not as its mean.** A single bar could show the
-        thirty-day average and nothing else — not four sessions steadily
-        improving, not one outlier dragging the average — because a mean has no
-        shape. `sessionTrend.ts` decides what is plotted; it returns null
-        rather than an axis with one point on it, and the sentence above still
-        carries the summary on its own.
+        One point per take, not per day: students do not practise daily, and a
+        calendar axis draws the gaps as flat stretches nobody played. Without
+        two takes there is no line, and the sentence carries the finding alone.
       */}
       {sessionTrend ? (
         <SessionTrendChart
           trend={sessionTrend}
+          area
           accessibilityLabel={tendency.spoken}
-          style={styles.bar}
+          style={styles.chart}
         />
-      ) : null}
+      ) : (
+        <Text variant="body" color="textSecondary" style={styles.detail}>
+          {tendency.detail}
+        </Text>
+      )}
 
       {focus ? (
         <FadeIn index={0}>
-          <View style={styles.section}>
-            <SectionHeader label="Next focus" />
-            <TodayRow
-              title={focus.title}
-              detail={focusReason(focus.sessions)}
-              detailLines={3}
-              onPress={() =>
-                navigation.navigate('Record', { pieceId: focus.pieceId })
-              }
-            />
+          {/*
+            **The one card on the screen**, because it is the one thing here
+            that is a recommendation rather than a reading: a piece, where in it
+            the trouble is, and the button that goes and practises it.
+          */}
+          <View style={styles.card}>
+            <Text variant="eyebrow" color="textTertiary" style={styles.eyebrowCaps}>
+              Worth a look
+            </Text>
+            <Text variant="pieceTitle" numberOfLines={2} style={styles.cardTitle}>
+              {focus.title}
+            </Text>
+            {drift ? (
+              <>
+                <View style={styles.passages}>
+                  <PassageChart
+                    drift={drift}
+                    accessibilityLabel={`${focus.title}, passage by passage. ${drift.sentence}`}
+                  />
+                </View>
+                <Text variant="metadata" color="textSecondary" style={styles.sentence}>
+                  {drift.sentence}
+                </Text>
+                <PrimaryButton
+                  label={
+                    drift.practice
+                      ? `Practice ${barsLabel(drift.practice).toLowerCase()}`
+                      : 'Practice it again'
+                  }
+                  onPress={() => practise(focus.pieceId, drift.practice?.from)}
+                  style={styles.cardAction}
+                />
+              </>
+            ) : (
+              <>
+                <Text variant="metadata" color="textSecondary" style={styles.sentence}>
+                  {focusReason(focus.sessions)}
+                </Text>
+                <PrimaryButton
+                  label="Practice it"
+                  onPress={() => practise(focus.pieceId)}
+                  style={styles.cardAction}
+                />
+              </>
+            )}
           </View>
         </FadeIn>
       ) : null}
 
-      {comparison ? (
-        <View style={styles.section}>
-          <SectionHeader label="Comparable takes" />
-          <Text variant="pieceTitle">{comparison.latest.pieceTitle}</Text>
-          <Text variant="body" color="textSecondary" style={styles.retrySpacing}>
-            Average bar deviation: {comparison.previousDeviation.toFixed(1)}% previously
-            {' → '}{comparison.latestDeviation.toFixed(1)}% in your latest take.
-          </Text>
-          <Text variant="metadataSmall" color="textSecondary" style={styles.retrySpacing}>
-            Same score, tempo, instrument and practice settings. Lower means bar
-            averages were closer to the beat—not an overall playing score.
-          </Text>
-          <SecondaryButton label="Open previous take" style={styles.retrySpacing}
-            onPress={() => navigation.navigate('Verdict', { analysisId: comparison.previous.id })} />
-          <SecondaryButton label="Open latest take" style={styles.retrySpacing}
-            onPress={() => navigation.navigate('Verdict', { analysisId: comparison.latest.id })} />
-        </View>
+      {/*
+        Every piece, one line each, behind a toggle: the recommended piece is
+        the default answer and the rest are there when asked for. A chevron
+        that turns is the drawn affordance, and it does the thing it depicts.
+      */}
+      {others.length > 1 ? (
+        <>
+          <Pressable
+            onPress={() => setShowAll((open) => !open)}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: showAll }}
+            aria-expanded={showAll}
+            style={({ pressed }) => [styles.toggle, pressed && styles.togglePressed]}
+          >
+            <Text variant="metadata" color="accentText" style={styles.toggleLabel}>
+              {showAll ? 'Show less' : `See all ${others.length} pieces`}
+            </Text>
+            {/* Turned on a wrapper: a transform on the icon itself is lost on web. */}
+            <View style={showAll ? styles.chevronOpen : undefined}>
+              <ChevronDown size={15} strokeWidth={1.8} color={colors.accentText} />
+            </View>
+          </Pressable>
+          {showAll ? (
+            <View style={styles.list}>
+              <Text variant="eyebrow" color="textTertiary" style={styles.eyebrowCaps}>
+                Your pieces
+              </Text>
+              <View style={styles.rows}>
+                {others.map((piece) => (
+                  <PieceInsightRow
+                    key={piece.pieceId}
+                    insight={piece}
+                    onPress={() => navigation.navigate('PieceDetail', { pieceId: piece.pieceId })}
+                  />
+                ))}
+              </View>
+            </View>
+          ) : null}
+        </>
       ) : null}
 
       {recentTakes.isError ? (
-        <View style={styles.section}>
-          <SectionHeader label="Recent sessions" />
-          <Text variant="body" color="textSecondary">
-            Your recent sessions couldn't refresh. Your practice summary is still available.
+        <View style={styles.list}>
+          <Text variant="metadata" color="textSecondary">
+            Your recent takes couldn&rsquo;t refresh, so the chart may be missing the newest.
           </Text>
           <SecondaryButton
-            label={recentTakes.isFetching ? 'Trying…' : 'Retry recent sessions'}
+            label={recentTakes.isFetching ? 'Trying…' : 'Try again'}
             disabled={recentTakes.isFetching}
-            style={styles.retrySpacing}
-            onPress={() => { void recentTakes.refetch(); }}
+            style={styles.retry}
+            onPress={() => {
+              void recentTakes.refetch();
+            }}
           />
         </View>
       ) : null}
-
-      {takes.length > 0 ? (
-        <FadeIn index={1}>
-          <View style={styles.section}>
-            <SectionHeader label="Recent sessions" />
-            {/*
-              **Four lines of instruction used to sit here** — what opening a
-              session gets you, and a caveat that two takes are not
-              automatically comparable. The first half described the rows'
-              own affordance; the second is a real caveat, and it already
-              appears above, on the comparison that actually puts two takes
-              side by side. Saying it over a list nobody is comparing yet is
-              the screen explaining itself before anything has happened.
-            */}
-            {takes.map((take, index) => (
-              <TodayRow
-                key={take.id}
-                title={take.pieceTitle}
-                detail={joinMetadata([
-                  formatLastPracticedShort(take.recordedAt),
-                  `${take.targetBpm} BPM`,
-                  // `formatVerdict`, not `formatTendency`: this row is one
-                  // recording. The tendency wording is a claim about a habit —
-                  // its own comment says a single take cannot see one — and it
-                  // rendered here as "2 days ago · 76 BPM · You tend to rush",
-                  // a sentence about a musician's playing wedged into a list of
-                  // facts about one file.
-                  formatVerdict(take.verdict),
-                ])}
-                onPress={() =>
-                  navigation.navigate('Verdict', { analysisId: take.id })
-                }
-                divided={rowDivided(index)}
-              />
-            ))}
-            {history.length > 5 ? (
-              <SecondaryButton
-                label={showMoreHistory ? 'Show fewer sessions' : 'Show up to 20 recent sessions'}
-                onPress={() => setShowMoreHistory((value) => !value)}
-                style={styles.retrySpacing}
-              />
-            ) : null}
-          </View>
-        </FadeIn>
-      ) : null}
-
-      <View style={styles.section}>
-        {/* **Where the row of big numbers went.** "34 sessions" is already in
-            the sentence under the title and "30 days" is already in the
-            eyebrow, so two thirds of that block was the screen repeating
-            itself in a larger typeface. The third, a count of pieces, is one
-            scroll of this list — and a heading reading "4 pieces" beside
-            "Next focus" and "Recent sessions" names a quantity where its
-            neighbours name a section. */}
-        <SectionHeader label="By piece" />
-        {insights.pieces.map((piece, index) => (
-          <FadeIn key={piece.pieceId} index={index + 2}>
-            <PieceInsightRow
-              insight={piece}
-              divided={rowDivided(index)}
-              onPress={() =>
-                navigation.navigate('PieceDetail', { pieceId: piece.pieceId })
-              }
-            />
-          </FadeIn>
-        ))}
-      </View>
     </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
-  retrySpacing: {
+  eyebrow: {
+    textTransform: 'uppercase',
+    marginTop: spacing.xl,
+    marginBottom: 6,
+  },
+  eyebrowCaps: {
+    textTransform: 'uppercase',
+  },
+  detail: {
     marginTop: spacing.md,
   },
-  bar: {
-    marginTop: spacing.xl,
+  chart: {
+    marginTop: 22,
   },
-  legend: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: spacing.sm,
-  },
-  section: {
+  card: {
     marginTop: spacing['2xl'],
+    padding: spacing.lg,
+    borderRadius: radii.lg,
+    borderWidth: BORDER_WIDTH,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  cardTitle: {
+    marginTop: 7,
+  },
+  passages: {
+    marginTop: 14,
+  },
+  sentence: {
+    marginTop: spacing.md,
+  },
+  cardAction: {
+    marginTop: 14,
+  },
+  toggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    minHeight: 44,
+    marginTop: 10,
+  },
+  togglePressed: {
+    opacity: 0.55,
+  },
+  toggleLabel: {
+    fontFamily: fontFamily.sansMedium,
+  },
+  chevronOpen: {
+    transform: [{ rotate: '180deg' }],
+  },
+  list: {
+    marginTop: 14,
+  },
+  rows: {
+    marginTop: 7,
+  },
+  retry: {
+    marginTop: spacing.md,
   },
 });

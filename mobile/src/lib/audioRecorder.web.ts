@@ -65,6 +65,37 @@ const QUANTA_PER_MESSAGE = 32;
  */
 const withWorklet = new WeakSet<BaseAudioContext>();
 
+/**
+ * Asks for the microphone without recording anything — onboarding's "Allow
+ * microphone" (`redesign/OnboardMic.dc.html`).
+ *
+ * The browser's prompt comes from opening a stream, so one is opened and its
+ * tracks stopped at once. **The same session dance as a take, and for the
+ * same reason**: WebKit refuses capture outright while the page is declared
+ * `playback`, so asking without declaring `play-and-record` first would be
+ * refused on every iPhone and read as the musician saying no. `playback` is
+ * handed back however it ends.
+ *
+ * Resolves whether access was given. Never throws: a refusal here is an
+ * answer, and the take that needs the microphone explains how to change it.
+ */
+export async function requestMicrophoneAccess(): Promise<boolean> {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    return false;
+  }
+  try {
+    await releaseAudioSession();
+    await prepareForCapture();
+    const media = await navigator.mediaDevices.getUserMedia({ audio: true });
+    media.getTracks().forEach((track) => track.stop());
+    return true;
+  } catch {
+    return false;
+  } finally {
+    void prepareForPlayback();
+  }
+}
+
 export async function startRecording(): Promise<Recorder> {
   if (!navigator.mediaDevices?.getUserMedia) {
     throw new MicrophoneUnavailableError(

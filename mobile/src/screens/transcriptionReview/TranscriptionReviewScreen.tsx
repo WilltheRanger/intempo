@@ -7,17 +7,17 @@ import { StyleSheet, View } from 'react-native';
 
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
 import {
+  BackLink,
   EmptyState,
   IconButton,
   Input,
-  PageHeader,
   PrimaryButton,
   ScreenContainer,
   Text,
 } from '../../components/primitives';
 import { captureSession, useCapturedPages } from '../../data/captureSession';
 import { useAttachScorePages, useTranscribePage } from '../../data/hooks/useScan';
-import { spacing } from '../../design';
+import { BORDER_WIDTH, colors, radii, spacing } from '../../design';
 import type { RootNavigation } from '../../navigation/types';
 
 /** Tall enough to read a title and a composer off the photograph. */
@@ -80,7 +80,12 @@ export function TranscriptionReviewScreen() {
             ? { index: 0, routes: [{ name: activeTab }] }
             : undefined,
         },
-        { name: 'PieceScore', params: { pieceId } },
+        // A new piece takes step 3 first — its working tempo — and the score
+        // after that; pages attached to a piece already in the library go
+        // straight to its score, which already has a tempo.
+        attachmentPieceId
+          ? { name: 'PieceScore', params: { pieceId } }
+          : { name: 'SetTempo', params: { pieceId } },
       ],
     });
   }
@@ -89,14 +94,14 @@ export function TranscriptionReviewScreen() {
     if (saving.current) return;
     if (pages.length === 0 || imageKeys.length !== pages.length) {
       setError(
-        'The uploaded pages are incomplete. Go back and send them again.',
+        'Some pages didn’t upload. Go back and resend.',
       );
       return;
     }
 
     const trimmed = title.trim();
     if (!attachmentPieceId && !trimmed) {
-      setError('Give the piece a title. It is how you will find it again.');
+      setError('Add a title.');
       return;
     }
 
@@ -139,22 +144,50 @@ export function TranscriptionReviewScreen() {
     );
   }
 
+  const saveLabel = attachmentPieceId
+    ? pages.length === 1
+      ? 'Attach and read page'
+      : `Attach and read ${pages.length} pages`
+    : pages.length === 1
+      ? 'Save and read page'
+      : `Save and read ${pages.length} pages`;
+
   return (
-    <ScreenContainer>
-      <PageHeader
-        eyebrow="Step 2 of 3"
-        title={attachmentPieceId ? 'Attach sheet music' : 'Name this piece'}
-        onBack={goBack}
-        backLabel="Back to pages"
-      />
+    <ScreenContainer
+      footer={
+        /*
+          No longer the ten-to-sixty-second wait it used to be. The request
+          creates the row and returns; reading the page happens in a worker and
+          is watched on the score screen.
+        */
+        <PrimaryButton
+          label={saveLabel}
+          onPress={() => void save()}
+          loading={attachmentPieceId ? attach.isPending : transcribe.isPending}
+          disabled={attachmentPieceId ? attach.isPending : transcribe.isPending}
+        />
+      }
+    >
+      {/* The redesign's head (`redesign/NamePiece.dc.html`). */}
+      <View style={styles.head}>
+        <BackLink label="Back to pages" onPress={goBack} />
+        <Text variant="eyebrow" color="textTertiary" style={styles.eyebrow}>
+          {attachmentPieceId ? 'Step 2 of 2' : 'Step 2 of 3'}
+        </Text>
+        <Text variant="screenTitle" accessibilityRole="header">
+          {attachmentPieceId ? 'Attach sheet music' : 'Name this piece'}
+        </Text>
+      </View>
 
-      <Text variant="body" color="textSecondary" style={styles.lede}>
-        {attachmentPieceId
-          ? 'Check the page order. InTempo will read these into the piece already in your library.'
-          : 'Name the piece now. After you save it, InTempo reads every page in order and opens the notation for you to check.'}
-      </Text>
-
-      {!attachmentPieceId ? (
+      {/*
+        Only when attaching: there is nothing to name, so the screen has to say
+        what it is for. Naming a new piece explains itself.
+      */}
+      {attachmentPieceId ? (
+        <Text variant="body" color="textSecondary" style={styles.lede}>
+          Check the page order.
+        </Text>
+      ) : (
         <>
           <Input
             label="Title"
@@ -182,7 +215,7 @@ export function TranscriptionReviewScreen() {
             style={styles.field}
           />
         </>
-      ) : null}
+      )}
 
       {/*
         Every page stays available while they type, because title, movement and
@@ -194,30 +227,31 @@ export function TranscriptionReviewScreen() {
           <IconButton
             icon={ChevronLeft}
             label="Previous page"
+            variant="bare"
             onPress={() => setPageIndex((index) => index - 1)}
             disabled={pageIndex === 0}
           />
-          <Text variant="sectionLabel" color="textSecondary">
+          <Text variant="metadata" color="textSecondary" style={styles.pageCount}>
             Page {pageIndex + 1} of {pages.length}
           </Text>
           <IconButton
             icon={ChevronRight}
             label="Next page"
+            variant="bare"
             onPress={() => setPageIndex((index) => index + 1)}
             disabled={pageIndex >= pages.length - 1}
           />
         </View>
       ) : null}
 
-      <ScoreThumbnail
-        source={pages[pageIndex]?.source ?? null}
-        style={styles.page}
-      />
+      {/* The page, on a white card, as the prototype shows it. */}
+      <View style={styles.pageCard}>
+        <ScoreThumbnail source={pages[pageIndex]?.source ?? null} style={styles.page} />
+      </View>
 
-      <Text variant="metadataSmall" color="textSecondary" style={styles.field}>
+      <Text variant="metadataSmall" color="textTertiary" style={styles.note}>
         Before saving: check that every staff is visible, the pages are in order,
-        and the image isn't blurred or covered by shadows. You'll check the
-        recognized notes next, before recording.
+        and the image isn&rsquo;t blurred or covered by shadows.
       </Text>
 
       {error ? (
@@ -225,56 +259,57 @@ export function TranscriptionReviewScreen() {
           {error}
         </Text>
       ) : null}
-
-      {/*
-        No longer the ten-to-sixty-second wait it used to be. The request now
-        creates the row and returns; reading the page happens in a worker and
-        is watched on the score screen this lands on.
-      */}
-      <PrimaryButton
-        label={
-          attachmentPieceId
-            ? pages.length === 1
-              ? 'Attach and read page'
-              : `Attach and read ${pages.length} pages`
-            : pages.length === 1
-              ? 'Save and read page'
-              : `Save and read ${pages.length} pages`
-        }
-        onPress={() => void save()}
-        loading={attachmentPieceId ? attach.isPending : transcribe.isPending}
-        disabled={attachmentPieceId ? attach.isPending : transcribe.isPending}
-        style={styles.save}
-      />
     </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
-  lede: {
+  head: {
+    paddingTop: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  eyebrow: {
+    textTransform: 'uppercase',
     marginTop: spacing.xs,
+    marginBottom: 6,
+  },
+  lede: {
+    marginTop: spacing.md,
   },
   first: {
-    marginTop: spacing.xl,
+    marginTop: spacing['2xl'],
   },
   field: {
-    marginTop: spacing.lg,
+    marginTop: 18,
   },
   pageNav: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
+    gap: spacing.xl,
     marginTop: spacing.xl,
+  },
+  pageCount: {
+    minWidth: 96,
+    textAlign: 'center',
+  },
+  pageCard: {
+    marginTop: spacing.md,
+    padding: spacing.md,
+    borderRadius: radii.lg,
+    borderWidth: BORDER_WIDTH,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    overflow: 'hidden',
   },
   page: {
     width: '100%',
     height: PAGE_HEIGHT,
-    marginTop: spacing.xl,
+  },
+  note: {
+    marginTop: spacing.lg,
   },
   error: {
     marginTop: spacing.lg,
-  },
-  save: {
-    marginTop: spacing['2xl'],
   },
 });

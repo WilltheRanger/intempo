@@ -33,7 +33,7 @@ export interface CaptureFailure {
 
 export function captureFailure(): CaptureFailure {
   return {
-    headline: 'That photo could not be taken',
+    headline: 'Couldn’t take that photo',
     // **Not "an error occurred".** The camera returning nothing is the ordinary
     // shape of this failure on both platforms, and saying so is what makes the
     // second clause believable rather than reassurance with nothing behind it.
@@ -42,11 +42,9 @@ export function captureFailure(): CaptureFailure {
     // it outweighed the heading, which is the hierarchy §3 law 4 rules out;
     // the cause and the workaround moved down to the hint, where they are
     // 13pt and clearly a footnote.
-    body: 'The camera gave nothing back, which usually clears on its own.',
-    hint:
-      'If it keeps happening, another app may have hold of the camera. '
-      + 'Photograph the page in your camera app instead.',
-    retakeLabel: 'Take this page again',
+    body: 'The camera gave nothing back. Try again.',
+    hint: 'Still failing? Use the camera app.',
+    retakeLabel: 'Try again',
     cameraAppLabel: 'Open the camera app',
   };
 }
