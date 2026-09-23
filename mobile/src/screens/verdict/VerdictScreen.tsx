@@ -5,15 +5,13 @@ import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import {
+  BackLink,
   EmptyState,
-  MetadataRow,
   PageHeader,
   PrimaryButton,
   ScreenContainer,
-  SectionHeader,
   Text,
 } from '../../components/primitives';
-import { FadeIn } from '../../components/motion';
 import { VerdictSkeleton } from '../../components/skeletons';
 import { takeSource } from '../../data/sources';
 import type { MeasureVerdict, TakeResult, UserVerdict } from '../../data/types';
@@ -22,9 +20,9 @@ import { formatTakeVerdict, formatTempo } from '../../lib/tempo';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
 import {
   describeTrendRange,
-  readMeasure,
   timedMeasureRange,
 } from '../../lib/verdict/measureReading';
+import { openingMeasure } from '../../lib/verdict/measureChart';
 import { passageLabel } from '../../lib/verdict/passage';
 import {
   failureTitle,
@@ -38,12 +36,11 @@ import {
 } from '../../lib/verdict/correction';
 import { useSubmitCorrection } from '../../data/hooks/useCorrections';
 import { CorrectionPrompt, type CorrectionState } from './CorrectionPrompt';
-import { MEASURE_COLUMNS, MeasureRow } from './MeasureRow';
+import { MeasureBars } from './MeasureBars';
+import { MeasureCard } from './MeasureCard';
 import { TrendLine } from './TrendLine';
 import { TakePlayback } from './TakePlayback';
 import { loadStateFor } from '../../lib/loadState';
-import { rowDivided } from '../../components/rowMetrics';
-import { retryFocus } from './retryFocus';
 
 /**
  * What one take came back as.
@@ -62,7 +59,8 @@ import { retryFocus } from './retryFocus';
 export function VerdictScreen() {
   const navigation = useNavigation<RootNavigation>();
   const { params } = useRoute<RouteProp<RootStackParamList, 'Verdict'>>();
-  const [revealed, setRevealed] = useState<number | null>(null);
+  /** The measure the chart has open; null until chosen, meaning `openingMeasure`. */
+  const [selected, setSelected] = useState<number | null>(null);
 
   /*
     Where each measure's correction has got to, keyed by measure number.
@@ -318,20 +316,25 @@ export function VerdictScreen() {
     covered?.last ??
     take.measures[take.measures.length - 1]?.measure ??
     take.measures.length;
-  const focus = take.lowConfidence ? null : retryFocus(take.measures);
+  const opening = openingMeasure(take.measures);
+  const chosen = take.measures.find((m) => m.measure === (selected ?? opening)) ?? null;
 
+  /*
+    **The redesign's verdict** (`redesign/Verdict.dc.html`, 2026-09-23): the
+    piece, the verdict as the title, one sentence, three facts on a ruled row,
+    the take as a line, every measure as one chart, and the selected measure
+    opened in a card underneath.
+
+    It replaces a list of one row per measure, which on a real piece was forty
+    rows to scroll for the three that mattered. The chart opens on the measure
+    most worth practising (`openingMeasure`), which is what the "Try bar 7
+    again" sentence used to point at in words.
+
+    One control at the top the prototype does not draw: "‹ Back to the piece".
+    A verdict opened from a piece's history in the home-screen app has no
+    browser Back and no tab bar, and "Record again" is not the way out of it.
+  */
   return (
-    /*
-      **One action, not two.** "Back to the piece" was a full-width secondary
-      button under the primary *and* the label on the chevron at the top — the
-      same words twice, one of them saying what the other already offered. It
-      cost about 65pt of a screen whose measure list was showing three rows of
-      twelve, which is the part of this screen a musician actually works from.
-
-      The two also went to different places under the same words: the chevron
-      called `goBack()`, which after a take returns to the Record screen, while
-      the button `replace`d with the piece. The chevron now does what it says.
-    */
     <ScreenContainer
       footer={
         <PrimaryButton
@@ -340,41 +343,27 @@ export function VerdictScreen() {
         />
       }
     >
-      <PageHeader
-        eyebrow={take.pieceTitle}
-        title={take.lowConfidence ? 'Timing is uncertain' : formatTakeVerdict(take.measures)}
-        onBack={() => navigation.navigate('PieceDetail', { pieceId: take.pieceId })}
-        backLabel="Back to the piece"
+      <BackLink
+        label="Back to the piece"
+        onPress={() => navigation.navigate('PieceDetail', { pieceId: take.pieceId })}
       />
+      <Text variant="eyebrow" color="textTertiary" style={styles.eyebrow} numberOfLines={1}>
+        {take.pieceTitle}
+      </Text>
+      <Text variant="screenTitle" accessibilityRole="header">
+        {take.lowConfidence ? 'Timing is uncertain' : formatTakeVerdict(take.measures)}
+      </Text>
 
       <Text variant="body" color="textSecondary" style={styles.headline}>
         {take.lowConfidence
           ? 'The recording was hard to follow, so this timing read may be inaccurate. Listen to your take, then record again in a quieter room or closer to the microphone.'
           : take.headline}
       </Text>
-
       {/*
-        **One finding, and only when there is one.**
-
-        The verdict says what happened to the beat. This says the thing the
-        verdict cannot: the tempo actually played against the one that was
-        set, a take that sped up rather than one that was merely fast, or the
-        written note value that behaves differently from the rest — "your
-        quarters are fine and your sixteenths run away", which is a thing to
-        practise where "you rushed" is not.
-
-        Which one appears is ranked per take rather than by a fixed order, in
-        `services/insights.lead_finding`: a take whose real story is the
-        sixteenths must not lead with a 2 BPM difference nobody would notice.
-
-        **Null is the common case and is the design.** A musician who played
-        at the tempo they set, evenly, has already been told so above; a
-        second line restating it teaches them this part of the screen is
-        furniture, and then the line that matters is not read either.
-
-        Kept to `body` weight rather than given a heading, because §3 law 4
-        allows the screen one focal point and that is the verdict title above.
-        It reads as a continuation of the sentence before it.
+        What the verdict cannot say: the tempo actually played, a take that
+        sped up, or the note value that behaves differently from the rest —
+        ranked per take in `services/insights.lead_finding`, and only when
+        there is one. Body weight, a continuation of the sentence above.
       */}
       {take.finding ? (
         <Text variant="body" style={styles.finding}>
@@ -382,112 +371,95 @@ export function VerdictScreen() {
         </Text>
       ) : null}
 
-      <MetadataRow
-        variant="metadataSmall"
-        items={[
-          `Target ${formatTempo(take.targetBpm, take.tempoBeatUnit)}`,
-          // **Which bars, when the take did not open the page.** Practising a
-          // passage is the ordinary case — the pipeline matches a take against
-          // the passage it covers — and this said "4 measures", which is true
-          // and answers a question nobody asked: four measures of what, and
-          // why does the list below start at bar 9? See `passage.ts`.
-          passageLabel(take.measures),
-          take.missedNotes > 0 ? noteLabel(take.missedNotes) : null,
-        ]}
-        style={styles.meta}
-      />
-
-      {take.recordingAvailable ? (
-        <TakePlayback analysisId={take.id} />
-      ) : null}
-
-      {focus ? (
-        <Text variant="body" color="textSecondary" style={styles.focus}>
-          {focus}
-        </Text>
-      ) : null}
-
-      <SectionHeader label="Across the take" style={styles.section} />
-      {/*
-        No sentence under this one. The chart names its own axes — Target on
-        the rule, ahead and behind either side of it, measure numbers at each
-        end — so prose explaining it would only repeat what it already says.
-      */}
-      <View style={styles.chart}>
-        <TrendLine
-          trend={take.trend}
-          tolerance={take.tolerance}
-          firstMeasure={firstMeasure}
-          lastMeasure={lastMeasure}
-          // The same two numbers the axis prints — see `describeTrendRange`,
-          // which lives beside `timedMeasureRange` because they had drifted.
-          accessibilityLabel={describeTrendRange(firstMeasure, lastMeasure)}
+      {/* Three facts, ruled above and below, in the redesign's columns. */}
+      <View style={styles.facts}>
+        <Fact label="Target" value={formatTempo(take.targetBpm, take.tempoBeatUnit)} />
+        <Fact label="Passage" value={passageLabel(take.measures) ?? '—'} />
+        <Fact
+          label="Missed"
+          value={take.missedNotes > 0 ? noteLabel(take.missedNotes) : 'None'}
         />
       </View>
 
-      <SectionHeader label="Measure by measure" style={styles.section} />
-      {/*
-        Which way the bars point. Laid out on the row's own columns so the
-        arrows sit over the bar rather than over the middle of the card.
-      */}
-      <View style={styles.legend}>
-        <Text variant="metadataSmall" color="textTertiary" style={styles.legendLabel}>
-          Behind ← Target → Ahead
-        </Text>
-      </View>
-      {/*
-        **Ruled rows on the page, not a card.** Twelve rows that already divide
-        themselves with a hairline apiece do not need a box drawn round them
-        (§3 law 3) — the same call as the library's own list and the piece
-        screen's destinations. Each row owns its gutter, so a selected one still
-        tints edge to edge.
-      */}
-      <View style={styles.measures}>
-        {take.measures.map((measure, index) => (
-          <FadeIn key={measure.measure} index={index}>
-            <MeasureRow
-              measure={measure}
-              tolerance={take.tolerance}
-              revealed={revealed === measure.measure}
-              onToggle={() =>
-                setRevealed((current) =>
-                  current === measure.measure ? null : measure.measure,
-                )
-              }
-              divided={rowDivided(index)}
-              revealedExtra={
-                /*
-                  Only where the app made a claim about the playing. A bar
-                  under a `rit.`, a held fermata or an ornament was never
-                  judged, so there is nothing to agree or disagree with —
-                  `canCorrect` is the row's own `revealsFigure`, deliberately,
-                  rather than a second predicate free to drift from it.
-                */
-                canCorrect(measure) ? (
-                  <CorrectionPrompt
-                    appVerdict={appVerdictFor(measure)}
-                    state={corrections[measure.measure] ?? { kind: 'idle' }}
-                    onChoose={(choice) => correct(measure, choice)}
-                  />
-                ) : null
-              }
-            />
-          </FadeIn>
-        ))}
-      </View>
+      {take.recordingAvailable ? (
+        <View style={styles.playback}>
+          <TakePlayback analysisId={take.id} />
+        </View>
+      ) : null}
 
+      <RuledHeading label="Across the take" />
       {/*
-        Only when some measure has a figure behind it. A take that is entirely
-        a `rit.`, or one bar of held chord, has no row that answers a tap — and
-        an instruction for an interaction the screen does not offer is the same
-        dead end as an empty state naming an action it has no route to.
+        No sentence under this one. The chart names its own axes — Target on
+        the rule, ahead and behind either side of it — so prose explaining it
+        would only repeat what it already says.
       */}
-      {take.measures.some((m) => readMeasure(m).revealsFigure) ? (
-        <Text variant="metadataSmall" color="textTertiary" style={styles.tip}>
-          Tap a measure for how far off the beat it was.
-        </Text>
+      <TrendLine
+        trend={take.trend}
+        tolerance={take.tolerance}
+        firstMeasure={firstMeasure}
+        lastMeasure={lastMeasure}
+        accessibilityLabel={describeTrendRange(firstMeasure, lastMeasure)}
+      />
+
+      <RuledHeading label="Measure by measure" />
+      <MeasureBars
+        measures={take.measures}
+        selected={chosen?.measure ?? null}
+        onSelect={setSelected}
+      />
+
+      {chosen ? (
+        <View style={styles.card}>
+          <MeasureCard
+            measure={chosen}
+            tolerance={take.tolerance}
+            correction={
+              /*
+                Only where the app made a claim about the playing. A bar under
+                a `rit.`, a held fermata or an ornament was never judged, so
+                there is nothing to agree or disagree with.
+              */
+              canCorrect(chosen) ? (
+                <CorrectionPrompt
+                  appVerdict={appVerdictFor(chosen)}
+                  state={corrections[chosen.measure] ?? { kind: 'idle' }}
+                  onChoose={(choice) => correct(chosen, choice)}
+                />
+              ) : null
+            }
+          />
+        </View>
       ) : null}
     </ScreenContainer>
+  );
+}
+
+/** One of the three facts under the verdict. */
+function Fact({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.fact}>
+      <Text variant="eyebrow" color="textTertiary" style={styles.factLabel}>
+        {label}
+      </Text>
+      <Text variant="body" style={styles.factValue}>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
+/**
+ * A section's name over a rule — the redesign's section heading: sentence
+ * case at 13pt rather than a tracked capital eyebrow, because on this screen
+ * the sections are read in order, not scanned for.
+ */
+function RuledHeading({ label }: { label: string }) {
+  return (
+    <View style={styles.ruled}>
+      <Text variant="sectionLabel" color="textSecondary" accessibilityRole="header">
+        {label}
+      </Text>
+    </View>
   );
 }
 
@@ -496,57 +468,50 @@ function noteLabel(count: number): string {
 }
 
 const styles = StyleSheet.create({
+  eyebrow: {
+    marginTop: spacing.xs,
+    marginBottom: 6,
+    textTransform: 'uppercase',
+  },
   headline: {
-    marginTop: spacing.sm,
+    marginTop: 10,
   },
   finding: {
-    // Tucked under the headline rather than spaced as a sibling: it is a
-    // second sentence about the same take, not a new section.
     marginTop: spacing.sm,
   },
-  meta: {
-    marginTop: spacing.md,
-  },
-  focus: {
+  facts: {
+    flexDirection: 'row',
     marginTop: spacing.lg,
-  },
-  section: {
-    marginTop: spacing['2xl'],
-  },
-  legend: {
-    // The row's own geometry: number column, gap, bar, gap, verdict column.
-    // Padding rather than spacer views, so the legend stays one line of text.
-    paddingLeft:
-      MEASURE_COLUMNS.gutter + MEASURE_COLUMNS.number + MEASURE_COLUMNS.gap,
-    paddingRight:
-      MEASURE_COLUMNS.gutter + MEASURE_COLUMNS.verdict + MEASURE_COLUMNS.gap,
-    paddingBottom: spacing.sm,
-  },
-  legendLabel: {
-    textAlign: 'center',
-  },
-  tip: {
-    marginTop: spacing.md,
-    textAlign: 'center',
-  },
-  /**
-   * The chart, ruled rather than boxed.
-   *
-   * It was the last card on the screen and therefore the only white surface on
-   * an ivory page, which gave the summary more weight than the twelve rows of
-   * detail below it — the same data, and the part a musician works from. A rule
-   * above and below marks it off as a figure without making it a panel (§3
-   * laws 3 and 6).
-   */
-  chart: {
-    marginTop: spacing.md,
     paddingVertical: spacing.md,
     borderTopWidth: BORDER_WIDTH,
     borderBottomWidth: BORDER_WIDTH,
     borderColor: colors.border,
   },
-  measures: {
+  fact: {
+    flex: 1,
+    minWidth: 0,
+  },
+  factLabel: {
+    letterSpacing: 0.9,
+    textTransform: 'uppercase',
+  },
+  factValue: {
+    marginTop: spacing.xs,
+    fontSize: 15,
+    lineHeight: 20,
+    fontVariant: ['tabular-nums'],
+  },
+  playback: {
+    marginTop: spacing.lg,
+  },
+  ruled: {
+    marginTop: 22,
+    marginBottom: spacing.lg,
+    paddingTop: 14,
     borderTopWidth: BORDER_WIDTH,
     borderTopColor: colors.border,
+  },
+  card: {
+    marginTop: spacing.xl,
   },
 });
