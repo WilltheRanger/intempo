@@ -5,9 +5,13 @@ Full-bleed photographs behind two screens. Product content, unlike
 
 | file | screen | source |
 |---|---|---|
-| `piano-keys.jpg` | Today hero (current) | — |
-| `today-hero.png` | Today hero (redesign), the rehearsal-room photo | Unsplash, from the redesign handoff as `Image unsplash.png`. Photographer not recorded in the handoff. |
+| `today-hero.jpg` | Today hero, the rehearsal-room photo | Unsplash, from the redesign handoff as `Image unsplash.png`. Photographer not recorded in the handoff. |
 | `signin-hero.jpg` | Sign in (redesign), the turntable photo | **Kevin McCutcheon on Unsplash** (`kevin-mccutcheon-TcSckNRL9J8-unsplash.jpg`). Keep this credit. |
+
+`today-hero.jpg` is the handoff's 1024×1536 PNG re-encoded as JPEG q85:
+1.98 MB to 173 KB; lossless encoding buys nothing visible in a photograph. The
+piano photograph it replaced (`piano-keys.jpg`, GVZ 42 on Unsplash) is in git
+history.
 
 `signin-hero.jpg` was scaled from 4000×6000 to 1290×1935 (JPEG q85): the width
 of the largest iPhone screen at 3×. The original, as handed off, is in git at

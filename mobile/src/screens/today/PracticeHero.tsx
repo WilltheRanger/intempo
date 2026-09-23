@@ -1,151 +1,78 @@
 import { Image } from 'expo-image';
-import { StyleSheet, View, useWindowDimensions } from 'react-native';
+import { useState } from 'react';
+import { StyleSheet, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { ChevronRight, Plus } from '../../components/icons';
-import { PressableScale } from '../../components/motion';
 import { IconButton } from '../../components/primitives/IconButton';
 import { PrimaryButton } from '../../components/primitives/PrimaryButton';
 import { Text } from '../../components/primitives/Text';
 import { SCREEN_GUTTER } from '../../components/primitives/ScreenContainer';
+import { PressableScale } from '../../components/motion';
 import { useTabBarHeight } from '../../navigation/tabBarMetrics';
-import { colors, ICON_SIZE, ICON_STROKE_WIDTH, radii, spacing } from '../../design';
+import { colors, spacing } from '../../design';
 import type { HeroContent, PendingLine } from './heroContent';
+import { FALL_START, fallStops } from './heroFall';
 
 /**
- * Today, as one photograph with the next thing to practise written on it.
+ * Today, light (`redesign/TodayLight.dc.html`): a rehearsal-room photograph
+ * across the top of the screen that falls away into the ivory page, with the
+ * greeting written on the photograph and the next thing to practise written on
+ * the ivory below it.
  *
- * **A prototype, and named as one here so nobody has to guess.** The layout
- * comes from a reference the owner supplied — a meditation app whose home
- * screen is a full-bleed image, a greeting, one large title and one pill
- * button. What was taken is the *composition*; what was not is the colour, the
- * photography and the filter chips. It replaces the carded Today; `git revert`
- * on the commit that introduced it brings the old one back whole.
+ * It replaces a dark hero — a piano photograph under a black wash with every
+ * line in ivory. The light version keeps the photograph as the picture it is
+ * rather than as a dark ground for type, and puts the copy on the page, where
+ * it reads in the app's own ink.
  *
- * ## Why it does not break the design laws it looks like it breaks
+ * ## Where the type may go
  *
- * §3 law 6 says gradients and floating rounded things are exceptions rather
- * than the default styling language. Everything here is one of the named
- * exceptions or is load-bearing:
+ * Two grounds, and every line belongs to one of them:
  *
- *  - The **wash and the gradient are legibility, not decoration.** Ivory type
- *    on a photograph of white paper is unreadable, and the arithmetic below is
- *    what makes it readable. Remove them and the screen fails; remove an
- *    ornament and nothing happens. That is the test.
- *  - The **add button is chrome** — the control layer, which law 6 exempts by
- *    name and which is the same glass capsule the rest of the app floats.
- *  - The **label pill** is the one thing here that is decoration, and it earns
- *    its place by separating "Recommended" from the title: without it the
- *    label reads as part of the piece's name.
+ *  - **The greeting and the "+" are ivory on the photograph**, in the top
+ *    195pt, where a light ink scrim (`TOP_SCRIM`) settles the brightest part
+ *    of the room behind them.
+ *  - **Everything else is ink on the ivory fall.** The fall follows the copy
+ *    rather than a fixed height (`heroFall.ts`): the prototype's sample is a
+ *    one-line title with nothing under it, and a real piece is a two-line
+ *    title, its composer and last take's sentence — which, against a fixed
+ *    47%, put the label and the title on the photograph. So the copy block is
+ *    measured and the fall is moved up until it has settled by the block's
+ *    first line.
  *
- * Law 4 wanted one dominant focal point, and the three-foot test on this is
- * the title, then the button, then the greeting — which is the order a
- * musician needs them in.
+ * The fall is `colors.bg` at rising opacity, not a decorative gradient: take it
+ * away and the title is ink on a dark photograph. That is the §3 law 6 test —
+ * removing an ornament changes nothing, removing this breaks the screen.
  *
- * ## The type is legible because of arithmetic, not because it looked fine
- *
- * A photograph is a ground the accessibility sweep cannot measure: it walks
- * `backgroundColor`, and an `<Image>` has none. So the ground is *made*
- * measurable — an opaque `darkBg` beneath everything and a flat wash above the
- * photograph, both of which the sweep does see — and the worst case is
- * computed rather than eyeballed.
- *
- * Worst case is the photograph's **measured** brightest block per tenth of its
- * height — a block rather than a pixel, since one specular highlight on a key
- * edge is not what the eye reads as ground. Each is composited the way the
- * screen composites it: the photograph at `IMAGE_OPACITY` over `darkBg`, then
- * `WASH`, then whatever `GRADIENT` has reached at that height.
- *
- *     band      photo     ground    onDark   onDarkMuted
- *     0-20%     #4E4E4E   #242424    14.8        5.5      greeting
- *     20-40%    #BFBFBF   #595858     6.8        3.3      the sheet, mid-ramp
- *     40-100%   #BBBBBB   #353432    12.0        4.8      title and below
- *
- * **`onDarkMuted` does not clear AA in the 20-40% band**, where the gradient
- * is still ramping and the photographed sheet music is at its brightest. So
- * every muted line lives below 45%, where the gradient has settled — a rule
- * about where type may go, which is why it is written here rather than
- * discovered later.
- *
- * The top band is the one that got easier: the previous ground was a tiled
- * manuscript scan, bright all the way up, and the greeting sat on `#655748` at
- * 6.7:1 with `onDarkMuted` unusable up there at 3.15:1. This photograph is
- * near-black at the top, so the same band now measures 16.4:1. The constants
- * were re-derived against it and came out unchanged, which is the answer the
- * arithmetic gave rather than one that was aimed for.
- *
- * The sweep measures the wash over `darkBg` and reports about 17:1, which is
- * *more* generous than reality — so these numbers are the real bound and the
- * sweep is only the backstop.
+ * Three-foot test: the title, then the button, then the greeting.
  */
 
 /**
- * How much of the photograph comes through.
- *
- * **Measured against the type, not chosen by eye.** An early attempt on the
- * previous ground was 0.45 behind a 0.68 wash, which cleared every threshold
- * comfortably and rendered the screen as a brown smudge — legible type on a
- * photograph nobody could see was a photograph.
- *
- * **Raised from 0.80 on 2026-09-14, together with the wash going neutral.**
- * The two had to move together: a neutral wash is darker than a warm one at
- * the same alpha, and that extra darkness is exactly what pays for the extra
- * photograph. The table above is the check, and it came out better on both
- * bands that carry muted type, not merely no worse.
+ * The ink scrim behind the greeting: 31% at the top edge, gone by 195pt. The
+ * prototype's `topScrim` and `scrimDepth`, and its four stops.
  */
-const IMAGE_OPACITY = 0.96;
+const SCRIM_DEPTH = 195;
+const TOP_SCRIM: ReadonlyArray<readonly [offset: number, opacity: number]> = [
+  [0, 0.31],
+  [0.359, 0.264],
+  [0.677, 0.155],
+  [1, 0],
+];
 
 /**
- * Flat ink over the whole field. See the arithmetic above.
- *
- * **Neutral, and it used to be warm.** The argument for warming it was that
- * this photograph is black-and-white and carries none of the app's sepia by
- * itself, so Today rendered as the one screen out of family. What that argument
- * left out is what it cost: `rgba(46, 30, 14, 0.50)` laid a brown cast over
- * the whole frame, and the piano keys — the picture's subject, and already its
- * darkest region — read as fog rather than as keys.
- *
- * **The owner asked for the cast gone on 2026-09-14, and it turns out to pay
- * for itself**, because a neutral wash is darker than a warm one at the same
- * alpha and darker ground is what muted type needs:
- *
- *     warmth (R/B) in the type band     1.22  ->  1.07
- *     photograph surviving, type band   0.180 ->  0.207    (+15%)
- *     photograph surviving, top band    0.400 ->  0.461    (+15%)
- *     onDarkMuted, top band              4.90 ->   5.48
- *     onDarkMuted, type band             4.68 ->   4.82
- *
- * So the type is *more* legible than it was, not less. The alpha went to 0.52
- * to buy that margin and `IMAGE_OPACITY` to 0.96 to spend it back on the
- * picture. The rule about where muted type may live is unchanged: the 20-40%
- * band still does not clear AA, and still holds none.
- *
- * The out-of-family point is now a trade somebody made rather than one nobody
- * noticed — this hero's ground is cooler than `darkBg`, and the photograph is
- * what the screen is for.
+ * **The rehearsal room**, from the redesign handoff (`Image unsplash.png`).
+ * Unsplash; the handoff did not record the photographer — see
+ * `assets/hero/SOURCES.md` and `AcknowledgementsScreen`.
  */
-const WASH = 'rgba(0, 0, 0, 0.52)';
-
-/**
- * How dark the bottom of the hero settles to, under the flat wash.
- *
- * Sized by `onDarkMuted`, which is the constraint: at the top band it is about
- * 3.2:1 against the manuscript and cannot be used there at all. This is what
- * brings it to **4.68:1**, and the metadata and the verdict sentence are the
- * two things that need it.
- */
-const GRADIENT = 0.55;
-
+const HERO_PHOTO = require('../../../assets/hero/today-hero.jpg');
 
 export interface PracticeHeroProps {
   /**
-   * What to write on the photograph, or null while the piece is still coming.
+   * What to write on the page, or null while the piece is still coming.
    *
-   * Null draws the ground and nothing else — the same photograph, the same
-   * wash, the same height — so the screen does not jump when the answer
-   * arrives. It replaces a card-shaped skeleton that stood in for a card this
-   * screen no longer has: a shimmer in the shape of the wrong thing is worse
-   * than the shape of the right thing with nothing in it yet.
+   * Null draws the photograph and the fall and nothing else, so the screen
+   * does not jump when the answer arrives.
    */
   content: HeroContent | null;
   /** The greeting line. "Good morning", from `getGreeting`. */
@@ -154,79 +81,30 @@ export interface PracticeHeroProps {
   name: string | null;
   onAction: () => void;
   onAdd: () => void;
+  /** "Recent results": the Insights tab, where every take is. */
+  onRecent: () => void;
   /**
    * The take this device handed over and nobody has read yet, if there is one.
    *
-   * Sits under the button as a single line rather than beside it: the hero has
-   * one dominant action (§3 law 4) and this is the second thing, not a rival.
-   * `pendingLineFor` decides what it says; `onPending` is what a press does,
-   * which is open the result when there is one and ask again when there is not.
+   * It takes the "Recent results" line's place rather than adding a third
+   * thing under the button: a take waiting to be read *is* the recent result,
+   * and the one a musician wants. `pendingLineFor` decides what it says;
+   * `onPending` opens it, or asks again.
    */
   pending?: PendingLine | null;
   onPending?: () => void;
 }
 
 /**
- * The one page the hero is ever built from.
+ * How much of Today is dark ground: the photograph above the fall.
  *
- * **Not the piece's own photograph, and not a mix of pages — and that is the
- * correction this screen cost most to learn.** The first version tiled four
- * fixtures and fell back to the musician's own scan. Two of those fixtures are
- * *white* printed pages, so the screen came out in bands of sepia and white,
- * and the title crossed a white band where ivory type on it measured about
- * 2:1. A musician's own photograph is worse: it is a phone picture of a page
- * under whatever lamp they own, and there is no wash that is right for all of
- * them.
- *
- * A ground that varies cannot be reasoned about, and this ground carries the
- * one line the screen exists for. So it is one fixed photograph, and the
- * arithmetic below is computed from its **measured** brightest block rather
- * than from a guess about paper.
- *
- * **Photo by GVZ 42 on Unsplash**, under the Unsplash Licence. Credited on
- * `AcknowledgementsScreen`, which is the screen that exists for this; the
- * licence does not require attribution, which is a reason to be careful about
- * it rather than a reason to skip it.
- *
- * It replaces a tiled scan of the handwritten fixture. That one was a strip
- * about 1200x150 repeated down the hero, because a single `cover` of it needed
- * roughly five times magnification and rendered two enormous blurred noteheads.
- * A 1400x2100 portrait photograph needs no such trick: it covers the hero at
- * about 1:1 on a 3x phone.
- */
-const HERO_PHOTO = require('../../../assets/hero/piano-keys.jpg');
-
-/** The photograph, covering the hero. */
-function HeroField() {
-  return (
-    <Image
-      source={HERO_PHOTO}
-      style={[StyleSheet.absoluteFill, styles.field]}
-      contentFit="cover"
-      // The subject — the sheet and the near end of the keyboard — is in the
-      // upper middle. Anchored there so a tall phone crops the empty bottom
-      // rather than the music.
-      contentPosition="top center"
-      accessibilityIgnoresInvertColors
-      pointerEvents="none"
-    />
-  );
-}
-
-/**
- * How much of Today is dark ground: all of it.
- *
- * The hero sizes itself with `flex: 1` now, so this is no longer the hero's
- * height — it is the number `TodayScreen` hands `ScreenContainer` as
- * `darkGround`, which is what tells the floating chrome to wear the dark
- * material. That mechanism is written in content points against a scroll
- * offset (`chromeTone.ts`), and a screen that does not scroll is simply the
- * case where the offset stays at zero. One viewport is more than the capsule's
- * midline in every orientation, so the bar is dark for as long as Today is on
- * screen — which is the answer, since the photograph never leaves.
+ * `TodayScreen` hands this to `ScreenContainer` as `darkGround`, which is what
+ * tells the floating chrome which material to wear. The bar sits on the ivory
+ * at the bottom, below this line, so it wears the light one — which is the
+ * answer now that the page, not the photograph, reaches the bottom edge.
  */
 export function useHeroHeight(): number {
-  return useWindowDimensions().height;
+  return Math.round(useWindowDimensions().height * FALL_START);
 }
 
 export function PracticeHero({
@@ -235,169 +113,139 @@ export function PracticeHero({
   name,
   onAction,
   onAdd,
+  onRecent,
   pending = null,
   onPending,
 }: PracticeHeroProps) {
-  // **The tab bar floats over this, so the hero has to end above it.** Without
-  // this the "Continue practice" button sat under the capsule: still tappable
-  // where it stuck out, and half-covered — a primary action partly behind
-  // furniture, which is the thumb zone (§3 law 7) being taken away by the
-  // thing that is supposed to be out of the way.
+  // The tab bar floats over this, so the copy has to end above it — a primary
+  // action half behind the furniture is the thumb zone (§3 law 7) taken away
+  // by the thing that is supposed to be out of the way.
   const tabBar = useTabBarHeight();
+  const insets = useSafeAreaInsets();
 
-  /**
-   * The whole screen, and now literally so.
-   *
-   * It used to stop 72pt short of the viewport so the next section peeked
-   * through — a scroll affordance, and a good idea that did not survive
-   * contact: what showed was not the next section but 72pt of bare page
-   * background, because that section starts with padding.
-   *
-   * Then it was exactly one viewport, with the rest of Today scrolling beneath
-   * it. There is no rest of Today any more, so it is `flex: 1` in a screen that
-   * does not scroll: the height the container has, whatever that is, with no
-   * measurement to keep in step. `useHeroHeight` survives for `darkGround`,
-   * which still has to be told in content points how tall the dark ground is.
-   */
+  // The hero's height and where its copy starts, both in hero points: what
+  // the fall is placed from. Zero until measured, which `fallStops` answers
+  // with the prototype's own curve.
+  const [height, setHeight] = useState(0);
+  const [bottomY, setBottomY] = useState(0);
+  const [blockY, setBlockY] = useState(0);
+  const copyTop = height > 0 && content !== null ? bottomY + blockY : null;
+  const measure = (set: (value: number) => void, key: 'y' | 'height') => (event: LayoutChangeEvent) => {
+    const value = Math.round(event.nativeEvent.layout[key]);
+    set(value);
+  };
+
+  const recent =
+    pending && onPending
+      ? { label: pending.label, onPress: onPending }
+      : { label: 'Recent results', onPress: onRecent };
 
   return (
-    <View style={styles.hero}>
-      <HeroField />
-      <View style={[StyleSheet.absoluteFill, styles.wash]} />
-      {/*
-        Deepens the bottom third, where every line of type is. Not a
-        `backgroundColor`, so the sweep cannot see it — which is the right way
-        round: it only ever makes the real contrast better than the measured
-        one. The flat wash above is what the numbers are computed from.
-      */}
-      <Svg
+    <View style={styles.hero} onLayout={measure(setHeight, 'height')}>
+      <Image
+        source={HERO_PHOTO}
         style={StyleSheet.absoluteFill}
+        contentFit="cover"
+        // The prototype's `object-position: 56% 40%`: the cello and the
+        // stands, rather than the empty doorway, on a narrow phone.
+        contentPosition={{ left: '56%', top: '40%' }}
+        accessibilityIgnoresInvertColors
+        pointerEvents="none"
+      />
+      <Svg style={StyleSheet.absoluteFill} width="100%" height="100%" pointerEvents="none">
+        <Defs>
+          <LinearGradient id="today-fall" x1="0" y1="0" x2="0" y2="1">
+            {fallStops(height, copyTop).map(([offset, opacity]) => (
+              <Stop key={offset} offset={offset} stopColor={colors.bg} stopOpacity={opacity} />
+            ))}
+          </LinearGradient>
+        </Defs>
+        <Rect x="0" y="0" width="100%" height="100%" fill="url(#today-fall)" />
+      </Svg>
+      <Svg
+        style={[styles.scrim, { height: SCRIM_DEPTH + insets.top }]}
         width="100%"
-        height="100%"
+        height={SCRIM_DEPTH + insets.top}
         pointerEvents="none"
       >
         <Defs>
-          {/*
-            Four stops, not two, because the copy has to sit on a *settled*
-            ground rather than on whatever the ramp happens to be at that
-            height — so the arithmetic in the file docstring is one number
-            rather than a function of y.
-
-            It settles by 45%, not 72%, and that followed the copy: centring
-            the block moved every muted line up into what had been the ramp.
-            The greeting is above 28% and stays on the bright manuscript.
-          */}
-          <LinearGradient id="hero-fade" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0" stopColor={colors.darkBg} stopOpacity="0" />
-            <Stop offset="0.28" stopColor={colors.darkBg} stopOpacity="0" />
-            <Stop offset="0.45" stopColor={colors.darkBg} stopOpacity={GRADIENT} />
-            <Stop offset="1" stopColor={colors.darkBg} stopOpacity={GRADIENT} />
+          <LinearGradient id="today-scrim" x1="0" y1="0" x2="0" y2="1">
+            {TOP_SCRIM.map(([offset, opacity]) => (
+              <Stop key={offset} offset={offset} stopColor={colors.darkBg} stopOpacity={opacity} />
+            ))}
           </LinearGradient>
         </Defs>
-        <Rect x="0" y="0" width="100%" height="100%" fill="url(#hero-fade)" />
+        <Rect x="0" y="0" width="100%" height="100%" fill="url(#today-scrim)" />
       </Svg>
 
-      <View style={[styles.content, { paddingBottom: tabBar + spacing.lg }]}>
+      <View
+        style={[
+          styles.content,
+          // The copy ends 48pt above the bar's top edge, as the prototype's
+          // does: close enough to the thumb, clear of the furniture.
+          { paddingTop: insets.top + spacing.xl, paddingBottom: tabBar + spacing['3xl'] + spacing.lg },
+        ]}
+      >
         <View style={styles.topRow}>
           <View style={styles.greeting}>
             <Text variant="screenTitle" color="onDark">
               {greeting}
             </Text>
             {name ? (
-              // **`onDark`, not `onDarkMuted`.** This line sits at the top of
-              // the hero where only the flat wash darkens the page — the
-              // gradient starts below it — so the muted token would be about
-              // 2.4:1 there. Emphasis comes from the size instead.
-              <Text variant="metadataSmall" color="onDark">
+              <Text variant="metadataSmall" color="onDark" style={styles.name}>
                 {name}
               </Text>
             ) : null}
           </View>
-          {/*
-            **The "+" is back in the header, and the objection to it is gone.**
-            `TodayScreen` recorded one being tried and rejected: "two unrelated
-            circles crowding the trailing corner, the smaller of which gave no
-            clue what it added". The pairing was the problem — it sat beside
-            the avatar. The avatar has moved to the Profile tab, where it is a
-            destination rather than an ornament, so this is the only control in
-            the corner and it is the one the reference puts there.
-          */}
-          <IconButton icon={Plus} label="Add a piece" tone="onDark" onPress={onAdd} />
-        </View>
-
-        <View style={styles.middle}>
-        {content === null ? null : (
-        <View style={styles.copy}>
-          <View style={styles.pill}>
-            <Text variant="sectionLabel" color="onDark">
-              {content.label}
-            </Text>
-          </View>
-          {/*
-            Three lines and then an ellipsis. A long classical title wraps to
-            two at 390pt and three at 320, and a fourth would start pushing the
-            button it belongs to off the bottom of the screen.
-          */}
-          <Text variant="displayTitle" color="onDark" numberOfLines={3} style={styles.title}>
-            {content.title}
-          </Text>
-          {content.meta ? (
-            <Text variant="metadataSmall" color="onDarkMuted" style={styles.meta}>
-              {content.meta}
-            </Text>
-          ) : null}
-          {content.detail ? (
-            <Text variant="body" color="onDarkMuted" style={styles.detail}>
-              {content.detail}
-            </Text>
-          ) : null}
-          {/*
-            `tone="light"` is the ivory-on-ink button, which is what a pill on
-            a dark ground has to be — and it is the same primary action the
-            rest of the app uses rather than a shape invented for this screen.
-
-            It was the first caller of that tone, and it found it broken: the
-            tone was built out of `actionBg`/`actionText`, which invert with
-            the appearance, so in dark mode this drew an ink button on an ink
-            hero. It comes from `onDark`/`darkBg` now.
-          */}
-          <PrimaryButton
-            label={content.actionLabel}
-            tone="light"
-            onPress={onAction}
-            style={styles.action}
+          <IconButton
+            icon={Plus}
+            label="Add a piece"
+            tone="onDark"
+            variant="bare"
+            onPress={onAdd}
+            style={styles.add}
           />
-          {/*
-            **The last recording, as one line rather than a card.**
-            It was a card under the hero until Today stopped scrolling. A
-            control, not a caption: it opens the result when there is one and
-            asks the server again when the answer could not be fetched — see
-            `pendingLineFor`.
-
-            `onDark` rather than `onDarkMuted`, even though this is secondary
-            copy: the muted token is only safe below 45% of the hero and this
-            line sits with the button. Size and the chevron do the receding.
-          */}
-          {pending && onPending ? (
-            <PressableScale
-              onPress={onPending}
-              accessibilityRole="button"
-              accessibilityLabel={pending.label}
-              activeScale={0.99}
-              style={({ pressed }) => [styles.pending, pressed && styles.pendingPressed]}
-            >
-              <Text variant="metadataSmall" color="onDark" numberOfLines={1} style={styles.pendingLabel}>
-                {pending.label}
-              </Text>
-              <ChevronRight
-                size={ICON_SIZE.sm}
-                strokeWidth={ICON_STROKE_WIDTH}
-                color={colors.onDark}
-              />
-            </PressableScale>
-          ) : null}
         </View>
-        )}
+
+        <View style={styles.bottom} onLayout={measure(setBottomY, 'y')}>
+          {content === null ? null : (
+            <View onLayout={measure(setBlockY, 'y')}>
+              <Text variant="eyebrow" color="textSecondary" style={styles.label}>
+                {content.label}
+              </Text>
+              {/*
+                Three lines and then an ellipsis. A long classical title wraps
+                to two at 390pt and three at 320, and a fourth would push the
+                button it belongs to under the tab bar.
+              */}
+              <Text variant="displayTitle" numberOfLines={3} style={styles.title}>
+                {content.title}
+              </Text>
+              {content.meta ? (
+                <Text variant="metadataSmall" color="textSecondary" style={styles.meta}>
+                  {content.meta}
+                </Text>
+              ) : null}
+              {content.detail ? (
+                <Text variant="body" color="textSecondary" numberOfLines={2} style={styles.detail}>
+                  {content.detail}
+                </Text>
+              ) : null}
+              <PrimaryButton label={content.actionLabel} onPress={onAction} style={styles.action} />
+              <PressableScale
+                onPress={recent.onPress}
+                accessibilityRole="button"
+                accessibilityLabel={recent.label}
+                activeScale={0.99}
+                style={({ pressed }) => [styles.recent, pressed && styles.recentPressed]}
+              >
+                <Text variant="metadata" color="textSecondary" numberOfLines={1} style={styles.recentLabel}>
+                  {recent.label}
+                </Text>
+                <ChevronRight size={17} strokeWidth={1.6} color={colors.textTertiary} />
+              </PressableScale>
+            </View>
+          )}
         </View>
       </View>
     </View>
@@ -406,73 +254,54 @@ export function PracticeHero({
 
 const styles = StyleSheet.create({
   hero: {
-    // The whole of a screen that does not scroll — see the note in the body.
     flex: 1,
-    // Opaque, and underneath everything: it is what makes the ground
-    // measurable when the photograph above it is not.
-    backgroundColor: colors.darkBg,
+    backgroundColor: colors.bg,
     overflow: 'hidden',
   },
-  // Dimmed on the field rather than by a heavier wash, so the wash can stay a
-  // flat colour the accessibility sweep is able to read.
-  field: { opacity: IMAGE_OPACITY, overflow: 'hidden' },
-  wash: { backgroundColor: WASH },
+  scrim: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+  },
   content: {
     flex: 1,
     paddingHorizontal: SCREEN_GUTTER,
-    paddingTop: spacing['4xl'],
-  },
-  /**
-   * The copy, centred in what the greeting leaves.
-   *
-   * It was pinned to the bottom by `space-between`, which put the title and
-   * its button in the last third and left a large empty middle — the screen
-   * read as bottom-heavy rather than composed. Centring in the *remaining*
-   * space rather than in the whole screen is what keeps the button in the
-   * thumb zone (§3 law 7) while the block itself sits where the eye expects
-   * it.
-   */
-  middle: {
-    flex: 1,
-    justifyContent: 'center',
   },
   topRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: spacing.md,
+    gap: spacing.sm,
   },
   greeting: { flex: 1, minWidth: 0 },
-  copy: { alignItems: 'flex-start' },
-  pill: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: radii.pill,
-    backgroundColor: colors.onDarkFill,
-    marginBottom: spacing.md,
+  name: { marginTop: spacing.xs },
+  // The glyph sits on the gutter line rather than the 44pt square's edge.
+  add: { marginRight: -10 },
+  bottom: {
+    flex: 1,
+    justifyContent: 'flex-end',
   },
-  title: { marginBottom: spacing.sm },
-  meta: { marginBottom: spacing.sm },
-  detail: { marginBottom: spacing.xl },
-  // Full width, so the thumb has the whole bottom of the screen to land on
-  // (§3 law 7) rather than a pill it has to aim at.
-  action: { alignSelf: 'stretch' },
-  /*
-    A row rather than a line of text: the chevron has to sit on the baseline of
-    the words, and the whole strip has to be the target. 44pt tall with the
-    padding, which is the platform minimum and not `hitSlop` — that does
-    nothing on the web build (`touchTargets.test.ts`).
-  */
-  pending: {
+  label: { textTransform: 'uppercase' },
+  title: {
+    marginTop: 6,
+    fontSize: 42,
+    lineHeight: 46,
+  },
+  meta: { marginTop: 10 },
+  detail: { marginTop: spacing.sm },
+  action: {
     alignSelf: 'stretch',
+    marginTop: 28,
+  },
+  // A row, not a caption: the whole 44pt strip is the target, and the chevron
+  // says it opens something.
+  recent: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs,
-    marginTop: spacing.md,
-    paddingVertical: spacing.md,
+    gap: spacing.sm,
+    minHeight: 44,
+    marginTop: 14,
   },
-  pendingPressed: { opacity: 0.6 },
-  pendingLabel: { flexShrink: 1 },
+  recentPressed: { opacity: 0.55 },
+  recentLabel: { flex: 1 },
 });

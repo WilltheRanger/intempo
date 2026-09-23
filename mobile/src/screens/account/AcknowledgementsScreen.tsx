@@ -56,8 +56,9 @@ export function AcknowledgementsScreen() {
         Photography
       </Text>
       <Text variant="body" style={styles.credit}>
-        The Today screen&rsquo;s photograph is by GVZ 42, on Unsplash, under
-        the Unsplash Licence.
+        The Today screen&rsquo;s photograph of a rehearsal room is from
+        Unsplash, under the Unsplash Licence. Its photographer was not recorded
+        when it was chosen; if it is yours, tell us and it will be named here.
       </Text>
 
       <Text variant="sectionLabel" color="textSecondary" style={styles.heading}>
