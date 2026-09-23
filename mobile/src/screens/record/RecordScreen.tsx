@@ -771,7 +771,16 @@ export function RecordScreen() {
    * it, and the worker trims the score to match — the same arrangement
    * `skip_long_rests` has, and for the same reason.
    */
-  const [chosenStartFrom, setChosenStartFrom] = useState<number | null>(null);
+  const [chosenStartFrom, setChosenStartFrom] = useState<number | null>(
+    params.startAt ?? null,
+  );
+  // Arriving again with a different `startAt` — the screen can still be
+  // mounted under the tabs — moves the start there too.
+  useEffect(() => {
+    if (params.startAt !== undefined) {
+      setChosenStartFrom(params.startAt);
+    }
+  }, [params.startAt]);
   const insets = useSafeAreaInsets();
   const listenSchedule = useMemo(
     () => (heard ? scheduleScore(heard, targetBpm) : null),

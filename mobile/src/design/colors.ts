@@ -130,6 +130,12 @@ export const lightColors = {
   panel: '#FAF8F2',
   /** A filled round control on that panel: the Listen button. */
   controlFill: '#E9E2D4',
+  /**
+   * A chart bar that is on the beat (`redesign/Insights.dc.html`, the
+   * handoff's "Steady (neutral chart bars)"): drawn, so the passage is there,
+   * and grey, so the gold bars beside it are the ones that are read.
+   */
+  steady: '#968D80',
 
   // -------------------------------------------------------------------------
   // Glass — the floating control layer, and nothing else.
@@ -370,6 +376,7 @@ export const darkColors: Palette = {
   /** Not yet designed for dark (the app is pinned light); a raised dark ground. */
   panel: '#211D19',
   controlFill: '#2F2923',
+  steady: '#6E665C',
 
   /**
    * Dark glass. Same 0.80 opacity as the light material and for the same

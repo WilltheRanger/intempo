@@ -230,30 +230,36 @@ if ((await path()).startsWith('/pieces/')) pass('browser forward → piece');
 else fail(`browser forward → ${await path()}`);
 
 await tab('Insights');
+// Every piece is behind "See all" now (`redesign/Insights.dc.html`): the
+// recommended one is the default answer and the rest are asked for.
+await page.getByRole('button', { name: /^See all \d+ pieces$/ }).first().click({ timeout: 10000 });
 await tapTo('Insights piece row', /Caprice No\. 24/, /^\/pieces\/[^/]+$/);
 await tab('Insights');
-await tapTo('Insights next focus', /60 Studies/, /\/record$/);
+// "Worth a look" practises the passage it names, and the take opens there.
+await tapTo('Insights worth a look', /^Practice (bars?|it)/, /\/record$/);
+if (/[?&]startAt=\d+/.test(await page.evaluate(() => location.search)))
+  pass('the worth-a-look passage opens the take at its first bar');
+else fail(`the worth-a-look button opened Record without a start bar: ${await page.evaluate(() => location.search)}`);
 
 /*
-  **A recorded take opens its verdict** — from Insights, which is where the
-  list of them lives.
+  **A recorded take opens its verdict** — from the piece, which is where the
+  list of them lives now.
 
-  It was checked on Today, which had a "Recent practice" card. Today is one
-  photograph with one action on it now, and the takes were only ever a copy of
-  Insights' own "Recent sessions". Same rule, one screen along; the assertion
-  that matters is that a row in that list reaches `/analyses/`, not which tab
-  it was tapped on.
+  It moved twice: Today's "Recent practice" card, then Insights' "Recent
+  sessions", and with the redesign it is the piece's own "See takes"
+  (`redesign/PieceDetail.dc.html`), which lays that piece's takes out under
+  its chart. Same rule, one screen along; what matters is that a row reaches
+  `/analyses/`, not which screen it was tapped on.
 */
-await tab('Insights');
-// The take rows carry their tempo in the accessible name; the "By piece"
-// rows below them do not. `.last()` alone reached the wrong one.
+await open('pieces/fixture-bach-bwv1001');
+await page.getByRole('button', { name: /^See takes$/ }).first().click({ timeout: 10000 });
 await page
-  .getByRole('button', { name: /Sonata No\. 1.*\d+ BPM/ })
+  .getByRole('button', { name: /^Take from .*\d+ BPM/ })
   .first()
   .click({ timeout: 10000 });
 await waitFor('the take row to open a verdict', async () => (await path()).startsWith('/analyses/'));
-if ((await path()).startsWith('/analyses/')) pass(`Insights take row → ${await path()}`);
-else fail(`Insights take row → ${await path()}, expected an analysis`);
+if ((await path()).startsWith('/analyses/')) pass(`a take under the piece's chart → ${await path()}`);
+else fail(`a take under the piece's chart → ${await path()}, expected an analysis`);
 
 /*
   **Today's one action starts a take.** The screen has exactly one button
@@ -442,15 +448,17 @@ if (onInsights === null) fail('no window headline on Insights at all');
 else pass(`Insights states the window as a habit: "${onInsights}"`);
 
 // A single take is not a habit. The tendency wording must not appear in a row
-// that describes one recording.
-const takeRow = (lines) => lines.find((l) => /·\s*\d+\s*BPM\s*·/.test(l)) ?? null;
-const row = takeRow(insightsText);
+// that describes one recording — which live under a piece's "See takes" now.
+await open('pieces/fixture-bach-bwv1001');
+await page.getByRole('button', { name: /^See takes$/ }).first().click({ timeout: 10000 });
+await page.waitForTimeout(300);
+const row = (await leaves()).find((l) => /^\d+\s*BPM\s*·/.test(l)) ?? null;
 if (row === null) {
-  fail('Insights: no recent-take row found to check');
+  fail('Piece detail: no take row found to check');
 } else if (HEADLINES.some((h) => row.includes(h))) {
-  fail(`Insights: a single take is worded as a habit — "${row}"`);
+  fail(`Piece detail: a single take is worded as a habit — "${row}"`);
 } else {
-  pass(`Insights take row states a verdict, not a habit: "${row}"`);
+  pass(`a take row states a verdict, not a habit: "${row}"`);
 }
 
 console.log('\n## Reading a real notation file');

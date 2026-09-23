@@ -87,7 +87,11 @@ export type RootStackParamList = {
   Legal: { document: 'privacy' | 'terms' };
   Help: undefined;
   Acknowledgements: undefined;
-  Record: { pieceId: string };
+  /**
+   * `startAt` opens the take at a bar rather than at the top — Insights'
+   * "Practice bars 21–24" is the caller. The musician can still move it.
+   */
+  Record: { pieceId: string; startAt?: number };
   /** The practice tempo for a piece, chosen on its own screen from Record. */
   Tempo: { pieceId: string };
   /** A recording the musician already has, looked at before it is sent. */

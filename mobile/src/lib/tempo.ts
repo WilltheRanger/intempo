@@ -82,7 +82,7 @@ export function fullScaleFor(
  * today is also what `backend/config.toml` ships, and it does not follow the
  * config when the bands are tuned.
  */
-const FALLBACK_INNER_PCT = 5;
+export const FALLBACK_INNER_PCT = 5;
 
 /**
  * Which band one signed deviation falls in, by the thresholds it was judged by.

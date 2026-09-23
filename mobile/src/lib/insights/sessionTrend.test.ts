@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
 import type { TakeResult, Tolerance } from '../../data/types';
-import { plotFraction, sessionTrendFrom } from './sessionTrend';
+import { axisLabels, plotFraction, sessionTrendFrom, trendRange } from './sessionTrend';
 
 const TOLERANCE: Tolerance = {
+  rushing_inner_pct: 5,
+  rushing_mid_pct: 12,
   rushing_outer_pct: 20,
+  dragging_inner_pct: 5,
+  dragging_mid_pct: 12,
   dragging_outer_pct: 20,
-} as unknown as Tolerance;
+};
 
 function take(over: Partial<TakeResult> = {}): TakeResult {
   return {
@@ -79,14 +83,17 @@ describe('building the series', () => {
     expect(sessionTrendFrom([], TOLERANCE)).toBeNull();
   });
 
-  it('takes its scale from the thresholds, not from the data', () => {
-    // A point at the top of the chart has to mean "severe", not "the tallest
-    // thing that happened to be in this window".
+  it('marks what counts as off with the band, not with the chart’s height', () => {
+    // The chart used to be scaled to the outer threshold so that its top edge
+    // meant "severe". The redesign fits the axis to the takes instead, and the
+    // on-tempo band — the take's own inner thresholds — is what says where
+    // "off the beat" begins.
     const trend = sessionTrendFrom([take(), take({ id: 't2' })], TOLERANCE);
-    expect(trend?.fullScale).toBe(20);
+    expect(trend?.range.bandTop).toBe(5);
+    expect(trend?.range.bandBottom).toBe(-5);
 
     const noTolerance = sessionTrendFrom([take(), take({ id: 't2' })], null);
-    expect(noTolerance?.fullScale).toBeGreaterThan(0);
+    expect(noTolerance?.range.bandTop).toBeGreaterThan(0);
   });
 });
 
@@ -101,40 +108,55 @@ describe('which points get a dot', () => {
       TOLERANCE,
     );
 
-  it('marks the latest session, the highest and the lowest', () => {
-    const trend = series([2, 9, -5, 3]);
-    expect(trend?.points.map((p) => p.notable)).toEqual([false, true, true, true]);
+  it('plots every take, oldest first', () => {
+    expect(series([2, 9, -5, 3])?.points.map((p) => p.value)).toEqual([2, 9, -5, 3]);
+  });
+});
+
+describe('the span a take chart draws', () => {
+  it('fits a musician who rushes, rather than spending half the chart behind the beat', () => {
+    const range = trendRange([2, 6, 11, 14], TOLERANCE);
+    expect(range.top).toBeGreaterThan(14);
+    // The band still shows below the line, and not much more.
+    expect(range.bottom).toBeLessThan(-5);
+    expect(-range.bottom).toBeLessThan(range.top / 2);
   });
 
-  it('does not mark every point', () => {
-    // The difference between a chart and a list of dots joined up.
-    const trend = series([1, 2, 3, 4, 5, 6, 7]);
-    expect(trend?.points.filter((p) => p.notable)).toHaveLength(2); // latest is also the highest
+  it('always holds the whole on-tempo band', () => {
+    const range = trendRange([0.5, 1, 0.2], TOLERANCE);
+    expect(range.top).toBeGreaterThan(range.bandTop);
+    expect(range.bottom).toBeLessThan(range.bandBottom);
+    expect([range.bandTop, range.bandBottom]).toEqual([5, -5]);
   });
 
-  it('marks only the latest when nothing moved', () => {
-    // A flat series would otherwise get dots on two arbitrary points and imply
-    // a spread that is not there.
-    const trend = series([4, 4, 4]);
-    expect(trend?.points.map((p) => p.notable)).toEqual([false, false, true]);
+  it('does not let one wild take flatten the rest', () => {
+    expect(trendRange([3, 4, 200], TOLERANCE).top).toBeLessThan(40);
+  });
+
+  it('names only the directions somebody played in', () => {
+    const rushing = [2, 6, 11, 14];
+    expect(axisLabels(rushing, trendRange(rushing, TOLERANCE))).toEqual({ ahead: true, behind: false });
+    const dragging = [-12, -3, 1];
+    expect(axisLabels(dragging, trendRange(dragging, TOLERANCE))).toEqual({ ahead: false, behind: true });
   });
 });
 
 describe('placing a value on the plot', () => {
-  it('puts ahead of the beat above the centre line', () => {
+  const range = trendRange([-10, 10], TOLERANCE);
+
+  it('puts ahead of the beat above the line', () => {
     // Rush-positive is up, which means negating: SVG's y grows downward, and
     // "ahead" is the top of every other tempo drawing in the app.
-    expect(plotFraction(10, 20)).toBeLessThan(0.5);
-    expect(plotFraction(-10, 20)).toBeGreaterThan(0.5);
-    expect(plotFraction(0, 20)).toBe(0.5);
+    expect(plotFraction(10, range)).toBeLessThan(plotFraction(0, range));
+    expect(plotFraction(-10, range)).toBeGreaterThan(plotFraction(0, range));
   });
 
-  it('pins a session past the threshold to the edge', () => {
-    expect(plotFraction(200, 20)).toBe(0);
-    expect(plotFraction(-200, 20)).toBe(1);
+  it('pins a value past the span to the edge', () => {
+    expect(plotFraction(500, range)).toBe(0);
+    expect(plotFraction(-500, range)).toBe(1);
   });
 
   it('centres rather than dividing by zero', () => {
-    expect(plotFraction(5, 0)).toBe(0.5);
+    expect(plotFraction(5, { top: 0, bottom: 0, bandTop: 0, bandBottom: 0 })).toBe(0.5);
   });
 });
