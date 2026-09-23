@@ -24,7 +24,7 @@ import { useUpdateProfile, useUploadAvatar } from '../../data/hooks/useProfile';
 import type { Musician } from '../../data/types';
 import { preferences, usePreferences } from '../../data/preferences';
 import type { Instrument, MetronomeMode } from '../../data/types';
-import { describeLoadError } from '../../data/api/describeError';
+import { describeLoadError } from '../../data/describeLoadError';
 import { metronomeChoices } from '../../lib/record/metronomeChoice';
 import {
   ProfilePhotoSaveError,

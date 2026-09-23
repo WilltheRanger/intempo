@@ -59,6 +59,15 @@ def test_wrong_audience_returns_401(
     assert res.status_code == 401
 
 
+def test_wrong_issuer_returns_401(
+    client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """A token from another Supabase project must not authenticate here."""
+    token = make_token(extra={"iss": "https://other.supabase.invalid/auth/v1"})
+    res = client.get("/whoami", headers={"Authorization": f"Bearer {token}"})
+    assert res.status_code == 401
+
+
 def test_non_uuid_sub_returns_401(
     client: TestClient, make_token: Callable[..., str]
 ) -> None:
@@ -128,6 +137,7 @@ def test_token_with_no_subject_claim_returns_401(
     token = pyjwt.encode(
         {
             "aud": "authenticated",
+            "iss": "https://test.supabase.invalid/auth/v1",
             "iat": int(now.timestamp()),
             "exp": int((now + timedelta(minutes=10)).timestamp()),
             "email": "nobody@example.com",

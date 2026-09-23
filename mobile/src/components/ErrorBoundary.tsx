@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
+import * as Sentry from '@sentry/react-native';
 
 import { colors, spacing } from '../design';
 import { PrimaryButton } from './primitives/PrimaryButton';
@@ -39,8 +40,14 @@ export class ErrorBoundary extends Component<
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    // The only place this is recorded today. When crash reporting is wired up,
-    // it reports from here.
+    if (!__DEV__ && process.env.EXPO_PUBLIC_SENTRY_DSN) {
+      Sentry.captureException(error, {
+        contexts: { react: { componentStack: info.componentStack } },
+      });
+    }
+    // Release builds report this to Sentry above. The console copy remains for
+    // local development and for builds whose release DSN is deliberately
+    // absent; neither path includes application analytics or routine events.
     //
     // The one `console` in shipped code besides `App.tsx`'s boot line, and the
     // exception `CLAUDE.md` §1 is about is *debug* output. A render that threw

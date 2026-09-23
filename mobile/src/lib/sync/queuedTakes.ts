@@ -1,7 +1,8 @@
 import type { TakeSubmissionState } from '../../data/practice/submitTake';
 import type { MetronomeMode } from '../../data/types';
 import type { CaptureReport } from '../audio/capture';
-import { deviceTakeStore } from './takeQueue.store';
+import { getActiveAccountId } from '../../data/auth/session';
+import { deviceTakeStoreFor } from './takeQueue.store';
 import {
   enqueue,
   load,
@@ -57,12 +58,16 @@ export async function keepTakeForLater(
   lastError: string,
 ): Promise<void> {
   try {
+    const accountId = await getActiveAccountId();
+    if (!accountId) return;
+    const deviceTakeStore = deviceTakeStoreFor(accountId);
     const id = idFor(recording.filename);
     await remove(deviceTakeStore, id);
     const queued = await enqueue(
       deviceTakeStore,
       {
         ...context,
+        accountId,
         filename: recording.filename,
         resume: recording.resume ?? {},
         audio: recording.audio,
@@ -86,6 +91,9 @@ export async function keepTakeForLater(
 /** The server has it. Drop the copy. */
 export async function takeWasAccepted(filename: string): Promise<void> {
   try {
+    const accountId = await getActiveAccountId();
+    if (!accountId) return;
+    const deviceTakeStore = deviceTakeStoreFor(accountId);
     await remove(deviceTakeStore, idFor(filename));
   } catch {
     // A stale entry is recovered by the next restore, which reads the bytes
@@ -115,6 +123,9 @@ export async function restoreQueuedTake(
   scoreId: string,
 ): Promise<RestoredTake | null> {
   try {
+    const accountId = await getActiveAccountId();
+    if (!accountId) return null;
+    const deviceTakeStore = deviceTakeStoreFor(accountId);
     const { takes } = await load(deviceTakeStore);
     const mine = takes
       .filter((take: QueuedTake) => take.scoreId === scoreId)
@@ -147,6 +158,9 @@ export async function restoreQueuedTake(
  */
 export async function forgetTakesFor(scoreId: string): Promise<void> {
   try {
+    const accountId = await getActiveAccountId();
+    if (!accountId) return;
+    const deviceTakeStore = deviceTakeStoreFor(accountId);
     await removeForScore(deviceTakeStore, scoreId);
   } catch {
     // See the module docstring: never at the cost of the thing it is attached

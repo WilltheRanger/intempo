@@ -82,6 +82,8 @@ export interface SubmitTakeInput {
    * picked file and for the native recorder.
    */
   capture?: CaptureReport;
+  /** Offline drain only: fail closed if sign-in changes during submission. */
+  assertOwner?: () => Promise<void>;
 }
 
 export interface SubmittedTakeState extends TakeSubmissionState {
@@ -149,22 +151,26 @@ export async function submitTake({
   skipLongRests = false,
   fromMeasure = null,
   capture,
+  assertOwner,
 }: SubmitTakeInput): Promise<SubmittedTakeState> {
   const state: TakeSubmissionState = { ...resume };
 
   try {
+    await assertOwner?.();
     if (state.analysisId) {
       return { ...state, analysisId: state.analysisId };
     }
 
     if (!state.audioKey) {
       const upload = await requestAudioUpload(filename);
+      await assertOwner?.();
       await uploadToSignedUrl(upload.upload_url, audio, contentType, {
         subject: 'recording',
       });
       state.audioKey = upload.object_key;
     }
 
+    await assertOwner?.();
     const { analysis_id } = await createAnalysisKeepingTheTake({
       score_id: scoreId,
       audio_key: state.audioKey,
@@ -266,8 +272,11 @@ export async function waitForAnalysis(
   {
     signal,
     onStage,
+    assertOwner,
   }: {
     signal?: AbortSignal;
+    /** Offline drain only: fail closed if sign-in changes while waiting. */
+    assertOwner?: () => Promise<void>;
     /**
      * Called with each stage the run reports, so a caller can show where it
      * has got to. Called on every poll rather than only on a change: the
@@ -285,6 +294,7 @@ export async function waitForAnalysis(
     if (signal?.aborted) {
       throw new Error('Cancelled');
     }
+    await assertOwner?.();
     const analysis = await getAnalysis(analysisId);
     if (onStage) {
       try {
