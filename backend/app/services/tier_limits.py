@@ -78,23 +78,45 @@ def month_bounds(now: datetime | None = None) -> tuple[datetime, datetime]:
 
 
 def count_analyses_this_month(client: Any, user_id: UUID, now: datetime | None = None) -> int:
-    """How many analyses this account has created in the current calendar month.
+    """How many of this month's analyses count against the free allowance.
 
-    Counts every analysis, including ones that failed. That is a deliberate
-    choice and the less generous one: a failed analysis still cost the pipeline
-    a run. It should be revisited if real failure rates make it feel punitive —
-    someone whose three attempts all failed on a bad microphone has had no
-    value from the month.
+    **A take counts if it produced a verdict, or might still.** So: every
+    analysis still queued or running — without those, a musician could start
+    four at once and have all of them admitted — and every finished one whose
+    result is `ok`.
+
+    **What does not count, decided by the owner on 2026-09-23:** a take the
+    pipeline refused (`not_played`, `alignment_failed`, `no_onsets` — finished,
+    with no verdict), a file refused at intake, and a run that failed on our
+    side. This counted every analysis until then, "the less generous" choice,
+    with a note that it should be revisited if failures made it feel punitive.
+    The pitch check made that concrete: a take refused because nobody played
+    had cost one of three monthly analyses for a recording of a metronome.
+
+    Two counts rather than one query, because PostgREST's filters cannot
+    express the union of "in flight" and "finished with a verdict" without an
+    `or=` that the test fake would have to parse. `result_json->>status` is the
+    `status` inside the stored result, text or null.
     """
     start, end = month_bounds(now)
-    response = (
-        client.table("analyses")
-        .select("id", count="exact")
-        .eq("user_id", str(user_id))
-        .gte("created_at", start.isoformat())
-        .lt("created_at", end.isoformat())
-        .execute()
+
+    def rows():
+        return (
+            client.table("analyses")
+            .select("id", count="exact")
+            .eq("user_id", str(user_id))
+            .gte("created_at", start.isoformat())
+            .lt("created_at", end.isoformat())
+        )
+
+    in_flight = _count(rows().in_("status", ["queued", "processing"]).execute())
+    with_verdict = _count(
+        rows().eq("status", "done").eq("result_json->>status", "ok").execute()
     )
+    return in_flight + with_verdict
+
+
+def _count(response: Any) -> int:
     count = getattr(response, "count", None)
     # `isinstance` rather than a None check, and rather than `int(count)`:
     # anything that isn't already an integer is a client that didn't answer the

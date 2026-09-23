@@ -440,6 +440,9 @@ def _tier_limit_detail() -> dict[str, object]:
         def eq(self, *_a, **_k):
             return self
 
+        def in_(self, *_a, **_k):
+            return self
+
         def gte(self, *_a, **_k):
             return self
 

@@ -6,6 +6,128 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-09-23 — A take nobody played is refused, by its pitch
+
+**All synthetic, like everything above.** The owner asked what happens when
+there is talking in the room, when nothing is played, or when a bow knocks the
+stand. Measured before this change, through the real `analyze()`:
+
+    what was recorded (nothing played)    before
+    a metronome clicking in an empty room  ok, "Steady all the way through", q 1.00
+    talking, against a bass page           ok, "You dragged bars 2–8 by 1 BPM", q 0.47
+    an empty room                          refused, "Same notes, different times…"
+    one to three knocks on a stand         refused, "Only 3 of 32 notes came through. Move the mic closer."
+
+The onset detector is amplitude-invariant by design, so every one of those is a
+run of notes to it. New: `services/pitch_evidence.py` asks what pitch held after
+each attack, and `analysis.nothing_played` refuses a take as `not_played` —
+"We didn't hear you play" / "Try again closer to your instrument." — when the
+page's pitches were not heard and the sound was not an instrument's.
+
+### New thresholds (`[pitch]`, none existed)
+
+    steady             0.6   one class leads this share of a window's frames
+    min_share          0.2   ...and holds this share of its energy
+    top                2     a written class is heard if among the two strongest
+    min_relative       0.5   ...and at least half as strong as the strongest
+    low_register_midi  45    a page whose middle is below A2 is heard via CQT
+    low_instruments    [double_bass]  ...and so is any take on these
+    not_played_page    0.25  at or above: the page was heard, never "not played"
+    chance             0.15  ...and more confirmed notes than luck would give at
+    significance       0.05    this rate per note, one-sided binomial
+    not_played_tonal   0.3   below: nothing held a pitch
+    one_pitch          0.9   one pitch every time, on a page with several
+                             (the page's classes counted over the whole page)
+    played_tonal       0.8   below, with quality under warn_quality: talking
+
+### Regression — the six clips
+
+Byte-identical `AnalysisResult` JSON on all six against `main` before this
+commit, compared with `cmp`:
+
+    clip                  status  quality  direction  onsets   tonal  page
+    01_detache_clean      ok      0.999    on         32       1.00   1.00
+    02_detache_rushing    ok      0.999    rush       32       1.00   1.00
+    03_detache_dragging   ok      0.999    drag       32       1.00   1.00
+    04_slurred            ok      0.998    on          8       1.00   1.00
+    05_open_e_long        ok      1.000    on          1       1.00   1.00
+    06_pizzicato          ok      0.999    on         16       1.00   1.00
+
+### What it separates (final settings)
+
+Bowed takes are 40 harmonics at 1/k with vibrato, a bow scratch and a 50 ms
+ring after the bow lifts; talking is voiced syllables at 3–6 a second with
+gliding pitch plus two short voice clips from LibreOffice's sound gallery;
+clicks are 30 ms decaying sines (1.5 kHz) or noise bursts; the "long beep" is
+100 ms of A5.
+
+    played                                   tonal  page   status
+    violin G-major scale, page right         0.97   1.00   ok
+    ... page a third off (a misread clef)    0.97   0.00   ok
+    sixteenths at 120, page a third off      0.97   0.00   ok
+    spiccato sixteenths at 160               0.97   1.00   ok
+    bass scale from open E1, page right      1.00   1.00   ok
+    bass under talking at 0 dB               0.97   0.94   ok (verdict skewed — see below)
+    violin under a click leaking at -10 dB   0.97   1.00   ok
+    violin with four knocks through it       0.97   1.00   ok
+
+    nothing played                           tonal  page   status
+    empty room                               0.00   0.00   not_played
+    beep / woodblock metronome               0.00   0.00   not_played
+    talking (bass page / violin page)        0.71 / 0.23  0.06 / 0.00   not_played
+    knocks / stand tings / glasses           0.60–1.00  0.00–0.25  not_played (one pitch: 1.00)
+    100 ms beep, page of several pitches     1.00   0.19   not_played (one pitch)
+    four notes of a different piece          1.00   —      alignment_failed, as before (one pitch 0.33)
+
+**What forced each piece of the design:**
+
+- **Page share alone** would call a real take against a misread page silence
+  (0.00 against a page a third off). Hence every "not played" rule requires
+  the page's pitches to be at chance (below 0.25) *and* something else.
+- **A 36-bin CQT chroma**, tried first, smeared spiccato sixteenths into each
+  other (tonal 0.06, page 0.03 — correct page, called not played). **A 93 ms
+  STFT chroma** fixed that and failed the bass's bottom octave (0.35 on a scale
+  from open E). So the page's register chooses: CQT below A2, STFT above.
+- **Rank alone** confirmed notes by chance against a pure tone: a 1.5 kHz beep
+  "held" 0.31 of a G major page, because the second-strongest class is noise.
+  Hence `min_relative`.
+- **The page's register alone** chose the STFT for a bass take against a page
+  that reads as treble — a bass part scanned in the wrong clef — and the take
+  held a pitch after 0.00 of attacks. Hence `low_instruments`.
+- **A share over a handful of notes** is chance: three glass clinks against a
+  bass page "held" 2 of 8 matched notes, 0.25 — one in three by luck. A flat
+  minimum of three notes fixed that and broke a player who stopped after two
+  notes, both held (one in fifty). Hence a binomial test, `chance` and
+  `significance`.
+- **"Hardly any attacks" as a rule** caught knocks and rings, and also a
+  musician who played four notes of a different piece — who should be told it
+  is the wrong piece. What separates them is that a stand, a glass or a knock
+  is one object struck again: one pitch every time (1.00), where four notes of
+  music are several (0.33). The rule was dropped; the one-pitch rule does its
+  work, once the page's pitches are counted over the page rather than over the
+  one or two notes a knock happens to match.
+
+### Known limits, measured
+
+- **A page of one repeated pitch** cannot use the one-pitch rule: a pitched
+  beep against it is a verdict ("Steady", q 1.00), and knocks or a glass keep
+  the older refusal ("Only 3 of 32 notes came through"). Indistinguishable
+  there from a real open-string take against a misread page, which must not
+  be refused.
+- **Notes too fast for the detector** — sixteenths at 180–200 BPM and 32nds at
+  100–132 (57–83 ms), where it found 4–19 of their attacks — were refused
+  before and are refused now, but as "not played", which they were not.
+- **Talking that holds each syllable steady** (a stand-in voice measured 0.94
+  tonal) is not caught by pitch; the alignment still refuses it (quality 0.22),
+  with the older sentence. No talking-only take reached a verdict.
+- **Talking under a real take still skews its timing** — the violin under
+  talking at -20 dB: "You dragged bars 6–7 by 8 BPM", q 0.47. Tried and not
+  shipped: dropping matched notes whose attack did not carry the written
+  pitch. Across eight talking seeds, the notes it flagged were not the notes
+  that were mistimed; on a sustained line the written pitch is sounding
+  wherever a syllable lands. That needs pitch-aware onset detection, not a
+  check afterwards.
+
 ## 2026-09-22 — An audit of what the analysis gets wrong, and eight fixes
 
 **Every number below is from synthetic takes.** The six corpus clips are still

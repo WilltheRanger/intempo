@@ -29,7 +29,8 @@ from app.services.alignment import (
     is_alignment_broken,
     to_timeline_base,
 )
-from app.services.analysis import Reading, prepare_for_alignment
+from app.services import pitch_evidence
+from app.services.analysis import Reading, nothing_played, prepare_for_alignment
 from app.services.audio_config import AudioConfig, load_audio_config
 from app.services.classification import (
     Delta,
@@ -87,6 +88,11 @@ class Diagnostics:
     expected_onsets: list[float]  # seconds, scaled to target_bpm
 
     # DTW's own opinion, before fuzzy matching cleans it up.
+    #: `pitch_evidence`'s two shares, so the dashboard can show why a take
+    #: was called not played — and a tuner can see how near the line a real
+    #: take sits. None until there were onsets to measure.
+    tonal_share: float | None = None
+    page_share: float | None = None
     raw_pairs: list[tuple[int, int]] = field(default_factory=list)
     matched: list[tuple[int, int]] = field(default_factory=list)
     missed_expected: list[int] = field(default_factory=list)
@@ -206,6 +212,43 @@ def analyze_with_diagnostics(
     )
     base.quality = round(raw.quality, 3)
     base.raw_pairs = list(raw.mapping)
+
+    # The same question `analyze()` asks, in the same place: after aligning,
+    # before anything is refused or timed. `onsets` count from the first one
+    # detected, so that is the clock's origin here.
+    probe = apply_fuzzy_match(
+        raw, onsets, expected, optional=optional, reclaimable=as_written.reclaimable
+    )
+    origin = float(heard.onsets[0])
+    evidence = pitch_evidence.assess(
+        y,
+        sr,
+        heard.onsets,
+        [(float(onsets[d] + origin), timeline.notes[e].pitch) for d, e in probe.matched],
+        steady=cfg.pitch.steady,
+        min_share=cfg.pitch.min_share,
+        top=cfg.pitch.top,
+        min_relative=cfg.pitch.min_relative,
+        low_register_midi=cfg.pitch.low_register_midi,
+        low_instrument=(instrument or ("double_bass" if double_bass else None))
+        in cfg.pitch.low_instruments,
+        page_pitches=[note.pitch for note in timeline.notes],
+    )
+    base.tonal_share = round(evidence.tonal_share, 3)
+    base.page_share = round(evidence.page_share, 3)
+    if nothing_played(
+        evidence,
+        quality=raw.quality,
+        n_detected=int(heard.onsets.size),
+        n_expected=int(expected.size),
+        config=cfg,
+    ):
+        base.status = "not_played"
+        base.verdict = (
+            f"Not played: a pitch held after {evidence.tonal_share:.2f} of attacks, "
+            f"the written one after {evidence.page_share:.2f} of notes."
+        )
+        return base
 
     if is_alignment_broken(raw.quality, config=cfg):
         base.status = "alignment_failed"

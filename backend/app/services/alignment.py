@@ -109,6 +109,13 @@ class ExpectedNote:
     #: mistake — see `align_dtw`'s `optional`. Sixty milliseconds from the note
     #: it decorates is inside the onset detector's resolution.
     is_grace_note: bool = False
+    #: The written pitch, as the score spells it ("E2", "F#4"), or None where
+    #: the page does not give one of its own — a grace note, which is a count
+    #: on the note it decorates rather than a note with a pitch.
+    #:
+    #: Read by `pitch_evidence` to ask whether what was heard at this note's
+    #: time is this note at all, which a timeline of times alone cannot say.
+    pitch: str | None = None
     #: A grace note is printed in front of this one.
     #:
     #: Separate from `is_grace_note` because the two need opposite treatment
@@ -482,6 +489,7 @@ def build_timeline(
                         ),
                         beats=_beats(note.duration),
                         under_slur=True,
+                        pitch=note.pitch,
                     )
                 )
                 last_onset_beats = elapsed_beats
@@ -564,6 +572,7 @@ def build_timeline(
                         # state. See `ExpectedNote.after_grace_note`.
                         after_grace_note=bool(note.grace_notes),
                         beats=_beats(note.duration),
+                        pitch=note.pitch,
                     )
                 )
                 global_index += 1

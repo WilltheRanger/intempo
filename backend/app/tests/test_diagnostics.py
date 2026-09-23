@@ -14,7 +14,7 @@ import pytest
 from app.services.analysis import analyze
 from app.services.diagnostics import analyze_with_diagnostics, envelope_of
 from app.services.score_schema import ScoreJson
-from app.tests.audio_helpers import evenly_spaced, synth_click_track
+from app.tests.audio_helpers import evenly_spaced, synth_bowed_take
 
 SR = 22050
 BPM = 60.0
@@ -48,7 +48,14 @@ def _score(n_notes: int, *, ornamented: bool = False) -> ScoreJson:
 
 @pytest.fixture
 def clean_take() -> tuple[np.ndarray, int]:
-    return synth_click_track(evenly_spaced(8, BPM), sr=SR), SR
+    """Bowed notes on the page's own pitch class, not the click helper.
+
+    Clicks were the take here until 2026-09-23, when a take whose attacks
+    hold none of the page's pitches became `not_played` before anything is
+    aligned — right for a metronome, and it left these tests comparing two
+    refusals rather than two readings.
+    """
+    return synth_bowed_take(evenly_spaced(8, BPM)), SR
 
 
 def test_diagnostics_matches_analyze_on_a_page_with_an_ornament(clean_take):

@@ -45,11 +45,14 @@ def _seed(fake: FakeSupabase, user_id: UUID, *, tier: str = "free", analyses: in
     fake.table("users").rows.append({"id": str(user_id), "email": "m@example.com", "tier": tier})
     fake.table("scores").rows.append({"id": str(score_id), "user_id": str(user_id)})
     for _ in range(analyses):
+        # A take that got a verdict: what "an analysis used" means since
+        # refused takes stopped counting.
         row = {
             "id": str(uuid4()),
             "user_id": str(user_id),
             "score_id": str(score_id),
             "status": "done",
+            "result_json": {"status": "ok"},
         }
         if created_at:
             row["created_at"] = created_at
@@ -103,6 +106,8 @@ def test_counts_only_this_month():
             {
                 "id": str(uuid4()),
                 "user_id": str(user_id),
+                "status": "done",
+                "result_json": {"status": "ok"},
                 "created_at": (now - timedelta(days=40)).isoformat(),
             }
         )
@@ -118,6 +123,66 @@ def test_counts_only_this_user():
     _seed(fake, theirs, analyses=3, created_at=now.isoformat())
 
     assert count_analyses_this_month(fake, mine, now) == 1
+
+
+def _take(user_id: UUID, now: datetime, status: str, result: str | None = None) -> dict:
+    return {
+        "id": str(uuid4()),
+        "user_id": str(user_id),
+        "status": status,
+        "result_json": {"status": result} if result else None,
+        "created_at": now.isoformat(),
+    }
+
+
+def test_a_take_with_no_verdict_does_not_count():
+    """The owner's rule, 2026-09-23: a refused take is not an analysis used.
+
+    Refused by the pipeline (nothing played, would not line up, digitally
+    silent), refused at intake, or failed on our side — none of them gave the
+    musician anything, and the first of them had been costing a free analysis
+    for a recording of a metronome.
+    """
+    fake = FakeSupabase()
+    user_id = uuid4()
+    now = datetime(2026, 9, 23, tzinfo=timezone.utc)
+    for result in ("not_played", "alignment_failed", "no_onsets"):
+        fake.table("analyses").rows.append(_take(user_id, now, "done", result))
+    fake.table("analyses").rows.append(_take(user_id, now, "failed"))
+    fake.table("analyses").rows.append(_take(user_id, now, "failed_recoverable"))
+
+    assert count_analyses_this_month(fake, user_id, now) == 0
+
+    fake.table("analyses").rows.append(_take(user_id, now, "done", "ok"))
+    assert count_analyses_this_month(fake, user_id, now) == 1
+
+
+def test_a_take_still_being_analysed_counts():
+    """Or a musician could start four at once and have every one admitted,
+    because none has finished with a verdict yet."""
+    fake = FakeSupabase()
+    user_id = uuid4()
+    now = datetime(2026, 9, 23, tzinfo=timezone.utc)
+    fake.table("analyses").rows.append(_take(user_id, now, "queued"))
+    fake.table("analyses").rows.append(_take(user_id, now, "processing"))
+
+    assert count_analyses_this_month(fake, user_id, now) == 2
+
+
+def test_a_refused_take_does_not_block_the_next(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """End to end: three refusals this month and the fourth take is still let in."""
+    fake = FakeSupabase()
+    user_id = uuid4()
+    score_id = _seed(fake, user_id)
+    now = datetime.now(tz=timezone.utc)
+    for _ in range(FREE_MONTHLY_ANALYSES):
+        fake.table("analyses").rows.append(_take(user_id, now, "done", "not_played"))
+    monkeypatch.setattr(db_module, "get_service_client", lambda: fake)
+    monkeypatch.setattr(analyses_module, "start_analysis", lambda *_a, **_k: None)
+
+    assert _submit(client, make_token, user_id, score_id).status_code == 202
 
 
 def test_paid_tiers_are_not_counted_at_all():

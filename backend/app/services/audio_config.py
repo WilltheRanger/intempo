@@ -109,6 +109,24 @@ class IntakeConfig:
 
 
 @dataclass(frozen=True)
+class PitchConfig:
+    """See `[pitch]` in config.toml and `services/pitch_evidence.py`."""
+
+    steady: float = 0.6
+    min_share: float = 0.2
+    top: int = 2
+    min_relative: float = 0.5
+    not_played_tonal: float = 0.3
+    not_played_page: float = 0.25
+    chance: float = 0.15
+    significance: float = 0.05
+    played_tonal: float = 0.8
+    one_pitch: float = 0.9
+    low_register_midi: int = 45
+    low_instruments: tuple[str, ...] = ("double_bass",)
+
+
+@dataclass(frozen=True)
 class TrendConfig:
     window: int
 
@@ -146,6 +164,8 @@ class AudioConfig:
     #: feature keeps loading rather than failing to parse a config it has
     #: always been able to read.
     intake: IntakeConfig = IntakeConfig()
+    #: Defaulted for the same reason as `intake`.
+    pitch: PitchConfig = PitchConfig()
 
 
 def _parse(raw: dict) -> AudioConfig:
@@ -202,6 +222,7 @@ def _parse(raw: dict) -> AudioConfig:
         intake=IntakeConfig(
             max_duration_s=float(raw.get("intake", {}).get("max_duration_s", 600.0)),
         ),
+        pitch=_pitch(raw.get("pitch", {})),
         calibration=CalibrationConfig(
             min_duration_s=float(cal["min_duration_s"]),
             max_duration_s=float(cal["max_duration_s"]),
@@ -214,6 +235,24 @@ def _parse(raw: dict) -> AudioConfig:
             bpm_min=float(cal["bpm_min"]),
             bpm_max=float(cal["bpm_max"]),
         ),
+    )
+
+
+def _pitch(row: dict) -> PitchConfig:
+    default = PitchConfig()
+    return PitchConfig(
+        steady=float(row.get("steady", default.steady)),
+        min_share=float(row.get("min_share", default.min_share)),
+        top=int(row.get("top", default.top)),
+        min_relative=float(row.get("min_relative", default.min_relative)),
+        not_played_tonal=float(row.get("not_played_tonal", default.not_played_tonal)),
+        not_played_page=float(row.get("not_played_page", default.not_played_page)),
+        chance=float(row.get("chance", default.chance)),
+        significance=float(row.get("significance", default.significance)),
+        played_tonal=float(row.get("played_tonal", default.played_tonal)),
+        one_pitch=float(row.get("one_pitch", default.one_pitch)),
+        low_register_midi=int(row.get("low_register_midi", default.low_register_midi)),
+        low_instruments=tuple(row.get("low_instruments", default.low_instruments)),
     )
 
 

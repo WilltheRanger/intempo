@@ -46,10 +46,19 @@ describe('nothingUsableTitle', () => {
     expect(nothingUsableTitle('alignment_failed')).toContain('line up');
   });
 
-  /** Two outcomes, two headings. Sharing one was the fault this replaced. */
-  it('gives the two statuses different headings', () => {
-    expect(nothingUsableTitle('no_onsets')).not.toBe(
-      nothingUsableTitle('alignment_failed'),
+  /**
+   * A metronome, talking or a knock, and no instrument: the owner's heading,
+   * with the pipeline's "Try again closer to your instrument." under it.
+   */
+  it('says it did not hear the musician play', () => {
+    expect(nothingUsableTitle('not_played')).toBe('We didn’t hear you play');
+  });
+
+  /** Every outcome its own heading. Sharing one was the fault this replaced. */
+  it('gives every status a different heading', () => {
+    const titles = (['no_onsets', 'alignment_failed', 'not_played'] as const).map(
+      nothingUsableTitle,
     );
+    expect(new Set(titles).size).toBe(titles.length);
   });
 });

@@ -1,5 +1,48 @@
 # InTempo Decisions
 
+## 2026-09-23 — A take nobody played is refused, and refusals are free
+
+**Context.** The owner: "there can be talking in the background, or someone
+records like nothing and it picks up like someone's bow hitting the stand."
+Measured on synthetic takes, a metronome in an empty room was told "Steady all
+the way through" at quality 1.00, and talking alone reached a verdict at 0.47.
+The onset detector is amplitude-invariant, so any attack is a note to it.
+Refused takes also counted against the free tier's three analyses a month.
+
+**Decision.**
+- **A new result status, `not_played`**, decided by pitch: after each attack,
+  did a pitch hold, and was it the one the page writes (`pitch_evidence.py`,
+  `analysis.nothing_played`). The app heads it "We didn't hear you play" and the
+  pipeline's sentence under it is "Try again closer to your instrument." — the
+  owner's words, approved 2026-09-23, split the way every other refusal is.
+- **The page is trusted when it agrees and doubted when it does not.** Every
+  "not played" rule requires the page's pitches to be heard at no better than
+  chance, because a real take against a misread page holds none of them.
+- **Only takes with a verdict, or still being analysed, count against the free
+  allowance** (`tier_limits.count_analyses_this_month`). The owner's call.
+  Refused by the pipeline, refused at intake, and failed on our side all stop
+  counting; in-flight ones still count, or four could be started at once.
+
+**Alternatives considered.**
+- *Pitch-class confirmation per note, to keep speech out of a real take's
+  timing.* Built and measured: across eight talking seeds the notes it flagged
+  were not the mistimed ones. Not shipped; see TUNING_LOG.md.
+- *A loudness gate.* The detector's amplitude invariance is deliberate — a far
+  microphone must work — and a metronome is loud.
+- *Only the page's pitch share.* Calls a real take against a misread clef
+  silence.
+- *One pitch representation.* The CQT smears fast high notes; the STFT cannot
+  resolve a bass's bottom octave. The page's register chooses.
+- *Counting failed runs but not pipeline refusals.* A crash on our side gave the
+  musician nothing either.
+
+**Trade-offs accepted.** About half a second of chroma per minute of take.
+A pitched beep against a page of one repeated pitch still gets a verdict.
+Notes too fast for the detector are now refused as "not played" rather than
+with the older sentence — they were refused either way. Talking under a real
+take can still skew its timing. A free account can now run any number of takes
+that end in a refusal, which costs compute and gives nothing away.
+
 ## 2026-09-23 — librosa is compiled when the image is built, not on a musician's take
 
 **Context.** The owner: "the recording processing takes way too long". The

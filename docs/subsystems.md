@@ -1285,6 +1285,26 @@ nothing else covers `backend/`. Named here rather than left to be found.
   because something that always has to be seen was put somewhere that can be
   hidden. Both are gone.
 
+### A take nobody played (2026-09-23)
+
+- **The detector cannot tell an instrument from a click, a syllable or a
+  knock**, by design — it is amplitude-invariant so a far microphone works. So
+  whether a take was *played* is asked separately, of its pitch:
+  `pitch_evidence.py`, decided in `analysis.nothing_played`, status
+  `not_played`. TUNING_LOG.md 2026-09-23 has every number.
+- **Never let the page's pitch share decide alone.** A transcription wrong on
+  every note (a misread clef) makes a real take hold none of its written
+  pitches. Every "not played" rule requires that share to be no better than
+  chance *and* something else — no pitch held, one pitch every time on a page
+  with several, or neither an instrument's steadiness nor the page's rhythm.
+- **Count the page's pitches over the page.** Three knocks match one note, and
+  counted over what was matched every page looked like a page of one pitch.
+- **Synthetic notes must ring.** A spiccato note synthesised as 42 ms with a
+  40 ms fade-in is bow scratch, not a note, and it made the check look broken
+  on fast playing. Real strings ring on after the bow lifts; so must a test's.
+- **Speech inside a real take is not solved.** It can still skew timing; a
+  per-note pitch filter was measured and did not find the mistimed notes.
+
 ## The capture path (2026-08-24) — what an audit of it found
 
 Nine defects between the shutter and a saved score, in a path that had **zero
