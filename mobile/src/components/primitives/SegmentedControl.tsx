@@ -3,9 +3,9 @@ import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'rea
 import {
   BORDER_WIDTH,
   colors,
+  fontFamily,
   MIN_TOUCH_TARGET,
   radii,
-  spacing,
 } from '../../design';
 import { Text } from './Text';
 
@@ -64,8 +64,9 @@ export function SegmentedControl<T extends string>({
             ]}
           >
             <Text
-              variant="button"
+              variant="metadata"
               color={selected ? 'textPrimary' : 'textSecondary'}
+              style={selected ? styles.labelSelected : styles.label}
             >
               {option.label}
             </Text>
@@ -77,33 +78,41 @@ export function SegmentedControl<T extends string>({
 }
 
 const styles = StyleSheet.create({
+  /**
+   * The redesign's track (`redesign/Profile.dc.html`): a sunken well with a
+   * hairline edge, and the chosen option a white tile inside it with no
+   * border of its own — the fill and the weight say which one, not a box.
+   */
   track: {
     flexDirection: 'row',
     backgroundColor: colors.surfacePressed,
+    borderWidth: BORDER_WIDTH,
+    borderColor: colors.border,
     borderRadius: radii.md,
-    padding: spacing.xs,
-    gap: spacing.xs,
+    padding: 3,
+    gap: 2,
   },
   segment: {
     flex: 1,
-    // The full 44, not `MIN_TOUCH_TARGET - spacing.sm`. The subtraction made
-    // the *track* 44 tall, which looks like it satisfies the floor and does
-    // not: the `Pressable` is what receives the tap, and the track's padding
-    // around it is not tappable. The control is 52 tall now, which is the
-    // honest cost of a target you can actually hit with an instrument in your
-    // hands.
+    // The design draws 34; the finger needs 44, and the finger wins.
     minHeight: MIN_TOUCH_TARGET,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: radii.sm,
-    borderWidth: BORDER_WIDTH,
-    borderColor: 'transparent',
+    borderRadius: 9,
   },
   segmentSelected: {
     backgroundColor: colors.surface,
-    borderColor: colors.border,
   },
   segmentPressed: {
-    borderColor: colors.borderStrong,
+    backgroundColor: colors.border,
+  },
+  label: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  labelSelected: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontFamily: fontFamily.sansMedium,
   },
 });

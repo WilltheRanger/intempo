@@ -11,6 +11,7 @@ import {
   PrimaryButton,
   ScreenContainer,
   Text,
+  RuledHeading,
 } from '../../components/primitives';
 import { VerdictSkeleton } from '../../components/skeletons';
 import { takeSource } from '../../data/sources';
@@ -387,7 +388,7 @@ export function VerdictScreen() {
         </View>
       ) : null}
 
-      <RuledHeading label="Across the take" />
+      <RuledHeading label="Across the take" style={styles.ruled} />
       {/*
         No sentence under this one. The chart names its own axes — Target on
         the rule, ahead and behind either side of it — so prose explaining it
@@ -401,7 +402,7 @@ export function VerdictScreen() {
         accessibilityLabel={describeTrendRange(firstMeasure, lastMeasure)}
       />
 
-      <RuledHeading label="Measure by measure" />
+      <RuledHeading label="Measure by measure" style={styles.ruled} />
       <MeasureBars
         measures={take.measures}
         selected={chosen?.measure ?? null}
@@ -453,16 +454,6 @@ function Fact({ label, value }: { label: string; value: string }) {
  * case at 13pt rather than a tracked capital eyebrow, because on this screen
  * the sections are read in order, not scanned for.
  */
-function RuledHeading({ label }: { label: string }) {
-  return (
-    <View style={styles.ruled}>
-      <Text variant="sectionLabel" color="textSecondary" accessibilityRole="header">
-        {label}
-      </Text>
-    </View>
-  );
-}
-
 function noteLabel(count: number): string {
   return count === 1 ? '1 note missed' : `${count} notes missed`;
 }
@@ -507,9 +498,6 @@ const styles = StyleSheet.create({
   ruled: {
     marginTop: 22,
     marginBottom: spacing.lg,
-    paddingTop: 14,
-    borderTopWidth: BORDER_WIDTH,
-    borderTopColor: colors.border,
   },
   card: {
     marginTop: spacing.xl,

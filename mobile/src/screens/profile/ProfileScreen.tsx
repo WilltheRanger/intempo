@@ -13,7 +13,7 @@ import {
   PageHeader,
   ScreenContainer,
   SecondaryButton,
-  SectionHeader,
+  RuledHeading,
   SegmentedControl,
   Text,
   ToggleRow,
@@ -32,18 +32,15 @@ import {
   type ProfilePhotoSelection,
 } from '../../data/profile/savePhoto';
 import { Camera } from '../../components/icons';
-import { SCREEN_GUTTER } from '../../components/primitives/ScreenContainer';
 import {
   BORDER_WIDTH,
   colors,
-  ICON_SIZE,
   ICON_STROKE_WIDTH,
   spacing,
 } from '../../design';
-import { formatRole, formatTier } from '../../lib/format';
+import { formatTier } from '../../lib/format';
 import type { RootNavigation } from '../../navigation/types';
 import { AccountRow } from './AccountRow';
-import { LinkRow } from '../../components/primitives/LinkRow';
 import { loadStateFor } from '../../lib/loadState';
 
 /**
@@ -214,7 +211,11 @@ export function ProfileScreen() {
           }
           style={({ pressed }) => (pressed ? styles.pressed : undefined)}
         >
-          <Avatar source={photoPreview ?? musician.avatarUrl} size={AVATAR_SIZE} />
+          <Avatar
+            source={photoPreview ?? musician.avatarUrl}
+            size={AVATAR_SIZE}
+            initial={musician.displayName ?? musician.email}
+          />
           {/*
             **The affordance, instead of a sentence explaining it.** This block
             used to carry "Choose your profile picture to change it." under the
@@ -225,16 +226,34 @@ export function ProfileScreen() {
           */}
           <View style={styles.avatarBadge}>
             <Camera
-              size={ICON_SIZE.sm}
+              size={14}
               strokeWidth={ICON_STROKE_WIDTH}
-              color={colors.actionText}
+              color={colors.onDark}
             />
           </View>
         </Pressable>
 
-        <Text variant="body" style={styles.identityEmail} numberOfLines={2}>
-          {musician.email}
-        </Text>
+        {/*
+          The name, then the address (`redesign/Profile.dc.html`): the name is
+          who this is, the address is which account. An account that has not
+          given a name shows the address alone, in ink, rather than a blank
+          where a name would be.
+        */}
+        <View style={styles.identityText}>
+          {musician.displayName ? (
+            <Text variant="pieceTitle" numberOfLines={1}>
+              {musician.displayName}
+            </Text>
+          ) : null}
+          <Text
+            variant="metadataSmall"
+            color={musician.displayName ? 'textTertiary' : 'textPrimary'}
+            style={[styles.identityEmail, musician.displayName ? styles.emailUnderName : null]}
+            numberOfLines={2}
+          >
+            {musician.email}
+          </Text>
+        </View>
       </View>
 
       {/* Only when there is something to say. Idle, the badge says it. */}
@@ -262,7 +281,7 @@ export function ProfileScreen() {
         />
       ) : null}
 
-      <SectionHeader label="Account" style={styles.section} />
+      <RuledHeading label="Account" rule="borderStrong" style={styles.section} />
       {/*
         **A band, not a floating card, and the alignment is why.** Keeping one
         surface for Account was the right call — it groups a set of related
@@ -275,109 +294,64 @@ export function ProfileScreen() {
         every row on the screen shares one vertical. Square, because a rounded
         corner touching the screen edge reads as a mistake.
       */}
-      <View style={styles.band}>
-          <AccountRow
-            label="Plan"
-            value={formatTier(musician.tier)}
-            divided={false}
-          />
-          <AccountRow label="Role" value={formatRole(musician.role)} />
-          {/*
-            The quota, before it is ever hit. `/v1/me` has carried this all
-            along and nothing read it, so the only way to learn about the limit
-            was to be refused by it — right after playing something. The
-            backend's own note on `UsageResponse` says as much: "a paywall that
-            only appears at the moment of refusal is a paywall that ambushes
-            someone who has just finished playing."
-
-            Absent for unlimited tiers, and absent when the server didn't
-            report it — that is "unknown", not "unlimited", and a row saying
-            either would be a guess.
-          */}
-          {usage ? <AccountRow label="Analyses" value={usage} /> : null}
-          {/*
-            The studio's name isn't on `/v1/me` — only its id, which means
-            nothing to the person reading it. Confirm the membership and leave
-            the row out entirely for the musicians who have none.
-          */}
-          {musician.studioId ? (
-            <AccountRow label="Studio" value="Connected" />
-          ) : null}
-          {/*
-            No value: the address is already beside the avatar at the top of
-            this screen, and printing it twice on one page is the kind of
-            duplication §3 law 10 asks you to remove.
-          */}
-          <LinkRow
-            label="Email"
-            onPress={() => navigation.navigate('ChangeEmail')}
-          />
-          <LinkRow
-            label="Password"
-            onPress={() => navigation.navigate('ChangePassword')}
-          />
+      {/*
+        Rows on the page, not in a band. The band grouped these on a white
+        surface run to both edges; the redesign groups them the way it groups
+        every section, with a heavy rule above and hairlines between, so
+        Account reads as one of five sections rather than the one in a box.
+        Role is gone with it — it restated the kind of account in a word the
+        musician chose at sign-up and cannot change here.
+      */}
+      <View>
+        <AccountRow label="Plan" value={formatTier(musician.tier)} />
+        {/*
+          The quota, before it is ever hit. `/v1/me` has carried this all
+          along; the only other way to learn about the limit is to be refused
+          by it right after playing something. Absent for unlimited tiers and
+          when the server did not report it — "unknown" is not "unlimited".
+        */}
+        {usage ? <AccountRow label="Analyses" value={usage} /> : null}
+        {/*
+          The studio's name is not on `/v1/me`, only its id, which means
+          nothing to the person reading it. The membership, and nothing for
+          musicians who have none.
+        */}
+        {musician.studioId ? <AccountRow label="Studio" value="Connected" /> : null}
+        <AccountRow label="Email" onPress={() => navigation.navigate('ChangeEmail')} />
+        <AccountRow label="Password" onPress={() => navigation.navigate('ChangePassword')} />
       </View>
 
-      <SectionHeader label="Practice" style={styles.section} />
-      {/*
-        **The way into the warmup, and the only one.** It was a panel on Today
-        until Today became one photograph with one action on it; a screen
-        nothing opens is dead code on a phone, where there is no address bar
-        (`navigationReachability.test.ts`). This section is where the
-        instrument that decides the exercise is already chosen, which makes it
-        the honest home for the exercise itself rather than a spare corner.
-      */}
-      <LinkRow
-        label="Daily warmup"
-        onPress={() => navigation.navigate('Warmup')}
-        divided={false}
-      />
-
+      <RuledHeading label="Practice" rule="borderStrong" style={styles.section} />
       <View style={styles.setting}>
-        <Text variant="button">Instrument</Text>
-        <Text
-          variant="metadataSmall"
-          color="textTertiary"
-          style={styles.settingNote}
-        >
-          Sets the instrument sound for Listen, and the warmup above.
+        <Text variant="button" style={styles.settingTitle}>
+          Instrument
         </Text>
-
+        <Text variant="metadataSmall" color="textTertiary" style={styles.settingNote}>
+          Sets the instrument sound for Listen, and the warmup.
+        </Text>
         <SegmentedControl
           label="Instrument"
           options={INSTRUMENT_OPTIONS}
           value={settings.instrument}
-          onChange={(instrument: Instrument) =>
-            preferences.setInstrument(instrument)
-          }
-          style={styles.control}
+          onChange={(instrument: Instrument) => preferences.setInstrument(instrument)}
         />
       </View>
 
       <View style={styles.setting}>
-        <Text variant="button">Metronome</Text>
-        <Text
-          variant="metadataSmall"
-          color="textTertiary"
-          style={styles.settingNote}
-        >
+        <Text variant="button" style={styles.settingTitle}>
+          Metronome
+        </Text>
+        <Text variant="metadataSmall" color="textTertiary" style={styles.settingNote}>
           How the beat is marked while you record.
         </Text>
-
         <SegmentedControl
           label="Metronome"
           options={METRONOME_OPTIONS}
           value={settings.metronomeMode}
           onChange={(mode: MetronomeMode) => preferences.setMetronomeMode(mode)}
-          style={styles.control}
         />
-
         {settings.metronomeMode === 'audio_with_headphones' ? (
-          <Text
-            variant="metadataSmall"
-            color="textTertiary"
-            style={styles.settingNote}
-          >
+          <Text variant="metadataSmall" color="textTertiary" style={styles.settingCaveat}>
             Use headphones — a metronome over the speaker ends up in the
             recording and throws the analysis off. This is the take only; the
             count-in always ticks, and is discarded before anything is sent.
@@ -385,12 +359,19 @@ export function ProfileScreen() {
         ) : null}
       </View>
 
-      <SectionHeader label="Preferences" style={styles.section} />
+      {/*
+        **The warmup's only door**, and after the two settings rather than
+        before them: the redesign's Practice section opens on the instrument,
+        which is the choice the warmup is built from. A screen nothing opens is
+        dead code on a phone (`navigationReachability.test.ts`).
+      */}
+      <AccountRow label="Daily warmup" onPress={() => navigation.navigate('Warmup')} />
+
+      <RuledHeading label="Preferences" rule="borderStrong" style={styles.section} />
       <ToggleRow
         label="Haptic feedback"
         value={settings.haptics}
         onChange={preferences.setHaptics}
-        divided={false}
       />
       <ToggleRow
         label="Reduce motion"
@@ -401,14 +382,13 @@ export function ProfileScreen() {
         onChange={preferences.setReduceMotion}
       />
 
-      <SectionHeader label="Data & privacy" style={styles.section} />
+      <RuledHeading label="Data & privacy" rule="borderStrong" style={styles.section} />
       <View>
           <ToggleRow
             label="Help improve score reading"
             description="Allow corrected bars and their sheet-music photos to be kept for improving the reader. Turning this off deletes what was kept."
             value={musician.trainingConsent}
             onChange={(value) => void changeTrainingConsent(value)}
-            divided={false}
             disabled={saveConsent.isPending}
           />
           {consentError ? (
@@ -421,40 +401,30 @@ export function ProfileScreen() {
               {consentError}
             </Text>
           ) : null}
-          <LinkRow
+          <AccountRow
             label="Download my data"
             onPress={() => navigation.navigate('ExportData')}
           />
-          <LinkRow
+          <AccountRow
             label="Delete account"
             value="Permanent"
             onPress={() => navigation.navigate('DeleteAccount')}
           />
       </View>
 
-      <SectionHeader label="About" style={styles.section} />
+      <RuledHeading label="About" rule="borderStrong" style={styles.section} />
       <View>
+          <AccountRow label="Version" value={appConfig.expo.version} />
+          <AccountRow label="Help & connection" onPress={() => navigation.navigate('Help')} />
           <AccountRow
-            label="Version"
-            value={appConfig.expo.version}
-            divided={false}
-          />
-          <LinkRow
-            label="Help & connection"
-            onPress={() => navigation.navigate('Help')}
-          />
-          <LinkRow
             label="Privacy"
             onPress={() => navigation.navigate('Legal', { document: 'privacy' })}
           />
-          <LinkRow
+          <AccountRow
             label="Terms"
             onPress={() => navigation.navigate('Legal', { document: 'terms' })}
           />
-          <LinkRow
-            label="Open source"
-            onPress={() => navigation.navigate('Acknowledgements')}
-          />
+          <AccountRow label="Open source" onPress={() => navigation.navigate('Acknowledgements')} />
       </View>
 
       <SecondaryButton
@@ -545,7 +515,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.lg,
-    marginTop: spacing.sm,
+    marginTop: 22,
+  },
+  identityText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  emailUnderName: {
+    marginTop: 3,
   },
   identityEmail: {
     flexShrink: 1,
@@ -575,7 +552,13 @@ const styles = StyleSheet.create({
    * of related facts; a lone control with a note above it does not.
    */
   setting: {
-    marginTop: spacing.xl,
+    paddingVertical: 14,
+    borderTopWidth: BORDER_WIDTH,
+    borderTopColor: colors.border,
+  },
+  settingTitle: {
+    fontSize: 15,
+    lineHeight: 20,
   },
   /**
    * The camera badge on the avatar.
@@ -591,36 +574,25 @@ const styles = StyleSheet.create({
     width: BADGE_SIZE,
     height: BADGE_SIZE,
     borderRadius: BADGE_SIZE / 2,
-    backgroundColor: colors.actionBg,
+    backgroundColor: colors.accent,
     borderWidth: 2,
     borderColor: colors.bg,
     alignItems: 'center',
     justifyContent: 'center',
   },
   section: {
-    marginTop: spacing['2xl'],
-  },
-  /**
-   * The Account group's surface, run to both screen edges.
-   *
-   * `marginHorizontal` cancels the screen gutter and `paddingHorizontal` puts
-   * it back on the content, so a row inside this band starts on exactly the
-   * same vertical as a bare row below it. Top and bottom hairlines close the
-   * group; there are no side borders, because the sides are the screen.
-   */
-  band: {
-    backgroundColor: colors.surface,
-    marginHorizontal: -SCREEN_GUTTER,
-    paddingHorizontal: SCREEN_GUTTER,
-    borderTopWidth: BORDER_WIDTH,
-    borderBottomWidth: BORDER_WIDTH,
-    borderColor: colors.border,
+    marginTop: 26,
   },
   settingNote: {
-    marginTop: spacing.xs,
+    marginTop: 3,
+    marginBottom: 11,
+    fontSize: 12,
+    lineHeight: 17,
   },
-  control: {
-    marginTop: spacing.lg,
+  settingCaveat: {
+    marginTop: spacing.sm,
+    fontSize: 12,
+    lineHeight: 17,
   },
   signOut: {
     marginTop: spacing['2xl'],

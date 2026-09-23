@@ -1,48 +1,58 @@
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
+import { ChevronRight } from '../../components/icons';
 import { Text } from '../../components/primitives/Text';
 import { BORDER_WIDTH, colors, MIN_TOUCH_TARGET, spacing } from '../../design';
 
 export interface AccountRowProps {
   label: string;
-  value: string;
-  /** Hairline above the row. Omit on the first row in a group. */
-  divided?: boolean;
+  /** What the row says on its right: "Free", "2 of 3 this month". */
+  value?: string | null;
+  /** Makes the row a link: a chevron on the right, and the whole row pressable. */
+  onPress?: () => void;
 }
 
 /**
- * One account fact: what it is on the left, what it says on the right.
+ * One ruled row on Profile (`redesign/Profile.dc.html`): the name in 13pt
+ * medium ink, and either a fact in 15pt secondary or a chevron.
  *
- * **The same shape as `LinkRow`, minus the chevron, and that is the point.**
- * Profile stacks facts and doors in one list, and until 2026-09-14 the two used
- * different grammars — this row put its label *above* its value while `LinkRow`
- * put it beside — so a reader could not tell from the shape of a row whether it
- * opened something. Now the only difference between a fact and a door is the
- * chevron, which is the one difference that means anything.
+ * **Every row carries its own top hairline, the first included.** The section
+ * heading above sits on a heavier rule (`RuledHeading`, `borderStrong`), so
+ * the first hairline is what starts the list rather than a doubled line.
  *
- * It used to be stacked, for a stated reason: the values "include email
- * addresses, and the alternative is truncating one". That was never true of
- * this component. Every value it has ever been given is short — Plan, Role,
- * Analyses, Studio, Version — and the email lives in `LinkRow`, which already
- * carries the `minWidth: 0` fix for exactly that truncation problem. The value
- * still shrinks here rather than pushing the row off-screen, so a long one
- * degrades instead of breaking the layout.
+ * The label is the smaller of the two on purpose: the rows are read down the
+ * right-hand side — the plan, the count, the version — and the left-hand side
+ * is the index to them.
  */
-export function AccountRow({ label, value, divided = true }: AccountRowProps) {
-  return (
-    <View style={[styles.row, divided && styles.divided]}>
-      <Text variant="body" style={styles.label}>
+export function AccountRow({ label, value = null, onPress }: AccountRowProps) {
+  const body = (
+    <>
+      <Text variant="sectionLabel" color="textPrimary" style={styles.label}>
         {label}
       </Text>
-      <Text
-        variant="body"
-        color="textSecondary"
-        numberOfLines={1}
-        style={styles.value}
-      >
-        {value}
-      </Text>
-    </View>
+      {value ? (
+        <Text color="textSecondary" numberOfLines={1} style={styles.value}>
+          {value}
+        </Text>
+      ) : null}
+      {onPress ? (
+        <ChevronRight size={17} strokeWidth={1.6} color={colors.textTertiary} />
+      ) : null}
+    </>
+  );
+
+  if (!onPress) {
+    return <View style={styles.row}>{body}</View>;
+  }
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={value ? `${label}, ${value}` : label}
+      style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+    >
+      {body}
+    </Pressable>
   );
 }
 
@@ -50,23 +60,23 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     gap: spacing.md,
     minHeight: MIN_TOUCH_TARGET,
-    paddingVertical: spacing.lg,
-  },
-  divided: {
+    paddingVertical: 14,
     borderTopWidth: BORDER_WIDTH,
     borderTopColor: colors.border,
   },
+  pressed: {
+    opacity: 0.55,
+  },
   label: {
-    flexShrink: 0,
+    flex: 1,
   },
   value: {
-    // See `LinkRow`'s note: a flex item's CSS min-width is its content, so an
-    // unbreakable value runs off the web build's screen without this.
     flexShrink: 1,
     minWidth: 0,
     textAlign: 'right',
+    fontSize: 15,
+    lineHeight: 20,
   },
 });

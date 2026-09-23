@@ -7,12 +7,19 @@ import {
   type ViewStyle,
 } from 'react-native';
 
-import { colors, motion, radii } from '../../design';
+import { BORDER_WIDTH, colors, fontFamily, motion, radii } from '../../design';
+import { Text } from './Text';
 
 export interface AvatarProps {
   /** Profile photo. Null falls back to the placeholder mark — the usual case. */
   source: string | null;
   size?: number;
+  /**
+   * The letter to draw when there is no photograph (`redesign/Profile.dc.html`):
+   * the account's own initial on a plain disc, which says whose account it is
+   * where the gold-and-charcoal mark only says that there is one.
+   */
+  initial?: string | null;
   /** Screen readers announce this; omit inside an already-labelled control. */
   accessibilityLabel?: string;
   style?: StyleProp<ViewStyle>;
@@ -29,6 +36,7 @@ export interface AvatarProps {
 export function Avatar({
   source,
   size = 42,
+  initial = null,
   accessibilityLabel,
   style,
 }: AvatarProps) {
@@ -47,6 +55,23 @@ export function Avatar({
         accessibilityLabel={accessibilityLabel}
         accessible={Boolean(accessibilityLabel)}
       />
+    );
+  }
+
+  if (initial) {
+    return (
+      <View
+        style={[styles.initialDisc, shape, style]}
+        accessible={Boolean(accessibilityLabel)}
+        accessibilityLabel={accessibilityLabel}
+      >
+        <Text
+          color="textSecondary"
+          style={[styles.initial, { fontSize: size * 0.37, lineHeight: size * 0.45 }]}
+        >
+          {initial.slice(0, 1).toUpperCase()}
+        </Text>
+      </View>
     );
   }
 
@@ -75,6 +100,16 @@ const styles = StyleSheet.create({
    * Proportions are fractions of the box, so one component serves the 42pt
    * header avatar and the 76pt one on Profile without a second set of values.
    */
+  initialDisc: {
+    backgroundColor: colors.surface,
+    borderWidth: BORDER_WIDTH,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  initial: {
+    fontFamily: fontFamily.serifRegular,
+  },
   mark: {
     backgroundColor: colors.accent,
     overflow: 'hidden',

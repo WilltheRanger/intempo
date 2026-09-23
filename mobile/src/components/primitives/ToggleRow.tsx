@@ -87,7 +87,12 @@ export function ToggleRow({
       ]}
     >
       <View style={styles.text}>
-        <Text variant="button">{label}</Text>
+        {/*
+          15pt regular, with a 12pt note (`redesign/Profile.dc.html`): a
+          setting's name is read, not pressed like a button's, and the switch
+          beside it is what says it is a control.
+        */}
+        <Text variant="body" style={styles.label}>{label}</Text>
         {description ? (
           <Text
             variant="metadataSmall"
@@ -142,7 +147,13 @@ const styles = StyleSheet.create({
   text: {
     flexShrink: 1,
   },
+  label: {
+    fontSize: 15,
+    lineHeight: 20,
+  },
   description: {
-    marginTop: spacing.xs,
+    marginTop: 2,
+    fontSize: 12,
+    lineHeight: 17,
   },
 });
