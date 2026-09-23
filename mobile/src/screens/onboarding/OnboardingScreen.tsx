@@ -1,17 +1,18 @@
 import { useState } from 'react';
 
+import { arrival } from '../../data/arrival';
 import { useMe } from '../../data/hooks/useMe';
 import { useUpdateProfile, useUploadAvatar } from '../../data/hooks/useProfile';
 import { profileUpdateFor, reusableAvatarKey } from '../../lib/onboarding';
-import { OnboardingForm, type OnboardingFormAnswers } from './OnboardingForm';
+import { OnboardingFlow, type OnboardingAnswers } from './OnboardingFlow';
 
 /**
  * Onboarding for an account that already exists.
  *
- * The three questions are `OnboardingForm`, shared with the screen that asks
- * them *before* the account does — this one is only what happens to the
- * answers: the photograph goes to the avatars bucket and the key is saved with
- * the rest of the profile.
+ * The questions are `OnboardingFlow`, shared with the screen that asks them
+ * *before* the account does — this one is only what happens to the answers:
+ * the photograph, if there is one, goes to the avatars bucket and the key is
+ * saved with the rest of the profile.
  *
  * ## It is a fallback now, not the main path
  *
@@ -21,11 +22,11 @@ import { OnboardingForm, type OnboardingFormAnswers } from './OnboardingForm';
  *
  * - the confirmation link was opened on **another device or browser**, where
  *   the draft never existed;
- * - the app was relaunched between answering and confirming, which loses the
- *   photograph on purpose (see `OnboardingDraft.photo`) — so the name and the
- *   instrument are already on the account and this screen opens with them
- *   filled, asking only for the picture;
  * - somebody reached `PATCH /v1/me` without this app at all.
+ *
+ * (A relaunch between answering and confirming used to be a third: it loses
+ * the photograph on purpose, and the photograph was required. It is optional
+ * since 2026-09-23, so the name and instrument alone now finish onboarding.)
  *
  * All three want the same thing: ask for whatever the account is still
  * missing. `me` supplies the answers it already has, which is why nothing here
@@ -42,7 +43,7 @@ import { OnboardingForm, type OnboardingFormAnswers } from './OnboardingForm';
  *
  * `RootNavigator` holds this in front of the app while `shouldOnboard(me)`,
  * the way the sign-in and password-reset screens are held. Saving invalidates
- * `me`; `onboarded` becomes true; the gate falls away. There is no `navigate`
+ * `me`; `onboarded` becomes true; the gate falls away to the welcome. There is no `navigate`
  * and no `reset` here, so there is no route this screen can be wrong about —
  * which matters, because navigation is the part of this app nothing tests.
  *
@@ -56,9 +57,9 @@ export function OnboardingScreen() {
   /**
    * **What the account already knows, because this screen can be answered
    * twice.** `PATCH /v1/me` stores what it is given and stamps `onboarded_at`
-   * only once the resulting row carries all three answers — so someone who
-   * typed their name, chose a photograph, was interrupted, and came back
-   * arrives here with those two already on their account.
+   * only once the resulting row carries both required answers — so someone
+   * whose name landed and whose instrument did not arrives here with the name
+   * already filled.
    */
   const { data: me } = useMe();
   /** The last successful upload, against the file it came from. */
@@ -67,7 +68,7 @@ export function OnboardingScreen() {
   );
   const [error, setError] = useState<string | null>(null);
 
-  async function finish(answers: OnboardingFormAnswers) {
+  async function finish(answers: OnboardingAnswers) {
     setError(null);
 
     let key = reusableAvatarKey(answers.photo, uploaded);
@@ -78,21 +79,19 @@ export function OnboardingScreen() {
       } catch (cause) {
         setError(
           cause instanceof Error
-            ? `${cause.message} Try Continue again.`
-            : 'That profile picture could not be sent. Try Continue again.',
+            ? `${cause.message} Try Finish again.`
+            : 'That profile picture could not be sent. Try Finish again.',
         );
         return;
       }
     }
 
-    if (!key && !me?.avatarUrl) {
-      // The button is disabled in this state; this guard also protects direct
-      // calls and future changes to the form rules. A photograph already on
-      // the account counts — the server reads the resulting row, not the body.
-      setError('Choose a profile picture before continuing.');
-      return;
-    }
-
+    // Stood up *before* the save, not after it: the save resolves only once
+    // `me` has been refetched, and by then the gate has already fallen — so
+    // setting it afterwards would let the tabs render before the welcome.
+    // Set early it costs nothing on a failure, because the gate is checked
+    // first and stays up until a save lands.
+    arrival.onboarded();
     try {
       // The mutation resolves only once `me` has been refetched, so the button
       // stays in its loading state right up to the moment the gate lifts —
@@ -114,17 +113,17 @@ export function OnboardingScreen() {
   }
 
   return (
-    <OnboardingForm
+    <OnboardingFlow
       initial={{
         name: me?.displayName ?? '',
         instrument: me?.instrument ?? null,
         photo: null,
       }}
       storedPhotoUrl={me?.avatarUrl ?? null}
+      finishLabel="Finish"
       busy={save.isPending || upload.isPending}
-      note={upload.isPending ? 'Sending your profile picture…' : null}
       error={error}
-      onSubmit={(answers) => void finish(answers)}
+      onFinish={(answers) => void finish(answers)}
     />
   );
 }

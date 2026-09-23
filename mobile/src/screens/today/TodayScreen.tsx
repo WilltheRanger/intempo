@@ -23,6 +23,7 @@ import { readPendingAnalysisStatus } from '../../data/practice/pendingAnalysisSt
 import { getGreeting } from '../../lib/greeting';
 import type { TabScreenNavigation } from '../../navigation/types';
 import { PracticeHero, useHeroHeight } from './PracticeHero';
+import { RiseIn } from './RiseIn';
 import { heroContentFor, pendingLineFor } from './heroContent';
 import { useAddPieceOption } from '../../navigation/useAddPieceOption';
 import { loadStateFor } from '../../lib/loadState';
@@ -202,41 +203,43 @@ export function TodayScreen() {
       contentStyle={styles.page}
     >
       {focused ? <StatusBar style="light" /> : null}
-      <PracticeHero
-        /*
-          Null while the piece is still coming: the same photograph, the same
-          wash, nothing written on it yet — so the screen does not jump when
-          the answer arrives. `heroContentFor` covers the account with no
-          pieces at all, which is a real state of this screen rather than a
-          fallback.
-        */
-        content={
-          load === 'loading'
-            ? null
-            : heroContentFor({
-                piece,
-                workingBpm,
-                lastTakeHeadline: headline,
-              })
-        }
-        greeting={getGreeting()}
-        name={me.data?.displayName ?? null}
-        onAction={() => (piece ? openPractice(piece) : setAddSheetVisible(true))}
-        onAdd={() => setAddSheetVisible(true)}
-        onRecent={() => navigation.navigate('Insights')}
-        pending={
-          pendingAnalysis && pendingCheck
-            ? pendingLineFor(pendingCheck, pendingPiece?.title ?? null)
-            : null
-        }
-        onPending={
-          pendingCheck === 'ready'
-            ? openPendingVerdict
-            : pendingCheck === 'checking'
-              ? undefined
-              : () => void checkPendingAnalysis()
-        }
-      />
+      <RiseIn>
+        <PracticeHero
+          /*
+            Null while the piece is still coming: the same photograph, the same
+            wash, nothing written on it yet — so the screen does not jump when
+            the answer arrives. `heroContentFor` covers the account with no
+            pieces at all, which is a real state of this screen rather than a
+            fallback.
+          */
+          content={
+            load === 'loading'
+              ? null
+              : heroContentFor({
+                  piece,
+                  workingBpm,
+                  lastTakeHeadline: headline,
+                })
+          }
+          greeting={getGreeting()}
+          name={me.data?.displayName ?? null}
+          onAction={() => (piece ? openPractice(piece) : setAddSheetVisible(true))}
+          onAdd={() => setAddSheetVisible(true)}
+          onRecent={() => navigation.navigate('Insights')}
+          pending={
+            pendingAnalysis && pendingCheck
+              ? pendingLineFor(pendingCheck, pendingPiece?.title ?? null)
+              : null
+          }
+          onPending={
+            pendingCheck === 'ready'
+              ? openPendingVerdict
+              : pendingCheck === 'checking'
+                ? undefined
+                : () => void checkPendingAnalysis()
+          }
+        />
+      </RiseIn>
 
       <AddPieceSheet
         visible={addSheetVisible}

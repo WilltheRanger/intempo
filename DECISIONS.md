@@ -1,5 +1,56 @@
 # InTempo Decisions
 
+## 2026-09-23 — Onboarding asks one question a screen, and the photograph is optional
+
+**Context.** The redesign (`redesign/Onboard*.dc.html`) replaces the single
+"Who's playing?" form with a Welcome, six one-question steps — name,
+instrument, learning or teaching, the microphone, how you heard of us, a
+photograph — and a Done screen. Its photograph step says "Optional" and offers
+"Do this later". The server had required a photograph since onboarding began:
+`ONBOARDING_REQUIRED_FIELDS` was name, instrument and `avatar_key`, and the app
+held Continue shut until one was chosen. It also asks two things the API has
+nowhere to put: whether the musician teaches, and where they heard of us.
+
+**Decision.** The owner's call, asked and answered on 2026-09-23:
+
+- **The photograph is optional.** `avatar_key` leaves
+  `ONBOARDING_REQUIRED_FIELDS` (`backend/app/routers/me.py`) and
+  `missingFromOnboarding` (`mobile/src/lib/onboarding.ts`). Name and
+  instrument stay required. A chosen photograph is still uploaded and saved
+  exactly as before.
+- **The role and the source are kept on the device** (`preferences.practiceRole`,
+  `preferences.foundVia`). Nothing reads either yet. Profile gains a Learning /
+  Teaching control, because the role step tells the musician they can change it
+  there.
+- **The order stays as 2026-09-08 set it**: answers before credentials.
+  "Create an account" opens the Welcome, the steps run, and then the account
+  form. The Welcome's "I already have an account" is the way back.
+- **Done is shown once, from memory** (`data/arrival.ts`), the first time the
+  account is through, and Today fades in once after it. The prototype carried
+  this in `sessionStorage`; the handoff lists that as a stand-in.
+
+**Alternatives considered.**
+- *Keep the photograph required and drop "Do this later".* It is the only
+  answer that cannot be given by thinking, and it changes nothing the app
+  does — no screen shows another person. Requiring it made the gate the
+  commonest place for a new account to stall, and made a relaunch between
+  sign-up and confirmation (which loses the unsent photograph by design) a
+  second trip through the questions.
+- *Send the role to the account.* `PATCH /v1/me` cannot set a role and every
+  account is created a student; the teacher tier is Batch 12's. A column added
+  now would be a schema decision made for a feature nobody has designed.
+- *Account first, as the prototype's links run* (Sign in → Create account →
+  Welcome). That reverses 2026-09-08 without anybody having asked for it, and
+  the prototype's own Welcome offers "I already have an account", which only
+  makes sense before one exists.
+
+**Trade-offs accepted.** An account can now finish onboarding with no
+photograph, so any future screen that shows one must handle its absence (the
+Profile avatar already does, with an initial). The role and the source live on
+one device: a second device asks nothing and knows neither. The microphone
+step asks the operating system for permission and moves on whatever the answer;
+a refusal is explained by the first take, not here.
+
 ## 2026-09-23 — Each take reports what the microphone applied, and the report can never refuse it
 
 **Context.** The web recorder asks for raw audio — auto-gain, noise

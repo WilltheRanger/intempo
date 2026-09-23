@@ -48,6 +48,7 @@ export { default as Play } from 'lucide-react-native/icons/play';
 export { default as Plus } from 'lucide-react-native/icons/plus';
 export { default as RotateCcw } from 'lucide-react-native/icons/rotate-ccw';
 export { default as Search } from 'lucide-react-native/icons/search';
+export { default as Settings } from 'lucide-react-native/icons/settings';
 export { default as Square } from 'lucide-react-native/icons/square';
 export { default as Trash2 } from 'lucide-react-native/icons/trash-2';
 export { default as User } from 'lucide-react-native/icons/user';

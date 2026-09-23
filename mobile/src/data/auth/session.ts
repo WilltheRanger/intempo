@@ -10,6 +10,7 @@ import {
   authRedirectPayload,
   authRedirectUrl,
 } from '../../lib/authRedirect';
+import { arrival } from '../arrival';
 import { onboardingDraft } from '../onboardingDraft';
 
 /**
@@ -328,6 +329,7 @@ export async function getAuthAvatarUrl(): Promise<string | null> {
  */
 export async function signOut(): Promise<void> {
   onboardingDraft.clear();
+  arrival.settled();
   const supabase = getSupabaseClient();
   if (!supabase) {
     return;

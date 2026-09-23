@@ -24,6 +24,7 @@ import { useUpdateProfile, useUploadAvatar } from '../../data/hooks/useProfile';
 import type { Musician } from '../../data/types';
 import { preferences, usePreferences } from '../../data/preferences';
 import type { Instrument, MetronomeMode } from '../../data/types';
+import type { PracticeRole } from '../../lib/onboardingSteps';
 import { describeLoadError } from '../../data/describeLoadError';
 import { metronomeChoices } from '../../lib/record/metronomeChoice';
 import {
@@ -360,6 +361,26 @@ export function ProfileScreen() {
       </View>
 
       {/*
+        Onboarding asks "Learning, or teaching?" and tells the musician they
+        can change it here, so here is where it changes. Device-kept, like the
+        answer itself (`preferences.practiceRole`) — the API has no role to set.
+      */}
+      <View style={styles.setting}>
+        <Text variant="button" style={styles.settingTitle}>
+          Learning or teaching
+        </Text>
+        <Text variant="metadataSmall" color="textTertiary" style={styles.settingNote}>
+          Kept on this device, for when teacher studios arrive.
+        </Text>
+        <SegmentedControl
+          label="Learning or teaching"
+          options={ROLE_OPTIONS}
+          value={settings.practiceRole ?? 'learning'}
+          onChange={(role: PracticeRole) => preferences.setPracticeRole(role)}
+        />
+      </View>
+
+      {/*
         **The warmup's only door**, and after the two settings rather than
         before them: the redesign's Practice section opens on the instrument,
         which is the choice the warmup is built from. A screen nothing opens is
@@ -484,6 +505,11 @@ const INSTRUMENT_OPTIONS = [
   { value: 'viola' as const, label: 'Viola' },
   { value: 'cello' as const, label: 'Cello' },
   { value: 'double_bass' as const, label: 'Bass' },
+];
+
+const ROLE_OPTIONS = [
+  { value: 'learning' as const, label: 'Learning' },
+  { value: 'teaching' as const, label: 'Teaching' },
 ];
 
 /**

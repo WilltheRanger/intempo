@@ -124,6 +124,11 @@ export const lightColors = {
   onDarkSecondary: 'rgba(251, 250, 247, 0.78)',
   /** A panel lifted off a dark ground by the faintest wash of ivory. */
   onDarkWash: 'rgba(251, 250, 247, 0.07)',
+  /**
+   * The gold on a dark ground (`redesign/OnboardWelcome.dc.html`, the tempo the
+   * scan found): `accent` lifted until it reads against ink as it does on ivory.
+   */
+  accentOnDark: '#C4A172',
 
   /** Pressed states. */
   actionBgPressed: '#332E28',
@@ -144,6 +149,15 @@ export const lightColors = {
    * and grey, so the gold bars beside it are the ones that are read.
    */
   steady: '#968D80',
+  /**
+   * A photographed page before it has been read (`redesign/OnboardWelcome.dc.html`):
+   * the paper, its notation gone grey, and its staff lines fainter still. The
+   * illustration draws the same page again in ink as the scan reads it, so the
+   * difference between these and `textPrimary` is the whole picture.
+   */
+  paper: '#FBF9F4',
+  photoInk: '#8C857B',
+  photoRule: '#A8A196',
 
   // -------------------------------------------------------------------------
   // Glass — the floating control layer, and nothing else.
@@ -379,6 +393,11 @@ export const darkColors: Palette = {
   onDarkFill: 'rgba(251, 250, 247, 0.16)',
   onDarkSecondary: 'rgba(251, 250, 247, 0.78)',
   onDarkWash: 'rgba(251, 250, 247, 0.07)',
+  /**
+   * The gold on a dark ground (`redesign/OnboardWelcome.dc.html`, the tempo the
+   * scan found): `accent` lifted until it reads against ink as it does on ivory.
+   */
+  accentOnDark: '#C4A172',
 
   actionBgPressed: '#E8E3D9',
   surfacePressed: '#2A241E',
@@ -387,6 +406,9 @@ export const darkColors: Palette = {
   panel: '#211D19',
   controlFill: '#2F2923',
   steady: '#6E665C',
+  paper: '#FBF9F4',
+  photoInk: '#8C857B',
+  photoRule: '#A8A196',
 
   /**
    * Dark glass. Same 0.80 opacity as the light material and for the same

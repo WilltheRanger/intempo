@@ -312,7 +312,7 @@ def test_a_name_of_spaces_is_no_name(
 
 
 def _finished(user_id: Any) -> dict[str, Any]:
-    """A body that answers all three, which is the only kind that finishes."""
+    """A body that answers everything onboarding asks, photo included."""
     return {
         "onboarded": True,
         "display_name": "Aryam",
@@ -334,16 +334,16 @@ def test_finishing_onboarding_stamps_the_time(
     assert sb.table.return_value.update.call_args.args[0].get("onboarded_at")
 
 
-def test_onboarding_is_refused_until_all_three_are_answered(
+def test_onboarding_is_refused_until_name_and_instrument_are_answered(
     monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
 ) -> None:
-    """The owner's call, 2026-08-25: *"dont make name profile and instrument
-    optional"*.
+    """A name and an instrument; the photo is optional since 2026-09-23.
 
-    Enforced here and not only in the app, because a requirement only the
-    client checks is a convention — this endpoint is reachable without the
-    screen, and the screen is the thing being replaced when someone writes a
-    second client.
+    The owner's call on 2026-08-25 made all three required; the redesign's
+    photo step ("Do this later") reversed the photo half, confirmed by the
+    owner. Enforced here and not only in the app, because a requirement only
+    the client checks is a convention — this endpoint is reachable without the
+    screen.
     """
     user_id = uuid4()
     sb = _profile_mock(row=_row(id=str(user_id)))
@@ -353,22 +353,37 @@ def test_onboarding_is_refused_until_all_three_are_answered(
 
     assert res.status_code == 400
     detail = res.json()["detail"]
-    assert "display_name" in detail and "instrument" in detail and "avatar_key" in detail
+    assert "display_name" in detail and "instrument" in detail
+    assert "avatar_key" not in detail
     # And nothing was written. A refused finish must not half-onboard anyone.
     sb.table.return_value.update.assert_not_called()
 
 
-@pytest.mark.parametrize(
-    "withheld", ["display_name", "instrument", "avatar_key"]
-)
+def test_finishing_without_a_photo_is_allowed(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """"Do this later" on the photo step finishes onboarding all the same."""
+    user_id = uuid4()
+    sb = _profile_mock(row=_row(id=str(user_id)))
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
+
+    body = _finished(user_id)
+    body.pop("avatar_key")
+    res = _patch(client, make_token(sub=user_id), body)
+
+    assert res.status_code == 200
+    assert sb.table.return_value.update.call_args.args[0].get("onboarded_at")
+
+
+@pytest.mark.parametrize("withheld", ["display_name", "instrument"])
 def test_any_one_missing_answer_refuses_the_finish(
     monkeypatch: pytest.MonkeyPatch,
     client: TestClient,
     make_token: Callable[..., str],
     withheld: str,
 ) -> None:
-    """Each field on its own, because "all three" is three rules and a check
-    that only looked at one would pass a two-thirds test."""
+    """Each field on its own, because "both" is two rules and a check that
+    only looked at one would pass a half test."""
     user_id = uuid4()
     sb = _profile_mock(row=_row(id=str(user_id)))
     monkeypatch.setattr(db_module, "get_service_client", lambda: sb)

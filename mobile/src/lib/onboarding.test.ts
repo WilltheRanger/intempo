@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  MISSING_LABELS,
-  describeMissing,
   draftIsWorthSending,
   draftUpdateFor,
   missingFromOnboarding,
@@ -37,23 +35,16 @@ function musician(overrides: Partial<Musician>): Musician {
 }
 
 describe('what onboarding still needs', () => {
-  it('needs all three when nothing has been given', () => {
-    expect(missingFromOnboarding(NOTHING)).toEqual([
-      'name',
-      'photo',
-      'instrument',
-    ]);
+  it('needs a name and an instrument when nothing has been given', () => {
+    expect(missingFromOnboarding(NOTHING)).toEqual(['name', 'instrument']);
   });
 
-  it('is satisfied only when all three are there', () => {
+  it('is satisfied by a name and an instrument', () => {
     expect(missingFromOnboarding(EVERYTHING)).toEqual([]);
   });
 
   it('names exactly what is missing, one field at a time', () => {
     expect(missingFromOnboarding({ ...EVERYTHING, name: '' })).toEqual(['name']);
-    expect(missingFromOnboarding({ ...EVERYTHING, avatarKey: null })).toEqual([
-      'photo',
-    ]);
     expect(missingFromOnboarding({ ...EVERYTHING, instrument: null })).toEqual([
       'instrument',
     ]);
@@ -67,32 +58,12 @@ describe('what onboarding still needs', () => {
     ]);
   });
 
-  it('accepts a local photo that is ready to upload on Continue', () => {
-    // Choosing is intentionally local. Continue performs the upload and does
-    // not save the profile until it has the resulting object key.
+  it('does not need a photograph', () => {
+    // Optional since 2026-09-23: the redesign's photo step has "Do this
+    // later", and the server no longer refuses a finish without one.
     expect(
-      missingFromOnboarding({
-        ...EVERYTHING,
-        avatarKey: null,
-        photoSelected: true,
-      }),
+      missingFromOnboarding({ ...EVERYTHING, avatarKey: null, photoSelected: false }),
     ).toEqual([]);
-  });
-
-  it('still requires a photo when neither a selection nor an object key exists', () => {
-    expect(
-      missingFromOnboarding({
-        ...EVERYTHING,
-        avatarKey: null,
-        photoSelected: false,
-      }),
-    ).toEqual(['photo']);
-  });
-
-  it('has a human label for every requirement it can report', () => {
-    for (const requirement of missingFromOnboarding(NOTHING)) {
-      expect(MISSING_LABELS[requirement]).toBeTruthy();
-    }
   });
 });
 
@@ -155,70 +126,6 @@ describe('whether the screen is shown at all', () => {
   });
 });
 
-describe('saying what is still needed', () => {
-  it('says nothing at all when nothing is', () => {
-    // Not an empty string: "Still needed:" with nothing after it is worse than
-    // no line, and null is the only shape a screen cannot render by accident.
-    expect(describeMissing([])).toBeNull();
-  });
-
-  it('names one', () => {
-    expect(describeMissing(['photo'])).toBe('Still needed: a profile picture.');
-  });
-
-  it('joins two with "and", not a comma', () => {
-    expect(describeMissing(['name', 'photo'])).toBe(
-      'Still needed: your name and a profile picture.',
-    );
-  });
-
-  it('joins three the way English does', () => {
-    expect(describeMissing(['name', 'photo', 'instrument'])).toBe(
-      'Still needed: your name, a profile picture and your instrument.',
-    );
-  });
-});
-
-describe('coming back to a half-answered onboarding', () => {
-  /**
-   * `PATCH /v1/me` stores what it is given and stamps `onboarded_at` only once
-   * the resulting row carries all three answers. So a musician who typed their
-   * name, chose a photograph, and was interrupted arrives here again with both
-   * on their account — and the screen used to start from nothing and ask for
-   * all three, including the one answer that cannot be given by thinking.
-   */
-  it('does not ask again for a photograph the account already has', () => {
-    expect(
-      missingFromOnboarding({ name: 'Alex', instrument: 'violin', avatarKey: null, storedPhoto: true }),
-    ).toEqual([]);
-  });
-
-  it('still asks when there is no photograph anywhere', () => {
-    expect(
-      missingFromOnboarding({ name: 'Alex', instrument: 'violin', avatarKey: null }),
-    ).toEqual(['photo']);
-    expect(
-      missingFromOnboarding({ name: 'Alex', instrument: 'violin', avatarKey: null, storedPhoto: false }),
-    ).toEqual(['photo']);
-  });
-
-  it('treats a stored photograph exactly as a chosen or uploaded one', () => {
-    // Three ways to satisfy the same requirement, and the screen must not care
-    // which: `avatarKey` after an upload, `photoSelected` before one, and this.
-    const answers = { name: 'Alex', instrument: 'violin', avatarKey: null } as const;
-    expect(missingFromOnboarding({ ...answers, avatarKey: 'k' })).toEqual([]);
-    expect(missingFromOnboarding({ ...answers, photoSelected: true })).toEqual([]);
-    expect(missingFromOnboarding({ ...answers, storedPhoto: true })).toEqual([]);
-  });
-
-  it('does not let a stored photograph excuse the other two', () => {
-    expect(missingFromOnboarding({ name: '', instrument: null, avatarKey: null, storedPhoto: true })).toEqual([
-      'name',
-      'instrument',
-    ]);
-  });
-});
-
 // --- answers given before the account existed -----------------------------
 
 /** A complete set, so each case below changes exactly one thing. */
@@ -229,7 +136,7 @@ const COMPLETE = {
 };
 
 describe('draftUpdateFor', () => {
-  it('claims onboarded when all three answers are there', () => {
+  it('claims onboarded when the required answers are there', () => {
     expect(draftUpdateFor(COMPLETE)).toEqual({
       onboarded: true,
       display_name: 'Arya',
@@ -238,8 +145,15 @@ describe('draftUpdateFor', () => {
     });
   });
 
+  it('claims onboarded without a photograph, which is optional', () => {
+    expect(draftUpdateFor({ ...COMPLETE, avatarKey: null })).toEqual({
+      onboarded: true,
+      display_name: 'Arya',
+      instrument: 'cello',
+    });
+  });
+
   it.each([
-    ['the photograph', { ...COMPLETE, avatarKey: null }],
     ['the name', { ...COMPLETE, name: '   ' }],
     ['the instrument', { ...COMPLETE, instrument: null }],
   ])('does not claim onboarded without %s', (_what, answers) => {
@@ -253,9 +167,8 @@ describe('draftUpdateFor', () => {
   });
 
   it('sends the answers it does have', () => {
-    expect(draftUpdateFor({ ...COMPLETE, avatarKey: null })).toEqual({
+    expect(draftUpdateFor({ ...COMPLETE, instrument: null, avatarKey: null })).toEqual({
       display_name: 'Arya',
-      instrument: 'cello',
     });
   });
 

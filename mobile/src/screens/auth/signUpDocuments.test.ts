@@ -6,8 +6,8 @@ import { SIGN_UP_DOCUMENTS } from './signUpDocuments';
 describe('documents available before account creation', () => {
   it('offers both the privacy policy and the terms', () => {
     expect(SIGN_UP_DOCUMENTS.map((document) => document.id)).toEqual([
-      'privacy',
       'terms',
+      'privacy',
     ]);
   });
 

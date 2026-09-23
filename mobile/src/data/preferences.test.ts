@@ -82,6 +82,8 @@ describe('defaults', () => {
       reduceMotion: false,
       practiceSetupSeen: false,
       lastTakeHadSound: null,
+      practiceRole: null,
+      foundVia: null,
     });
   });
 });
@@ -126,6 +128,8 @@ describe('reading storage it does not trust', () => {
       reduceMotion: false,
       practiceSetupSeen: false,
       lastTakeHadSound: null,
+      practiceRole: null,
+      foundVia: null,
     });
   });
 
@@ -191,6 +195,8 @@ describe('setting one preference', () => {
       reduceMotion: false,
       practiceSetupSeen: false,
       lastTakeHadSound: null,
+      practiceRole: null,
+      foundVia: null,
     });
   });
 });
