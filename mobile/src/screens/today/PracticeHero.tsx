@@ -214,9 +214,11 @@ export function PracticeHero({
       <View
         style={[
           styles.content,
-          // The copy ends 48pt above the bar's top edge, as the prototype's
-          // does: close enough to the thumb, clear of the furniture.
-          { paddingTop: insets.top + spacing.xl, paddingBottom: tabBar + spacing['3xl'] + spacing.lg },
+          // The copy ends 20pt above the bar's top edge: close to the thumb,
+          // clear of the furniture. 48pt, the prototype's, until 2026-09-24,
+          // when the owner found the title and the button "a bit too high" —
+          // and lowering the copy lowers the fall with it (`heroFall.ts`).
+          { paddingTop: insets.top + spacing.xl, paddingBottom: tabBar + spacing.xl },
         ]}
       >
         <View style={styles.topRow}>
