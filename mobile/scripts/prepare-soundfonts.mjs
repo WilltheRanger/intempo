@@ -91,7 +91,7 @@ const vsco = [];
 for (const [instrument, spec] of Object.entries(VSCO_INSTRUMENTS)) {
   const prepared = {};
   const samples = [];
-  for (const [file] of spec.regions) {
+  for (const [file, , , rootKey] of spec.regions) {
     const wav = vscoDir
       ? new Uint8Array(await readFile(`${vscoDir}/${file}`)).buffer
       : await (
@@ -100,7 +100,12 @@ for (const [instrument, spec] of Object.entries(VSCO_INSTRUMENTS)) {
               (spec.folder + file).split('/').map(encodeURIComponent).join('/'),
           )
         ).arrayBuffer();
-    prepared[file] = prepareSample(wav, spec.rate, spec.level);
+    prepared[file] = prepareSample(wav, {
+      rate: spec.rate,
+      levelDb: spec.level,
+      loopStartS: spec.loopStartS,
+      rootKey,
+    });
     samples.push({ file: spec.folder + file, sha256: sha256(wav) });
   }
   const built = buildBank(instrument, prepared);
