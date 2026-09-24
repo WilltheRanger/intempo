@@ -1,7 +1,9 @@
 import {
+  MIDIControllers,
   SpessaSynthProcessor,
   SpessaLog,
   type BasicSoundBank,
+  type MIDIController,
 } from 'spessasynth_core';
 import type { Instrument } from '../../data/types';
 import type { Schedule } from './schedule';
@@ -50,14 +52,59 @@ interface NoteEvent {
   frame: number;
   key: number;
   on: boolean;
+  /** Which of the two channels the note's moment was given. */
+  channel: number;
   /** Note-on only. */
   velocity?: number;
 }
 
-interface ExpressionEvent {
+interface ControlEvent {
   frame: number;
+  channel: number;
+  controller: MIDIController;
   value: number;
 }
+
+const VOLUME_CC = MIDIControllers.mainVolume;
+const EXPRESSION_CC = MIDIControllers.expression;
+const REVERB_CC = MIDIControllers.reverbDepth;
+const CHORUS_CC = MIDIControllers.chorusDepth;
+/** Channel volume while a channel is the one sounding. */
+const VOLUME = 100;
+/** Consecutive moments alternate between this many channels. */
+const CHANNELS = 2;
+/**
+ * How long the note before takes to stop once the next one starts.
+ *
+ * **Because a string plays one note at a time.** A sampler lets each note ring
+ * out its release — 0.3 s on the double bass, 0.5–0.6 s on GeneralUser's viola
+ * and cello — under the note after it, which a string does not do: change the
+ * note and the old pitch is gone. Two low notes sounding together beat against
+ * each other, slowly and loudly, and on the bass that was what the owner heard
+ * as muddy and wobbly (2026-09-24). So each moment gets its own channel,
+ * alternating, and when the next moment starts the previous channel's volume
+ * falls to nothing over this long: short enough that the notes do not beat,
+ * long enough to be a crossfade rather than a click.
+ */
+const HANDOFF_S = 0.06;
+const HANDOFF_STEPS = 12;
+/**
+ * The reverb each instrument is sent to (MIDI CC 91).
+ *
+ * **A touch for the double bass**, measured rather than preferred: its VSCO
+ * recordings already carry the room they were made in — their tails fall 20 dB
+ * in 0.6–1.1 s, two to three seconds of ring — and the engine's two-second
+ * hall on top of that, at 40 and with the bank's own send besides, was the
+ * "echoey" half of the owner's complaint (2026-09-24). None at all left a note
+ * that stopped dead; 12, with nothing from the bank, is a room behind it. The
+ * violin's recordings fall 20 dB in 0.35 s and GeneralUser's are dry.
+ */
+const REVERB_SEND: Record<Instrument, number> = {
+  violin: 40,
+  viola: 40,
+  cello: 40,
+  double_bass: 12,
+};
 
 function keyOf(frequency: number, instrument: Instrument): number {
   // ScoreJson stores written pitches. Double bass sounds one octave below
@@ -81,16 +128,41 @@ function playable(note: Schedule['notes'][number], schedule: Schedule): boolean 
   );
 }
 
+interface Moment {
+  startS: number;
+  /** The longest note that starts here: a chord is one moment. */
+  durationS: number;
+  channel: number;
+}
+
+/** Every distinct onset, in order, each on the channel after the last one's. */
+function moments(schedule: Schedule): Moment[] {
+  const starts = new Map<number, number>();
+  for (const note of schedule.notes) {
+    if (!playable(note, schedule)) continue;
+    starts.set(note.startS, Math.max(starts.get(note.startS) ?? 0, note.durationS));
+  }
+  return [...starts]
+    .sort((a, b) => a[0] - b[0])
+    .map(([startS, durationS], index) => ({
+      startS,
+      durationS,
+      channel: index % CHANNELS,
+    }));
+}
+
 export function soundfontEvents(
   schedule: Schedule,
   instrument: Instrument = 'violin',
 ): NoteEvent[] {
   const events: NoteEvent[] = [];
   const notes = schedule.notes.filter((note) => playable(note, schedule));
+  const channelAt = new Map(moments(schedule).map((m) => [m.startS, m.channel]));
   const endOfPiece = Math.round(schedule.durationS * RATE);
   for (const note of notes) {
     const key = keyOf(note.frequency, instrument);
     if (key < 0 || key > 127) continue;
+    const channel = channelAt.get(note.startS) ?? 0;
     const start = Math.round(note.startS * RATE);
     let end = Math.round(
       Math.min(note.startS + note.durationS, schedule.durationS) * RATE,
@@ -112,9 +184,10 @@ export function soundfontEvents(
         frame: start,
         key,
         on: true,
+        channel,
         velocity: note.velocity ?? UNMARKED_VELOCITY,
       },
-      { frame: end, key, on: false },
+      { frame: end, key, on: false, channel },
     );
   }
   return events.sort(
@@ -123,40 +196,77 @@ export function soundfontEvents(
 }
 
 /**
- * How the level moves while notes are held: CC 11, one value per moment.
+ * How the level moves while notes are held: CC 11 on each moment's channel.
  *
  * A note long enough to breathe (`SWELL_MIN_S`) gets `swell`'s bloom and ease
- * across its sounded length; any other note starts at the neutral level. One
- * channel carries one expression, so a chord shares its shape — its members
- * start and end together — and a slurred note hands over at the next onset.
+ * across its sounded length; any other note starts at the neutral level. A
+ * chord's members share a moment and so a channel and a shape.
  */
-export function expressionEvents(schedule: Schedule): ExpressionEvent[] {
-  const starts = new Map<number, number>();
-  for (const note of schedule.notes) {
-    if (!playable(note, schedule)) continue;
-    starts.set(note.startS, Math.max(starts.get(note.startS) ?? 0, note.durationS));
-  }
-  const moments = [...starts].sort((a, b) => a[0] - b[0]);
-  const events: ExpressionEvent[] = [];
-  let current = EXPRESSION_NEUTRAL;
-  const set = (seconds: number, value: number) => {
-    if (value === current) return;
-    current = value;
-    events.push({ frame: Math.round(seconds * RATE), value });
+export function expressionEvents(schedule: Schedule): ControlEvent[] {
+  const all = moments(schedule);
+  const events: ControlEvent[] = [];
+  const current = Array.from({ length: CHANNELS }, () => EXPRESSION_NEUTRAL);
+  const set = (channel: number, seconds: number, value: number) => {
+    if (value === current[channel]) return;
+    current[channel] = value;
+    events.push({
+      frame: Math.round(seconds * RATE),
+      channel,
+      controller: EXPRESSION_CC,
+      value,
+    });
   };
-  moments.forEach(([startS, durationS], index) => {
+  all.forEach(({ startS, durationS, channel }, index) => {
     if (durationS < SWELL_MIN_S) {
-      set(startS, EXPRESSION_NEUTRAL);
+      set(channel, startS, EXPRESSION_NEUTRAL);
       return;
     }
     const until = Math.min(
       startS + durationS,
-      moments[index + 1]?.[0] ?? Infinity,
+      all[index + 1]?.startS ?? Infinity,
       schedule.durationS,
     );
     for (let t = startS; t < until; t += EXPRESSION_STEP_S) {
-      set(t, swell((t - startS) / durationS));
+      set(channel, t, swell((t - startS) / durationS));
     }
+  });
+  return events;
+}
+
+/**
+ * The handoff between one moment and the next: CC 7 on the two channels.
+ *
+ * When a moment starts, its own channel is brought back to full volume first
+ * and the previous moment's channel falls to nothing over `HANDOFF_S` —
+ * finished early if that channel is needed again sooner, as it is in very fast
+ * passages, so a fade can never land on the note it is making room for.
+ */
+export function handoffEvents(schedule: Schedule): ControlEvent[] {
+  const all = moments(schedule);
+  const events: ControlEvent[] = [];
+  const volume = Array.from({ length: CHANNELS }, () => VOLUME);
+  all.forEach(({ startS, channel }, index) => {
+    const at = Math.round(startS * RATE);
+    if (volume[channel] !== VOLUME) {
+      volume[channel] = VOLUME;
+      events.push({ frame: at, channel, controller: VOLUME_CC, value: VOLUME });
+    }
+    const previous = all[index - 1];
+    if (!previous) return;
+    const reused = all[index + 1];
+    const until = Math.min(
+      at + Math.round(HANDOFF_S * RATE),
+      reused ? Math.round(reused.startS * RATE) - 1 : Infinity,
+    );
+    for (let step = 1; step <= HANDOFF_STEPS; step++) {
+      events.push({
+        frame: Math.max(at + 1, Math.round(at + ((until - at) * step) / HANDOFF_STEPS)),
+        channel: previous.channel,
+        controller: VOLUME_CC,
+        value: Math.round(VOLUME * (1 - step / HANDOFF_STEPS)),
+      });
+    }
+    volume[previous.channel] = 0;
   });
   return events;
 }
@@ -182,7 +292,12 @@ export async function renderSoundfont(
   if (!events.length)
     throw new Error('There are no playable notes in this passage.');
   if (cancelled()) throw new Error('Playback cancelled');
-  const expression = expressionEvents(schedule);
+  // Every control change in one list, in time: the handoff's volume and each
+  // moment's expression. Stable, so a restore stays ahead of the fade beside it.
+  const expression = [...expressionEvents(schedule), ...handoffEvents(schedule)]
+    .map((event, order) => ({ event, order }))
+    .sort((a, b) => a.event.frame - b.event.frame || a.order - b.order)
+    .map(({ event }) => event);
   const cacheKey = JSON.stringify([
     instrument,
     schedule.durationS,
@@ -197,15 +312,18 @@ export async function renderSoundfont(
   synth.setSystemParameter('gain', GAIN);
   synth.setSystemParameter('reverbGain', 0.35);
   synth.setSystemParameter('chorusGain', 0);
-  synth.programChange(0, INSTRUMENT_PROGRAMS[instrument]);
-  synth.controllerChange(0, 7, 100);
-  synth.controllerChange(0, 11, EXPRESSION_NEUTRAL);
-  // A hall a string player would practise in: the engine's own (GS Hall 2,
-  // about 2 s to die away), sent twice as much as the small room this used to
-  // be. The 10 ms before it answers keeps each attack clear of its own echo,
-  // which is what a musician copying the rhythm listens for.
-  synth.controllerChange(0, 91, 40);
-  synth.controllerChange(0, 93, 0);
+  for (let channel = 0; channel < CHANNELS; channel++) {
+    synth.programChange(channel, INSTRUMENT_PROGRAMS[instrument]);
+    synth.controllerChange(channel, VOLUME_CC, VOLUME);
+    synth.controllerChange(channel, EXPRESSION_CC, EXPRESSION_NEUTRAL);
+    // A hall a string player would practise in: the engine's own (GS Hall 2,
+    // about 2 s to die away), at the level `REVERB_SEND` gives this
+    // instrument.
+    synth.controllerChange(channel, REVERB_CC, REVERB_SEND[instrument]);
+    synth.controllerChange(channel, CHORUS_CC, 0);
+  }
+  // The 10 ms before the hall answers keeps each attack clear of its own
+  // echo, which is what a musician copying the rhythm listens for.
   synth.reverbProcessor.preDelayTime = 10;
   const frames = Math.ceil((schedule.durationS + TAIL) * RATE);
   const pcm = new Int16Array(frames * 2);
@@ -237,19 +355,25 @@ export async function renderSoundfont(
         events[event].frame <= position &&
         !events[event].on
       ) {
-        synth.noteOff(0, events[event++].key);
+        const off = events[event++];
+        synth.noteOff(off.channel, off.key);
       }
       while (
         control < expression.length &&
         expression[control].frame <= position
       ) {
-        synth.controllerChange(0, 11, expression[control++].value);
+        const change = expression[control++];
+        synth.controllerChange(change.channel, change.controller, change.value);
       }
       while (event < events.length && events[event].frame <= position) {
         const next = events[event++];
         if (next.on)
-          synth.noteOn(0, next.key, next.velocity ?? UNMARKED_VELOCITY);
-        else synth.noteOff(0, next.key);
+          synth.noteOn(
+            next.channel,
+            next.key,
+            next.velocity ?? UNMARKED_VELOCITY,
+          );
+        else synth.noteOff(next.channel, next.key);
       }
       const length = Math.min(
         128,
