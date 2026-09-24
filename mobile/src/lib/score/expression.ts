@@ -1,4 +1,4 @@
-import type { Articulation, Dynamics } from '../../data/types';
+import type { Articulation, Dynamics, Hairpin } from '../../data/types';
 import type { MetronomePulse } from '../metronome/beats';
 
 /**
@@ -88,6 +88,168 @@ export function applyDynamic(
   return {
     note: Math.max(standing, DYNAMIC_VELOCITY.f) + SFORZANDO_LIFT,
     standing,
+  };
+}
+
+/** The written levels, softest first: the steps a hairpin moves along. */
+const LADDER: readonly Level[] = ['ppp', 'pp', 'p', 'mp', 'mf', 'f', 'ff', 'fff'];
+
+/**
+ * How far a hairpin goes when the page does not say where it arrives: two
+ * steps, `p` to `mf`. One step is under 3 dB, a change a listener has to be
+ * told is there, and a hairpin is written to be heard.
+ */
+const HAIRPIN_STEPS = 2;
+
+/** The markings on a note that decide its level. */
+interface Marked {
+  dynamics?: Dynamics | null;
+  hairpin?: Hairpin | null;
+  hairpin_end?: boolean;
+}
+
+/** A hairpin, placed: the level moves in a straight line across these beats. */
+interface Ramp {
+  fromBeat: number;
+  toBeat: number;
+  from: number;
+  to: number;
+}
+
+interface LevelPlan {
+  /**
+   * What each note is struck at, before accent, metre and variation: its
+   * dynamic, or as far as a hairpin has carried the level by its onset.
+   */
+  attack: number[];
+  /** The level in force at each note's onset, without a one-note accent. */
+  standing: number[];
+  /**
+   * The level just before `beat`: where a note held across a hairpin has been
+   * carried to by then.
+   */
+  before(beat: number): number;
+}
+
+function isStanding(marking: Dynamics | null | undefined): boolean {
+  return !!marking && (isLevel(marking) || marking === 'fp');
+}
+
+/** A note that ends the hairpin before it: its end, a new one, or a new level. */
+function closesHairpin(note: Marked): boolean {
+  return !!note.hairpin_end || !!note.hairpin || isStanding(note.dynamics);
+}
+
+/**
+ * Where a hairpin arrives: the dynamic written at its end, if it lies the way
+ * the hairpin points; otherwise `HAIRPIN_STEPS` along from where it started.
+ *
+ * "cresc. … subito p" is a crescendo and then a sudden piano, not a
+ * diminuendo into one — so a written level on the wrong side is played as the
+ * jump it is, after a hairpin that went the way it was drawn.
+ */
+function arrival(kind: Hairpin, from: number, written: Dynamics | null | undefined): number {
+  if (written && isLevel(written)) {
+    const level = DYNAMIC_VELOCITY[written];
+    if (kind === 'crescendo' ? level > from : level < from) {
+      return level;
+    }
+  }
+  let nearest = 0;
+  LADDER.forEach((level, index) => {
+    if (Math.abs(DYNAMIC_VELOCITY[level] - from) < Math.abs(DYNAMIC_VELOCITY[LADDER[nearest]] - from)) {
+      nearest = index;
+    }
+  });
+  const step = kind === 'crescendo' ? HAIRPIN_STEPS : -HAIRPIN_STEPS;
+  const to = Math.max(0, Math.min(LADDER.length - 1, nearest + step));
+  return DYNAMIC_VELOCITY[LADDER[to]];
+}
+
+function along(ramp: Ramp, beat: number): number {
+  const t = (beat - ramp.fromBeat) / (ramp.toBeat - ramp.fromBeat);
+  return ramp.from + (ramp.to - ramp.from) * Math.max(0, Math.min(1, t));
+}
+
+/**
+ * The level through a passage: its dynamics, and its hairpins as ramps.
+ *
+ * `onsets` are the beats each note starts on and `endBeat` where the passage
+ * ends, in the order it is played — rests and tied-over notes included,
+ * because a hairpin can end on either.
+ *
+ * **A hairpin runs from the note it starts on to the first that closes it:**
+ * the note it is written to end on, the next hairpin, or the next dynamic.
+ * The level moves in a straight line across the beats between, so a
+ * crescendo over a bar of quarters and one over a held whole note climb at
+ * the same rate. One that nothing closes runs to the end of the passage.
+ *
+ * A sforzando inside a hairpin is one forced note on the way; it does not
+ * stop the hairpin, and the level after it carries on from where it was.
+ */
+export function levelsAlong(
+  notes: readonly Marked[],
+  onsets: readonly number[],
+  endBeat: number,
+): LevelPlan {
+  const attack: number[] = [];
+  const standingAt: number[] = [];
+  const ramps: Ramp[] = [];
+  // Where the level jumps, in order: `before` reads the last one behind it.
+  const jumps: { beat: number; level: number }[] = [];
+  let standing = UNMARKED_VELOCITY;
+  let open: { end: number; ramp: Ramp } | null = null;
+
+  for (let i = 0; i < notes.length; i += 1) {
+    const beat = onsets[i];
+    if (open && open.end === i) {
+      standing = open.ramp.to;
+      open = null;
+    }
+    const here = open ? along(open.ramp, beat) : standing;
+    const dynamic = applyDynamic(notes[i].dynamics, here);
+    attack.push(dynamic.note);
+    // Inside a hairpin only a one-note accent can be written here; the level
+    // it stands on is the hairpin's, and it carries on.
+    if (!open && dynamic.standing !== standing) {
+      standing = dynamic.standing;
+      jumps.push({ beat, level: standing });
+    }
+    standingAt.push(open ? here : standing);
+
+    const kind = notes[i].hairpin;
+    if (kind === 'crescendo' || kind === 'diminuendo') {
+      let end: number = i + 1;
+      while (end < notes.length && !closesHairpin(notes[end])) {
+        end += 1;
+      }
+      const toBeat = end < notes.length ? onsets[end] : endBeat;
+      const to = arrival(kind, standing, notes[end]?.dynamics);
+      if (toBeat > beat && to !== standing) {
+        const ramp = { fromBeat: beat, toBeat, from: standing, to };
+        ramps.push(ramp);
+        jumps.push({ beat: toBeat, level: to });
+        open = { end, ramp };
+      }
+    }
+  }
+
+  return {
+    attack,
+    standing: standingAt,
+    before(beat: number): number {
+      for (const ramp of ramps) {
+        if (ramp.fromBeat < beat && beat <= ramp.toBeat) {
+          return along(ramp, beat);
+        }
+      }
+      let level = UNMARKED_VELOCITY;
+      for (const jump of jumps) {
+        if (jump.beat >= beat) break;
+        level = jump.level;
+      }
+      return level;
+    },
   };
 }
 

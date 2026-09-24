@@ -127,6 +127,8 @@ export interface CorrectionInput {
   comment?: string | null;
 }
 
+export type Hairpin = 'crescendo' | 'diminuendo';
+
 export type Dynamics =
   | 'ppp' | 'pp' | 'p' | 'mp' | 'mf' | 'f' | 'ff' | 'fff'
   | 'fp' | 'sfz' | 'sf' | 'fz';
@@ -213,15 +215,29 @@ export interface ScoreNote {
    * chord is one attack. What this carries is the part the reading used to
    * drop, so a stave can draw both noteheads instead of one.
    *
-   * Absent on every score written before it was recorded. **Nothing draws it
-   * yet** — `engrave.ts` places one notehead per note, and giving it a second
-   * is a change to the stave, so it goes through the owner (CLAUDE.md §2).
+   * Absent on every score written before it was recorded. The stave draws
+   * each member as a notehead on the principal's stem (`StaveNote.chord`), and
+   * Listen sounds them at the principal's onset.
    */
   chord_pitches?: string[];
   /** The printed duration is intentionally held beyond its written value. */
   fermata?: boolean;
   /** Audible grace-note attacks immediately before this main note. */
   grace_notes?: number;
+  /**
+   * The grace notes' pitches, in the order they are played. Listen plays an
+   * ornament only when it has every one: a count alone stays silent, because
+   * an invented note is worse than a missing one.
+   */
+  grace_pitches?: string[];
+  /**
+   * A crescendo or diminuendo begins here — a hairpin, or the word. Playback
+   * only: Listen moves the level from this note to the next one written
+   * (`expression.levelsAlong`). Nothing in the timing reads it.
+   */
+  hairpin?: Hairpin | null;
+  /** The hairpin running into this note ends on it. */
+  hairpin_end?: boolean;
 }
 
 export interface ScoreSlur {

@@ -208,6 +208,28 @@ it('lets a held note bloom and ease, and leaves a short one level', () => {
   expect(after.at(-1)!.frame).toBeLessThan(2 * 44100);
 });
 
+it('carries a note under a hairpin from one level to the other, in a straight line', () => {
+  const note = passage(440).notes[0];
+  const rising = expressionEvents({
+    bpm: 60,
+    durationS: 3,
+    notes: [{ ...note, startS: 0, durationS: 2, expression: { from: 76, to: 120 } }],
+  }).map((event) => event.value);
+  expect(rising[0]).toBe(76);
+  expect(rising.at(-1)!).toBeGreaterThan(118);
+  expect(rising).toEqual([...rising].sort((a, b) => a - b));
+  // No bloom: a crescendo is the shape, not a swell on top of it.
+  expect(Math.max(...rising)).toBeLessThanOrEqual(120);
+
+  // A short note is carried too — the hairpin is what moves it, not its length.
+  const short = expressionEvents({
+    bpm: 60,
+    durationS: 1,
+    notes: [{ ...note, startS: 0, durationS: 0.5, expression: { from: 120, to: 90 } }],
+  }).map((event) => event.value);
+  expect(short.at(-1)!).toBeLessThan(95);
+});
+
 describe('the handoff from one note to the next', () => {
   const note = passage(440).notes[0];
   const line = (starts: number[], durationS = 0.4) => ({

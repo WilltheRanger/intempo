@@ -155,6 +155,51 @@ describe('how the notes are played', () => {
     expect(notes[0].durationS).toBe(0.5);
   });
 
+  it('swells through a crescendo, and still moves no note', () => {
+    // At 120 each quarter is short, so this is the notes' attacks alone; a
+    // note long enough to be carried through is the next test.
+    const rising = scheduleScore(
+      bar([
+        { ...SCALE[0], dynamics: 'p', hairpin: 'crescendo' },
+        SCALE[1],
+        SCALE[2],
+        { ...SCALE[3], dynamics: 'f', hairpin_end: true },
+      ]),
+      120,
+    ).notes;
+    const flat = scheduleScore(bar([{ ...SCALE[0], dynamics: 'p' }, SCALE[1], SCALE[2], SCALE[3]]), 120)
+      .notes;
+    // Each note of the crescendo is louder than the same note left at piano,
+    // and more so the further along it is.
+    const lift = rising.map((note, index) => note.velocity! - flat[index].velocity!);
+    expect(lift[0]).toBe(0);
+    expect(lift).toEqual([...lift].sort((a, b) => a - b));
+    expect(lift[3]).toBeGreaterThan(20);
+    expect(rising.map((note) => note.startS)).toEqual(flat.map((note) => note.startS));
+  });
+
+  it('carries a held note through its hairpin', () => {
+    const whole = { pitch: 'C4', duration: 'whole' as const, tied_to_next: false };
+    const [held] = scheduleScore(
+      {
+        ...bar([{ ...whole, dynamics: 'p', hairpin: 'crescendo' }]),
+        measures: [
+          { measure_number: 1, notes: [{ ...whole, dynamics: 'p', hairpin: 'crescendo' }], slurs: [] },
+          { measure_number: 2, notes: [{ ...whole, dynamics: 'f', hairpin_end: true }], slurs: [] },
+        ],
+      },
+      60,
+    ).notes;
+    // Struck at the loud end, and brought in quiet: the expression opens low
+    // and rises to the neutral level as the bar goes on.
+    expect(held.expression).toBeDefined();
+    expect(held.expression!.from).toBeLessThan(held.expression!.to);
+    expect(held.expression!.to).toBeLessThanOrEqual(120);
+    const [struckAtPiano] = scheduleScore(bar([{ ...whole, dynamics: 'p' }]), 60).notes;
+    expect(held.velocity!).toBeGreaterThan(struckAtPiano.velocity! + 20);
+    expect(struckAtPiano.expression).toBeUndefined();
+  });
+
   it('carries the dynamic of a note tied over onto what follows', () => {
     const notes = scheduleScore(
       bar([
@@ -167,5 +212,102 @@ describe('how the notes are played', () => {
     ).notes;
     expect(notes).toHaveLength(3);
     expect(notes[1].velocity!).toBeLessThan(notes[0].velocity! - 10);
+  });
+});
+
+describe('grace notes', () => {
+  /** Quarters at 60, a beat to the second. */
+  function line(notes: ScoreJson['measures'][number]['notes']): ScoreJson {
+    return {
+      time_signature: '4/4',
+      key_signature: 'C major',
+      tempo_marking: null,
+      bpm_hint: null,
+      clef: 'treble',
+      measures: [{ measure_number: 1, notes, slurs: [] }],
+      repeats: [],
+      ocr_confidence: 1,
+      notes_to_human: '',
+    };
+  }
+  const quarter = (pitch: string, extra = {}) => ({
+    pitch,
+    duration: 'quarter' as const,
+    tied_to_next: false,
+    ...extra,
+  });
+  const plain = scheduleScore(line(['C4', 'D4', 'E4', 'F4'].map((p) => quarter(p))), 60);
+
+  it('sound just before the note they lead into, which does not move', () => {
+    const schedule = scheduleScore(
+      line([
+        quarter('C4'),
+        quarter('D4', { grace_notes: 2, grace_pitches: ['F4', 'E4'] }),
+        quarter('E4'),
+        quarter('F4'),
+      ]),
+      60,
+    );
+    const [c, graceF, graceE, d] = schedule.notes;
+    expect(d.startS).toBe(plain.notes[1].startS);
+    expect(graceE.startS + graceE.durationS).toBeCloseTo(d.startS);
+    expect(graceF.startS).toBeLessThan(graceE.startS);
+    expect(graceF.startS).toBeGreaterThan(c.startS);
+    expect([graceF.frequency, graceE.frequency].map(Math.round)).toEqual([349, 330]);
+    expect(graceE.velocity!).toBeLessThan(d.velocity!);
+    expect(graceE.legato).toBe(true);
+    expect(schedule.notes.filter((n) => !plain.notes.some((q) => q.startS === n.startS)))
+      .toHaveLength(2);
+    // Time order, which the playhead's scan rests on.
+    const starts = schedule.notes.map((note) => note.startS);
+    expect(starts).toEqual([...starts].sort((a, b) => a - b));
+  });
+
+  it('stay silent when their notes are not all known', () => {
+    for (const marks of [
+      { grace_notes: 1 },
+      { grace_notes: 2, grace_pitches: ['E4'] },
+      { grace_notes: 1, grace_pitches: ['H9'] },
+    ]) {
+      const schedule = scheduleScore(
+        line([quarter('C4'), quarter('D4', marks), quarter('E4'), quarter('F4')]),
+        60,
+      );
+      expect(schedule.notes).toEqual(plain.notes);
+    }
+  });
+
+  it('take no more than half of a fast note before them', () => {
+    const fast = scheduleScore(
+      line([
+        quarter('C4'),
+        quarter('D4', { grace_notes: 3, grace_pitches: ['E4', 'F4', 'G4'] }),
+        quarter('E4'),
+        quarter('F4'),
+      ]),
+      480,
+    );
+    const beat = 60 / 480;
+    const firstGrace = fast.notes[1];
+    expect(firstGrace.startS).toBeGreaterThanOrEqual(beat / 2 - 1e-9);
+  });
+
+  it('on the very first note, start the piece a little later rather than be lost', () => {
+    const schedule = scheduleScore(
+      line([
+        quarter('C4', { grace_notes: 1, grace_pitches: ['D4'] }),
+        quarter('D4'),
+        quarter('E4'),
+        quarter('F4'),
+      ]),
+      60,
+    );
+    const [grace, ...rest] = schedule.notes;
+    expect(grace.startS).toBe(0);
+    // Everything after moves together: no note moves against another.
+    rest.forEach((note, index) => {
+      expect(note.startS - rest[0].startS).toBeCloseTo(plain.notes[index].startS, 9);
+    });
+    expect(schedule.durationS - rest[0].startS).toBeCloseTo(plain.durationS, 9);
   });
 });

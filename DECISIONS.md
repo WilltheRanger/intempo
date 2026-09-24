@@ -1,5 +1,53 @@
 # InTempo Decisions
 
+## 2026-09-24 — Crescendos and grace notes in Listen: levels in beats, ornaments only by name
+
+**Context.** The owner asked for crescendos and grace notes in Listen. Two
+things stood in the way before any sound: the MusicXML importer found every
+`<dynamics>` in a bar and discarded it, never read a `<wedge>`, and took
+"cresc." as the tempo marking when it was the first word printed; and a grace
+note was kept only as a count on the note it decorates, with no pitch.
+
+**Decision.**
+- **Markings land on the next note or rest in the line being read.** A
+  `<direction>` is written before the note it stands over, and a hairpin's
+  `stop` after the last note under it, so both are read in bar order and
+  carried across the barline. `Note` gains `hairpin`, `hairpin_end` and
+  `grace_pitches`, all playback-only.
+- **A hairpin is a straight line across beats**, from the note it starts on
+  to the first that closes it: its written end, the next hairpin, or the next
+  dynamic (`expression.levelsAlong`). It arrives at the dynamic written there
+  if that lies the way it points, and otherwise two steps along (`p` to
+  `mf`). A sforzando inside one does not stop it.
+- **A long note under a hairpin moves while it is held.** Velocity is fixed
+  at the attack, so a note of `SWELL_MIN_S` or longer is struck at the louder
+  end of its stretch and CC 11 carries it between the two levels. Both act on
+  the level by the same curve, so the ratio of the two CC values is the ratio
+  of the two levels.
+- **Grace notes play only when every pitch is known**, 70 ms each at most,
+  ending exactly on the note they decorate and taking no more than half of
+  the note before. A piece that opens on one starts that much later. No main
+  note moves.
+
+**Alternatives considered.**
+- *Velocity steps alone.* A crescendo under one held note would not move at
+  all, and that is the commonest hairpin in string writing.
+- *One step for an unmarked hairpin.* Under 3 dB, a change the listener has
+  to be told is there.
+- *Guessing a grace's pitch from the note it decorates* (a step above). A
+  wrong ornament in the reference teaches the wrong note; silence teaches
+  nothing wrong.
+- *The server's placement (`ORNAMENT_SHARE`).* Chosen to make matching work,
+  not to sound like a player, and the matcher tolerates a tenth of a beat.
+
+**Trade-offs accepted.**
+- Photographs read by the vision models carry no hairpins and no grace
+  pitches: their prompt deliberately asks for neither. Only MusicXML (the
+  reader's own output, and imports) brings them.
+- A held note under a hairpin is struck with the louder end's timbre.
+- A hairpin in a voice that is not read is carried to the next note of the
+  line that is, where it is usually overwritten or harmless.
+
 ## 2026-09-24 — homr's title reader is configured here, not taken out of homr; and the reader stays warm for five minutes
 
 **Context.** Asked to make reading a page faster the way Immich makes its

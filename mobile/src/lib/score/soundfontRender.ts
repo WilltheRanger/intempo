@@ -133,22 +133,25 @@ interface Moment {
   /** The longest note that starts here: a chord is one moment. */
   durationS: number;
   channel: number;
+  /** A hairpin's movement across it, from `ScheduledNote.expression`. */
+  expression?: { from: number; to: number };
 }
 
 /** Every distinct onset, in order, each on the channel after the last one's. */
 function moments(schedule: Schedule): Moment[] {
-  const starts = new Map<number, number>();
+  const starts = new Map<number, Omit<Moment, 'channel'>>();
   for (const note of schedule.notes) {
     if (!playable(note, schedule)) continue;
-    starts.set(note.startS, Math.max(starts.get(note.startS) ?? 0, note.durationS));
+    const seen = starts.get(note.startS);
+    starts.set(note.startS, {
+      startS: note.startS,
+      durationS: Math.max(seen?.durationS ?? 0, note.durationS),
+      expression: seen?.expression ?? note.expression,
+    });
   }
-  return [...starts]
-    .sort((a, b) => a[0] - b[0])
-    .map(([startS, durationS], index) => ({
-      startS,
-      durationS,
-      channel: index % CHANNELS,
-    }));
+  return [...starts.values()]
+    .sort((a, b) => a.startS - b.startS)
+    .map((moment, index) => ({ ...moment, channel: index % CHANNELS }));
 }
 
 export function soundfontEvents(
@@ -198,9 +201,11 @@ export function soundfontEvents(
 /**
  * How the level moves while notes are held: CC 11 on each moment's channel.
  *
- * A note long enough to breathe (`SWELL_MIN_S`) gets `swell`'s bloom and ease
- * across its sounded length; any other note starts at the neutral level. A
- * chord's members share a moment and so a channel and a shape.
+ * A note under a hairpin moves in a straight line between the two values the
+ * schedule gave it. Otherwise a note long enough to breathe (`SWELL_MIN_S`)
+ * gets `swell`'s bloom and ease across its sounded length, and any other note
+ * starts at the neutral level. A chord's members share a moment and so a
+ * channel and a shape.
  */
 export function expressionEvents(schedule: Schedule): ControlEvent[] {
   const all = moments(schedule);
@@ -216,8 +221,8 @@ export function expressionEvents(schedule: Schedule): ControlEvent[] {
       value,
     });
   };
-  all.forEach(({ startS, durationS, channel }, index) => {
-    if (durationS < SWELL_MIN_S) {
+  all.forEach(({ startS, durationS, channel, expression }, index) => {
+    if (!expression && durationS < SWELL_MIN_S) {
       set(channel, startS, EXPRESSION_NEUTRAL);
       return;
     }
@@ -227,7 +232,14 @@ export function expressionEvents(schedule: Schedule): ControlEvent[] {
       schedule.durationS,
     );
     for (let t = startS; t < until; t += EXPRESSION_STEP_S) {
-      set(channel, t, swell((t - startS) / durationS));
+      const fraction = (t - startS) / durationS;
+      set(
+        channel,
+        t,
+        expression
+          ? Math.round(expression.from + (expression.to - expression.from) * fraction)
+          : swell(fraction),
+      );
     }
   });
   return events;
