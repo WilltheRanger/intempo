@@ -18,6 +18,7 @@ from app.tests.audio_helpers import evenly_spaced, synth_click_track
 from app.tests.fake_supabase import FakeSupabase
 from app.workers import analysis_runner, dispatch
 from app.workers.analysis_runner import sweep_stuck_analyses
+from app.services import take_archive
 
 PROJECT_HOST = "https://test.supabase.invalid"
 
@@ -285,11 +286,19 @@ def test_full_flow_queued_to_done(
     # And the take now costs a fraction of what it did. This is the only test
     # that reaches `keep_playback_copy` through the worker rather than calling
     # it directly, so it is the only one that can show the verdict and the
-    # archiving are one path: the WAV is gone, the Opus is beside it, and the
-    # row names the Opus.
+    # archiving are one path: the Opus is beside the WAV and the row names it.
     opus_key = f"{wav_key.removesuffix('.wav')}.opus"
-    assert fake.object_keys("audio-uploads") == {opus_key}
     assert fake.table("analyses").rows[0]["playback_key"] == opus_key
+    # **The WAV outlives the verdict by the life of a link to it.** A phone
+    # that asked for its recording a moment before the row named the Opus
+    # holds a link to the WAV; deleting it here is what made one fail.
+    assert fake.object_keys("audio-uploads") == {wav_key, opus_key}
+    finished = datetime.fromisoformat(fake.table("analyses").rows[0]["finished_at"])
+    released = take_archive.sweep_judged_originals(
+        fake, now=finished + take_archive.RELEASE_AFTER + timedelta(seconds=1)
+    )
+    assert released == 1
+    assert fake.object_keys("audio-uploads") == {opus_key}
 
 
 def test_worker_marks_failed_when_audio_unavailable(

@@ -20,7 +20,7 @@ taking the right recordings and, twice over, about it not taking the wrong ones.
 from __future__ import annotations
 
 import io
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import numpy as np
 import pytest
@@ -159,7 +159,13 @@ def test_a_reference_with_no_key_in_it_is_refused() -> None:
 # ---- the ordering ----------------------------------------------------------
 
 
-def test_the_wav_goes_only_after_the_copy_is_stored_and_recorded() -> None:
+def test_the_copy_is_stored_and_recorded_and_the_wav_is_left_for_the_sweep() -> None:
+    """**Not deleted here any more.** The verdict screen asks for its recording
+    the moment the verdict arrives, which can be before this has written the
+    Opus into the row — so it is handed a link to the WAV, and a WAV deleted
+    a few hundred milliseconds later answered that link with a 400 (measured
+    in the storage logs, 2026-09-24). `sweep_judged_originals` removes it once
+    every link it could have been given has expired."""
     bucket = _Bucket()
     client = _Client(bucket)
 
@@ -168,7 +174,7 @@ def test_the_wav_goes_only_after_the_copy_is_stored_and_recorded() -> None:
     assert key == "user-1/take.opus"
     assert [name for name, _ in bucket.uploaded] == ["user-1/take.opus"]
     assert client.patches == [{"playback_key": "user-1/take.opus"}]
-    assert bucket.removed == [["user-1/take.wav"]]
+    assert bucket.removed == []
 
 
 def test_a_failed_upload_leaves_the_wav_alone() -> None:
@@ -197,15 +203,6 @@ def test_a_failed_row_write_leaves_the_wav_alone() -> None:
 
     assert keep_playback_copy(client, "a1", "user-1/take.wav", _wav()) is None
     assert bucket.removed == [], "the original was deleted with the row still naming it"
-
-
-def test_a_failed_delete_still_counts_as_a_copy() -> None:
-    """Both copies exist, playback prefers the Opus. Costs storage, nothing else."""
-    bucket = _Bucket(remove_fails=True)
-    client = _Client(bucket)
-
-    assert keep_playback_copy(client, "a1", "user-1/take.wav", _wav()) == "user-1/take.opus"
-    assert client.patches == [{"playback_key": "user-1/take.opus"}]
 
 
 def test_an_unusable_reference_touches_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -461,3 +458,96 @@ def test_it_is_reachable_from_the_sweeper_loop() -> None:
     assert "take_archive.sweep_unjudged_takes" in source, (
         "imported but never swept — every failed take would keep its WAV"
     )
+    assert "take_archive.sweep_judged_originals" in source, (
+        "imported but never swept — every judged take would keep its WAV"
+    )
+
+
+# ---- the originals of takes that were judged --------------------------------
+#
+# `keep_playback_copy` no longer deletes the WAV: a link to it may already be
+# in a phone's hands. These are about the sweep that does, an hour later.
+
+
+def _judged_take(*, finished: str = "2026-09-01T00:00:00+00:00", **extra) -> dict:
+    return {
+        "id": "a1",
+        "status": "done",
+        "audio_url": "audio-uploads/user-1/take.wav",
+        "playback_key": "user-1/take.opus",
+        "finished_at": finished,
+        **extra,
+    }
+
+
+def test_a_judged_takes_wav_goes_once_no_link_to_it_can_play() -> None:
+    fake = _seeded([_judged_take()], ["user-1/take.wav", "user-1/take.opus"])
+
+    assert take_archive.sweep_judged_originals(fake, now=NOW) == 1
+    assert fake.object_keys(take_archive.AUDIO_BUCKET) == {"user-1/take.opus"}
+    assert fake.table("analyses").rows[0]["audio_reclaimed_at"] is not None
+
+
+def test_a_link_handed_out_at_the_verdict_still_plays_until_it_expires() -> None:
+    """The case this exists for. A link to the WAV can be minted a moment
+    after `finished_at`, and it lives `SIGNED_AUDIO_DOWNLOAD_TTL_SECONDS`; the
+    WAV has to outlive every such link."""
+    from app.services.audio_storage import SIGNED_AUDIO_DOWNLOAD_TTL_SECONDS
+
+    just_expired = NOW - timedelta(seconds=SIGNED_AUDIO_DOWNLOAD_TTL_SECONDS)
+    fake = _seeded(
+        [_judged_take(finished=just_expired.isoformat())],
+        ["user-1/take.wav", "user-1/take.opus"],
+    )
+
+    assert take_archive.sweep_judged_originals(fake, now=NOW) == 0
+    assert "user-1/take.wav" in fake.object_keys(take_archive.AUDIO_BUCKET)
+    assert take_archive.RELEASE_AFTER > timedelta(seconds=SIGNED_AUDIO_DOWNLOAD_TTL_SECONDS)
+
+
+def test_a_judged_take_with_no_opus_keeps_its_wav() -> None:
+    """The transcode failed, so the WAV is the recording its verdict plays."""
+    fake = _seeded([_judged_take(playback_key=None)], ["user-1/take.wav"])
+
+    assert take_archive.sweep_judged_originals(fake, now=NOW) == 0
+    assert fake.object_keys(take_archive.AUDIO_BUCKET) == {"user-1/take.wav"}
+
+
+def test_an_unjudged_take_is_left_to_its_own_sweep() -> None:
+    fake = _seeded(
+        [_judged_take(status="failed", playback_key=None)], ["user-1/take.wav"]
+    )
+
+    assert take_archive.sweep_judged_originals(fake, now=NOW) == 0
+    assert fake.object_keys(take_archive.AUDIO_BUCKET) == {"user-1/take.wav"}
+
+
+def test_the_backlog_of_takes_whose_wav_already_went_is_marked_and_forgotten() -> None:
+    """Every judged take before this lost its WAV at the verdict. The first
+    passes find nothing behind them, mark them, and never offer them again."""
+    fake = _seeded([_judged_take()], ["user-1/take.opus"])
+
+    assert take_archive.sweep_judged_originals(fake, now=NOW) == 1
+    assert take_archive.sweep_judged_originals(fake, now=NOW) == 0
+    assert fake.object_keys(take_archive.AUDIO_BUCKET) == {"user-1/take.opus"}
+
+
+def test_it_never_deletes_the_copy_a_take_plays_from() -> None:
+    """`audio_url` and `playback_key` differ only in their extension. A row
+    whose two named one object must not lose its only recording to a tidy-up."""
+    fake = _seeded(
+        [_judged_take(audio_url="audio-uploads/user-1/take.opus")], ["user-1/take.opus"]
+    )
+
+    assert take_archive.sweep_judged_originals(fake, now=NOW) == 0
+    assert fake.object_keys(take_archive.AUDIO_BUCKET) == {"user-1/take.opus"}
+
+
+def test_a_broken_query_costs_the_release_one_pass() -> None:
+    class _Broken:
+        storage = None
+
+        def table(self, _name):
+            raise RuntimeError("supabase said no")
+
+    assert take_archive.sweep_judged_originals(_Broken(), now=NOW) == 0

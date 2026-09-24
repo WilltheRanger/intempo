@@ -37,6 +37,17 @@ having worked. The failure modes that leaves are all the *safe* direction:
 The one arrangement that would lose a recording — delete first, then write —
 is the one this cannot do.
 
+**The delete waits an hour, because a link to the WAV can outlive the row
+naming it.** It used to follow the row write by a few hundred milliseconds, and
+the verdict screen asks for its recording the moment the verdict arrives —
+which is before the copy exists. Measured in the storage logs on 2026-09-24:
+the phone was handed a link to the WAV 0.4 s before the row named the Opus, the
+WAV was deleted 0.3 s later, and the phone's request for it failed with a 400
+— "Can't load the recording right now" on a take whose copy was sitting right
+there. A signed link lives `SIGNED_AUDIO_DOWNLOAD_TTL_SECONDS`, so the WAV of a
+judged take now lives that long and a margin more (`sweep_judged_originals`),
+and every link this service has ever handed out plays until it expires.
+
 **The other half is the takes that never get a verdict**, and for three days
 there was nothing at all. `keep_playback_copy` runs on one path: `run_analysis`,
 after the row is written `done`. A take that ends `failed` or
@@ -65,7 +76,7 @@ import numpy as np
 import soundfile as sf
 
 from app.db import get_service_client
-from app.services.audio_storage import object_key_from
+from app.services.audio_storage import SIGNED_AUDIO_DOWNLOAD_TTL_SECONDS, object_key_from
 from app.services.buckets import AUDIO_BUCKET
 from app.services.cache_headers import CACHE_FOREVER
 
@@ -137,7 +148,11 @@ def _resample_to_48k(data: "np.ndarray", rate: int) -> "np.ndarray":
 
 
 def keep_playback_copy(client, analysis_id: str, reference: str, wav_bytes: bytes) -> str | None:
-    """Store an Opus copy of a judged take and delete its WAV.
+    """Store an Opus copy of a judged take and point the row at it.
+
+    The WAV is left where it is: `sweep_judged_originals` removes it once no
+    link to it can still be live. See the module docstring for the take this
+    cost.
 
     Returns the new key, or None when anything at all went wrong — in which
     case the WAV is still there and the take is still playable, which is the
@@ -188,16 +203,6 @@ def keep_playback_copy(client, analysis_id: str, reference: str, wav_bytes: byte
         )
         return None
 
-    try:
-        bucket.remove([original])
-    except Exception:  # noqa: BLE001
-        # Both copies exist. Playback prefers the Opus, so this costs storage
-        # and nothing else — which is the direction to fail in.
-        log.warning(
-            "analysis %s: kept %s but could not remove %s",
-            analysis_id, key, original, exc_info=True,
-        )
-
     log.info(
         "analysis %s: playback copy %s (%d KB from %d KB)",
         analysis_id, key, len(opus) // 1024, len(wav_bytes) // 1024,
@@ -223,6 +228,15 @@ def keep_playback_copy(client, analysis_id: str, reference: str, wav_bytes: byte
 #: reason it gives: sweeping too early costs somebody a recording they are
 #: still using, and sweeping too late costs a few megabytes for a few hours.
 RECLAIM_AFTER = timedelta(hours=24)
+
+#: How long the WAV of a *judged* take outlives its verdict.
+#:
+#: As long as a link to it can still play, and ten minutes more: the link is
+#: signed for `SIGNED_AUDIO_DOWNLOAD_TTL_SECONDS` from whenever it was asked
+#: for, which is at the latest a moment after `finished_at`, when the row
+#: starts naming the Opus instead. The ten minutes cover that moment and any
+#: clock between here and storage. Costs about 6 MB for an hour per take.
+RELEASE_AFTER = timedelta(seconds=SIGNED_AUDIO_DOWNLOAD_TTL_SECONDS) + timedelta(minutes=10)
 
 #: How many takes one pass will reclaim.
 #:
@@ -286,11 +300,67 @@ def sweep_unjudged_takes(client=None, *, now: datetime | None = None) -> int:
         log.warning("could not list takes to reclaim", exc_info=True)
         return 0
 
+    reclaimed = _reclaim(client, rows)
+    if reclaimed:
+        log.info("reclaimed the audio of %d unjudged take(s)", reclaimed)
+    return reclaimed
+
+
+def sweep_judged_originals(client=None, *, now: datetime | None = None) -> int:
+    """Delete the WAVs of judged takes once no link to them can play. Returns how many.
+
+    Only a take that is `done` **and has its Opus**: one whose transcode
+    failed has no `playback_key`, and its WAV is the recording its verdict
+    screen plays — the third of 018's nulls, which `sweep_unjudged_takes`
+    leaves alone for the same reason.
+
+    `audio_reclaimed_at` is the mark, as it is there, so a pass never offers the
+    next one a take it has finished with. Every judged take before this existed
+    already lost its WAV at the verdict; the first passes find nothing behind
+    them to delete, mark them, and are done with them.
+    """
+    client = client or get_service_client()
+    if client is None:
+        return 0
+
+    cutoff = ((now or datetime.now(tz=timezone.utc)) - RELEASE_AFTER).isoformat()
+    try:
+        rows = (
+            client.table("analyses")
+            .select("id,audio_url,playback_key")
+            .eq("status", "done")
+            .not_.is_("playback_key", "null")
+            .is_("audio_reclaimed_at", "null")
+            .lt("finished_at", cutoff)
+            .limit(RECLAIM_BATCH)
+            .execute()
+        ).data or []
+    except Exception:  # noqa: BLE001 — the loop outlives any one failure
+        log.warning("could not list judged takes to release", exc_info=True)
+        return 0
+
+    released = _reclaim(client, rows)
+    if released:
+        log.info("released the original WAV of %d judged take(s)", released)
+    return released
+
+
+def _reclaim(client, rows: list[dict]) -> int:
+    """Delete each row's original upload, then mark the row. Returns how many.
+
+    **The object first, then the mark** — see `sweep_unjudged_takes`. And never
+    the key the row plays from: `audio_url` and `playback_key` differ only in
+    their extension, so a row whose two ever named one object would otherwise
+    have its only recording deleted by the sweep meant to tidy up after it.
+    """
     reclaimed = 0
     for row in rows:
         analysis_id = row.get("id")
         key = object_key_from(str(row.get("audio_url") or ""))
         if not analysis_id:
+            continue
+        if key and key == object_key_from(str(row.get("playback_key") or "")):
+            log.warning("analysis %s: %s is its playback copy; not removed", analysis_id, key)
             continue
         if key:
             try:
@@ -313,9 +383,6 @@ def sweep_unjudged_takes(client=None, *, now: datetime | None = None) -> int:
                 analysis_id, key, exc_info=True,
             )
         reclaimed += 1
-
-    if reclaimed:
-        log.info("reclaimed the audio of %d unjudged take(s)", reclaimed)
     return reclaimed
 
 

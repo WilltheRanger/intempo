@@ -321,6 +321,7 @@ def run_analysis(analysis_id: str) -> None:
         # Read from the row rather than passed in: the work happens after the
         # response is sent, so the row is the only thing that survives.
         _stage(client, analysis_id, "listening")
+        trace: dict = {}
         result = analyze(
             (y, sr),
             score,
@@ -336,6 +337,7 @@ def run_analysis(analysis_id: str) -> None:
             # row predates the column resolves to the flat threshold with no
             # filter — what it has always had — rather than being guessed at.
             instrument=row.get("instrument"),
+            trace=trace,
         )
         # Stamped on the model, not bolted onto the dump, so `AnalysisResult`
         # stays the whole truth about what an analysis result contains.
@@ -376,7 +378,30 @@ def run_analysis(analysis_id: str) -> None:
     # `_finish_failed` and turn a judged take into a failed one; the whole
     # module is best effort and returns None rather than raising, and the row
     # is already `done` either way.
+    _keep_diagnostics(client, analysis_id, trace)
     keep_playback_copy(client, analysis_id, str(row["audio_url"]), audio_bytes)
+
+
+def _keep_diagnostics(client, analysis_id: str, trace: dict) -> None:
+    """Store the analysis's working on the row, as a separate write.
+
+    **Separate, and after the verdict,** so nothing about it can cost a take
+    its result: the column arrives with migration 027, and a project that has
+    not had it applied answers this write with an error — which is logged here
+    and goes no further, exactly as a failed playback copy does.
+
+    What it is for: the first real double-bass takes were refused as "not
+    played" and as not lining up, and why could only be read from a log on a
+    machine nobody could reach. See `analyze`'s `trace`.
+    """
+    if not trace:
+        return
+    try:
+        client.table("analyses").update({"diagnostics": trace}).eq(
+            "id", analysis_id
+        ).execute()
+    except Exception:  # noqa: BLE001 — a diagnostic must never cost a verdict
+        log.warning("analysis %s: could not store diagnostics", analysis_id, exc_info=True)
 
 
 def _fetch_analysis(client, analysis_id: str) -> dict | None:

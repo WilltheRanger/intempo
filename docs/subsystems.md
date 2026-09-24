@@ -809,9 +809,14 @@ nothing else covers `backend/`. Named here rather than left to be found.
   click tracks, and the failure above lived in the gap for as long as it existed.
 
   Capturing one after the fact is harder than it sounds: `keep_playback_copy`
-  re-encodes a take to Opus and **deletes the WAV** once the analysis succeeds,
-  so the eight real takes survive only as lossy copies. If you want a real-audio
-  fixture, arrange to keep the WAV *before* the take is recorded.
+  re-encodes a take to Opus once the analysis succeeds, and the WAV is deleted
+  an hour later by `sweep_judged_originals` (at once, before 2026-09-24), so the
+  real takes survive only as lossy copies. If you want a real-audio fixture,
+  take the WAV within that hour or arrange to keep it *before* the take is
+  recorded. What each take's analysis saw — every attack, the reading chosen,
+  the alignment's halves, the pitch evidence and the refusal rule — is kept on
+  the row as `analyses.diagnostics` since 027, so a refused take can be
+  diagnosed without its audio.
 
 
 - **The page's audio session category decides whether the microphone works at

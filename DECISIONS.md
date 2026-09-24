@@ -1,5 +1,37 @@
 # InTempo Decisions
 
+## 2026-09-24 — A judged take's WAV goes an hour after its verdict, not at it; the analysis keeps its working
+
+**Context.** The owner's take showed "Can't load the recording right now". The
+storage logs showed a race: the phone asked for its recording 0.4 s before the
+worker wrote the Opus key into the row, so it was signed a link to the WAV, and
+`keep_playback_copy` deleted that WAV 0.3 s later; the phone's fetch got a 400.
+Separately, the owner's first real double-bass takes were refused ("not played"
+with 73 of 75 notes; not lining up with 109), and why was only in a log line
+on the Modal worker.
+
+**Decision.**
+- `keep_playback_copy` no longer deletes the WAV. `sweep_judged_originals`
+  deletes it once `finished_at` is older than the signed-link lifetime plus ten
+  minutes, marking `audio_reclaimed_at` (migration 027 widens that column's
+  meaning from "unjudged take reclaimed" to "original deleted").
+- `analyze()` takes an optional `trace` and fills it with the values its
+  decisions used; the worker stores it as `analyses.diagnostics` in a separate
+  write after the verdict. `why_not_played` names which of the three rules
+  refused a take.
+
+**Alternatives considered.**
+- *Write the Opus before publishing the verdict.* Race-free, but the encode
+  alone measured 1.2 s on a one-minute take, added to every verdict.
+- *Retry on the client when the player errors.* Hides this race and leaves any
+  other stale link broken.
+- *Diagnostics inside `result_json`.* That is the app's payload; the attack
+  times are hundreds of numbers the app never reads.
+
+**Trade-offs accepted.** About 6 MB per take held for an extra hour. The
+backlog of judged rows (whose WAVs already went at the verdict) is marked by
+the first passes with nothing to delete.
+
 ## 2026-09-24 — Crescendos and grace notes in Listen: levels in beats, ornaments only by name
 
 **Context.** The owner asked for crescendos and grace notes in Listen. Two

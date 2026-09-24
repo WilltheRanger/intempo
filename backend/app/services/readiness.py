@@ -149,6 +149,11 @@ REQUIRED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     # missing it records nothing and looks, from the table, like a fleet of
     # clients that never reported.
     ("analyses", "capture", "026"),
+    # 027. The analysis's working on each take. Degrades quietly the same way
+    # — the worker writes it separately, after the verdict, and logs a failure
+    # — so a deployment missing it analyses exactly as before and keeps no
+    # record of why a take was refused, which is the one thing it is for.
+    ("analyses", "diagnostics", "027"),
     # 013. All three degrade quietly on purpose — every caller narrows its
     # select or retries its write without them, because the alternative was a
     # save that 500s and a scan that sits `reading` forever during the window
