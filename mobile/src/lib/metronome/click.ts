@@ -3,6 +3,7 @@ import { File, Paths } from 'expo-file-system';
 
 import { prepareForPlayback } from '../audio/session';
 import { encodeWavBytes } from '../audio/wav';
+import { ACCENT_HZ, CLICK_GAIN, CLICK_HZ, CLICK_S } from './clickSound';
 import { startBeatClock, startPlannedBeatClock } from './clock';
 import type { ClickTrack, ClickTrackOptions } from './click.types';
 
@@ -27,10 +28,6 @@ import type { ClickTrack, ClickTrackOptions } from './click.types';
  */
 
 const SAMPLE_RATE = 22050;
-const CLICK_HZ = 1000;
-const ACCENT_HZ = 1600;
-const CLICK_S = 0.03;
-const CLICK_GAIN = 0.25;
 
 /** One click as 16-bit PCM: a decaying burst, no attack ramp. */
 function renderClick(frequency: number): Int16Array {
