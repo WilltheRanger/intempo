@@ -6,6 +6,7 @@ import {
 import type { Instrument } from '../../data/types';
 import type { Schedule } from './schedule';
 import { INSTRUMENT_PROGRAMS } from './soundfontBank';
+import { Limiter } from './limiter';
 import {
   EXPRESSION_NEUTRAL,
   SWELL_MIN_S,
@@ -32,20 +33,15 @@ const EXPRESSION_STEP_S = 0.02;
 /**
  * The engine's master gain: how loud Listen is.
  *
- * 0.6 until 2026-09-24, which put an unmarked melody's peaks at −27 to −31
- * dBFS — 15 dB under the metronome's click (−12 dBFS) and the reference
- * tone, and quiet on a phone speaker at any volume. 15 dB up puts the
- * melody where the click is, measured on all four instruments.
+ * 0.6 until 2026-09-24: an unmarked melody peaked at −27 to −31 dBFS, 15 dB
+ * under the metronome's click, quiet on a phone at any volume. 15 dB up was
+ * the first answer and still not enough by the owner's ear; 25 dB up puts an
+ * unmarked melody's own peaks at −2.5 to −6 dBFS, and `Limiter` takes the
+ * attacks and vibrato peaks that stand above that.
  */
-const GAIN = 0.6 * 10 ** (15 / 20);
-/**
- * The loudest a sample may be (−1 dBFS). At `GAIN`, an accented fff line
- * peaks 3–8 dB under it; accented fff chords, the loudest thing a page can
- * ask for, pass it, and are rendered again lower instead of clipping.
- */
+const GAIN = 0.6 * 10 ** (25 / 20);
+/** The loudest a sample may be: −1 dBFS, headroom for the phone's converter. */
 const CEILING = 10 ** (-1 / 20);
-/** How long a pass keeps listening after it first passes the ceiling. */
-const OVER_WINDOW_S = 0.5;
 // One short passage only (at most ~11 MB); retries at the same tempo need not
 // render again. Never cache pending work, errors, or a cancelled render.
 let recent:
@@ -194,61 +190,11 @@ export async function renderSoundfont(
     expression,
   ]);
   if (recent?.bank === bank && recent.key === cacheKey) return recent.audio;
-  const frames = Math.ceil((schedule.durationS + TAIL) * RATE);
-  let gain = GAIN;
-  let pcm: Int16Array | undefined;
-  // Almost every passage takes one pass. One loud enough to pass the ceiling
-  // stops where it does and starts again, scaled so that sample lands just
-  // under it; a later, louder one can do the same, a few times at most.
-  for (let attempt = 0; attempt < 4 && !pcm; attempt++) {
-    const pass = await renderPass(
-      events,
-      expression,
-      bank,
-      instrument,
-      frames,
-      gain,
-      cancelled,
-    );
-    if (pass instanceof Int16Array) pcm = pass;
-    else gain *= (CEILING / pass.over) * 0.98;
-  }
-  if (!pcm) throw new Error('This passage is too loud to play without distorting.');
-  const audio: RenderedInstrument = {
-    pcm,
-    sampleRate: RATE,
-    channels: 2,
-    durationS: frames / RATE,
-  };
-  recent =
-    schedule.durationS <= 60 ? { bank, key: cacheKey, audio } : undefined;
-  return audio;
-}
-
-/**
- * One render at one gain: the samples, or — once one would pass the ceiling —
- * how far over it went, so the caller can try again lower rather than clip.
- *
- * **Measured over the whole attack, not the first sample over.** A chord's
- * level is still rising where it first crosses the ceiling; stopping there
- * read 1.03 on a chord that peaks at 1.6, and four retries each lowered it by
- * less than a decibel. So the pass renders on for `OVER_WINDOW_S` and reports
- * the highest sample it saw.
- */
-async function renderPass(
-  events: NoteEvent[],
-  expression: ExpressionEvent[],
-  bank: BasicSoundBank,
-  instrument: Instrument,
-  frames: number,
-  gain: number,
-  cancelled: () => boolean,
-): Promise<Int16Array | { over: number }> {
   SpessaLog.setLogLevel(false, false, false);
   const synth = new SpessaSynthProcessor(RATE, { eventsEnabled: false });
   synth.soundBankManager.addSoundBank(bank, 'instrument');
   synth.setSystemParameter('interpolationType', 2); // Hermite, not nearest-neighbour.
-  synth.setSystemParameter('gain', gain);
+  synth.setSystemParameter('gain', GAIN);
   synth.setSystemParameter('reverbGain', 0.35);
   synth.setSystemParameter('chorusGain', 0);
   synth.programChange(0, INSTRUMENT_PROGRAMS[instrument]);
@@ -261,15 +207,26 @@ async function renderPass(
   synth.controllerChange(0, 91, 40);
   synth.controllerChange(0, 93, 0);
   synth.reverbProcessor.preDelayTime = 10;
+  const frames = Math.ceil((schedule.durationS + TAIL) * RATE);
   const pcm = new Int16Array(frames * 2);
+  const limiter = new Limiter(RATE, CEILING);
+  const limited: [number, number] = [0, 0];
+  // The limiter hands each sample back `lookahead` samples late; writing it
+  // at its own index is what keeps every note on its beat.
+  let written = 0;
+  const write = () => {
+    // Ease only the very end of the reverb tail; never truncate note releases.
+    const fade = Math.min(1, (frames - 1 - written) / (RATE * 0.1));
+    pcm[written * 2] = Math.round(limited[0] * fade * 32767);
+    pcm[written * 2 + 1] = Math.round(limited[1] * fade * 32767);
+    written += 1;
+  };
   const left = new Float32Array(128);
   const right = new Float32Array(128);
   let position = 0;
   let event = 0;
   let control = 0;
   let sinceYield = 0;
-  let peak = 0;
-  let crossedAt = -1;
   try {
     while (position < frames) {
       // Offs, then the level, then ons: a note that starts as another ends
@@ -304,21 +261,9 @@ async function renderPass(
       right.fill(0);
       synth.process(left, right, 0, length);
       for (let i = 0; i < length; i++) {
-        // Ease only the very end of the reverb tail; never truncate note releases.
-        const fade = Math.min(1, (frames - 1 - position - i) / (RATE * 0.1));
-        const l = left[i] * fade;
-        const r = right[i] * fade;
-        peak = Math.max(peak, Math.abs(l), Math.abs(r));
-        pcm[(position + i) * 2] = Math.round(Math.max(-1, Math.min(1, l)) * 32767);
-        pcm[(position + i) * 2 + 1] = Math.round(
-          Math.max(-1, Math.min(1, r)) * 32767,
-        );
+        if (limiter.push(left[i], right[i], limited)) write();
       }
-      if (crossedAt < 0 && peak > CEILING) crossedAt = position;
       position += length;
-      if (crossedAt >= 0 && position - crossedAt >= OVER_WINDOW_S * RATE) {
-        return { over: peak };
-      }
       sinceYield += length;
       if (sinceYield >= 8192) {
         sinceYield = 0;
@@ -326,8 +271,20 @@ async function renderPass(
         if (cancelled()) throw new Error('Playback cancelled');
       }
     }
+    // The last `lookahead` samples are still inside the limiter.
+    while (written < frames) {
+      if (limiter.push(0, 0, limited)) write();
+    }
     if (cancelled()) throw new Error('Playback cancelled');
-    return crossedAt >= 0 ? { over: peak } : pcm;
+    const audio: RenderedInstrument = {
+      pcm,
+      sampleRate: RATE,
+      channels: 2,
+      durationS: frames / RATE,
+    };
+    recent =
+      schedule.durationS <= 60 ? { bank, key: cacheKey, audio } : undefined;
+    return audio;
   } finally {
     synth.midiChannels.forEach((channel) => channel.stopAllNotes(true));
     synth.soundBankManager.deleteSoundBank('instrument');
