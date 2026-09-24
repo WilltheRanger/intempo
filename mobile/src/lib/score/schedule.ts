@@ -1,12 +1,13 @@
-import type { Duration, ScoreJson } from '../../data/types';
+import type { Duration, ScoreJson, ScoreNote } from '../../data/types';
 import { flattenNotes, readTies } from '../notation/ties';
 import { measuresInPlayOrder } from './playOrder';
 import { midiOf } from '../notation/pitch';
 import { timeSignaturesByMeasure } from '../notation/meter';
 import { metronomePulse } from '../metronome/beats';
 import {
-  UNMARKED_VELOCITY,
-  applyDynamic,
+  EXPRESSION_NEUTRAL,
+  SWELL_MIN_S,
+  levelsAlong,
   metricLift,
   velocityOf,
 } from './expression';
@@ -138,6 +139,12 @@ export interface ScheduledNote {
    * next rather than separated from it.
    */
   legato?: boolean;
+  /**
+   * How the level moves while the note is held, as MIDI expression (CC 11) at
+   * its start and at its end: a long note under a hairpin. Absent, the note
+   * keeps its own shape (`expression.swell`).
+   */
+  expression?: { from: number; to: number };
 }
 
 export interface Schedule {
@@ -186,6 +193,42 @@ const ARTICULATION_LENGTH: Record<string, number> = {
   staccato: 0.5,
   tenuto: 1,
 };
+
+/**
+ * How long each grace note sounds, at most: a flick before the beat, about as
+ * fast as a finger drops. Seconds rather than beats, because it is the same
+ * flick at any tempo.
+ *
+ * Not the server's placement, and it need not be. `alignment.build_timeline`
+ * spreads a note's ornaments over `ORNAMENT_SHARE` of its run-up, a number
+ * chosen to make matching work, and a tenth of a beat out of place costs the
+ * matcher far less than an ornament missing. This is chosen to sound like a
+ * player; both put the ornament before the beat and the beat where it was.
+ */
+const GRACE_S = 0.07;
+/** The most of the note before that its ornament may take. */
+const GRACE_SHARE = 0.5;
+/** Shorter than this a grace note is a smear, not a note, and is left out. */
+const GRACE_MIN_S = 0.02;
+/** An ornament is lighter than the note it leads into. */
+const GRACE_SOFTER = 8;
+
+/**
+ * The grace notes to play before a note, or null for none.
+ *
+ * **All of them or none**, and only by name. A count with no pitches is what
+ * a reading from a photograph gives, and guessing the note would put a wrong
+ * one in front of the right one — the reference teaching a mistake. The
+ * alignment still expects the attack; it is only Listen that stays quiet.
+ */
+function ornamentOf(note: ScoreNote): number[] | null {
+  const pitches = note.grace_pitches ?? [];
+  if (pitches.length === 0 || pitches.length < (note.grace_notes ?? 0)) {
+    return null;
+  }
+  const hz = pitches.map(frequencyOf);
+  return hz.every((f): f is number => f !== null) ? hz : null;
+}
 
 /**
  * Walk the score, emitting one entry per sounded note.
@@ -247,17 +290,41 @@ export function scheduleScore(
     });
   }
   const meters = timeSignaturesByMeasure(score);
-  let standing = UNMARKED_VELOCITY;
+  // The beat each flat note starts on, for the hairpins: a crescendo is a
+  // line across beats, so it needs to know where each note falls on it. Rests
+  // and tied-over notes are counted, because a hairpin can end on either, and
+  // a dynamic written on a tied-over note still stands for what follows.
+  const onsets: number[] = [];
+  let beatsSoFar = 0;
+  for (const note of flat) {
+    onsets.push(beatsSoFar);
+    beatsSoFar += BEATS[note.duration] ?? UNKNOWN_DURATION_BEATS;
+  }
+  const levels = levelsAlong(flat, onsets, beatsSoFar);
+
+  // **An ornament on the very first note needs time before it**, and a piece
+  // that opens on one has none: nothing before the first onset but the start.
+  // So the whole piece starts that much later rather than losing the ornament
+  // or moving the note it decorates. Every onset moves together, so no note
+  // moves against another.
+  const first = flat.findIndex(
+    (note, i) => !ties.absorbed[i] && note.pitch !== 'rest' && frequencyOf(note.pitch) !== null,
+  );
+  const opening = first === -1 ? null : ornamentOf(flat[first]);
+  if (opening) {
+    const room = clock + onsets[first] * secondsPerBeat;
+    clock += Math.max(0, opening.length * GRACE_S - room);
+  }
   let barStart = clock;
+  // Where the last sounded note started: an ornament takes its time from it.
+  // Null before the first, whose ornament may have all the silence before it.
+  let previousOnset: number | null = null;
 
   for (let i = 0; i < flat.length; i += 1) {
     if (opensBar[i]) {
       barStart = clock;
     }
     const note = flat[i];
-    // A dynamic written on a tied-over note still stands for what follows.
-    const dynamic = applyDynamic(note.dynamics, standing);
-    standing = dynamic.standing;
     if (ties.absorbed[i]) {
       continue; // already sounding, as part of the note that tied into it
     }
@@ -278,14 +345,57 @@ export function scheduleScore(
     const frequency = note.pitch === 'rest' ? null : frequencyOf(note.pitch);
 
     if (frequency !== null) {
+      // **A long note under a hairpin moves while it is held.** Velocity is
+      // fixed at the attack, so the note is struck at the louder end of its
+      // stretch and CC 11 carries it from one end to the other; both act on
+      // the level by the same curve, so the ratio of the two levels is the
+      // ratio of the two expression values. A short note is left to the next
+      // attack, which arrives before the difference could be heard.
+      const from = levels.standing[i];
+      const to = levels.before(onsets[i] + sounded / secondsPerBeat);
+      const moves = sounded >= SWELL_MIN_S && Math.abs(to - from) >= 1;
+      const peak = Math.max(from, to);
       const pulse = metronomePulse(meters.get(measureOf[i]));
       const velocity = velocityOf({
-        dynamic: dynamic.note,
+        dynamic: levels.attack[i] + (moves ? peak - from : 0),
         articulation: note.articulation,
         metric: metricLift((clock - barStart) / secondsPerBeat, pulse),
         slurredFrom: slurredFrom[i],
         index: globalIndex,
       });
+      const expression = moves
+        ? {
+            from: Math.round((EXPRESSION_NEUTRAL * from) / peak),
+            to: Math.round((EXPRESSION_NEUTRAL * to) / peak),
+          }
+        : undefined;
+
+      // **The ornament first, because it is played first**, ending exactly
+      // where the note it decorates begins. It takes its time from the note
+      // before — never more than `GRACE_SHARE` of it, or all of the silence
+      // before the first note — and never the note's own onset, which is
+      // where the analysis will listen for it.
+      const ornament = ornamentOf(note);
+      if (ornament) {
+        const room =
+          previousOnset === null ? clock : (clock - previousOnset) * GRACE_SHARE;
+        const each = Math.min(GRACE_S, room / ornament.length);
+        if (each >= GRACE_MIN_S) {
+          ornament.forEach((graceHz, k) => {
+            notes.push({
+              startS: clock - each * (ornament.length - k),
+              durationS: each,
+              frequency: graceHz,
+              measureNumber: measureOf[i],
+              globalIndex,
+              velocity: Math.max(1, velocity - GRACE_SOFTER),
+              legato: true,
+            });
+            globalIndex += 1;
+          });
+        }
+      }
+
       notes.push({
         startS: clock,
         durationS: sounded,
@@ -294,8 +404,10 @@ export function scheduleScore(
         globalIndex,
         velocity,
         ...(legato ? { legato } : {}),
+        ...(expression ? { expression } : {}),
       });
       globalIndex += 1;
+      previousOnset = clock;
 
       // **The rest of the chord, at the same instant.** A double stop played
       // back as its lower note alone is not the piece: the demo fixture opens
@@ -316,6 +428,7 @@ export function scheduleScore(
           globalIndex: globalIndex - 1,
           velocity,
           ...(legato ? { legato } : {}),
+          ...(expression ? { expression } : {}),
         });
       }
     }

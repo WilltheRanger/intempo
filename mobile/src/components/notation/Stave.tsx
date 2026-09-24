@@ -250,9 +250,9 @@ export interface StaveProps {
    * teach. Off for reading a real piece, where a letter under every note reads
    * as a beginner's crib.
    *
-   * **A caller that turns this off has to state the clef**, because nothing
-   * here draws one and the names were carrying that information — the same
-   * notehead is a different pitch in alto clef. See `engrave.ts`.
+   * **A caller that turns this off has to state the clef** — with `head`, or
+   * some other way — because the names were carrying that information: the
+   * same notehead is a different pitch in alto clef. See `engrave.ts`.
    */
   showNoteNames?: boolean;
   /**
@@ -383,10 +383,11 @@ const MULTI_REST_NUMBER_SIZE = 1.5;
 /**
  * Engraved notation, wrapped onto as many systems as it takes.
  *
- * Draws what `engrave` laid out and nothing more. **No clef** — the reasoning is
- * in `engrave.ts`. With `showNoteNames` on, the names under each system carry
- * the information a clef would; with it off, the caller owes the reader that
- * information some other way.
+ * Draws what `engrave` laid out and nothing more. **No clef unless `head` asks
+ * for one** — the reasoning is in `engrave.ts`. With `showNoteNames` on, the
+ * names under each system carry the information a clef would; with them off,
+ * the caller owes the reader that information, and `head` is how the reading
+ * screens pay it.
  *
  * The names are SVG text rather than React Native text so they travel with the
  * system they belong to. A row of absolutely positioned labels worked for one

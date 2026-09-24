@@ -5,6 +5,7 @@ import {
   DYNAMIC_VELOCITY,
   UNMARKED_VELOCITY,
   applyDynamic,
+  levelsAlong,
   metricLift,
   swell,
   variation,
@@ -142,5 +143,108 @@ describe('a held note', () => {
       expect(Math.abs(next - previous)).toBeLessThanOrEqual(2);
       previous = next;
     }
+  });
+});
+
+describe('a hairpin', () => {
+  const { p, mp, mf, f, ff, fff } = DYNAMIC_VELOCITY;
+  /** Quarters, one beat each, in a row. */
+  const along = (notes: Parameters<typeof levelsAlong>[0]) =>
+    levelsAlong(notes, notes.map((_, beat) => beat), notes.length);
+
+  it('climbs in a straight line to the dynamic written at its end', () => {
+    const levels = along([
+      { dynamics: 'p', hairpin: 'crescendo' },
+      {},
+      {},
+      {},
+      { dynamics: 'f', hairpin_end: true },
+      {},
+    ]);
+    expect(levels.attack).toEqual([p, p + 8, p + 16, p + 24, f, f]);
+    expect(levels.standing).toEqual(levels.attack);
+  });
+
+  it('goes two steps when nothing is written where it ends', () => {
+    const levels = along([{ dynamics: 'p', hairpin: 'crescendo' }, {}, { hairpin_end: true }, {}]);
+    expect(levels.attack.at(-2)).toBe(mf);
+    expect(levels.attack.at(-1)).toBe(mf);
+    const falling = along([{ dynamics: 'f', hairpin: 'diminuendo' }, {}, { hairpin_end: true }]);
+    expect(falling.attack.at(-1)).toBe(mp);
+  });
+
+  it('runs to the next dynamic when its end was not written', () => {
+    // "cresc." has no end mark: it runs until the page says where it went.
+    const levels = along([{ hairpin: 'crescendo' }, {}, {}, { dynamics: 'ff' }]);
+    expect(levels.attack[0]).toBe(mf);
+    expect(levels.attack[3]).toBe(ff);
+    expect(levels.attack[1]).toBeGreaterThan(mf);
+  });
+
+  it('runs to the end of the passage when nothing ends it', () => {
+    const levels = levelsAlong([{ dynamics: 'p', hairpin: 'crescendo' }], [0], 4);
+    expect(levels.before(4)).toBe(mf);
+    expect(levels.before(2)).toBeCloseTo((p + mf) / 2);
+  });
+
+  it('plays a dynamic on the wrong side of it as the sudden change it is', () => {
+    // cresc. … subito p: up, and then down at once, not a diminuendo.
+    const levels = along([{ dynamics: 'mp', hairpin: 'crescendo' }, {}, { dynamics: 'p' }, {}]);
+    expect(levels.attack[1]).toBeGreaterThan(mp);
+    expect(levels.attack[2]).toBe(p);
+    expect(levels.before(2)).toBe(f);
+    expect(levels.before(2.5)).toBe(p);
+  });
+
+  it('carries on through a sforzando', () => {
+    const levels = along([
+      { dynamics: 'p', hairpin: 'crescendo' },
+      { dynamics: 'sfz' },
+      {},
+      { dynamics: 'f' },
+    ]);
+    expect(levels.attack[1]).toBeGreaterThan(f);
+    expect(levels.standing[1]).toBeCloseTo(p + (f - p) / 3);
+    expect(levels.attack[2]).toBeCloseTo(p + (2 * (f - p)) / 3);
+  });
+
+  it('swells and returns under a < >', () => {
+    const levels = along([
+      { dynamics: 'p', hairpin: 'crescendo' },
+      {},
+      { hairpin_end: true, hairpin: 'diminuendo' },
+      {},
+      { hairpin_end: true },
+    ]);
+    expect(levels.attack).toEqual([p, (p + mf) / 2, mf, (p + mf) / 2, p]);
+  });
+
+  it('is carried by a note held across it', () => {
+    // A whole note under a crescendo: nothing is struck on the way, and the
+    // level is still meant to rise.
+    const levels = levelsAlong(
+      [{ dynamics: 'p', hairpin: 'crescendo' }, { dynamics: 'f', hairpin_end: true }],
+      [0, 4],
+      5,
+    );
+    expect(levels.before(0)).toBe(mf);
+    expect(levels.before(2)).toBeCloseTo((p + f) / 2);
+    expect(levels.before(4)).toBe(f);
+  });
+
+  it('changes nothing when there is none', () => {
+    const plain = along([{ dynamics: 'p' }, {}, { dynamics: 'fp' }, {}, { dynamics: 'sf' }]);
+    let standing = UNMARKED_VELOCITY;
+    const expected = ['p', null, 'fp', null, 'sf'].map((marking) => {
+      const next = applyDynamic(marking as Parameters<typeof applyDynamic>[0], standing);
+      standing = next.standing;
+      return next.note;
+    });
+    expect(plain.attack).toEqual(expected);
+  });
+
+  it('has nowhere to go past the loudest level', () => {
+    const levels = along([{ dynamics: 'fff', hairpin: 'crescendo' }, {}, {}]);
+    expect(levels.attack).toEqual([fff, fff, fff]);
   });
 });

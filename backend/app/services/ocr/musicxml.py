@@ -40,6 +40,7 @@ from app.services.score_schema import (
     ScoreJson,
     Slur,
     Tuplet,
+    hairpin_from_text,
 )
 
 # MusicXML type names → ours. `long` and `maxima` are still absent, and a piece
@@ -1535,6 +1536,17 @@ def score_json_from_musicxml(
     #: — the count rides on the next real note — so carrying it costs nothing
     #: when the bar ends without one.
     pending_graces = 0
+    #: Their pitches, in playing order; an empty string for one that could not
+    #: be named, which withholds the whole group's names (see below).
+    pending_grace_pitches: list[str] = []
+    #: Dynamics and hairpins waiting for the note they stand over, carried
+    #: across the barline the same way. A `<direction>` is written before the
+    #: note it applies to, and a hairpin's `stop` after the last note under it
+    #: — so each lands on the next note or rest in the line being read, which
+    #: is where the level it describes takes effect.
+    pending_dynamic: str | None = None
+    pending_hairpin: str | None = None
+    pending_hairpin_end = False
     #: Whether any bracketed group's length was kept as rests, so the sentence
     #: shown to a musician can say so rather than sending them to a short bar
     #: that is no longer short.
@@ -1721,7 +1733,10 @@ def score_json_from_musicxml(
 
         for direction in measure_el.iterfind("direction"):
             words = _text(direction.find("direction-type/words"))
-            if words and tempo_marking is None:
+            # "cresc." is often the first word a part prints, and it is not a
+            # tempo; it became this piece's tempo marking until it was read as
+            # the hairpin it is, in the loop over the bar's notes below.
+            if words and tempo_marking is None and hairpin_from_text(words) is None:
                 tempo_marking = words
             printed_tempo = _metronome_tempo(direction)
             if printed_tempo is not None and tempo_beat_unit is None:
@@ -1740,10 +1755,6 @@ def score_json_from_musicxml(
             # converted mark. The mark's unit is still kept for display.
             if bpm_hint is None and printed_tempo is not None:
                 bpm_hint = printed_tempo[0]
-            for dynamics in direction.iterfind("direction-type/dynamics"):
-                for child in dynamics:
-                    if child.tag in _DYNAMIC_TAGS:
-                        break
 
         notes: list[Note] = []
         #: Every note the measure holds, before the voice filter — the fallback
@@ -1818,7 +1829,27 @@ def score_json_from_musicxml(
             unnamed_beats = 0.0
 
         for child in measure_el:
-            if child.tag in ("note", "forward") and not on_kept_staff(child):
+            if child.tag in ("note", "forward", "direction") and not on_kept_staff(child):
+                continue
+            if child.tag == "direction":
+                # Read here, in the order the bar is written, and not in the
+                # loop over `<direction>` above: that loop knows a bar has a
+                # dynamic but not which note it stands over, and for years it
+                # found each one and discarded it.
+                for mark in child.iterfind("direction-type/dynamics/*"):
+                    if mark.tag in _DYNAMIC_TAGS:
+                        pending_dynamic = mark.tag
+                for wedge in child.iterfind("direction-type/wedge"):
+                    kind = wedge.get("type")
+                    if kind == "stop":
+                        pending_hairpin_end = True
+                    elif kind in ("crescendo", "diminuendo"):
+                        pending_hairpin = kind
+                # "cresc." and "dim." are hairpins with no room to draw one.
+                for words in child.iterfind("direction-type/words"):
+                    written = hairpin_from_text(_text(words) or "")
+                    if written is not None:
+                        pending_hairpin = written
                 continue
             if child.tag == "forward":
                 # Only the kept voice's gaps: a `<forward>` belonging to a
@@ -1856,6 +1887,11 @@ def score_json_from_musicxml(
             # no duration and adds no onset — so the count stays exactly as it
             # was. See `Note.chord_pitches`.
             if note_el.find("chord") is not None:
+                # A grace chord's second note is part of the ornament, not of
+                # the note before it: stacking it there sounded an ornament's
+                # pitch for the whole length of the previous note.
+                if note_el.find("grace") is not None:
+                    continue
                 member = _pitch_name(note_el)
                 # `not_filtered` rather than `notes`: it holds every note built
                 # in this measure including ones the voice filter dropped, so
@@ -1885,6 +1921,8 @@ def score_json_from_musicxml(
                 grace_voice = (note_el.findtext("voice") or "").strip()
                 if not (multi_voice and grace_voice and grace_voice != kept_voice):
                     pending_graces += 1
+                    named = _pitch_name(note_el)
+                    pending_grace_pitches.append(named if named and named != "rest" else "")
                 continue
             # **A cue note is time you do not play.**
             #
@@ -1970,7 +2008,29 @@ def score_json_from_musicxml(
             # musician sits through, which is the bar before an entry and the
             # one they most need to be right.
             graces = 0 if pitch == "rest" else pending_graces
+            # Every ornament named, or none: a group with one unreadable pitch
+            # keeps its count for the timeline and loses its names, because a
+            # run played with a note missing is a different ornament.
+            grace_pitches = (
+                pending_grace_pitches
+                if graces and all(pending_grace_pitches)
+                else []
+            )
             pending_graces = 0
+            pending_grace_pitches = []
+            # Markings go to the line being read, never to a note from a voice
+            # the filter dropped — the level would change on nothing heard.
+            # A rest takes them: the level is in force from where it is written.
+            marked = not filtered_out
+            # A dynamic written on the note itself outranks one in a direction.
+            own_dynamic = next(
+                (
+                    mark.tag
+                    for mark in note_el.iterfind("notations/dynamics/*")
+                    if mark.tag in _DYNAMIC_TAGS
+                ),
+                None,
+            )
             # The rests stand where the group stood, so this runs before the
             # note that ended the run is appended and not after it.
             flush_unnamed()
@@ -1981,10 +2041,18 @@ def score_json_from_musicxml(
                 articulation=_articulation(note_el),  # type: ignore[arg-type]
                 tied_to_next=tied,
                 grace_notes=graces,
+                grace_pitches=grace_pitches,
                 # Anywhere in `<notations>`; the spec allows several and their
                 # shape and placement are engraving, not duration.
                 fermata=note_el.find("notations/fermata") is not None,
+                dynamics=(own_dynamic or pending_dynamic) if marked else None,
+                hairpin=pending_hairpin if marked else None,
+                hairpin_end=pending_hairpin_end if marked else False,
             )
+            if marked:
+                pending_dynamic = None
+                pending_hairpin = None
+                pending_hairpin_end = False
             not_filtered.append(built)
             if filtered_out:
                 continue

@@ -13,13 +13,15 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal, get_args
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 log = logging.getLogger("intempo.score")
 
 # Closed enums per spec §6.
 Clef = Literal["treble", "bass", "alto", "tenor"]
 Articulation = Literal["staccato", "tenuto", "accent"]
+#: A hairpin, or its written-out word: the level moves from this note on.
+Hairpin = Literal["crescendo", "diminuendo"]
 Dynamics = Literal[
     "ppp", "pp", "p", "mp", "mf", "f", "ff", "fff",
     "fp", "sfz", "sf", "fz",
@@ -342,6 +344,26 @@ def _one_of(allowed: frozenset[str], field: str):
 
 
 _DYNAMICS = frozenset(get_args(Dynamics))
+
+
+def hairpin_from_text(text: str) -> Hairpin | None:
+    """`crescendo` or `diminuendo` for a hairpin's name or its printed word.
+
+    "cresc.", "poco a poco cresc.", "crescendo" → crescendo; "dim.", "dimin.",
+    "decresc.", "diminuendo", "decrescendo" → diminuendo; anything else, None.
+    """
+    words = _tidy(text).replace("_", " ").split()
+    for word in words:
+        if word.startswith("decresc") or word.startswith("dim"):
+            return "diminuendo"
+        if word.startswith("cresc"):
+            return "crescendo"
+    return None
+
+
+#: The longest ornament whose notes are kept by name. A written-out run of
+#: more than this is not a grace; see `Note.grace_pitches`.
+_MAX_GRACE_PITCHES = 16
 _ARTICULATIONS = frozenset(get_args(Articulation))
 _CLEFS = frozenset(get_args(Clef))
 
@@ -410,6 +432,46 @@ class Note(_Strict):
     #: before the field existed, which is why it defaults rather than being
     #: required. A rest never has any.
     chord_pitches: list[str] = Field(default_factory=list)
+    #: A crescendo or diminuendo — hairpin or the word — begins at this note.
+    #:
+    #: **Playback only, like `dynamics`.** The level ramps from the dynamic in
+    #: force here to the next one written, reached at the note marked
+    #: `hairpin_end` or, without one, at the next dynamic or hairpin. Nothing
+    #: in the timing analysis reads it.
+    hairpin: Hairpin | None = None
+    #: The hairpin running into this note ends on it.
+    hairpin_end: bool = False
+    #: The grace notes' pitches, in the order they are played, one per attack.
+    #:
+    #: **Beside `grace_notes`, not instead of it.** The count is what the
+    #: timeline uses, and a reader that knows how many ornaments there are but
+    #: not which notes they are still gives the alignment everything it needs.
+    #: The pitches are for playing them: Listen leaves an ornament out rather
+    #: than guess its note, so without these it plays none.
+    grace_pitches: list[str] = Field(default_factory=list)
+
+    @field_validator("grace_pitches", mode="before")
+    @classmethod
+    def _keep_playable_grace_pitches(cls, values: Any) -> Any:
+        # Dropped, not refused: an ornament's pitch is only ever played, and a
+        # page must never be lost to one — the argument `_one_of` makes. That
+        # includes a run longer than any ornament, which a hostile file can
+        # write two thousand of: its count stands and its names go.
+        if not isinstance(values, list) or len(values) > _MAX_GRACE_PITCHES:
+            return []
+        return [
+            value
+            for value in values
+            if isinstance(value, str) and value != "rest" and _PITCH_PATTERN.match(value)
+        ]
+
+    @model_validator(mode="after")
+    def _grace_count_covers_its_pitches(self) -> "Note":
+        # Every named ornament is an attack, so the count is never below the
+        # names. More attacks than names is allowed: some pitches unknown.
+        if len(self.grace_pitches) > self.grace_notes:
+            self.grace_notes = len(self.grace_pitches)
+        return self
 
     @field_validator("chord_pitches")
     @classmethod
@@ -431,6 +493,14 @@ class Note(_Strict):
     _keep_known_dynamics = field_validator("dynamics", mode="before")(
         _one_of(_DYNAMICS, "dynamics")
     )
+
+    @field_validator("hairpin", mode="before")
+    @classmethod
+    def _read_hairpin(cls, value: Any) -> Any:
+        # The words as printed, not only the names: "cresc.", "dim." and
+        # "decresc." are how a page writes a hairpin it has no room to draw.
+        # Anything else is dropped, never refused — see `_one_of`.
+        return hairpin_from_text(value) if isinstance(value, str) else None
 
     @field_validator("pitch")
     @classmethod

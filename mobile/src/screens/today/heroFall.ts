@@ -15,14 +15,19 @@
  * with the prototype's 28% took the wash up to about a quarter of the way
  * down the screen, and the owner's answer (2026-09-23) was that it "creeps up
  * too high". The copy's first line still needs settled ivory, so the fall
- * cannot start later; it can finish sooner, and a 20% run leaves the room in
+ * cannot start later; it can finish sooner, and a 20% run left the room in
  * the photograph about 70pt deeper for the same contrast under the label.
+ *
+ * **17% since 2026-09-24**, when the owner asked for more of the image again,
+ * with the copy lowered 28pt at the same time. The two together start the
+ * fall about 45pt further down a 390×844 screen, and the label still sits on
+ * ivory settled to `SETTLED_WASH`: that is placed from the copy, not from here.
  */
 
 /** The prototype's `fadeStart`, as a fraction of the height. */
 export const FALL_START = 0.47;
 /** The run from where the fall starts to where it is fully ivory, as a fraction. */
-export const FALL_SPAN = 0.2;
+export const FALL_SPAN = 0.17;
 
 /**
  * The prototype's curve: along the run (0 to 1), how much ivory is laid over

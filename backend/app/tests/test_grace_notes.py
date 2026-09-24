@@ -124,6 +124,54 @@ def test_a_grace_before_a_cue_is_dropped_with_it() -> None:
     assert [n.grace_notes for n in score.measures[0].notes] == [0, 0, 0, 0]
 
 
+def test_the_ornaments_pitches_are_kept_in_the_order_they_are_played() -> None:
+    """The count is for the timeline; the names are for Listen, which plays
+    an ornament only when it knows its notes."""
+    score = _one_bar(_grace("B") + _grace("C") + _note() + _note() + _note() + _note())
+    first = score.measures[0].notes[0]
+    assert first.grace_pitches == ["B3", "C3"]
+    assert first.grace_notes == 2
+
+
+def test_a_grace_chord_names_only_the_note_that_leads_it() -> None:
+    score = _one_bar(
+        _grace("B") + _grace("D", chord=True) + _note() + _note() + _note() + _note()
+    )
+    assert score.measures[0].notes[0].grace_pitches == ["B3"]
+
+
+def test_a_grace_chord_is_not_stacked_on_the_note_before_it() -> None:
+    """A grace chord's second note is part of the ornament. Read as a chord
+    member it was added to the *previous* note's double stop, and would have
+    sounded for that note's whole length."""
+    score = _one_bar(
+        _note() + _grace("B") + _grace("D", chord=True) + _note() + _note() + _note()
+    )
+    notes = score.measures[0].notes
+    assert notes[0].chord_pitches == []
+    assert notes[1].grace_notes == 1
+    assert notes[1].grace_pitches == ["B3"]
+
+
+def test_one_unreadable_ornament_withholds_the_names_of_its_group() -> None:
+    """Played with a note missing it would be a different ornament, so the
+    group keeps its count and loses its names."""
+    unnamed = (
+        "<note><grace/><pitch><step>B</step><alter>3</alter><octave>3</octave>"
+        "</pitch><type>16th</type></note>"
+    )
+    score = _one_bar(_grace("B") + unnamed + _note() + _note() + _note() + _note())
+    first = score.measures[0].notes[0]
+    assert first.grace_notes == 2
+    assert first.grace_pitches == []
+
+
+def test_a_grace_before_a_rest_names_nothing_either() -> None:
+    rest = "<note><rest/><duration>4</duration><type>quarter</type></note>"
+    score = _one_bar(_note() + _grace() + rest + _note() + _note())
+    assert all(n.grace_pitches == [] for n in score.measures[0].notes)
+
+
 def test_a_grace_carries_across_the_barline() -> None:
     """Engravers print the ornament before the barline and the note after it."""
     score = score_json_from_musicxml(
