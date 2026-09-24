@@ -176,9 +176,12 @@ def _pins_in_the_image() -> dict[str, str]:
 #: it a backend dependency would put all of that into every developer's
 #: environment and into the Render image, to be imported by nothing.
 #:
+#: `rapidocr` is homr's own title reader, pinned beside it because
+#: `homr_provider` builds that reader itself with keys from its config.
+#:
 #: A set rather than a blanket exemption, because the point of the check is that
 #: a version nothing has run cannot reach a container by accident.
-_ONLY_ON_MODAL = {"homr"}
+_ONLY_ON_MODAL = {"homr", "rapidocr"}
 
 
 def _pip_install_blocks() -> list[str]:

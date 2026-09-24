@@ -185,6 +185,12 @@ transcription_image = (
     .apt_install("libglib2.0-0", "libgl1")
     .pip_install(
         "homr==0.7.0",
+        # homr's title reader. homr names it without a version, and
+        # `homr_provider` builds the reader itself with keys from this
+        # version's config — see `_TITLE_READER_PARAMS` — so it is pinned to
+        # the release that was measured rather than whatever PyPI holds on the
+        # day the image is built.
+        "rapidocr==3.9.2",
         "anthropic==0.97.0",
         # **Not decoration, and not obvious.** `services/page_image` raises
         # `fastapi.HTTPException` — six of them — and `transcription_runner`
@@ -259,6 +265,23 @@ transcription_image = (
     # the first scan of a session, and the scan is already asynchronous — the
     # musician is watching a progress screen that says what it is doing.
     min_containers=0,
+    # **Warm for five minutes after a read, rather than Modal's one.**
+    #
+    # Not the same trade as `min_containers`: this keeps a container only
+    # after somebody has scanned, and only briefly. A container that has read a
+    # page already holds what a cold one spends its first seconds on — the
+    # container itself (3.13 s of startup on this function's dashboard), the
+    # Python imports (2.0–4.3 s measured), homr's transformer and title reader
+    # loaded, and onnxruntime past its first run. A retake, or the next piece
+    # on the stand, inside five minutes lands on that container instead.
+    #
+    # 300 s is what Immich keeps its recognition models loaded for after their
+    # last use (`MACHINE_LEARNING_MODEL_TTL`), for the same reason. Idle time
+    # is billed: 2.5 GiB and the default 0.125 core come to about $0.0000072 a
+    # second at Modal's published function rates (2026-02), so the 240 s
+    # beyond the default cost about $0.002 per scanning session, and nothing
+    # at all when nobody scans.
+    scaledown_window=300,
 )
 def transcribe_score(score_id: str) -> None:
     """One page, start to finish.

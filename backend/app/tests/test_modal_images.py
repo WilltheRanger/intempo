@@ -324,15 +324,20 @@ SECONDS_PER_PAGE = 40
 CONTAINER_STARTUP_SECONDS = 60
 
 
-def _transcribe_timeout() -> int:
-    """The `timeout=` on `transcribe_score`, read out of `modal_app.py`."""
+def _transcribe_setting(name: str) -> int:
+    """One whole-number setting on `transcribe_score`, read out of `modal_app.py`."""
     source = _MODAL_APP.read_text()
     start = source.index("def transcribe_score(")
     decorator = source.rindex("@app.function(", 0, start)
     block = source[decorator:start]
-    match = re.search(r"timeout=(\d+)", block)
-    assert match, "transcribe_score has no timeout; this test cannot check it"
+    match = re.search(rf"\b{name}=(\d+)", block)
+    assert match, f"transcribe_score has no {name}; this test cannot check it"
     return int(match.group(1))
+
+
+def _transcribe_timeout() -> int:
+    """The `timeout=` on `transcribe_score`."""
+    return _transcribe_setting("timeout")
 
 
 def test_a_full_length_scan_fits_in_the_container_s_timeout() -> None:
@@ -386,4 +391,37 @@ def test_the_budget_is_not_so_slack_that_it_checks_nothing() -> None:
         f"headroom that the check above cannot fail for any realistic cap — "
         f"which means it is not checking anything. Either the per-page budget "
         f"is wrong or this pair of numbers is no longer related."
+    )
+
+
+# ---------------------------------------------------------------------------
+# The reader stays warm after a scan — briefly, and never around the clock
+# ---------------------------------------------------------------------------
+
+#: Modal's own idle window when none is set, and the longest it accepts.
+_MODAL_DEFAULT_SCALEDOWN_SECONDS = 60
+_MODAL_MAX_SCALEDOWN_SECONDS = 20 * 60
+
+
+def test_the_reader_stays_warm_after_a_scan_but_not_around_the_clock() -> None:
+    """Two settings that look alike and are opposite trades.
+
+    `scaledown_window` keeps a container for a while **after** somebody has
+    scanned, so a retake or the next piece skips the container, the imports and
+    the model loads — Immich's model TTL, for the same reason. `min_containers`
+    keeps one **whether or not** anybody scans, which is a bill around the clock
+    and was turned down deliberately. This holds both: the window longer than
+    Modal's default, or it is not doing anything; inside what Modal accepts,
+    which `test_the_modal_app_is_valid_for_the_installed_client` cannot see
+    because Modal checks values only at deploy; and nothing kept warm otherwise.
+    """
+    window = _transcribe_setting("scaledown_window")
+
+    assert _MODAL_DEFAULT_SCALEDOWN_SECONDS < window <= _MODAL_MAX_SCALEDOWN_SECONDS, (
+        f"scaledown_window={window}s: at or under Modal's default of "
+        f"{_MODAL_DEFAULT_SCALEDOWN_SECONDS}s it keeps nothing warm that was not "
+        f"already, and over {_MODAL_MAX_SCALEDOWN_SECONDS}s the deploy is refused"
+    )
+    assert _transcribe_setting("min_containers") == 0, (
+        "a reader kept warm with nobody scanning is billed around the clock"
     )
