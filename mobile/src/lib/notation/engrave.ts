@@ -14,17 +14,21 @@ import {
  * lives on its own where it can be checked a note at a time.
  *
  * **Scope, stated honestly.** This engraves a single line of music across as
- * many systems as it takes: noteheads, stems, beamed eighths, ledger lines,
- * inline sharps, barlines and the note names underneath. It is not a score
- * engraver — no key signatures, no slurs, no dynamics, no chords, no rests. It
- * exists to draw the daily warmup, whose notes this app authors, and the
- * warmups are written to stay inside what it can draw.
+ * many systems as it takes. It began as the daily warmup's engraver —
+ * noteheads, stems, beams, ledger lines and the note names underneath — and
+ * now draws the pieces musicians read as well: the opening metre, key
+ * signatures and key changes, clef changes, rests and multi-bar rests, dots,
+ * accidentals, ties and slurs, chords, tuplets, dynamics, articulations,
+ * fermatas, repeat barlines and endings. It is still one line: no second
+ * voice, no hairpins, no grace notes, no written directions, and no metre
+ * change after the first.
  *
- * **It draws no clef**, and that is a decision rather than an omission. A clef
- * is a piece of calligraphy; a hand-approximated treble clef in an app for
- * classical musicians would be the first thing a reader noticed and the last
- * thing they forgave. Honest about being an exercise diagram rather than
- * pretending to be engraved sheet music.
+ * **The warmup draws no clef**, and that is a decision rather than an
+ * omission: a bare exercise stave with the note names under it, the way a
+ * study book prints one. A screen reading a real piece asks for a system head
+ * (`StaveProps.head`), and the clef it draws there is Bravura's glyph — a real
+ * engraving font, never a hand-approximated one, which in an app for classical
+ * musicians would be the first thing a reader noticed.
  *
  * Something else therefore has to say which clef these positions are in, or the
  * same notehead means a different pitch to a violist than to a violinist. Two
