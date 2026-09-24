@@ -184,6 +184,71 @@ sakoe_chiba_band = 0.2     # DTW Sakoe-Chiba band radius, ±20% of path length (
 # tolerance. Changing this value has no effect on any reading.
 slur_tolerance_pct = 15.0
 
+[pitch]
+# Whether a take is somebody playing this page, asked of its pitch rather than
+# its timing. See `services/pitch_evidence.py` for what is measured and
+# `analysis.nothing_played` for what is decided; TUNING_LOG.md, 2026-09-23, for
+# every number below and the takes it was measured on. **All synthetic** — the
+# same caveat as the corpus: these separate a metronome from a violin by a wide
+# margin, and nothing here has yet heard a real room.
+#
+# After an attack, one pitch class must lead in this share of the listening
+# window's frames to count as held.
+steady = 0.6
+# ...and hold at least this share of the window's chroma energy. A flat
+# spectrum gives each class a twelfth (0.083); a bowed string gives its own
+# class a third or more.
+min_share = 0.2
+# A page whose middle written pitch is below this MIDI note (45 is A2) is heard
+# through a constant-Q transform, which resolves a bass's bottom octave; any
+# other through a short STFT, which keeps fast notes apart. See `_N_FFT` in
+# `pitch_evidence.py` for the two measurements that forced the split.
+low_register_midi = 45
+# ...and these instruments always are, whatever the page says. A bass part
+# scanned in the wrong clef reads as a treble page; heard through the STFT, a
+# real bass take against it held a pitch after 0.00 of attacks.
+low_instruments = ["double_bass"]
+# A written pitch counts as heard if it is among this many strongest classes.
+# Two, because a string's third harmonic is its fifth, and on a low note heard
+# through a phone microphone the fifth can outweigh the root.
+top = 2
+# ...and holds at least this share of the strongest class's energy. Rank alone
+# let noise confirm notes: against a pure beep the second-strongest class is
+# noise, and a 1.5 kHz beep "held" a G major page's pitches after 0.31 of notes.
+min_relative = 0.5
+# At or above this share of notes holding their written pitch, some of the
+# page was heard, and nothing below applies: it was played, and what went wrong
+# is the rest of the pipeline's to say. Every take with nothing played measured
+# 0.00–0.19. Takes with an instrument usually measure near 1.00 — but fast
+# legato against a correct page fell to 0.12 (the last note still ringing
+# where the next is listened for) and a misread page gives 0.00, which is why
+# a low share is never enough on its own: every rule below needs more.
+not_played_page = 0.25
+# ...and only if that many confirmed notes would happen by luck less often
+# than `significance`, at a chance rate of `chance` per note. A share over a
+# handful of notes is chance: three glass clinks against a bass page matched
+# eight notes and held two, 0.25 — a one-in-three chance. A player who stopped
+# after two notes, both held, is one in fifty. Chance is set above anything a
+# sound with nothing played measured over many notes (0.00–0.07).
+chance = 0.15
+significance = 0.05
+# Below that, not played if fewer than this share of attacks held any pitch:
+# every metronome and empty room measured 0.00–0.03.
+not_played_tonal = 0.3
+# ...or if this share of the pitched attacks are one pitch, on a page with more
+# than one: one object struck again and again. A beeping metronome, a bow
+# knocking the stand, a stand or a glass ringing — each measured 1.00. Four
+# notes of a different piece measured 0.33, and are left to be called the
+# wrong piece.
+one_pitch = 0.9
+# ...or if the attacks are less tonal than this *and* the take fits the page's
+# rhythm worse than `alignment.warn_quality`: talking, at 0.23–0.77 tonal and
+# quality 0.47 at best. Every instrument take held 0.87 or more — including
+# sixteenths against a page a third off everywhere, a misread clef, which must
+# not be called silence. A voice steadier than that is not caught here, and is
+# refused by the alignment instead.
+played_tonal = 0.8
+
 [calibration]
 # 2-second BPM calibration clip (§4). Values belong in remote config.
 min_duration_s = 1.0

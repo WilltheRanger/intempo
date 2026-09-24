@@ -506,7 +506,7 @@ export interface AnalysisResponse {
  * here is normalised to rush-positive in one place — `toTake` in
  * `data/sources/api.ts` — and nowhere else.
  */
-export type ResultStatus = 'ok' | 'alignment_failed' | 'no_onsets';
+export type ResultStatus = 'ok' | 'alignment_failed' | 'no_onsets' | 'not_played';
 
 export interface PerNoteResult {
   global_index: number;

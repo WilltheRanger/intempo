@@ -13,6 +13,7 @@ Flow (spec §4 pseudocode):
 from __future__ import annotations
 
 import logging
+import math
 from collections import defaultdict
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -22,6 +23,7 @@ import numpy as np
 from pydantic import BaseModel, Field
 
 from app.services import audio as audio_svc
+from app.services import pitch_evidence
 from app.services.alignment import (
     MIN_TEMPO_RATIO,
     MIN_TRIM_GAIN,
@@ -57,7 +59,12 @@ from app.services.score_schema import ScoreJson, tempo_change_spans
 
 log = logging.getLogger("intempo.analysis")
 
-Status = Literal["ok", "alignment_failed", "no_onsets"]
+Status = Literal["ok", "alignment_failed", "no_onsets", "not_played"]
+
+#: What a take that was never played is told, under the app's heading "We
+#: didn't hear you play". The owner's words, approved 2026-09-23, split where
+#: every other refusal is split: the finding in the heading, the move here.
+NOT_PLAYED = "Try again closer to your instrument."
 
 
 class PerNote(BaseModel):
@@ -366,6 +373,89 @@ def _take_is_much_longer_than_the_page(
     page = float(expected[-1] - expected[0])
     take = float(onsets[-1] - onsets[0])
     return page > 0 and take > page * TAKE_TOO_LONG_RATIO
+
+
+def nothing_played(
+    evidence: pitch_evidence.Evidence,
+    *,
+    quality: float,
+    n_detected: int,
+    n_expected: int,
+    config: AudioConfig,
+) -> bool:
+    """Was this sound somebody playing, or something else the microphone heard?
+
+    **Measured on 2026-09-23, on synthetic takes** (TUNING_LOG.md has every
+    row). Takes with nothing played:
+
+    - a metronome of any kind, an empty room: a pitch held after 0.00–0.03 of
+      the attacks. The case that matters most, because a click on every beat
+      is a perfect take of a page of even notes — it was told "Steady all the
+      way through" at quality 1.00;
+    - talking: the page's pitches after at most 0.07 of notes, and a poor fit
+      to its rhythm (quality 0.47 at best, which was enough for talking alone
+      to be given a verdict);
+    - a beep, a bow knocking a stand, a stand ringing, a glass: the same sound
+      each time, so one pitch after every attack, whatever the page writes.
+
+    **The page is trusted when it agrees and doubted when it does not.** A
+    transcription can be wrong everywhere — a misread clef moves every note —
+    and a real take against it holds none of its written pitches: 0.00, on a
+    scale read a third off. So every rule below first requires the page's
+    pitches not to have been heard beyond chance, and then something more:
+
+    1. **Nothing held a pitch** → not played. Clicks, room.
+    2. **One pitch every time, on a page with several** → not played. A beep,
+       a knock, a ring: one object struck again and again. A short take of a
+       different piece is several pitches (0.33 on four notes) and is left to
+       the rest of the pipeline to call the wrong piece. A page of one
+       repeated pitch cannot use this rule — a real open-string take against
+       a misread page looks the same.
+    3. **Less steady than an instrument, and not the page's rhythm either** →
+       not played. Talking. Instruments held a pitch after 0.87 or more of
+       attacks — sixteenths against a misread page too — and fit the page's
+       rhythm at 0.93 or more even when misread.
+
+    Everything else is left to the rest of the pipeline, exactly as before.
+    See `pitch_evidence` for the two shares and `[pitch]` in config.toml for
+    the numbers.
+    """
+    p = config.pitch
+    if evidence.n_attacks == 0:
+        return False
+    # Some of the page's pitches were heard: whatever else went wrong, it is
+    # somebody playing, and what they are told is the rest of the pipeline's.
+    # **More of them than chance would put there**, as well as a share: three
+    # glass clinks against a bass page matched eight notes and "held" two, 0.25
+    # — on the line as a share, and a one-in-three chance by luck. Two notes of
+    # two, from a player who stopped after two, is not luck.
+    if evidence.page_share >= p.not_played_page and _beyond_chance(
+        evidence.n_confirmed, evidence.n_matched, chance=p.chance, alpha=p.significance
+    ):
+        return False
+    if evidence.tonal_share < p.not_played_tonal:
+        return True
+    if evidence.page_classes >= 2 and evidence.one_pitch_share >= p.one_pitch:
+        return True
+    return (
+        evidence.tonal_share < p.played_tonal
+        and quality < config.alignment.warn_quality
+    )
+
+
+def _beyond_chance(hits: int, trials: int, *, chance: float, alpha: float) -> bool:
+    """Would `hits` of `trials` happen by luck less often than `alpha`?
+
+    The one-sided binomial tail, summed directly: `trials` is a page's matched
+    notes, dozens at most, and this runs once a take.
+    """
+    if trials <= 0 or hits <= 0:
+        return False
+    tail = sum(
+        math.comb(trials, k) * chance**k * (1 - chance) ** (trials - k)
+        for k in range(hits, trials + 1)
+    )
+    return tail < alpha
 
 
 def _why_nothing_to_compare(expected: np.ndarray) -> str:
@@ -903,8 +993,8 @@ def analyze(
     sample_rate)` tuple — the Batch 4 worker decodes storage bytes once
     and passes the waveform straight through, avoiding a second decode.
 
-    Returns a graceful `alignment_failed` / `no_onsets` result rather than
-    raising when the input can't be trusted — the caller turns status into
+    Returns a graceful `alignment_failed` / `no_onsets` / `not_played` result
+    rather than raising when the input can't be trusted — the caller turns status into
     the right user-facing state.
     """
     cfg = config or load_audio_config()
@@ -995,8 +1085,9 @@ def analyze(
             "analysis: recovered %d onset(s) the first pass did not report",
             recovered.size,
         )
+        combined = np.sort(np.concatenate([onsets, recovered]))
         anchored = align_take(
-            np.sort(np.concatenate([onsets, recovered])),
+            combined,
             expected,
             target_bpm=target_bpm,
             config=cfg,
@@ -1005,6 +1096,67 @@ def analyze(
         )
         onsets = anchored.onsets
         raw = anchored.alignment
+        # `align_take` re-zeroes on the first onset it keeps, so the recording
+        # clock moves with it. Nothing below this line used it until the pitch
+        # check, which has to find each note in the waveform.
+        origin += float(combined[anchored.trimmed_lead])
+
+    probe = apply_fuzzy_match(
+        raw, onsets, expected, optional=optional, reclaimable=reclaimable
+    )
+    evidence = pitch_evidence.assess(
+        heard.y,
+        heard.sr,
+        heard.onsets,
+        [(float(onsets[d] + origin), timeline.notes[e].pitch) for d, e in probe.matched],
+        steady=cfg.pitch.steady,
+        min_share=cfg.pitch.min_share,
+        top=cfg.pitch.top,
+        min_relative=cfg.pitch.min_relative,
+        low_register_midi=cfg.pitch.low_register_midi,
+        low_instrument=(instrument or ("double_bass" if double_bass else None))
+        in cfg.pitch.low_instruments,
+        page_pitches=[note.pitch for note in timeline.notes],
+    )
+    log.info(
+        "analysis: pitch held after %.2f of %d attacks, written pitch after "
+        "%.2f of %d notes",
+        evidence.tonal_share,
+        evidence.n_attacks,
+        evidence.page_share,
+        evidence.n_matched,
+    )
+    # **Before the refusal check and before the verdict**, because both of
+    # the takes this exists for would otherwise get past it: a metronome in an
+    # empty room aligns perfectly, and talking on its own reached a verdict at
+    # quality 0.47. What the alignment made of a sound nobody played is not a
+    # reason to say anything about it.
+    if nothing_played(
+        evidence,
+        quality=raw.quality,
+        n_detected=int(heard.onsets.size),
+        n_expected=int(heard.expected.size),
+        config=cfg,
+    ):
+        log.warning(
+            "analysis: not played — pitch held after %.2f of %d attacks, "
+            "written pitch after %.2f of %d notes",
+            evidence.tonal_share,
+            evidence.n_attacks,
+            evidence.page_share,
+            evidence.n_matched,
+        )
+        return AnalysisResult(
+            # Zero, not the alignment's quality: a click track aligns at 1.00,
+            # and `alignment_quality` is stored on the row as a number about
+            # the performance.
+            status="not_played",
+            quality=0.0,
+            tolerance=Tolerance.of(cfg),
+            verdict=NOT_PLAYED,
+            n_detected_onsets=int(heard.onsets.size),
+            n_expected_onsets=int(heard.expected.size),
+        )
 
     if is_alignment_broken(raw.quality, config=cfg):
         # **The one line that says which half refused the take.**

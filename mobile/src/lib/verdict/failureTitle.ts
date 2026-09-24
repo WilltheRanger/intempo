@@ -33,6 +33,12 @@ const FOR_STATUS: Record<Exclude<ResultStatus, 'ok'>, string> = {
   // could not hear — and it points at the pair of things that explain them,
   // which is what the sentence beneath goes on to name.
   alignment_failed: 'This didn’t line up with the page',
+  // **Something reached the microphone, and it was not the instrument
+  // playing this page** — a metronome, talking, a bow tapping the stand. The
+  // owner's words (2026-09-23), with the pipeline's sentence beneath saying
+  // what to do: "Try again closer to your instrument." Not "nothing reached
+  // the microphone", which is the routing fault above and would be untrue.
+  not_played: 'We didn’t hear you play',
 };
 
 /**

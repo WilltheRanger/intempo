@@ -39,6 +39,23 @@ class _Result:
         self.count = count
 
 
+def _value(row: dict, col: str) -> Any:
+    """A column, or a path into a JSON column as PostgREST spells one.
+
+    `result_json->>status` is the text at `status` inside `result_json`, and
+    null when the column is null or the key absent — which is what Postgres's
+    `->>` does, and what the free-tier count filters on.
+    """
+    if "->>" not in col:
+        return row.get(col)
+    column, key = col.split("->>", 1)
+    inner = row.get(column)
+    if not isinstance(inner, dict):
+        return None
+    got = inner.get(key)
+    return None if got is None else str(got)
+
+
 class _Query:
     def __init__(self, table: "_Table", op: str, payload: dict | None = None):
         self._table = table
@@ -115,17 +132,18 @@ class _Query:
 
     def _matches(self, row: dict) -> bool:
         for kind, col, val in self._filters:
-            if kind == "eq" and str(row.get(col)) != str(val):
+            got = _value(row, col)
+            if kind == "eq" and str(got) != str(val):
                 return False
-            if kind == "in" and row.get(col) not in val:
+            if kind == "in" and got not in val:
                 return False
-            if kind == "lt" and not (str(row.get(col)) < str(val)):
+            if kind == "lt" and not (str(got) < str(val)):
                 return False
-            if kind == "gte" and not (str(row.get(col)) >= str(val)):
+            if kind == "gte" and not (str(got) >= str(val)):
                 return False
-            if kind == "is" and row.get(col) is not None:
+            if kind == "is" and got is not None:
                 return False
-            if kind == "not is" and row.get(col) is None:
+            if kind == "not is" and got is None:
                 return False
         return True
 
