@@ -14,10 +14,10 @@ import type { Instrument } from '../../data/types';
  *
  *   - `import('./soundfontRender')` pulls `spessasynth_core` — a synthesiser,
  *     620 KB of JavaScript — as its own lazily-loaded chunk.
- *   - `loadSoundfont` fetches the instrument's `.sf2`, 0.6–1.0 MB.
+ *   - `loadSoundfont` fetches the instrument's `.sf2`, 0.8–1.3 MB.
  *
- * So the musician decides to listen and *then* waits for a megabyte and a
- * half. On a phone away from wifi that is the whole complaint, and when it
+ * So the musician decides to listen and *then* waits for up to two
+ * megabytes. On a phone away from wifi that is the whole complaint, and when it
  * outlasts the watchdog it is the other half of it — "can't listen" rather
  * than "slow".
  *

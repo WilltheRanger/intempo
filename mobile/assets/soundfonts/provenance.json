@@ -1,36 +1,161 @@
 {
-  "source": "https://raw.githubusercontent.com/mrbumpy409/GeneralUser-GS/684543d5e5efaef08d02be50dcda8d552478fa60/GeneralUser-GS.sf2",
-  "revision": "684543d5e5efaef08d02be50dcda8d552478fa60",
-  "sourceSha256": "9575028c7a1f589f5770fccc8cff2734566af40cd26ed836944e9a5152688cfe",
   "tool": "spessasynth_core 4.3.22",
-  "presets": [
-    {
-      "instrument": "violin",
-      "program": 40,
-      "name": "Violin",
-      "bytes": 937662,
-      "sha256": "9e2d46af573d5e6f99aeb849a8861370342a35581860b53aa8e8e9b816c8ffb5"
-    },
-    {
-      "instrument": "viola",
-      "program": 41,
-      "name": "Viola",
-      "bytes": 774930,
-      "sha256": "9fab36abc07379eeaa35598f593eb448a15d22676c1d282481c6fda1e444fc63"
-    },
-    {
-      "instrument": "cello",
-      "program": 42,
-      "name": "Cello",
-      "bytes": 1008632,
-      "sha256": "4bd0139827b1ace01b70b8cc458be344e37dab5de1af8fab7e8bb13eb4ffae79"
-    },
-    {
-      "instrument": "double_bass",
-      "program": 43,
-      "name": "Double Bass",
-      "bytes": 598980,
-      "sha256": "5ee7e1589f0606a6981bbb172ad8abb5e2e6903b455d48781d11a754c70871d7"
-    }
-  ]
+  "generalUser": {
+    "source": "https://raw.githubusercontent.com/mrbumpy409/GeneralUser-GS/684543d5e5efaef08d02be50dcda8d552478fa60/GeneralUser-GS.sf2",
+    "revision": "684543d5e5efaef08d02be50dcda8d552478fa60",
+    "sourceSha256": "9575028c7a1f589f5770fccc8cff2734566af40cd26ed836944e9a5152688cfe",
+    "presets": [
+      {
+        "instrument": "viola",
+        "program": 41,
+        "name": "Viola",
+        "bytes": 774930,
+        "sha256": "9fab36abc07379eeaa35598f593eb448a15d22676c1d282481c6fda1e444fc63"
+      },
+      {
+        "instrument": "cello",
+        "program": 42,
+        "name": "Cello",
+        "bytes": 1008632,
+        "sha256": "4bd0139827b1ace01b70b8cc458be344e37dab5de1af8fab7e8bb13eb4ffae79"
+      }
+    ]
+  },
+  "vsco": {
+    "source": "https://github.com/sgossner/VSCO-2-CE (SFZ branch)",
+    "revision": "6dd651d55dde97fd4028699be9d4481f26917891",
+    "builtBy": "scripts/vsco-instrument.mjs",
+    "presets": [
+      {
+        "instrument": "violin",
+        "program": 40,
+        "name": "Violin",
+        "bytes": 1327958,
+        "sha256": "63fe5c31b5b5664819d93f5a55b7e38e99ae486402a616ff8a4f684deb0ca8f0",
+        "samples": [
+          {
+            "file": "Strings/Solo Violin/Arco Vib/LLVln_ArcoVib_G3_f.wav",
+            "sha256": "80bae3776b0ccd3d4774f47429e829c7764f5fe6061ff844a8affc6ac68b7899"
+          },
+          {
+            "file": "Strings/Solo Violin/Arco Vib/LLVln_ArcoVib_A3_f.wav",
+            "sha256": "76934f3a85e4ba3b6518132c2fe6effa340c33fbb02f94e88c60b00073dc722f"
+          },
+          {
+            "file": "Strings/Solo Violin/Arco Vib/LLVln_ArcoVib_C4_f.wav",
+            "sha256": "4169605b51a72454f11bc2c34efc66c1d9993fd2b7d5f097a025ef9d3a2dbdfa"
+          },
+          {
+            "file": "Strings/Solo Violin/Arco Vib/LLVln_ArcoVib_E4_f.wav",
+            "sha256": "418512905f3294a23cf999f0587bf8e04d60192fe317ea8c80c150a85670eda2"
+          },
+          {
+            "file": "Strings/Solo Violin/Arco Vib/LLVln_ArcoVib_G4_f.wav",
+            "sha256": "14e3ea3d5172722d4d2686bae5da3d603800a7a474fa295d98275a9410913822"
+          },
+          {
+            "file": "Strings/Solo Violin/Arco Vib/LLVln_ArcoVib_A4_f.wav",
+            "sha256": "19e5374658351508a9e2c929e871a43caff41e62d5e3363ead6f88428a9ab863"
+          },
+          {
+            "file": "Strings/Solo Violin/Arco Vib/LLVln_ArcoVib_C5_f.wav",
+            "sha256": "af72f852ef2892233699851dacf5f8d97d446822d8eb4ce9e0ec27d5a721b118"
+          },
+          {
+            "file": "Strings/Solo Violin/Arco Vib/LLVln_ArcoVib_E5_f.wav",
+            "sha256": "5c278e263fd59650190fc58294945cd291906eb1abd8293f728a96a878d1d478"
+          },
+          {
+            "file": "Strings/Solo Violin/Arco Vib/LLVln_ArcoVib_G5_f.wav",
+            "sha256": "b5bb27541d6187e6eeb20baf50625ca35fc9d44c7f113936a9369bc7ce490a68"
+          },
+          {
+            "file": "Strings/Solo Violin/Arco Vib/LLVln_ArcoVib_A5_f.wav",
+            "sha256": "0558d79d23db55c710e664e6283b62619f5a582ce261a5c082700a0d01536627"
+          },
+          {
+            "file": "Strings/Solo Violin/Arco Vib/LLVln_ArcoVib_C6_f.wav",
+            "sha256": "7ec8e0c2dde75282a4aaacccc713c84faa3e84daa9cf43df45ffc0e209964d46"
+          },
+          {
+            "file": "Strings/Solo Violin/Arco Vib/LLVln_ArcoVib_E6_f.wav",
+            "sha256": "8d1712f5659274a83aa90807132084559633e4817027c8a5b5f40826b3d9bc84"
+          },
+          {
+            "file": "Strings/Solo Violin/Arco Vib/LLVln_ArcoVib_G6_f.wav",
+            "sha256": "68c49e55565810ea822866e3d39e51c1a5ad53cfa1a67bc25836ca7feac3fe0c"
+          },
+          {
+            "file": "Strings/Solo Violin/Arco Vib/LLVln_ArcoVib_A6_f.wav",
+            "sha256": "37f6cc2f12b1b443a77d3ee370178da4a002a2ac3b6529663cc7ee002728ddcf"
+          },
+          {
+            "file": "Strings/Solo Violin/Arco Vib/LLVln_ArcoVib_C7_f.wav",
+            "sha256": "f8223aed62911ef3f6937111bf3cdcc36fc25a636d4f99480b97029c4d28f393"
+          }
+        ]
+      },
+      {
+        "instrument": "double_bass",
+        "program": 43,
+        "name": "Double Bass",
+        "bytes": 885438,
+        "sha256": "806f7ea20c2266558ef02e3814f37bc9910e473ebce7653a8dced4f862d0bd14",
+        "samples": [
+          {
+            "file": "Strings/Solo Contrabass/SusVib/BKCtbss_SusVib_F#0_v3_rr1.wav",
+            "sha256": "bc9070ac281edf964d9feac92b153325fec22e6a88b53a73acf2aa7850d1b9c3"
+          },
+          {
+            "file": "Strings/Solo Contrabass/SusVib/BKCtbss_SusVib_G0_v3_rr1.wav",
+            "sha256": "6d841bd02829835078fc968ffd30ad2c01e458390e2723dac916b1a1115bd666"
+          },
+          {
+            "file": "Strings/Solo Contrabass/SusVib/BKCtbss_SusVib_A#0_v3_rr1.wav",
+            "sha256": "f5fca51ec4a3c1d03fcd6a9d94784bf84384c05e309838d6d8929d076762f991"
+          },
+          {
+            "file": "Strings/Solo Contrabass/SusVib/BKCtbss_SusVib_C1_v3_rr1.wav",
+            "sha256": "21749ba7c5dc3d7655ce1dde97a0c51daeaa8eb1bbe5d822b32c4b159f3f89e8"
+          },
+          {
+            "file": "Strings/Solo Contrabass/SusVib/BKCtbss_SusVib_D1_v3_rr1.wav",
+            "sha256": "c554aa070923f478cda513f67b6677c453405cdbdf38c1af681d029b3640ada1"
+          },
+          {
+            "file": "Strings/Solo Contrabass/SusVib/BKCtbss_SusVib_E1_v3_rr1.wav",
+            "sha256": "aab357aa26c66c89024d241de02570095ad439a9850b98832811f9983a072af3"
+          },
+          {
+            "file": "Strings/Solo Contrabass/SusVib/BKCtbss_SusVib_F#1_v3_rr1.wav",
+            "sha256": "ee6701e62ce18dbf4c20f758e8e164e4334ea0078157df0a7b5afa75be6f36a3"
+          },
+          {
+            "file": "Strings/Solo Contrabass/SusVib/BKCtbss_SusVib_G#1_v3_rr1.wav",
+            "sha256": "93ffb027fc3725c7da5d80783a81332c5baedd16b3039899a0cb85b96e7b6079"
+          },
+          {
+            "file": "Strings/Solo Contrabass/SusVib/BKCtbss_SusVib_A1_v3_rr1.wav",
+            "sha256": "1abfc2d6bddeabe86b3195e9c4361991ec759b572baac2364ba8072b27903b40"
+          },
+          {
+            "file": "Strings/Solo Contrabass/SusVib/BKCtbss_SusVib_C#2_v3_rr1.wav",
+            "sha256": "7be4df2b55ed12b796b84575f88d714155b68340a7f667006e5edb84910ef4f3"
+          },
+          {
+            "file": "Strings/Solo Contrabass/SusVib/BKCtbss_SusVib_E2_v3_rr1.wav",
+            "sha256": "b21c1861b57c6b7b54270406c6050e20b10a243792595417c7905c44e719ba80"
+          },
+          {
+            "file": "Strings/Solo Contrabass/SusVib/BKCtbss_SusVib_G#2_v3_rr1.wav",
+            "sha256": "fefc88c63020db273d4ed7a27b48f00b70945b680e0c64ad7036969b44bf8274"
+          },
+          {
+            "file": "Strings/Solo Contrabass/SusVib/BKCtbss_SusVib_B2_v3_rr1.wav",
+            "sha256": "31b343087d55a947c0d7e13a9ac8cdeaf438da1115dcfd96f829ca0d2261ba52"
+          }
+        ]
+      }
+    ]
+  }
 }
