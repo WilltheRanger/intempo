@@ -59,7 +59,8 @@ const declared = [
  */
 const VENDORED_NAMES = [
   'Bravura (music font)',
-  'GeneralUser GS (string SoundFonts)',
+  'GeneralUser GS (viola and cello SoundFonts)',
+  'VS Chamber Orchestra 2 CE (violin and double bass samples)',
 ];
 
 const listed = LICENCES.map((entry) => entry.name);

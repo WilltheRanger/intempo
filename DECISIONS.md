@@ -63,6 +63,59 @@ container that already has everything loaded. `min_containers` stays 0.
   machine. `tools/reader-speed.py` is there to take them on the owner's real
   pages and, with Modal's dashboard, on the deployment.
 
+## 2026-09-24 — Listen plays recorded violin and bass, and plays the page's dynamics and slurs
+
+**Context.** The owner: "Can you redo the sound of bass violin and all other
+instruments to sound more natural?" Listen rendered every note at velocity 76
+and 85% of its written length, ignoring the page's dynamics, accents and
+slurs, through GeneralUser GS presets. The violin and bass were the two that
+sounded most like a sample player. The owner chose, 2026-09-24: new recordings
+for violin and bass, keep viola and cello, the new rendering for all four, and
+before/after clips to approve before anything merges.
+
+**Decision.**
+- **Violin and double bass come from VS Chamber Orchestra 2 CE** (CC0): the
+  loud layer of solo Arco Vib and SusVib, built into single-preset banks by
+  `scripts/vsco-instrument.mjs`. Every note is trimmed to its attack plus a
+  0.6–1.0 s loop, with the bow's slow drift flattened inside the loop, levelled
+  to the GeneralUser preset it replaces, and limited only on the attack and on
+  single vibrato cycles. Viola and cello stay GeneralUser.
+- **The page's markings reach the sound, and never the clock**
+  (`score/expression.ts`). Dynamics set velocity: standing until the next
+  marking, with `fp` and the sforzandi as single attacks. Accents, the downbeat
+  and the bar's middle lean; offbeats and notes carried on under a slur ease.
+  A deterministic ±2 keeps a scale from sounding typed. Slurred notes sound
+  their whole value and overlap the next by 30 ms. Notes held 0.9 s or longer
+  bloom and ease through CC 11. Detached notes sound 92% of their value, up
+  from 85%. The reverb send doubles (CC 91 20 → 40) into the engine's own hall,
+  with a 10 ms pre-delay.
+- **Onsets are exactly where they were.** A reference that moved a note to
+  sound human would teach a rhythm the analysis marks down.
+
+**Alternatives considered.**
+- *VSCO's soft layer, or both layers.* The soft violin notes swell for
+  0.7–3.4 s before reaching full level, and one soft bass note takes 6 s.
+  In a timing reference that is a note that sounds late.
+- *Longer samples instead of flattened loops.* The measured problem was a
+  3–5.6 dB swell repeating one to three times a second. A longer loop only
+  repeats it less often. Longer samples also cost bank size, which Listen
+  downloads before its first note.
+- *Adding vibrato with the engine's LFO.* GeneralUser's violin and viola, and
+  the VSCO recordings, already carry recorded vibrato (measured at 8–16 cents);
+  an LFO on top would double it.
+- *Softening slurred attacks with CC 73.* The engine maps it onto each bank's
+  own attack time, so the same setting gives about 5 ms on the new violin and
+  up to a second on GeneralUser's viola.
+- *Humanised timing.* Ruled out by the rule above.
+
+**Trade-offs accepted.** The violin bank grows from 0.94 to 1.33 MB and the
+bass from 0.60 to 0.89 MB. Listen prefetches them, but a musician on a slow
+connection waits about 0.7 MB longer the first time. An unmarked score plays
+0.8 dB quieter (mf is 72, so that f can sit in the cello's middle layer).
+Below E1 and above C7, the stretched outermost recordings play notes the
+instruments cannot. A slurred note still re-attacks its sample, softened by
+velocity and the overlap, not replaced by a true legato transition.
+
 ## 2026-09-23 — A take nobody played is refused, and refusals are free
 
 **Context.** The owner: "there can be talking in the background, or someone

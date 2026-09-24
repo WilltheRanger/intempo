@@ -55,3 +55,117 @@ describe('a tempo that is not a number', () => {
     );
   });
 });
+
+describe('how the notes are played', () => {
+  /** One bar of 4/4 at 60, so a beat is a second. */
+  function bar(
+    notes: ScoreJson['measures'][number]['notes'],
+    slurs: ScoreJson['measures'][number]['slurs'] = [],
+  ): ScoreJson {
+    return {
+      time_signature: '4/4',
+      key_signature: 'C major',
+      tempo_marking: null,
+      bpm_hint: null,
+      clef: 'treble',
+      measures: [{ measure_number: 1, notes, slurs }],
+      repeats: [],
+      ocr_confidence: 1,
+      notes_to_human: '',
+    };
+  }
+  const quarter = (pitch: string) => ({
+    pitch,
+    duration: 'quarter' as const,
+    tied_to_next: false,
+  });
+  const SCALE = ['C4', 'D4', 'E4', 'F4'].map(quarter);
+
+  /**
+   * **The rule every other one here is under.** A reference that moved a
+   * note to sound more human would teach the musician a rhythm the analysis
+   * then marks them down for.
+   */
+  it('never moves a note', () => {
+    const plain = scheduleScore(bar(SCALE), 60);
+    const marked = scheduleScore(
+      bar(
+        [
+          { ...SCALE[0], dynamics: 'p' },
+          { ...SCALE[1], articulation: 'accent' },
+          SCALE[2],
+          { ...SCALE[3], dynamics: 'sfz' },
+        ],
+        [{ start_note_index: 0, end_note_index: 2 }],
+      ),
+      60,
+    );
+    expect(marked.notes.map((note) => note.startS)).toEqual(
+      plain.notes.map((note) => note.startS),
+    );
+    expect(marked.durationS).toBe(plain.durationS);
+  });
+
+  it('plays a written dynamic until the next one', () => {
+    const notes = scheduleScore(
+      bar([{ ...SCALE[0], dynamics: 'p' }, SCALE[1], SCALE[2], SCALE[3]]),
+      60,
+    ).notes;
+    const loud = scheduleScore(
+      bar([{ ...SCALE[0], dynamics: 'f' }, SCALE[1], SCALE[2], SCALE[3]]),
+      60,
+    ).notes;
+    notes.forEach((note, index) => {
+      expect(note.velocity!).toBeLessThan(loud[index].velocity!);
+    });
+  });
+
+  it('leans on the downbeat of an unmarked bar', () => {
+    const [first, second, third, fourth] = scheduleScore(bar(SCALE), 60).notes;
+    expect(first.velocity!).toBeGreaterThan(second.velocity!);
+    expect(first.velocity!).toBeGreaterThan(fourth.velocity!);
+    expect(third.velocity!).toBeGreaterThanOrEqual(fourth.velocity! - 2);
+  });
+
+  it('holds slurred notes their whole value into the next, and separates the last', () => {
+    const notes = scheduleScore(
+      bar(SCALE, [{ start_note_index: 0, end_note_index: 2 }]),
+      60,
+    ).notes;
+    expect(notes.map((note) => note.legato ?? false)).toEqual([true, true, false, false]);
+    expect(notes[0].durationS).toBe(1);
+    expect(notes[1].durationS).toBe(1);
+    // The slur's last note ends the bow stroke: an ordinary gap after it.
+    expect(notes[2].durationS).toBeLessThan(1);
+    // No new bow on the notes the slur carries on to.
+    expect(notes[1].velocity!).toBeLessThan(
+      scheduleScore(bar(SCALE), 60).notes[1].velocity!,
+    );
+  });
+
+  it('keeps a staccato short under a slur', () => {
+    const notes = scheduleScore(
+      bar(
+        [{ ...SCALE[0], articulation: 'staccato' }, SCALE[1], SCALE[2], SCALE[3]],
+        [{ start_note_index: 0, end_note_index: 1 }],
+      ),
+      60,
+    ).notes;
+    expect(notes[0].legato).toBeUndefined();
+    expect(notes[0].durationS).toBe(0.5);
+  });
+
+  it('carries the dynamic of a note tied over onto what follows', () => {
+    const notes = scheduleScore(
+      bar([
+        { ...SCALE[0], tied_to_next: true },
+        { ...SCALE[0], dynamics: 'pp' },
+        SCALE[2],
+        SCALE[3],
+      ]),
+      60,
+    ).notes;
+    expect(notes).toHaveLength(3);
+    expect(notes[1].velocity!).toBeLessThan(notes[0].velocity! - 10);
+  });
+});

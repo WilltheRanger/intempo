@@ -58,18 +58,23 @@ describe('reading ties', () => {
 });
 
 describe('what the app plays', () => {
-  // Sounding length is shortened by the default articulation (0.85) so notes
-  // do not run into each other; the *written* length is what this is about.
-  const ARTICULATION = 0.85;
+  // The *written* length is what this is about, so the notes are asked to
+  // sound all of it. This used to divide by a copy of the default articulation,
+  // which broke the day the default changed.
+  const WRITTEN = { articulation: 1 };
   const at = (s: ReturnType<typeof scheduleScore>) =>
     s.notes.map((x) => [
       Number(x.startS.toFixed(3)),
-      Number((x.durationS / ARTICULATION).toFixed(3)),
+      Number(x.durationS.toFixed(3)),
     ]);
 
   it('holds a real tie as one sound', () => {
     // Two tied quarters at 60bpm: one note, two seconds long.
-    const s = scheduleScore(score([bar(1, [n('E2', 'quarter', true), n('E2')])]), 60);
+    const s = scheduleScore(
+      score([bar(1, [n('E2', 'quarter', true), n('E2')])]),
+      60,
+      WRITTEN,
+    );
     expect(s.notes).toHaveLength(1);
     expect(at(s)).toEqual([[0, 2]]);
   });
@@ -80,6 +85,7 @@ describe('what the app plays', () => {
     const s = scheduleScore(
       score([bar(1, [n('E2', 'quarter', true)]), bar(2, [n('E2'), n('E2')])]),
       60,
+      WRITTEN,
     );
     expect(s.notes).toHaveLength(2);
     expect(at(s)).toEqual([[0, 2], [2, 1]]);
@@ -87,7 +93,11 @@ describe('what the app plays', () => {
 
   it('sounds a slur written as a tie as two notes', () => {
     // The app merged these into one long note while the backend counted two.
-    const s = scheduleScore(score([bar(1, [n('E2', 'quarter', true), n('G2')])]), 60);
+    const s = scheduleScore(
+      score([bar(1, [n('E2', 'quarter', true), n('G2')])]),
+      60,
+      WRITTEN,
+    );
     expect(s.notes).toHaveLength(2);
     expect(at(s)).toEqual([[0, 1], [1, 1]]);
   });
