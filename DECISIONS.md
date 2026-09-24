@@ -1,5 +1,68 @@
 # InTempo Decisions
 
+## 2026-09-24 — homr's title reader is configured here, not taken out of homr; and the reader stays warm for five minutes
+
+**Context.** Asked to make reading a page faster the way Immich makes its
+recognition fast, the first step was to time homr stage by stage rather than
+guess — on three engraved full pages photographed at 3024×4032, and on the
+fixtures. On four cores a full page took 10–14 s, and a quarter of it was
+recognising the page's **title**: homr runs RapidOCR over the strip above the
+first staff, on a thread beside its transformer, to fill `<work-title>`.
+`musicxml.py` imports no title at all. The cost is RapidOCR's default detector,
+which scales an image's *short* side up to 736 px — so a ~1920×270 strip was
+searched at ~5200×736 while the transformer needed the same cores.
+
+The other Immich lesson is the one it is known for: keep the models loaded
+between requests. Here a container that has read a page holds its imports
+(2.0–4.3 s measured) and loaded models, and Modal discards it after 60 idle
+seconds.
+
+**Decision.** Two changes.
+
+*`homr_provider` builds homr's title reader itself*, with the detector limited
+by its long side to 960 px (`_TITLE_READER_PARAMS`), and puts it in
+`homr.title_detection._reader` — the slot homr fills lazily, and only while it
+is empty. Measured: a photographed page 10.1–14.2 s → 7.9–9.7 s, CPU 32–44 s →
+24–28 s, and a byte-identical `ScoreJson` on every page, fixtures included.
+RapidOCR is pinned at 3.9.2 in the reading image, because the keys come from
+its config.
+
+*`transcribe_score` gets `scaledown_window=300`*, Immich's own figure for the
+same purpose. A retake or the next piece inside five minutes lands on a
+container that already has everything loaded. `min_containers` stays 0.
+
+**Alternatives considered.**
+
+- *Take the title step out* — replace `homr.main.detect_title` at run time.
+  Measured 0.1–0.7 s faster again than the sized reader, but it
+  replaces one of homr's functions, and the arrangement the owner chose is
+  AGPL-3.0 **used unmodified**. The sized reader gets nearly all of the win
+  while homr runs exactly as it ships, so the question stays open for the
+  owner rather than being settled in passing.
+- *Give the title reader fewer threads.* Measured worse: on one thread the title
+  alone took ~9 s and the page waited for it, 14–15 s in all.
+- *A reader kept warm around the clock* (`min_containers=1`). Removes the cold
+  start from the first scan of a session too, at the price of billing every
+  hour of the day; turned down before on cost and not proposed again here.
+- *Warm the reader when the app asks for an upload URL*, before the photograph
+  arrives — Immich's preload, and the likely next step. Not done: whether Modal
+  hands the real read to a container that is still starting cannot be tested
+  from a session without Modal access, and getting it wrong starts two
+  containers for one page.
+
+**Trade-offs accepted.**
+
+- It reaches into a private homr attribute. An upgrade that moves it costs
+  speed, never a page: the provider says so in the log and homr builds its own
+  reader, slower and with the same notes. Tests hold both paths, and homr is
+  pinned.
+- Idle time is billed: about $0.0000072 a second for this container at Modal's
+  published rates, so the 240 s beyond the default cost about $0.002 per
+  scanning session.
+- Neither change has been measured *on Modal* — the numbers are from a four-core
+  machine. `tools/reader-speed.py` is there to take them on the owner's real
+  pages and, with Modal's dashboard, on the deployment.
+
 ## 2026-09-24 — One note at a time, and a bass that is not looped or drowned
 
 **Context.** The owner, after the new sound went live: the double bass

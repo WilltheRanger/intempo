@@ -313,6 +313,8 @@ class HomrProvider:
                 f"{self.name}: homr is not installed in this container"
             ) from exc
 
+        _size_the_title_reader()
+
         try:
             process_image(
                 str(page),
@@ -430,6 +432,89 @@ def _turned(page: Path, degrees: int) -> Path | None:
 #: `selected_staff` for "all of them", which is what homr's own CLI passes.
 #: Named because `-1` at a call site reads like a mistake.
 _EVERY_STAFF = -1
+
+#: homr's title reader, sized for the strip it is actually given.
+#:
+#: **homr reads a title off every page, and nothing here reads it.**
+#: `detect_staffs_in_image` hands the strip above the first staff to RapidOCR
+#: on a background thread and writes what it finds into `<work-title>`;
+#: `musicxml.py` imports no title at all. That would not matter if it were
+#: cheap, and it was a quarter of every read.
+#:
+#: **RapidOCR's default detector is sized for pages, not strips.** `limit_type:
+#: min` at 736 scales an image until its *short* side is 736 px, so a title
+#: strip of about 1920×270 was searched for text at roughly 5200×736 — while the
+#: transformer was reading the staves on the same cores, and the page waited
+#: for both. Limiting the *long* side to 960 instead, measured 2026-09-24:
+#:
+#: | four cores | title thread | whole page |
+#: |---|---|---|
+#: | three engraved pages, photographed, 7–10 staves | 3.4–7.5 s → 0.4–0.6 s | 10.1–14.2 s → 7.9–9.7 s |
+#: | the same three as flat scans | 2.0–2.9 s → 0.9–1.0 s | 9.5–10.2 s → 8.6–9.8 s |
+#: | fixtures 01–03, one staff each | 1.7–2.1 s → 1.0–1.2 s | 2.3–2.8 s → 1.7–2.1 s |
+#:
+#: CPU per photographed page fell from 32–44 s to 24–28 s, and CPU is what a
+#: container with fewer cores than this machine turns into waiting: four reads
+#: sharing four cores took 50–59 s each before and 42–45 s after.
+#:
+#: **Not a note changes.** Every page above gives a byte-identical `ScoreJson`
+#: either way — `01_simple_printed` still reads 32 eighths — and fixtures 04–05
+#: are refused for the same reason either way. The MusicXML differs only in
+#: `<work-title>`, where the smaller detector found "Bass" on a page the
+#: default had left blank.
+#:
+#: **Why a configured reader, and not the title taken out.** homr has no switch
+#: for it, and replacing its functions at run time would change what homr runs
+#: — which is not the "used unmodified" arrangement at the top of this file,
+#: and not a call to make in passing. homr builds this reader lazily, into
+#: `title_detection._reader`, only while that is still empty; this puts one
+#: there first. homr's code runs exactly as it ships, with its dependency —
+#: RapidOCR, Apache-2.0 — configured differently. `tools/reader-speed.py
+#: --as-homr-ships` reads a page the old way, for comparison.
+_TITLE_READER_PARAMS = {
+    "Det.limit_type": "max",
+    "Det.limit_side_len": 960,
+}
+
+
+def _size_the_title_reader() -> None:
+    """Build homr's title reader before homr does. Never raises.
+
+    A reader that is already there is left alone — whoever built it, it is the
+    one about to be used. Any failure leaves homr to build its own, which is
+    exactly what happened before this existed: slower, and the same notes.
+
+    Built here, on the reading thread, before homr starts: 0.25–0.28 s once
+    per container, measured, that homr's own lazy build used to spend on its
+    title thread. Building it anywhere later would race homr to the slot.
+    """
+    try:
+        from homr import title_detection
+    except ImportError:
+        return
+    if not (
+        hasattr(title_detection, "_reader")
+        and hasattr(title_detection, "_initialize_reader")
+    ):
+        # A homr that builds its reader some other way. Setting the attribute
+        # would change nothing, so say that rather than appear to have worked.
+        log.warning(
+            "homr: this version builds its title reader differently; it was "
+            "not sized, and pages will read slower"
+        )
+        return
+    if title_detection._reader is not None:
+        return
+    try:
+        from rapidocr import RapidOCR
+
+        title_detection._reader = RapidOCR(params=_TITLE_READER_PARAMS)
+    except Exception:  # noqa: BLE001 — homr builds its own: slower, same notes
+        log.warning(
+            "homr: could not size the title reader; homr will build its own",
+            exc_info=True,
+        )
+
 
 #: Instantiated once. Nothing here holds state between pages; the weights are
 #: loaded by `onnxruntime` inside homr and cached there.

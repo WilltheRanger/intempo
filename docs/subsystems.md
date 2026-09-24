@@ -366,6 +366,25 @@ and the scan flow there works differently as of 2026-08-24:
   512 MB host. `TRANSCRIPTION_RUNTIME=modal` sends pages there and is separate
   from `ANALYSIS_RUNTIME` on purpose. AGPL-3.0, used unmodified, accepted
   deliberately by the owner.
+- **A quarter of every read was a title nothing reads** (2026-09-24). homr runs
+  RapidOCR over the strip above the first staff, on a thread beside its
+  transformer, to fill `<work-title>` — which `musicxml.py` never imports.
+  RapidOCR's default detector scales an image's *short* side up to 736 px, so a
+  ~1920×270 strip was searched at ~5200×736: 4–7 s on four cores, taken from
+  the transformer reading the staves. `homr_provider` now builds homr's title
+  reader itself, detector limited by its long side (`_TITLE_READER_PARAMS`),
+  into the slot homr fills only while empty. A photographed full page went from
+  10.1–14.2 s to 7.9–9.7 s and about 30% less CPU, and every `ScoreJson` came out
+  byte-identical. homr's code is untouched; skipping the title step outright
+  measured 0.1–0.7 s faster still, and would mean running a changed homr —
+  the owner's call under the AGPL note above, not one to make in passing.
+  **When a read is slow, time the stages before touching one**:
+  `tools/reader-speed.py` prints each, cold then warm, and `--as-homr-ships`
+  reads the old way so the score digests can be compared. The slow part was
+  not the one reading notes. And `transcribe_score` keeps its container 300 s after a read
+  (Modal's default is 60), so a retake or the next piece skips the container
+  start, 2–4 s of imports and the model loads — Immich's model TTL, for the
+  same reason.
 - **Staff systems are found by ink density, not by darkness, and the crops tile
   the page.** Both were rewritten after the first real photograph this project
   has seen — a String Bass part with ten systems — where the old projection of

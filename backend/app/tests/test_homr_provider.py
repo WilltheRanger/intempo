@@ -567,3 +567,135 @@ def test_a_page_that_yields_a_single_note_is_refused(homr) -> None:
 
     with pytest.raises(OCRProviderError):
         HomrProvider().parse(b"<page>")
+
+
+# ---------------------------------------------------------------------------
+# homr's title reader is built here, sized for the strip it reads
+# ---------------------------------------------------------------------------
+
+#: The width homr resizes every page to before it cuts the title strip out of
+#: it (`homr/resize.py`, `target_width`). A detector limited below this shrinks
+#: the strip; RapidOCR's default grew it to about 5200 px.
+_HOMR_PAGE_WIDTH = 1920
+
+
+@pytest.fixture()
+def title_reader(monkeypatch):
+    """homr's `title_detection` and RapidOCR, replaced, recording what was built.
+
+    Call it **after** `homr(...)`, which installs a fresh `homr` package.
+    """
+    built: list[dict] = []
+
+    class RapidOCR:
+        def __init__(self, config_path=None, params=None):
+            built.append(params)
+
+    def cannot_be_built(config_path=None, params=None):
+        raise RuntimeError("the OCR models are missing")
+
+    def _install(*, existing=None, fails=False, homr_has_the_slot=True):
+        title_detection = types.ModuleType("homr.title_detection")
+        if homr_has_the_slot:
+            title_detection._reader = existing
+            title_detection._initialize_reader = lambda: None
+        rapidocr = types.ModuleType("rapidocr")
+        rapidocr.RapidOCR = cannot_be_built if fails else RapidOCR
+        monkeypatch.setitem(sys.modules, "homr.title_detection", title_detection)
+        monkeypatch.setattr(
+            sys.modules["homr"], "title_detection", title_detection, raising=False
+        )
+        monkeypatch.setitem(sys.modules, "rapidocr", rapidocr)
+
+        # What homr would find in the slot at the moment it reads the page.
+        main = sys.modules["homr.main"]
+        process_image = main.process_image
+
+        def recording(path, config, args):
+            title_detection.reader_when_read = getattr(title_detection, "_reader", None)
+            process_image(path, config, args)
+
+        monkeypatch.setattr(main, "process_image", recording)
+        return title_detection, built
+
+    return _install
+
+
+def test_homr_is_handed_a_title_reader_sized_for_the_strip(homr, title_reader) -> None:
+    """RapidOCR's default searched a 1920×270 strip at about 5200×736, beside
+    the transformer on the same cores — a quarter of every read, for a title
+    nothing here imports. The reader has to be in homr's slot *before* homr
+    reads the page, or homr builds the default one itself."""
+    homr(MUSICXML.format(notes=_FOUR_QUARTERS))
+    title_detection, built = title_reader()
+
+    HomrProvider().parse(b"<page>")
+
+    assert len(built) == 1, "no title reader was built"
+    params = built[0]
+    assert params["Det.limit_type"] == "max", (
+        "limited by the short side, the strip is scaled up, which is the cost"
+    )
+    assert params["Det.limit_side_len"] < _HOMR_PAGE_WIDTH, (
+        "a limit at or over the strip's own width does not shrink it"
+    )
+    assert title_detection.reader_when_read is title_detection._reader is not None
+
+
+def test_one_title_reader_serves_every_page(homr, title_reader) -> None:
+    """A container reads several pages; building the reader per page would pay
+    for loading its models on each of them."""
+    homr(MUSICXML.format(notes=_FOUR_QUARTERS))
+    _, built = title_reader()
+
+    HomrProvider().parse(b"<page one>")
+    HomrProvider().parse(b"<page two>")
+
+    assert len(built) == 1
+
+
+def test_a_title_reader_already_built_is_left_alone(homr, title_reader) -> None:
+    """Whoever built it, it is the one about to be used, and replacing it would
+    throw away models already loaded."""
+    homr(MUSICXML.format(notes=_FOUR_QUARTERS))
+    theirs = object()
+    title_detection, built = title_reader(existing=theirs)
+
+    HomrProvider().parse(b"<page>")
+
+    assert built == []
+    assert title_detection._reader is theirs
+
+
+def test_a_title_reader_that_cannot_be_built_does_not_cost_the_page(
+    homr, title_reader, caplog
+) -> None:
+    """The title is thrown away. Failing a musician's page over the thing that
+    reads it would be the worst trade in this file: homr builds its own reader
+    instead, which is slower and gives the same notes."""
+    homr(MUSICXML.format(notes=_FOUR_QUARTERS))
+    title_detection, _ = title_reader(fails=True)
+
+    with caplog.at_level("WARNING", logger="intempo.ocr"):
+        response = HomrProvider().parse(b"<page>")
+
+    assert len(response.score.measures[0].notes) == 4
+    assert title_detection._reader is None, "the slot must be left for homr to fill"
+    assert "could not size the title reader" in caplog.text
+
+
+def test_a_homr_that_builds_its_reader_elsewhere_is_said_out_loud(
+    homr, title_reader, caplog
+) -> None:
+    """homr is pinned, and an upgrade may move the reader. Setting an attribute
+    nothing reads would look like it worked while every page read slower, so
+    the log says which it is."""
+    homr(MUSICXML.format(notes=_FOUR_QUARTERS))
+    _, built = title_reader(homr_has_the_slot=False)
+
+    with caplog.at_level("WARNING", logger="intempo.ocr"):
+        response = HomrProvider().parse(b"<page>")
+
+    assert len(response.score.measures[0].notes) == 4
+    assert built == []
+    assert "builds its title reader differently" in caplog.text
