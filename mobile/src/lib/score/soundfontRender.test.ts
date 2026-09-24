@@ -211,9 +211,9 @@ function peakDb(pcm: Int16Array): number {
   return 20 * Math.log10(peak / 32768);
 }
 
-it('plays an ordinary melody at the level of the metronome click', async () => {
-  // The click peaks at −12 dBFS. At the old gain a melody peaked at −27 to
-  // −31, quiet on a phone speaker at any volume.
+it('plays an ordinary melody close to full scale', async () => {
+  // At the first gain a melody peaked at −27 to −31 dBFS; at the second,
+  // −12 to −16, and the owner still could not hear it well on a phone.
   const bank = parseSoundfont(bytes('violin'), 'violin');
   const melody: Schedule = {
     bpm: 80,
@@ -227,13 +227,13 @@ it('plays an ordinary melody at the level of the metronome click', async () => {
     })),
   };
   const audio = await renderSoundfont(melody, bank, 'violin', () => false);
-  expect(peakDb(audio.pcm)).toBeGreaterThan(-18);
-  expect(peakDb(audio.pcm)).toBeLessThan(-8);
+  expect(peakDb(audio.pcm)).toBeGreaterThan(-6);
+  expect(peakDb(audio.pcm)).toBeLessThanOrEqual(-1);
 });
 
-it('renders the loudest chords a page can ask for lower, instead of clipping them', async () => {
-  // Accented fff triple stops: at the playing gain they peak about 4 dB over
-  // full scale, and a clamp there is audible distortion.
+it('holds the loudest chords a page can ask for under the ceiling, instead of clipping them', async () => {
+  // Accented fff triple stops peak about 14 dB over full scale at the playing
+  // gain, and a clamp there is audible distortion.
   const bank = parseSoundfont(bytes('violin'), 'violin');
   const chords: Schedule = {
     bpm: 80,
@@ -251,6 +251,6 @@ it('renders the loudest chords a page can ask for lower, instead of clipping the
   };
   const audio = await renderSoundfont(chords, bank, 'violin', () => false);
   expect(peakDb(audio.pcm)).toBeLessThanOrEqual(-1);
-  // Lowered to just under the ceiling, not to silence.
-  expect(peakDb(audio.pcm)).toBeGreaterThan(-3);
+  // Held at the ceiling, not turned down to silence.
+  expect(peakDb(audio.pcm)).toBeGreaterThan(-2);
 });
