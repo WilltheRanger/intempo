@@ -2,6 +2,7 @@ import { secondsPerBeat } from './beats';
 import type { ClickTrack, ClickTrackOptions } from './click.types';
 import { audioContext, resumeAudio } from '../audio/context.web';
 import { prepareForPlayback } from '../audio/session.web';
+import { ACCENT_HZ, CLICK_GAIN, CLICK_HZ, CLICK_S } from './clickSound';
 
 /**
  * Audible clicks in a browser, scheduled against the audio clock.
@@ -28,19 +29,6 @@ const WAKE_MS = 60;
  * can start from the same instant. See that field for what the mismatch cost.
  */
 const LEAD_IN_S = 0.1;
-
-/**
- * A click, not a tone.
- *
- * Short and hard on purpose: the ear places a transient far more precisely
- * than it places the start of anything that fades in, and placing the beat is
- * the entire job. Two pitches so the downbeat is distinguishable without being
- * louder — a louder accent bleeds further into the microphone.
- */
-const CLICK_HZ = 1000;
-const ACCENT_HZ = 1600;
-const CLICK_S = 0.03;
-const CLICK_GAIN = 0.25;
 
 export function startClicks({ bpm, perBar, beats }: ClickTrackOptions): ClickTrack {
   const maybeContext = audioContext();

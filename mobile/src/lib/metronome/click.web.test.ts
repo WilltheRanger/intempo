@@ -23,9 +23,13 @@ interface Booking {
 let bookings: Booking[];
 let audioNow: number;
 let contexts: StubContext[];
+/** Every level a click's envelope was set to start at. */
+let levels: number[];
 
 class StubParam {
-  setValueAtTime() {}
+  setValueAtTime(value: number) {
+    levels.push(value);
+  }
   exponentialRampToValueAtTime() {}
 }
 
@@ -90,6 +94,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   bookings = [];
   contexts = [];
+  levels = [];
   audioNow = 5;
   vi.stubGlobal('window', { AudioContext: StubContext });
   // The context is shared for the life of the page (`lib/audio/context.web.ts`),
@@ -180,6 +185,21 @@ describe('the web click track', () => {
       .map((b) => b.index);
 
     expect(accents.slice(0, 3)).toEqual([0, 3, 6]);
+  });
+
+  it('strikes every click at the shared level, as loud as it can be without clipping', async () => {
+    // Raised from 0.25 when Listen was raised 25 dB (`clickSound.ts`). The two
+    // platforms read one constant now; this pins that the web one is it.
+    const { CLICK_GAIN } = await import('./clickSound');
+    const startClicks = await loadStartClicks();
+    const track = startClicks({ bpm: 120, perBar: 4 });
+    advance(2);
+    track.stop();
+
+    expect(levels.length).toBeGreaterThan(3);
+    expect(levels.every((level) => level === CLICK_GAIN)).toBe(true);
+    expect(CLICK_GAIN).toBeGreaterThan(0.25);
+    expect(CLICK_GAIN).toBeLessThan(1);
   });
 
   it('strikes every beat the same when there is no bar to accent', async () => {
