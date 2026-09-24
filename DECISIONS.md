@@ -63,6 +63,47 @@ container that already has everything loaded. `min_containers` stays 0.
   machine. `tools/reader-speed.py` is there to take them on the owner's real
   pages and, with Modal's dashboard, on the deployment.
 
+## 2026-09-24 — One note at a time, and a bass that is not looped or drowned
+
+**Context.** The owner, after the new sound went live: the double bass
+"sounds so bad". Their words for it were fake or cheap, muddy or echoey, and
+wobbly on long notes. They chose to keep the new recordings and fix them.
+Measured on the live render, nothing was clipping; the limiter touched
+0.04% of violin samples and no bass samples.
+
+**Decision.**
+- **A note stops when the next one starts.** Consecutive moments alternate
+  between two MIDI channels. At each onset the previous channel's volume
+  falls to nothing over 60 ms (`handoffEvents`), finishing early if that
+  channel is needed again. That is how a string behaves, and it removes the
+  release tails that rang under the next note. Applied to all four
+  instruments.
+- **The bass keeps 2.6–3.0 s of real bowing before any loop**, up from
+  0.5–0.9 s, so half and whole notes play the recording rather than a
+  repeating snippet. Its loop join is compared over two cycles and
+  crossfaded over four, because 30–40 ms is under two cycles of a low E. Its
+  level is matched on the early sustain, 0.3–1.5 s, where a held bass note
+  spends its time.
+- **Much less reverb on the bass.** The bank no longer adds a send of its
+  own, the renderer sends 12 rather than 40, and the release is 1.0 s rather
+  than 0.3 s. The recordings carry their room: their tails fall 20 dB in
+  0.6–1.1 s.
+
+**Alternatives considered.**
+- *The engine's `killNote`* cuts a voice's release directly, but it is marked
+  internal.
+- *CC 72 (release time)* is read once, when a release starts, so it cannot
+  shorten a tail that is already ringing.
+- *No reverb on the bass at all.* A note then stopped dead 0.3 s after the
+  bow left, which is its own kind of fake.
+- *Going back to GeneralUser's bass.* The owner chose to keep the new one.
+
+**Trade-offs accepted.**
+- The bass bank grows from 0.89 to 2.03 MB.
+- The handoff doubles the channels the engine runs, at no measurable cost.
+- A note tied or slurred into a chord still hands over to it, because a
+  chord is one moment.
+
 ## 2026-09-24 — Listen plays recorded violin and bass, and plays the page's dynamics and slurs
 
 **Context.** The owner: "Can you redo the sound of bass violin and all other

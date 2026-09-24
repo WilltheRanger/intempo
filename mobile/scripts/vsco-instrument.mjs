@@ -38,6 +38,10 @@ export const VSCO_INSTRUMENTS = {
     folder: 'Strings/Solo Violin/Arco Vib/',
     rate: 32000,
     level: -11.7,
+    reverbSend: 70,
+    loopStartS: [0.5, 0.9],
+    /** A bowed string's release, the moment the bow leaves. */
+    releaseS: 0.3,
     regions: [
       ['LLVln_ArcoVib_G3_f.wav', 55, 55, 55, 0],
       ['LLVln_ArcoVib_A3_f.wav', 56, 58, 57, 0],
@@ -62,6 +66,14 @@ export const VSCO_INSTRUMENTS = {
     folder: 'Strings/Solo Contrabass/SusVib/',
     rate: 22050,
     level: -14.0,
+    // None: these recordings carry their room, two to three seconds of it.
+    reverbSend: 0,
+    // Late: see `loopStartS` below.
+    loopStartS: [2.6, 3.0],
+    // A bass string rings on after the bow leaves: these recordings fall
+    // 20 dB in 0.6–1.1 s once it does. At 0.3 s, with no reverb added, a
+    // note stopped dead — the dry, cut-off end of a sampler, not a bass.
+    releaseS: 1.0,
     regions: [
       ['BKCtbss_SusVib_F#0_v3_rr1.wav', 24, 30, 30, 0],
       ['BKCtbss_SusVib_G0_v3_rr1.wav', 31, 32, 31, 0],
@@ -80,18 +92,29 @@ export const VSCO_INSTRUMENTS = {
   },
 };
 
-/** How much of each recording to keep: the attack and room for a loop. */
-const KEEP_S = 1.8;
 /**
- * Where a loop may start and how long it may be, in seconds. At least 0.6 s,
- * so a held note repeats about once a second: shorter loops of the same audio
- * came out 0.35 s long and repeated nearly three times a second, which reads
- * as a pulse however clean the join.
+ * How long a loop may be, in seconds. At least 0.6 s, so a held note repeats
+ * about once a second: shorter loops of the same audio came out 0.35 s long
+ * and repeated nearly three times a second, which reads as a pulse however
+ * clean the join.
+ *
+ * Where it may start is each instrument's `loopStartS`, and for the double
+ * bass that is **late**: 2.6–3.0 s of real bowing before anything repeats.
+ * The owner heard the bass's long notes as wobbly and fake (2026-09-24); a
+ * loop repeats the same bow and vibrato, identically, and a bass part is made
+ * of half notes and whole notes, so with the loop at 0.5 s almost every bass
+ * note was one. The recordings run 9–14 s; 3 s covers a half note at 46 bpm
+ * and a whole note at 92. The violin, whose notes are mostly shorter, keeps
+ * its early loop and its smaller bank.
  */
-const LOOP_START_S = [0.5, 0.9];
 const LOOP_LENGTH_S = [0.6, 1.0];
-/** Crossfade baked in before the loop end, so the jump back is seamless. */
+/**
+ * The crossfade baked in before the loop end, so the jump back is seamless:
+ * 40 ms, or four cycles of the note if that is longer. A bass's low E is
+ * 41 Hz, and 40 ms of it is under two cycles — too few to hide a join in.
+ */
 const CROSSFADE_S = 0.04;
+const CROSSFADE_CYCLES = 4;
 /**
  * The window the loop's slow level is measured over: one vibrato cycle (a
  * player's 5–6 Hz), so what is flattened is the bow's drift, not the vibrato.
@@ -99,7 +122,7 @@ const CROSSFADE_S = 0.04;
 const LEVEL_WINDOW_S = 0.19;
 /**
  * Each instrument's `level` is the RMS, in dBFS, every one of its notes is
- * matched to over its loop, so no key jumps out — and chosen so the instrument
+ * matched to where a held note spends its time (see `prepareSample`), so no key jumps out — and chosen so the instrument
  * plays as loud as the GeneralUser preset it replaces. Measured by rendering
  * every other key of both banks at velocity 72 through the app's engine: at
  * −20 dB the violin came out a median 8.3 dB quieter and the bass 6.0 dB.
@@ -108,8 +131,6 @@ const PEAK_CEILING = 10 ** (-1 / 20);
 /** How far ahead the attack limiter looks, and how fast it lets go. */
 const LIMIT_LOOKAHEAD_S = 0.005;
 const LIMIT_RELEASE_S = 0.05;
-/** A bowed string's release, the moment the bow leaves. */
-const RELEASE_S = 0.3;
 
 /** 16-bit PCM WAV, any channel count, to mono float. */
 function decodeWav(buffer) {
@@ -201,14 +222,16 @@ function similarity(x, a, b, length) {
  * contour must too, or the loop audibly pulses once per repeat (200 ms).
  * Searched coarse then fine.
  */
-function findLoop(x, rate) {
-  const fine = Math.round(0.03 * rate);
+function findLoop(x, rate, loopStartS, periodS) {
+  // The waveform is compared over two cycles at least: 30 ms is less than one
+  // and a half of the bass's bottom string.
+  const fine = Math.round(Math.max(0.03, 2 * periodS) * rate);
   const broad = Math.round(0.2 * rate);
   let best = { score: -Infinity, start: 0, end: 0 };
   const step = Math.round(0.005 * rate);
   for (
-    let start = Math.round(LOOP_START_S[0] * rate);
-    start <= Math.round(LOOP_START_S[1] * rate);
+    let start = Math.round(loopStartS[0] * rate);
+    start <= Math.round(loopStartS[1] * rate);
     start += step * 2
   ) {
     for (
@@ -333,7 +356,8 @@ function limitPeaks(out, loop, rate) {
  * One recording, ready for the bank: trimmed, looped, crossfaded, levelled.
  * Returns the audio and its loop, in samples at `rate`.
  */
-export function prepareSample(wav, rate, levelDb) {
+export function prepareSample(wav, { rate, levelDb, loopStartS, rootKey }) {
+  const periodS = 1 / (440 * 2 ** ((rootKey - 69) / 12));
   const decoded = decodeWav(wav);
   let x = resample(decoded.samples, decoded.rate, rate);
   // Start at the note, not before it.
@@ -341,10 +365,11 @@ export function prepareSample(wav, rate, levelDb) {
   for (const v of x) peak = Math.max(peak, Math.abs(v));
   let onset = 0;
   while (onset < x.length && Math.abs(x[onset]) < peak * 0.01) onset++;
-  x = x.slice(Math.max(0, onset - Math.round(0.002 * rate)), Math.max(0, onset) + Math.round(KEEP_S * rate) + Math.round(0.4 * rate));
+  const keepS = loopStartS[1] + LOOP_LENGTH_S[1] + 0.4;
+  x = x.slice(Math.max(0, onset - Math.round(0.002 * rate)), Math.max(0, onset) + Math.round(keepS * rate));
 
-  const loop = findLoop(x, rate);
-  const fade = Math.round(CROSSFADE_S * rate);
+  const loop = findLoop(x, rate, loopStartS, periodS);
+  const fade = Math.round(Math.max(CROSSFADE_S, CROSSFADE_CYCLES * periodS) * rate);
   const out = x.slice(0, loop.end + 1 + 64);
   // Equal-power crossfade into the loop end from the audio before the loop
   // start, so the samples just before the jump already sound like the ones
@@ -360,7 +385,15 @@ export function prepareSample(wav, rate, levelDb) {
   // sample that *would* be the loop start, and the interpolator reads past it.
   for (let i = 0; i <= 64; i++) out[loop.end + i] = out[loop.start + i];
 
-  const level = rms(out, loop.start, loop.end);
+  // Matched where a held note spends its time. With the loop under a second
+  // in (the violin) that is the loop. With it three seconds in (the bass) the
+  // loop is only what the longest notes reach, after the bow has eased 2–4 dB,
+  // and matching on it left neighbouring keys 4 dB apart in the early sustain
+  // every note plays — so there, that is what is matched.
+  const early = loop.start > Math.round(1.5 * rate);
+  const level = early
+    ? rms(out, Math.round(0.3 * rate), Math.round(1.5 * rate))
+    : rms(out, loop.start, loop.end);
   const gain = 10 ** (levelDb / 20) / Math.max(level, 1e-6);
   for (let i = 0; i < out.length; i++) out[i] *= gain;
   limitPeaks(out, loop, rate);
@@ -374,7 +407,7 @@ export function buildBank(instrument, prepared) {
   bank.soundBankInfo.name = `InTempo ${spec.name} (VSCO 2 CE)`;
   const inst = new BasicInstrument();
   inst.name = spec.name;
-  const releaseTimecents = Math.round(1200 * Math.log2(RELEASE_S));
+  const releaseTimecents = Math.round(1200 * Math.log2(spec.releaseS));
   const samples = [];
   const last = spec.regions.length - 1;
   for (const [index, [file, lo, hi, root, cents]] of spec.regions.entries()) {
@@ -404,8 +437,11 @@ export function buildBank(instrument, prepared) {
   preset.bankMSB = 0;
   preset.bankLSB = 0;
   // The reverb send GeneralUser gives every one of its string presets (7%),
-  // so the four instruments sit in the same room at the same distance.
-  preset.globalZone.setGenerator(GeneratorTypes.reverbEffectsSend, 70);
+  // so the instruments sit in the same room — except where the recording
+  // already carries one (`reverbSend: 0`).
+  if (spec.reverbSend) {
+    preset.globalZone.setGenerator(GeneratorTypes.reverbEffectsSend, spec.reverbSend);
+  }
   preset.createZone(inst);
   bank.addSamples(...samples);
   bank.addInstruments(inst);

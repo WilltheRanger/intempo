@@ -99,8 +99,8 @@
         "instrument": "double_bass",
         "program": 43,
         "name": "Double Bass",
-        "bytes": 885438,
-        "sha256": "806f7ea20c2266558ef02e3814f37bc9910e473ebce7653a8dced4f862d0bd14",
+        "bytes": 2030178,
+        "sha256": "0d649d58e54fef89afabaa02f4e2f1ff3948766899f1d46f8053d8a4f7636f72",
         "samples": [
           {
             "file": "Strings/Solo Contrabass/SusVib/BKCtbss_SusVib_F#0_v3_rr1.wav",

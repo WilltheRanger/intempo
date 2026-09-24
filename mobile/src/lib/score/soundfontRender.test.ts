@@ -1,7 +1,7 @@
 // Test-only Node API; the Expo application does not include Node type globals.
 // @ts-expect-error Provided by the Vitest Node runtime.
 import { readFileSync } from 'node:fs';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.mock('stb-vorbis', async () => import('./sf2OnlyDecoder'));
 vi.mock('expo-asset', () => ({
   Asset: { fromModule: (id: number) => ({ uri: String(id) }) },
@@ -14,6 +14,7 @@ vi.mock('./sampleBytes', () => ({ readSampleBytes: read }));
 import { loadSoundfont, parseSoundfont } from './soundfontBank';
 import {
   expressionEvents,
+  handoffEvents,
   renderSoundfont,
   soundfontEvents,
 } from './soundfontRender';
@@ -193,7 +194,8 @@ it('lets a held note bloom and ease, and leaves a short one level', () => {
 
   // Short notes: nothing to shape, and nothing sent while it stays neutral.
   expect(expressionEvents(passage(440))).toEqual([]);
-  // After a held note, the next short one starts back at the neutral level.
+  // After a held note, the next short one is on the other channel and starts
+  // at the neutral level: nothing is sent for it at all.
   const after = expressionEvents({
     bpm: 60,
     durationS: 3,
@@ -202,5 +204,113 @@ it('lets a held note bloom and ease, and leaves a short one level', () => {
       { ...note, startS: 2, durationS: 0.25, globalIndex: 1 },
     ],
   });
-  expect(after.at(-1)).toEqual({ frame: 2 * 44100, value: 120 });
+  expect(after.every((event) => event.channel === 0)).toBe(true);
+  expect(after.at(-1)!.frame).toBeLessThan(2 * 44100);
+});
+
+describe('the handoff from one note to the next', () => {
+  const note = passage(440).notes[0];
+  const line = (starts: number[], durationS = 0.4) => ({
+    bpm: 60,
+    durationS: starts.at(-1)! + 1,
+    notes: starts.map((startS, index) => ({
+      ...note,
+      startS,
+      durationS,
+      frequency: 220 * 2 ** (index / 12),
+      globalIndex: index,
+    })),
+  });
+
+  it('puts consecutive notes on alternate channels, and a chord on one', () => {
+    const chord: Schedule = {
+      ...line([0, 0.5]),
+      notes: [...line([0, 0.5]).notes, { ...note, startS: 0, durationS: 0.4, frequency: 330 }],
+    };
+    const ons = soundfontEvents(chord).filter((event) => event.on);
+    expect(ons.map((event) => [event.frame, event.channel])).toEqual([
+      [0, 0],
+      [0, 0],
+      [22050, 1],
+    ]);
+  });
+
+  it('fades the note before to nothing within 60 ms of the next one starting', () => {
+    // A string plays one note at a time; a sampler lets each release ring
+    // under the next, and two low notes beating was the bass's mud.
+    const fades = handoffEvents(line([0, 0.5])).filter((event) => event.channel === 0);
+    expect(fades.at(-1)).toMatchObject({ value: 0 });
+    expect(fades[0].frame).toBeGreaterThan(22050);
+    expect(fades.at(-1)!.frame).toBeLessThanOrEqual(22050 + Math.round(0.06 * 44100));
+    const values = fades.map((event) => event.value);
+    expect(values).toEqual([...values].sort((a, b) => b - a));
+  });
+
+  it('brings a channel back before its next note, and never fades onto it', () => {
+    // Very fast notes, 40 ms apart: shorter than the fade. While a note is
+    // the one sounding — from its start to the next note's — nothing may turn
+    // its channel down, and its channel is back at full volume as it starts.
+    const starts = [0, 0.04, 0.08, 0.12, 0.16];
+    const events = handoffEvents(line(starts, 0.035));
+    const frame = (seconds: number) => Math.round(seconds * 44100);
+    starts.forEach((startS, index) => {
+      const channel = index % 2;
+      const until = starts[index + 1] ?? Infinity;
+      const own = events.filter(
+        (event) => event.channel === channel && event.frame >= frame(startS) && event.frame < frame(until),
+      );
+      expect(own.filter((event) => event.value < 100)).toEqual([]);
+      if (index >= 2) expect(own[0]).toMatchObject({ frame: frame(startS), value: 100 });
+    });
+  });
+});
+
+function peakDb(pcm: Int16Array): number {
+  let peak = 0;
+  for (const sample of pcm) peak = Math.max(peak, Math.abs(sample));
+  return 20 * Math.log10(peak / 32768);
+}
+
+it('plays an ordinary melody close to full scale', async () => {
+  // At the first gain a melody peaked at −27 to −31 dBFS; at the second,
+  // −12 to −16, and the owner still could not hear it well on a phone.
+  const bank = parseSoundfont(bytes('violin'), 'violin');
+  const melody: Schedule = {
+    bpm: 80,
+    durationS: 3,
+    notes: [392, 440, 493.88, 523.25].map((frequency, index) => ({
+      startS: index * 0.75,
+      durationS: 0.69,
+      frequency,
+      measureNumber: 1,
+      globalIndex: index,
+    })),
+  };
+  const audio = await renderSoundfont(melody, bank, 'violin', () => false);
+  expect(peakDb(audio.pcm)).toBeGreaterThan(-6);
+  expect(peakDb(audio.pcm)).toBeLessThanOrEqual(-1);
+});
+
+it('holds the loudest chords a page can ask for under the ceiling, instead of clipping them', async () => {
+  // Accented fff triple stops peak about 14 dB over full scale at the playing
+  // gain, and a clamp there is audible distortion.
+  const bank = parseSoundfont(bytes('violin'), 'violin');
+  const chords: Schedule = {
+    bpm: 80,
+    durationS: 6,
+    notes: [0, 1.5, 3, 4.5].flatMap((startS, index) =>
+      [196, 293.66, 493.88, 783.99].map((frequency) => ({
+        startS,
+        durationS: 1.4,
+        frequency,
+        measureNumber: 1,
+        globalIndex: index,
+        velocity: 127,
+      })),
+    ),
+  };
+  const audio = await renderSoundfont(chords, bank, 'violin', () => false);
+  expect(peakDb(audio.pcm)).toBeLessThanOrEqual(-1);
+  // Held at the ceiling, not turned down to silence.
+  expect(peakDb(audio.pcm)).toBeGreaterThan(-2);
 });
