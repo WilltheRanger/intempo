@@ -204,3 +204,53 @@ it('lets a held note bloom and ease, and leaves a short one level', () => {
   });
   expect(after.at(-1)).toEqual({ frame: 2 * 44100, value: 120 });
 });
+
+function peakDb(pcm: Int16Array): number {
+  let peak = 0;
+  for (const sample of pcm) peak = Math.max(peak, Math.abs(sample));
+  return 20 * Math.log10(peak / 32768);
+}
+
+it('plays an ordinary melody at the level of the metronome click', async () => {
+  // The click peaks at −12 dBFS. At the old gain a melody peaked at −27 to
+  // −31, quiet on a phone speaker at any volume.
+  const bank = parseSoundfont(bytes('violin'), 'violin');
+  const melody: Schedule = {
+    bpm: 80,
+    durationS: 3,
+    notes: [392, 440, 493.88, 523.25].map((frequency, index) => ({
+      startS: index * 0.75,
+      durationS: 0.69,
+      frequency,
+      measureNumber: 1,
+      globalIndex: index,
+    })),
+  };
+  const audio = await renderSoundfont(melody, bank, 'violin', () => false);
+  expect(peakDb(audio.pcm)).toBeGreaterThan(-18);
+  expect(peakDb(audio.pcm)).toBeLessThan(-8);
+});
+
+it('renders the loudest chords a page can ask for lower, instead of clipping them', async () => {
+  // Accented fff triple stops: at the playing gain they peak about 4 dB over
+  // full scale, and a clamp there is audible distortion.
+  const bank = parseSoundfont(bytes('violin'), 'violin');
+  const chords: Schedule = {
+    bpm: 80,
+    durationS: 6,
+    notes: [0, 1.5, 3, 4.5].flatMap((startS, index) =>
+      [196, 293.66, 493.88, 783.99].map((frequency) => ({
+        startS,
+        durationS: 1.4,
+        frequency,
+        measureNumber: 1,
+        globalIndex: index,
+        velocity: 127,
+      })),
+    ),
+  };
+  const audio = await renderSoundfont(chords, bank, 'violin', () => false);
+  expect(peakDb(audio.pcm)).toBeLessThanOrEqual(-1);
+  // Lowered to just under the ceiling, not to silence.
+  expect(peakDb(audio.pcm)).toBeGreaterThan(-3);
+});

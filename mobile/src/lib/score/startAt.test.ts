@@ -149,3 +149,25 @@ describe('startableMeasures', () => {
     expect(startableMeasures(scheduleScore(repeated, 60))).toEqual([1, 2]);
   });
 });
+
+describe('starting at a bar with a chord in it', () => {
+  it('keeps a chord one moment, as the whole piece numbers it', () => {
+    // `scheduleScore` gives a chord's members the index of the moment they
+    // share. Renumbering by position after the trim split them, so the same
+    // chord was one moment from the top and two from its own bar.
+    const score = scoreOf([
+      quarters(1, ['C4']),
+      {
+        measure_number: 2,
+        notes: [
+          { pitch: 'G3', duration: 'quarter', tied_to_next: false, chord_pitches: ['D4'] },
+          { pitch: 'A3', duration: 'quarter', tied_to_next: false },
+        ],
+        slurs: [],
+      } as ReturnType<typeof quarters>,
+    ]);
+    const whole = scheduleScore(score, 60);
+    expect(whole.notes.map((n) => n.globalIndex)).toEqual([0, 1, 1, 2]);
+    expect(startAtMeasure(whole, 2).notes.map((n) => n.globalIndex)).toEqual([0, 0, 1]);
+  });
+});

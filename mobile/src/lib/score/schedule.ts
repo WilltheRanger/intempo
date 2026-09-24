@@ -353,15 +353,22 @@ export function startAtMeasure(schedule: Schedule, measureNumber: number): Sched
   }
 
   const offset = first.startS;
+  // Renumbered, because `globalIndex` has to index the notes actually being
+  // played — by moment, not by position, so a chord's members keep sharing
+  // one index as they do from the top (`scheduleScore`).
+  const renumbered = new Map<number, number>();
   const notes = schedule.notes
     .filter((note) => note.startS >= offset)
-    .map((note, index) => ({
-      ...note,
-      startS: note.startS - offset,
-      // Renumbered, because `globalIndex` is what a playhead uses to say which
-      // note is sounding, and it has to index the notes actually being played.
-      globalIndex: index,
-    }));
+    .map((note) => {
+      if (!renumbered.has(note.globalIndex)) {
+        renumbered.set(note.globalIndex, renumbered.size);
+      }
+      return {
+        ...note,
+        startS: note.startS - offset,
+        globalIndex: renumbered.get(note.globalIndex)!,
+      };
+    });
 
   return {
     ...schedule,
