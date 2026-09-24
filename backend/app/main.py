@@ -66,6 +66,10 @@ async def _sweep_periodically() -> None:
         # it and swept by nothing. The one path that deletes a WAV runs only
         # after a verdict is written. See `services/take_archive`.
         await asyncio.to_thread(take_archive.sweep_unjudged_takes)
+        # And the originals of takes that *were* judged, an hour after the
+        # verdict rather than at it: a link to the WAV handed out just before
+        # the Opus was recorded has to keep playing until it expires.
+        await asyncio.to_thread(take_archive.sweep_judged_originals)
         # And the scans the reader could not read, which that sweep cannot see
         # either: `POST /v1/scores` claims the photograph as it writes the row,
         # so a reading that fails leaves a titled piece with no notation and a

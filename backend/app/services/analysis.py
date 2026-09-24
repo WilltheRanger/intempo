@@ -17,7 +17,7 @@ import math
 from collections import defaultdict
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 from pydantic import BaseModel, Field
@@ -385,6 +385,36 @@ def nothing_played(
 ) -> bool:
     """Was this sound somebody playing, or something else the microphone heard?
 
+    True when `why_not_played` names a rule; see it for the rules.
+    """
+    return (
+        why_not_played(
+            evidence,
+            quality=quality,
+            n_detected=n_detected,
+            n_expected=n_expected,
+            config=config,
+        )
+        is not None
+    )
+
+
+def why_not_played(
+    evidence: pitch_evidence.Evidence,
+    *,
+    quality: float,
+    n_detected: int,
+    n_expected: int,
+    config: AudioConfig,
+) -> str | None:
+    """Which rule says nothing was played — `no_pitch`, `one_pitch` or
+    `not_tonal` — or None if none does.
+
+    Named rather than only decided because the first real take this refused
+    (2026-09-24, a double bass that detected 73 of 75 notes) could not say
+    which of the three it tripped, and the answer is the whole of what tuning
+    them against real rooms needs. `analyses.diagnostics` stores it.
+
     **Measured on 2026-09-23, on synthetic takes** (TUNING_LOG.md has every
     row). Takes with nothing played:
 
@@ -422,7 +452,7 @@ def nothing_played(
     """
     p = config.pitch
     if evidence.n_attacks == 0:
-        return False
+        return None
     # Some of the page's pitches were heard: whatever else went wrong, it is
     # somebody playing, and what they are told is the rest of the pipeline's.
     # **More of them than chance would put there**, as well as a share: three
@@ -432,15 +462,17 @@ def nothing_played(
     if evidence.page_share >= p.not_played_page and _beyond_chance(
         evidence.n_confirmed, evidence.n_matched, chance=p.chance, alpha=p.significance
     ):
-        return False
+        return None
     if evidence.tonal_share < p.not_played_tonal:
-        return True
+        return "no_pitch"
     if evidence.page_classes >= 2 and evidence.one_pitch_share >= p.one_pitch:
-        return True
-    return (
+        return "one_pitch"
+    if (
         evidence.tonal_share < p.played_tonal
         and quality < config.alignment.warn_quality
-    )
+    ):
+        return "not_tonal"
+    return None
 
 
 def _beyond_chance(hits: int, trials: int, *, chance: float, alpha: float) -> bool:
@@ -978,6 +1010,36 @@ def _with_restarts(
     return reading, anchored
 
 
+#: The most attack times one trace keeps. A fourteen-minute take at a fast
+#: tempo is a few thousand; past this the list is the detector misfiring, and
+#: its first few thousand say so as well as all of them would.
+_TRACE_MAX_TIMES = 4000
+
+
+def _traced(trace: dict[str, Any] | None, **values: Any) -> None:
+    """Record `values` in `trace`, if the caller asked for one."""
+    if trace is not None:
+        trace.update(values)
+
+
+def _times(values: np.ndarray) -> list[float]:
+    """Seconds to the millisecond, as plain floats: JSON, not numpy."""
+    return [round(float(v), 3) for v in values[:_TRACE_MAX_TIMES]]
+
+
+def _alignment_trace(anchored: AnchoredAlignment) -> dict[str, Any]:
+    raw = anchored.alignment
+    return {
+        "quality": round(float(raw.quality), 3),
+        "timing_quality": round(float(raw.timing_quality), 3),
+        "coverage": round(float(raw.coverage), 3),
+        "subsequence": bool(raw.subsequence),
+        "n_detected": int(raw.n_detected),
+        "trimmed_lead": int(anchored.trimmed_lead),
+        "trimmed_tail": int(anchored.trimmed_tail),
+    }
+
+
 def analyze(
     audio: str | Path | tuple[np.ndarray, int],
     score: ScoreJson,
@@ -986,12 +1048,21 @@ def analyze(
     instrument: str | None = None,
     double_bass: bool = False,
     config: AudioConfig | None = None,
+    trace: dict[str, Any] | None = None,
 ) -> AnalysisResult:
     """Analyze a recording against a score at a target tempo.
 
     `audio` is either a path to load, or an already-decoded `(waveform,
     sample_rate)` tuple — the Batch 4 worker decodes storage bytes once
     and passes the waveform straight through, avoiding a second decode.
+
+    `trace`, when given, is filled with the working on the way to the answer:
+    every attack the detector reported, the reading chosen, the alignment's two
+    halves, the pitch evidence and the rule that refused the take, if one did.
+    Nothing is recomputed for it — each value is the one the decision used —
+    and nothing reads it back; the worker stores it on the row
+    (`analyses.diagnostics`) so a real take can say why it was refused without
+    anyone fetching its audio. See `_traced`.
 
     Returns a graceful `alignment_failed` / `no_onsets` / `not_played` result
     rather than raising when the input can't be trusted — the caller turns status into
@@ -1007,8 +1078,15 @@ def analyze(
         config=cfg,
     )
     onsets = heard.onsets
+    _traced(
+        trace,
+        duration_s=round(heard.y.size / heard.sr, 3) if heard.sr else None,
+        detected_s=_times(heard.onsets),
+        n_expected_as_written=int(heard.expected.size),
+    )
 
     if onsets.size == 0 or heard.expected.size == 0:
+        _traced(trace, outcome="no_onsets")
         return AnalysisResult(
             status="no_onsets",
             quality=0.0,
@@ -1046,6 +1124,7 @@ def analyze(
     reclaimable = reading.reclaimable
     onsets = anchored.onsets
     raw = anchored.alignment
+    _traced(trace, reading=reading.name, n_expected=int(expected.size))
 
     # **A second look, before the take is called unreadable rather than
     # after.** This began life below the refusal check, where it was useless:
@@ -1080,6 +1159,7 @@ def analyze(
         min_gap_s=closest_expected_gap(expected, optional=reading.grace),
         config=cfg,
     ) - origin
+    _traced(trace, recovered=int(recovered.size))
     if recovered.size:
         log.info(
             "analysis: recovered %d onset(s) the first pass did not report",
@@ -1118,6 +1198,19 @@ def analyze(
         in cfg.pitch.low_instruments,
         page_pitches=[note.pitch for note in timeline.notes],
     )
+    _traced(
+        trace,
+        alignment=_alignment_trace(anchored),
+        pitch={
+            "tonal_share": round(evidence.tonal_share, 3),
+            "page_share": round(evidence.page_share, 3),
+            "one_pitch_share": round(evidence.one_pitch_share, 3),
+            "n_attacks": evidence.n_attacks,
+            "n_matched": evidence.n_matched,
+            "n_confirmed": evidence.n_confirmed,
+            "page_classes": evidence.page_classes,
+        },
+    )
     log.info(
         "analysis: pitch held after %.2f of %d attacks, written pitch after "
         "%.2f of %d notes",
@@ -1131,13 +1224,15 @@ def analyze(
     # empty room aligns perfectly, and talking on its own reached a verdict at
     # quality 0.47. What the alignment made of a sound nobody played is not a
     # reason to say anything about it.
-    if nothing_played(
+    refused_by = why_not_played(
         evidence,
         quality=raw.quality,
         n_detected=int(heard.onsets.size),
         n_expected=int(heard.expected.size),
         config=cfg,
-    ):
+    )
+    if refused_by is not None:
+        _traced(trace, outcome="not_played", rule=refused_by)
         log.warning(
             "analysis: not played — pitch held after %.2f of %d attacks, "
             "written pitch after %.2f of %d notes",
@@ -1159,6 +1254,7 @@ def analyze(
         )
 
     if is_alignment_broken(raw.quality, config=cfg):
+        _traced(trace, outcome="alignment_failed")
         # **The one line that says which half refused the take.**
         #
         # `quality` is `timing_quality * coverage`, and a refusal reported only
@@ -1196,6 +1292,12 @@ def analyze(
 
     cleaned = apply_fuzzy_match(
         raw, onsets, expected, optional=optional, reclaimable=reclaimable
+    )
+    _traced(
+        trace,
+        outcome="ok",
+        n_missed=len(cleaned.missed_expected),
+        n_extra=len(cleaned.extra_detected),
     )
     deltas = compute_deltas(cleaned, onsets, timeline, target_bpm, config=cfg)
     trend = rolling_trend(deltas, config=cfg)
