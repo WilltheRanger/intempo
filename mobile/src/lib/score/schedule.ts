@@ -2,6 +2,14 @@ import type { Duration, ScoreJson } from '../../data/types';
 import { flattenNotes, readTies } from '../notation/ties';
 import { measuresInPlayOrder } from './playOrder';
 import { midiOf } from '../notation/pitch';
+import { timeSignaturesByMeasure } from '../notation/meter';
+import { metronomePulse } from '../metronome/beats';
+import {
+  UNMARKED_VELOCITY,
+  applyDynamic,
+  metricLift,
+  velocityOf,
+} from './expression';
 
 /**
  * A score and a tempo, turned into notes with times and pitches.
@@ -120,6 +128,16 @@ export interface ScheduledNote {
   measureNumber: number;
   /** Index among sounded notes, so a playhead can name what it's on. */
   globalIndex: number;
+  /**
+   * How hard the note is played, 1–127: its dynamic, any accent, and where it
+   * falls in the bar (`expression.ts`). Absent means an unmarked note.
+   */
+  velocity?: number;
+  /**
+   * Slurred into the next note: held for its whole value, and joined to the
+   * next rather than separated from it.
+   */
+  legato?: boolean;
 }
 
 export interface Schedule {
@@ -140,7 +158,12 @@ export interface ScheduleOptions {
   leadInS?: number;
 }
 
-const DEFAULT_ARTICULATION = 0.85;
+/**
+ * 0.85 until 2026-09-24. A bow change is short: at 0.85 a quarter at 80 had
+ * 110 ms of silence before the next note, which on a sampled string reads as
+ * a keyboard, not a bow. 0.92 keeps a gap the ear hears as separation.
+ */
+const DEFAULT_ARTICULATION = 0.92;
 
 /**
  * How long a marked note actually sounds, as a fraction of its written value.
@@ -156,9 +179,8 @@ const DEFAULT_ARTICULATION = 0.85;
  * hold it for its whole value — so it overrides the default gap entirely rather
  * than shortening it slightly less.
  *
- * An accent changes weight, not length, and this player has no dynamics; it
- * therefore sounds exactly like an unmarked note. Saying so here is the point —
- * a future reader should not have to wonder whether it was forgotten.
+ * An accent changes weight, not length, so it is not here: it is in the
+ * note's velocity (`expression.ts`), with the page's dynamics.
  */
 const ARTICULATION_LENGTH: Record<string, number> = {
   staccato: 0.5,
@@ -205,36 +227,73 @@ export function scheduleScore(
   const ties = readTies(measures);
   // Which measure each flat note belongs to, so a scheduled note can still say.
   const measureOf: number[] = [];
+  // Where each flat note begins a bar, and whether a slur carries it into the
+  // next note or brings it from the last. Slur indices count within a bar.
+  const opensBar: boolean[] = [];
+  const slurredTo: boolean[] = [];
+  const slurredFrom: boolean[] = [];
   for (const measure of measures) {
-    for (const _ of measure.notes ?? []) {
+    const written = measure.notes ?? [];
+    written.forEach((_, local) => {
       measureOf.push(measure.measure_number);
-    }
+      opensBar.push(local === 0);
+      const slurs = measure.slurs ?? [];
+      slurredTo.push(
+        slurs.some((s) => s.start_note_index <= local && local < s.end_note_index),
+      );
+      slurredFrom.push(
+        slurs.some((s) => s.start_note_index < local && local <= s.end_note_index),
+      );
+    });
   }
+  const meters = timeSignaturesByMeasure(score);
+  let standing = UNMARKED_VELOCITY;
+  let barStart = clock;
 
   for (let i = 0; i < flat.length; i += 1) {
+    if (opensBar[i]) {
+      barStart = clock;
+    }
+    const note = flat[i];
+    // A dynamic written on a tied-over note still stands for what follows.
+    const dynamic = applyDynamic(note.dynamics, standing);
+    standing = dynamic.standing;
     if (ties.absorbed[i]) {
       continue; // already sounding, as part of the note that tied into it
     }
-    const note = flat[i];
     let beats = BEATS[note.duration] ?? UNKNOWN_DURATION_BEATS;
+    let last = i;
     for (let held = i + 1; held < flat.length && ties.absorbed[held]; held += 1) {
       beats += BEATS[flat[held].duration] ?? UNKNOWN_DURATION_BEATS;
+      last = held;
     }
 
     const durationS = beats * secondsPerBeat;
-    // The note's own marking wins over the global gap; without one, the gap.
-    const sounded =
-      durationS *
-      (ARTICULATION_LENGTH[note.articulation ?? ''] ?? articulation);
+    // The note's own marking wins over everything; then a slur, which holds a
+    // note its whole value into the next; then the global gap. A tied note is
+    // slurred on if the last note of the tie is.
+    const marked = ARTICULATION_LENGTH[note.articulation ?? ''];
+    const legato = marked === undefined && slurredTo[last];
+    const sounded = durationS * (marked ?? (legato ? 1 : articulation));
     const frequency = note.pitch === 'rest' ? null : frequencyOf(note.pitch);
 
     if (frequency !== null) {
+      const pulse = metronomePulse(meters.get(measureOf[i]));
+      const velocity = velocityOf({
+        dynamic: dynamic.note,
+        articulation: note.articulation,
+        metric: metricLift((clock - barStart) / secondsPerBeat, pulse),
+        slurredFrom: slurredFrom[i],
+        index: globalIndex,
+      });
       notes.push({
         startS: clock,
         durationS: sounded,
         frequency,
         measureNumber: measureOf[i],
         globalIndex,
+        velocity,
+        ...(legato ? { legato } : {}),
       });
       globalIndex += 1;
 
@@ -255,6 +314,8 @@ export function scheduleScore(
           frequency: chordHz,
           measureNumber: measureOf[i],
           globalIndex: globalIndex - 1,
+          velocity,
+          ...(legato ? { legato } : {}),
         });
       }
     }

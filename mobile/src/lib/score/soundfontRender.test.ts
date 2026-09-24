@@ -12,7 +12,11 @@ vi.mock('./soundfontAssets', () => ({
 const read = vi.hoisted(() => vi.fn());
 vi.mock('./sampleBytes', () => ({ readSampleBytes: read }));
 import { loadSoundfont, parseSoundfont } from './soundfontBank';
-import { renderSoundfont, soundfontEvents } from './soundfontRender';
+import {
+  expressionEvents,
+  renderSoundfont,
+  soundfontEvents,
+} from './soundfontRender';
 import type { Instrument } from '../../data/types';
 import type { Schedule } from './schedule';
 
@@ -138,4 +142,65 @@ it('cancels while rendering and refuses unbounded or empty schedules', async () 
       () => false,
     ),
   ).rejects.toThrow('no playable');
+});
+
+it('plays each note at its own velocity, and an unmarked one at mezzo-forte', () => {
+  const score = passage(440);
+  score.notes.push({ ...score.notes[0], startS: 0.3, globalIndex: 1, velocity: 100 });
+  const ons = soundfontEvents(score).filter((event) => event.on);
+  expect(ons.map((event) => event.velocity)).toEqual([72, 100]);
+});
+
+it('runs a slurred note into the next, but never across the same key struck again', () => {
+  const note = passage(440).notes[0];
+  const into = (next: number) =>
+    soundfontEvents({
+      bpm: 60,
+      durationS: 1,
+      notes: [
+        { ...note, startS: 0, durationS: 0.25, legato: true },
+        { ...note, startS: 0.25, durationS: 0.25, frequency: next, globalIndex: 1 },
+      ],
+    });
+  // A different pitch: 30 ms of overlap, so there is no gap between them.
+  const joined = into(493.88);
+  const firstOff = joined.find((event) => !event.on && event.key === 69)!;
+  expect(firstOff.frame).toBe(Math.round(0.28 * 44100));
+  // The same pitch: the overlap's note-off would silence the new attack, so
+  // the note ends exactly where the next begins, and is released first.
+  const repeated = into(440);
+  expect(repeated.map((event) => [event.frame, event.on])).toEqual([
+    [0, true],
+    [11025, false],
+    [11025, true],
+    [22050, false],
+  ]);
+});
+
+it('lets a held note bloom and ease, and leaves a short one level', () => {
+  const note = passage(440).notes[0];
+  const held = expressionEvents({
+    bpm: 60,
+    durationS: 3,
+    notes: [{ ...note, startS: 0, durationS: 2 }],
+  });
+  const values = held.map((event) => event.value);
+  const peak = values.indexOf(Math.max(...values));
+  expect(values[peak]).toBe(127);
+  expect(values.slice(0, peak)).toEqual([...values.slice(0, peak)].sort((a, b) => a - b));
+  expect(values.slice(peak)).toEqual([...values.slice(peak)].sort((a, b) => b - a));
+  expect(held.at(-1)!.frame).toBeLessThan(2 * 44100);
+
+  // Short notes: nothing to shape, and nothing sent while it stays neutral.
+  expect(expressionEvents(passage(440))).toEqual([]);
+  // After a held note, the next short one starts back at the neutral level.
+  const after = expressionEvents({
+    bpm: 60,
+    durationS: 3,
+    notes: [
+      { ...note, startS: 0, durationS: 2 },
+      { ...note, startS: 2, durationS: 0.25, globalIndex: 1 },
+    ],
+  });
+  expect(after.at(-1)).toEqual({ frame: 2 * 44100, value: 120 });
 });

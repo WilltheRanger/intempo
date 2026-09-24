@@ -46,7 +46,7 @@ export const LICENCES: Licence[] = [
   { name: 'expo-status-bar', version: '57.0.1', licence: 'MIT' },
   { name: 'expo-system-ui', version: '57.0.3', licence: 'MIT' },
   { name: 'fflate', version: '0.8.3', licence: 'MIT' },
-  { name: 'GeneralUser GS (string SoundFonts)', version: '2.0.3 subset', licence: 'GeneralUser GS License v2.0' },
+  { name: 'GeneralUser GS (viola and cello SoundFonts)', version: '2.0.3 subset', licence: 'GeneralUser GS License v2.0' },
   { name: 'lucide-react-native', version: '1.31.0', licence: 'ISC' },
   { name: 'patch-package', version: '8.0.1', licence: 'MIT' },
   { name: 'react', version: '19.2.3', licence: 'MIT' },
@@ -61,4 +61,5 @@ export const LICENCES: Licence[] = [
   { name: 'typescript', version: '6.0.3', licence: 'Apache-2.0' },
   { name: 'typescript-eslint', version: '8.69.0', licence: 'MIT' },
   { name: 'vitest', version: '4.1.11', licence: 'MIT' },
+  { name: 'VS Chamber Orchestra 2 CE (violin and double bass samples)', version: '6dd651d subset', licence: 'CC0-1.0' },
 ];
