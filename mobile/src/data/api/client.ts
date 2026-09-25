@@ -71,7 +71,13 @@ export class ApiError extends Error {
 }
 
 interface ApiFetchOptions extends Omit<RequestInit, 'body'> {
-  body?: unknown;
+  /**
+   * The request's JSON, **as an object** — serialised here. A string would be
+   * serialised again and arrive as a JSON string the API refuses; that is how
+   * every correction a musician sent was lost (`postCorrections`), so the type
+   * no longer admits one.
+   */
+  body?: object;
   /** Set false for the rare unauthenticated call (only `/v1/health` today). */
   authenticated?: boolean;
 }
