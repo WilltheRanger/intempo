@@ -26,10 +26,12 @@ import xml.etree.ElementTree as ET
 
 from defusedxml.ElementTree import fromstring as defused_fromstring
 from defusedxml.common import DefusedXmlException
+from collections.abc import Callable
 from typing import Final
 
 from app.services.ocr.meter import quarter_beats
 from app.services.ocr.validate import infer_beats_per_measure
+from app.services.tempo_words import tempo_word
 from app.services.score_schema import (
     DURATION_BEATS,
     PITCH_PATTERN,
@@ -39,6 +41,7 @@ from app.services.score_schema import (
     Repeat,
     ScoreJson,
     Slur,
+    TempoChange,
     Tuplet,
     hairpin_from_text,
 )
@@ -1451,6 +1454,76 @@ def _navigation_in(part_el: ET.Element) -> list[tuple[int, int, str]]:
     return found
 
 
+def _tempo_mark_in(
+    direction: ET.Element,
+    words: str | None,
+    printed_tempo: tuple[int, str] | None,
+    tempo_before: int | None,
+    heading: bool,
+) -> tuple[str, str, float | None] | None:
+    """The tempo change one `<direction>` prints, as (kind, text, bpm), or None.
+
+    **The owner's question, 2026-09-25**: "how am I supposed to account for
+    tempo variations or where it says poco". A file states them — `<words>`
+    for "poco rit." and "a tempo", a `<metronome>` or `<sound tempo>` for a
+    new tempo part-way through — and every one was read and thrown away.
+
+    A metronome mark or `<sound tempo>` is a change only once the piece has a
+    tempo: the first one *is* its tempo (`bpm_hint`). Words go through
+    `tempo_words.tempo_word`, which reads only what a part prints for tempo.
+    """
+    stated: float | None = None
+    if tempo_before is not None:
+        if printed_tempo is not None:
+            stated = float(printed_tempo[0])
+        else:
+            sound = direction.find("sound")
+            raw = sound.get("tempo") if sound is not None else None
+            try:
+                value = float(raw) if raw else None
+            except ValueError:
+                value = None
+            if value is not None and 20 <= value <= 300:
+                stated = round(value, 1)
+    word = tempo_word(words or "", heading=heading) if words else None
+    if stated is not None:
+        # A number states a new tempo whatever the words beside it say.
+        return ("new_tempo", word.text if word else (words or "new tempo")[:40], stated)
+    if word is not None:
+        return (word.kind, word.text, None)
+    return None
+
+
+def _tempo_changes(
+    marks: list[tuple[int, str, str, float | None]],
+    bar_at: Callable[[int], int | None],
+) -> list[TempoChange]:
+    """The tempo changes, in the finished page's bar numbers, one per bar.
+
+    A bar often prints its words and its metronome mark as two directions —
+    "meno mosso" and "♩ = 88" — which are one change: the words, with the
+    number.
+    """
+    by_bar: dict[int, tuple[str, str, float | None]] = {}
+    for index, kind, text, bpm in marks:
+        bar = bar_at(index)
+        if bar is None:
+            continue
+        held = by_bar.get(bar)
+        if held is None:
+            by_bar[bar] = (kind, text, bpm)
+        elif kind == "new_tempo" and held[0] == "new_tempo":
+            by_bar[bar] = (
+                "new_tempo",
+                held[1] if held[2] is None else text,
+                bpm if bpm is not None else held[2],
+            )
+    return [
+        TempoChange(measure_number=bar, kind=kind, text=text, bpm=bpm)  # type: ignore[arg-type]
+        for bar, (kind, text, bpm) in sorted(by_bar.items())
+    ]
+
+
 def score_json_from_musicxml(
     xml: str, *, clef_fallback: str | None = None, part: str | None = None
 ) -> ScoreJson:
@@ -1520,6 +1593,10 @@ def score_json_from_musicxml(
     measures: list[Measure] = []
     #: `(index in measures, how many bars it stands for, metre stated on it)`
     pending_rests: list[tuple[int, int, str | None]] = []
+    #: Tempo changes printed part-way through — "poco rit.", "a tempo", a new
+    #: metronome mark — by source measure index, mapped to the finished page's
+    #: bar numbers at the end exactly as the repeats are.
+    tempo_marks: list[tuple[int, str, str, float | None]] = []
     #: 1 once an opening anacrusis has taken number 1, so every printed
     #: number after it moves up to stay distinct. See the loop below.
     pickup_shift = 0
@@ -1733,12 +1810,18 @@ def score_json_from_musicxml(
 
         for direction in measure_el.iterfind("direction"):
             words = _text(direction.find("direction-type/words"))
+            # A tempo is already established when this direction is read: a
+            # metronome mark after that is a change, before it the piece's own.
+            tempo_before = bpm_hint
             # "cresc." is often the first word a part prints, and it is not a
             # tempo; it became this piece's tempo marking until it was read as
             # the hairpin it is, in the loop over the bar's notes below.
             if words and tempo_marking is None and hairpin_from_text(words) is None:
                 tempo_marking = words
             printed_tempo = _metronome_tempo(direction)
+            marked = _tempo_mark_in(direction, words, printed_tempo, tempo_before, index == 1)
+            if marked is not None:
+                tempo_marks.append((len(measures), *marked))
             if printed_tempo is not None and tempo_beat_unit is None:
                 tempo_beat_unit = printed_tempo[1]
             sound = direction.find("sound")
@@ -2288,6 +2371,11 @@ def score_json_from_musicxml(
             for position, measure in enumerate(measures, start=1)
         ]
 
+    tempo_changes = _tempo_changes(
+        tempo_marks,
+        lambda index: measures[moved[index]].measure_number if 0 <= index < len(moved) else None,
+    )
+
     total_notes = sum(len(m.notes) for m in measures)
     # Confidence an engine did not report, inferred from what had to be thrown
     # away. A run that dropped a fifth of its notes for want of a readable type
@@ -2347,6 +2435,7 @@ def score_json_from_musicxml(
         measures=measures,
         repeats=repeats,
         unclosed_repeat_starts=unclosed_repeat_starts,
+        tempo_changes=tempo_changes,
         ocr_confidence=confidence,
         notes_to_human=notes_to_human,
     )

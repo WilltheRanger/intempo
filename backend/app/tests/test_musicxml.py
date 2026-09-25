@@ -3650,3 +3650,83 @@ def test_key_fifths_reads_what_the_names_say() -> None:
     assert key_fifths("unknown") is None
     assert key_fifths(None) is None
     assert key_fifths("H major") is None
+
+
+# ---------------------------------------------------------------------------
+# Tempo changes printed part-way through (the owner, 2026-09-25: "how am I
+# supposed to account for tempo variations or where it says poco")
+# ---------------------------------------------------------------------------
+
+
+def _words(text: str) -> str:
+    return f"<direction><direction-type><words>{text}</words></direction-type></direction>"
+
+
+def _metronome(per_minute: int, unit: str = "quarter") -> str:
+    return (
+        "<direction><direction-type><metronome>"
+        f"<beat-unit>{unit}</beat-unit><per-minute>{per_minute}</per-minute>"
+        "</metronome></direction-type></direction>"
+    )
+
+
+def _four(number: int, before: str = "", attributes: str = "") -> str:
+    return _bar(number, before + _A_QUARTER * 4, attributes)
+
+
+def test_the_words_and_marks_a_file_prints_for_tempo_are_read() -> None:
+    score = score_json_from_musicxml(
+        _part(
+            _four(1, _words("Andante") + _metronome(104), _FOUR_FOUR)
+            + _four(2)
+            + _four(3, _words("poco rit."))
+            + _four(4)
+            + _four(5, _words("a tempo"))
+            + _four(6, _words("cresc."))
+            + _four(7, _words("meno mosso") + _metronome(88))
+            + _four(8)
+        )
+    )
+
+    assert score.bpm_hint == 104
+    assert score.tempo_marking == "Andante"
+    assert [(c.measure_number, c.kind, c.text, c.bpm) for c in score.tempo_changes] == [
+        (3, "ritardando", "poco rit.", None),
+        (5, "a_tempo", "a tempo", None),
+        (7, "new_tempo", "meno mosso", 88.0),
+    ]
+
+
+def test_a_metronome_mark_with_no_words_is_a_new_tempo_with_its_number() -> None:
+    score = score_json_from_musicxml(
+        _part(_four(1, _metronome(100), _FOUR_FOUR) + _four(2) + _four(3, _metronome(72)))
+    )
+
+    assert [(c.measure_number, c.kind, c.bpm) for c in score.tempo_changes] == [
+        (3, "new_tempo", 72.0)
+    ]
+
+
+def test_the_piece_s_own_tempo_is_not_a_change() -> None:
+    """The first metronome mark is the piece's tempo, wherever it is printed,
+    and a tempo name heading bar 1 is its tempo marking."""
+    score = score_json_from_musicxml(
+        _part(_four(1, _words("Allegro"), _FOUR_FOUR) + _four(2, _metronome(120)) + _four(3))
+    )
+
+    assert score.bpm_hint == 120
+    assert score.tempo_changes == []
+
+
+def test_a_tempo_change_keeps_its_bar_across_a_multi_bar_rest() -> None:
+    """Mapped as the repeats are: a four-bar rest before it moves it by three."""
+    score = score_json_from_musicxml(
+        _part(
+            _four(1, "", _FOUR_FOUR)
+            + _bar(2, "<note><rest measure='yes'/><duration>4</duration></note>", _MULTI_REST_4)
+            + _four(3, _words("rit."))
+        )
+    )
+
+    rit = next(c for c in score.tempo_changes if c.kind == "ritardando")
+    assert rit.measure_number == score.measures[-1].measure_number
