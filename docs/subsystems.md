@@ -627,6 +627,37 @@ and the scan flow there works differently as of 2026-08-24:
   Both rules the screen can get wrong live in `lib/onboarding.ts` where they are
   tested, not in the `.tsx`.
 
+### The app would not start, and the screen meant to catch it crashed too (2026-09-25)
+
+The owner's phone opened to "The app crashed while starting." over a column of
+bundle addresses and no message. Two faults, each hiding the other:
+
+- **The error screen needed navigation it did not have.** `ErrorBoundary`
+  sits *above* `NavigationContainer` in `App.tsx`, and draws its "Something
+  broke" in `ScreenContainer` — which, since 2026-09-11, calls
+  `useFocusEffect`. Outside a navigator that throws "Couldn't find a
+  navigation object", so **any** crash crashed the fallback, the original
+  error was lost, and the boot report in `index.html` took the screen.
+  `ScreenContainer` now mounts its focus listener only under navigation (the
+  test `useNavigation` itself makes). Checked in a browser with a screen made
+  to throw at launch: "Something broke", the message, "Try again".
+- **The launch cache hands back yesterday's shapes.** `data/cache` saves
+  takes, readings, pieces and the account to the device and restores them
+  before any fetch, and the Insights tab is built at launch. Takes gained
+  `playedBpm` and then `intonation` and `pitchCents` within three days while
+  `CACHE_SHAPE` stayed at 1, so a saved take came back with `intonation`
+  **undefined** — which `!== null` passes — and `pitchTrendFrom` read
+  `.spreadCents` off it. After a crash nothing is mounted to fetch fresh data,
+  so it repeats on every launch until the readings age out (24 h). The shape
+  is now 2, and `persistShape.test.ts` lists every field of every saved type
+  as a `Record<keyof T, true>`: **adding a field to one stops `tsc` until the
+  shape is bumped with it.**
+- **WebKit's `error.stack` has no message**, only frames, so the boot report
+  said where and never what. It now leads with `name: message`.
+
+**The rule:** anything drawn above `NavigationContainer` must not call a
+navigation hook, and a field added to a saved type is a new cache shape.
+
 ## `npm audit fix --force` would take this app back to SDK 46 (2026-09-09)
 
 `npm audit --omit=dev` reports **24 advisories, 7 of them high**, and closes

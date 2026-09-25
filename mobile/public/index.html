@@ -174,6 +174,23 @@
          * stale index.html pinned to a deleted bundle looks exactly like a
          * crash.
          */
+        /*
+         * **The message, then the stack.** WebKit's `error.stack` is frames
+         * only — no "TypeError: …" line at the top the way V8's has — so on an
+         * iPhone this printed a column of addresses and never said what went
+         * wrong (2026-09-25: "Couldn't find a navigation object" was nowhere
+         * on the screen a musician sent in). Said once: where the stack
+         * already starts with the message, it is left as it is.
+         */
+        function describeError(error) {
+          var stack = error.stack ? String(error.stack) : '';
+          var message = error.message ? String(error.message) : '';
+          if (!message) return stack;
+          var head = (error.name ? error.name + ': ' : '') + message;
+          if (stack.indexOf(message) !== -1) return stack;
+          return stack ? head + '\n' + stack : head;
+        }
+
         function describeNothing(event) {
           var lines = ['The error carried no message.'];
           if (resourceFailures.length) {
@@ -281,7 +298,7 @@
             var error = event.error;
             report(
               'The app crashed while starting.',
-              (error && (error.stack || error.message)) ||
+              (error && describeError(error)) ||
                 event.message ||
                 describeNothing(event),
             );
@@ -293,7 +310,7 @@
           var reason = event.reason;
           report(
             'The app crashed while starting.',
-            (reason && (reason.stack || reason.message)) || String(reason),
+            (reason && describeError(reason)) || String(reason),
           );
         });
 

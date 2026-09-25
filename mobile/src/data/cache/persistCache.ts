@@ -26,10 +26,20 @@ export const CACHE_KEY = 'intempo.library-cache';
  *
  * Part of the buster, so a build that reads the old shape discards it rather
  * than hydrating a `Piece` that is missing a field the screens now require.
- * Changing `pieceForDisk` below is the trigger; adding a key root is not,
- * because an unknown key simply never matches.
+ * Changing `pieceForDisk` below is a trigger; so is a field added to any type
+ * saved here — a take, its bars, the readings, a piece, the account — and
+ * `persistShape.test.ts` stops compiling until this is bumped. Adding a key
+ * root is not, because an unknown key simply never matches.
+ *
+ * **2, on 2026-09-25, after the app would not start.** Takes gained a tempo
+ * per bar and then a pitch reading within three days, and this stayed at 1.
+ * A phone that had saved takes from before came back with them missing
+ * `intonation` — `undefined`, which the Insights line tested as `!== null`
+ * and passed — so the tab the app builds at launch read `.spreadCents` off
+ * nothing and threw, on every launch, until the saved readings aged out a day
+ * later: the crash left nothing mounted to fetch fresh ones.
  */
-export const CACHE_SHAPE = 1;
+export const CACHE_SHAPE = 2;
 
 /**
  * How long a saved library is still worth showing.

@@ -1,5 +1,9 @@
 import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
-import { useFocusEffect } from '@react-navigation/native';
+import {
+  NavigationContainerRefContext,
+  NavigationContext,
+  useFocusEffect,
+} from '@react-navigation/native';
 import { useCallback, useContext, useRef, useState, type ReactNode } from 'react';
 import {
   Platform,
@@ -179,12 +183,19 @@ export function ScreenContainer({
   // this whole mechanism exists to fix. Re-reported on focus from the top,
   // because a tab that is returned to has its old offset.
   const scrollY = useRef(0);
-  useFocusEffect(
-    useCallback(() => {
-      reportTone(toneFor(scrollY.current));
-      return () => reportTone('auto');
-    }, [reportTone, toneFor]),
-  );
+  const onFocus = useCallback(() => {
+    reportTone(toneFor(scrollY.current));
+    return () => reportTone('auto');
+  }, [reportTone, toneFor]);
+  // **Only under a navigator.** `useFocusEffect` throws outside one, and
+  // `ErrorBoundary` draws its "Something broke" in this container *above*
+  // the `NavigationContainer` — so from 2026-09-11, when this hook arrived,
+  // any crash at all crashed the screen meant to catch it, and the musician
+  // got the raw boot report with the real error lost (2026-09-25). The same
+  // test `useNavigation` makes, so this mounts exactly where it cannot throw.
+  const screenNavigation = useContext(NavigationContext);
+  const containerNavigation = useContext(NavigationContainerRefContext);
+  const navigated = screenNavigation !== undefined || containerNavigation !== undefined;
 
   function handleScroll(event: NativeSyntheticEvent<NativeScrollEvent>) {
     scrollY.current = event.nativeEvent.contentOffset.y;
@@ -285,6 +296,7 @@ export function ScreenContainer({
     // (20pt) each get the right gap with no per-device branching. The bar
     // below owns the bottom inset; claiming it here too would double it.
     <SafeAreaView style={styles.safeArea} edges={['top']}>
+      {navigated ? <OnFocus effect={onFocus} /> : null}
       {scrollArea}
 
       {footer ? (
@@ -303,6 +315,12 @@ export function ScreenContainer({
       ) : null}
     </SafeAreaView>
   );
+}
+
+/** `useFocusEffect` as a component, so it can be left out where it would throw. */
+function OnFocus({ effect }: { effect: () => () => void }) {
+  useFocusEffect(effect);
+  return null;
 }
 
 /**

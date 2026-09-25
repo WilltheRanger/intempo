@@ -38,6 +38,18 @@ describe('pitchTrendFrom', () => {
     expect(pitchTrendFrom(takes([9, null, 20]))!.points).toHaveLength(2);
   });
 
+  it('leaves out a take saved before pitch was read, without throwing', () => {
+    // Restored from the launch cache, a take from before 2026-09-25 has no
+    // `intonation` at all — `undefined`, which `!== null` let through to
+    // `.spreadCents`, and the app did not start.
+    const saved = takes([9, 20]);
+    delete (saved[1] as Partial<TakeResult>).intonation;
+
+    expect(() => pitchTrendFrom(saved)).not.toThrow();
+    expect(pitchTrendFrom(saved)).toBeNull();
+    expect(() => pitchTrendLine(saved)).not.toThrow();
+  });
+
   it('is null with fewer than two takes to join', () => {
     expect(pitchTrendFrom(takes([9, null]))).toBeNull();
   });
