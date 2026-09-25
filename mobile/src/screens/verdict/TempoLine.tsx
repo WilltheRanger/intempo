@@ -87,7 +87,7 @@ export function TempoLine({
               y1={targetY}
               x2={VIEW_WIDTH}
               y2={targetY}
-              stroke={colors.borderStrong}
+              stroke={colors.chartRule}
               strokeWidth={BORDER_WIDTH}
               vectorEffect="non-scaling-stroke"
             />

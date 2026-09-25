@@ -164,7 +164,7 @@ export function MeasureBars({
                         left,
                         width: barWidth,
                         height,
-                        backgroundColor: bar.tone ? colors[bar.tone] : colors.borderStrong,
+                        backgroundColor: bar.tone ? colors[bar.tone] : colors.chartRule,
                       },
                       bar.up ? { bottom: HALF } : { top: HALF },
                     ]}
@@ -205,7 +205,7 @@ const styles = StyleSheet.create({
     right: 0,
     top: HALF,
     height: BORDER_WIDTH,
-    backgroundColor: colors.borderStrong,
+    backgroundColor: colors.chartRule,
   },
   bar: {
     position: 'absolute',
@@ -217,7 +217,7 @@ const styles = StyleSheet.create({
     bottom: -4,
     height: HEIGHT + 8,
     borderWidth: BORDER_WIDTH,
-    borderColor: colors.borderStrong,
+    borderColor: colors.chartRule,
     borderRadius: 4,
   },
   ends: {

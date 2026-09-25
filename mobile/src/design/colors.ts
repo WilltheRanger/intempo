@@ -27,26 +27,44 @@ export const lightColors = {
   textPrimary: '#14110E',
   /**
    * Warm gray. Composer names, supporting copy.
-   * 6.51:1 on `bg`, 7.26:1 on `surface` — clearly below primary, comfortably
-   * readable, and clear of WCAG AA at any size.
+   * 8.51:1 on `bg`, 9.49:1 on `surface` — clearly below primary, and past
+   * WCAG AAA's 7:1 at every size.
+   *
+   * Was `#5C564D`, 6.51:1. It passed, but the owner found the app hard to read
+   * (2026-09-25), and this is the colour of the second line under every title.
    */
-  textSecondary: '#5C564D',
+  textSecondary: '#4A453E',
   /**
    * Metadata, placeholders, disabled text.
    *
-   * 4.52:1 on `bg`, 5.04:1 on `surface` — clears WCAG AA at every size it is
-   * used at. Measured, not estimated: `audit-a11y.mjs`.
+   * 5.67:1 on `bg`, 6.32:1 on `surface`. Measured, not estimated:
+   * `contrast.test.ts` holds it to 5.5.
    *
-   * Was `#7A7367`, documented as "~4.6:1 on `bg`". That figure was the ratio
-   * on `surface`; on `bg`, where most of this text actually sits, it was 4.21
-   * — under the floor. A 4% darkening fixes it and is all but invisible.
+   * **Headroom, not the floor** (the owner, 2026-09-25: "hard to read… not
+   * much contrast"). It was `#756E63` at 4.52:1 — AA by 0.02 — and it is the
+   * colour of the app's most common text: 13pt and 11pt labels, axis numbers,
+   * eyebrows. Passing by a rounding error at the smallest sizes is what reads
+   * as faint. Before that it was `#7A7367`, documented as ~4.6:1 on `bg` and
+   * really 4.21 there.
    */
-  textTertiary: '#756E63',
+  textTertiary: '#655F55',
 
   /** Default 1px border on cards, dividers, inputs. */
   border: '#E6E2DA',
   /** Focused/active border. Stands in for the `:focus` ring RN doesn't have. */
   borderStrong: '#D8D2C6',
+  /**
+   * **A line that carries information on a chart**: the target tempo's rule,
+   * the zero line a drift is measured from, a scale's track, the selected
+   * bar's outline. 3.18:1 on `bg`, 3.55:1 on `surface` — WCAG 1.4.11's 3:1
+   * for a graphical object someone needs in order to read the chart.
+   *
+   * These were `borderStrong` and `border`, at 1.35:1 and 1.16:1: the "104"
+   * line on the owner's chart was all but invisible (2026-09-25). A hairline
+   * that only separates sections stays `border` — that one is decoration, and
+   * darkening it would put a box around everything.
+   */
+  chartRule: '#8F877A',
 
   /**
    * Muted antique gold. The only accent. Used sparingly.
@@ -365,6 +383,8 @@ export const darkColors: Palette = {
 
   border: '#332C25',
   borderStrong: '#3D362E',
+  // 3.69:1 on `bg`, 3.25:1 on `surface`: the same 3:1 floor as the light one.
+  chartRule: '#756D62',
 
   /**
    * The brand gold, unchanged. **4.77:1** on the page and 4.20:1 on a card:

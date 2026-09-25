@@ -157,7 +157,7 @@ export function SessionTrendChart({
               y1={zeroY}
               x2={width - EDGE}
               y2={zeroY}
-              stroke={colors.borderStrong}
+              stroke={colors.chartRule}
               strokeWidth={BORDER_WIDTH}
             />
             {area ? (
@@ -238,8 +238,9 @@ const styles = StyleSheet.create({
   axis: {
     position: 'absolute',
     left: 0,
-    fontSize: 11,
-    lineHeight: 14,
+    // 12 is the app's smallest size (`typography.caption`).
+    fontSize: 12,
+    lineHeight: 16,
   },
   xAxis: {
     flexDirection: 'row',

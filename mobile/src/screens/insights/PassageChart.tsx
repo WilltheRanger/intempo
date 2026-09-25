@@ -118,7 +118,7 @@ const styles = StyleSheet.create({
     left: GUTTER,
     right: 0,
     height: BORDER_WIDTH,
-    backgroundColor: colors.borderStrong,
+    backgroundColor: colors.chartRule,
   },
   bar: {
     position: 'absolute',
@@ -127,8 +127,9 @@ const styles = StyleSheet.create({
   axis: {
     position: 'absolute',
     left: 0,
-    fontSize: 11,
-    lineHeight: 14,
+    // 12 is the app's smallest size (`typography.caption`).
+    fontSize: 12,
+    lineHeight: 16,
   },
   ends: {
     flexDirection: 'row',

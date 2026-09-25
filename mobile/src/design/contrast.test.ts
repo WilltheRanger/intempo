@@ -60,6 +60,36 @@ describe('text on the light grounds', () => {
   }
 });
 
+describe('headroom for the text most of the app is set in', () => {
+  // **"Hard to read… not much contrast"** (the owner, 2026-09-25). Every
+  // token already cleared 4.5:1 — `textTertiary` by 0.02 — and the app's most
+  // common text is 13pt and 12pt in those two greys. Passing is the floor
+  // above; these are the margins the palette is now built to.
+  it('keeps supporting copy past 7:1', () => {
+    expect(contrast(colors.textSecondary, colors.bg)).toBeGreaterThanOrEqual(7);
+  });
+
+  it('keeps the lightest text well clear of the floor', () => {
+    expect(contrast(colors.textTertiary, colors.bg)).toBeGreaterThanOrEqual(5.5);
+  });
+});
+
+describe('lines a chart is read by', () => {
+  // The target tempo's rule, a zero line, a scale's track: WCAG 1.4.11's 3:1
+  // for a graphical object needed to understand the content. They were drawn
+  // in the border colours, at 1.35:1 and 1.16:1.
+  for (const [name, palette, ground] of [
+    ['light, on the page', colors, colors.bg],
+    ['light, on a card', colors, colors.surface],
+    ['dark, on the page', darkColors, darkColors.bg],
+    ['dark, on a card', darkColors, darkColors.surface],
+  ] as const) {
+    it(`clear 3:1 (${name})`, () => {
+      expect(contrast(palette.chartRule, ground)).toBeGreaterThanOrEqual(LARGE);
+    });
+  }
+});
+
 describe('the accent', () => {
   it('is not used for small text on a light ground', () => {
     // **The finding this file was written for.** `accent` is a mark — a

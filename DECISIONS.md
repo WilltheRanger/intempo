@@ -1,5 +1,30 @@
 # InTempo Decisions
 
+## 2026-09-25 — Readability: greys with headroom, 12pt floor, chart lines at 3:1
+
+**Context.** The owner: "the design of our app is kind of hard to read and
+there's not much contrast". Measured, every text token passed WCAG AA — but
+`textTertiary` by 0.02 (4.52:1), and the explicitly set text colours are
+overwhelmingly the two greys (212 of 224), mostly at 13pt and 11pt regular.
+The lines a chart is read by — the target tempo's rule, zero lines, the
+card's scale track — were drawn in the border colours at 1.35:1 and 1.16:1.
+
+**Decision** (asked; the owner chose the middle option):
+- `textSecondary` #5C564D → #4A453E (6.51 → 8.51:1); `textTertiary`
+  #756E63 → #655F55 (4.52 → 5.67:1). `contrast.test.ts` holds 7 and 5.5.
+- 12pt is the smallest size: `caption`, `eyebrow`, `tabLabel` and four chart
+  labels were 11.
+- New `chartRule` (3.18:1 on the page, 3.55 on a card; dark palette 3.69)
+  for lines that carry information. Section hairlines stay `border`.
+
+**Alternatives considered.** Darkening the greys alone (sizes and lines are
+half the problem); medium weight for all small text and darker verdict
+colours (heavier, busier — kept in reserve).
+
+**Trade-offs accepted.** A slightly heavier page. The verdict colours stay at
+~4.5–4.6:1; they are never the only carrier of a meaning and each sits beside
+a word.
+
 ## 2026-09-25 — The verdict says each thing once; a thanks that lands; a card scale that reads without a legend
 
 **Context.** The owner, on their take's verdict (screenshots, 2026-09-25):
