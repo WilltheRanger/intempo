@@ -1,5 +1,51 @@
 # InTempo Decisions
 
+## 2026-09-25 — A take is paired with its page by the chain of notes when timing cannot read it
+
+**Context.** The owner's real double-bass take played every note of its page
+in order and was refused as "Same notes, different times": timing-only DTW
+lost its place among 105 attacks against 95 written notes, and pitch class
+could not tell the octaves of bars 11–13 apart. The owner's rule: judge the
+chain of notes — if it is the page, a note in between that is out of tune or
+that the scan misread does not make it something else — and report the timing
+rather than refuse.
+
+**Decision.**
+- `alignment.align_chain`: an in-order pairing by pitch (an edit distance),
+  with where each attack falls breaking ties between equal pitches. Scored by
+  the same function as `align_dtw`, which was lifted out of it
+  (`_scored_mapping`).
+- `pitch_evidence.pitch_track` (YIN, on the waveform before the bass's 80 Hz
+  high-pass) and an octave-aware `mismatch`; a double bass is matched an
+  octave below where it is written.
+- `analysis`: the chain is tried only for a take under `warn_quality`, and kept
+  only when it is trusted by pitch (`_trusted_by_pitch`: at least 70% of the
+  notes the page asks for heard at their written pitch, at least eight, on at
+  least three pitches) and the timing pairing is not, or confirms fewer. A
+  trusted pairing is not refused as not played or as broken, and carries no
+  low-confidence caveat.
+- `apply_fuzzy_match` counts an attack paired with nothing as extra — only the
+  chain leaves one out.
+
+**Alternatives considered.**
+- *Pitch as a cost term inside the DTW* (built first, commit 5eb2356c). DTW
+  still pairs every extra attack with some note, and its best pairing of the
+  owner's take confirmed 59 of 75 notes at 370 ms median error where the chain
+  confirms 75 of 88 at under half that.
+- *Trust as a share of the notes paired.* A chain free to leave notes out
+  pairs only what matches: a different tune in the same key was trusted in two
+  of six seeds. Counted against the page's notes it is trusted in none of 420
+  wrong takes.
+- *pyin for the pitch.* Agrees with yin on 88% of this take's attacks at eight
+  times the cost.
+- *Refuse any take whose notes are not the page's.* Would refuse a real take
+  against a misread page; the 2026-09-23 decision already chose not to.
+
+**Trade-offs accepted.** The pitch track runs on every take (about 0.4 s a
+minute of audio). A different tune in the page's own rhythm still gets a
+timing verdict, as before. The trust thresholds are set against synthetic
+chance and one real take.
+
 ## 2026-09-24 — A judged take's WAV goes an hour after its verdict, not at it; the analysis keeps its working
 
 **Context.** The owner's take showed "Can't load the recording right now". The

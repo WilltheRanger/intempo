@@ -6,6 +6,147 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-09-25 — The chain of notes: a take whose pitches are the page's is judged, not refused
+
+**The first real take in this log.** Everything above is synthetic. This began
+with the owner's double-bass take (analysis 99aecbad, 104 BPM set, about 97
+played, 62 s): every note of its 25-bar page in order, refused as "Same notes,
+different times". The audio is the owner's and is not in the repository; the
+numbers below are what it measured.
+
+**Two faults, both in the matcher, neither a threshold.**
+
+- **Timing alone lost its place.** 105 attacks against 95 written notes — bow
+  changes, strings ringing on, a note heard twice — and `align_dtw` pairs every
+  attack with some note. Its pairing implied a tempo jumping between 28 and
+  203 BPM, and heard 25 of the page's 75 notes at their written pitch (0.33).
+- **Pitch class could not tell the octaves apart.** Bars 11–13 are octave
+  leaps (F3 F4 E4 E3 …); by chroma every note of them matches both of its
+  neighbours.
+
+**Tried first and replaced: pitch as a cost in the DTW** (the WIP commit
+5eb2356c). With pitch added at 0.5–16 typical gaps, its pairing of this take
+as written confirmed 38–59 of the 75 notes, with a median timing error of
+370–1040 ms against one straight line. DTW still gives every extra attack a note, and the
+timing terms still pull the path off the chain.
+
+### New: `alignment.align_chain`
+
+An edit distance on pitch: every attack is a written note or left out, every
+written note is heard or skipped, in order. Twice — once on pitch alone, once
+more with where each attack falls against a running median of the notes the
+first pass heard at pitch, which settles which of two equal pitches is which.
+Scored by the same `_scored_mapping` as `align_dtw`. Used only when the timing
+pairing is under `warn_quality`, and kept only when its pitches are the page's
+and the timing pairing's are not (or are fewer).
+
+    CHAIN_SKIP              0.6   leaving an attack or a written note out
+    CHAIN_SKIP_OPTIONAL     0.05  ...a slurred note or an ornament
+    CHAIN_TIME_WEIGHT       0.3   an attack a played gap from its place, saturated
+    CHAIN_PLACEMENT_NOTES   9     running median the placement is read from
+
+`CHAIN_SKIP` sits between half a wrong note and a whole one: a wrong note
+where the counts agree stays paired (the owner's rule — the out-of-tune note
+in the middle is still that note), a wrong-pitched attack the counts do not
+need is left out. The placement was interpolated through the first pass's
+pairs at first; it kept whatever the first pass had picked between two equal
+pitches, and four notes of this take went to a re-attack a second after the
+one on time. The running median fixed all four.
+
+### New: the pitch, with its octave (`pitch_evidence.pitch_track`)
+
+YIN over the instrument's sounding range, **on the waveform before the 80 Hz
+high-pass** — that filter removes the bottom octave's fundamentals, which is
+where a bass's E1–E2 live. A double bass is matched an octave below where it
+is written.
+
+    _IN_TUNE_ST     0.6   within this many semitones: the written note (0)
+    _OTHER_NOTE_ST  1.4   beyond: another note (1); a ramp between
+    _OCTAVE_AWAY    0.5   the same letter an octave off
+
+pyin was measured against yin on this take: they agree within half a semitone
+on 88% of attacks and differ by an octave on 3%, at 13.7 s against 1.7 s per
+minute of audio. yin.
+
+### New thresholds (`[pitch]`, none existed)
+
+    confirm_mismatch       0.25  an attack confirms its note at or under this
+    confirmed_share        0.7   of the notes the page asks for, heard at pitch
+    confirmed_min_notes    8
+    confirmed_min_pitches  3
+
+**Counted against the page's notes, not the notes paired** — and this was
+learned the hard way. As first written (share of paired notes ≥ 0.6, coverage
+≥ 0.5), a different tune in the same key with loose timing was trusted in two
+of six seeds and given a verdict: a chain free to leave notes out pairs only
+the ones that match. Measured with the final rule, 20 seeds each, violin
+synth, loose timing (every gap within ±50% of a beat):
+
+    what was played against the page        of the page's notes at pitch
+                                            16 notes      32         64
+                                            med   max   med  max   med  max
+    the page itself                         0.94  1.00  0.91 0.97  0.90 0.97
+    a different tune, same key              0.28  0.62  0.23 0.47  0.19 0.42
+    the scale up and down                   0.31  0.50  0.34 0.50  0.34 0.45
+    the page's notes shuffled               0.44  0.56  0.41 0.69  0.33 0.55
+    the page reversed                       0.41  0.62  0.42 0.62  0.38 0.59
+    the page a step up in the key           0.44  0.56  0.42 0.53  0.46 0.55
+    random chromatic notes                  0.12  0.31  0.16 0.25  0.17 0.22
+    one pitch throughout                    0.12  0.25  0.09 0.22  0.08 0.19
+
+    trusted: the page 59 of 60; every other row 0 of 60.
+
+The owner's take: 0.83 as written, **0.85 legato** (every written note an
+attack — how it was played), 0.90 after the recovery pass.
+
+### The owner's take, before and after
+
+    before   alignment_failed  q 0.000  timing 0.000  "Same notes, different times"
+    after    ok                q 0.496  timing 0.517  coverage 0.960  read legato
+             "You dragged bars 1–16 by 4 BPM."  played 97.5 BPM (-6.5)
+             79 of the 88 notes asked for heard at pitch, 23 different pitches
+
+The pairing, checked by hand against the heard pitch of every note: right
+throughout except bar 12 (octave leaps the tracker hears in the lower octave —
+paired, unconfirmed) and bar 21, where the page says G E G E and the take plays
+G E B A — very likely a misread by the scan, and exactly the case the owner
+described: the note in between is wrong, the chain is not.
+
+### Regression — the six clips
+
+Byte-identical `AnalysisResult` JSON on all six against `main` (sha256 of the
+sorted JSON, same config): every clip reads at 0.998–1.000, so the chain step
+never runs on them.
+
+    clip                  status  quality  direction  onsets
+    01_detache_clean      ok      0.999    on         32
+    02_detache_rushing    ok      0.999    rush       32
+    03_detache_dragging   ok      0.999    drag       32
+    04_slurred            ok      0.998    on          8
+    05_open_e_long        ok      1.000    on          1
+    06_pizzicato          ok      0.999    on         16
+
+### Cost
+
+The pitch track runs on every take: this take's analysis went from 1.67 s to
+2.06 s (best of three, measured while the test suite ran on the same machine).
+
+### Known limits, measured
+
+- **The verdict's figure is a run's pace, not the take's tempo.** The run
+  "bars 1–16" spans a hesitation in bar 15, after which `compute_deltas`
+  measures from the new level (`pulse_anchors`), so the pace fitted across it
+  is 4 BPM slow where `insights` reads the take, correctly, as 97.5 against
+  104. Not changed here: it is how every verdict reads a run.
+- **A different tune in the rhythm of the page still gets a timing verdict**,
+  as on `main`: the chain never runs on a take timing can read. Refusing on
+  wrong notes would refuse a real take against a misread page, which the
+  2026-09-23 entry measured and chose not to do.
+- **Half the page** is under 0.70 of its notes by construction, so a partial
+  take never takes the chain; timing's subsequence matching still reads it.
+- **One real take.** Every threshold here is set with a margin against chance
+  on synthetic tunes, and checked on one recording.
+
 ## 2026-09-23 — A take nobody played is refused, by its pitch
 
 **All synthetic, like everything above.** The owner asked what happens when

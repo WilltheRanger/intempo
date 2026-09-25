@@ -715,25 +715,6 @@ POSITION_CAP_GAPS = 0.15
 #: that flat region, not a tuned point. See `TUNING_LOG.md`, 2026-09-22.
 STEP_PENALTY_CAPS = 3.0
 
-#: What hearing the wrong pitch costs a pairing, in typical written gaps — the
-#: unit `POSITION_CAP_GAPS` is in. Used only when the caller passes `pitch`.
-#:
-#: **Timing alone lost its place on the first real take it was given**
-#: (2026-09-24): a double bass, 105 attacks against 95 written notes, every
-#: pitch in the right order, and the pairing it chose implied a tempo jumping
-#: between 28 and 203 BPM — refused as "same notes, different times". Paired by
-#: pitch alone the same take reads as a steady 97 BPM. A real instrument adds
-#: attacks timing cannot tell from notes (a bow change, a repeated note heard
-#: twice, a string ringing on) and drops others; pitch is what says which is
-#: which.
-#:
-#: Set so a clearly wrong pitch outweighs the saturated position term: a
-#: pairing is pushed to the note that sounded rather than the nearest in time,
-#: unless the timing disagrees by more than a wrong pitch does. Pitch never
-#: decides alone — see `analysis._align_reading`, which keeps a pitch-guided
-#: pairing only when its *timing* fits better.
-PITCH_WEIGHT = 1.0
-
 
 def _clamp_ratio(ratio: float) -> float:
     """Hold a tempo rescale inside what a musician plausibly did."""
@@ -1299,7 +1280,6 @@ def align_take(
     config: AudioConfig | None = None,
     steady: np.ndarray | None = None,
     optional: np.ndarray | None = None,
-    pitch: np.ndarray | None = None,
 ) -> AnchoredAlignment:
     """Align, having first worked out which detections are the *take*.
 
@@ -1343,9 +1323,6 @@ def align_take(
     than the exhaustive search does.
     """
     detected = np.asarray(detected, dtype=float)
-    # One row per detection, trimmed with them: see `align_dtw`'s `pitch`.
-    if pitch is not None and pitch.shape[0] != detected.size:
-        pitch = None
     base = to_timeline_base(detected)
     untrimmed = AnchoredAlignment(
         onsets=base,
@@ -1358,7 +1335,6 @@ def align_take(
             config=config,
             steady=steady,
             optional=optional,
-            pitch=pitch,
         ),
     )
     if detected.size < 3 or expected.size == 0:
@@ -1402,11 +1378,6 @@ def align_take(
                         # that "were" bars 6–7, quality 1.000, bar 1's notes
                         # named as bar 6's. The untrimmed take decides.
                         subsequence_allowed=untrimmed.alignment.subsequence,
-                        pitch=(
-                            pitch[lead : detected.size - tail]
-                            if pitch is not None
-                            else None
-                        ),
                     ),
                 )
             )
@@ -1425,6 +1396,127 @@ def align_take(
     )
 
 
+# Quality measures how well the *shape* of the performance matches the
+# score — not the lead-in before the first note, and not the tempo it was
+# played at. A player who starts 200 ms after "record" and then plays
+# perfectly is a 1.0, and so is one who plays the whole thing steadily at
+# 95% of the marked tempo: both are the right piece, played recognisably.
+#
+# This removed a constant offset only. A tempo difference is not a constant
+# offset, it is a ramp, so the residuals it left grew with the *square* of
+# the take's length — 64 notes at 1% drift scored 0.514, and quality became
+# a measure of how long the piece was.
+#
+# A straight line is removed instead: offset *and* rate. What is left is
+# what a steady tempo cannot explain, which is the only thing "can this
+# alignment be trusted" should turn on. The tempo difference itself is not
+# discarded — it is the verdict, and `compute_deltas` computes it from real
+# seconds further down.
+def _scored_mapping(
+    mapping: list[tuple[int, int]],
+    detected: np.ndarray,
+    expected: np.ndarray,
+    *,
+    sec_per_beat: float,
+    cfg: AudioConfig,
+    steady: np.ndarray | None,
+    optional: np.ndarray | None,
+    subsequence: bool,
+) -> AlignmentResult:
+    """Score one pairing of `detected` with `expected`: timing times coverage.
+
+    Shared by `align_dtw` and `align_chain`, so a pairing found either way is
+    judged by the same rules.
+    """
+    residuals = _residuals(
+        mapping,
+        detected,
+        expected,
+        sec_per_beat=sec_per_beat,
+        config=cfg,
+        steady=steady,
+    )
+    total_cost = float(residuals.sum())
+    timing_quality = _quality_from_cost(total_cost, len(residuals), sec_per_beat)
+
+    # Timing quality alone is blind to *coverage*: one perfectly-placed
+    # onset against an 8-note score scores 1.0 on timing while 7 notes
+    # went unheard. Weight by the fraction of expected notes actually
+    # matched so a "played two bars then stopped / wrong page" take is
+    # correctly flagged as broken rather than "steady".
+    #
+    # `optional` marks expected onsets that may legitimately not be heard, and
+    # they are dropped from **both** halves of that fraction. Grace notes are
+    # the case: the page prints the ornament, so the onset belongs in the
+    # timeline, but whether a separate attack is *reported* is a coin toss —
+    # an acciaccatura can sit sixty milliseconds from the note it decorates,
+    # inside the onset detector's own resolution, and a musician may simply
+    # not play it. Counting those as unheard notes made a **perfectly played**
+    # take of four ornamented bars fall from quality 1.000 to 0.350, under the
+    # cutoff that tells the musician to record it again. Left in the numerator
+    # they would also be free credit for onsets nobody required.
+    covered_all = {e for _, e in mapping}
+    required = (
+        np.ones(expected.size, dtype=bool)
+        if optional is None
+        else ~np.asarray(optional, dtype=bool)
+    )
+    # **Over the passage the take covers, not over the page.**
+    #
+    # Coverage asks "of the notes this take was supposed to contain, how many
+    # were heard". With the whole page as the denominator it silently asks
+    # something else — "how much of the page did you record" — and answers a
+    # musician practising four bars of a long part with 0.07 however well they
+    # played them. Every early take of this app was refused that way: the
+    # ceiling `n_detected / n_expected` sat under `broken_quality` before a
+    # single note was compared, so no performance could have passed.
+    #
+    # The passage is the written span the match actually lands in, first
+    # matched note to last — and **only when the take cannot be the whole
+    # page**, which is the same test `subsequence` is taken on. Two reasons,
+    # and the second is not obvious:
+    #
+    #  - Where the take does cover the page, the page *is* the passage, so the
+    #    two denominators agree and the narrower one only adds risk.
+    #  - `align_take` competes trim candidates on quality. A denominator that
+    #    shrinks with the span is one a trim can never lose by: cutting a real
+    #    note off either end removes it from the numerator and the denominator
+    #    together, so coverage holds while the take gets shorter. Applied
+    #    unconditionally this quietly taught the trim search to eat the last
+    #    note of every take — `test_ornaments_the_musician_did_not_play_are_not
+    #    _missed_notes` reported one missed note against a complete
+    #    performance, which is how it was found.
+    #
+    # And only once there are enough matches to believe the span at all: below
+    # `MIN_ONSETS_TO_ESTIMATE_TEMPO` a handful of stray detections could
+    # nominate any two notes as the ends and score themselves against those
+    # two — the same crossover, and the same reason, as the tempo estimate.
+    in_span = required.copy()
+    if subsequence and len(covered_all) >= MIN_ONSETS_TO_ESTIMATE_TEMPO:
+        first, last = min(covered_all), max(covered_all)
+        in_span[:first] = False
+        in_span[last + 1 :] = False
+    denominator = int(in_span.sum())
+    if denominator:
+        covered = sum(1 for e in covered_all if in_span[e])
+    else:
+        # Every expected onset is optional — vanishingly unlikely, and the old
+        # fraction is a better answer than dividing by zero.
+        covered, denominator = len(covered_all), expected.size
+    coverage = covered / denominator if denominator else 0.0
+    quality = timing_quality * coverage
+    return AlignmentResult(
+        mapping=mapping,
+        cost=total_cost,
+        quality=quality,
+        n_detected=int(detected.size),
+        n_expected=int(expected.size),
+        timing_quality=timing_quality,
+        coverage=coverage,
+        subsequence=subsequence,
+    )
+
+
 def align_dtw(
     detected: np.ndarray,
     expected: np.ndarray,
@@ -1434,14 +1526,8 @@ def align_dtw(
     steady: np.ndarray | None = None,
     optional: np.ndarray | None = None,
     subsequence_allowed: bool = True,
-    pitch: np.ndarray | None = None,
 ) -> AlignmentResult:
     """Align detected onsets to expected onsets with a constrained DTW.
-
-    `pitch`, when given, is `(detected, expected)` from
-    `pitch_evidence.mismatch`: how unlike each written note each attack
-    sounded. It is added to the cost of pairing them (`PITCH_WEIGHT`), and
-    changes nothing else — quality is still measured on timing alone.
 
     Onsets are 1-D time sequences; we hand librosa `(1, N)` feature rows
     (1 feature = time, N steps). A Sakoe-Chiba band keeps the warp near
@@ -1634,12 +1720,9 @@ def align_dtw(
                 step[back:] = skippable[:-back]
                 reach &= step
                 back += 1
-        cost = interval + (
+        return interval + (
             POSITION_WEIGHT * np.minimum(position, POSITION_CAP_GAPS * gap)
         )
-        if pitch is not None and pitch.shape == cost.shape:
-            cost = cost + PITCH_WEIGHT * gap * pitch
-        return cost
 
     #: Whether the take can only be *part* of the page, so the match must be
     #: allowed to start and end mid-page.
@@ -1794,108 +1877,15 @@ def align_dtw(
                 if abs(refined - ratio) > 1e-6:
                     mapping = _match(refined)
 
-    # Quality measures how well the *shape* of the performance matches the
-    # score — not the lead-in before the first note, and not the tempo it was
-    # played at. A player who starts 200 ms after "record" and then plays
-    # perfectly is a 1.0, and so is one who plays the whole thing steadily at
-    # 95% of the marked tempo: both are the right piece, played recognisably.
-    #
-    # This removed a constant offset only. A tempo difference is not a constant
-    # offset, it is a ramp, so the residuals it left grew with the *square* of
-    # the take's length — 64 notes at 1% drift scored 0.514, and quality became
-    # a measure of how long the piece was.
-    #
-    # A straight line is removed instead: offset *and* rate. What is left is
-    # what a steady tempo cannot explain, which is the only thing "can this
-    # alignment be trusted" should turn on. The tempo difference itself is not
-    # discarded — it is the verdict, and `compute_deltas` computes it from real
-    # seconds further down.
     def _scored(mapping: list[tuple[int, int]]) -> AlignmentResult:
-        residuals = _residuals(
+        return _scored_mapping(
             mapping,
             detected,
             expected,
             sec_per_beat=sec_per_beat,
-            config=cfg,
+            cfg=cfg,
             steady=steady,
-        )
-        total_cost = float(residuals.sum())
-        timing_quality = _quality_from_cost(total_cost, len(residuals), sec_per_beat)
-
-        # Timing quality alone is blind to *coverage*: one perfectly-placed
-        # onset against an 8-note score scores 1.0 on timing while 7 notes
-        # went unheard. Weight by the fraction of expected notes actually
-        # matched so a "played two bars then stopped / wrong page" take is
-        # correctly flagged as broken rather than "steady".
-        #
-        # `optional` marks expected onsets that may legitimately not be heard, and
-        # they are dropped from **both** halves of that fraction. Grace notes are
-        # the case: the page prints the ornament, so the onset belongs in the
-        # timeline, but whether a separate attack is *reported* is a coin toss —
-        # an acciaccatura can sit sixty milliseconds from the note it decorates,
-        # inside the onset detector's own resolution, and a musician may simply
-        # not play it. Counting those as unheard notes made a **perfectly played**
-        # take of four ornamented bars fall from quality 1.000 to 0.350, under the
-        # cutoff that tells the musician to record it again. Left in the numerator
-        # they would also be free credit for onsets nobody required.
-        covered_all = {e for _, e in mapping}
-        required = (
-            np.ones(expected.size, dtype=bool)
-            if optional is None
-            else ~np.asarray(optional, dtype=bool)
-        )
-        # **Over the passage the take covers, not over the page.**
-        #
-        # Coverage asks "of the notes this take was supposed to contain, how many
-        # were heard". With the whole page as the denominator it silently asks
-        # something else — "how much of the page did you record" — and answers a
-        # musician practising four bars of a long part with 0.07 however well they
-        # played them. Every early take of this app was refused that way: the
-        # ceiling `n_detected / n_expected` sat under `broken_quality` before a
-        # single note was compared, so no performance could have passed.
-        #
-        # The passage is the written span the match actually lands in, first
-        # matched note to last — and **only when the take cannot be the whole
-        # page**, which is the same test `subsequence` is taken on. Two reasons,
-        # and the second is not obvious:
-        #
-        #  - Where the take does cover the page, the page *is* the passage, so the
-        #    two denominators agree and the narrower one only adds risk.
-        #  - `align_take` competes trim candidates on quality. A denominator that
-        #    shrinks with the span is one a trim can never lose by: cutting a real
-        #    note off either end removes it from the numerator and the denominator
-        #    together, so coverage holds while the take gets shorter. Applied
-        #    unconditionally this quietly taught the trim search to eat the last
-        #    note of every take — `test_ornaments_the_musician_did_not_play_are_not
-        #    _missed_notes` reported one missed note against a complete
-        #    performance, which is how it was found.
-        #
-        # And only once there are enough matches to believe the span at all: below
-        # `MIN_ONSETS_TO_ESTIMATE_TEMPO` a handful of stray detections could
-        # nominate any two notes as the ends and score themselves against those
-        # two — the same crossover, and the same reason, as the tempo estimate.
-        in_span = required.copy()
-        if subsequence and len(covered_all) >= MIN_ONSETS_TO_ESTIMATE_TEMPO:
-            first, last = min(covered_all), max(covered_all)
-            in_span[:first] = False
-            in_span[last + 1 :] = False
-        denominator = int(in_span.sum())
-        if denominator:
-            covered = sum(1 for e in covered_all if in_span[e])
-        else:
-            # Every expected onset is optional — vanishingly unlikely, and the old
-            # fraction is a better answer than dividing by zero.
-            covered, denominator = len(covered_all), expected.size
-        coverage = covered / denominator if denominator else 0.0
-        quality = timing_quality * coverage
-        return AlignmentResult(
-            mapping=mapping,
-            cost=total_cost,
-            quality=quality,
-            n_detected=int(detected.size),
-            n_expected=int(expected.size),
-            timing_quality=timing_quality,
-            coverage=coverage,
+            optional=optional,
             subsequence=subsequence,
         )
 
@@ -1933,6 +1923,218 @@ def align_dtw(
             if candidate.quality > result.quality:
                 result = candidate
     return result
+
+
+# ---- the note chain ---------------------------------------------------------
+#
+# **Timing alone lost its place on the first real take it was given**
+# (2026-09-24): a double bass, 105 attacks against 95 written notes, every
+# pitch of the page in order, and the pairing `align_dtw` chose implied a tempo
+# jumping between 28 and 203 BPM — refused as "same notes, different times". A
+# real instrument adds attacks that timing cannot tell from notes (a bow
+# change, a string ringing on, a note heard twice) and drops others, and a
+# player who hesitates moves every note after it. What says which attack is
+# which note is the note itself.
+#
+# Adding pitch to the DTW's cost was tried first and is not enough: DTW gives
+# every attack a note, so each extra one is paired with something, and the
+# timing terms still pull the path off the chain. On that take its pairing
+# confirmed 51 of 73 notes with a median timing error of 430 ms. Paired as a
+# chain — every attack either a written note or unpaired, every written note
+# either heard or skipped, in order — the same take confirms 74 of 82 at a
+# steady 97.5 BPM, 150 ms median.
+
+#: What leaving one attack, or one written note, out of the chain costs — in
+#: the unit of `pitch_evidence.mismatch`, where 0 is the written pitch heard
+#: and 1 is another note.
+#:
+#: Above half of a wrong note and below all of one, so a wrong note where the
+#: counts agree stays paired — the out-of-tune note in the middle of a phrase
+#: is still that note, and its timing is still reported — while a wrong-pitched
+#: attack the counts do not need is left out rather than forced onto a note.
+CHAIN_SKIP = 0.6
+
+#: The same for a note the take may not sound: an ornament, or a slurred note
+#: under one bow. Skipping one says nothing about the take.
+CHAIN_SKIP_OPTIONAL = 0.05
+
+#: What an attack a whole played gap from where the chain puts its note costs,
+#: on top of its pitch; saturated there. Only breaks ties the pitch cannot — a
+#: run of one repeated pitch with a note missed or doubled in it — so it is a
+#: fraction of `CHAIN_SKIP`: the right pitch in the wrong place still pairs.
+CHAIN_TIME_WEIGHT = 0.3
+
+_DIAG, _UP, _LEFT = 0, 1, 2
+
+
+def _chain_path(
+    cost: np.ndarray, skip_attack: float, skip_note: np.ndarray
+) -> list[tuple[int, int]]:
+    """The cheapest in-order pairing of attacks (rows) with notes (columns).
+
+    An edit distance: pairing costs its cell, leaving an attack out costs
+    `skip_attack`, leaving note `j` out costs `skip_note[j]`. Solved a row at a
+    time — the skip along a row is a running minimum — so a long take costs a
+    few thousand small array operations rather than a Python loop per cell.
+    """
+    n, m = cost.shape
+    before = np.concatenate([[0.0], np.cumsum(skip_note)])
+    previous = before.copy()
+    moves = np.full((n + 1, m + 1), _LEFT, dtype=np.int8)
+    for i in range(1, n + 1):
+        up = previous + skip_attack
+        diag = np.full(m + 1, np.inf)
+        diag[1:] = previous[:-1] + cost[i - 1]
+        best = np.minimum(up, diag)
+        move = np.where(diag <= up, _DIAG, _UP).astype(np.int8)
+        row = np.minimum.accumulate(best - before) + before
+        move[row < best - 1e-12] = _LEFT
+        moves[i] = move
+        previous = row
+    path: list[tuple[int, int]] = []
+    i, j = n, m
+    while i > 0 or j > 0:
+        move = moves[i, j]
+        if move == _DIAG:
+            path.append((i - 1, j - 1))
+            i, j = i - 1, j - 1
+        elif move == _UP:
+            i -= 1
+        else:
+            j -= 1
+    return path[::-1]
+
+
+#: How many of the notes heard at their pitch each placement is read from.
+#: A running median over this many, so one attack paired with the wrong note
+#: of a repeated pitch cannot move where its neighbours are expected — and
+#: short enough that a hesitation moves them within a bar or so.
+CHAIN_PLACEMENT_NOTES = 9
+
+
+def _where_the_chain_puts(
+    expected: np.ndarray, played: np.ndarray, written: np.ndarray
+) -> np.ndarray:
+    """When each written note would sound, read off the notes already placed.
+
+    At the take's own pace (a median of per-interval rates, as `_residuals`
+    reads it), from the level the placed notes around it agree on — a running
+    median of their offsets (`CHAIN_PLACEMENT_NOTES`).
+
+    **Not through the placed notes themselves.** The first pass pairs on pitch
+    alone, so where one pitch is written twice in a row either attack can take
+    either note; interpolating through its choice made the second pass keep
+    whatever the first had picked. Measured on the owner's take: four notes
+    paired with a re-attack a second after the one on time.
+    """
+    steps = np.diff(written)
+    usable = steps > 0
+    pace = float(np.median(np.diff(played)[usable] / steps[usable])) if usable.any() else 1.0
+    if not np.isfinite(pace) or pace <= 0:
+        pace = 1.0
+    offsets = played - pace * written
+    half = CHAIN_PLACEMENT_NOTES // 2
+    level = np.array(
+        [
+            float(np.median(offsets[max(0, k - half) : k + half + 1]))
+            for k in range(offsets.size)
+        ]
+    )
+    # Past either end the level holds, which is the pace carried on.
+    return pace * expected + np.interp(expected, written, level)
+
+
+def align_chain(
+    detected: np.ndarray,
+    expected: np.ndarray,
+    pitch: np.ndarray,
+    *,
+    target_bpm: float = 120.0,
+    config: AudioConfig | None = None,
+    steady: np.ndarray | None = None,
+    optional: np.ndarray | None = None,
+) -> AnchoredAlignment:
+    """Pair attacks with written notes as a chain of pitches, in order.
+
+    `pitch` is `(detected, expected)` from `pitch_evidence.mismatch`. Twice:
+    once on pitch alone, and once more with where each attack falls against
+    the notes the first pass heard at their written pitch
+    (`CHAIN_TIME_WEIGHT`), which settles which of several equal pitches is
+    which.
+
+    Scored exactly as `align_dtw` scores a pairing (`_scored_mapping`); the
+    attacks before the first paired one and after the last are trimmed as
+    `align_take` trims noise, and those between that pair with nothing are
+    extra (`apply_fuzzy_match`). Whether the pairing is to be believed is a
+    question about its pitches, and is the caller's —
+    `analysis._trusted_by_pitch`.
+    """
+    cfg = config or load_audio_config()
+    sec_per_beat = 60.0 / target_bpm if target_bpm > 0 else 0.5
+    detected = np.asarray(detected, dtype=float)
+    expected = np.asarray(expected, dtype=float)
+    pitch = np.asarray(pitch, dtype=float)
+    empty = AnchoredAlignment(
+        onsets=to_timeline_base(detected),
+        trimmed_lead=0,
+        trimmed_tail=0,
+        alignment=AlignmentResult(
+            mapping=[],
+            cost=float("inf"),
+            quality=0.0,
+            n_detected=int(detected.size),
+            n_expected=int(expected.size),
+        ),
+    )
+    if detected.size == 0 or expected.size == 0 or pitch.shape != (
+        detected.size,
+        expected.size,
+    ):
+        return empty
+
+    skippable = (
+        np.asarray(optional, dtype=bool)
+        if optional is not None and optional.size == expected.size
+        else np.zeros(expected.size, dtype=bool)
+    )
+    skip_note = np.where(skippable, CHAIN_SKIP_OPTIONAL, CHAIN_SKIP)
+    path = _chain_path(pitch, CHAIN_SKIP, skip_note)
+
+    heard = [(d, e) for d, e in path if pitch[d, e] <= cfg.pitch.confirm_mismatch]
+    if len(heard) >= 2:
+        placed = _where_the_chain_puts(
+            expected,
+            np.array([detected[d] for d, _ in heard]),
+            np.array([expected[e] for _, e in heard]),
+        )
+        played_gap = typical_gap(np.diff(np.array([detected[d] for d, _ in heard])))
+        if played_gap > 0:
+            away = np.abs(detected[:, None] - placed[None, :]) / played_gap
+            path = _chain_path(
+                pitch + CHAIN_TIME_WEIGHT * np.minimum(away, 1.0), CHAIN_SKIP, skip_note
+            )
+    if not path:
+        return empty
+
+    lead, last = path[0][0], path[-1][0]
+    kept = detected[lead : last + 1]
+    onsets = to_timeline_base(kept)
+    mapping = [(d - lead, e) for d, e in path]
+    return AnchoredAlignment(
+        onsets=onsets,
+        trimmed_lead=int(lead),
+        trimmed_tail=int(detected.size - 1 - last),
+        alignment=_scored_mapping(
+            mapping,
+            onsets,
+            expected,
+            sec_per_beat=sec_per_beat,
+            cfg=cfg,
+            steady=steady,
+            optional=optional,
+            subsequence=False,
+        ),
+    )
 
 
 def apply_fuzzy_match(
@@ -1981,6 +2183,10 @@ def apply_fuzzy_match(
         closest = min(det_indices, key=lambda d: abs(detected[d] - expected[exp_i]))
         matched.append((closest, exp_i))
         extra.extend(d for d in det_indices if d != closest)
+    # An attack paired with nothing. `align_dtw` gives every attack a note, so
+    # only `align_chain` leaves one out — an attack the chain did not need.
+    paired = {det_i for det_i, _ in alignment.mapping}
+    extra.extend(d for d in range(detected.size) if d not in paired)
 
     matched.sort()
     extra.sort()

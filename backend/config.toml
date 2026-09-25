@@ -248,6 +248,33 @@ one_pitch = 0.9
 # not be called silence. A voice steadier than that is not caught here, and is
 # refused by the alignment instead.
 played_tonal = 0.8
+# **A pairing whose pitches line up is trusted, and its timing reported rather
+# than refused.** The first real take this pipeline heard (a double bass,
+# 2026-09-24) played every note of its page in order at a steady 97 BPM, and
+# was refused as "same notes, different times" twice over: timing alone lost
+# its place, and once pitch found it, the trust score still read human rubato
+# as a bad pairing. The owner's rule, which this is: judge the chain of notes —
+# one note out of tune, or misread by the scan, does not make the take wrong.
+#
+# An attack confirms the written note it is paired with when their mismatch
+# (`pitch_evidence.mismatch`: 0 same note, 0.5 an octave off, 1 another note)
+# is at most this.
+confirm_mismatch = 0.25
+# ...and a pairing is trusted when at least this share of the notes the page
+# asks for (every required note, and the optional ones paired) were heard at
+# their written pitch. Of the page's notes, not of the notes paired: a chain
+# free to leave notes out can pair only the ones that match, and a different
+# tune in the same key matched 100% of the notes it paired. Chance, measured
+# on same-key random tunes against a page, 20 seeds each: at most 0.62 of a
+# 16-note page, 0.47 of 32, 0.42 of 64. The page itself played with rubato:
+# median 0.90–0.94, trusted 59 times in 60. The owner's real take: 0.85
+# (timing's own pairing of it: 0.33). See TUNING_LOG.md 2026-09-25.
+confirmed_share = 0.7
+# ...there are at least this many of them,
+confirmed_min_notes = 8
+# ...on at least this many different written pitches — a page of one or two
+# pitches is matched by chance, and cannot say which note is which.
+confirmed_min_pitches = 3
 
 [calibration]
 # 2-second BPM calibration clip (§4). Values belong in remote config.

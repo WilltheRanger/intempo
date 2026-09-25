@@ -199,6 +199,73 @@ def heard_after(
     return out
 
 
+def pitch_track(y: np.ndarray, sr: int, *, fmin: float, fmax: float) -> np.ndarray:
+    """The sounding pitch through a take, as fractional MIDI, one per `HOP`.
+
+    **With its octave**, which the chroma above deliberately folds away. An
+    octave leap — G3 to G4, a bar the owner's bass part has three of — is two
+    notes of one class, and a matcher that cannot tell them apart pairs the
+    wrong one and reads the bar at twice or half its tempo.
+
+    YIN rather than pYIN, measured on the owner's real take (2026-09-25): pYIN
+    costs 13.7 s per minute of audio, YIN 1.7 s, and the two agree within half
+    a semitone on 88% of attacks and an octave apart on 3%. The matcher asks
+    this of a whole chain of notes, where a stray octave costs little.
+
+    Give it the waveform *before* any high-pass: a bass's filter removes the
+    fundamentals of its bottom octave, and YIN then reads them an octave up.
+    """
+    import librosa
+
+    frame = 1 << int(np.ceil(np.log2(max(2048.0, 2.2 * sr / fmin))))
+    f0 = librosa.yin(y, fmin=fmin, fmax=fmax, sr=sr, frame_length=frame, hop_length=HOP)
+    return librosa.hz_to_midi(f0)
+
+
+def heights_at(track: np.ndarray, sr: int, attacks_s: np.ndarray) -> np.ndarray:
+    """The pitch that sounded after each attack, as fractional MIDI.
+
+    The median over the same window `heard_after` listens in, less its first
+    30 ms: a bow's attack is noise before it is a note. NaN where the window
+    holds no frames.
+    """
+    attacks_s = np.asarray(attacks_s, dtype=float)
+    out = np.full(attacks_s.size, np.nan)
+    for i, t in enumerate(attacks_s):
+        gap = (attacks_s[i + 1] - t) if i + 1 < attacks_s.size else _LISTEN_S * 2
+        start = t + max(_SETTLE_S, 0.03)
+        end = t + _SETTLE_S + min(_LISTEN_S, _LISTEN_SHARE_OF_GAP * gap)
+        first = int(round(start * sr / HOP))
+        last = max(first + 1, int(round(end * sr / HOP)))
+        window = track[max(0, first) : min(track.size, last)]
+        window = window[np.isfinite(window)]
+        if window.size:
+            out[i] = float(np.median(window))
+    return out
+
+
+#: Within this many semitones of the written pitch, an attack *is* that note —
+#: a player's intonation, not a different note.
+_IN_TUNE_ST = 0.6
+#: ...and by this many it is certainly another note.
+_OTHER_NOTE_ST = 1.4
+#: What an attack an exact octave away costs: half. YIN slips an octave on a
+#: few notes in a hundred, and a real octave mistake is rare enough that the
+#: chain around it decides.
+_OCTAVE_AWAY = 0.5
+
+
+def _height_mismatch(heard: float, sounding: float) -> float:
+    d = abs(heard - sounding)
+    if d <= _IN_TUNE_ST:
+        return 0.0
+    if abs(d - 12.0) <= _IN_TUNE_ST:
+        return _OCTAVE_AWAY
+    if d < _OTHER_NOTE_ST:
+        return (d - _IN_TUNE_ST) / (_OTHER_NOTE_ST - _IN_TUNE_ST)
+    return 1.0
+
+
 def mismatch(
     frames: np.ndarray,
     sr: int,
@@ -206,25 +273,38 @@ def mismatch(
     written: list[str | None],
     *,
     steady: float,
+    track: np.ndarray | None = None,
+    transpose: int = 0,
 ) -> np.ndarray:
     """How unlike each written note each attack sounded: (attacks, notes), 0–1.
 
-    0 where the written class was the strongest thing heard after the attack,
-    rising towards 1 as it goes missing; 0.5 wherever there is nothing to
-    compare — a written note with no pitch, or an attack with no window to
-    listen in. Pitch class, like everything here: an octave is not a mismatch.
+    With a `track` (`pitch_track`), by the pitch that sounded, octave and all:
+    0 within `_IN_TUNE_ST` of the written note sounded `transpose` semitones
+    from where it is written (a double bass sounds an octave below its page),
+    `_OCTAVE_AWAY` an octave off, 1 for another note. Without one, or for an
+    attack the chroma says held no pitch, by pitch class: 0 where the written
+    class was the strongest thing heard, rising towards 1 as it goes missing.
+    0.5 wherever there is nothing to compare — a written note with no pitch, or
+    an attack with no window to listen in.
 
-    For the matcher (`alignment.align_dtw`'s `pitch`), which otherwise decides
-    which note an attack is by timing alone.
+    For the note chain (`alignment.align_chain`), which pairs attacks with
+    notes by it, and for counting how many notes a pairing heard at their
+    written pitch (`analysis._confirmed`).
     """
-    heard = heard_after(frames, sr, np.asarray(attacks_s, dtype=float), steady=steady)
+    attacks_s = np.asarray(attacks_s, dtype=float)
+    heard = heard_after(frames, sr, attacks_s, steady=steady)
+    heights = heights_at(track, sr, attacks_s) if track is not None else None
     classes = [pitch_class(p) for p in written]
+    sounding = [None if m is None else m + transpose for m in (midi(p) for p in written)]
     out = np.full((len(heard), len(classes)), 0.5)
     for i, h in enumerate(heard):
         if not h.relative:
             continue
+        pitched = heights is not None and h.pitch_class is not None and np.isfinite(heights[i])
         for j, c in enumerate(classes):
-            if c is not None:
+            if pitched and sounding[j] is not None:
+                out[i, j] = _height_mismatch(float(heights[i]), float(sounding[j]))
+            elif c is not None:
                 out[i, j] = 1.0 - h.relative[c]
     return out
 
