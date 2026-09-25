@@ -2250,5 +2250,8 @@ def analyze(
                 d.expected_ms for d in deltas if d.timed and not d.is_slur_interior
             ],
             pulses=[d.pulse for d in deltas if d.timed and not d.is_slur_interior],
+            # The sentence above the finding already names the bars and their
+            # tempo; the finding must not say it again.
+            verdict_names_run=verdict.direction is not Direction.on,
         ),
     )

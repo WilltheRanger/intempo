@@ -6,6 +6,7 @@ import {
   barTempo,
   tempoChartBars,
   tempoLine,
+  tempoScale,
   tempoY,
 } from './barTempo';
 
@@ -145,5 +146,52 @@ describe('tempoLine', () => {
   it('is null with fewer than two points', () => {
     expect(tempoLine([bar(1, 100)], 104, 'quarter')).toBeNull();
     expect(tempoLine([bar(1, null), bar(2, null)], 104, 'quarter')).toBeNull();
+  });
+});
+
+describe('tempoScale', () => {
+  const at = (bpm: number, unit: 'quarter' | 'half' = 'quarter') =>
+    tempoScale(barTempo(bar(24, bpm), 104, unit, TOLERANCE)!, TOLERANCE);
+
+  it('puts the target in the middle and a slower bar to its left', () => {
+    // The owner's bar 24: 87 against 104 is 16% under, of a 20% outer band.
+    const scale = at(86.6);
+
+    expect(scale.at).toBeCloseTo(0.5 - 0.84 / 2, 2);
+    expect(scale.from).toBe(scale.at);
+    expect(scale.to).toBe(0.5);
+    expect(scale.playedLabel).toBe('87');
+    expect(scale.targetLabel).toBe('104');
+    expect(scale.tone).toBe(barTempo(bar(24, 86.6), 104, 'quarter', TOLERANCE)!.tone);
+  });
+
+  it('puts a faster bar to the right', () => {
+    const scale = at(114);
+
+    expect(scale.at).toBeGreaterThan(0.5);
+    expect(scale.from).toBe(0.5);
+    expect(scale.to).toBe(scale.at);
+  });
+
+  it('pins a bar past the outer band to the end', () => {
+    const scale = at(70);
+
+    expect(scale.at).toBe(0);
+    expect(scale.pinned).toBe(true);
+    expect(scale.playedLabel).toBe('70');
+  });
+
+  it('keeps one label where the two would print over each other', () => {
+    const scale = at(103);
+
+    expect(scale.playedLabel).toBeNull();
+    expect(scale.targetLabel).toBe('104');
+  });
+
+  it("labels in the page's beat unit", () => {
+    const scale = at(80, 'half');
+
+    expect(scale.targetLabel).toBe('52');
+    expect(scale.playedLabel).toBe('40');
   });
 });

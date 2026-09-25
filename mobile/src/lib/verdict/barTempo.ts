@@ -262,3 +262,60 @@ export function tempoY(bpm: number, line: TempoLineData, height: number): number
   }
   return ((line.max - bpm) / span) * height;
 }
+
+/** The outer band when the take carries no tolerance: the pipeline's default. */
+const DEFAULT_OUTER_PCT = 20;
+
+/**
+ * Closer than this share of the track, the two labels under the scale would
+ * print over each other; the target's wins, and the bar's own tempo is in the
+ * card's corner anyway.
+ */
+const SCALE_LABEL_GAP = 0.16;
+
+/** The bar card's tempo scale: where the bar's tempo sits against the target. */
+export interface TempoScale {
+  /** Where the bar's tempo sits along the track: 0 at the slow end, 1 at the fast. */
+  at: number;
+  /** The tinted stretch between the target and the dot, as shares of the track. */
+  from: number;
+  to: number;
+  /** Past the end of the scale, so drawn at the end. */
+  pinned: boolean;
+  /** Under the dot — "87" — or null where it would sit on the target's. */
+  playedLabel: string | null;
+  /** Under the notch in the middle — "104". */
+  targetLabel: string;
+  tone: ColorToken;
+}
+
+/**
+ * **A picture that needs no legend** (the owner, 2026-09-25: "don't get what
+ * the bottom bar is trying to say"). The card's bar grew from an unmarked
+ * centre, so nothing said the centre was their tempo or which side was slow.
+ * Now the target is a notch in the middle with its number under it, the bar's
+ * tempo is a dot with its own, slower is left and faster is right, and the
+ * stretch between is the bar's colour.
+ *
+ * Each half of the track is the distance to the outer band on that side —
+ * where the pipeline calls a bar severe — so a dot at the end means exactly
+ * that, as the old bar's full deflection did.
+ */
+export function tempoScale(tempo: BarTempo, tolerance: Tolerance | null): TempoScale {
+  const slower = tempo.deviationPct < 0;
+  const outer = slower
+    ? (tolerance?.dragging_outer_pct ?? DEFAULT_OUTER_PCT)
+    : (tolerance?.rushing_outer_pct ?? DEFAULT_OUTER_PCT);
+  const share = Math.abs(tempo.deviationPct) / Math.max(outer, 1);
+  const half = Math.min(1, share) / 2;
+  const at = slower ? 0.5 - half : 0.5 + half;
+  return {
+    at,
+    from: Math.min(at, 0.5),
+    to: Math.max(at, 0.5),
+    pinned: share > 1,
+    playedLabel: Math.abs(at - 0.5) < SCALE_LABEL_GAP ? null : String(tempo.bpm),
+    targetLabel: String(tempo.target),
+    tone: tempo.tone,
+  };
+}

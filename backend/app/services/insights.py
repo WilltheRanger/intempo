@@ -416,6 +416,7 @@ def insights_for(
     target_bpm_for_lead: float | None = None,
     positions: list[float] | None = None,
     pulses: list[int] | None = None,
+    verdict_names_run: bool = False,
 ) -> Insights:
     """Everything above, or an empty `Insights` for a take too small to describe.
 
@@ -454,7 +455,13 @@ def insights_for(
     # until they exist. Returned on a copy rather than mutated, so `Insights`
     # stays something a caller can rely on not changing under them.
     return built.model_copy(
-        update={"lead": lead_finding(built, target_bpm_for_lead or target_bpm)}
+        update={
+            "lead": lead_finding(
+                built,
+                target_bpm_for_lead or target_bpm,
+                verdict_names_run=verdict_names_run,
+            )
+        }
     )
 
 
@@ -621,8 +628,18 @@ class Finding(BaseModel):
     weight: float
 
 
-def lead_finding(insights: Insights, target_bpm: float) -> Finding | None:
+def lead_finding(
+    insights: Insights, target_bpm: float, *, verdict_names_run: bool = False
+) -> Finding | None:
     """The single most unusual thing about this take, or nothing.
+
+    **Never the sentence above it again.** When the verdict names a run of
+    bars and the tempo they went at, a tempo or drift finding says the same
+    thing a third time — the owner's take read "You dragged throughout",
+    "You dragged bars 13–25 by 23 BPM." and "You slowed down by 15 BPM."
+    (2026-09-25). `verdict_names_run` leaves those two out, so the line goes
+    to something the verdict cannot say — which note values lagged, or
+    nothing.
 
     **One finding, chosen per take rather than by fixed priority.** A take
     whose real story is the sixteenths should not lead with a 2 BPM tempo
@@ -711,6 +728,10 @@ def lead_finding(insights: Insights, target_bpm: float) -> Finding | None:
     # set against. A tempo worth saying is a tempo the sentence would deny.
     if any(c.kind == "tempo" for c in worth_saying):
         worth_saying = [c for c in worth_saying if c.kind != "steadiness"]
+    if verdict_names_run:
+        worth_saying = [c for c in worth_saying if c.kind not in ("tempo", "drift")]
+    if not worth_saying:
+        return None
     return max(worth_saying, key=lambda c: c.weight)
 
 

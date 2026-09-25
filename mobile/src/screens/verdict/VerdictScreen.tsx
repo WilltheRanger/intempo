@@ -31,11 +31,8 @@ import {
   intakeRefusal,
   nothingUsableTitle,
 } from '../../lib/verdict/failureTitle';
-import {
-  appVerdictFor,
-  canCorrect,
-  correctionAcknowledgement,
-} from '../../lib/verdict/correction';
+import { appVerdictFor, canCorrect } from '../../lib/verdict/correction';
+import { success } from '../../lib/haptics';
 import { useSubmitCorrection } from '../../data/hooks/useCorrections';
 import { CorrectionPrompt, type CorrectionState } from './CorrectionPrompt';
 import { MeasureBars } from './MeasureBars';
@@ -102,14 +99,14 @@ export function VerdictScreen() {
         ],
       },
       {
-        onSuccess: () =>
+        onSuccess: () => {
+          // Felt as well as seen: the answer arrived.
+          success();
           setCorrections((current) => ({
             ...current,
-            [measure.measure]: {
-              kind: 'sent',
-              message: correctionAcknowledgement(choice),
-            },
-          })),
+            [measure.measure]: { kind: 'sent', choice },
+          }));
+        },
         onError: (error: unknown) =>
           setCorrections((current) => ({
             ...current,
@@ -452,6 +449,12 @@ export function VerdictScreen() {
                   state={corrections[chosen.measure] ?? { kind: 'idle' }}
                   onChoose={(choice) =>
                     correct(chosen, choice, chosenAppVerdict ?? appVerdictFor(chosen))
+                  }
+                  onChange={() =>
+                    setCorrections((current) => ({
+                      ...current,
+                      [chosen.measure]: { kind: 'idle' },
+                    }))
                   }
                 />
               ) : null

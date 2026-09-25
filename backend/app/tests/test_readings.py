@@ -15,6 +15,8 @@ one, and keeps the page as written unless another fits clearly better. See
 
 from __future__ import annotations
 
+import re
+
 import numpy as np
 import pytest
 
@@ -97,9 +99,11 @@ def test_a_legato_passage_played_fast_is_told_the_tempo_it_was_played_at() -> No
     assert result.status == "ok"
     assert result.verdict_direction.value == "rush"
     assert result.insights.played_bpm == pytest.approx(SLUR_BPM * 1.03, abs=0.5)
-    # Before: "You rushed across measures 2–4 by an average of 57 BPM."
-    assert "by 57" not in result.verdict
-    assert "by 2 BPM" in result.verdict or "by 3 BPM" in result.verdict
+    # Before: "You rushed across measures 2–4 by an average of 57 BPM" —
+    # 137 against 80. The tempo quoted now is the one it was played at.
+    quoted = re.search(r"went at (\d+)\.", result.verdict)
+    assert quoted, result.verdict
+    assert int(quoted.group(1)) == pytest.approx(SLUR_BPM * 1.03, abs=1.0)
 
 
 def test_slurred_notes_the_detector_did_not_hear_are_not_missed() -> None:

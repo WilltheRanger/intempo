@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import numpy as np
 import pytest
 
@@ -120,7 +122,8 @@ def test_generate_verdict_detects_rushing_run() -> None:
     deltas = [_delta(-15.0, measure=m, idx=m) for m in range(1, 6)]
     verdict = generate_verdict(deltas, target_bpm=120.0)
     assert verdict.direction is Direction.rush
-    assert "rushed" in verdict.text
+    # Early by the same share throughout: a side, and no tempo to quote.
+    assert verdict.text == "Bars 1–5 ran ahead."
     assert verdict.start_measure == 1 and verdict.end_measure == 5
 
 
@@ -136,7 +139,7 @@ def test_generate_verdict_uses_bpm_not_percent() -> None:
     # sitting at one constant displacement has no pace of its own to report.
     deltas = [_delta(15.0 * m, measure=m, idx=m) for m in range(1, 5)]
     verdict = generate_verdict(deltas, target_bpm=120.0)
-    assert "BPM" in verdict.text
+    assert re.fullmatch(r"Bars 1–4 went at \d+\.", verdict.text), verdict.text
     assert "%" not in verdict.text
 
 
@@ -334,7 +337,7 @@ def test_the_sentence_names_the_bars_the_chart_shows_off_tempo() -> None:
 
     verdict = generate_verdict(deltas, 104.0, tempi=_tempi(by_bar, across=80.0))
 
-    assert verdict.text == "You dragged bars 13–20 by 24 BPM."
+    assert verdict.text == "Bars 13–20 went at 80."
     assert verdict.direction is Direction.drag
     assert (verdict.start_measure, verdict.end_measure) == (13, 20)
 
@@ -356,7 +359,7 @@ def test_a_rushed_run_by_bars() -> None:
 
     verdict = generate_verdict(deltas, 104.0, tempi=_tempi(by_bar, across=119.0))
 
-    assert verdict.text == "You rushed bars 2–3 by 15 BPM."
+    assert verdict.text == "Bars 2–3 went at 119."
     assert verdict.direction is Direction.rush
 
 
@@ -369,7 +372,7 @@ def test_one_bar_is_named_only_when_it_is_clearly_out() -> None:
     alone = generate_verdict(deltas, 104.0, tempi=_tempi(slight))
     assert (alone.start_measure, alone.end_measure) != (2, 2)
     verdict = generate_verdict(deltas, 104.0, tempi=_tempi(clear, across=85.0))
-    assert verdict.text == "You dragged bar 2 by 19 BPM."
+    assert verdict.text == "Bar 2 went at 85."
 
 
 def test_a_bar_with_too_few_timed_notes_is_not_a_run() -> None:
@@ -395,7 +398,7 @@ def test_a_bar_under_a_written_change_is_left_out() -> None:
     verdict = generate_verdict(deltas, 104.0, tempi=_tempi(by_bar, across=90.0))
 
     assert (verdict.start_measure, verdict.end_measure) == (2, 4)
-    assert "by 14 BPM" in verdict.text
+    assert verdict.text == "Bars 2–4 went at 90."
 
 
 def test_no_figure_when_the_run_has_no_tempo_of_its_own() -> None:
@@ -404,7 +407,7 @@ def test_no_figure_when_the_run_has_no_tempo_of_its_own() -> None:
 
     verdict = generate_verdict(deltas, 104.0, tempi=_tempi(by_bar, across=None))
 
-    assert verdict.text == "You dragged bars 1–4."
+    assert verdict.text == "Bars 1–4 fell behind."
 
 
 def test_on_tempo_bar_by_bar_the_note_rule_still_speaks() -> None:
@@ -417,7 +420,7 @@ def test_on_tempo_bar_by_bar_the_note_rule_still_speaks() -> None:
     verdict = generate_verdict(deltas, 104.0, tempi=_tempi(by_bar, across=101.0))
 
     assert verdict.direction is Direction.drag
-    assert verdict.text.startswith("You dragged bars 1–6")
+    assert verdict.text.startswith("Bars 1–6 ")
 
 
 def test_end_to_end_the_sentence_follows_the_bars() -> None:
@@ -440,4 +443,4 @@ def test_end_to_end_the_sentence_follows_the_bars() -> None:
     )
 
     assert (verdict.start_measure, verdict.end_measure) == (7, 8)
-    assert verdict.text == "You dragged bars 7–8 by 24 BPM."
+    assert verdict.text == "Bars 7–8 went at 80."

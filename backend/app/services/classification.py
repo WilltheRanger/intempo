@@ -688,6 +688,7 @@ def generate_verdict(
                 start_m=by_bars.first,
                 end_m=by_bars.last,
                 difference=None if played is None else played - target_bpm,
+                target_bpm=target_bpm,
                 lurch=lurch,
             )
 
@@ -744,6 +745,7 @@ def generate_verdict(
         difference=run_tempo_difference(
             run, timed[best_start - 1] if best_start > 0 else None, target_bpm
         ),
+        target_bpm=target_bpm,
         lurch=lurch,
     )
 
@@ -754,28 +756,35 @@ def _run_verdict(
     start_m: int,
     end_m: int,
     difference: float | None,
+    target_bpm: float,
     lurch: str | None,
 ) -> Verdict:
-    """The sentence for a run, whichever rule found it."""
+    """The sentence for a run, whichever rule found it.
+
+    **Where, and the tempo — never the verb again.** It is read under a title
+    that already says which way ("You dragged throughout"), and the owner
+    found the screen saying it three times (2026-09-25): the title, "You
+    dragged bars 13–25 by 23 BPM.", and "You slowed down by 15 BPM." So the
+    sentence adds only what the title cannot: the bars, and the tempo they
+    went at — the number the chart below it plots, rather than a gap the
+    musician has to subtract. "Bars", because every screen of the app says
+    bars.
+    """
     # The figure is only said when it agrees with the direction and survives
     # rounding. A run that got ahead of the beat at its first note and then
     # held the tempo exactly *was* rushed, and its pace across the run is still
-    # nearer the target than one BPM — "by an average of 0 BPM" says nothing,
-    # and a figure pointing the other way would contradict the verb.
+    # nearer the target than one BPM — a tempo equal to the target says
+    # nothing, and one on the other side of it would contradict the title.
     bpm_delta: int | None = None
     if difference is not None and (difference > 0) == rushing:
         bpm_delta = round(abs(difference)) or None
-    verb = "rushed" if rushing else "dragged"
 
-    # Short, because it is read under a title that already says which way:
-    # "You rushed in the middle" over "You rushed bars 5–8 by 4 BPM". "Bars",
-    # because every screen of the app says bars.
-    where = f"bar {start_m}" if start_m == end_m else f"bars {start_m}–{end_m}"
-    text = (
-        f"You {verb} {where} by {bpm_delta} BPM."
-        if bpm_delta is not None
-        else f"You {verb} {where}."
-    )
+    where = f"Bar {start_m}" if start_m == end_m else f"Bars {start_m}–{end_m}"
+    if bpm_delta is not None:
+        text = f"{where} went at {round(target_bpm + difference)}."
+    else:
+        # Early or late at the tempo: there is no tempo to quote, only a side.
+        text = f"{where} {'ran ahead' if rushing else 'fell behind'}."
     if lurch:
         # Two things happened and both are worth saying. The drift comes first
         # because it is the one the tolerance bands measured.

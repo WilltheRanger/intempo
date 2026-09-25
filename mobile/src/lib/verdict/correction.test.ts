@@ -121,16 +121,23 @@ describe('the words offered', () => {
 describe('what it says afterwards', () => {
   it('records the answer without claiming the verdict changed', () => {
     // The bar still reads what it read. This is a note to whoever tunes the
-    // thresholds, not an edit to the take, and a tick or a "Fixed" would be
-    // the app pretending to have learned something in two seconds.
+    // thresholds, not an edit to the take: the check says it was received,
+    // and "Updated" or "Fixed" would say the app learned something in two
+    // seconds.
     const said = correctionAcknowledgement('dragging');
 
-    expect(said).toBe('Noted as dragging.');
-    expect(said).not.toMatch(/updat|chang|fix|correct/i);
+    expect(said).toEqual({
+      title: 'Thanks for the feedback!',
+      answer: 'You heard: Dragging',
+    });
+    expect(`${said.title} ${said.answer}`).not.toMatch(/updat|fix|correct/i);
   });
 
   it('does not read back "unsure" as a verdict', () => {
-    // "Noted as not sure" is not a sentence about the playing.
-    expect(correctionAcknowledgement('unsure')).toBe('Thanks.');
+    // "You heard: Not sure" is not a sentence about the playing.
+    expect(correctionAcknowledgement('unsure')).toEqual({
+      title: 'Thanks for the feedback!',
+      answer: "You weren't sure",
+    });
   });
 });

@@ -1,5 +1,47 @@
 # InTempo Decisions
 
+## 2026-09-25 — The verdict says each thing once; a thanks that lands; a card scale that reads without a legend
+
+**Context.** The owner, on their take's verdict (screenshots, 2026-09-25):
+the top was "extremely repetitive and wordy" — "You dragged throughout", "You
+dragged bars 13–25 by 23 BPM.", "You slowed down by 15 BPM." — answering "What
+did you hear?" said only "Thanks.", and the bar in the card was unreadable.
+Asked, they chose: title plus one short line, the insight only when new; a
+check, "Thanks for the feedback!", their answer and a way to change it; a
+tempo scale.
+
+**Decision.**
+- *Sentence.* The server's run sentence drops the verb the title already
+  says and gives where and the tempo: "Bars 13–25 went at 81." ("ran ahead" /
+  "fell behind" when there is no tempo to quote). `lead_finding` leaves out
+  tempo and drift when the verdict names a run, so the line goes to something
+  the verdict cannot say ("Your half notes lagged.") or to nothing.
+- *Thanks.* This reverses the 2026-08 rule "deliberately not Thanks or a
+  tick". What that rule protected still holds — nothing claims the verdict
+  changed; the words are a thanks and their answer read back — but a bare
+  "Thanks." read as a control gone dead. A check pops in (`PopIn`, the
+  shared spring, reduced-motion aware), a light haptic on the tap and a
+  success pulse when it lands, and "Change" returns to the question.
+- *Card.* "Bar 24", and `TempoScale`: the musician's tempo a notch in the
+  middle, the bar's a dot, slower left and faster right, each number under
+  its mark, each half of the track the outer band on that side. Results
+  without a tempo keep `DeviationBar`.
+
+**Alternatives considered.**
+- *Hide the insight line on the client.* The server sends one lead; hiding a
+  repeat there would drop the line entirely rather than let the next finding
+  (the half notes) speak.
+- *Rephrase the sentence on the client.* The run and its tempo live only in
+  the server's text; parsing a sentence back into data is the wrong
+  direction.
+- *Remove the card's bar.* Chosen against: the owner asked for it clearer,
+  not gone.
+
+**Trade-offs accepted.** Stored results keep their old sentences until
+re-run. Steady takes still read "You held the tempo" / "Steady all the way
+through." — close, but the second says where (all of it), and changing it
+was not asked.
+
 ## 2026-09-25 — The sentence under the title names bars off tempo, by the chart's own numbers
 
 **Context.** With the charts in BPM (entry below), the owner's take read
