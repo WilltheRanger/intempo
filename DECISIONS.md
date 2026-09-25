@@ -1,5 +1,37 @@
 # InTempo Decisions
 
+## 2026-09-25 — Timing reads a short take from where its page begins; the pitch track can say somebody played
+
+**Context.** The first re-run of real takes through the new analysis gave one
+a verdict on the wrong bars — eight seconds recorded from bar 7, "You rushed
+bars 42–45 by 39 BPM", 1 of 11 notes at those bars' pitches — and told ten
+double bass takes they had not been played, one with 15 notes at their exact
+written pitch on seven pitches. `TUNING_LOG.md` has the table.
+
+**Decision.**
+- Subsequence matching in `align_dtw` keeps its free end and loses its free
+  start: the first detection kept pairs within `PREFIX_START_BEATS` (2) of the
+  page's first note. `DECISIONS.md` 2026-09-14 accepted subsequence matching
+  because "a fragment is a prefix"; this makes the matcher hold to it.
+- `why_not_played` is not asked of a pairing the pitch track hears at the
+  page's pitches beyond chance on three or more pitches (`_heard_by_pitch`).
+
+**Alternatives considered.**
+- *Refuse a timing-only passage whose pitches disagree.* Pitch disagrees with
+  a misread page too, where timing is all there is; the prefix is what the app
+  records, whatever the page says.
+- *Penalise a late start rather than forbid it.* A penalty is a number to tune
+  against a rhythm's luck, which is the thing that went wrong.
+- *Lower `played_tonal` to where real bass takes sit (0.59–0.69).* Talking
+  measured 0.23–0.77 and would reach the alignment, which gave it a verdict
+  at 0.47 before `not_tonal` existed.
+
+**Trade-offs accepted.** A take that starts partway into the bars it was
+recorded from, with nothing before it heard, is refused by timing where it
+was placed before; pitch can still place it (`_placed_by_pitch`). Four real
+bass takes are still called not played: too few paired notes to be beyond
+chance, and no audio here to find out why.
+
 ## 2026-09-25 — Old takes are re-judged from their playback copy; a replay is found by pitch
 
 **Context.** Every one of the 17 takes in the live project was refused by the

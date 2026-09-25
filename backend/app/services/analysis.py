@@ -1015,6 +1015,31 @@ def _placed_by_pitch(confirmed: _Confirmed, config: AudioConfig) -> bool:
     )
 
 
+def _heard_by_pitch(confirmed: _Confirmed, config: AudioConfig) -> bool:
+    """Whether the pitch track heard this page's notes beyond chance.
+
+    **Somebody played — not that they played it well.** It asks only which
+    refusal a take gets, never whether it gets one: a take this is true of is
+    not "not played", and whatever timing and the chain make of it stands.
+
+    The first re-run of the owner's takes (2026-09-25) told ten double bass
+    takes "Try again closer to your instrument". One had 15 of its 59 paired
+    notes at their exact written pitch, on seven different pitches. The chroma
+    `pitch_evidence` measures heard a pitch held after 0.29 of its attacks —
+    under `not_played_tonal` — because a bass's low notes read as no pitch to
+    it (see `vouched` in `analyze`). The take the chain reads perfectly held
+    one after 0.66, and synthetic instruments after 0.87 or more.
+
+    Exact pitch, in its octave, is what a click, a room or a voice does not
+    land on: the same `chance` and `significance` `why_not_played` holds the
+    chroma's page share to, with several of the page's pitches among them.
+    """
+    p = config.pitch
+    return confirmed.pitches >= p.confirmed_min_pitches and _beyond_chance(
+        confirmed.notes, confirmed.paired, chance=p.chance, alpha=p.significance
+    )
+
+
 def _align_reading(
     onsets: np.ndarray, reading: Reading, target_bpm: float, config: AudioConfig
 ) -> AnchoredAlignment:
@@ -2001,7 +2026,9 @@ def analyze(
     # Not for a pairing the pitch confirms: a click, a voice or a room cannot
     # land on the page's pitches note after note, and a bass's low notes can
     # read as "no pitch held" to the chroma while the pitch track hears them.
-    refused_by = None if vouched else why_not_played(
+    # Nor for one whose notes the pitch track hears at the page's own pitches
+    # beyond chance (`_heard_by_pitch`): not trusted, but somebody playing.
+    refused_by = None if vouched or _heard_by_pitch(confirmed, cfg) else why_not_played(
         evidence,
         quality=raw.quality,
         n_detected=int(heard.onsets.size),

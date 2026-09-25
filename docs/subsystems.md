@@ -1364,6 +1364,12 @@ nothing else covers `backend/`. Named here rather than left to be found.
 - **A chosen start bar with no note in it moves forward, not to bar 1**
   (`lib/record/startOptions.startBarFor`); the take, Listen and the analysis
   all follow it.
+- **Rhythm fits somewhere on a long page by luck.** A fragment matched by
+  timing is a prefix of its page (`PREFIX_START_BEATS`); only pitch may place
+  it elsewhere. The first re-run of real takes put bar 7 at bars 42–45.
+- **Real bass is less "tonal" than synthetic bass.** The chroma heard a pitch
+  after 0.59–0.69 of a real bass's attacks, 0.87+ of a synthetic one's. Ask
+  the pitch track (`_heard_by_pitch`) before telling anyone they did not play.
 - TUNING_LOG.md 2026-09-25 has every number.
 
 ## The capture path (2026-08-24) — what an audit of it found

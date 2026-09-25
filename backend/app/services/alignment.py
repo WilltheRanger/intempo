@@ -1012,6 +1012,28 @@ def _quality_from_cost(total_cost: float, path_len: int, sec_per_beat: float) ->
 MIN_TEMPO_RATIO = 0.6
 MAX_TEMPO_RATIO = 1.7
 
+#: **Timing reads a take shorter than its page from the page's start.**
+#:
+#: The app records from where the musician chose — the worker trims the page
+#: to `from_measure` — so a take that stops early is a *prefix* of its page,
+#: and `DECISIONS.md` (2026-09-14) accepted subsequence matching on exactly
+#: that ground. The matcher did not hold to it: its path could begin anywhere,
+#: and a rhythm fits some stretch of a long page by luck. The first re-run of
+#: the owner's takes (2026-09-25) had an eight-second take from bar 7 placed at
+#: bars 42–45 of an American in Paris bass part — 0.93, "You rushed bars 42–45
+#: by 39 BPM" — where 1 of the 11 notes it paired was at the pitch those bars
+#: write.
+#:
+#: So the first detection kept (a lead-in is `align_take`'s to trim) pairs with
+#: a written note within this many beats of the first, or with either of the
+#: first two: a quiet first note or two may go unheard. Where else a take
+#: begins is pitch's to say — `alignment.align_chain` with `passage`, and only
+#: where the pitches are the page's (`analysis._placed_by_pitch`).
+PREFIX_START_BEATS = 2.0
+
+#: A cell no path may use. Finite, so the accumulated cost stays a number.
+UNREACHABLE_COST = 1e9
+
 #: How many onsets a take needs before its pace is estimated from it at all.
 #:
 #: Below this the estimate is both unnecessary and unreliable, and the two facts
@@ -1786,6 +1808,9 @@ def align_dtw(
         if optional is not None and optional.size == expected.size
         else np.zeros(expected.size, dtype=bool)
     )
+    # The written notes a take matched as a stretch of the page may begin on.
+    startable = written_span <= PREFIX_START_BEATS * sec_per_beat
+    startable[: min(2, startable.size)] = True
     steps = {
         "step_sizes_sigma": np.array([[1, 1], [0, 1], [1, 0]]),
         "weights_add": np.array([0.0, step_penalty, step_penalty]),
@@ -1813,6 +1838,11 @@ def align_dtw(
         if passable.any():
             path_cost = cost.copy()
             path_cost[:, passable] = np.minimum(path_cost[:, passable], position_cap)
+        if subsequence:
+            # The take begins where the page begins: see `PREFIX_START_BEATS`.
+            if path_cost is cost:
+                path_cost = cost.copy()
+            path_cost[0, ~startable] = UNREACHABLE_COST
         try:
             if subsequence:
                 _, wp = librosa.sequence.dtw(C=path_cost, subseq=True, **steps)
