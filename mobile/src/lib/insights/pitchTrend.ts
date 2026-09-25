@@ -42,7 +42,7 @@ const CHANGE_WORTH_SAYING_CENTS = 3;
 export function pitchTrendFrom(takes: readonly TakeResult[]): PitchTrend | null {
   const read = takes.filter(
     (t): t is TakeResult & { intonation: NonNullable<TakeResult['intonation']> } =>
-      t.failure === null && t.status === 'ok' && t.intonation !== null,
+      t.failure === null && t.status === 'ok' && t.intonation != null,
   );
   if (read.length < MINIMUM_POINTS) {
     return null;
@@ -67,7 +67,7 @@ export function pitchTrendFrom(takes: readonly TakeResult[]): PitchTrend | null 
  */
 export function pitchTrendLine(takes: readonly TakeResult[]): string | null {
   const read = takes.filter(
-    (t) => t.failure === null && t.status === 'ok' && t.intonation !== null,
+    (t) => t.failure === null && t.status === 'ok' && t.intonation != null,
   );
   const newest = read[0]?.intonation;
   if (!newest) {

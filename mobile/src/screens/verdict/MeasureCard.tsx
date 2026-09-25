@@ -60,7 +60,7 @@ export function MeasureCard({
   // Its pitch, where the take was read for it: "17 under your 104 · 12 cents
   // flat". One line, because it is one bar.
   const pitch =
-    intonation && measure.pitchCents !== null
+    intonation && measure.pitchCents != null
       ? pitchWords(measure.pitchCents, intonation)
       : null;
   const detail = [timing, pitch].filter(Boolean).join(' · ') || null;

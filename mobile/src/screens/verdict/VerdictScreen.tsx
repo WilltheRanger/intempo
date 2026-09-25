@@ -462,7 +462,7 @@ export function VerdictScreen() {
               chart={pitchBars}
               name="Pitch in bar"
               describe={(m) =>
-                m.pitchCents === null
+                m.pitchCents == null
                   ? 'Not read'
                   : pitchWords(m.pitchCents, take.intonation!)
               }

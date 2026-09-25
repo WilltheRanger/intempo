@@ -114,7 +114,16 @@ describe('the wiring', () => {
   it('clears the tone when the screen loses focus', () => {
     // React Navigation keeps a tab mounted when you leave it, so a screen that
     // reported `onDark` and went quiet would hand its material to Library.
-    expect(container).toMatch(/useFocusEffect\([\s\S]{0,400}reportTone\('auto'\)/);
+    expect(container).toMatch(/const onFocus = useCallback\([\s\S]{0,200}reportTone\('auto'\)/);
+    expect(container).toMatch(/<OnFocus effect=\{onFocus\} \/>/);
+    expect(container).toMatch(/useFocusEffect\(effect\)/);
+  });
+
+  it('listens for focus only under a navigator', () => {
+    // `ErrorBoundary` draws in this container above the `NavigationContainer`,
+    // where `useFocusEffect` throws — and a crashing crash screen lost the
+    // real error on every launch it mattered (2026-09-25).
+    expect(container).toMatch(/\{navigated \? <OnFocus/);
   });
 
   it('has the bar read the reported tone, not the route', () => {

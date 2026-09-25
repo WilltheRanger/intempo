@@ -162,6 +162,41 @@ describe('before anything has mounted', () => {
   });
 });
 
+describe('a crash on an iPhone', () => {
+  it('says what went wrong, not only where', () => {
+    // WebKit's `stack` is frames only. What a musician sent in on 2026-09-25
+    // was a column of addresses, and the message was nowhere on the screen.
+    app.fire('error', {
+      message: "Error: Couldn't find a navigation object.",
+      error: {
+        name: 'Error',
+        message: "Couldn't find a navigation object.",
+        stack: '@https://example.test/_expo/static/js/web/index-abc.js:260:253',
+      },
+    });
+
+    expect(app.text()).toContain("Error: Couldn't find a navigation object.");
+    expect(app.text()).toContain('index-abc.js:260:253');
+  });
+
+  it('does not say the message twice where the stack already has it', () => {
+    app.fire('error', {
+      message: 'TypeError: x is undefined',
+      error: { name: 'TypeError', message: 'x is undefined', stack: 'TypeError: x is undefined\n  at boot' },
+    });
+
+    expect(app.text().match(/x is undefined/g)).toHaveLength(1);
+  });
+
+  it('reports a rejected promise with its message too', () => {
+    app.fire('unhandledrejection', {
+      reason: { name: 'TypeError', message: 'load failed', stack: 'fetch@https://example.test/a.js:1:1' },
+    });
+
+    expect(app.text()).toContain('TypeError: load failed');
+  });
+});
+
 describe('a resource that failed', () => {
   it('does not by itself claim the app crashed', () => {
     // An <img> is not a crash. expo-image and react-native-web both mount real

@@ -44,11 +44,11 @@ export function pitchChartBars(
   measures: readonly MeasureVerdict[],
   take: TakeIntonation | null,
 ): ChartBar[] | null {
-  if (take === null || measures.every((m) => m.pitchCents === null)) {
+  if (take == null || measures.every((m) => m.pitchCents == null)) {
     return null;
   }
   return measures.map((m) => {
-    if (m.pitchCents === null) {
+    if (m.pitchCents == null) {
       // Nothing in the bar could be read: a neutral stub, as an untimed bar is.
       return { measure: m.measure, up: true, size: MIN_BAR, tone: null };
     }
@@ -107,7 +107,7 @@ export function pitchLines(
   take: TakeIntonation,
 ): { summary: string; tuning: string | null } {
   const read = measures.filter(
-    (m): m is MeasureVerdict & { pitchCents: number } => m.pitchCents !== null,
+    (m): m is MeasureVerdict & { pitchCents: number } => m.pitchCents != null,
   );
   const best = longestOffRun(read, take);
   let summary: string;
