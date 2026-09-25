@@ -1964,6 +1964,16 @@ CHAIN_SKIP_OPTIONAL = 0.05
 #: fraction of `CHAIN_SKIP`: the right pitch in the wrong place still pairs.
 CHAIN_TIME_WEIGHT = 0.3
 
+#: How much less leaving out the last written note costs than the first,
+#: spread evenly between them — only ever a tie-break.
+#:
+#: **A take that stops early is far likelier than one that jumps ahead.**
+#: Where a page repeats its pitches, pairing the end of a take with the end of
+#: the page and leaving out notes in the middle costs exactly what leaving out
+#: the end costs, and the chain chose the middle: bars 1–4 played twice, read
+#: as a restart, had its last five notes paired with bars 5–8.
+CHAIN_LATE_SKIP_DISCOUNT = 0.01
+
 _DIAG, _UP, _LEFT = 0, 1, 2
 
 
@@ -2111,7 +2121,9 @@ def align_chain(
         if optional is not None and optional.size == expected.size
         else np.zeros(expected.size, dtype=bool)
     )
-    skip_note = np.where(skippable, CHAIN_SKIP_OPTIONAL, CHAIN_SKIP)
+    skip_note = np.where(skippable, CHAIN_SKIP_OPTIONAL, CHAIN_SKIP) - (
+        CHAIN_LATE_SKIP_DISCOUNT * np.arange(expected.size) / max(expected.size - 1, 1)
+    )
     path = _chain_path(pitch, CHAIN_SKIP, skip_note, passage=passage)
 
     heard = [(d, e) for d, e in path if pitch[d, e] <= cfg.pitch.confirm_mismatch]

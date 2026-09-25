@@ -73,3 +73,32 @@ export function startOptions(
 
   return options;
 }
+
+/**
+ * The bar a take starts from: the one chosen, or — where no note sounds in it,
+ * so there is nothing to count in to or listen from — the first bar after it
+ * that has one.
+ *
+ * **Never the top in its place.** The screen used to fall back to the first
+ * sounding bar of the piece, so a musician who chose a bar of rest — from the
+ * score, a link, or a file queued for a bar — was quietly moved back to bar 1:
+ * the count-in, Listen and the take all started somewhere they had not
+ * chosen, and the analysis was sent that bar too. The owner's words for it:
+ * "make sure when I choose the measure to start from it starts there". The
+ * nearest place that can start, going forward, is where they meant.
+ *
+ * @param chosen the bar the musician chose, or null for the top.
+ * @param startable the bars that sound, in playing order — `startableMeasures`.
+ */
+export function startBarFor(chosen: number | null, startable: readonly number[]): number {
+  if (startable.length === 0) {
+    return chosen ?? 1;
+  }
+  if (chosen === null) {
+    return startable[0];
+  }
+  if (startable.includes(chosen)) {
+    return chosen;
+  }
+  return startable.find((bar) => bar > chosen) ?? startable[startable.length - 1];
+}

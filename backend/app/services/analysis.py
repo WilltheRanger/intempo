@@ -1053,6 +1053,8 @@ class _Chained:
     anchored: AnchoredAlignment
     confirmed: _Confirmed
     trusted: bool
+    #: Where `anchored.onsets[0]` falls on the recording's clock.
+    first_s: float = 0.0
 
 
 def _chain(
@@ -1090,6 +1092,7 @@ def _chain(
             if passage
             else _trusted_by_pitch(confirmed, config)
         ),
+        first_s=first,
     )
 
 
@@ -1134,22 +1137,269 @@ def _by_chain(
 CHAIN_GAIN_NOTES = 2
 
 
-def _unheard_count(anchored: AnchoredAlignment, reading: Reading) -> int:
-    """How many written notes a pairing leaves unheard, missed or not reached.
+def _claimed_unheard(
+    anchored: AnchoredAlignment, reading: Reading, confirmed: _Confirmed
+) -> int:
+    """How many notes a pairing says were played and were not heard.
 
-    Both, not the missed alone: a pairing that puts a skipped bar at the end
-    of the page calls it not reached, and the one that puts it where it was
-    would otherwise look as if it had added four missed notes.
+    Paired at another pitch, or missed inside the bars it says were played.
+    Not the notes it says were never reached — a take of four bars has not
+    claimed the other four.
+
+    **The measure a re-pairing may not make worse**, and it took three tries.
+    Missed notes alone: a skipped bar placed at the end of the page is "not
+    reached", so putting it where it was looked like adding four misses. All
+    unheard notes: bars 1–4 played twice leave bars 5–8 unheard however they
+    are read, so the right reading looked worse than a wrong one. What a
+    pairing *claims* is the thing to hold it to: timing claimed bars 1–4 twice
+    were bars 1–8 and heard 14 of those notes at another pitch; the replay
+    heard as a replay claims nothing it did not hear.
     """
-    return len(
-        apply_fuzzy_match(
-            anchored.alignment,
-            anchored.onsets,
-            reading.expected,
-            optional=reading.optional,
-            reclaimable=reading.reclaimable,
-        ).missed_expected
+    cleaned = apply_fuzzy_match(
+        anchored.alignment,
+        anchored.onsets,
+        reading.expected,
+        optional=reading.optional,
+        reclaimable=reading.reclaimable,
     )
+    unreached = _not_reached(cleaned, reading.timeline)
+    missed = sum(1 for e in cleaned.missed_expected if e not in unreached)
+    return (confirmed.paired - confirmed.notes) + missed
+
+
+#: Where a chain stops being the page: heard at pitch at least this share of
+#: the notes before a point, and at most `REPLAY_AFTER` after it.
+REPLAY_BEFORE = 0.8
+
+#: Chance, on a page that walks one scale, confirms about half the notes a
+#: replay is paired with further on (`TUNING_LOG.md` 2026-09-25). Above that,
+#: the chain is still the page.
+REPLAY_AFTER = 0.6
+
+#: How many paired attacks before the split a replay may really have begun
+#: after. Two bars of quarters: chance rarely runs longer than a bar.
+REPLAY_LOOKBACK = 8
+
+
+def _replay_break(
+    chained: _Chained, pitch: _Pitch, config: AudioConfig
+) -> list[tuple[int, int]]:
+    """Where a chain of notes went back: its last attack and note before it.
+
+    **Timing cannot see a passage played twice** on an even rhythm — bars 1–4
+    again are bars 5–8 to a clock — and there is often no pause before it to
+    look for a restart at. Pitch can: paired straight through, the first time
+    is heard at the page's pitches and the second only by chance. The point
+    that splits the pairing into the most-heard stretch and the least is
+    where the take went back.
+
+    Returns the places the take may have gone back from, as `(attack index
+    on the recording's onsets, written note)`: the split, and the paired
+    attacks up to `REPLAY_LOOKBACK` before it. **Before it too**, because the
+    replay's first notes can match the notes after the split by chance — a
+    page that walks one scale gave bar 5 the replay's first four, and the
+    split landed after them, as "restarted at bar 2". Empty where there is no
+    such split.
+    """
+    anchored = chained.anchored
+    mapping = anchored.alignment.mapping
+    least = config.pitch.confirmed_min_notes
+    attacks = anchored.onsets.size
+    if attacks < 2 * least or not mapping:
+        return []
+    closest = pitch.mismatch(anchored.onsets + chained.first_s, chained.reading)
+    # **Counted over the attacks, not the pairs.** The chain leaves out an
+    # attack that matches nothing, so the notes it does pair after a replay
+    # look well heard — eight of ten on a page that walks one scale — while
+    # half the attacks there are heard at no written pitch at all.
+    heard = np.zeros(attacks, dtype=float)
+    note_of = np.full(attacks, -1)
+    for d, e in mapping:
+        note_of[d] = e
+        heard[d] = float(closest[d, e] <= config.pitch.confirm_mismatch)
+    running = np.cumsum(heard)
+    best: tuple[float, int] | None = None
+    for p in range(least, attacks - least + 1):
+        before = running[p - 1] / p
+        after = (running[-1] - running[p - 1]) / (attacks - p)
+        if before >= REPLAY_BEFORE and after <= REPLAY_AFTER:
+            if best is None or before - after > best[0]:
+                best = (before - after, p)
+    if best is None:
+        return []
+    paired_before = [d for d in range(best[1]) if note_of[d] >= 0]
+    return [
+        (anchored.trimmed_lead + d, int(note_of[d]))
+        for d in paired_before[-REPLAY_LOOKBACK - 1 :]
+    ]
+
+
+def _replayed_by_pitch(
+    onsets: np.ndarray,
+    chained: _Chained,
+    target_bpm: float,
+    config: AudioConfig,
+    pitch: _Pitch,
+    depth: int | None = None,
+) -> _Chained:
+    """`chained`, with the passages the take went back and played again.
+
+    At each `_replay_break`, the attacks after it are chained as a passage of
+    the page (`_placed_by_pitch`); where that passage begins at or before the
+    break, the take went back to it, and the reading becomes the page played
+    to the break and again from there (`_restarted`) — kept if it hears
+    `CHAIN_GAIN_NOTES` more notes at pitch and claims no more unheard
+    (`_claimed_unheard`). Up to `MAX_RESTARTS` times.
+
+    A restart that falls short is given the next one before it is judged:
+    bars 1–2 played three times, read as played twice, gains only what
+    chance gives the third time through — it is the second restart that
+    makes it right.
+    """
+    depth = MAX_RESTARTS if depth is None else depth
+    current = chained
+    for _ in range(depth):
+        best: _Chained | None = None
+        found = [
+            _replay_from(onsets, current, last_attack, last_note, target_bpm, config, pitch)
+            for last_attack, last_note in _replay_break(current, pitch, config)
+        ] + _replay_before(onsets, current, target_bpm, config, pitch)
+        for candidate in found:
+            if candidate is not None and (
+                best is None or candidate.confirmed.notes > best.confirmed.notes
+            ):
+                best = candidate
+        if best is None:
+            break
+        if best.confirmed.notes < current.confirmed.notes + CHAIN_GAIN_NOTES and depth > 1:
+            best = _replayed_by_pitch(onsets, best, target_bpm, config, pitch, depth - 1)
+        if best.confirmed.notes < current.confirmed.notes + CHAIN_GAIN_NOTES:
+            break
+        if _claimed_unheard(
+            best.anchored, best.reading, best.confirmed
+        ) > _claimed_unheard(current.anchored, current.reading, current.confirmed):
+            break
+        log.info("analysis: heard by pitch as %r", best.reading.name)
+        current = best
+    return current
+
+
+def _placed_start(
+    attacks: np.ndarray,
+    reading: Reading,
+    target_bpm: float,
+    config: AudioConfig,
+    pitch: _Pitch,
+) -> _Chained | None:
+    """Where on the page a stretch of attacks begins, if pitch can say.
+
+    The whole stretch first, then its first two bars' worth of notes, then
+    one: after a replay the take may go back again (bars 1–2 three times), and
+    the stretch as a whole is then no one passage of the page — only its start
+    is.
+    """
+    least = config.pitch.confirmed_min_notes
+    for size in (attacks.size, 2 * least, least):
+        if size < least or size > attacks.size:
+            continue
+        placed = _chain(attacks[:size], reading, target_bpm, config, pitch, passage=True)
+        if placed.trusted and placed.anchored.alignment.mapping:
+            return placed
+    return None
+
+
+def _replay_before(
+    onsets: np.ndarray,
+    current: _Chained,
+    target_bpm: float,
+    config: AudioConfig,
+    pitch: _Pitch,
+) -> list[_Chained]:
+    """Readings where a run of attacks the chain left out was a first try.
+
+    **The other shape a passage played twice takes.** Chained straight
+    through, the take can pair the *second* time through and leave the first
+    out: bars 1–6, then back to bar 5 and on, paired bars 5–8 with the second
+    time and left eight attacks unpaired in the middle. A run of at least
+    `confirmed_min_notes` unpaired attacks is placed on the page; where it
+    carries on from the note before it and covers notes the take then plays
+    again, it was played, and then played again.
+    """
+    anchored = current.anchored
+    mapping = anchored.alignment.mapping
+    least = config.pitch.confirmed_min_notes
+    note_of = dict(mapping)
+    lead = anchored.trimmed_lead
+    candidates: list[_Chained] = []
+    run_start: int | None = None
+    for d in range(anchored.onsets.size + 1):
+        paired = d == anchored.onsets.size or d in note_of
+        if not paired and run_start is None:
+            run_start = d
+        if not paired or run_start is None:
+            continue
+        start, end = run_start, d
+        run_start = None
+        if end - start < least or end >= anchored.onsets.size or start == 0:
+            continue
+        before = max((k for k in note_of if k < start), default=None)
+        if before is None:
+            continue
+        placed = _placed_start(
+            np.asarray(onsets, dtype=float)[lead + start : lead + end],
+            current.reading,
+            target_bpm,
+            config,
+            pitch,
+        )
+        if placed is None:
+            continue
+        covered = [e for _, e in placed.anchored.alignment.mapping]
+        first, last = min(covered), max(covered)
+        again = note_of[end]
+        if first <= note_of[before] or again > last:
+            continue
+        ratio = _written_per_played(current)
+        pause_written = float(onsets[lead + end] - onsets[lead + end - 1]) * ratio
+        reading = _restarted(current.reading, last, again, pause_written)
+        candidates.append(_chain(onsets, reading, target_bpm, config, pitch))
+    return candidates
+
+
+def _written_per_played(chained: _Chained) -> float:
+    """Written seconds per played second, at the pace the chain heard."""
+    mapping = chained.anchored.alignment.mapping
+    played = np.diff([chained.anchored.onsets[d] for d, _ in mapping])
+    written = np.diff([chained.reading.expected[e] for _, e in mapping])
+    usable = (played > 0) & (written > 0)
+    return float(np.median(written[usable] / played[usable])) if usable.any() else 1.0
+
+
+def _replay_from(
+    onsets: np.ndarray,
+    current: _Chained,
+    last_attack: int,
+    last_note: int,
+    target_bpm: float,
+    config: AudioConfig,
+    pitch: _Pitch,
+) -> _Chained | None:
+    """`current`'s reading played to `last_note` and again from where the
+    attacks after `last_attack` are placed on the page — or None where they
+    are not placed (`_placed_by_pitch`), or not at or before `last_note`."""
+    rest = np.asarray(onsets, dtype=float)[last_attack + 1 :]
+    placed = _placed_start(rest, current.reading, target_bpm, config, pitch)
+    if placed is None:
+        return None
+    again = min(e for _, e in placed.anchored.alignment.mapping)
+    if again > last_note:
+        return None
+    # The pause in written seconds, at the pace the chain heard the take.
+    ratio = _written_per_played(current)
+    resumed = last_attack + 1 + placed.anchored.trimmed_lead
+    pause_written = float(onsets[resumed] - onsets[last_attack]) * ratio
+    reading = _restarted(current.reading, last_note, again, pause_written)
+    return _chain(onsets, reading, target_bpm, config, pitch)
 
 
 def _audited_by_chain(
@@ -1163,26 +1413,29 @@ def _audited_by_chain(
 ) -> _Chained | None:
     """The chain's pairing, if it should replace the timing pairing.
 
-    Kept only when trusted by pitch (`_trusted_by_pitch`), and when the timing
-    pairing is not, or hears fewer notes at their pitch — by any margin for a
-    take timing cannot read (under `warn_quality`), by `CHAIN_GAIN_NOTES` for
-    one it can, and then only if no more written notes go unheard
-    (`_unheard_count`). Under `warn_quality` every reading of the page is
-    chained; at or over it only the reading timing chose, so a take that reads
-    well keeps the reading it was read as.
+    **For a take timing refuses** (quality under `broken_quality`), only a
+    chain trusted by pitch across the whole page (`_trusted_by_pitch`) — the
+    rule of 2026-09-25, and the only one that rescues a refusal. Every
+    reading of the page is chained under `warn_quality`; at or over it only
+    the reading timing chose, so a take that reads well keeps the reading it
+    was read as.
 
-    A take timing has found to be a stretch of the page is chained as one and
-    held to `_placed_by_pitch` instead — for a take timing accepts, never to
-    rescue one it refuses.
+    **For a take timing accepts**, the chain may re-pair it where it is placed
+    by pitch (`_placed_by_pitch`) and claims no more notes played-and-unheard
+    than timing did (`_claimed_unheard`). It hears `CHAIN_GAIN_NOTES` more
+    notes at pitch where timing read the take well, any more where it did not.
+
+    Either way, a passage played again is looked for (`_replayed_by_pitch`),
+    and a take timing found to be a stretch of the page is chained as one.
     """
-    readable = anchored.alignment.quality >= config.alignment.warn_quality
+    quality = anchored.alignment.quality
+    readable = quality >= config.alignment.warn_quality
+    accepted = not is_alignment_broken(quality, config=config)
     # A take timing has already found to be a stretch of the page is chained
     # as one. Its rhythm cannot say which stretch where the page repeats one —
     # bars 5–8 of even quarters were paired as bars 1–4 — and its pitches can.
-    # Only where timing gives the take a verdict anyway: see
-    # `_placed_by_pitch`, which is all a passage is held to.
     passage = anchored.alignment.subsequence
-    if passage and is_alignment_broken(anchored.alignment.quality, config=config):
+    if passage and not accepted:
         return None
     candidate = (
         _chain(onsets, reading, target_bpm, config, pitch, passage=passage)
@@ -1196,7 +1449,16 @@ def _audited_by_chain(
             passage=passage,
         )
     )
-    if candidate is None or not candidate.trusted:
+    if candidate is None:
+        return None
+    replayed = _replayed_by_pitch(onsets, candidate, target_bpm, config, pitch)
+    # A refusal is only ever overridden by a whole page heard at pitch.
+    if accepted or replayed.trusted:
+        candidate = replayed
+    if not (
+        candidate.trusted
+        or (accepted and _placed_by_pitch(candidate.confirmed, config))
+    ):
         return None
     timed = _confirmed(
         anchored, reading, pitch, float(onsets[anchored.trimmed_lead]), config
@@ -1204,15 +1466,14 @@ def _audited_by_chain(
     needed = timed.notes + (CHAIN_GAIN_NOTES if readable else 1)
     if _trusted_by_pitch(timed, config) and candidate.confirmed.notes < needed:
         return None
-    # **Re-paired, never with more notes called missed.** A take that played
-    # bars 1–4 twice paired its second time through against bars 5–8, eight
-    # notes of sixteen matching by chance — confirming more than timing did,
-    # and calling the other eight missed where timing had called none. Where
-    # timing reads a take well, the chain may correct which attack is which
-    # note, not add to what the musician is told they left out.
-    if readable and _unheard_count(candidate.anchored, candidate.reading) > _unheard_count(
-        anchored, reading
-    ):
+    # **Re-paired, never claiming more notes played and not heard.** A take
+    # that played bars 1–4 twice, chained straight through, paired its second
+    # time against bars 5–8 — eight of sixteen matching by chance, the other
+    # eight called missed, where timing had claimed fourteen at another pitch
+    # and none missed. See `_claimed_unheard`.
+    if accepted and _claimed_unheard(
+        candidate.anchored, candidate.reading, candidate.confirmed
+    ) > _claimed_unheard(anchored, reading, timed):
         return None
     log.info(
         "analysis: paired as a chain of notes, %d of %d at their written pitch "
@@ -1221,7 +1482,7 @@ def _audited_by_chain(
         candidate.confirmed.paired,
         timed.notes,
         timed.paired,
-        anchored.alignment.quality,
+        quality,
     )
     return candidate
 
@@ -1593,6 +1854,9 @@ def analyze(
     # **The chain of notes, where it hears the page better than timing does.**
     # See `alignment.align_chain` for the real take this is for, and
     # `CHAIN_GAIN_NOTES` for the takes timing reads well and wrongly.
+    # Whether timing alone would give the take a verdict. A pairing the chain
+    # then corrects stays a take with a verdict: see `_audited_by_chain`.
+    accepted_by_timing = not is_alignment_broken(anchored.alignment.quality, config=cfg)
     chained = _audited_by_chain(
         onsets, reading, anchored, score, target_bpm, cfg, pitch
     )
@@ -1695,6 +1959,10 @@ def analyze(
     # tune, or one the scan misread, is one unconfirmed note in the chain.
     confirmed = _confirmed(anchored, reading, pitch, origin, cfg)
     trusted = _trusted_by_pitch(confirmed, cfg)
+    # Heard at the page's pitches across the page, or a take timing accepted
+    # and the chain re-paired by pitch: either way not a take to refuse, and
+    # not one whose timing is in doubt.
+    vouched = trusted or (chained is not None and accepted_by_timing)
     _traced(
         trace,
         alignment=_alignment_trace(anchored),
@@ -1733,7 +2001,7 @@ def analyze(
     # Not for a pairing the pitch confirms: a click, a voice or a room cannot
     # land on the page's pitches note after note, and a bass's low notes can
     # read as "no pitch held" to the chroma while the pitch track hears them.
-    refused_by = None if trusted else why_not_played(
+    refused_by = None if vouched else why_not_played(
         evidence,
         quality=raw.quality,
         n_detected=int(heard.onsets.size),
@@ -1762,7 +2030,7 @@ def analyze(
             n_expected_onsets=int(heard.expected.size),
         )
 
-    if is_alignment_broken(raw.quality, config=cfg) and trusted:
+    if is_alignment_broken(raw.quality, config=cfg) and vouched:
         log.info(
             "analysis: timing alone would refuse (quality %.3f), kept — %d of %d "
             "paired notes heard at their written pitch",
@@ -1770,7 +2038,7 @@ def analyze(
             confirmed.notes,
             confirmed.paired,
         )
-    if is_alignment_broken(raw.quality, config=cfg) and not trusted:
+    if is_alignment_broken(raw.quality, config=cfg) and not vouched:
         _traced(trace, outcome="alignment_failed")
         # **The one line that says which half refused the take.**
         #
@@ -1848,7 +2116,7 @@ def analyze(
         status="ok",
         quality=round(raw.quality, 3),
         tolerance=Tolerance.of(cfg),
-        low_confidence=raw.quality < cfg.alignment.warn_quality and not trusted,
+        low_confidence=raw.quality < cfg.alignment.warn_quality and not vouched,
         verdict=verdict.text,
         verdict_direction=verdict.direction,
         per_note=per_note,

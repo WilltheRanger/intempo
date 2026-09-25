@@ -1,0 +1,57 @@
+name: Re-run analyses
+
+# Runs takes through the deployed analysis again, by id. Run by hand, from the
+# Actions tab or the API, never on a push: it overwrites verdicts.
+#
+# See `backend/scripts/rerun_analyses.py` for why and what it does. This file
+# exists so it can run where the Modal token already is, without a developer
+# machine holding one.
+
+on:
+  workflow_dispatch:
+    inputs:
+      analysis_ids:
+        description: "Analysis ids, separated by commas or spaces"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  rerun:
+    name: re-run analyses
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      # Pinned with `deploy-modal.yml`; see the note there on moving them as a pair.
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install the Modal client
+        run: pip install modal
+
+      - name: Re-run
+        shell: bash
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+          # Through the environment, never interpolated into the script: the
+          # input is free text.
+          ANALYSIS_IDS: ${{ inputs.analysis_ids }}
+        run: |
+          set -eo pipefail
+          python scripts/rerun_analyses.py "$ANALYSIS_IDS" 2>&1 | tee /tmp/rerun.log
+          {
+            echo "### Re-run"
+            echo
+            echo '```'
+            cat /tmp/rerun.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -110,7 +110,7 @@ import {
   metronomeValueLabel,
 } from '../../lib/record/metronomeChoice';
 import { ScoreScroll } from '../../components/score/ScoreScroll';
-import { startOptions } from '../../lib/record/startOptions';
+import { startBarFor, startOptions } from '../../lib/record/startOptions';
 import { entryAccessibilityLabel, entryRowLabel } from '../../lib/score/entryCopy';
 import { ListenPlayer } from './ListenPlayer';
 import { PillRow } from './PillRow';
@@ -790,10 +790,9 @@ export function RecordScreen() {
     () => (listenSchedule ? startableMeasures(listenSchedule) : []),
     [listenSchedule],
   );
-  const startFrom =
-    chosenStartFrom !== null && startable.includes(chosenStartFrom)
-      ? chosenStartFrom
-      : (startable[0] ?? 1);
+  // A bar with no note in it moves forward to the next that has one, never
+  // back to the top — see `startBarFor`.
+  const startFrom = startBarFor(chosenStartFrom, startable);
   const setStartFrom = setChosenStartFrom;
 
   /**

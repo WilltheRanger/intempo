@@ -254,10 +254,21 @@ def run_analysis(analysis_id: str) -> None:
         {"status": "processing", "stage": STAGES[0], "updated_at": _now_iso()},
     )
 
+    # **A take heard again, after its original is gone.** A judged take's WAV
+    # goes an hour after its verdict (`take_archive.sweep_judged_originals`)
+    # and an unjudged one's a day after it failed; what stays is the Opus
+    # playback copy. Every take the first real bass player recorded had been
+    # refused by an analysis that has since learned to hear them, and running
+    # them again needs the one recording left. Opus is lossy, and at the
+    # playback copy's bitrate the attacks and pitches the analysis reads are
+    # intact — it is the file the owner's own take was diagnosed from.
+    replaying = bool(row.get("audio_reclaimed_at")) and bool(row.get("playback_key"))
+    source = str(row["playback_key"]) if replaying else row["audio_url"]
+
     try:
         # Rows keep a durable key-shaped reference, never the five-minute PUT
         # permission. Sign a fresh private GET immediately before reading.
-        audio_bytes = download_audio(readable_audio_url(client, row["audio_url"]))
+        audio_bytes = download_audio(readable_audio_url(client, source))
         score = _load_score(client, row["score_id"], row["user_id"])
         # **The take was played against a shortened score, so judge it against
         # one.** Skipping a long rest the timeline still contains takes an
@@ -379,7 +390,10 @@ def run_analysis(analysis_id: str) -> None:
     # module is best effort and returns None rather than raising, and the row
     # is already `done` either way.
     _keep_diagnostics(client, analysis_id, trace)
-    keep_playback_copy(client, analysis_id, str(row["audio_url"]), audio_bytes)
+    # Not for a take read from its playback copy: that copy is the recording
+    # now, and encoding it again would overwrite it with a copy of itself.
+    if not replaying:
+        keep_playback_copy(client, analysis_id, str(row["audio_url"]), audio_bytes)
 
 
 def _keep_diagnostics(client, analysis_id: str, trace: dict) -> None:
