@@ -89,15 +89,12 @@ export interface PracticeHeroProps {
   name: string | null;
   onAction: () => void;
   onAdd: () => void;
-  /** "Recent results": the Insights tab, where every take is. */
-  onRecent: () => void;
   /**
    * The take this device handed over and nobody has read yet, if there is one.
    *
-   * It takes the "Recent results" line's place rather than adding a third
-   * thing under the button: a take waiting to be read *is* the recent result,
-   * and the one a musician wants. `pendingLineFor` decides what it says;
-   * `onPending` opens it, or asks again.
+   * The one line under the button, and only while there is one: a take
+   * waiting to be read is the result a musician wants. `pendingLineFor`
+   * decides what it says; `onPending` opens it, or asks again.
    */
   pending?: PendingLine | null;
   onPending?: () => void;
@@ -121,7 +118,6 @@ export function PracticeHero({
   name,
   onAction,
   onAdd,
-  onRecent,
   pending = null,
   onPending,
 }: PracticeHeroProps) {
@@ -168,10 +164,10 @@ export function PracticeHero({
     return () => animation.stop();
   }, [arrival, hasContent, reduceMotion]);
 
-  const recent =
-    pending && onPending
-      ? { label: pending.label, onPress: onPending }
-      : { label: 'Recent results', onPress: onRecent };
+  // Only a take waiting to be read earns a line under the button. "Recent
+  // results" used to stand here otherwise; the owner removed it (2026-09-25)
+  // for the photograph's sake — the Insights tab is one tap away anyway.
+  const recent = pending && onPending ? { label: pending.label, onPress: onPending } : null;
 
   return (
     <View style={styles.hero} onLayout={measure(setHeight, 'height')}>
@@ -275,18 +271,25 @@ export function PracticeHero({
                 </Text>
               ) : null}
               <PrimaryButton label={content.actionLabel} onPress={onAction} style={styles.action} />
-              <PressableScale
-                onPress={recent.onPress}
-                accessibilityRole="button"
-                accessibilityLabel={recent.label}
-                activeScale={0.99}
-                style={({ pressed }) => [styles.recent, pressed && styles.recentPressed]}
-              >
-                <Text variant="metadata" color="textSecondary" numberOfLines={1} style={styles.recentLabel}>
-                  {recent.label}
-                </Text>
-                <TrailingChevron />
-              </PressableScale>
+              {recent ? (
+                <PressableScale
+                  onPress={recent.onPress}
+                  accessibilityRole="button"
+                  accessibilityLabel={recent.label}
+                  activeScale={0.99}
+                  style={({ pressed }) => [styles.recent, pressed && styles.recentPressed]}
+                >
+                  <Text
+                    variant="metadata"
+                    color="textSecondary"
+                    numberOfLines={1}
+                    style={styles.recentLabel}
+                  >
+                    {recent.label}
+                  </Text>
+                  <TrailingChevron />
+                </PressableScale>
+              ) : null}
             </Animated.View>
           )}
         </View>

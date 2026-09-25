@@ -1,5 +1,28 @@
 # InTempo Decisions
 
+## 2026-09-25 — Today without "Recent results"; "Your takes" as rows
+
+**Context.** The owner, on two screenshots: Today's "Recent results" row
+could go, the copy move down, and more of the photograph show; and the
+"Your takes" card on a piece was "destroying visual hierarchy".
+
+**Decision.**
+- *Today.* The row is gone; the line under Practice appears only for a take
+  waiting to be read (`pendingLineFor`). The copy drops into its 58pt, and the
+  ivory fall follows it down: `heroFall` gains `MAX_START` (0.58), where the
+  prototype's `FALL_START` (0.47) had been the ceiling, so the fall no longer
+  washes photograph nothing sits on.
+- *Piece detail* (asked; the owner chose "takes as rows, no card"). No box,
+  no chart: the count line, the three newest takes as rows — when, and what
+  the verdict said (`lib/insights/takeRows.ts`) — and "See all N" in place.
+  The piece loads 12 detailed takes, not 6, so "See all 11" is true; beyond
+  12 it says "See the last 12". The chart was the drift line, flooring for a
+  take held slow and plotting only the takes with a verdict (2 of 11).
+
+**Alternatives considered.** One "Your takes" row among the links (quieter,
+one tap further from any take); a BPM tempo line without the card (a second
+chart competing with the score for a page whose subject is the piece).
+
 ## 2026-09-25 — Pitch: how in tune, in cents, against the player's own tuning
 
 **Context.** The owner: "for insights let's add pitch variation as a graph".

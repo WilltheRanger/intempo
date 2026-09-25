@@ -58,13 +58,6 @@ export interface SessionTrendChartProps {
    * white rather than the page's ivory.
    */
   compact?: boolean;
-  /**
-   * The number of the first take drawn, when the chart shows the newest few
-   * of a longer history: a piece with 40 takes whose chart said "Take 1" at its
-   * left edge would be naming the wrong take. Insights' chart is "your last N
-   * takes" and counts from 1.
-   */
-  firstTake?: number;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -74,7 +67,6 @@ export function SessionTrendChart({
   height = 190,
   area = false,
   compact = false,
-  firstTake = 1,
   style,
 }: SessionTrendChartProps) {
   const dotRadius = compact ? 2.6 : DOT_RADIUS;
@@ -218,10 +210,10 @@ export function SessionTrendChart({
 
       <View style={styles.xAxis}>
         <Text variant="caption" color="textTertiary">
-          Take {firstTake}
+          Take 1
         </Text>
         <Text variant="caption" color="textTertiary">
-          Take {firstTake + trend.points.length - 1}
+          Take {trend.points.length}
         </Text>
       </View>
     </View>

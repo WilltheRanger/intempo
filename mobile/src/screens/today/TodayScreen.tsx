@@ -233,7 +233,6 @@ export function TodayScreen() {
           name={me.data?.displayName ?? null}
           onAction={() => (piece ? openPractice(piece) : setAddSheetVisible(true))}
           onAdd={() => setAddSheetVisible(true)}
-          onRecent={() => navigation.navigate('Insights')}
           pending={
             pendingAnalysis && pendingCheck
               ? pendingLineFor(pendingCheck, pendingPiece?.title ?? null)

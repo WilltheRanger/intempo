@@ -1359,7 +1359,7 @@ export const fixtureTakeSource: TakeSource = {
    * piece in the sample library returns nothing, which is also what the card
    * has to handle for a piece nobody has recorded yet.
    */
-  async getPieceHistory(pieceId, window = 6) {
+  async getPieceHistory(pieceId, window = 12) {
     const recent = (await fixtureTakeSource.getRecentTakes(12)).filter(
       (take) => take.pieceId === pieceId,
     );

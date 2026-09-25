@@ -60,6 +60,18 @@ const LEAD = 8;
  */
 export const MIN_START = 0.2;
 
+/**
+ * The lowest the fall may start: it follows the copy down to here.
+ *
+ * It was capped at the prototype's `FALL_START` until 2026-09-25, when the
+ * owner removed "Recent results" and asked for the copy lower and more of the
+ * photograph. Without a lower cap the copy dropped by the row's 58pt and the
+ * fall stayed where it was, washing photograph that nothing sat on. With it,
+ * the fall moves with the copy — the room is ~9% of the height deeper on a
+ * 390×844 screen — and still settles before the label.
+ */
+export const MAX_START = 0.58;
+
 export type FallStop = [offset: number, opacity: number];
 
 /**
@@ -70,7 +82,7 @@ export function fallStops(height: number, copyTop: number | null): FallStop[] {
   let start = FALL_START;
   if (height > 0 && copyTop !== null) {
     const settleBy = (copyTop - LEAD) / height;
-    start = Math.max(MIN_START, Math.min(FALL_START, settleBy - SETTLED_ALONG * FALL_SPAN));
+    start = Math.max(MIN_START, Math.min(MAX_START, settleBy - SETTLED_ALONG * FALL_SPAN));
   }
   const stops: FallStop[] = [[0, 0]];
   for (const [along, wash] of CURVE) {

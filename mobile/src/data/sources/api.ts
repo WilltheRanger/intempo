@@ -756,7 +756,7 @@ export const apiTakeSource: TakeSource = {
    * In parallel: neither answer depends on the other, and this runs while a
    * musician is looking at the piece they are about to play.
    */
-  async getPieceHistory(pieceId, window = 6) {
+  async getPieceHistory(pieceId, window = 12) {
     const [rows, detailed] = await Promise.all([
       listAnalyses({
         scoreId: pieceId,
