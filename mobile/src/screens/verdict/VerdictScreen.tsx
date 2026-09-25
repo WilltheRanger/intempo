@@ -447,7 +447,7 @@ export function VerdictScreen() {
             {pitch.summary}
           </Text>
           {pitch.tuning ? (
-            <Text variant="metadataSmall" color="textTertiary" style={styles.pitchTuning}>
+            <Text variant="caption" color="textTertiary" style={styles.pitchTuning}>
               {pitch.tuning}
             </Text>
           ) : null}

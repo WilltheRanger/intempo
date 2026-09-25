@@ -51,16 +51,14 @@ describe('pitchTrendFrom', () => {
 describe('pitchTrendLine', () => {
   it('says the latest take in cents, and whether it is closer than the start', () => {
     expect(pitchTrendLine(takes([9, 12, 20]))).toBe(
-      'Your notes sit within 15 cents of your tuning. Closer than your earliest take.',
+      'Within 15¢ of your tuning · closer than before',
     );
-    expect(pitchTrendLine(takes([22, 12]))).toBe(
-      'Your notes sit about 22 cents from your tuning. Further out than your earliest take.',
-    );
-    expect(pitchTrendLine(takes([22, 21]))).toBe('Your notes sit about 22 cents from your tuning.');
+    expect(pitchTrendLine(takes([22, 12]))).toBe('About 22¢ off your tuning · further out than before');
+    expect(pitchTrendLine(takes([22, 21]))).toBe('About 22¢ off your tuning');
   });
 
   it('works from one take, and says nothing with none', () => {
-    expect(pitchTrendLine(takes([9]))).toBe('Your notes sit within 15 cents of your tuning.');
+    expect(pitchTrendLine(takes([9]))).toBe('Within 15¢ of your tuning');
     expect(pitchTrendLine(takes([null]))).toBeNull();
   });
 });
