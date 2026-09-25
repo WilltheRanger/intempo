@@ -331,10 +331,17 @@ const DRAG_HEADLINES: Record<Span, string> = {
  * Slight drift gets the gentler "Tempo drifted ahead": at that band the
  * pipeline is inside the tolerance where the spec says not to claim certainty,
  * so naming the player would be more confident than the measurement.
+ *
+ * **Held when the sentence under it found nothing to name** (`direction`,
+ * the server's verdict). A bar's band is how far it sits from the grid since
+ * the first note, so a take that came in slow and then kept time has every
+ * bar after its entrance banded late — and the settling-in the owner asked to
+ * be spared (2026-09-25) would title "You dragged throughout" a take whose
+ * sentence reads "Steady all the way through."
  */
-export function formatTakeVerdict(measures: MeasureVerdict[]): string {
+export function formatTakeVerdict(measures: MeasureVerdict[], direction?: Direction): string {
   const off = measures.filter((m) => m.band !== 'on');
-  if (measures.length === 0 || off.length === 0) {
+  if (direction === 'on' || measures.length === 0 || off.length === 0) {
     return 'You held the tempo';
   }
 

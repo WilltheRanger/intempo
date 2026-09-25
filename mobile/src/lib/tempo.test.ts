@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import type { Tolerance } from '../data/types';
+import type { MeasureVerdict, Tolerance } from '../data/types';
 import {
   displayTempoBpm,
+  formatTakeVerdict,
   formatTempo,
   formatWorkingTempo,
   fullScaleFor,
@@ -139,5 +140,37 @@ describe('printed tempo units', () => {
       expect(quarterBpmFromDisplay(min, unit), `${unit} min`).toBeGreaterThanOrEqual(20);
       expect(min, `${unit} range`).toBeLessThan(max);
     }
+  });
+});
+
+describe('the title over one take', () => {
+  function bar(measure: number, band: MeasureVerdict['band']): MeasureVerdict {
+    return {
+      measure,
+      playedBpm: null,
+      pitchCents: null,
+      noteCount: 4,
+      deviationPct: band === 'on' ? 0 : 40,
+      band,
+      direction: band === 'on' ? 'on' : 'drag',
+      verdict: band === 'on' ? 'on_tempo' : 'dragging',
+      underTempoChange: false,
+      uneven: false,
+      timedNoteCount: 4,
+      untimedReason: null,
+    };
+  }
+
+  // Came in slow, then kept time: every bar after the entrance sits late
+  // against the grid, and the band says so.
+  const settled = [bar(1, 'severe'), bar(2, 'severe'), bar(3, 'severe'), bar(4, 'severe')];
+
+  it('reads the bars when the sentence under it named a stretch', () => {
+    expect(formatTakeVerdict(settled, 'drag')).toBe('You dragged throughout');
+    expect(formatTakeVerdict(settled)).toBe('You dragged throughout');
+  });
+
+  it('agrees with the sentence when it found nothing to name', () => {
+    expect(formatTakeVerdict(settled, 'on')).toBe('You held the tempo');
   });
 });

@@ -363,7 +363,7 @@ export function VerdictScreen() {
         onPress={() => navigation.popTo('PieceDetail', { pieceId: take.pieceId })}
       />
       <Text variant="screenTitle" accessibilityRole="header">
-        {take.lowConfidence ? 'Timing is uncertain' : formatTakeVerdict(take.measures)}
+        {take.lowConfidence ? 'Timing is uncertain' : formatTakeVerdict(take.measures, take.direction)}
       </Text>
 
       <Text variant="body" color="textSecondary" style={styles.headline}>

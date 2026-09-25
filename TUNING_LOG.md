@@ -6,6 +6,50 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-09-25 — Settling in and winding down: `[tolerance] settling_bars = 2`, new
+
+New threshold, no existing one changed. The owner asked whether the app allows
+for the time it takes to find the tempo after the count-in, "and same with the
+end". It allowed for the silence (the count-in is discarded, timing runs from
+the first note, up to three stray sounds are trimmed at each end), not for the
+playing: a first bar or two off the tempo was the verdict line.
+
+**Rule** (`classification._Edges`): a run of bars, or of notes, lying wholly
+inside the first or last `settling_bars` bars the take played is not named.
+The notes of a spared end leave the note rule too, and after a spared entrance
+the note rule measures drift from where the take settled. On a short take the
+ends shrink so one bar is neither. `settling_bars = 0` is the old behaviour
+exactly, which is how the "before" column below was run.
+
+### Synthetic takes (12 bars of quarters, target 100)
+
+    take                           before                    after
+    bar 1 at 86                    Bar 1 went at 86.         Steady all the way through.
+    bars 1–2 at 86, 93             Bars 1–2 went at 89.      Steady all the way through.
+    bars 1–2 at 116, 108           Bars 1–2 went at 112.     Steady all the way through.
+    last bar at 84                 Bar 12 went at 84.        Steady all the way through.
+    bars 11–12 at 92, 82           Bars 11–12 went at 88.    Steady all the way through.
+    settle, then bars 6–7 at 88    Bars 1–2 went at 89.      Bars 6–7 went at 88.
+    bars 1–4 at 88                 Bars 1–4 went at 88.      (same)
+    bars 6–7 at 88                 Bars 6–7 went at 88.      (same)
+    held 97 throughout             Bars 1–12 went at 97.     (same)
+    settle, then held 96           —                         Bars 3–12 went at 96.
+    settle, then held 92           —                         Bars 1–12 went at 92.
+
+Two intermediate versions were measured and rejected: sparing the bars alone
+let the note rule say "Bars 1–12 fell behind." after a slow bar 1, because its
+lag is carried into every later note; and sparing the entrance's notes but not
+the ending's made an 8-bar take at 100 against 104 that eased off into
+"Bars 1–8 went at 96." rather than "Bars 1–6 went at 100."
+
+### Regression
+
+- Six clips: every verdict and direction identical (01, 04, 05, 06 steady;
+  02 "Bars 2–8 ran ahead."; 03 "Bars 2–8 fell behind.").
+- The owner's takes (Opus, locally): identical — 0313 "Bars 13–25 went at
+  81.", 1940 "Bars 15–24 went at 96.", leads unchanged. Neither named run is
+  at an end, so no re-run is needed.
+
 ## 2026-09-25 — Intonation, new: `[intonation]` and what it was measured on
 
 New thresholds, no existing one changed. `services/intonation.py` reads each

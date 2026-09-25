@@ -1,5 +1,33 @@
 # InTempo Decisions
 
+## 2026-09-25 — The verdict line spares settling in and winding down
+
+**Context.** The owner: "does the app count for when you start to play
+because it takes time to count tempo and same with the end". The silence was
+already handled; the playing was not — a first bar or two found after the
+count-in, or a last bar eased off, was named as the take's problem, and where
+a real run elsewhere was the same length it was named instead of it.
+
+**Decision** (the owner chose "grace at both ends" over "start only" and
+"leave it"). A run wholly inside the first or last two bars the take played is
+not named, by the bar rule or the note rule; the note rule also leaves those
+bars' notes out, and after a spared entrance reads drift from where the take
+settled. Three bars or more from the top are named whole, from bar 1. The
+chart still draws every bar as played. The title follows the sentence: when
+the sentence names nothing, the title is "You held the tempo" rather than a
+reading of bands that carry the entrance's lag.
+
+**Alternatives.** A grace in seconds or notes rather than bars — rejected,
+because the chart and the sentence speak in bars, and "the first two bars" is
+something a musician can check against the page. Trimming the edge bar off a
+longer run ("Bars 2–4" for a slow 1–4) — rejected, it names less than the chart
+shows. Grace only at the start — the owner chose both.
+
+**Trade-offs.** A last bar played at 70 against 100 is now not named, because
+one bar at the end is what winding down looks like. The title's *where* ("at
+the start", "throughout") still reads the bands, which carry lag forward from
+any slow stretch; only its "held" case now follows the sentence.
+
 ## 2026-09-25 — Today without "Recent results"; "Your takes" as rows
 
 **Context.** The owner, on two screenshots: Today's "Recent results" row

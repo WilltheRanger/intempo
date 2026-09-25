@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import re
 
 import numpy as np
@@ -423,24 +425,111 @@ def test_on_tempo_bar_by_bar_the_note_rule_still_speaks() -> None:
     assert verdict.text.startswith("Bars 1–6 ")
 
 
-def test_end_to_end_the_sentence_follows_the_bars() -> None:
-    """Through `compute_deltas` and `bar_pacing`, as `analyze()` runs them:
-    six bars at 100 against 104 — on, bar by bar — then two at 80. Every note
-    is behind from bar 2, so the note rule named bars 1–8; the chart shows
-    the last two."""
-    target = 104.0
-    timeline = build_timeline(_quarters(8), target)
+def _played(bars: int, bpm_of_bar: Callable[[int], float], target: float = 104.0):
+    """Quarters, each bar at its own tempo, through `compute_deltas` and
+    `bar_pacing` as `analyze()` runs them."""
+    timeline = build_timeline(_quarters(bars), target)
     detected, t = [], 0.0
-    for i in range(32):
+    for i in range(bars * 4):
         detected.append(t)
-        t += 60.0 / (100.0 if i < 24 else 80.0)
-    matched = [(i, i) for i in range(32)]
+        t += 60.0 / bpm_of_bar(i // 4 + 1)
+    matched = [(i, i) for i in range(bars * 4)]
     onsets = np.asarray(detected)
     deltas = compute_deltas(CleanedAlignment(matched=matched), onsets, timeline, target)
-
-    verdict = generate_verdict(
+    return generate_verdict(
         deltas, target, tempi=bar_pacing(matched, onsets, timeline, target)
     )
 
+
+def test_end_to_end_the_sentence_follows_the_bars() -> None:
+    """Six bars at 100 against 104 — on, bar by bar — then two at 80, then two
+    at 100 again. Every note is behind from bar 2, so the note rule named
+    bars 1–8; the chart shows bars 7–8."""
+    verdict = _played(10, lambda bar: 80.0 if bar in (7, 8) else 100.0)
+
     assert (verdict.start_measure, verdict.end_measure) == (7, 8)
     assert verdict.text == "Bars 7–8 went at 80."
+
+
+# ---------------------------------------------------------------------------
+# Settling in and winding down are not named (the owner, 2026-09-25)
+# ---------------------------------------------------------------------------
+
+
+def test_settling_into_the_tempo_is_not_named() -> None:
+    """"It takes time to count tempo": in off the count-in at 86 and 93, then
+    on the beat to the end. The two bars were the whole sentence — and their
+    lag, carried into every note after them, made the note rule say the whole
+    take fell behind once the bars were spared."""
+    verdict = _played(12, lambda bar: {1: 86.0, 2: 93.0}.get(bar, 104.0))
+
+    assert verdict.text == "Steady all the way through."
+    assert verdict.direction is Direction.on
+
+
+def test_winding_down_is_not_named() -> None:
+    """"...and same with the end": easing off over the last two bars."""
+    verdict = _played(12, lambda bar: {11: 94.0, 12: 84.0}.get(bar, 104.0))
+
+    assert verdict.text == "Steady all the way through."
+
+
+def test_a_spared_entrance_does_not_hide_the_stretch_that_matters() -> None:
+    """Two runs of two bars: the entrance was named, being the earlier."""
+    verdict = _played(12, lambda bar: {1: 86.0, 2: 93.0, 6: 88.0, 7: 88.0}.get(bar, 104.0))
+
+    assert (verdict.start_measure, verdict.end_measure) == (6, 7)
+
+
+def test_three_slow_bars_from_the_top_are_a_tempo() -> None:
+    """Named whole, from bar 1 — not trimmed to the bars after the grace."""
+    verdict = _played(12, lambda bar: 90.0 if bar <= 3 else 104.0)
+
+    assert (verdict.start_measure, verdict.end_measure) == (1, 3)
+
+
+def test_after_a_spared_entrance_drift_is_read_from_where_it_settled() -> None:
+    """In at 86 and 93, then held at 100 — on, bar by bar, and falling behind
+    from bar 3. The note rule names the holding back, and from bar 3."""
+    verdict = _played(12, lambda bar: {1: 86.0, 2: 93.0}.get(bar, 100.0))
+
+    assert verdict.direction is Direction.drag
+    assert verdict.start_measure == 3
+
+
+def test_the_settled_level_is_read_after_the_whole_entrance() -> None:
+    """On the beat in bar 1, slow in bar 2, then on: bar 1's notes come before
+    the lag, so they cannot be where the take settled."""
+    verdict = _played(12, lambda bar: 86.0 if bar == 2 else 104.0)
+
+    assert verdict.text == "Steady all the way through."
+
+
+def test_a_spared_ending_is_left_out_of_the_note_rule_too() -> None:
+    """Held at 100 against 104 for six bars, then eased off: the note rule
+    names the six, and not the ending the bars spared — "Bars 1–8 went at
+    96." folded the ending into the figure."""
+    verdict = _played(8, lambda bar: 80.0 if bar >= 7 else 100.0)
+
+    assert (verdict.start_measure, verdict.end_measure) == (1, 6)
+    assert verdict.text == "Bars 1–6 went at 100."
+
+
+def test_the_ends_shrink_on_a_short_passage() -> None:
+    """On three bars, only bars 1 and 3 are ends: a slow bar 2 is the take."""
+    verdict = _played(3, lambda bar: 80.0 if bar == 2 else 104.0)
+
+    assert verdict.direction is Direction.drag
+    assert verdict.start_measure == 2
+
+
+def test_the_edges_of_a_take_are_the_bars_it_played() -> None:
+    """A passage from bar 9: its entrance is bar 9, not bar 1."""
+    deltas = [
+        _delta(12.0 if i < 4 else 0.0, measure=9 + i // 4, idx=i) for i in range(40)
+    ]
+    by_bar = {9: 88.0} | {m: 104.0 for m in range(10, 19)}
+
+    verdict = generate_verdict(deltas, 104.0, tempi=_tempi(by_bar, across=88.0))
+
+    assert verdict.direction is Direction.on
