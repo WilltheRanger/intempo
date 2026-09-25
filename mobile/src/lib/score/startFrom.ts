@@ -40,12 +40,21 @@ export function startFromMeasure(score: ScoreJson, measureNumber: number): Score
 }
 
 /**
- * Changes at or after the entry bar, plus the one still standing at it.
+ * Changes at or after the entry bar, and every one before it, moved there.
  *
- * **The carried one is the point.** A `rit.` printed at bar 3 is still in force
- * at bar 4, and the analysis refuses to time notes under a written change —
- * so dropping it would report a musician dragging for slowing exactly as the
- * page told them to.
+ * **What is in force at the entry bar is the point.** A `rit.` printed at bar
+ * 3 is still in force at bar 4, and the analysis refuses to time notes under a
+ * written change — so dropping it would report a musician dragging for slowing
+ * exactly as the page told them to. A "meno mosso" at bar 10 sets the tempo bar
+ * 20 is judged against.
+ *
+ * **All of them, in the order printed.** This carried the last one alone,
+ * which was enough while a marking only said "not steady here". A tempo change
+ * remembers what it changed from — "a tempo" after a `rit.` inside a meno
+ * mosso returns to the meno mosso — so the entry bar is reached through the
+ * same markings the page has, and a `rit.` already ended ends again there. The
+ * same rule as `backend/app/services/start_at.py`, held to it by
+ * `fixtures/practice/start_at.json`.
  */
 function carriedTempoChanges(
   score: ScoreJson,
@@ -53,20 +62,12 @@ function carriedTempoChanges(
 ): ScoreJson['tempo_changes'] {
   const changes = score.tempo_changes ?? [];
   const after = changes.filter((change) => change.measure_number >= measureNumber);
-  const before = changes.filter((change) => change.measure_number < measureNumber);
-  if (before.length === 0) {
-    return after;
-  }
-  // Something printed on the entry bar itself supersedes the carried one.
-  if (after.some((change) => change.measure_number === measureNumber)) {
-    return after;
-  }
-  const standing = before.reduce((latest, change) =>
-    change.measure_number > latest.measure_number ? change : latest,
-  );
+  const before = changes
+    .filter((change) => change.measure_number < measureNumber)
+    .sort((a, b) => a.measure_number - b.measure_number);
   // Moved to the entry bar rather than left where it was printed: a change
   // outside the score cannot be found by a walk over the measures.
-  return [{ ...standing, measure_number: measureNumber }, ...after];
+  return [...before.map((change) => ({ ...change, measure_number: measureNumber })), ...after];
 }
 
 /** The three facts a bar can print that hold until the next bar prints one. */

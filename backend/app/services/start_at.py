@@ -86,26 +86,32 @@ def _repeats_from(score: ScoreJson, measure_number: int) -> list:
 
 
 def _tempo_changes_from(score: ScoreJson, measure_number: int) -> list:
-    """Changes at or after the entry bar, plus the one still in force at it.
+    """Changes at or after the entry bar, and every one before it, moved there.
 
-    **The carried-forward one is the point.** A `rit.` printed at bar 13 is
-    still in force at bar 14, and `classification.py` refuses to time notes
-    under a written change — so dropping it would judge a passage the page told
-    the musician to slow through, and report them dragging for reading it
-    correctly. That is the exact failure `under_tempo_change` exists to
-    prevent, reintroduced by trimming.
+    **What is in force at the entry bar is the point.** A `rit.` printed at bar
+    13 is still in force at bar 14, and `classification.py` refuses to time
+    notes under a written change — so dropping it would judge a passage the
+    page told the musician to slow through, and report them dragging for
+    reading it correctly. A "meno mosso" at bar 10 sets the tempo bar 20 is
+    judged against. That is the failure `under_tempo_change` and
+    `targets_by_measure` exist to prevent, reintroduced by trimming.
 
-    It is moved to the entry bar rather than left where it was printed, because
-    a change outside the score cannot be found by `tempo_change_spans`, which
-    walks measures.
+    **All of them, in the order printed, rather than the last one.** This
+    used to carry the last marking alone, which was enough while a marking
+    only said "not steady here". A tempo change remembers what it changed
+    from — "a tempo" after a `rit.` inside a meno mosso returns to the meno
+    mosso (`score_schema.tempo_in_force`) — so the entry bar has to be reached
+    through the same markings the page has. A `rit.` already ended before the
+    cut ends again at the entry bar, because the next marking in order ends
+    it (`tempo_change_spans`).
+
+    Moved to the entry bar rather than left where they were printed, because a
+    change outside the score cannot be found by walking its measures.
     """
     after = [c for c in score.tempo_changes if c.measure_number >= measure_number]
-    before = [c for c in score.tempo_changes if c.measure_number < measure_number]
-    if not before:
-        return after
-    # The last one printed before the cut is the one still standing at it.
-    standing = max(before, key=lambda c: c.measure_number)
-    if any(c.measure_number == measure_number for c in after):
-        # Something is already printed at the entry bar; it supersedes.
-        return after
-    return [standing.model_copy(update={"measure_number": measure_number}), *after]
+    before = sorted(
+        (c for c in score.tempo_changes if c.measure_number < measure_number),
+        key=lambda c: c.measure_number,
+    )
+    carried = [c.model_copy(update={"measure_number": measure_number}) for c in before]
+    return [*carried, *after]

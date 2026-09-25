@@ -33,6 +33,7 @@ function measure(over: Partial<MeasureVerdict> = {}): MeasureVerdict {
     untimedReason: null,
     playedBpm: null,
     pitchCents: null,
+    targetBpm: null,
     ...over,
   };
 }

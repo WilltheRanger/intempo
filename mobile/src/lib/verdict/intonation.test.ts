@@ -18,6 +18,7 @@ function bar(measure: number, pitchCents: number | null): MeasureVerdict {
     measure,
     playedBpm: null,
     pitchCents,
+    targetBpm: null,
     noteCount: 4,
     deviationPct: 0,
     band: 'on',

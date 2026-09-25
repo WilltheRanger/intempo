@@ -361,9 +361,16 @@ export interface ScoreMeasure {
  */
 export interface ScoreTempoChange {
   measure_number: number;
-  kind: 'ritardando' | 'accelerando' | 'a_tempo';
+  kind: 'ritardando' | 'accelerando' | 'a_tempo' | 'new_tempo';
   /** What is printed — "rit.", "poco rall.". Quoted, never paraphrased. */
   text: string;
+  /**
+   * For `new_tempo` — "più mosso", "meno mosso", a new metronome mark — the
+   * tempo it sets in quarter notes per minute, in the terms of the piece's
+   * marked tempo, so it scales with the tempo a take is practised at. Null
+   * where the page says "slower" without a number: those bars are not judged.
+   */
+  bpm?: number | null;
 }
 
 export interface ScoreRepeat {
@@ -589,6 +596,12 @@ export interface PerMeasureResult {
    * before 2026-09-25; null where nothing in the bar could be read.
    */
   pitch_cents?: number | null;
+  /**
+   * The tempo the bar was meant at, where the page moved it off the take's
+   * target — "meno mosso", a new metronome mark. Absent where the bar is at
+   * the take's target, and on results stored before 2026-09-25.
+   */
+  target_bpm?: number | null;
 }
 
 /**
@@ -907,6 +920,12 @@ export interface MeasureVerdict {
    * sharp-positive, or null. See `lib/verdict/intonation.ts`.
    */
   pitchCents: number | null;
+  /**
+   * The tempo this bar is judged against, where the page moved it off the
+   * take's target ("meno mosso 88"); null where it is the take's own. Read
+   * through `barTarget`, never on its own.
+   */
+  targetBpm: number | null;
   noteCount: number;
   /** Percentage of one beat, normalised to **rush-positive**: ahead is up. */
   deviationPct: number;

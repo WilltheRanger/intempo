@@ -3,9 +3,11 @@ import { describe, expect, it } from 'vitest';
 import type { MeasureVerdict, Tolerance } from '../../data/types';
 import {
   appVerdictForBar,
+  barTarget,
   barTempo,
   tempoChartBars,
   tempoLine,
+  tempoLineLabel,
   tempoScale,
   tempoY,
 } from './barTempo';
@@ -24,6 +26,7 @@ function bar(measure: number, playedBpm: number | null, over: Partial<MeasureVer
     measure,
     playedBpm,
     pitchCents: null,
+    targetBpm: null,
     noteCount: 4,
     // The pile-up the charts used to plot: huge, and always behind.
     deviationPct: -300,
@@ -194,5 +197,48 @@ describe('tempoScale', () => {
 
     expect(scale.targetLabel).toBe('52');
     expect(scale.playedLabel).toBe('40');
+  });
+});
+
+describe('a page that changes tempo', () => {
+  // Marked 104; "meno mosso 88" from bar 3; "Tempo I" from bar 5.
+  const STEPPED = [
+    bar(1, 104),
+    bar(2, 103),
+    bar(3, 88, { targetBpm: 88 }),
+    bar(4, 87, { targetBpm: 88 }),
+    bar(5, 104),
+  ];
+
+  it('judges a bar against its own target', () => {
+    expect(barTarget(STEPPED[2], 104)).toBe(88);
+    expect(barTarget(STEPPED[0], 104)).toBe(104);
+
+    const meno = barTempo(STEPPED[2], 104, 'quarter', TOLERANCE)!;
+    expect(meno.detail).toBe('On your 88');
+    expect(meno.band).toBe('on');
+  });
+
+  it('draws the target as steps, changing between the bars', () => {
+    const line = tempoLine(STEPPED, 104, 'quarter')!;
+
+    expect(line.steps.map((s) => s.bpm)).toEqual([104, 88, 104]);
+    expect(line.steps[0]).toMatchObject({ from: 0, to: 0.375 });
+    expect(line.steps[1]).toMatchObject({ from: 0.375, to: 0.875 });
+    expect(line.steps[2]).toMatchObject({ from: 0.875, to: 1 });
+  });
+
+  it('labels every target, and a piece that never changes has one step', () => {
+    expect(tempoLine(STEPPED, 104, 'quarter')!.ticks.filter((t) => t.isTarget).map((t) => t.bpm)).toEqual([
+      104, 88,
+    ]);
+    expect(tempoLine(OWNER, 104, 'quarter')!.steps).toEqual([{ from: 0, to: 1, bpm: 104 }]);
+  });
+
+  it('says each target in turn', () => {
+    expect(tempoLineLabel(STEPPED, 104, 'quarter')).toBe(
+      'Tempo by bar, against 104 BPM, then 88 from bar 3, then 104 from bar 5',
+    );
+    expect(tempoLineLabel(OWNER, 104, 'quarter')).toBe('Tempo by bar, against your 104 BPM');
   });
 });

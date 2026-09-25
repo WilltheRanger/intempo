@@ -1,5 +1,5 @@
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
-import Svg, { Line, Polyline } from 'react-native-svg';
+import Svg, { Polyline } from 'react-native-svg';
 
 import { Text } from '../../components/primitives/Text';
 import { BORDER_WIDTH, colors, spacing } from '../../design';
@@ -42,7 +42,14 @@ export function TempoLine({
   accessibilityLabel,
   style,
 }: TempoLineProps) {
-  const targetY = tempoY(line.target, line, HEIGHT);
+  // The target as steps: flat for a piece that never changes tempo, stepping
+  // where the page sets a new one ("meno mosso", a new metronome mark).
+  const targetPoints = line.steps
+    .flatMap((step) => {
+      const y = tempoY(step.bpm, line, HEIGHT).toFixed(1);
+      return [`${(step.from * VIEW_WIDTH).toFixed(1)},${y}`, `${(step.to * VIEW_WIDTH).toFixed(1)},${y}`];
+    })
+    .join(' ');
 
   return (
     <View style={style}>
@@ -82,11 +89,9 @@ export function TempoLine({
             viewBox={`0 0 ${VIEW_WIDTH} ${HEIGHT}`}
             preserveAspectRatio="none"
           >
-            <Line
-              x1={0}
-              y1={targetY}
-              x2={VIEW_WIDTH}
-              y2={targetY}
+            <Polyline
+              points={targetPoints}
+              fill="none"
               stroke={colors.chartRule}
               strokeWidth={BORDER_WIDTH}
               vectorEffect="non-scaling-stroke"

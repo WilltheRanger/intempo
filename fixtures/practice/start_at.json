@@ -20,11 +20,13 @@
     "2. Drop a repeat that opens before the entry bar, including one that spans",
     "   it \u2014 someone starting mid-passage plays straight on rather than jumping",
     "   back to a sign they never passed.",
-    "3. Keep tempo changes at or after the entry bar, plus the last one printed",
-    "   before it, moved to the entry bar. That carried one is the point: a",
-    "   `rit.` printed at bar 3 is still in force at bar 4, and the analysis",
-    "   refuses to time notes under a written change. Dropping it reports a",
-    "   musician dragging for slowing exactly as the page told them to.",
+    "3. Keep tempo changes at or after the entry bar, plus every one printed",
+    "   before it, moved to the entry bar in the order printed. What is in force",
+    "   at the entry bar is the point: a `rit.` still running there must not be",
+    "   dropped, and a tempo change remembers what it changed from (\"a tempo\"",
+    "   after a `rit.` inside a meno mosso returns to the meno mosso), so the",
+    "   entry bar is reached through the same markings the page has. The next",
+    "   marking in order ends a `rit.`, so one already ended ends again there.",
     "4. A change printed on the entry bar itself supersedes the carried one.",
     "5. Entering at the first bar, or at a bar the piece does not have, changes",
     "   nothing at all.",
@@ -173,7 +175,7 @@
       ]
     },
     {
-      "name": "only the last change before the entry bar is carried",
+      "name": "every change before the entry bar is carried, in order",
       "bars": [
         1,
         2,
@@ -201,12 +203,16 @@
       "out_tempo_changes": [
         [
           4,
+          "ritardando"
+        ],
+        [
+          4,
           "a_tempo"
         ]
       ]
     },
     {
-      "name": "a change printed on the entry bar supersedes the carried one",
+      "name": "a change printed on the entry bar comes after the carried ones",
       "bars": [
         1,
         2,
@@ -232,6 +238,10 @@
       ],
       "out_repeats": [],
       "out_tempo_changes": [
+        [
+          4,
+          "ritardando"
+        ],
         [
           4,
           "a_tempo"

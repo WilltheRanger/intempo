@@ -27,6 +27,7 @@ from app.services.score_schema import (
     Measure,
     ScoreJson,
     measures_under_tempo_change,
+    targets_by_measure,
     read_ties,
 )
 
@@ -116,6 +117,17 @@ class ExpectedNote:
     #: Read by `pitch_evidence` to ask whether what was heard at this note's
     #: time is this note at all, which a timeline of times alone cannot say.
     pitch: str | None = None
+    #: Where the note falls on the page, in quarter beats from the first bar
+    #: played. `onset_s` is the same place in seconds at the tempo each bar is
+    #: judged against, which changes where the page says so
+    #: (`score_schema.targets_by_measure`); this does not, so a pace measured
+    #: against it is a tempo in BPM however the target moved
+    #: (`analysis.bar_pacing`).
+    written_beats: float | None = None
+    #: Seconds per quarter beat at the tempo in force for this note's bar.
+    #: None on a note not built by `build_timeline`, which is then read at the
+    #: take's target throughout, as every note was before bars had tempos.
+    beat_s: float | None = None
     #: A grace note is printed in front of this one.
     #:
     #: Separate from `is_grace_note` because the two need opposite treatment
@@ -397,7 +409,19 @@ def build_timeline(
     under_tempo_change = measures_under_tempo_change(score)
     if target_bpm <= 0:
         raise ValueError(f"target_bpm must be positive, got {target_bpm}")
-    sec_per_beat = 60.0 / target_bpm
+    # **Each bar at its own tempo.** A "meno mosso" at 88 in a piece marked 104
+    # is played slower on purpose, and a timeline at one tempo throughout
+    # called every note after it late (2026-09-25). The clock is kept in
+    # seconds as well as beats, advancing each note at its own bar's rate.
+    targets = targets_by_measure(score, target_bpm)
+    # Seconds are read from beats, from where the tempo last changed — never
+    # summed note by note, whose rounding drifts: 40 eighths summed ended at
+    # 16.249999999999993 s, and a rhythm test sitting on its threshold felt it.
+    # With no change the clock is `beats × seconds per beat`, exactly as it
+    # was before bars had tempos.
+    segment_s = 0.0
+    segment_beats = 0.0
+    sec_per_beat: float | None = None
 
     onsets: list[float] = []
     notes: list[ExpectedNote] = []
@@ -421,6 +445,18 @@ def build_timeline(
     position = 0  # index into the flattened note sequence `ties` is keyed by
 
     for measure in played:
+        bar_sec_per_beat = 60.0 / targets.get(measure.measure_number, target_bpm)
+        if sec_per_beat is None:
+            sec_per_beat = bar_sec_per_beat
+        elif bar_sec_per_beat != sec_per_beat:
+            segment_s += (elapsed_beats - segment_beats) * sec_per_beat
+            segment_beats = elapsed_beats
+            sec_per_beat = bar_sec_per_beat
+
+        def at_seconds(beats: float) -> float:
+            """A beat position on this clock, in seconds since the first note."""
+            return segment_s + (beats - segment_beats) * sec_per_beat
+
         # Slur interiors/boundaries are per-measure (slur indices are
         # note offsets within the measure).
         interior: set[int] = set()
@@ -475,10 +511,12 @@ def build_timeline(
                 # slur is the rare case, and inventing an attack for one in
                 # the reading that exists to *allow* attacks would be the one
                 # place this could add a note the page does not print.
-                onsets.append(elapsed_beats * sec_per_beat)
+                onsets.append(at_seconds(elapsed_beats))
                 notes.append(
                     ExpectedNote(
-                        onset_s=elapsed_beats * sec_per_beat,
+                        onset_s=at_seconds(elapsed_beats),
+                        written_beats=elapsed_beats,
+                        beat_s=sec_per_beat,
                         measure_number=measure.measure_number,
                         note_index_in_measure=i,
                         global_index=global_index,
@@ -517,10 +555,12 @@ def build_timeline(
                     span = max(0.0, min(run_up, own)) * ORNAMENT_SHARE
                     for g in range(note.grace_notes, 0, -1):
                         at = elapsed_beats - span * g / note.grace_notes
-                        onsets.append(at * sec_per_beat)
+                        onsets.append(at_seconds(at))
                         notes.append(
                             ExpectedNote(
-                                onset_s=at * sec_per_beat,
+                                onset_s=at_seconds(at),
+                                written_beats=at,
+                                beat_s=sec_per_beat,
                                 measure_number=measure.measure_number,
                                 note_index_in_measure=i,
                                 global_index=global_index,
@@ -533,11 +573,13 @@ def build_timeline(
                             )
                         )
                         global_index += 1
-                onsets.append(elapsed_beats * sec_per_beat)
+                onsets.append(at_seconds(elapsed_beats))
                 last_onset_beats = elapsed_beats
                 notes.append(
                     ExpectedNote(
-                        onset_s=elapsed_beats * sec_per_beat,
+                        onset_s=at_seconds(elapsed_beats),
+                        written_beats=elapsed_beats,
+                        beat_s=sec_per_beat,
                         measure_number=measure.measure_number,
                         note_index_in_measure=i,
                         global_index=global_index,

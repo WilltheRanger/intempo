@@ -24,7 +24,7 @@ import {
   timedMeasureRange,
 } from '../../lib/verdict/measureReading';
 import { openingMeasure } from '../../lib/verdict/measureChart';
-import { appVerdictForBar, tempoLine } from '../../lib/verdict/barTempo';
+import { appVerdictForBar, tempoLine, tempoLineLabel } from '../../lib/verdict/barTempo';
 import { pitchChartBars, pitchLines, pitchWords } from '../../lib/verdict/intonation';
 import { passageLabel } from '../../lib/verdict/passage';
 import {
@@ -410,10 +410,7 @@ export function VerdictScreen() {
           line={tempo}
           firstMeasure={take.measures[0].measure}
           lastMeasure={take.measures[take.measures.length - 1].measure}
-          accessibilityLabel={`Tempo by bar, against your ${formatTempo(
-            take.targetBpm,
-            take.tempoBeatUnit,
-          )}`}
+          accessibilityLabel={tempoLineLabel(take.measures, take.targetBpm, take.tempoBeatUnit)}
         />
       ) : (
         <TrendLine

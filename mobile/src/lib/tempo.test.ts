@@ -149,6 +149,7 @@ describe('the title over one take', () => {
       measure,
       playedBpm: null,
       pitchCents: null,
+      targetBpm: null,
       noteCount: 4,
       deviationPct: band === 'on' ? 0 : 40,
       band,
