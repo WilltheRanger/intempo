@@ -1358,6 +1358,12 @@ nothing else covers `backend/`. Named here rather than left to be found.
 - **A passage is chosen to fit.** Never trust a share of *its* notes alone;
   hold it to the take's own attacks, and let it choose bars, not override a
   refusal.
+- **Count what the chain did not pair.** It leaves out an attack that
+  matches nothing, so the pairs it keeps always look well heard; a replay is
+  visible in the share of *attacks* heard, not of pairs.
+- **A chosen start bar with no note in it moves forward, not to bar 1**
+  (`lib/record/startOptions.startBarFor`); the take, Listen and the analysis
+  all follow it.
 - TUNING_LOG.md 2026-09-25 has every number.
 
 ## The capture path (2026-08-24) — what an audit of it found

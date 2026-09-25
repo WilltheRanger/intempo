@@ -194,16 +194,53 @@ def test_a_skip_is_told_from_a_note_played_and_not_heard() -> None:
     assert skipped_ahead(pairs, waited * 2, onsets) == []
 
 
-def test_a_passage_played_twice_is_not_called_half_missed() -> None:
-    """Bars 1–4 twice. The chain can pair the second time through against
-    bars 5–8 — half of it matching by chance on a page that walks the same
-    scale — and call the rest missed. Timing had called none missed, and a
-    take timing reads well is re-paired only if no more notes go unheard."""
-    notes = TUNE[:16] + TUNE[:16]
-    result, _ = _analyse(notes, 0.6 + np.arange(len(notes)) * BEAT)
+def _replayed(notes: list[int]) -> tuple[object, dict]:
+    return _analyse(notes, 0.6 + np.arange(len(notes)) * BEAT)
+
+
+def test_a_passage_played_twice_is_read_as_played_twice() -> None:
+    """Bars 1–4, then bars 1–4 again, with no pause between. On an even rhythm
+    timing reads that as bars 1–8, and there is no pause to look for a
+    restart at; pitch hears the second time through fall to chance."""
+    result, trace = _replayed(TUNE[:16] + TUNE[:16])
 
     assert result.status == "ok"
+    assert "restarted at bar 1" in trace["reading"]
     assert result.n_missed_notes == 0
+    assert result.n_extra_notes == 0
+    assert [m.measure_number for m in result.per_measure] == [1, 2, 3, 4]
+
+
+def test_going_back_mid_take_is_read_as_going_back() -> None:
+    """Bars 1–6, then back to bar 5 and on. Chained straight through, the
+    first time through bars 5–6 was left as eight extra attacks."""
+    result, trace = _replayed(TUNE[:24] + TUNE[16:])
+
+    assert "restarted at bar 5" in trace["reading"]
+    assert result.n_missed_notes == 0
+    assert result.n_extra_notes == 0
+
+
+def test_the_last_bars_played_again_are_read_as_played_again() -> None:
+    result, trace = _replayed(TUNE + TUNE[16:])
+
+    assert "restarted at bar 5" in trace["reading"]
+    assert result.n_extra_notes == 0
+
+
+def test_a_passage_played_twice_on_other_pages_too() -> None:
+    from app.tests.test_note_chain import _page, _tune
+
+    for seed in range(5):
+        tune = _tune(100 + seed)
+        notes = tune[:16] + tune[:16]
+        y = synth_bowed_take(
+            list(0.6 + np.arange(32) * BEAT), freqs_hz=[_hz(m) for m in notes], sr=SR
+        )
+        trace: dict = {}
+        result = analyze((y, SR), _page(tune), BPM, instrument="violin", trace=trace)
+        assert result.n_missed_notes == 0, seed
+        assert "restarted at bar 1" in trace["reading"], seed
 
 
 def test_a_stretch_of_the_page_is_held_to_the_take_s_own_attacks() -> None:

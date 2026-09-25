@@ -6,6 +6,63 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-09-25 — A passage played twice is heard as played twice
+
+**Synthetic.** The known limit of the entry below: bars 1–4 then bars 1–4
+again, on an even rhythm, was paired straight through as bars 1–8 by timing,
+and restarts were only ever looked for at a pause and in a take timing could
+not read. The owner asked for it fixed.
+
+    played (measured on main at 4c754f12)  main                            now
+    bars 1–4 twice, no pause               bars 1–8, paired straight on    restarted at bar 1, bars 1–4
+    bars 1–4 twice, 2 s pause              bars 1–8, 3 missed              restarted at bar 1, 0 missed
+    bars 1–6, back to bar 5, to the end    8 extra                         restarted at bar 5, 0 extra
+    whole page, then bars 5–8 again        16 extra                        restarted at bar 5, 0 extra
+    bars 1–4 twice, five other pages       0 of 5 read as a restart        5 of 5, 0 missed
+
+### How
+
+- **Where the chain stops being the page.** Paired straight through, the
+  first time is heard at the page's pitches and the second only by chance.
+  `_replay_break` splits the take's attacks where the share heard falls from
+  at least `REPLAY_BEFORE` (0.8) to at most `REPLAY_AFTER` (0.6) — **over the
+  attacks, not the pairs**: the chain leaves out what matches nothing, so the
+  pairs after a replay looked eight in ten heard. The attacks after the split
+  are placed on the page by pitch (their start only, so a take can go back
+  again); where they begin at or before the split, the take went back.
+  Up to `REPLAY_LOOKBACK` (8) paired attacks before the split are tried too:
+  a replay's first notes can match the bars after by chance, and the split
+  then landed a bar late ("restarted at bar 2").
+- **A run of eight or more unpaired attacks** that carries on from the note
+  before it and covers notes the take then plays again is a first try (going
+  back mid-take left the first time through as extras).
+- **Ties leave the end of the page unpaired** (`CHAIN_LATE_SKIP_DISCOUNT`,
+  0.01 over the page): a take that stops early is likelier than one that jumps
+  ahead, and on a page that repeats its pitches the chain had paired a
+  replay's last five notes with bars 5–8.
+- **The guard is what a pairing claims** (`_claimed_unheard`: paired at
+  another pitch, or missed inside the bars it says were played). Missed notes
+  alone blocked the skipped bar; all unheard notes blocked the replay, whose
+  unplayed bars 5–8 are unheard however it is read.
+- A take timing accepts can be re-paired this way (`_placed_by_pitch`) and is
+  not then refused or caveated; a refusal is still only overridden by a whole
+  page heard at pitch.
+
+### Regression
+
+- Six clips: byte-identical against `main`. The twenty habits: unchanged.
+- Wrong takes: nothing paired by the chain but the page itself — and "the
+  first half twice", now read as the restart it is on 5 of 6 pages.
+- The owner's take: unchanged ("You dragged bars 1–13 by 5 BPM", 79 of 88).
+
+### Known limit
+
+- **Bars 1–2 three times, on a page whose bars 3–6 share their pitches**, is
+  still paired straight through: the third time through matches bars 3–4 at
+  5 in 8, above `REPLAY_AFTER`, and loosening it would read chance as a
+  replay on ordinary pages. The timing verdict is right; the bar numbers are
+  not.
+
 ## 2026-09-25 — What playing does between the notes: holds, tuning, skips, restarts, half a page
 
 **Synthetic, like everything before the entry below.** The owner asked what

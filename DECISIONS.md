@@ -1,5 +1,33 @@
 # InTempo Decisions
 
+## 2026-09-25 — Old takes are re-judged from their playback copy; a replay is found by pitch
+
+**Context.** Every one of the 17 takes in the live project was refused by the
+old analysis, and the owner asked for all of them to be run through the new
+one. Every WAV was already gone. Separately, a passage played twice on an even
+rhythm was still read as the page played straight through.
+
+**Decision.**
+- The worker reads the Opus playback copy when a row's original has been
+  reclaimed, and makes no new copy of it. `scripts/rerun_analyses.py`, run by
+  the `rerun-analyses.yml` workflow by hand, calls the deployed worker for each
+  id and overwrites that row's verdict.
+- A replay is found by where the chain of notes stops being the page, and by
+  runs of attacks it left out; kept only where it hears more notes at pitch
+  and claims no more unheard.
+
+**Alternatives considered.**
+- *Re-analyse on the laptop and write the results with SQL.* A second
+  implementation of the worker's write path, which this project has been
+  bitten by four times; the deployed function is the one that judges takes.
+- *Keep the WAV forever.* Six times the storage for a re-run that is rare.
+- *Search every bar as a restart point.* Bars squared chains per take; the
+  split finds the one worth trying.
+
+**Trade-offs accepted.** Opus is lossy; the owner's own take was diagnosed from
+its playback copy with the same results. A re-run replaces the old verdict,
+which for every take re-run so far was a refusal.
+
 ## 2026-09-25 — Pitch audits every pairing; restarts must be heard; skips and unplayed bars are not rushing or missed
 
 **Context.** Twenty natural playing habits run through the pipeline: a held

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { startOptions, type LastTakeBars } from './startOptions';
+import { startBarFor, startOptions, type LastTakeBars } from './startOptions';
 
 const BARS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 
@@ -77,5 +77,31 @@ describe('startOptions', () => {
       ['stopped', 6],
       ['rushed', 2],
     ]);
+  });
+});
+
+describe('startBarFor', () => {
+  it('starts where the musician chose', () => {
+    expect(startBarFor(7, BARS)).toBe(7);
+  });
+
+  it('starts at the top when nothing was chosen', () => {
+    expect(startBarFor(null, [3, 4, 5])).toBe(3);
+  });
+
+  it('moves a bar of rest forward to the next bar that sounds, never back to the top', () => {
+    // Bars 5–8 are rest: a part that waits four bars.
+    const withRests = [1, 2, 3, 4, 9, 10, 11, 12];
+    expect(startBarFor(6, withRests)).toBe(9);
+    expect(startBarFor(6, withRests)).not.toBe(1);
+  });
+
+  it('keeps the last bar that sounds for a choice past the end of the music', () => {
+    expect(startBarFor(20, [1, 2, 3])).toBe(3);
+  });
+
+  it('keeps the choice when nothing is known to sound yet', () => {
+    expect(startBarFor(7, [])).toBe(7);
+    expect(startBarFor(null, [])).toBe(1);
   });
 });
