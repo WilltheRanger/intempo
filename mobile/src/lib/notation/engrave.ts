@@ -777,6 +777,18 @@ export interface EngravedEnding {
   closesRight: boolean;
 }
 
+/**
+ * A tempo marking printed over a bar — "poco rit.", "a tempo", "meno mosso ·
+ * 88" — where the page prints it: above the system, from the bar's start.
+ */
+export interface EngravedTempoMark {
+  x: number;
+  /** The words' baseline. */
+  y: number;
+  size: number;
+  label: string;
+}
+
 export interface EngravedTuplet {
   from: number;
   to: number;
@@ -823,6 +835,8 @@ export interface EngravedSystem {
    */
   ties: EngravedSlur[];
   endings: EngravedEnding[];
+  /** Tempo markings over this system's bars. */
+  tempoMarks: EngravedTempoMark[];
   /**
    * Dynamics, on one baseline for the whole system.
    *
@@ -914,6 +928,12 @@ export interface EngraveOptions {
    * break come out right without any special case.
    */
   endings?: { label: string; from: number; to: number; closed: boolean }[];
+  /**
+   * Tempo markings by measure number — the musician's own, or read off the
+   * page (`ScoreJson.tempo_changes`). Given whole for the reason `endings`
+   * is: `measureSpans` knows where each bar starts on each system.
+   */
+  tempoMarks?: { label: string; measure: number }[];
   /**
    * The score's very last barline ends a repeated section.
    *
@@ -1712,6 +1732,8 @@ function layoutSystem(
    * next head, and a change *to C major* is announced by nothing at all.
    */
   closingChange: ResolvedKeyChange | null = null,
+  /** Tempo markings that may fall on this system, by measure number. */
+  tempoMarkSpans: NonNullable<EngraveOptions['tempoMarks']> = [],
 ): { system: PlacedSystem; top: number; bottom: number } {
   const halfGap = lineGap / 2;
   /**
@@ -1732,6 +1754,7 @@ function layoutSystem(
   const tuplets: EngravedTuplet[] = [];
   const slurs: EngravedSlur[] = [];
   const endings: EngravedEnding[] = [];
+  const tempoMarks: EngravedTempoMark[] = [];
   const ties: EngravedSlur[] = [];
   const engravedKeyChanges: EngravedKeyChange[] = [];
   const engravedClefChanges: EngravedClefChange[] = [];
@@ -2573,6 +2596,25 @@ function layoutSystem(
   }
 
   /**
+   * Tempo markings, on one baseline above everything else on the system —
+   * brackets included — as a printed part sets its "rit." and "a tempo": clear
+   * of the notes, starting where the bar does.
+   */
+  const marksHere = tempoMarkSpans.flatMap((mark) => {
+    const span = measureSpans.find((s) => s.measureNumber === mark.measure);
+    return span ? [{ mark, span }] : [];
+  });
+  if (marksHere.length > 0) {
+    const size = lineGap * TEMPO_MARK_SIZE;
+    const y = Math.min(...extents) - lineGap * TEMPO_MARK_CLEARANCE;
+    for (const { mark, span } of marksHere) {
+      tempoMarks.push({ x: Math.max(headX, span.from), y, size, label: mark.label });
+    }
+    // The words' cap height, so the system above keeps clear of them.
+    extents.push(y - size * 0.75);
+  }
+
+  /**
    * Dynamics, on one baseline under the whole system.
    *
    * Placed last, because the baseline is measured from everything already on
@@ -2635,6 +2677,7 @@ function layoutSystem(
       slurs,
       ties,
       endings,
+      tempoMarks,
       dynamics,
       head,
       keyChanges: engravedKeyChanges,
@@ -2907,6 +2950,10 @@ function tieInFrom(to: EngravedNote, headX: number, lineGap: number): EngravedSl
 /** How far above the system's topmost ink an ending bracket sits. */
 const ENDING_CLEARANCE = 1.2;
 
+/** A tempo marking's size, and its baseline above the topmost ink, in staff spaces. */
+const TEMPO_MARK_SIZE = 1.5;
+const TEMPO_MARK_CLEARANCE = 0.9;
+
 /**
  * How far the bracket's end hooks drop, in staff spaces.
  *
@@ -3035,6 +3082,7 @@ function shift(system: PlacedSystem, dy: number): PlacedSystem {
       y: ending.y + dy,
       labelY: ending.labelY + dy,
     })),
+    tempoMarks: system.tempoMarks.map((mark) => ({ ...mark, y: mark.y + dy })),
     ties: system.ties.map((tie) => ({
       from: { ...tie.from, y: tie.from.y + dy },
       to: { ...tie.to, y: tie.to.y + dy },
@@ -3262,6 +3310,7 @@ export function engrave(
       options.endings ?? [],
       runChanges,
       closingChange,
+      options.tempoMarks ?? [],
     );
     const dy = cursor - laid.top;
     systems.push({

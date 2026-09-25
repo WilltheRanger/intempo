@@ -67,6 +67,8 @@ export interface StaveScore {
   closesWithRepeat: boolean;
   /** First- and second-time ending brackets, by measure number. */
   endings: { label: string; from: number; to: number; closed: boolean }[];
+  /** Tempo markings, by the measure they are printed at. */
+  tempoMarks: { label: string; measure: number }[];
 }
 
 /**
@@ -684,6 +686,15 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
     beatQuarters: beamBeatQuarters(score.time_signature),
     closesWithRepeat,
     endings,
+    // As printed — "poco rit.", "a tempo" — and a new tempo with its number,
+    // which the page prints beside the words as a metronome mark.
+    tempoMarks: (score.tempo_changes ?? []).map((change) => ({
+      measure: change.measure_number,
+      label:
+        change.kind === 'new_tempo' && change.bpm
+          ? `${change.text} · ${change.bpm}`
+          : change.text,
+    })),
   };
 }
 

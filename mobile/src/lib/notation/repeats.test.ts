@@ -255,3 +255,44 @@ describe('drawing them', () => {
     expect(closing.at(-1)).toBe('end');
   });
 });
+
+describe('tempo markings', () => {
+  const bar = (number: number, extra: Partial<StaveItem> = {}): StaveItem =>
+    ({ pitch: 'C4', value: 'whole', measureNumber: number, ...extra }) as StaveItem;
+  const fourBars = () =>
+    Array.from({ length: 4 }, (_, i) => bar(i + 1, i > 0 ? { barBefore: true } : {}));
+
+  it('are read off the score as printed, a new tempo with its number', () => {
+    const stave = staveScoreFor({
+      ...scoreOf(6, []),
+      tempo_changes: [
+        { measure_number: 3, kind: 'ritardando', text: 'poco rit.' },
+        { measure_number: 5, kind: 'new_tempo', text: 'meno mosso', bpm: 88 },
+      ],
+    });
+
+    expect(stave.tempoMarks).toEqual([
+      { measure: 3, label: 'poco rit.' },
+      { measure: 5, label: 'meno mosso · 88' },
+    ]);
+  });
+
+  it('are drawn from the start of their bar, above the staff and any bracket', () => {
+    const drawn = engrave(fourBars(), 'treble', {
+      endings: [{ label: '1.', from: 3, to: 3, closed: true }],
+      tempoMarks: [{ label: 'poco rit.', measure: 3 }],
+    });
+    const system = drawn.systems[0];
+    const [mark] = system.tempoMarks;
+    const bar3 = system.measureSpans.find((span) => span.measureNumber === 3)!;
+
+    expect(mark.label).toBe('poco rit.');
+    expect(mark.x).toBeCloseTo(bar3.from);
+    expect(mark.y).toBeLessThan(Math.min(...system.staffLines));
+    expect(mark.y).toBeLessThan(system.endings[0].y);
+  });
+
+  it('draw nothing on a system without them', () => {
+    expect(engrave(fourBars(), 'treble', {}).systems[0].tempoMarks).toEqual([]);
+  });
+});

@@ -115,6 +115,7 @@ export function ScoreBand({
             beatQuarters: stave.beatQuarters,
             closesWithRepeat: stave.closesWithRepeat,
             endings: stave.endings,
+            tempoMarks: stave.tempoMarks,
             head,
             nameRow: false,
           })
@@ -156,6 +157,7 @@ export function ScoreBand({
               beatQuarters={stave.beatQuarters}
               closesWithRepeat={stave.closesWithRepeat}
               endings={stave.endings}
+              tempoMarks={stave.tempoMarks}
               head={head}
               // A letter under every note is a study-book aid, and this is a
               // glance at a piece rather than a page to practise from.

@@ -1,6 +1,7 @@
 import type { Duration, ScoreJson, ScoreNote } from '../../data/types';
 import { flattenNotes, readTies } from '../notation/ties';
 import { measuresInPlayOrder } from './playOrder';
+import { tempoByMeasure } from './tempoMap';
 import { midiOf } from '../notation/pitch';
 import { timeSignaturesByMeasure } from '../notation/meter';
 import { metronomePulse } from '../metronome/beats';
@@ -255,6 +256,14 @@ export function scheduleScore(
   // from one bad number.
   const beatsPerMinute = Number.isFinite(bpm) ? Math.max(1, bpm) : FALLBACK_BPM;
   const secondsPerBeat = 60 / beatsPerMinute;
+  // **Each bar at the tempo the page sets for it** — a "meno mosso · 88" is
+  // heard at 88, scaled as the whole performance is (`tempoMap.ts`). Every
+  // other bar is at `secondsPerBeat`, exactly as before.
+  const barTempo = tempoByMeasure(score, beatsPerMinute);
+  const secondsPerBeatIn = (measure: number) => {
+    const tempo = barTempo.get(measure);
+    return tempo && Number.isFinite(tempo) && tempo > 0 ? 60 / tempo : secondsPerBeat;
+  };
   const notes: ScheduledNote[] = [];
 
   let clock = leadInS;
@@ -335,7 +344,8 @@ export function scheduleScore(
       last = held;
     }
 
-    const durationS = beats * secondsPerBeat;
+    const barSecondsPerBeat = secondsPerBeatIn(measureOf[i]);
+    const durationS = beats * barSecondsPerBeat;
     // The note's own marking wins over everything; then a slur, which holds a
     // note its whole value into the next; then the global gap. A tied note is
     // slurred on if the last note of the tie is.
@@ -352,14 +362,14 @@ export function scheduleScore(
       // ratio of the two expression values. A short note is left to the next
       // attack, which arrives before the difference could be heard.
       const from = levels.standing[i];
-      const to = levels.before(onsets[i] + sounded / secondsPerBeat);
+      const to = levels.before(onsets[i] + sounded / barSecondsPerBeat);
       const moves = sounded >= SWELL_MIN_S && Math.abs(to - from) >= 1;
       const peak = Math.max(from, to);
       const pulse = metronomePulse(meters.get(measureOf[i]));
       const velocity = velocityOf({
         dynamic: levels.attack[i] + (moves ? peak - from : 0),
         articulation: note.articulation,
-        metric: metricLift((clock - barStart) / secondsPerBeat, pulse),
+        metric: metricLift((clock - barStart) / barSecondsPerBeat, pulse),
         slurredFrom: slurredFrom[i],
         index: globalIndex,
       });

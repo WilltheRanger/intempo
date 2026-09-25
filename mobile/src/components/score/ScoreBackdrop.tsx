@@ -122,6 +122,7 @@ export function ScoreBackdrop({
             beatQuarters: stave.beatQuarters,
             closesWithRepeat: stave.closesWithRepeat,
             endings: stave.endings,
+            tempoMarks: stave.tempoMarks,
             head,
             nameRow: false,
           })
@@ -166,6 +167,7 @@ export function ScoreBackdrop({
                 beatQuarters={stave?.beatQuarters}
                 closesWithRepeat={stave?.closesWithRepeat}
                 endings={stave?.endings}
+                tempoMarks={stave?.tempoMarks}
                 head={head}
                 showNoteNames={false}
                 highlightMeasure={startFrom}
