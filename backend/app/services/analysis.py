@@ -821,10 +821,71 @@ def readings_of(score: ScoreJson, target_bpm: float) -> list[Reading]:
     return out
 
 
+@dataclass(frozen=True)
+class _Pitch:
+    """The take's chroma, for pairing attacks with notes by what they sounded.
+
+    Computed once per take and shared by the matcher and the pitch evidence,
+    which read the same transform. See `alignment.PITCH_WEIGHT` for the real
+    take that needed it.
+    """
+
+    frames: np.ndarray
+    sr: int
+    steady: float
+
+    def mismatch(self, attacks_s: np.ndarray, reading: Reading) -> np.ndarray:
+        return pitch_evidence.mismatch(
+            self.frames,
+            self.sr,
+            attacks_s,
+            [note.pitch for note in reading.timeline.notes],
+            steady=self.steady,
+        )
+
+
+def _pitch_of(
+    heard: Heard,
+    score_pitches: list[str | None],
+    *,
+    low_instrument: bool,
+    config: AudioConfig,
+) -> _Pitch:
+    """The chroma the matcher and the pitch evidence share.
+
+    Low register decided the way `pitch_evidence.assess` decides it, from the
+    page rather than the matched notes — the match is what this feeds, so it
+    cannot wait for one.
+    """
+    written = [m for m in (pitch_evidence.midi(p) for p in score_pitches) if m is not None]
+    low = low_instrument or (
+        bool(written) and float(np.median(written)) < config.pitch.low_register_midi
+    )
+    return _Pitch(
+        frames=pitch_evidence.chroma(heard.y, heard.sr, low_register=low),
+        sr=heard.sr,
+        steady=config.pitch.steady,
+    )
+
+
 def _align_reading(
-    onsets: np.ndarray, reading: Reading, target_bpm: float, config: AudioConfig
+    onsets: np.ndarray,
+    reading: Reading,
+    target_bpm: float,
+    config: AudioConfig,
+    pitch: _Pitch | None = None,
+    origin: float = 0.0,
 ) -> AnchoredAlignment:
-    return align_take(
+    """Align `onsets` to `reading`, by timing and, where it fits better, pitch.
+
+    **Pitch proposes; timing decides.** The pitch-guided pairing is kept only
+    when its quality — measured on timing alone — beats the timing-only
+    pairing by `MIN_READING_GAIN`. So it can rescue a take whose extra and
+    missing attacks lost the timing-only match, and cannot make a worse fit
+    win: every take that aligned before aligns the same way. `origin` puts
+    `onsets` back on the recording's clock, which is where the chroma is.
+    """
+    plain = align_take(
         onsets,
         reading.expected,
         target_bpm=target_bpm,
@@ -832,6 +893,25 @@ def _align_reading(
         steady=reading.steady,
         optional=reading.optional,
     )
+    if pitch is None or len(onsets) == 0:
+        return plain
+    guided = align_take(
+        onsets,
+        reading.expected,
+        target_bpm=target_bpm,
+        config=config,
+        steady=reading.steady,
+        optional=reading.optional,
+        pitch=pitch.mismatch(np.asarray(onsets, dtype=float) + origin, reading),
+    )
+    if guided.alignment.quality > plain.alignment.quality + MIN_READING_GAIN:
+        log.info(
+            "analysis: paired by pitch as well as timing, quality %.3f -> %.3f",
+            plain.alignment.quality,
+            guided.alignment.quality,
+        )
+        return guided
+    return plain
 
 
 def _best_reading(
@@ -839,9 +919,10 @@ def _best_reading(
     readings: list[Reading],
     target_bpm: float,
     config: AudioConfig,
+    pitch: _Pitch | None = None,
 ) -> tuple[Reading, AnchoredAlignment]:
     """The first reading, unless another fits by more than `MIN_READING_GAIN`."""
-    scored = [(r, _align_reading(onsets, r, target_bpm, config)) for r in readings]
+    scored = [(r, _align_reading(onsets, r, target_bpm, config, pitch)) for r in readings]
     chosen = scored[0]
     rivals = scored[1:]
     if rivals:
@@ -915,6 +996,7 @@ def _with_restarts(
     chosen: tuple[Reading, AnchoredAlignment],
     target_bpm: float,
     config: AudioConfig,
+    pitch: _Pitch | None = None,
 ) -> tuple[Reading, AnchoredAlignment]:
     """The chosen reading, with the stops and starts a practice take has in it.
 
@@ -998,7 +1080,7 @@ def _with_restarts(
         if best is None or best[1] == best[2] + 1:
             continue
         candidate = best[3]
-        realigned = _align_reading(onsets, candidate, target_bpm, config)
+        realigned = _align_reading(onsets, candidate, target_bpm, config, pitch)
         if realigned.alignment.quality > anchored.alignment.quality + MIN_READING_GAIN:
             log.info(
                 "analysis: read as %r, quality %.3f -> %.3f",
@@ -1109,11 +1191,22 @@ def analyze(
     # prints — see `Reading`. As written comes first and is kept unless another
     # reading fits clearly better, and a take the chosen reading still cannot
     # explain is read once more for stops and restarts.
+    # The take's chroma, once: the matcher pairs attacks with notes by it
+    # where timing alone loses its place, and the pitch evidence below reads
+    # the same frames.
+    pitch = _pitch_of(
+        heard,
+        [note.pitch for note in heard.timeline.notes],
+        low_instrument=(instrument or ("double_bass" if double_bass else None))
+        in cfg.pitch.low_instruments,
+        config=cfg,
+    )
     reading, anchored = _with_restarts(
         onsets,
-        _best_reading(onsets, readings_of(score, target_bpm), target_bpm, cfg),
+        _best_reading(onsets, readings_of(score, target_bpm), target_bpm, cfg, pitch),
         target_bpm,
         cfg,
+        pitch,
     )
     if reading.name != "as written":
         log.info("analysis: read as %r", reading.name)
@@ -1166,14 +1259,9 @@ def analyze(
             recovered.size,
         )
         combined = np.sort(np.concatenate([onsets, recovered]))
-        anchored = align_take(
-            combined,
-            expected,
-            target_bpm=target_bpm,
-            config=cfg,
-            steady=steady,
-            optional=optional,
-        )
+        # `combined` is on the take's clock; `origin` puts it back on the
+        # recording's, where the chroma is.
+        anchored = _align_reading(combined, reading, target_bpm, cfg, pitch, origin)
         onsets = anchored.onsets
         raw = anchored.alignment
         # `align_take` re-zeroes on the first onset it keeps, so the recording
@@ -1197,6 +1285,7 @@ def analyze(
         low_instrument=(instrument or ("double_bass" if double_bass else None))
         in cfg.pitch.low_instruments,
         page_pitches=[note.pitch for note in timeline.notes],
+        frames=pitch.frames,
     )
     _traced(
         trace,

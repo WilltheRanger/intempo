@@ -199,6 +199,36 @@ def heard_after(
     return out
 
 
+def mismatch(
+    frames: np.ndarray,
+    sr: int,
+    attacks_s: np.ndarray,
+    written: list[str | None],
+    *,
+    steady: float,
+) -> np.ndarray:
+    """How unlike each written note each attack sounded: (attacks, notes), 0–1.
+
+    0 where the written class was the strongest thing heard after the attack,
+    rising towards 1 as it goes missing; 0.5 wherever there is nothing to
+    compare — a written note with no pitch, or an attack with no window to
+    listen in. Pitch class, like everything here: an octave is not a mismatch.
+
+    For the matcher (`alignment.align_dtw`'s `pitch`), which otherwise decides
+    which note an attack is by timing alone.
+    """
+    heard = heard_after(frames, sr, np.asarray(attacks_s, dtype=float), steady=steady)
+    classes = [pitch_class(p) for p in written]
+    out = np.full((len(heard), len(classes)), 0.5)
+    for i, h in enumerate(heard):
+        if not h.relative:
+            continue
+        for j, c in enumerate(classes):
+            if c is not None:
+                out[i, j] = 1.0 - h.relative[c]
+    return out
+
+
 @dataclass(frozen=True)
 class Evidence:
     """The two numbers, and what they were counted over."""
@@ -240,6 +270,7 @@ def assess(
     low_register_midi: int,
     low_instrument: bool = False,
     page_pitches: list[str | None] | None = None,
+    frames: np.ndarray | None = None,
 ) -> Evidence:
     """Measure both shares for one take.
 
@@ -250,6 +281,9 @@ def assess(
     heard through the constant-Q transform. See `_N_FFT`.
     `page_pitches`: every pitch the page writes, for `page_classes`. The
     matched notes' pitches when omitted.
+
+    `frames`: the take's chroma, when the caller has already computed it for
+    the matcher — the same transform, so it is not computed twice.
     `low_instrument`: the instrument is one whose sound is low whatever the
     page says — a bass part scanned in the wrong clef reads as a treble page,
     and through the STFT a real bass take against it held a pitch after 0.00 of
@@ -259,7 +293,8 @@ def assess(
     low = low_instrument or (
         bool(written_midi) and float(np.median(written_midi)) < low_register_midi
     )
-    frames = chroma(y, sr, low_register=low)
+    if frames is None:
+        frames = chroma(y, sr, low_register=low)
     attacks_s = np.sort(np.asarray(attacks_s, dtype=float))
     heard = heard_after(frames, sr, attacks_s, steady=steady)
     tonal = [h.pitch_class is not None and h.share >= min_share for h in heard]

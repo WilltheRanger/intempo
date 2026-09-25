@@ -715,6 +715,25 @@ POSITION_CAP_GAPS = 0.15
 #: that flat region, not a tuned point. See `TUNING_LOG.md`, 2026-09-22.
 STEP_PENALTY_CAPS = 3.0
 
+#: What hearing the wrong pitch costs a pairing, in typical written gaps — the
+#: unit `POSITION_CAP_GAPS` is in. Used only when the caller passes `pitch`.
+#:
+#: **Timing alone lost its place on the first real take it was given**
+#: (2026-09-24): a double bass, 105 attacks against 95 written notes, every
+#: pitch in the right order, and the pairing it chose implied a tempo jumping
+#: between 28 and 203 BPM — refused as "same notes, different times". Paired by
+#: pitch alone the same take reads as a steady 97 BPM. A real instrument adds
+#: attacks timing cannot tell from notes (a bow change, a repeated note heard
+#: twice, a string ringing on) and drops others; pitch is what says which is
+#: which.
+#:
+#: Set so a clearly wrong pitch outweighs the saturated position term: a
+#: pairing is pushed to the note that sounded rather than the nearest in time,
+#: unless the timing disagrees by more than a wrong pitch does. Pitch never
+#: decides alone — see `analysis._align_reading`, which keeps a pitch-guided
+#: pairing only when its *timing* fits better.
+PITCH_WEIGHT = 1.0
+
 
 def _clamp_ratio(ratio: float) -> float:
     """Hold a tempo rescale inside what a musician plausibly did."""
@@ -1280,6 +1299,7 @@ def align_take(
     config: AudioConfig | None = None,
     steady: np.ndarray | None = None,
     optional: np.ndarray | None = None,
+    pitch: np.ndarray | None = None,
 ) -> AnchoredAlignment:
     """Align, having first worked out which detections are the *take*.
 
@@ -1323,6 +1343,9 @@ def align_take(
     than the exhaustive search does.
     """
     detected = np.asarray(detected, dtype=float)
+    # One row per detection, trimmed with them: see `align_dtw`'s `pitch`.
+    if pitch is not None and pitch.shape[0] != detected.size:
+        pitch = None
     base = to_timeline_base(detected)
     untrimmed = AnchoredAlignment(
         onsets=base,
@@ -1335,6 +1358,7 @@ def align_take(
             config=config,
             steady=steady,
             optional=optional,
+            pitch=pitch,
         ),
     )
     if detected.size < 3 or expected.size == 0:
@@ -1378,6 +1402,11 @@ def align_take(
                         # that "were" bars 6–7, quality 1.000, bar 1's notes
                         # named as bar 6's. The untrimmed take decides.
                         subsequence_allowed=untrimmed.alignment.subsequence,
+                        pitch=(
+                            pitch[lead : detected.size - tail]
+                            if pitch is not None
+                            else None
+                        ),
                     ),
                 )
             )
@@ -1405,8 +1434,14 @@ def align_dtw(
     steady: np.ndarray | None = None,
     optional: np.ndarray | None = None,
     subsequence_allowed: bool = True,
+    pitch: np.ndarray | None = None,
 ) -> AlignmentResult:
     """Align detected onsets to expected onsets with a constrained DTW.
+
+    `pitch`, when given, is `(detected, expected)` from
+    `pitch_evidence.mismatch`: how unlike each written note each attack
+    sounded. It is added to the cost of pairing them (`PITCH_WEIGHT`), and
+    changes nothing else — quality is still measured on timing alone.
 
     Onsets are 1-D time sequences; we hand librosa `(1, N)` feature rows
     (1 feature = time, N steps). A Sakoe-Chiba band keeps the warp near
@@ -1599,9 +1634,12 @@ def align_dtw(
                 step[back:] = skippable[:-back]
                 reach &= step
                 back += 1
-        return interval + (
+        cost = interval + (
             POSITION_WEIGHT * np.minimum(position, POSITION_CAP_GAPS * gap)
         )
+        if pitch is not None and pitch.shape == cost.shape:
+            cost = cost + PITCH_WEIGHT * gap * pitch
+        return cost
 
     #: Whether the take can only be *part* of the page, so the match must be
     #: allowed to start and end mid-page.
