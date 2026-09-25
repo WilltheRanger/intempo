@@ -6,8 +6,10 @@ import numpy as np
 import pytest
 
 from app.services.alignment import CleanedAlignment, build_timeline
+from app.services.analysis import bar_pacing
 from app.services.classification import (
     Band,
+    BarTempi,
     Delta,
     Direction,
     classify_band,
@@ -303,3 +305,139 @@ def test_a_note_the_page_states_a_time_for_gives_no_reason() -> None:
 
     assert all(d.timed for d in deltas)
     assert all(d.untimed_reason is None for d in deltas)
+
+
+# ---------------------------------------------------------------------------
+# Given the take's bar tempi, the sentence names the run the chart draws
+# ---------------------------------------------------------------------------
+
+
+def _tempi(by_bar: dict[int, float], across: float | None = None) -> BarTempi:
+    return BarTempi(by_bar=by_bar, across=lambda first, last: across)
+
+
+def _behind_from_the_start(bars: int) -> list[Delta]:
+    """Four notes a bar, every one of them behind — the drift a take held
+    steadily slow piles up from its first note."""
+    return [
+        _delta(10.0 + i, measure=1 + i // 4, idx=i) for i in range(bars * 4)
+    ]
+
+
+def test_the_sentence_names_the_bars_the_chart_shows_off_tempo() -> None:
+    """**The owner's take, 2026-09-25.** "You dragged bars 1–12 by 7 BPM",
+    over a chart whose bars 1–12 sat near 100 and whose bars 18–25 sat at 78:
+    the note rule's longest run was the stretch before a re-anchor, not the
+    slowing. By bars, it is the slowing."""
+    deltas = _behind_from_the_start(20)
+    by_bar = {m: 101.0 for m in range(1, 13)} | {m: 78.0 for m in range(13, 21)}
+
+    verdict = generate_verdict(deltas, 104.0, tempi=_tempi(by_bar, across=80.0))
+
+    assert verdict.text == "You dragged bars 13–20 by 24 BPM."
+    assert verdict.direction is Direction.drag
+    assert (verdict.start_measure, verdict.end_measure) == (13, 20)
+
+
+def test_a_bar_is_banded_as_the_card_bands_it() -> None:
+    """98.3 against 104 is 5.5% under: the card says it dragged, so the
+    sentence counts it. 100.2 is 3.7%: on, for both."""
+    deltas = _behind_from_the_start(6)
+    by_bar = {1: 100.2, 2: 100.2, 3: 98.3, 4: 97.0, 5: 96.0, 6: 100.2}
+
+    verdict = generate_verdict(deltas, 104.0, tempi=_tempi(by_bar, across=97.0))
+
+    assert (verdict.start_measure, verdict.end_measure) == (3, 5)
+
+
+def test_a_rushed_run_by_bars() -> None:
+    deltas = [_delta(-8.0 - i, measure=1 + i // 4, idx=i) for i in range(16)]
+    by_bar = {1: 104.0, 2: 118.0, 3: 120.0, 4: 104.0}
+
+    verdict = generate_verdict(deltas, 104.0, tempi=_tempi(by_bar, across=119.0))
+
+    assert verdict.text == "You rushed bars 2–3 by 15 BPM."
+    assert verdict.direction is Direction.rush
+
+
+def test_one_bar_is_named_only_when_it_is_clearly_out() -> None:
+    """A single bar's tempo is the least certain point on the chart."""
+    deltas = _behind_from_the_start(4)
+    slight = {1: 104.0, 2: 97.0, 3: 104.0, 4: 104.0}  # 6.7% under
+    clear = {1: 104.0, 2: 85.0, 3: 104.0, 4: 104.0}  # 18% under
+
+    alone = generate_verdict(deltas, 104.0, tempi=_tempi(slight))
+    assert (alone.start_measure, alone.end_measure) != (2, 2)
+    verdict = generate_verdict(deltas, 104.0, tempi=_tempi(clear, across=85.0))
+    assert verdict.text == "You dragged bar 2 by 19 BPM."
+
+
+def test_a_bar_with_too_few_timed_notes_is_not_a_run() -> None:
+    """One note is one note's timing, however far out its bar reads."""
+    deltas = [_delta(0.0, measure=1 + i // 4, idx=i) for i in range(8)]
+    deltas.append(_delta(0.0, measure=3, idx=8))
+    by_bar = {1: 104.0, 2: 104.0, 3: 70.0}
+
+    verdict = generate_verdict(deltas, 104.0, tempi=_tempi(by_bar, across=70.0))
+
+    assert verdict.direction is Direction.on
+
+
+def test_a_bar_under_a_written_change_is_left_out() -> None:
+    """The page asked for another tempo there: not a drag, and not a break
+    in the run around it either."""
+    deltas = [
+        _delta(10.0 + i, measure=1 + i // 4, idx=i, under_tempo_change=i // 4 == 2)
+        for i in range(20)
+    ]
+    by_bar = {1: 104.0, 2: 90.0, 3: 60.0, 4: 90.0, 5: 104.0}
+
+    verdict = generate_verdict(deltas, 104.0, tempi=_tempi(by_bar, across=90.0))
+
+    assert (verdict.start_measure, verdict.end_measure) == (2, 4)
+    assert "by 14 BPM" in verdict.text
+
+
+def test_no_figure_when_the_run_has_no_tempo_of_its_own() -> None:
+    deltas = _behind_from_the_start(4)
+    by_bar = {1: 90.0, 2: 90.0, 3: 90.0, 4: 90.0}
+
+    verdict = generate_verdict(deltas, 104.0, tempi=_tempi(by_bar, across=None))
+
+    assert verdict.text == "You dragged bars 1–4."
+
+
+def test_on_tempo_bar_by_bar_the_note_rule_still_speaks() -> None:
+    """A take held 3% slow is on tempo in every bar and a beat behind by the
+    end — and the title above the sentence, which reads the drift, says it
+    dragged. The sentence must not answer "steady" under that title."""
+    deltas = _behind_from_the_start(6)
+    by_bar = {m: 101.0 for m in range(1, 7)}
+
+    verdict = generate_verdict(deltas, 104.0, tempi=_tempi(by_bar, across=101.0))
+
+    assert verdict.direction is Direction.drag
+    assert verdict.text.startswith("You dragged bars 1–6")
+
+
+def test_end_to_end_the_sentence_follows_the_bars() -> None:
+    """Through `compute_deltas` and `bar_pacing`, as `analyze()` runs them:
+    six bars at 100 against 104 — on, bar by bar — then two at 80. Every note
+    is behind from bar 2, so the note rule named bars 1–8; the chart shows
+    the last two."""
+    target = 104.0
+    timeline = build_timeline(_quarters(8), target)
+    detected, t = [], 0.0
+    for i in range(32):
+        detected.append(t)
+        t += 60.0 / (100.0 if i < 24 else 80.0)
+    matched = [(i, i) for i in range(32)]
+    onsets = np.asarray(detected)
+    deltas = compute_deltas(CleanedAlignment(matched=matched), onsets, timeline, target)
+
+    verdict = generate_verdict(
+        deltas, target, tempi=bar_pacing(matched, onsets, timeline, target)
+    )
+
+    assert (verdict.start_measure, verdict.end_measure) == (7, 8)
+    assert verdict.text == "You dragged bars 7–8 by 24 BPM."

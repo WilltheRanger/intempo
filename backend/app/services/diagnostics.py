@@ -30,7 +30,12 @@ from app.services.alignment import (
     to_timeline_base,
 )
 from app.services import pitch_evidence
-from app.services.analysis import Reading, nothing_played, prepare_for_alignment
+from app.services.analysis import (
+    Reading,
+    bar_pacing,
+    nothing_played,
+    prepare_for_alignment,
+)
 from app.services.audio_config import AudioConfig, load_audio_config
 from app.services.classification import (
     Delta,
@@ -268,5 +273,10 @@ def analyze_with_diagnostics(
     base.deltas = deltas
     base.trend = rolling_trend(deltas, config=cfg)
     base.low_confidence = raw.quality < cfg.alignment.warn_quality
-    base.verdict = generate_verdict(deltas, target_bpm, config=cfg).text
+    base.verdict = generate_verdict(
+        deltas,
+        target_bpm,
+        config=cfg,
+        tempi=bar_pacing(cleaned.matched, onsets, timeline, target_bpm),
+    ).text
     return base

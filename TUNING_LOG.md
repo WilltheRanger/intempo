@@ -6,6 +6,57 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-09-25 — The verdict line names the bars the chart shows; five notes per bar tempo
+
+**Real take.** Re-run on #149's analysis, the owner's take (de5493f3) drew its
+bars in BPM — about 100 through bar 6, 81–93 in bars 7–11, about 78 from bar
+18 — under the sentence "You dragged bars 1–12 by 7 BPM." The note rule reads
+drift from the target held since the first note, so in a take played slow
+every note is behind and the longest run was the stretch before a re-anchor.
+The owner chose "match the graph" (asked, 2026-09-25), and asked whether the
+chart should be smoothed.
+
+### What changed
+
+- **`MIN_NOTES_FOR_BAR_TEMPO` 3 → 5.** Measured on forty synthetic takes of
+  the owner's piece (true tempo known per bar: 102 / 87 / 100 / 80; onset
+  jitter 25 ms; one note in twelve unmatched):
+
+      estimator             mean err  p90   bars of 1–2 notes  error at the two steps
+      3 points (was)          1.6     3.0        2.2                 1.4
+      5 points (now)          0.7     1.6        0.6                 1.9
+      6 points                0.7     0.8        1.0                 9.5
+      3 points + 3-bar smooth 1.8     5.9        2.7                 2.1
+
+  Six borrows across a real change; smoothing the drawn line is worse than
+  nothing. Re-measured at 15 and 40 ms of jitter: five points read 0.4 and
+  1.1 against three's 1.3 and 2.0; four sat between (0.6, 1.3) with the
+  steps a little sharper (0.8, 1.9 against 1.2, 2.9). The
+  first bars, with nothing before them to borrow, now borrow the bars after.
+  The owner's take: bar-to-bar jumpiness 8.8 → 5.4 BPM; bar 16 73 → 82, bar
+  17 104 → 85 (one note, the spike that split the slow ending in two).
+
+- **`generate_verdict` given `tempi` names the longest run of bars off the
+  target in one direction**, each bar banded as the card bands it
+  (`(1 − bpm/target) × 100`), bars under a written change or with nothing
+  timed left out. At least `MIN_VERDICT_RUN` timed notes; one bar alone only
+  when clearly out. The figure is `tempo_across_bars` — the same fit over the
+  whole run. With no such run, the note rule speaks as before.
+
+### Regression
+
+- **Six clips: identical, every field.** Their bars are 59.5–60.5 against 60
+  — on, bar by bar — so the rushing and dragging clips fall through to the
+  note rule and keep "You rushed bars 2–8." / "You dragged bars 2–8."
+- **The owner's two takes** (Opus copies, locally):
+
+      take   was                                  now
+      0313   You dragged bars 13–21 by 7 BPM.     You dragged bars 13–25 by 23 BPM.
+      1940   You dragged bars 1–13 by 5 BPM.      You dragged bars 15–24 by 8 BPM.
+
+  0313 on the server (WAV) read "bars 1–12 by 7"; the lead lines are
+  unchanged ("You slowed down by 15 BPM." / "You played at 98, not 104.").
+
 ## 2026-09-25 — Each bar's tempo, for charts in BPM; unevenness against the player's own pace
 
 **Real take.** The owner's first working take through the app (Elijah, bass,
