@@ -117,6 +117,7 @@ import { PillRow } from './PillRow';
 import { StartFromSheet } from './StartFromSheet';
 import { scheduleScore, startableMeasures } from '../../lib/score';
 import { startFromMeasure } from '../../lib/score/startFrom';
+import { steadyElapsedMs, tempoClock } from '../../lib/score/tempoClock';
 import { hasWarning, preflight } from '../../lib/record/preflight';
 import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
 import {
@@ -920,10 +921,16 @@ export function RecordScreen() {
    * and whether ten notation renders a second cost anything on a real phone,
    * are both device questions - see the PR.
    */
+  // Where the take is on the page, as a steady take at `targetBpm` would have
+  // reached it — so the mark and the rest countdown follow a "meno mosso · 88"
+  // the way the click does (`lib/score/tempoClock.ts`). Identical to
+  // `elapsedMs` on a page that never changes tempo.
+  const takeClock = useMemo(() => tempoClock(takeScore, targetBpm), [takeScore, targetBpm]);
+  const onPageMs = steadyElapsedMs(takeClock, elapsedMs, targetBpm);
   const playhead =
     recording && perBar && targetBpm
       ? playheadAt({
-          elapsedMs,
+          elapsedMs: onPageMs,
           bpm: targetBpm,
           beatsPerBar: perBar,
           startFrom,
@@ -946,7 +953,7 @@ export function RecordScreen() {
   // and taps harder — so the cue has to be known before the hook is called.
   // Every input here is already settled by this point.
   const activeRest = recording
-    ? restCueAt(restCues, elapsedMs, targetBpm)
+    ? restCueAt(restCues, onPageMs, targetBpm)
     : null;
 
   // **The count-in is not the metronome setting.** It ticks, taps and counts

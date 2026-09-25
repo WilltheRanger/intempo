@@ -63,6 +63,9 @@ the bar editor is where a musician already corrects what was read.
 **Trade-offs.** The metronome while recording still runs at one tempo: it is a
 fixed-interval clock, and following a new tempo means scheduling its beats from
 the score. Listen and the analysis follow the marking; the click does not yet.
+*Superseded the same day:* the click, the playhead and the rest countdown now
+share `lib/score/tempoClock.ts`, which walks the same tempo map. A `rit.` still
+clicks steadily, because the page gives no number to slow to.
 
 ## 2026-09-25 — Tempo changes: a stated new tempo is judged against, per bar
 

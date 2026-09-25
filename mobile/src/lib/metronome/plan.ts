@@ -2,6 +2,7 @@ import type { ScoreJson, ScoreMeasure } from '../../data/types';
 import { timeSignaturesByMeasure } from '../notation/meter';
 import { measuresInPlayOrder } from '../score/playOrder';
 import { BEATS, FALLBACK_BPM } from '../score/schedule';
+import { tempoClock } from '../score/tempoClock';
 import { metronomePulse, type Beat } from './beats';
 
 const UNKNOWN_DURATION_BEATS = 1;
@@ -38,6 +39,11 @@ function durationInQuarterBeats(measure: ScoreMeasure): number {
  * Meter is looked up in written order before repeats are expanded. Returning
  * to an earlier printed bar therefore returns to the meter in force there,
  * instead of carrying a later change backwards through the repeat.
+ *
+ * **Each bar clicks at the tempo the page sets for it** (`tempoClock.ts`): a
+ * "meno mosso · 88" clicks at 88, scaled as the take is, the way Listen plays
+ * it and the analysis judges it. The count-in is at the first played bar's
+ * tempo, so a take started inside the meno mosso is counted in at it.
  */
 export function buildMetronomePlan(
   score: ScoreJson | null | undefined,
@@ -45,7 +51,8 @@ export function buildMetronomePlan(
 ): MetronomePlan {
   const quarterBpm =
     Number.isFinite(bpm) && bpm > 0 ? bpm : FALLBACK_BPM;
-  const secondsPerQuarter = 60 / quarterBpm;
+  const clock = tempoClock(score, quarterBpm);
+  const countInSecondsPerQuarter = clock.openingSecondsPerBeat;
   const beats: PlannedBeat[] = [];
   let atQuarter = 0;
   let index = 0;
@@ -59,7 +66,7 @@ export function buildMetronomePlan(
 
   for (let pulse = 0; pulse < countInPulses; pulse += 1) {
     beats.push({
-      atS: atQuarter * secondsPerQuarter,
+      atS: atQuarter * countInSecondsPerQuarter,
       index,
       beatInBar: firstPulse ? pulse : null,
       downbeat: pulse === 0 && firstPulse !== null,
@@ -73,6 +80,9 @@ export function buildMetronomePlan(
     return { beats, countInPulses };
   }
 
+  // The first downbeat, and from there the page's own clock.
+  const downbeatS = atQuarter * countInSecondsPerQuarter;
+  atQuarter = 0;
   const meters = timeSignaturesByMeasure(score);
   for (const measure of measuresInPlayOrder(score)) {
     const duration = durationInQuarterBeats(measure);
@@ -90,7 +100,7 @@ export function buildMetronomePlan(
       offset += quarterSize
     ) {
       beats.push({
-        atS: (atQuarter + offset) * secondsPerQuarter,
+        atS: downbeatS + clock.secondsAt(atQuarter + offset),
         index,
         beatInBar: pulse ? beatInBar : null,
         downbeat: beatInBar === 0 && pulse !== null,
