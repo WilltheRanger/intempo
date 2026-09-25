@@ -1329,6 +1329,25 @@ nothing else covers `backend/`. Named here rather than left to be found.
 - **Speech inside a real take is not solved.** It can still skew timing; a
   per-note pitch filter was measured and did not find the mistimed notes.
 
+### The chain of notes (2026-09-25)
+
+- **A real instrument breaks timing-only matching.** The first real take (a
+  double bass) had 105 attacks for 95 notes — bow changes, ringing strings, a
+  note heard twice — and `align_dtw`, which gives every attack a note, lost its
+  place. `alignment.align_chain` pairs by pitch in order and may leave an
+  attack out; it runs only for a take under `warn_quality`.
+- **Count trust against the page's notes, never the notes paired.** A pairing
+  allowed to skip can pair only what matches; a different tune in the same key
+  was 100% "confirmed" that way, and given a verdict.
+- **Read a bass's pitch before its high-pass.** The 80 Hz filter that helps
+  the onset detector removes the fundamentals of the bottom octave. And a bass
+  sounds an octave below its page: match `midi - 12`.
+- **Never place a note through the pairing you are trying to correct.** The
+  second pass read where notes belong by interpolating through the first
+  pass's pairs, and so kept every arbitrary choice the first made between two
+  equal pitches. A running median of their offsets does not.
+- TUNING_LOG.md 2026-09-25 has every number.
+
 ## The capture path (2026-08-24) — what an audit of it found
 
 Nine defects between the shutter and a saved score, in a path that had **zero

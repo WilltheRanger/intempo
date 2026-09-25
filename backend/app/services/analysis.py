@@ -27,6 +27,7 @@ from app.services import pitch_evidence
 from app.services.alignment import (
     MIN_TEMPO_RATIO,
     MIN_TRIM_GAIN,
+    align_chain,
     align_dtw,
     align_take,
     attacks_outnumber_the_music,
@@ -543,6 +544,9 @@ class Heard:
     grace: np.ndarray
     #: What the detector fired on, on the recording's clock.
     onsets: np.ndarray
+    #: The waveform before any high-pass, for reading pitch: a bass's filter
+    #: removes its bottom octave's fundamentals. None where nothing kept it.
+    unfiltered: np.ndarray | None = None
 
 
 def prepare_for_alignment(
@@ -582,6 +586,7 @@ def prepare_for_alignment(
     # it. See `[onset.instrument]` in config.toml.
     named = instrument or ("double_bass" if double_bass else None)
     settings = audio_svc.onset_settings_for(config, named)
+    unfiltered = y
     if settings.highpass_hz > 0:
         y = audio_svc.high_pass(y, sr, settings.highpass_hz)
 
@@ -630,6 +635,7 @@ def prepare_for_alignment(
         expected=expected,
         grace=grace,
         onsets=onsets,
+        unfiltered=unfiltered,
     )
 
 
@@ -821,6 +827,145 @@ def readings_of(score: ScoreJson, target_bpm: float) -> list[Reading]:
     return out
 
 
+@dataclass(frozen=True)
+class _Pitch:
+    """The take's chroma, for pairing attacks with notes by what they sounded.
+
+    Computed once per take and shared by the note chain and the pitch
+    evidence, which read the same transform. See `alignment.align_chain` for
+    the real take that needed it.
+    """
+
+    frames: np.ndarray
+    sr: int
+    steady: float
+    #: `pitch_evidence.pitch_track`: the sounding pitch with its octave.
+    track: np.ndarray | None = None
+    #: Semitones from written to sounding: -12 for a double bass.
+    transpose: int = 0
+
+    def mismatch(self, attacks_s: np.ndarray, reading: Reading) -> np.ndarray:
+        return pitch_evidence.mismatch(
+            self.frames,
+            self.sr,
+            attacks_s,
+            [note.pitch for note in reading.timeline.notes],
+            steady=self.steady,
+            track=self.track,
+            transpose=self.transpose,
+        )
+
+
+#: Where each instrument's sounding pitch lies, for the pitch track, in Hz: its
+#: lowest open string, a little under, to well above its highest normal note.
+#: A range that is too wide is where YIN finds octave errors.
+_SOUNDING_RANGE_HZ: dict[str, tuple[float, float]] = {
+    "double_bass": (35.0, 500.0),
+    "cello": (60.0, 1100.0),
+    "viola": (120.0, 1500.0),
+    "violin": (180.0, 3600.0),
+}
+_ANY_RANGE_HZ = (35.0, 3600.0)
+#: A double bass is written an octave above where it sounds.
+_TRANSPOSE: dict[str, int] = {"double_bass": -12}
+
+
+def _pitch_of(
+    heard: Heard,
+    score_pitches: list[str | None],
+    *,
+    low_instrument: bool,
+    config: AudioConfig,
+    instrument: str | None = None,
+) -> _Pitch:
+    """The chroma the matcher and the pitch evidence share.
+
+    Low register decided the way `pitch_evidence.assess` decides it, from the
+    page rather than the matched notes — the match is what this feeds, so it
+    cannot wait for one.
+    """
+    written = [m for m in (pitch_evidence.midi(p) for p in score_pitches) if m is not None]
+    low = low_instrument or (
+        bool(written) and float(np.median(written)) < config.pitch.low_register_midi
+    )
+    fmin, fmax = _SOUNDING_RANGE_HZ.get(instrument or "", _ANY_RANGE_HZ)
+    source = heard.unfiltered if heard.unfiltered is not None else heard.y
+    return _Pitch(
+        frames=pitch_evidence.chroma(heard.y, heard.sr, low_register=low),
+        sr=heard.sr,
+        steady=config.pitch.steady,
+        track=pitch_evidence.pitch_track(source, heard.sr, fmin=fmin, fmax=fmax),
+        transpose=_TRANSPOSE.get(instrument or "", 0),
+    )
+
+
+@dataclass(frozen=True)
+class _Confirmed:
+    """How many of the notes a pairing names were heard at their written pitch."""
+
+    #: Written notes heard at their written pitch.
+    notes: int = 0
+    #: Written notes paired with an attack at all.
+    paired: int = 0
+    #: How many different written pitches are among `notes`.
+    pitches: int = 0
+    #: The notes the reading asks to hear: every one it requires, and the
+    #: optional ones (an ornament, a slurred note) that were paired.
+    asked: int = 0
+
+
+def _confirmed(
+    anchored: AnchoredAlignment,
+    reading: Reading,
+    pitch: _Pitch | None,
+    first_s: float,
+    config: AudioConfig,
+) -> _Confirmed:
+    """Count the notes a pairing names that were heard at their written pitch.
+
+    Counting written notes: where several attacks were paired with one note,
+    the closest in pitch decides it. `first_s` is where `anchored.onsets[0]`
+    falls on the recording's clock, which is where the pitch was read.
+    """
+    if pitch is None or not anchored.alignment.mapping or anchored.onsets.size == 0:
+        return _Confirmed()
+    mismatch = pitch.mismatch(anchored.onsets + first_s, reading)
+    closest: dict[int, float] = {}
+    for d, e in anchored.alignment.mapping:
+        if 0 <= d < mismatch.shape[0] and 0 <= e < mismatch.shape[1]:
+            closest[e] = min(closest.get(e, 1.0), float(mismatch[d, e]))
+    heard = [e for e, v in closest.items() if v <= config.pitch.confirm_mismatch]
+    optional = reading.optional
+    return _Confirmed(
+        notes=len(heard),
+        paired=len(closest),
+        pitches=len({reading.timeline.notes[e].pitch for e in heard}),
+        asked=int((~optional).sum()) + sum(1 for e in closest if optional[e]),
+    )
+
+
+def _trusted_by_pitch(confirmed: _Confirmed, config: AudioConfig) -> bool:
+    """Whether a pairing's pitches line up well enough to report its timing.
+
+    **The chain decides, not each note** — the owner's rule (2026-09-25). A
+    note out of tune, or one the scan misread, is one unconfirmed note in a
+    chain that is otherwise the page; it does not make the take something
+    else.
+
+    Counted against the notes the page asks for, not the notes paired: a
+    pairing free to leave notes out can always pair only the ones that match,
+    and a different tune in the same key matched 100% of the notes it paired.
+    See `[pitch]` `confirmed_*` in config.toml for how far chance reaches.
+    """
+    p = config.pitch
+    return (
+        confirmed.notes >= p.confirmed_min_notes
+        and confirmed.pitches >= p.confirmed_min_pitches
+        and confirmed.asked > 0
+        and confirmed.notes / confirmed.asked >= p.confirmed_share
+    )
+
+
 def _align_reading(
     onsets: np.ndarray, reading: Reading, target_bpm: float, config: AudioConfig
 ) -> AnchoredAlignment:
@@ -849,6 +994,69 @@ def _best_reading(
         if best[1].alignment.quality > chosen[1].alignment.quality + MIN_READING_GAIN:
             chosen = best
     return chosen
+
+
+@dataclass(frozen=True)
+class _Chained:
+    """A reading paired as a chain of pitches, and how many it confirmed."""
+
+    reading: Reading
+    anchored: AnchoredAlignment
+    confirmed: _Confirmed
+    trusted: bool
+
+
+def _chain(
+    onsets: np.ndarray,
+    reading: Reading,
+    target_bpm: float,
+    config: AudioConfig,
+    pitch: _Pitch,
+    origin: float = 0.0,
+) -> _Chained:
+    """`reading` paired with `onsets` by `alignment.align_chain`. `origin` puts
+    `onsets` on the recording's clock, which is where the pitch was read."""
+    onsets = np.asarray(onsets, dtype=float)
+    anchored = align_chain(
+        onsets,
+        reading.expected,
+        pitch.mismatch(onsets + origin, reading),
+        target_bpm=target_bpm,
+        config=config,
+        steady=reading.steady,
+        optional=reading.optional,
+    )
+    first = float(onsets[anchored.trimmed_lead]) + origin if onsets.size else origin
+    confirmed = _confirmed(anchored, reading, pitch, first, config)
+    return _Chained(
+        reading=reading,
+        anchored=anchored,
+        confirmed=confirmed,
+        trusted=_trusted_by_pitch(confirmed, config),
+    )
+
+
+def _by_chain(
+    onsets: np.ndarray,
+    readings: list[Reading],
+    target_bpm: float,
+    config: AudioConfig,
+    pitch: _Pitch,
+) -> _Chained | None:
+    """The reading whose chain confirms the most notes, if any is trusted.
+
+    Ties go to the earlier reading, as they do by timing (`_best_reading`): a
+    player who does not re-attack slurred notes confirms the same notes either
+    way, and the page as written is the reading to keep.
+    """
+    best: _Chained | None = None
+    for reading in readings:
+        chained = _chain(onsets, reading, target_bpm, config, pitch)
+        if chained.trusted and (
+            best is None or chained.confirmed.notes > best.confirmed.notes
+        ):
+            best = chained
+    return best
 
 
 #: The shortest silence that can be a stop rather than part of the music.
@@ -1115,11 +1323,49 @@ def analyze(
         target_bpm,
         cfg,
     )
+    # The take's pitch, once: the note chain reads it, and so does the pitch
+    # evidence below.
+    low_instrument = instrument or ("double_bass" if double_bass else None)
+    pitch = _pitch_of(
+        heard,
+        [note.pitch for note in heard.timeline.notes],
+        low_instrument=low_instrument in cfg.pitch.low_instruments,
+        config=cfg,
+        instrument=low_instrument,
+    )
+    # **The chain of notes, for a take timing cannot read.** See
+    # `alignment.align_chain` for the real take this is for. Only under
+    # `warn_quality`, so nothing that reads today moves; and only kept when the
+    # chain's pitches are the page's (`_trusted_by_pitch`) and the timing
+    # pairing's are not, or are fewer.
+    chained: _Chained | None = None
+    if anchored.alignment.quality < cfg.alignment.warn_quality:
+        candidate = _by_chain(
+            onsets, readings_of(score, target_bpm), target_bpm, cfg, pitch
+        )
+        if candidate is not None:
+            timed = _confirmed(
+                anchored, reading, pitch, float(onsets[anchored.trimmed_lead]), cfg
+            )
+            if (
+                not _trusted_by_pitch(timed, cfg)
+                or candidate.confirmed.notes > timed.notes
+            ):
+                log.info(
+                    "analysis: paired as a chain of notes, %d of %d at their "
+                    "written pitch (timing alone: %d of %d, quality %.3f)",
+                    candidate.confirmed.notes,
+                    candidate.confirmed.paired,
+                    timed.notes,
+                    timed.paired,
+                    anchored.alignment.quality,
+                )
+                chained = candidate
+                reading, anchored = candidate.reading, candidate.anchored
     if reading.name != "as written":
         log.info("analysis: read as %r", reading.name)
     timeline = reading.timeline
     expected = reading.expected
-    steady = reading.steady
     optional = reading.optional
     reclaimable = reading.reclaimable
     onsets = anchored.onsets
@@ -1166,13 +1412,12 @@ def analyze(
             recovered.size,
         )
         combined = np.sort(np.concatenate([onsets, recovered]))
-        anchored = align_take(
-            combined,
-            expected,
-            target_bpm=target_bpm,
-            config=cfg,
-            steady=steady,
-            optional=optional,
+        # Paired the way the take was, and on the recording's clock
+        # (`origin`) where the chain reads the pitch.
+        anchored = (
+            _chain(combined, reading, target_bpm, cfg, pitch, origin).anchored
+            if chained is not None
+            else _align_reading(combined, reading, target_bpm, cfg)
         )
         onsets = anchored.onsets
         raw = anchored.alignment
@@ -1194,13 +1439,28 @@ def analyze(
         top=cfg.pitch.top,
         min_relative=cfg.pitch.min_relative,
         low_register_midi=cfg.pitch.low_register_midi,
-        low_instrument=(instrument or ("double_bass" if double_bass else None))
-        in cfg.pitch.low_instruments,
+        low_instrument=low_instrument in cfg.pitch.low_instruments,
         page_pitches=[note.pitch for note in timeline.notes],
+        frames=pitch.frames,
     )
+    # **The chain of notes, judged whole** — the owner's rule (2026-09-25).
+    # A pairing whose pitches are the page's, note after note, is the take of
+    # this page whatever its timing says, and the timing is what the musician
+    # asked about: so it is reported rather than refused. One note out of
+    # tune, or one the scan misread, is one unconfirmed note in the chain.
+    confirmed = _confirmed(anchored, reading, pitch, origin, cfg)
+    trusted = _trusted_by_pitch(confirmed, cfg)
     _traced(
         trace,
         alignment=_alignment_trace(anchored),
+        paired_by="chain" if chained is not None else "timing",
+        confirmed={
+            "notes": confirmed.notes,
+            "paired": confirmed.paired,
+            "pitches": confirmed.pitches,
+            "asked": confirmed.asked,
+            "trusted": trusted,
+        },
         pitch={
             "tonal_share": round(evidence.tonal_share, 3),
             "page_share": round(evidence.page_share, 3),
@@ -1224,7 +1484,11 @@ def analyze(
     # empty room aligns perfectly, and talking on its own reached a verdict at
     # quality 0.47. What the alignment made of a sound nobody played is not a
     # reason to say anything about it.
-    refused_by = why_not_played(
+    #
+    # Not for a pairing the pitch confirms: a click, a voice or a room cannot
+    # land on the page's pitches note after note, and a bass's low notes can
+    # read as "no pitch held" to the chroma while the pitch track hears them.
+    refused_by = None if trusted else why_not_played(
         evidence,
         quality=raw.quality,
         n_detected=int(heard.onsets.size),
@@ -1253,7 +1517,15 @@ def analyze(
             n_expected_onsets=int(heard.expected.size),
         )
 
-    if is_alignment_broken(raw.quality, config=cfg):
+    if is_alignment_broken(raw.quality, config=cfg) and trusted:
+        log.info(
+            "analysis: timing alone would refuse (quality %.3f), kept — %d of %d "
+            "paired notes heard at their written pitch",
+            raw.quality,
+            confirmed.notes,
+            confirmed.paired,
+        )
+    if is_alignment_broken(raw.quality, config=cfg) and not trusted:
         _traced(trace, outcome="alignment_failed")
         # **The one line that says which half refused the take.**
         #
@@ -1326,7 +1598,7 @@ def analyze(
         status="ok",
         quality=round(raw.quality, 3),
         tolerance=Tolerance.of(cfg),
-        low_confidence=raw.quality < cfg.alignment.warn_quality,
+        low_confidence=raw.quality < cfg.alignment.warn_quality and not trusted,
         verdict=verdict.text,
         verdict_direction=verdict.direction,
         per_note=per_note,

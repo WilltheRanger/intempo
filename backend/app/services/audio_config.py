@@ -124,6 +124,10 @@ class PitchConfig:
     one_pitch: float = 0.9
     low_register_midi: int = 45
     low_instruments: tuple[str, ...] = ("double_bass",)
+    confirm_mismatch: float = 0.25
+    confirmed_share: float = 0.7
+    confirmed_min_notes: int = 8
+    confirmed_min_pitches: int = 3
 
 
 @dataclass(frozen=True)
@@ -253,6 +257,12 @@ def _pitch(row: dict) -> PitchConfig:
         one_pitch=float(row.get("one_pitch", default.one_pitch)),
         low_register_midi=int(row.get("low_register_midi", default.low_register_midi)),
         low_instruments=tuple(row.get("low_instruments", default.low_instruments)),
+        confirm_mismatch=float(row.get("confirm_mismatch", default.confirm_mismatch)),
+        confirmed_share=float(row.get("confirmed_share", default.confirmed_share)),
+        confirmed_min_notes=int(row.get("confirmed_min_notes", default.confirmed_min_notes)),
+        confirmed_min_pitches=int(
+            row.get("confirmed_min_pitches", default.confirmed_min_pitches)
+        ),
     )
 
 
