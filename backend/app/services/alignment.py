@@ -1968,7 +1968,11 @@ _DIAG, _UP, _LEFT = 0, 1, 2
 
 
 def _chain_path(
-    cost: np.ndarray, skip_attack: float, skip_note: np.ndarray
+    cost: np.ndarray,
+    skip_attack: float,
+    skip_note: np.ndarray,
+    *,
+    passage: bool = False,
 ) -> list[tuple[int, int]]:
     """The cheapest in-order pairing of attacks (rows) with notes (columns).
 
@@ -1976,10 +1980,13 @@ def _chain_path(
     `skip_attack`, leaving note `j` out costs `skip_note[j]`. Solved a row at a
     time — the skip along a row is a running minimum — so a long take costs a
     few thousand small array operations rather than a Python loop per cell.
+
+    `passage`: the notes before the first pairing and after the last cost
+    nothing to leave out — the take is a stretch of the page, not all of it.
     """
     n, m = cost.shape
     before = np.concatenate([[0.0], np.cumsum(skip_note)])
-    previous = before.copy()
+    previous = np.zeros(m + 1) if passage else before.copy()
     moves = np.full((n + 1, m + 1), _LEFT, dtype=np.int8)
     for i in range(1, n + 1):
         up = previous + skip_attack
@@ -1992,8 +1999,10 @@ def _chain_path(
         moves[i] = move
         previous = row
     path: list[tuple[int, int]] = []
-    i, j = n, m
-    while i > 0 or j > 0:
+    # A passage ends wherever it is cheapest to, and begins wherever the walk
+    # back reaches the first attack.
+    i, j = n, (int(np.argmin(previous)) if passage else m)
+    while i > 0 or (j > 0 and not passage):
         move = moves[i, j]
         if move == _DIAG:
             path.append((i - 1, j - 1))
@@ -2053,6 +2062,7 @@ def align_chain(
     config: AudioConfig | None = None,
     steady: np.ndarray | None = None,
     optional: np.ndarray | None = None,
+    passage: bool = False,
 ) -> AnchoredAlignment:
     """Pair attacks with written notes as a chain of pitches, in order.
 
@@ -2068,6 +2078,10 @@ def align_chain(
     extra (`apply_fuzzy_match`). Whether the pairing is to be believed is a
     question about its pitches, and is the caller's —
     `analysis._trusted_by_pitch`.
+
+    `passage`: the take is a stretch of the page rather than all of it (see
+    `_chain_path`), scored as `align_dtw` scores a subsequence — coverage over
+    the stretch it lands in.
     """
     cfg = config or load_audio_config()
     sec_per_beat = 60.0 / target_bpm if target_bpm > 0 else 0.5
@@ -2098,7 +2112,7 @@ def align_chain(
         else np.zeros(expected.size, dtype=bool)
     )
     skip_note = np.where(skippable, CHAIN_SKIP_OPTIONAL, CHAIN_SKIP)
-    path = _chain_path(pitch, CHAIN_SKIP, skip_note)
+    path = _chain_path(pitch, CHAIN_SKIP, skip_note, passage=passage)
 
     heard = [(d, e) for d, e in path if pitch[d, e] <= cfg.pitch.confirm_mismatch]
     if len(heard) >= 2:
@@ -2111,7 +2125,10 @@ def align_chain(
         if played_gap > 0:
             away = np.abs(detected[:, None] - placed[None, :]) / played_gap
             path = _chain_path(
-                pitch + CHAIN_TIME_WEIGHT * np.minimum(away, 1.0), CHAIN_SKIP, skip_note
+                pitch + CHAIN_TIME_WEIGHT * np.minimum(away, 1.0),
+                CHAIN_SKIP,
+                skip_note,
+                passage=passage,
             )
     if not path:
         return empty
@@ -2132,7 +2149,7 @@ def align_chain(
             cfg=cfg,
             steady=steady,
             optional=optional,
-            subsequence=False,
+            subsequence=passage,
         ),
     )
 

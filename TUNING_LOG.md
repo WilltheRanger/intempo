@@ -6,6 +6,111 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-09-25 — What playing does between the notes: holds, tuning, skips, restarts, half a page
+
+**Synthetic, like everything before the entry below.** The owner asked what
+natural playing would break. Twenty habits were run through `analyze()` on an
+8-bar G-major violin page at 90 BPM, on this branch and on `main`. Four were
+reported wrong, and the owner asked for all four fixed. Two more turned out to
+have been wrong all along, hidden by an even rhythm.
+
+### Before and after
+
+    habit                                 main                                   now
+    holds a note 1 / 2 beats too long     1 / 2 notes "missed"                   0 missed, steady
+    tunes 4 open strings after the end    2 notes "missed", q 0.71               0 missed, q 1.00
+    retunes mid-take (4 strings, 5 s)     "You dragged bars 4–5 by 35 BPM"       steady, 4 extra
+    plays only bars 1–4 / only 5–8        16 "missed" / and paired as bars 1–4  0 missed, bars 1–4 / 5–8
+    skips bar 4                           bar 8 "missed", bars 4–7 timed         bar 4 missed, steady
+                                          against the wrong notes
+    plays bar 3 twice                     0 extra; 29 of 32 notes paired to      4 extra, steady
+                                          the wrong attack (3 heard at pitch)
+
+Unchanged on all fourteen others, including a real restart (still read as
+"restarted at bar 3"), half speed and 25% fast (right BPM), tremolo, trills,
+added grace notes, 15 s of silence first, and warm-up notes.
+
+### What was wrong, and each fix
+
+- **A hold was absorbed by throwing away the first note.** `align_take`'s trim
+  search discarded the first real note as noise, which shifted the whole first
+  half one note early and lined the hold up with the grid: quality 0.966,
+  "Steady", one note "missed", every note before the hold timed against the
+  attack of the note after. Half of them heard at the wrong pitch — which is
+  what now catches it: **the note chain also audits takes timing reads well**
+  (`CHAIN_GAIN_NOTES` = 2 more notes heard at pitch to replace a pairing at or
+  over `warn_quality`), and **may not leave more written notes unheard** than
+  the timing pairing did (a take playing bars 1–4 twice otherwise paired its
+  second time through against bars 5–8, half matching by chance).
+- **Tuning after the end** pushed the last two notes out of the timing
+  pairing. Fixed by the same audit: the chain leaves the open strings out.
+- **Retuning mid-take was read as a restart.** Four open strings fit the
+  rhythm of "restarted at bar 4", three of the four at another pitch; refused
+  that, the same strings fit "a first try at bar 5, then bar 5 again". A
+  restart now stands only if **both** copies of the replayed bars are heard at
+  pitch — asked only where the take pairs by pitch at all (the chain trusts
+  it), so a click track's restarts stand as timing reads them.
+- **Half a page** was reported as 16 missed notes. Notes before the first bar
+  the take reached and after the last are **not reached**, not missed
+  (`analysis._not_reached`); a note unheard inside the bars played is still
+  missed. The app's "Passage" already names the bars from the per-bar results.
+- **Bars 5–8 were paired as bars 1–4**: on an even rhythm every stretch looks
+  alike. A take timing has found to be a stretch of the page is chained as a
+  passage (free edges), and placed where its pitches are.
+- **A skipped bar read as rushing.** Every note after it arrives a bar early.
+  `classification.skipped_ahead` finds where a pairing went past written notes
+  without spending their time, and each stretch between is its own pulse. The
+  recovery pass no longer searches inside one.
+
+### New thresholds
+
+    CHAIN_GAIN_NOTES     2     more notes at pitch to re-pair a take read well
+    skip                 a gap nearer one played interval than the written span
+    restart replay       each copy at least half heard at pitch
+
+### What had to be narrowed, measured
+
+- **A passage cannot be trusted like a page.** Over a stretch the chain picks,
+  the share of its notes heard is high by luck: 24 notes of the page played
+  backwards passed in 13 of 20 seeds. Requiring the take's *attacks* to be
+  heard too brings a different same-key tune to at most 1 in 20 and the
+  reversed passage to 4 in 20 — not enough to override a refusal, so it does
+  not: `_placed_by_pitch` only chooses which bars a take was, for a take
+  timing already gives a verdict. Trust that overrides a refusal stays
+  whole-page (`_trusted_by_pitch`, 0 of 420 wrong takes).
+
+      take of the page's 32   own passage   other tune   shuffled   reversed
+      8 notes                 8/20          0/20         1/20       0/20
+      12                      19/20         0/20         0/20       0/20
+      16                      20/20         0/20         1/20       1/20
+      24                      20/20         1/20         0/20       4/20
+
+- **Skips only in a pairing made by pitch.** First written for every pairing,
+  it read three notes a live room swallowed as a skipped bar, the recovery
+  pass stopped looking for them, and `test_a_take_the_room_swallowed_is_read_
+  instead_of_refused` failed: a timing pairing that lost notes looks exactly
+  like one that went past them.
+
+### Regression
+
+- **Six clips:** byte-identical `AnalysisResult` JSON against `main`.
+- **The owner's take:** still `ok`, 79 of 88 notes at pitch; now "You dragged
+  bars 1–13 by 5 BPM" (was "1–16 by 4"). Bar 14 leaves out one note of its
+  octave pairs, and the stretch after is now measured from where the player
+  picked up; `insights` reads 6.5 slow.
+- **Wrong takes:** the sweep of 2026-09-25 rerun end to end — none paired by
+  the chain except the page itself with loose timing.
+
+### Known limits
+
+- **A passage played twice** (bars 1–4, then bars 1–4 again) is still paired
+  straight through by timing on an even rhythm. It is no longer made worse,
+  and it is not yet read as the restart it is: restarts are only looked for
+  in a take timing cannot read.
+- **The trim that dropped the first note is still there**; the chain audit
+  corrects its result where pitch can see it, which on a page of one repeated
+  pitch it cannot.
+
 ## 2026-09-25 — The chain of notes: a take whose pitches are the page's is judged, not refused
 
 **The first real take in this log.** Everything above is synthetic. This began

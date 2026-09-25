@@ -189,6 +189,68 @@ def uneven_measures(
     return uneven
 
 
+def skipped_ahead(
+    matched: list[tuple[int, int]],
+    detected: np.ndarray,
+    onsets: np.ndarray,
+) -> list[int]:
+    """Where in `matched` the take went straight past written notes.
+
+    Positions `p` such that `matched[p]` is the first pair after a run of
+    written notes nobody played — and nobody *waited through*: the attack
+    arrives one of the take's own intervals after the last one, not after the
+    written length of the notes in between.
+
+    **A skipped bar is not rushing.** Skip bar 4 and every note from bar 5 on
+    arrives a bar early against the page. Measured before this: "You rushed
+    bars 4–5 by 171 BPM" on a take whose every note was steady. A note that
+    was played and not *heard* is the other case, and stays as it was: its
+    time was spent, so the next attack arrives where the page puts it.
+
+    Read against the take's own pace (the median of its per-interval rates,
+    as `alignment._residuals` reads it), so practising at half speed does not
+    turn every gap into a skip: at a gap, a skip is closer to one played
+    interval than to the whole written span.
+    """
+    if len(matched) < 3:
+        return []
+    det = np.array([detected[d] for d, _ in matched], dtype=float)
+    exp = np.array([onsets[e] for _, e in matched], dtype=float)
+    written_steps = np.diff(exp)
+    usable = written_steps > 0
+    if not usable.any():
+        return []
+    pace = float(np.median(np.diff(det)[usable] / written_steps[usable]))
+    if not np.isfinite(pace) or pace <= 0:
+        return []
+    skips: list[int] = []
+    for p in range(1, len(matched)):
+        e1, e2 = matched[p - 1][1], matched[p][1]
+        if e2 - e1 < 2:
+            continue
+        written = float(onsets[e2] - onsets[e1])
+        one = float(onsets[e1 + 1] - onsets[e1])
+        played = float(det[p] - det[p - 1]) / pace
+        # Nearer to one interval than to the whole span: the notes between
+        # were gone past, not waited through.
+        if played < (written + one) / 2:
+            skips.append(p)
+    return skips
+
+
+def skipped_notes(
+    matched: list[tuple[int, int]],
+    detected: np.ndarray,
+    onsets: np.ndarray,
+) -> set[int]:
+    """The written notes a take went straight past (`skipped_ahead`)."""
+    return {
+        e
+        for p in skipped_ahead(matched, detected, onsets)
+        for e in range(matched[p - 1][1] + 1, matched[p][1])
+    }
+
+
 def compute_deltas(
     cleaned: CleanedAlignment,
     detected: np.ndarray,
@@ -196,6 +258,7 @@ def compute_deltas(
     target_bpm: float,
     *,
     config: AudioConfig | None = None,
+    by_pitch: bool = False,
 ) -> list[Delta]:
     """Per matched note-pair, compute the timing delta in ms and % of beat.
 
@@ -211,7 +274,11 @@ def compute_deltas(
     only its neighbour reports that as steady.
 
     The origin is not fixed for the whole take, though. It follows the
-    musician's pulse across a break in it — see `_pulse_anchors`.
+    musician's pulse across a break in it — see `_pulse_anchors` — and, for a
+    pairing made by pitch (`by_pitch`), across a bar the take skipped — see
+    `skipped_ahead`. Only by pitch: a timing pairing that lost notes to a live
+    room looks exactly like one that went past them, and only the pitches can
+    say which it was.
     """
     cfg = config or load_audio_config()
     detected = np.asarray(detected, dtype=float)
@@ -240,12 +307,22 @@ def compute_deltas(
         ],
         dtype=bool,
     )
-    anchors = pulse_anchors(
-        offsets,
-        beat_ms / 1000.0,
-        config=cfg,
-        positions=np.array([timeline.onsets[e] for _, e in cleaned.matched], dtype=float),
-        usable=usable,
+    positions = np.array([timeline.onsets[e] for _, e in cleaned.matched], dtype=float)
+    # Each stretch between two skips is its own pulse: the jump across a skip
+    # is where the page went, not where the player's beat did.
+    skips = skipped_ahead(cleaned.matched, detected, timeline.onsets) if by_pitch else []
+    bounds = [0, *skips, offsets.size]
+    anchors = np.concatenate(
+        [
+            pulse_anchors(
+                offsets[a:b],
+                beat_ms / 1000.0,
+                config=cfg,
+                positions=positions[a:b],
+                usable=usable[a:b],
+            )
+            for a, b in zip(bounds[:-1], bounds[1:], strict=True)
+        ]
     )
 
     uneven = uneven_measures(cleaned, detected, timeline, config=cfg)

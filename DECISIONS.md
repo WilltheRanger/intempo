@@ -1,5 +1,38 @@
 # InTempo Decisions
 
+## 2026-09-25 — Pitch audits every pairing; restarts must be heard; skips and unplayed bars are not rushing or missed
+
+**Context.** Twenty natural playing habits run through the pipeline: a held
+note, tuning after the end, retuning mid-take and half a page all came out
+wrong, and a skipped or repeated bar had been paired wrongly all along. The
+owner asked for the four fixed.
+
+**Decision.**
+- The note chain audits every take with a trustworthy pitch reading, not only
+  those under `warn_quality`, and replaces a well-read timing pairing when it
+  hears `CHAIN_GAIN_NOTES` more notes at pitch and leaves no more unheard.
+- A restart reading stands only if both copies of the replayed bars are heard
+  at pitch, where the take pairs by pitch at all.
+- Notes outside the bars a take played are not reached, not missed.
+- A take timing finds to be a stretch of the page is chained as a passage and
+  placed by pitch, for takes timing already accepts. Passage placement is a
+  weaker test than trust and never overrides a refusal.
+- In a pairing made by pitch, a skipped bar splits the take into separately
+  anchored stretches, and the recovery pass does not search inside it.
+
+**Alternatives considered.**
+- *Stop the trim search from discarding the first note.* The root of the hold
+  case, but the trim exists for a bow settling before the first note, and
+  timing alone cannot tell the two apart; pitch can, after the fact.
+- *Passage trust by the share of the passage's notes.* Passed 13 of 20
+  reversed passages; see TUNING_LOG.md.
+- *Skips for every pairing.* Read a live room's swallowed notes as a skip.
+
+**Trade-offs accepted.** A take read well by timing can now be re-paired, so
+a verdict can move on a take nobody complained about — only where two or more
+notes more are heard at their written pitch and none more go unheard. The
+chain runs on every take (a few ms beside the pitch track already there).
+
 ## 2026-09-25 — A take is paired with its page by the chain of notes when timing cannot read it
 
 **Context.** The owner's real double-bass take played every note of its page
