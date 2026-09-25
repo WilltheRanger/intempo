@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from typing import Literal
 
@@ -500,9 +500,52 @@ class _BarRun:
     rushing: bool
 
 
+@dataclass(frozen=True)
+class _Edges:
+    """The bars at each end of a take given to settling in and winding down.
+
+    **The owner, 2026-09-25**: "it takes time to count tempo and same with the
+    end". A musician comes in off a count-in and finds the beat over the first
+    bar or two, and eases off over the last notes. The verdict line named both
+    as the take's problem — "Bars 1–2 went at 89." over a take on the beat
+    from bar 3 to the end — and, where a real run in the middle was the same
+    length, named them instead of it, being the earlier.
+
+    So a run of bars, or of notes, lying wholly inside the first or the last
+    `settling_bars` bars the take played is not named. One reaching past them
+    is, whole and from bar 1: three slow bars from the top are a tempo, not an
+    entrance. The ends shrink on a short take so that at least one bar is
+    neither — on a three-bar passage only bars 1 and 3 are ends. The chart
+    still draws every bar as it was played; only the sentence is spared.
+    """
+
+    start: frozenset[int]
+    end: frozenset[int]
+
+    def hold(self, bars: set[int]) -> bool:
+        """Whether these bars lie wholly inside one end."""
+        return bool(bars) and (bars <= self.start or bars <= self.end)
+
+
+def _edges(judged: list[Delta], settling_bars: int) -> _Edges:
+    # The bars the take played, a written tempo change included: the bar
+    # before a closing "rit." is not the end.
+    played = sorted(
+        {d.measure_number for d in judged if d.timed or d.under_tempo_change}
+    )
+    size = min(settling_bars, (len(played) - 1) // 2)
+    if size <= 0:
+        return _Edges(frozenset(), frozenset())
+    return _Edges(frozenset(played[:size]), frozenset(played[-size:]))
+
+
 def _longest_bar_run(
-    judged: list[Delta], tempi: BarTempi, target_bpm: float, config: AudioConfig
-) -> _BarRun | None:
+    judged: list[Delta],
+    tempi: BarTempi,
+    target_bpm: float,
+    config: AudioConfig,
+    edges: _Edges,
+) -> tuple[_BarRun | None, frozenset[int]]:
     """The longest run of bars played off the target the same way, by the
     tempo each bar was played at — the numbers the verdict's chart draws.
 
@@ -523,6 +566,10 @@ def _longest_bar_run(
     and one bar alone is named only when it is clearly out
     (`_CLEAR_BANDS`) — a single bar's tempo is the least certain on the chart.
     The longest run by bars wins; then by notes; then the earlier.
+
+    A run wholly inside the take's first or last bars is settling in or
+    winding down, and is passed over (`_Edges`). The second value is the bars
+    passed over that way, which the note rule must leave out too.
     """
     timed: dict[int, int] = defaultdict(int)
     changed: set[int] = set()
@@ -543,6 +590,7 @@ def _longest_bar_run(
 
     best: _BarRun | None = None
     best_key = (0, 0)
+    spared: set[int] = set()
     i = 0
     while i < len(bars):
         sign = bars[i][1]
@@ -554,6 +602,11 @@ def _longest_bar_run(
             j += 1
         run = bars[i : j + 1]
         notes = sum(n for *_, n in run)
+        where = {bar for bar, *_ in run}
+        if edges.hold(where):
+            spared |= where
+            i = j + 1
+            continue
         worth = notes >= MIN_VERDICT_RUN and (
             len(run) >= 2 or run[0][2] in _CLEAR_BANDS
         )
@@ -561,7 +614,59 @@ def _longest_bar_run(
             best_key = (len(run), notes)
             best = _BarRun(first=run[0][0], last=run[-1][0], rushing=sign < 0)
         i = j + 1
-    return best
+    return best, frozenset(spared)
+
+
+#: How many notes after the opening the take's settled level is read from.
+_SETTLED_NOTES = 3
+
+
+def _without_spared_ends(
+    timed: list[Delta], spared: frozenset[int], edges: _Edges, config: AudioConfig
+) -> list[Delta]:
+    """The notes the note rule reads once an entrance or ending is spared.
+
+    The spared bars' own notes go: the note rule may not name what the bar
+    rule passed over — a take on tempo that eased off over its last two bars
+    was otherwise "Bars 1–8 went at 96."
+
+    And after a spared entrance, the rest is measured from where the take
+    settled. Deltas are drift from the take's level at its first notes, so an
+    entrance off the tempo is carried into every note after it: a first bar
+    at 86 against 100 leaves the rest a third of a beat behind, however well
+    they kept time, and the note rule read that as "Bars 1–12 fell behind."
+    The level the take settled at is taken off the notes that follow in the
+    same stretch of pulse (a re-anchor has already done this for any later
+    one), and they are banded again.
+    """
+    kept = [d for d in timed if d.measure_number not in spared]
+    entrance = spared & edges.start
+    # Read from after the whole entrance: with bar 1 on the beat and bar 2
+    # spared, bar 1's notes sit before the lag and would read it as none.
+    settled = [d for d in kept if entrance and d.measure_number > max(entrance)]
+    if not settled:
+        return kept
+    pulse = settled[0].pulse
+    same = [d for d in settled if d.pulse == pulse]
+    level_pct = float(np.median([d.delta_pct for d in same[:_SETTLED_NOTES]]))
+    level_ms = float(np.median([d.delta_ms for d in same[:_SETTLED_NOTES]]))
+    out: list[Delta] = []
+    for d in kept:
+        if d.pulse != pulse or d.measure_number <= max(entrance):
+            out.append(d)
+            continue
+        pct = d.delta_pct - level_pct
+        band = classify_band(pct, config=config)
+        out.append(
+            replace(
+                d,
+                delta_pct=pct,
+                delta_ms=d.delta_ms - level_ms,
+                band=band,
+                direction=_direction(pct, band),
+            )
+        )
+    return out
 
 
 def run_tempo_difference(
@@ -678,9 +783,12 @@ def generate_verdict(
     if not judged:
         return Verdict(text="Not enough clear notes to judge.", direction=Direction.on)
     lurch = describe_tempo_change(deltas, tempo_spans or [])
+    cfg = config or load_audio_config()
+    edges = _edges(judged, cfg.tolerance.settling_bars)
+    spared: frozenset[int] = frozenset()
 
     if tempi is not None and target_bpm > 0:
-        by_bars = _longest_bar_run(judged, tempi, target_bpm, config or load_audio_config())
+        by_bars, spared = _longest_bar_run(judged, tempi, target_bpm, cfg, edges)
         if by_bars is not None:
             played = tempi.across(by_bars.first, by_bars.last)
             return _run_verdict(
@@ -692,9 +800,12 @@ def generate_verdict(
                 lurch=lurch,
             )
 
-    # The note rule reads no config — it is pure geometry over deltas that
-    # were already banded using it.
+    # The note rule is geometry over deltas already banded — unless the bar
+    # rule spared an entrance or an ending, whose notes it then leaves out,
+    # banding what follows a spared entrance from where the take settled.
     timed = [d for d in judged if d.timed]
+    if spared:
+        timed = _without_spared_ends(timed, spared, edges, cfg)
 
     # Sign per note: +1 rushing, -1 dragging, 0 within tolerance.
     signs = [
@@ -713,7 +824,12 @@ def generate_verdict(
         j = i
         while j + 1 < n and signs[j + 1] == signs[i]:
             j += 1
-        if (j - i + 1) > best_len and _run_is_worth_naming(timed[i : j + 1]):
+        if (
+            (j - i + 1) > best_len
+            and _run_is_worth_naming(timed[i : j + 1])
+            # Settling in and winding down, as for bars (`_Edges`).
+            and not edges.hold({d.measure_number for d in timed[i : j + 1]})
+        ):
             best_len, best_start, best_end = j - i + 1, i, j
         i = j + 1
 

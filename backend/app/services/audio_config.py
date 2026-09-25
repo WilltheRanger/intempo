@@ -99,6 +99,8 @@ class ToleranceConfig:
     #: See `[tolerance.pulse]` in config.toml.
     disturbance_deviations: float = 6.0
     disturbance_floor_beats: float = 0.1667
+    #: See `settling_bars` in `[tolerance]`.
+    settling_bars: int = 2
 
 
 @dataclass(frozen=True)
@@ -228,6 +230,7 @@ def _parse(raw: dict) -> AudioConfig:
             disturbance_floor_beats=float(
                 tol.get("pulse", {}).get("disturbance_floor_beats", 0.1667)
             ),
+            settling_bars=int(tol.get("settling_bars", 2)),
         ),
         trend=TrendConfig(window=int(trend["window"])),
         alignment=AlignmentConfig(

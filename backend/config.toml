@@ -160,6 +160,12 @@ rushing_outer_pct = 20.0   # mid..outer = rush (orange); beyond = severe (red)
 dragging_inner_pct = 5.0
 dragging_mid_pct = 10.0
 dragging_outer_pct = 20.0
+# Settling in and winding down (the owner, 2026-09-25): a stretch this many
+# bars long or shorter, at the very start or end of a take, is not named in
+# the verdict line — finding the beat after the count-in, and easing off on
+# the last notes. Longer than this, or half the take or more, and it is named
+# whole. The chart still draws every bar as played.
+settling_bars = 2
 
 [tolerance.pulse]
 # When a musician breaks their pulse rather than drifting off it. Below these
