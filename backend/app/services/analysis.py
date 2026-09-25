@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 import math
 from collections import defaultdict
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Literal
@@ -45,11 +46,17 @@ from app.services.alignment import (
     typical_gap,
 )
 from app.services.audio_config import AudioConfig, load_audio_config
-from app.services.insights import Insights, insights_for, tempo_by_bar
+from app.services.insights import (
+    Insights,
+    insights_for,
+    tempo_across_bars,
+    tempo_by_bar,
+)
 from app.services.onset_recovery import predict_audio_times, recover_onsets
 from app.services.classification import (
     skipped_notes,
     Band,
+    BarTempi,
     Delta,
     Direction,
     UntimedReason,
@@ -233,7 +240,7 @@ def _shared_untimed_reason(
 
 
 def _summarize_measures(
-    deltas: list[Delta], tempi: dict[int, float] | None = None
+    deltas: list[Delta], tempi: Mapping[int, float] | None = None
 ) -> list[PerMeasure]:
     by_measure: dict[int, list[Delta]] = defaultdict(list)
     for d in deltas:
@@ -273,13 +280,14 @@ def _summarize_measures(
     return summaries
 
 
-def _bar_tempi(
+def bar_pacing(
     matched: list[tuple[int, int]],
     onsets: np.ndarray,
     timeline: ExpectedTimeline,
     target_bpm: float,
-) -> dict[int, float]:
-    """`insights.tempo_by_bar` for this pairing.
+) -> BarTempi:
+    """The take's bar tempi (`insights.tempo_by_bar`), and the tempo of any
+    run of its bars (`insights.tempo_across_bars`), for this pairing.
 
     Only notes whose written time the page states: an ornament's is this
     code's guess (`ORNAMENT_SHARE`), and so is where the note it decorates
@@ -292,12 +300,15 @@ def _bar_tempi(
         if 0 <= e < len(timeline.notes)
         and not (timeline.notes[e].is_grace_note or timeline.notes[e].after_grace_note)
     ]
-    return tempo_by_bar(
-        [float(timeline.onsets[e]) for _, e in kept],
-        [float(onsets[d]) for d, _ in kept],
-        [timeline.notes[e].measure_number for _, e in kept],
-        target_bpm,
-        new_stretch=[bool(timeline.notes[e].after_fermata) for _, e in kept],
+    written = [float(timeline.onsets[e]) for _, e in kept]
+    played = [float(onsets[d]) for d, _ in kept]
+    bars = [timeline.notes[e].measure_number for _, e in kept]
+    new_stretch = [bool(timeline.notes[e].after_fermata) for _, e in kept]
+    return BarTempi(
+        by_bar=tempo_by_bar(written, played, bars, target_bpm, new_stretch=new_stretch),
+        across=lambda first, last: tempo_across_bars(
+            written, played, bars, target_bpm, first, last, new_stretch=new_stretch
+        ),
     )
 
 
@@ -2165,8 +2176,15 @@ def analyze(
         cleaned, onsets, timeline, target_bpm, config=cfg, by_pitch=chained is not None
     )
     trend = rolling_trend(deltas, config=cfg)
+    # One pacing for the sentence and the chart, so the run the sentence names
+    # is the one the chart draws off the target.
+    pacing = bar_pacing(cleaned.matched, onsets, timeline, target_bpm)
     verdict = generate_verdict(
-        deltas, target_bpm, config=cfg, tempo_spans=tempo_change_spans(score)
+        deltas,
+        target_bpm,
+        config=cfg,
+        tempo_spans=tempo_change_spans(score),
+        tempi=pacing,
     )
 
     per_note = [
@@ -2194,9 +2212,7 @@ def analyze(
         verdict=verdict.text,
         verdict_direction=verdict.direction,
         per_note=per_note,
-        per_measure=_summarize_measures(
-            deltas, _bar_tempi(cleaned.matched, onsets, timeline, target_bpm)
-        ),
+        per_measure=_summarize_measures(deltas, pacing.by_bar),
         trend=trend,
         n_detected_onsets=raw.n_detected,
         n_expected_onsets=raw.n_expected,

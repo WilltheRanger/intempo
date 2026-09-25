@@ -33,6 +33,8 @@ plausible on every screen it reaches.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import numpy as np
 from pydantic import BaseModel
 
@@ -249,9 +251,59 @@ def detrended(
 
 #: A bar is timed from its own notes and the first note of the next bar, so
 #: the length of its last note counts; one with fewer borrows the bar before.
-#: Three, not two: a tempo from one interval is one note's timing, and a
-#: last note paired early read the owner's final bar as 264 BPM.
-MIN_NOTES_FOR_BAR_TEMPO = 3
+#:
+#: **Five, measured** (2026-09-25, after the owner asked whether the chart
+#: should be smoothed). On forty synthetic takes of the owner's piece — a
+#: known tempo in every bar, 25 ms of onset jitter, one note in twelve
+#: unmatched — three points missed the true tempo by 1.6 BPM on average and
+#: by 2.2 on the bars holding one or two notes; five missed by 0.7 and 0.6,
+#: and still found a step from 102 to 87 within a BPM or so of either side.
+#: Six borrowed across the step and missed it by 9.5. Smoothing the drawn
+#: line instead — three bars, weighted by notes — was worse than doing
+#: nothing: 5.9 BPM at the 90th percentile against 3.0, because it spreads a
+#: real change over the bars beside it. Two was never enough: a tempo from
+#: one interval is one note's timing, and a last note paired early read the
+#: owner's final bar as 264 BPM.
+MIN_NOTES_FOR_BAR_TEMPO = 5
+
+
+def _pacing(
+    written: list[float],
+    played: list[float],
+    bars: list[int],
+    new_stretch: list[bool] | None,
+) -> tuple[np.ndarray, Callable[[np.ndarray], float | None]]:
+    """The notes' bar numbers in written order, and the pace of any window of
+    them — what `tempo_by_bar` and `tempo_across_bars` both fit.
+
+    The window is indices into that order. The pace is seconds played per
+    second written: the median slope between every two of the window's notes
+    (Theil–Sen), within a stretch, over gaps a believable tempo explains.
+    """
+    w = np.asarray(written, dtype=float)
+    p = np.asarray(played, dtype=float)
+    b = np.asarray(bars)
+    order = np.argsort(w, kind="stable")
+    w, p, b = w[order], p[order], b[order]
+    breaks = (
+        np.asarray(new_stretch, dtype=bool)[order]
+        if new_stretch is not None and len(new_stretch) == w.size
+        else np.zeros(w.size, dtype=bool)
+    )
+    stretch = np.cumsum(breaks)
+
+    def pace(idx: np.ndarray) -> float | None:
+        slopes = []
+        for i, a in enumerate(idx):
+            for c in idx[i + 1 :]:
+                if stretch[a] != stretch[c]:
+                    continue
+                dw, dp = w[c] - w[a], p[c] - p[a]
+                if dw > 0 and dp > 0 and MIN_TEMPO_RATIO <= dw / dp <= MAX_TEMPO_RATIO:
+                    slopes.append(dp / dw)
+        return float(np.median(slopes)) if slopes else None
+
+    return b, pace
 
 
 def tempo_by_bar(
@@ -274,11 +326,12 @@ def tempo_by_bar(
 
     `written` and `played` are paired notes' written and played times in
     seconds, in written order; `bars` their bar numbers. Each bar is its notes
-    plus the next bar's first note — downbeat to downbeat — fitted by least
-    squares, and one with fewer than `MIN_NOTES_FOR_BAR_TEMPO` points borrows
-    the bar before. `new_stretch` marks notes the page does not time from the
-    note before (after a fermata: the held length is not written); the fit is
-    pooled within stretches, so a fermata is not read as the bar dragging.
+    plus the next bar's first note — downbeat to downbeat — and one with fewer
+    than `MIN_NOTES_FOR_BAR_TEMPO` points borrows the bars before it, or the
+    bars after when the take has none before. `new_stretch` marks notes the
+    page does not time from the note before (after a fermata: the held length
+    is not written); the fit is pooled within stretches, so a fermata is not
+    read as the bar dragging.
 
     **Robust, because a real take is noisy.** The slope is Theil–Sen's — the
     median of the slopes between every two of the window's notes — rather than
@@ -288,48 +341,68 @@ def tempo_by_bar(
     pace. Least squares on the owner's take (2026-09-25) read its last bar,
     reached with two notes unheard, as 142 BPM, and a bar with one stray
     attack as 148.
+
+    **Not smoothed afterwards**, on purpose: see `MIN_NOTES_FOR_BAR_TEMPO`.
+    Thin bars borrow notes instead, so a real change stays where it happened.
     """
     if target_bpm <= 0 or len(written) < 2:
         return {}
-    w = np.asarray(written, dtype=float)
-    p = np.asarray(played, dtype=float)
-    b = np.asarray(bars)
-    order = np.argsort(w, kind="stable")
-    w, p, b = w[order], p[order], b[order]
-    breaks = (
-        np.asarray(new_stretch, dtype=bool)[order]
-        if new_stretch is not None and len(new_stretch) == w.size
-        else np.zeros(w.size, dtype=bool)
-    )
-    stretch = np.cumsum(breaks)
+    b, pace = _pacing(written, played, bars, new_stretch)
 
-    def pace(idx: np.ndarray) -> float | None:
-        """Seconds played per second written: the median pairwise slope,
-        within a stretch, over gaps a believable tempo explains."""
-        slopes = []
-        for i, a in enumerate(idx):
-            for c in idx[i + 1 :]:
-                if stretch[a] != stretch[c]:
-                    continue
-                dw, dp = w[c] - w[a], p[c] - p[a]
-                if dw > 0 and dp > 0 and MIN_TEMPO_RATIO <= dw / dp <= MAX_TEMPO_RATIO:
-                    slopes.append(dp / dw)
-        return float(np.median(slopes)) if slopes else None
+    def downbeat_to_downbeat(k: int) -> np.ndarray:
+        idx = np.flatnonzero(b == numbers[k])
+        following = np.flatnonzero(b == numbers[k + 1])[:1] if k + 1 < len(numbers) else idx[:0]
+        return np.concatenate([idx, following])
 
     tempi: dict[int, float] = {}
     numbers = list(dict.fromkeys(b.tolist()))
     for k, bar in enumerate(numbers):
-        idx = np.flatnonzero(b == bar)
-        following = np.flatnonzero(b == numbers[k + 1])[:1] if k + 1 < len(numbers) else idx[:0]
-        window = np.concatenate([idx, following])
+        window = downbeat_to_downbeat(k)
         back = k - 1
         while window.size < MIN_NOTES_FOR_BAR_TEMPO and back >= 0:
             window = np.concatenate([np.flatnonzero(b == numbers[back]), window])
             back -= 1
+        # The opening bars have nothing before them to borrow, and a piece
+        # that opens on a held note would otherwise start its chart at bar 3.
+        ahead = k + 1
+        while window.size < MIN_NOTES_FOR_BAR_TEMPO and ahead < len(numbers):
+            window = np.union1d(window, downbeat_to_downbeat(ahead))
+            ahead += 1
         slope = pace(window) if window.size >= MIN_NOTES_FOR_BAR_TEMPO else None
         if slope is not None:
             tempi[int(bar)] = round(target_bpm / slope, 1)
     return tempi
+
+
+def tempo_across_bars(
+    written: list[float],
+    played: list[float],
+    bars: list[int],
+    target_bpm: float,
+    first: int,
+    last: int,
+    *,
+    new_stretch: list[bool] | None = None,
+) -> float | None:
+    """The tempo bars `first` to `last` were played at together, in BPM.
+
+    The same fit as `tempo_by_bar`, over every note of the stretch and the
+    next bar's first — what the verdict line quotes for the run of bars it
+    names, so its figure is the pace across the run rather than an average of
+    the chart's points. `None` when the stretch holds too few notes to say.
+    """
+    if target_bpm <= 0 or len(written) < 2:
+        return None
+    b, pace = _pacing(written, played, bars, new_stretch)
+    inside = np.flatnonzero((b >= first) & (b <= last))
+    if inside.size == 0:
+        return None
+    after = np.flatnonzero(b > last)[:1]
+    window = np.concatenate([inside, after])
+    if window.size < MIN_NOTES_FOR_BAR_TEMPO:
+        return None
+    slope = pace(window)
+    return None if slope is None else round(target_bpm / slope, 1)
 
 
 def insights_for(

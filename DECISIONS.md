@@ -1,5 +1,35 @@
 # InTempo Decisions
 
+## 2026-09-25 — The sentence under the title names bars off tempo, by the chart's own numbers
+
+**Context.** With the charts in BPM (entry below), the owner's take read
+"You dragged bars 1–12 by 7 BPM." over a chart whose bars 1–12 sat near 100
+and whose bars 18–25 sat at 78. The sentence's run was the note rule's —
+drift from the target since the first note — which in a take held slow is
+behind everywhere, so its longest run is whatever lies between two
+re-anchors. Asked, the owner chose "match the graph".
+
+**Decision.** Given the take's bar tempi, `generate_verdict` names the
+longest run of bars off the target in one direction, banded exactly as the
+bar card bands them, and quotes the run's tempo fitted as one stretch. The
+note rule stays as the fallback when no run of bars is worth naming. Bar
+tempi use five notes, not three, because the sentence now reads them and one
+thin bar was splitting the owner's slow ending (TUNING_LOG).
+
+**Alternatives considered.**
+- *The biggest gap rather than the longest run.* A single thin bar — the
+  least certain point on the chart — would win it on noise.
+- *Smooth the chart and the sentence's input.* Measured: worse than no
+  smoothing at the steps, which are what a musician needs located.
+- *Drop the note rule.* A take held 3% slow is on tempo in every bar and a
+  beat behind by bar 8; the title reads that drift and says it dragged, and
+  a sentence of "Steady all the way through." under it would contradict it.
+
+**Trade-offs accepted.** This amends the entry below, which kept the
+sentence on the click. The title still answers "did you fall behind the
+click"; the sentence answers "where was the tempo off", and falls back to the
+click's answer only when no bar was. A take's sentence changes when re-run.
+
 ## 2026-09-25 — The verdict's charts plot each bar's tempo; the title still answers the click
 
 **Context.** The owner's first working take (steady at ~90 against 104, two

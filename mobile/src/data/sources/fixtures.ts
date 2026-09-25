@@ -1189,7 +1189,7 @@ const FIXTURE_MEASURES: {
   { measure: 1, notes: 4, dragPct: -1.2, band: 'on', bpm: 97 },
   { measure: 2, notes: 4, dragPct: -2.8, band: 'on', bpm: 98 },
   { measure: 3, notes: 4, dragPct: -4.4, band: 'on', bpm: 99 },
-  { measure: 4, notes: 4, dragPct: -7.9, band: 'slight', bpm: 101 },
+  { measure: 4, notes: 4, dragPct: -7.9, band: 'slight', bpm: 100 },
   { measure: 5, notes: 4, dragPct: -11.6, band: 'rush_drag', bpm: 104 },
   { measure: 6, notes: 4, dragPct: -14.8, band: 'rush_drag', bpm: 106 },
   { measure: 7, notes: 4, dragPct: -16.2, band: 'rush_drag', bpm: 105 },
@@ -1439,8 +1439,10 @@ function buildFixtureTake(): TakeResult | null {
     // of someone browsing the demo, describing a recording they never made.
     failure: null,
     status: 'ok',
-    // The pipeline writes this sentence; the screen shows it verbatim.
-    headline: 'You rushed bars 5–8 by 4 BPM.',
+    // The pipeline writes this sentence; the screen shows it verbatim. It
+    // names the bars whose `bpm` above is off 96 (`_longest_bar_run`), at
+    // their tempo together — so the sample reads as the server would say it.
+    headline: 'You rushed bars 5–8 by 8 BPM.',
     direction: 'rush',
     verdict: verdictFor('rush_drag', 'rush'),
     lowConfidence: false,

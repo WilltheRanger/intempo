@@ -1378,6 +1378,14 @@ nothing else covers `backend/`. Named here rather than left to be found.
   `played_bpm` for charts and `insights.detrended` for comparisons.
 - **Real onsets need a robust fit.** Least squares on a bar's notes read one
   stray attack as 148 BPM; `tempo_by_bar` uses Theil–Sen over believable gaps.
+- **Filter a noisy number where it is made, never by smoothing the chart.**
+  Smoothing the drawn line spreads a real change over its neighbours (worst
+  case 5.9 BPM off against 3.0); five points per bar instead of three halves
+  the error and keeps the step (`MIN_NOTES_FOR_BAR_TEMPO`).
+- **The sentence under the title names bars off tempo by those same tempi**
+  (`classification._longest_bar_run`), banded as the card bands them. The
+  note rule is its fallback, and must stay one: a take a few percent slow is
+  on tempo in every bar and a beat behind by the end, and the title says so.
 - TUNING_LOG.md 2026-09-25 has every number.
 
 ## The capture path (2026-08-24) — what an audit of it found

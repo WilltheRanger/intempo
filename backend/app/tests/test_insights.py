@@ -19,6 +19,7 @@ from app.services.insights import (
     played_tempo,
     standout_note_value,
     steadiness,
+    tempo_across_bars,
     tempo_by_bar,
     tempo_drift,
     timing_by_note_value,
@@ -582,3 +583,68 @@ class TestTempoByBar:
         tempi = tempo_by_bar(written, played, bars, 104.0)
 
         assert tempi[4] == pytest.approx(100.0, abs=5.0)
+
+    def test_thin_bars_read_true_under_a_good_players_spread(self):
+        """**Filtered where the number is made, not smoothed after.**
+
+        The owner asked whether the chart should be smoothed (2026-09-25). A
+        bar of two notes timed from three points is close to two notes'
+        timing: sixteen such bars at 90, each note a normal 25 ms either side,
+        read 1.8 BPM off on average over six takes. Five points — the bar
+        before lends its notes — read 0.8.
+        """
+        errors = []
+        for seed in range(6):
+            written, played, bars = self._bars([90.0] * 16, notes_per_bar=2)
+            rng = np.random.default_rng(seed)
+            played = list(np.asarray(played) + rng.normal(0.0, 0.025, len(played)))
+            tempi = tempo_by_bar(written, played, bars, 104.0)
+            errors += [abs(v - 90.0) for v in tempi.values()]
+
+        assert np.mean(errors) < 1.2
+
+    def test_a_bar_with_notes_enough_of_its_own_keeps_a_real_change(self):
+        """What smoothing the drawn line would have cost: a real slowing
+        spread over the bars beside it. A bar of four is read from itself and
+        the next downbeat, so the step lands where it was played."""
+        written, played, bars = self._bars([104.0] * 4 + [80.0] * 4)
+
+        tempi = tempo_by_bar(written, played, bars, 104.0)
+
+        assert tempi[4] == pytest.approx(104.0, abs=0.5)
+        assert tempi[5] == pytest.approx(80.0, abs=0.5)
+
+    def test_an_opening_held_note_borrows_the_bars_after(self):
+        """Nothing comes before bar 1, so a piece that opens on a whole note
+        would have its chart start at bar 3."""
+        step = 60.0 / 104.0
+        written, played, bars = [0.0], [0.0], [1]
+        more_w, more_p, more_b = self._bars([96.0] * 4)
+        written += [4 * step + w for w in more_w]
+        played += [4 * 60.0 / 96.0 + p for p in more_p]
+        bars += [b + 1 for b in more_b]
+
+        tempi = tempo_by_bar(written, played, bars, 104.0)
+
+        assert tempi[1] == pytest.approx(96.0, abs=0.5)
+
+
+class TestTempoAcrossBars:
+    """The tempo of a run of bars — the figure the verdict line quotes."""
+
+    def test_a_run_is_read_at_its_own_tempo(self):
+        written, played, bars = TestTempoByBar._bars([104.0] * 4 + [80.0] * 4)
+
+        assert tempo_across_bars(written, played, bars, 104.0, 5, 8) == pytest.approx(
+            80.0, abs=0.5
+        )
+        assert tempo_across_bars(written, played, bars, 104.0, 1, 4) == pytest.approx(
+            104.0, abs=0.5
+        )
+
+    def test_too_little_to_say_is_none(self):
+        written, played, bars = TestTempoByBar._bars([90.0] * 4, notes_per_bar=1)
+
+        assert tempo_across_bars(written, played, bars, 104.0, 2, 3) is None
+        assert tempo_across_bars(written, played, bars, 104.0, 9, 12) is None
+        assert tempo_across_bars([], [], [], 104.0, 1, 2) is None

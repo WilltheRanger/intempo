@@ -15,6 +15,8 @@ dragging = "behind". The trend/verdict flip this to rush-positive so
 
 from __future__ import annotations
 
+from collections import defaultdict
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import Enum
 from typing import Literal
@@ -453,6 +455,20 @@ class Verdict:
     avg_bpm_delta: float | None = None
 
 
+@dataclass(frozen=True)
+class BarTempi:
+    """The tempo each bar was played at, and the tempo of any run of them.
+
+    `by_bar` is what the verdict's charts draw (`insights.tempo_by_bar`);
+    `across(first, last)` fits bars `first` to `last` as one stretch
+    (`insights.tempo_across_bars`) — the figure a sentence about that run
+    quotes. Built for a take by `analysis.bar_pacing`.
+    """
+
+    by_bar: Mapping[int, float]
+    across: Callable[[int, int], float | None]
+
+
 #: The fewest consecutive notes that make a drift worth naming on their own.
 #:
 #: **Two was enough, and two is what chance produces.** A take with no drift
@@ -475,6 +491,77 @@ def _run_is_worth_naming(run: list[Delta]) -> bool:
     if len(run) >= MIN_VERDICT_RUN:
         return True
     return len(run) >= 2 and all(d.band in _CLEAR_BANDS for d in run)
+
+
+@dataclass(frozen=True)
+class _BarRun:
+    first: int
+    last: int
+    rushing: bool
+
+
+def _longest_bar_run(
+    judged: list[Delta], tempi: BarTempi, target_bpm: float, config: AudioConfig
+) -> _BarRun | None:
+    """The longest run of bars played off the target the same way, by the
+    tempo each bar was played at — the numbers the verdict's chart draws.
+
+    **Why bars and not notes** (the owner, 2026-09-25, choosing "match the
+    graph"). The note rule reads drift from the target held since the first
+    note, so in a take played steadily slow every note is behind and the run
+    is simply the longest stretch between two re-anchors: "You dragged bars
+    1–12 by 7 BPM" under a chart whose bars 18–25 sat at 78 against 104. A
+    bar's own tempo says where the take was off, and by how much, the way the
+    chart shows it.
+
+    Each bar is banded exactly as the bar card bands it — `(1 − bpm/target) ×
+    100`, the number `lib/verdict/barTempo.ts` classifies, in this module's
+    sign (positive is behind). Bars with nothing timed or under a written
+    tempo change are left out rather than counted as on tempo, as untimed
+    notes are in the note rule: the page asked for another tempo there, or
+    there was nothing to time. A run must hold `MIN_VERDICT_RUN` timed notes,
+    and one bar alone is named only when it is clearly out
+    (`_CLEAR_BANDS`) — a single bar's tempo is the least certain on the chart.
+    The longest run by bars wins; then by notes; then the earlier.
+    """
+    timed: dict[int, int] = defaultdict(int)
+    changed: set[int] = set()
+    for d in judged:
+        if d.under_tempo_change:
+            changed.add(d.measure_number)
+        if d.timed:
+            timed[d.measure_number] += 1
+
+    bars: list[tuple[int, int, Band, int]] = []  # bar, sign, band, timed notes
+    for bar, bpm in sorted(tempi.by_bar.items()):
+        if bpm <= 0 or not timed.get(bar) or bar in changed:
+            continue
+        pct = (1.0 - bpm / target_bpm) * 100.0
+        band = classify_band(pct, config=config)
+        sign = 0 if band is Band.on else (1 if pct > 0 else -1)
+        bars.append((bar, sign, band, timed[bar]))
+
+    best: _BarRun | None = None
+    best_key = (0, 0)
+    i = 0
+    while i < len(bars):
+        sign = bars[i][1]
+        if sign == 0:
+            i += 1
+            continue
+        j = i
+        while j + 1 < len(bars) and bars[j + 1][1] == sign:
+            j += 1
+        run = bars[i : j + 1]
+        notes = sum(n for *_, n in run)
+        worth = notes >= MIN_VERDICT_RUN and (
+            len(run) >= 2 or run[0][2] in _CLEAR_BANDS
+        )
+        if worth and (len(run), notes) > best_key:
+            best_key = (len(run), notes)
+            best = _BarRun(first=run[0][0], last=run[-1][0], rushing=sign < 0)
+        i = j + 1
+    return best
 
 
 def run_tempo_difference(
@@ -563,8 +650,16 @@ def generate_verdict(
     *,
     config: AudioConfig | None = None,
     tempo_spans: list[TempoSpan] | None = None,
+    tempi: BarTempi | None = None,
 ) -> Verdict:
     """One-line human verdict from the largest same-direction run (§4).
+
+    **Given the take's bar tempi, the run is of bars** — the longest stretch
+    the chart below the sentence shows off the target, and the figure is the
+    tempo that stretch was played at (`_longest_bar_run`). The note rule below
+    is what is said without them, and when no run of bars is worth naming:
+    a take held a few percent slow is on tempo bar by bar yet a beat behind
+    by the end, and the title above the sentence says it dragged.
 
     We surface the longest contiguous run of notes that drift the same
     way (all rushing or all dragging, ignoring notes inside tolerance and
@@ -579,13 +674,25 @@ def generate_verdict(
     Their band is `on` by refusal, not by measurement, so letting one break a
     run would split a rushed passage at every ornament in it.
     """
-    # No config is read here — the run-finding below is pure geometry over
-    # deltas that were already banded using it. `config` stays in the signature
-    # because every function in this module takes it, and a caller having to
-    # remember which ones actually use it is worse than an ignored argument.
     judged = [d for d in deltas if not d.is_slur_interior]
     if not judged:
         return Verdict(text="Not enough clear notes to judge.", direction=Direction.on)
+    lurch = describe_tempo_change(deltas, tempo_spans or [])
+
+    if tempi is not None and target_bpm > 0:
+        by_bars = _longest_bar_run(judged, tempi, target_bpm, config or load_audio_config())
+        if by_bars is not None:
+            played = tempi.across(by_bars.first, by_bars.last)
+            return _run_verdict(
+                rushing=by_bars.rushing,
+                start_m=by_bars.first,
+                end_m=by_bars.last,
+                difference=None if played is None else played - target_bpm,
+                lurch=lurch,
+            )
+
+    # The note rule reads no config — it is pure geometry over deltas that
+    # were already banded using it.
     timed = [d for d in judged if d.timed]
 
     # Sign per note: +1 rushing, -1 dragging, 0 within tolerance.
@@ -609,8 +716,6 @@ def generate_verdict(
             best_len, best_start, best_end = j - i + 1, i, j
         i = j + 1
 
-    lurch = describe_tempo_change(deltas, tempo_spans or [])
-
     # No meaningful run: everything within tolerance, or nothing chance could
     # not have produced.
     if best_len == 0:
@@ -632,10 +737,26 @@ def generate_verdict(
         )
 
     run = timed[best_start : best_end + 1]
-    rushing = run[0].direction is Direction.rush
-    difference = run_tempo_difference(
-        run, timed[best_start - 1] if best_start > 0 else None, target_bpm
+    return _run_verdict(
+        rushing=run[0].direction is Direction.rush,
+        start_m=run[0].measure_number,
+        end_m=run[-1].measure_number,
+        difference=run_tempo_difference(
+            run, timed[best_start - 1] if best_start > 0 else None, target_bpm
+        ),
+        lurch=lurch,
     )
+
+
+def _run_verdict(
+    *,
+    rushing: bool,
+    start_m: int,
+    end_m: int,
+    difference: float | None,
+    lurch: str | None,
+) -> Verdict:
+    """The sentence for a run, whichever rule found it."""
     # The figure is only said when it agrees with the direction and survives
     # rounding. A run that got ahead of the beat at its first note and then
     # held the tempo exactly *was* rushed, and its pace across the run is still
@@ -644,8 +765,6 @@ def generate_verdict(
     bpm_delta: int | None = None
     if difference is not None and (difference > 0) == rushing:
         bpm_delta = round(abs(difference)) or None
-    start_m = run[0].measure_number
-    end_m = run[-1].measure_number
     verb = "rushed" if rushing else "dragged"
 
     # Short, because it is read under a title that already says which way:
