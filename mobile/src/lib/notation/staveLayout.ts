@@ -24,6 +24,7 @@ export interface StaveLayoutRequest {
   beatQuarters?: number;
   closesWithRepeat?: boolean;
   endings?: { label: string; from: number; to: number; closed: boolean }[];
+  tempoMarks?: { label: string; measure: number }[];
   head?: {
     clef: Clef | null;
     key: { pitch: string; kind: 'sharp' | 'flat' }[];
@@ -66,6 +67,7 @@ export function layOutStave(request: StaveLayoutRequest): StaveLayout {
     beatQuarters,
     closesWithRepeat,
     endings,
+    tempoMarks,
     head,
     nameRow = true,
   } = request;
@@ -82,6 +84,7 @@ export function layOutStave(request: StaveLayoutRequest): StaveLayout {
       beatQuarters,
       closesWithRepeat,
       endings,
+      tempoMarks,
       head,
       // Also stops the layout reserving the row's height, so hiding the names
       // doesn't leave a band of empty space under every system.

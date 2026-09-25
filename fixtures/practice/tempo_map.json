@@ -1,0 +1,190 @@
+{
+  "_comment": [
+    "The tempo each bar is meant at, where the page changes it, and the contract",
+    "both implementations must keep: `score_schema.tempo_in_force` in the",
+    "backend, which the analysis judges each bar against, and",
+    "`lib/score/tempoMap.ts` in the app, which Listen plays and the bar editor",
+    "starts a new tempo from. Two walks in two languages; this file is how they",
+    "stay one rule, as `start_at.json` does for trimming.",
+    "",
+    "`stated` is per bar, from bar 1: null is the piece's opening tempo, a",
+    "number a `new_tempo`'s stated BPM. Each marking pushes the tempo it leaves,",
+    "`a tempo` pops one, and \"Tempo I\" goes back to the opening.",
+    "`tempo_changes` rows are [measure, kind, text, bpm]."
+  ],
+  "cases": [
+    {
+      "name": "a piece that never changes tempo",
+      "bars": 4,
+      "tempo_changes": [],
+      "stated": [
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "name": "a new tempo holds from its bar on",
+      "bars": 5,
+      "tempo_changes": [
+        [
+          3,
+          "new_tempo",
+          "meno mosso",
+          88
+        ]
+      ],
+      "stated": [
+        null,
+        null,
+        88,
+        88,
+        88
+      ]
+    },
+    {
+      "name": "a tempo after a rit. inside a new tempo returns to the new tempo",
+      "bars": 8,
+      "tempo_changes": [
+        [
+          2,
+          "new_tempo",
+          "meno mosso",
+          88
+        ],
+        [
+          4,
+          "ritardando",
+          "poco rit.",
+          null
+        ],
+        [
+          6,
+          "a_tempo",
+          "a tempo",
+          null
+        ]
+      ],
+      "stated": [
+        null,
+        88,
+        88,
+        88,
+        88,
+        88,
+        88,
+        88
+      ]
+    },
+    {
+      "name": "a tempo after a new tempo returns to the one before it",
+      "bars": 7,
+      "tempo_changes": [
+        [
+          2,
+          "new_tempo",
+          "pi\u00f9 mosso",
+          120
+        ],
+        [
+          4,
+          "new_tempo",
+          "meno mosso",
+          96
+        ],
+        [
+          6,
+          "a_tempo",
+          "a tempo",
+          null
+        ]
+      ],
+      "stated": [
+        null,
+        120,
+        120,
+        96,
+        96,
+        120,
+        120
+      ]
+    },
+    {
+      "name": "Tempo I goes back to the opening, however deep",
+      "bars": 7,
+      "tempo_changes": [
+        [
+          2,
+          "new_tempo",
+          "pi\u00f9 mosso",
+          120
+        ],
+        [
+          4,
+          "new_tempo",
+          "meno mosso",
+          96
+        ],
+        [
+          6,
+          "a_tempo",
+          "Tempo I",
+          null
+        ]
+      ],
+      "stated": [
+        null,
+        120,
+        120,
+        96,
+        96,
+        null,
+        null
+      ]
+    },
+    {
+      "name": "a rit. and its a tempo leave the stated tempo alone",
+      "bars": 5,
+      "tempo_changes": [
+        [
+          2,
+          "ritardando",
+          "rit.",
+          null
+        ],
+        [
+          4,
+          "a_tempo",
+          "a tempo",
+          null
+        ]
+      ],
+      "stated": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "name": "a new tempo with no number states nothing",
+      "bars": 4,
+      "tempo_changes": [
+        [
+          2,
+          "new_tempo",
+          "meno mosso",
+          null
+        ]
+      ],
+      "stated": [
+        null,
+        null,
+        null,
+        null
+      ]
+    }
+  ]
+}

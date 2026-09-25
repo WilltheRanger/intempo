@@ -5,6 +5,7 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import {
   EmptyState,
+  Input,
   LoadingState,
   BackLink,
   PrimaryButton,
@@ -13,7 +14,7 @@ import {
 } from '../../components/primitives';
 import { BottomSheet } from '../../components/overlays/BottomSheet';
 import { useCorrectScore, usePiece } from '../../data/hooks/usePieces';
-import type { Clef, ScoreJson, ScoreNote } from '../../data/types';
+import type { Clef, ScoreJson, ScoreNote, ScoreTempoChange } from '../../data/types';
 import { Minus, Plus } from '../../components/icons';
 import {
   BORDER_WIDTH,
@@ -54,6 +55,20 @@ import {
   describeClef,
 } from './clefEdit';
 import { timeSignaturesByMeasure } from '../../lib/notation/meter';
+import {
+  TEMPO_MARK_CHOICES,
+  applyTempoMarkEdit,
+  choiceOf,
+  describeTempoMark,
+  markFor,
+  nextMetronomeMark,
+  printedAfterStep,
+  startingBpm,
+  statedTempoBefore,
+  tempoMarksAt,
+  usualPrinted,
+  type TempoMarkChoice,
+} from './tempoMarkEdit';
 
 /**
  * Fixing a measure whose durations do not add up.
@@ -109,6 +124,13 @@ export function MeasureEditScreen() {
   const [clefEdit, setClefEdit] = useState<{ value: Clef | null } | null>(null);
   const [pickingClef, setPickingClef] = useState(false);
   const [pickingKey, setPickingKey] = useState(false);
+  /** The tempo marking at this bar, as `keyEdit`: null untouched, a wrapped null removed. */
+  const [tempoEdit, setTempoEdit] = useState<{ value: ScoreTempoChange | null } | null>(null);
+  const [pickingTempo, setPickingTempo] = useState(false);
+  // What the tempo sheet holds while it is open, committed by "Done".
+  const [sheetChoice, setSheetChoice] = useState<TempoMarkChoice | null>(null);
+  const [sheetPrinted, setSheetPrinted] = useState('');
+  const [sheetBpm, setSheetBpm] = useState(100);
 
   // Seeded from the score the first time it arrives, then owned locally so a
   // background refetch cannot discard edits in progress.
@@ -181,6 +203,52 @@ export function MeasureEditScreen() {
       ? 'Unknown'
       : 'No change';
 
+  // The tempo marking printed at this bar, and the tempo in force as it
+  // begins — what a new tempo's stepper starts from and is compared with.
+  const savedTempo = tempoMarksAt(piece.score, params.measureNumber)[0] ?? null;
+  const workingTempo = tempoEdit === null ? savedTempo : tempoEdit.value;
+  const tempoBefore =
+    statedTempoBefore(piece.score, params.measureNumber) ?? piece.score.bpm_hint ?? sheetBpm;
+  const tempoDescription = describeTempoMark(workingTempo);
+
+  function openTempo() {
+    if (!piece?.score) {
+      return;
+    }
+    setSheetChoice(workingTempo ? choiceOf(workingTempo) : null);
+    setSheetPrinted(workingTempo?.text ?? '');
+    setSheetBpm(workingTempo?.bpm ?? startingBpm(piece.score, params.measureNumber));
+    setPickingTempo(true);
+  }
+
+  function chooseTempo(choice: TempoMarkChoice | null) {
+    impact(ImpactFeedbackStyle.Light);
+    setSheetChoice(choice);
+    setSheetPrinted(choice === null ? '' : usualPrinted(choice, sheetBpm, tempoBefore));
+  }
+
+  function stepTempo(direction: 1 | -1) {
+    impact(ImpactFeedbackStyle.Light);
+    const next = nextMetronomeMark(sheetBpm, direction);
+    setSheetBpm(next);
+    setSheetPrinted((printed) => printedAfterStep(printed, next, tempoBefore));
+  }
+
+  function commitTempo() {
+    setTempoEdit({
+      value:
+        sheetChoice === null
+          ? null
+          : markFor(
+              sheetChoice,
+              params.measureNumber,
+              sheetPrinted,
+              sheetChoice === 'new_tempo' ? sheetBpm : null,
+            ),
+    });
+    setPickingTempo(false);
+  }
+
   function change(patch: Partial<ScoreNote>) {
     if (!working) {
       return;
@@ -243,10 +311,14 @@ export function MeasureEditScreen() {
       keyEdit === null
         ? withNotes
         : applyKeySignatureEdit(withNotes, params.measureNumber, workingKey);
-    const corrected =
+    const withClef =
       clefEdit === null
         ? withKey
         : applyClefEdit(withKey, params.measureNumber, workingClef);
+    const corrected =
+      tempoEdit === null
+        ? withClef
+        : applyTempoMarkEdit(withClef, params.measureNumber, tempoEdit.value);
     try {
       await correct.mutateAsync(corrected);
       goBack();
@@ -292,7 +364,7 @@ export function MeasureEditScreen() {
             loading={correct.isPending}
             disabled={
               correct.isPending ||
-              (notes === null && keyEdit === null && clefEdit === null)
+              (notes === null && keyEdit === null && clefEdit === null && tempoEdit === null)
             }
           />
         </View>
@@ -378,6 +450,34 @@ export function MeasureEditScreen() {
           {!isFirstBar && workingClef === null ? (
             <Text variant="metadataSmall" color="textTertiary">
               Choose a clef only if a new one is printed at this bar.
+            </Text>
+          ) : null}
+        </View>
+        <Text variant="metadata" color="accentText" style={styles.change}>
+          Change
+        </Text>
+      </Pressable>
+
+      {/*
+        A tempo change printed at this bar — "poco rit.", "a tempo", "meno
+        mosso". The page's reader sees notes, not words (the owner, 2026-09-25:
+        "how am I supposed to account for tempo variations or where it says
+        poco"), so a musician marks it here, where the key and clef are.
+      */}
+      <Text variant="caption" color="textTertiary" style={styles.keyLabel}>
+        Tempo
+      </Text>
+      <Pressable
+        onPress={openTempo}
+        accessibilityRole="button"
+        accessibilityLabel={`Change the tempo marking. ${tempoDescription}`}
+        style={({ pressed }) => [styles.keySetting, pressed && styles.pressed]}
+      >
+        <View style={styles.keyCopy}>
+          <Text variant="body" style={styles.settingValue}>{tempoDescription}</Text>
+          {workingTempo === null ? (
+            <Text variant="metadataSmall" color="textTertiary">
+              Mark one where the page prints it.
             </Text>
           ) : null}
         </View>
@@ -725,11 +825,86 @@ export function MeasureEditScreen() {
         </ScrollView>
       </BottomSheet>
 
+      <BottomSheet
+        visible={pickingTempo}
+        onClose={() => setPickingTempo(false)}
+        title={`Tempo at bar ${params.measureNumber}`}
+        expand
+      >
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.keyChoices}
+          keyboardShouldPersistTaps="handled"
+        >
+          {[{ value: null, label: 'No change at this bar' }, ...TEMPO_MARK_CHOICES].map((choice) => {
+            const chosen = sheetChoice === choice.value;
+            return (
+              <Pressable
+                key={choice.value ?? 'none'}
+                onPress={() => chooseTempo(choice.value)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: chosen }}
+                aria-pressed={chosen}
+                style={({ pressed }) => [styles.keyChoice, chosen && styles.keyChoiceOn, pressed && styles.pressed]}
+              >
+                <Text variant="metadata">{choice.label}</Text>
+              </Pressable>
+            );
+          })}
+
+          {sheetChoice === 'new_tempo' ? (
+            // Through the marks on a metronome, which is how a page states one.
+            <View style={styles.pitchStepper}>
+              <Pressable
+                onPress={() => stepTempo(-1)}
+                accessibilityRole="button"
+                accessibilityLabel="Slower"
+                style={({ pressed }) => [styles.stepButton, pressed && styles.pressed]}
+              >
+                <Minus size={ICON_SIZE.md} strokeWidth={ICON_STROKE_WIDTH} color={colors.textPrimary} />
+              </Pressable>
+              <View style={styles.pitchName} accessibilityLiveRegion="polite">
+                <Text style={styles.pitchText}>{sheetBpm}</Text>
+                <Text variant="metadataSmall" color="textTertiary">BPM</Text>
+              </View>
+              <Pressable
+                onPress={() => stepTempo(1)}
+                accessibilityRole="button"
+                accessibilityLabel="Faster"
+                style={({ pressed }) => [styles.stepButton, pressed && styles.pressed]}
+              >
+                <Plus size={ICON_SIZE.md} strokeWidth={ICON_STROKE_WIDTH} color={colors.textPrimary} />
+              </Pressable>
+            </View>
+          ) : null}
+
+          {sheetChoice !== null ? (
+            <View style={styles.tempoPrinted}>
+              <Input
+                label="As printed"
+                value={sheetPrinted}
+                onChangeText={setSheetPrinted}
+                placeholder={usualPrinted(sheetChoice, sheetBpm, tempoBefore) || 'meno mosso'}
+                autoCapitalize="none"
+              />
+            </View>
+          ) : null}
+
+          <PrimaryButton label="Done" onPress={commitTempo} style={styles.tempoDone} />
+        </ScrollView>
+      </BottomSheet>
+
     </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
+  tempoPrinted: {
+    marginTop: spacing.xl,
+  },
+  tempoDone: {
+    marginTop: spacing.xl,
+  },
   /*
     Every tappable thing on this screen acknowledges the touch. These were bare
     `Pressable`s with a static style, so a tap produced no response at all until

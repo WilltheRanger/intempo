@@ -1,5 +1,35 @@
 # InTempo Decisions
 
+## 2026-09-25 — Marking a tempo change by hand, in the bar editor
+
+**Context.** The analysis can judge a "meno mosso" at its own tempo (#163),
+but only if the score says it is there, and the page's reader sees notes, not
+words. The owner chose to be able to mark them themselves as well as having
+them read from the photo.
+
+**Decision.** A "Tempo" setting in the bar editor, beside Key and Clef, opening
+a sheet: no change, slowing down, speeding up, back to tempo, back to the
+opening tempo, a new tempo. A new tempo has a stepper that moves through the
+marks on a metronome (…84, 88, 92…) from the tempo in force at the bar, and
+suggests "meno mosso" or "più mosso" by which way it went; an "As printed"
+field keeps the page's own words ("poco rit."). One marking per bar. Saved with
+the bar, through the same whole-score correction the notes use. The score draws
+each marking in italic over the bar it is printed at, above any bracket. Listen
+plays a new tempo at its own speed, scaled with the Listen tempo.
+
+The walk the analysis, Listen and the editor share — each marking pushes the
+tempo it leaves, "a tempo" pops one, "Tempo I" goes to the opening — is held
+between backend and app by `fixtures/practice/tempo_map.json`.
+
+**Alternatives.** A per-bar tempo typed as a number — rejected, a page states
+metronome marks and a stepper through them is four taps where typing is a
+keyboard. A separate "tempo changes" screen listing every marking — deferred;
+the bar editor is where a musician already corrects what was read.
+
+**Trade-offs.** The metronome while recording still runs at one tempo: it is a
+fixed-interval clock, and following a new tempo means scheduling its beats from
+the score. Listen and the analysis follow the marking; the click does not yet.
+
 ## 2026-09-25 — Tempo changes: a stated new tempo is judged against, per bar
 
 **Context.** The owner: "How am I supposed to account for tempo variations or

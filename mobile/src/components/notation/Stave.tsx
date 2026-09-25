@@ -243,6 +243,8 @@ export interface StaveProps {
   closesWithRepeat?: boolean;
   /** First- and second-time ending brackets — `staveScoreFor` computes them. */
   endings?: { label: string; from: number; to: number; closed: boolean }[];
+  /** Tempo markings over their bars — `staveScoreFor` computes them. */
+  tempoMarks?: { label: string; measure: number }[];
   /**
    * Print each note's letter under the system.
    *
@@ -405,6 +407,7 @@ export function Stave({
   beatQuarters,
   closesWithRepeat,
   endings,
+  tempoMarks,
   head,
   showNoteNames = true,
   highlightMeasure = null,
@@ -434,6 +437,7 @@ export function Stave({
     beatQuarters,
     closesWithRepeat,
     endings,
+    tempoMarks,
     head,
     nameRow: showNoteNames,
   });
@@ -1089,6 +1093,25 @@ export function Stave({
                 {ending.label}
               </SvgText>
             </G>
+          ))}
+
+          {/*
+            Tempo markings — "poco rit.", "a tempo", "meno mosso · 88" — in
+            italic type over the bar they are printed at, as a part sets them.
+            The musician's own, or read off the page.
+          */}
+          {system.tempoMarks.map((mark, index) => (
+            <SvgText
+              key={`tempo-${index}`}
+              x={mark.x}
+              y={mark.y}
+              fill={rule}
+              fontSize={mark.size}
+              fontFamily={fontFamily.serifRegular}
+              fontStyle="italic"
+            >
+              {mark.label}
+            </SvgText>
           ))}
 
           {/*

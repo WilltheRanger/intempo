@@ -116,6 +116,7 @@ export function StartBarPicker({ score, bars, value, onChange }: StartBarPickerP
             beatQuarters: stave.beatQuarters,
             closesWithRepeat: stave.closesWithRepeat,
             endings: stave.endings,
+            tempoMarks: stave.tempoMarks,
             head,
             nameRow: false,
           })
@@ -191,6 +192,7 @@ export function StartBarPicker({ score, bars, value, onChange }: StartBarPickerP
                 beatQuarters={stave?.beatQuarters}
                 closesWithRepeat={stave?.closesWithRepeat}
                 endings={stave?.endings}
+                tempoMarks={stave?.tempoMarks}
                 head={head}
                 showNoteNames={false}
                 highlightMeasure={value}

@@ -800,6 +800,24 @@ else if (!afterBarSave.some((l) => /^3 of 4 beats$/.test(l)))
   fail('a refused save discarded the edit that was on screen');
 else pass(`a refused save keeps the edit and says why: "${refusal.slice(0, 52)}…"`);
 
+/*
+ * **A tempo change, marked by hand** (the owner, 2026-09-25: "how am I
+ * supposed to account for tempo variations or where it says poco"). The rules
+ * are unit-tested in `tempoMarkEdit.test.ts`; what is not is the sheet — that
+ * choosing a new tempo shows the stepper, that stepping moves through the
+ * metronome's marks and suggests the words, and that Done writes it back to
+ * the row the musician will save.
+ */
+await page.getByRole('button', { name: /^Change the tempo marking\./ }).first().click();
+await page.getByRole('button', { name: 'A new tempo', exact: true }).first().click({ timeout: 10000 });
+await page.getByRole('button', { name: 'Slower', exact: true }).first().click();
+await page.getByRole('button', { name: 'Done', exact: true }).first().click();
+const tempoMarkRow = page.getByRole('button', { name: /^Change the tempo marking\./ }).first();
+await tempoMarkRow.waitFor({ timeout: 10000 }).catch(() => {});
+const tempoLabel = (await tempoMarkRow.getAttribute('aria-label')) ?? '';
+if (/meno mosso · \d+$/.test(tempoLabel)) pass(`a new tempo marked from the bar editor: "${tempoLabel}"`);
+else fail(`marking a slower new tempo left the row reading "${tempoLabel}"`);
+
 console.log('\n## Telling the app it got a bar wrong');
 
 /*

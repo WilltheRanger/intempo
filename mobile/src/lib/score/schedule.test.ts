@@ -311,3 +311,35 @@ describe('grace notes', () => {
     expect(schedule.durationS - rest[0].startS).toBeCloseTo(plain.durationS, 9);
   });
 });
+
+describe('a page that changes tempo', () => {
+  // Marked 104; "meno mosso · 88" from bar 3. Four quarters a bar.
+  const stepped = (bpmHint: number | null): ScoreJson =>
+    ({
+      clef: 'treble',
+      time_signature: '4/4',
+      ocr_confidence: 1,
+      bpm_hint: bpmHint,
+      measures: Array.from({ length: 4 }, (_, i) => ({
+        measure_number: i + 1,
+        notes: Array.from({ length: 4 }, () => ({ pitch: 'A4', duration: 'quarter' })),
+      })),
+      tempo_changes: [{ measure_number: 3, kind: 'new_tempo', text: 'meno mosso', bpm: 88 }],
+    }) as unknown as ScoreJson;
+
+  it('plays the new tempo from its bar, and nothing before it moves', () => {
+    const played = scheduleScore(stepped(104), 104);
+    const bar = (n: number) => played.notes.filter((note) => note.measureNumber === n);
+
+    expect(bar(1)[1].startS - bar(1)[0].startS).toBeCloseTo(60 / 104);
+    expect(bar(3)[1].startS - bar(3)[0].startS).toBeCloseTo(60 / 88);
+    expect(bar(3)[0].startS).toBeCloseTo((8 * 60) / 104);
+  });
+
+  it('scales the new tempo with the tempo Listen is set to', () => {
+    const played = scheduleScore(stepped(104), 52);
+    const bar3 = played.notes.filter((note) => note.measureNumber === 3);
+
+    expect(bar3[1].startS - bar3[0].startS).toBeCloseTo(60 / 44);
+  });
+});
