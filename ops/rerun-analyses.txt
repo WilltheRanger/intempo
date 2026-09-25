@@ -27,6 +27,10 @@
 # the bars the BPM chart shows off tempo, and each bar's tempo is read from
 # five notes rather than three. The owner asked again that the two takes on
 # the other account stay out.
+#
+# 2026-09-25, a fifth time — after #153: the sentence gives the bars and the
+# tempo they went at ("Bars 13–25 went at 81."), and the line under it no
+# longer repeats the tempo. Same sixteen; the other account's two stay out.
 5d6011ba-dd06-4b81-884a-86eff4ab565d
 44975f56-1b8a-473a-8e5a-e06d1d0f7a1e
 2aac1ba8-595a-433f-bec2-a49077bbf359
