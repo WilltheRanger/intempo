@@ -87,16 +87,32 @@ export function appVerdictFor(measure: MeasureVerdict): UserVerdict {
   return measure.direction === 'rush' ? 'rushing' : 'dragging';
 }
 
+/** What the card says once an answer has been sent. */
+export interface CorrectionThanks {
+  /** The thanks itself, beside the check. */
+  title: string;
+  /** Their answer read back, so they can see what was sent — and change it. */
+  answer: string;
+}
+
 /**
  * What to say once it has been sent.
  *
- * Deliberately not "Thanks" or a tick that implies the verdict changed. The
- * bar still reads what it read: this is a note to whoever tunes the
- * thresholds, not an edit to the take. Saying otherwise would be the app
- * pretending to have learned something in the two seconds since the tap.
+ * **A thanks that lands** (the owner, 2026-09-25: "it should say thanks for
+ * the feedback, and some confirmation that seems satisfying"). The bare
+ * "Thanks." read as the control having stopped working. So: a check, the
+ * thanks, and their own answer read back.
+ *
+ * **Still not a claim that the verdict changed.** The bar reads what it read:
+ * this is a note to whoever tunes the thresholds, not an edit to the take,
+ * and "Updated" or "Fixed" would be the app pretending to have learned
+ * something in the two seconds since the tap.
  */
-export function correctionAcknowledgement(choice: UserVerdict): string {
-  return choice === 'unsure'
-    ? 'Thanks.'
-    : `Noted as ${correctionWord(choice).toLowerCase()}.`;
+export function correctionAcknowledgement(choice: UserVerdict): CorrectionThanks {
+  return {
+    title: 'Thanks for the feedback!',
+    // "You heard: Not sure" is not a sentence about the playing.
+    answer:
+      choice === 'unsure' ? "You weren't sure" : `You heard: ${correctionWord(choice)}`,
+  };
 }

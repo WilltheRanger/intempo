@@ -1440,9 +1440,10 @@ function buildFixtureTake(): TakeResult | null {
     failure: null,
     status: 'ok',
     // The pipeline writes this sentence; the screen shows it verbatim. It
-    // names the bars whose `bpm` above is off 96 (`_longest_bar_run`), at
-    // their tempo together — so the sample reads as the server would say it.
-    headline: 'You rushed bars 5–8 by 8 BPM.',
+    // names the bars whose `bpm` above is off 96 (`_longest_bar_run`) and the
+    // tempo they went at together, without the title's verb — so the sample
+    // reads as the server would say it.
+    headline: 'Bars 5–8 went at 104.',
     direction: 'rush',
     verdict: verdictFor('rush_drag', 'rush'),
     lowConfidence: false,

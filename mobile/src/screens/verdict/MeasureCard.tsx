@@ -4,15 +4,18 @@ import { StyleSheet, View } from 'react-native';
 import { Text } from '../../components/primitives';
 import type { MeasureVerdict, TempoBeatUnit, Tolerance } from '../../data/types';
 import { BORDER_WIDTH, colors, radii, spacing } from '../../design';
-import { barTempo } from '../../lib/verdict/barTempo';
+import { barTempo, tempoScale } from '../../lib/verdict/barTempo';
 import { deviationWords } from '../../lib/verdict/deviationWords';
 import { readMeasure } from '../../lib/verdict/measureReading';
 import { DeviationBar } from '../insights/DeviationBar';
+import { TempoScale } from './TempoScale';
 
 /**
- * The measure the chart has selected (`redesign/Verdict.dc.html`): its number,
- * where it sat against the beat, the word for it, how far off in shares of a
- * beat, and — where the app made a claim — "What did you hear?".
+ * The measure the chart has selected (`redesign/Verdict.dc.html`): "Bar 24"
+ * and its tempo, a scale with the musician's tempo notched in the middle and
+ * the bar's as a dot (`TempoScale`), how far under or over, and — where the
+ * app made a claim — "What did you hear?". An older result with no tempo
+ * keeps the bar of how far it sat from the beat.
  *
  * **A card, and the one on this screen that earns it** (§3 law 3): it is a
  * detail about one measure sitting under a chart of all of them, and the box
@@ -46,29 +49,39 @@ export function MeasureCard({
       ? deviationWords(measure.deviationPct, measure.direction)
       : null;
 
+  const tone = tempo ? tempo.tone : reading.tone;
+
   return (
     <View style={styles.card} accessible={false}>
-      <View style={styles.row}>
+      {/*
+        "Bar 24", not a bare 24: on its own the number read as a score, not
+        as which bar this is (the owner, 2026-09-25).
+      */}
+      <View style={styles.head}>
         <Text variant="body" style={styles.number}>
-          {measure.measure}
+          Bar {measure.measure}
         </Text>
-        <DeviationBar
-          deviationPct={
-            tempo ? tempo.deviationPct : reading.showsDeviation ? measure.deviationPct : 0
-          }
-          tolerance={tolerance}
-          fill={tempo ? tempo.tone : reading.tone}
-          accessibilityLabel={tempo ? tempo.spoken : reading.accessibilityLabel}
-          style={styles.bar}
-        />
-        <Text
-          variant="body"
-          color={tempo ? tempo.tone : reading.tone}
-          style={styles.verdict}
-        >
+        <Text variant="body" color={tone} style={styles.verdict}>
           {tempo ? tempo.label : reading.label}
         </Text>
       </View>
+      {tempo ? (
+        <TempoScale
+          scale={tempoScale(tempo, tolerance)}
+          accessibilityLabel={tempo.spoken}
+          style={styles.picture}
+        />
+      ) : (
+        // An older result, or a bar with no tempo of its own: how far it sat
+        // from the beat, as before.
+        <DeviationBar
+          deviationPct={reading.showsDeviation ? measure.deviationPct : 0}
+          tolerance={tolerance}
+          fill={reading.tone}
+          accessibilityLabel={reading.accessibilityLabel}
+          style={styles.picture}
+        />
+      )}
       {detail ? (
         <Text variant="metadataSmall" color="textSecondary" style={styles.detail}>
           {detail}
@@ -89,30 +102,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.md,
   },
-  row: {
+  head: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
     gap: 14,
   },
   number: {
-    width: 26,
-    textAlign: 'right',
     fontSize: 15,
     lineHeight: 20,
     fontVariant: ['tabular-nums'],
   },
-  bar: {
-    flex: 1,
-  },
   verdict: {
-    // At least the width "Rushing" needs, and wider for "106 BPM".
-    minWidth: 78,
     textAlign: 'right',
     fontSize: 15,
     lineHeight: 20,
   },
-  detail: {
+  picture: {
     marginTop: spacing.md,
+  },
+  detail: {
+    marginTop: spacing.sm,
   },
   correction: {
     marginTop: 14,

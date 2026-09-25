@@ -6,6 +6,26 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-09-25 — Wording only: the run sentence gives where and the tempo; the lead never repeats it
+
+No threshold changed. The owner found the verdict's top saying one thing three
+times. `_run_verdict` now says "Bars 13–25 went at 81." (the run's tempo)
+rather than "You dragged bars 13–25 by 23 BPM.", and "ran ahead" / "fell
+behind" where there is no tempo to quote; `lead_finding(verdict_names_run=)`
+drops tempo and drift under such a sentence.
+
+### Regression
+
+- Six clips: every field identical except two sentences —
+  02 "You rushed bars 2–8." → "Bars 2–8 ran ahead.";
+  03 "You dragged bars 2–8." → "Bars 2–8 fell behind." No lead on any of them,
+  before or after.
+- The owner's takes (Opus, locally):
+
+      take   sentence                  lead (was → now)
+      0313   Bars 13–25 went at 81.    You slowed down by 15 BPM. → Your half notes lagged.
+      1940   Bars 15–24 went at 96.    You played at 98, not 104. → Your half notes ran ahead.
+
 ## 2026-09-25 — The verdict line names the bars the chart shows; five notes per bar tempo
 
 **Real take.** Re-run on #149's analysis, the owner's take (de5493f3) drew its

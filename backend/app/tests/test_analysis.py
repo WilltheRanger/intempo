@@ -100,7 +100,7 @@ def test_analyze_rushing_recording_reports_rushed(tmp_path) -> None:
 
     assert result.status == "ok"
     assert len(result.per_note) == 8, "every click should be detected at this rate"
-    assert "rushed" in result.verdict
+    assert result.verdict.startswith("Bars ")
     assert result.verdict_direction.value == "rush"
 
 

@@ -339,6 +339,32 @@ class TestLeadFinding:
         assert out is not None and out.kind == "tempo"
         assert "75" in out.text and "60" in out.text
 
+    def test_under_a_sentence_that_names_the_bars_the_line_says_something_else(self):
+        """**The owner's take, 2026-09-25**: "You dragged throughout", then
+        the bars and their tempo, then "You slowed down by 15 BPM." — the
+        same thing three times. With the verdict naming a run, tempo and drift
+        are left out and the line goes to what the verdict cannot say."""
+        half = NoteValueTiming(beats=2.0, label="half notes", note_count=12, mean_delta_pct=12.0)
+        quarter = NoteValueTiming(beats=1.0, label="quarter notes", note_count=40, mean_delta_pct=0.0)
+        insights = self._insights(
+            played_bpm=89.7,
+            tempo_difference_bpm=-14.3,
+            drift_bpm=-15.0,
+            by_note_value=[half, quarter],
+            standout_value=half,
+        )
+
+        assert lead_finding(insights, 104.0).kind == "drift"
+        named = lead_finding(insights, 104.0, verdict_names_run=True)
+        assert named is not None and named.text == "Your half notes lagged."
+
+    def test_under_a_named_run_with_nothing_else_there_is_no_line(self):
+        insights = self._insights(
+            played_bpm=89.7, tempo_difference_bpm=-14.3, drift_bpm=-15.0
+        )
+
+        assert lead_finding(insights, 104.0, verdict_names_run=True) is None
+
     def test_the_note_value_beats_a_tempo_gap_nobody_would_notice(self):
         """**The reason this ranks rather than following a fixed order.** A
         2 BPM difference at 92 and a note value 12% of a beat adrift are both

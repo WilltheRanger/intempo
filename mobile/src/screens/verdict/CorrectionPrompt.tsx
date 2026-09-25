@@ -1,10 +1,14 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 
+import { Check } from '../../components/icons';
+import { FadeIn, PopIn } from '../../components/motion';
 import { Text } from '../../components/primitives/Text';
 import type { UserVerdict } from '../../data/types';
-import { fontFamily, spacing } from '../../design';
+import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
+import { ICON_SIZE, colors, fontFamily, spacing } from '../../design';
 import {
   CORRECTION_CHOICES,
+  correctionAcknowledgement,
   correctionWord,
 } from '../../lib/verdict/correction';
 
@@ -12,7 +16,7 @@ import {
 export type CorrectionState =
   | { kind: 'idle' }
   | { kind: 'sending'; choice: UserVerdict }
-  | { kind: 'sent'; message: string }
+  | { kind: 'sent'; choice: UserVerdict }
   | { kind: 'failed'; message: string };
 
 export interface CorrectionPromptProps {
@@ -20,7 +24,12 @@ export interface CorrectionPromptProps {
   appVerdict: UserVerdict;
   state: CorrectionState;
   onChoose: (choice: UserVerdict) => void;
+  /** Back to the question, from the thanks. */
+  onChange: () => void;
 }
+
+/** The check's column, so the answer line sits under the thanks, not the check. */
+const CHECK_GAP = spacing.sm;
 
 /**
  * "What did you hear?", under a revealed bar.
@@ -45,14 +54,47 @@ export function CorrectionPrompt({
   appVerdict,
   state,
   onChoose,
+  onChange,
 }: CorrectionPromptProps) {
   if (state.kind === 'sent') {
+    const thanks = correctionAcknowledgement(state.choice);
+    /*
+      **A thanks that lands** (the owner, 2026-09-25). The bare "Thanks." read
+      as the control going dead. A check that pops in, the thanks in ink, and
+      their own answer read back with the way to change it — so the tap is
+      seen to have been received, and what was received is on screen.
+    */
     return (
-      <View style={styles.block}>
-        <Text variant="metadataSmall" color="textTertiary">
-          {state.message}
-        </Text>
-      </View>
+      <FadeIn style={styles.block}>
+        <View
+          style={styles.thanksRow}
+          accessibilityRole="text"
+          accessibilityLiveRegion="polite"
+          accessibilityLabel={`${thanks.title} ${thanks.answer}.`}
+        >
+          <PopIn>
+            <Check size={ICON_SIZE.md} strokeWidth={2.5} color={colors.accent} />
+          </PopIn>
+          <Text variant="metadata" style={styles.thanks}>
+            {thanks.title}
+          </Text>
+        </View>
+        <View style={styles.answerRow}>
+          <Text variant="metadataSmall" color="textSecondary">
+            {thanks.answer}
+          </Text>
+          <Pressable
+            onPress={onChange}
+            accessibilityRole="button"
+            accessibilityLabel="Change your answer"
+            style={({ pressed }) => [styles.change, pressed && styles.choicePressed]}
+          >
+            <Text variant="metadataSmall" color="accentText" style={styles.appsChoice}>
+              Change
+            </Text>
+          </Pressable>
+        </View>
+      </FadeIn>
     );
   }
 
@@ -72,7 +114,13 @@ export function CorrectionPrompt({
             <Pressable
               key={choice}
               disabled={busy}
-              onPress={() => onChoose(choice)}
+              onPress={() => {
+                // Felt on the tap itself: iOS Safari only lets a page touch the
+                // haptics inside the gesture, and the success pulse comes after
+                // the network (`VerdictScreen.correct`).
+                impact(ImpactFeedbackStyle.Light);
+                onChoose(choice);
+              }}
               accessibilityRole="button"
               accessibilityState={{ disabled: busy, selected: isApps }}
               // The app's own reading is the control's current value until the
@@ -146,5 +194,26 @@ const styles = StyleSheet.create({
   },
   failed: {
     paddingTop: spacing.xs,
+  },
+  thanksRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: CHECK_GAP,
+    paddingTop: spacing.xs,
+  },
+  thanks: {
+    fontFamily: fontFamily.sansMedium,
+    color: colors.textPrimary,
+  },
+  answerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 18,
+    marginLeft: ICON_SIZE.md + CHECK_GAP,
+  },
+  change: {
+    // The word is 13pt; the target is the platform minimum all the same.
+    minHeight: 44,
+    justifyContent: 'center',
   },
 });

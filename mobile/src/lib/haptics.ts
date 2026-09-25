@@ -18,4 +18,18 @@ export function impact(
   void Haptics.impactAsync(style);
 }
 
+/**
+ * The "that worked" tap: two quick pulses, iOS's own success pattern.
+ *
+ * For a thing the musician sent and the app received — an answer to "What
+ * did you hear?" — where a single impact reads as a press rather than as the
+ * press having done something. Gated the same way as `impact`.
+ */
+export function success(): void {
+  if (!preferences.current().haptics) {
+    return;
+  }
+  void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+}
+
 export { ImpactFeedbackStyle } from 'expo-haptics';

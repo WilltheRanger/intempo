@@ -277,7 +277,8 @@ def test_drift_before_a_change_is_still_reported_alongside_it() -> None:
     )
     result = _analyse(tempos, RIT_AT_5)
 
-    assert "rushed" in result.verdict
+    assert result.verdict_direction.value == "rush"
+    assert result.verdict.startswith("Bar")
     assert "lurched at bar 7" in result.verdict
 
 
