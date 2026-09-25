@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from app.services.alignment import PREFIX_START_BEATS, align_take
 from app.services.analysis import analyze
 from app.services.audio_config import load_audio_config
 from app.services.score_schema import Measure, Note, ScoreJson
@@ -115,3 +116,28 @@ def test_quality_reports_which_half_refused_a_take(tmp_path) -> None:
 
     assert result.status == "ok"
     assert result.quality > 0.0
+
+
+def test_timing_reads_a_short_take_from_where_the_page_begins() -> None:
+    """The first re-run of the owner's takes (2026-09-25): eight seconds
+    recorded from bar 7 of a bass part, and timing placed them at bars 42–45 —
+    "You rushed bars 42–45 by 39 BPM", with 1 of 11 notes at the pitch those
+    bars write. A run of even eighths fits some stretch of a long page by luck.
+
+    The same shape: two quarters and a held eighth, two bars' rest, eight bars
+    of eighths between rests, then even eighths. A take of even eighths is
+    read from the page's start, where it does not fit — never from the stretch
+    it happens to fit. Where else a take begins is pitch's to say.
+    """
+    quarter = 60.0 / BPM
+    opening = [0.0, quarter, 2 * quarter]
+    spaced = [6 * 2 * quarter + i * quarter for i in range(16)]
+    even = [spaced[-1] + 2 * quarter + i * quarter / 2 for i in range(24)]
+    expected = np.asarray(opening + spaced + even)
+    take = 0.6 + np.arange(20) * quarter / 2
+
+    anchored = align_take(take, expected, target_bpm=BPM)
+
+    first = min(e for _, e in anchored.alignment.mapping)
+    assert expected[first] - expected[0] <= PREFIX_START_BEATS * quarter
+    assert anchored.alignment.quality < load_audio_config().alignment.broken_quality

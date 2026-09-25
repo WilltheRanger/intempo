@@ -6,6 +6,81 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-09-25 — The first re-run of real takes: a fragment read from its start, and "not played" asked of the pitch track
+
+**Real takes, fifteen of them.** Every refused take on the owner's account was
+run through the analysis of #142–#144 from its Opus playback copy
+(`rerun-analyses.yml`). One came back right, one came back wrong, and ten were
+told "Try again closer to your instrument" by a rule calibrated on synthetic
+takes.
+
+    take      page, tempo              re-run said                           the pitch track
+    99aecbad  Elijah, bass 104         ok — dragged bars 1–13 by 5 BPM       79 of 88 notes at pitch
+    2aac1ba8  AiP from bar 7, bass 80  ok — "rushed bars 42–45 by 39 BPM"    1 of 11 at pitch
+    242082ca  Elijah, bass 116         not played (no_pitch, tonal 0.29)     15 of 59, seven pitches
+    3bc2e100  AiP from bar 7, bass 80  not played (no_pitch, tonal 0.14)     7 of 17, three pitches
+    a54ccd57  Elijah, bass 104         not played (not_tonal, tonal 0.69)    2 of 5 paired
+    068323bd  Elijah, bass 160         not played (not_tonal, tonal 0.60)    1 of 1 paired
+    ae148002  Elijah, bass 116         not played (not_tonal, tonal 0.59)    6 of 23
+    b83e75e4  AiP from bar 7, "violin" not played (not_tonal, tonal 0.62)    0 of 2
+    four more                          not played (no_pitch, tonal 0.0–0.27) 0–1 paired
+    three more                         alignment_failed                      —
+
+**The owner's good take holds a pitch after 0.66 of attacks.** `played_tonal`
+(0.8) says instruments hold one after 0.87 or more, which was true of every
+synthetic take and is not true of a double bass on a phone. So `not_tonal` —
+"less steady than an instrument, and a poor fit" — describes a real bass take
+the timing cannot read, and it cannot be moved: talking measured 0.23–0.77.
+**Unchanged here, and the known limit below.**
+
+**Not a codec artefact.** Three synthetic tunes, violin and bass, written as a
+48 kHz WAV and through `take_archive.to_opus` (61 kbps): the same status,
+quality, tonal share and page share either way, to the third decimal.
+
+### What changed
+
+- **`alignment.PREFIX_START_BEATS` (new, 2.0).** A take matched as a stretch of
+  its page begins on a written note within two beats of the page's first, or
+  on either of the first two. 2aac1ba8 was placed at bars 42–45 at 0.931 by
+  rhythm alone; from its start at bar 7 it scores 0.000 and is refused. Replayed
+  from its stored onsets, with the score trimmed to bar 7 as the worker does:
+
+      take      before (placed at)   now
+      2aac1ba8  0.931 (bars 42–48)   0.000 (from bar 7)
+      3bc2e100  0.739 (bars 20–22)   0.000 (from bar 7)
+      5d6011ba, 44975f56, b83e75e4   0.000 either way
+
+  Where else a take begins is pitch's to say (`align_chain` with `passage`,
+  `_placed_by_pitch`), which is unchanged.
+- **`analysis._heard_by_pitch` (new).** A pairing with notes at their exact
+  written pitch beyond chance (`[pitch]` `chance` 0.15, `significance` 0.05,
+  the numbers `why_not_played` already holds the chroma to) on at least
+  `confirmed_min_pitches` (3) pitches is somebody playing: `why_not_played` is
+  not asked. It decides which refusal, never whether. 242082ca (15 of 59) and
+  3bc2e100 (7 of 17) pass it; 9 of 59, 2 of 5, and 12 of 16 on one or two
+  pitches do not.
+
+### Regression
+
+- Six clips: byte-identical against `main`.
+- The twenty habits and the replay sweep: identical output.
+- Wrong takes (`chain_refuse`, 9 kinds × 6 seeds): none newly given a verdict;
+  one refused that was not (the page shuffled, seed 0 — "ok" by timing with 0
+  of 26 notes at pitch); two keep their timing verdict with another pairing.
+  The passage sweep calls `align_chain`, which this does not touch.
+- The owner's take: unchanged ("You dragged bars 1–13 by 5 BPM").
+- Pinned: `test_timing_reads_a_short_take_from_where_the_page_begins` (on
+  `main` the take is placed at note 19, quality 1.000),
+  `test_the_page_heard_beyond_chance_is_somebody_playing`.
+
+### Known limit
+
+- **Four real bass takes are still told they were not played**, at a tonal
+  share the owner's accepted take shares. Their timing pairing paired one to
+  five notes, too few to be beyond chance, and a refused stretch of a page is
+  never chained (the passage false positives of the entry below). Their audio
+  is what would settle it.
+
 ## 2026-09-25 — A passage played twice is heard as played twice
 
 **Synthetic.** The known limit of the entry below: bars 1–4 then bars 1–4

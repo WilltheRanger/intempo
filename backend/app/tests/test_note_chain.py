@@ -24,7 +24,7 @@ from app.services.alignment import (
     align_chain,
     apply_fuzzy_match,
 )
-from app.services.analysis import _Confirmed, _trusted_by_pitch, analyze
+from app.services.analysis import _Confirmed, _heard_by_pitch, _trusted_by_pitch, analyze
 from app.services.audio_config import load_audio_config
 from app.services.pitch_evidence import midi
 from app.services.score_schema import ScoreJson
@@ -173,6 +173,25 @@ def test_trust_counts_the_notes_the_page_asks_for_not_the_notes_paired() -> None
 def test_trust_needs_enough_notes_on_enough_pitches() -> None:
     assert not _trusted_by_pitch(_Confirmed(notes=6, paired=6, pitches=4, asked=6), CFG)
     assert not _trusted_by_pitch(_Confirmed(notes=16, paired=16, pitches=2, asked=16), CFG)
+
+
+def test_the_page_heard_beyond_chance_is_somebody_playing() -> None:
+    """The owner's bass take told "Try again closer to your instrument" on the
+    re-run of 2026-09-25: 15 of 59 paired notes at their exact written pitch,
+    on seven pitches — far from trusted, and far beyond chance."""
+    assert _heard_by_pitch(_Confirmed(notes=15, paired=59, pitches=7, asked=75), CFG)
+    assert _heard_by_pitch(_Confirmed(notes=7, paired=17, pitches=3, asked=75), CFG)
+
+
+def test_a_few_notes_at_pitch_are_not_somebody_playing() -> None:
+    """Chance, or one sound: what `why_not_played` is still asked about."""
+    # About what chance puts on the page's pitches.
+    assert not _heard_by_pitch(_Confirmed(notes=9, paired=59, pitches=5, asked=75), CFG)
+    # Too few to tell from luck.
+    assert not _heard_by_pitch(_Confirmed(notes=2, paired=5, pitches=2, asked=75), CFG)
+    # Beyond chance, but one or two pitches: a ringing stand, an open string.
+    assert not _heard_by_pitch(_Confirmed(notes=12, paired=16, pitches=1, asked=32), CFG)
+    assert not _heard_by_pitch(_Confirmed(notes=12, paired=16, pitches=2, asked=32), CFG)
 
 
 # ---- a take ------------------------------------------------------------------------
