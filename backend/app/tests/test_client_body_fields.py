@@ -233,7 +233,13 @@ def test_the_corrections_wrapper_key_is_the_one_the_client_writes() -> None:
     from app.routers.corrections import CreateCorrectionsRequest
 
     source = (MOBILE_SRC / "data" / "api" / "corrections.ts").read_text()
-    keys = set(re.findall(r"body:\s*JSON\.stringify\(\{\s*(\w+)", source))
+    # `body: { corrections }` — the object, which `apiFetch` encodes. It was
+    # `JSON.stringify({ corrections })`, encoded twice: every correction a
+    # musician sent arrived as a JSON string and was refused (2026-09-25).
+    keys = set(re.findall(r"body:\s*\{\s*(\w+)", source))
+    assert not re.search(r"body:\s*JSON\.stringify", source), (
+        "corrections.ts serialises its own body; apiFetch serialises it again"
+    )
 
     assert keys == set(CreateCorrectionsRequest.model_fields), (
         f"the client sends {sorted(keys)}; the endpoint declares "
