@@ -1,5 +1,42 @@
 # InTempo Decisions
 
+## 2026-09-25 — Insights plots tempo, not drift; the piece's takes lead with verdicts
+
+**Context.** The owner circled both screens: "fix the visual hierarchy". From
+three feet, Insights was its title, then a slab of beige, then a white card
+whose black button was the darkest thing on the page — two focal points. The
+slab was the trend chart's wash under a line pinned to the floor: both charts
+plotted drift, which a take held steadily slow grows along its length, the
+reason the verdict's charts moved to per-bar tempo in #83–#86. The piece
+screen had two headings for its takes, three refusals in full ink as the
+loudest words under the score, and ran straight on into Digital score /
+Original pages / Rename.
+
+**Decision** (the owner chose each of these from options):
+- Insights' take trend and "Worth a look" passages plot each bar's tempo
+  against the tempo set for it (`barTempo`), the median per take and per
+  passage; axis words On tempo / Faster / Slower; no wash. The span is at
+  least 2.5 band-widths so an on-tempo history shows a stripe, not a block,
+  lengthened toward the side the takes lean. A piece played at one wrong
+  speed throughout says so ("Slower than your tempo all the way through.")
+  and offers the whole piece rather than naming its last passage.
+- "Worth a look" is a section like "In tune", its action the outlined button,
+  and it sits below "In tune" (the owner, the same evening: "put worth a look
+  below") — the readings first, what to do about them last, nearest the thumb.
+- "Your takes": one heading with the count beside it; a reading in ink, a
+  refusal in grey; a day's date said once; a gap before the piece's own rows.
+
+**Alternatives.** Keep drift and unclamp it — honest about the click, but a
+steadily slow take still reads as "worst at the end" wherever it drifted
+furthest. Drop the top chart for a sentence. Fold refusals into one line, or
+show only the latest take. Keep the card with a quieter button.
+
+**Trade-offs.** The title ("You tend to drag") still comes from the server's
+drift aggregate, so on an unusual take the title and the chart answer
+slightly different questions — the same split the verdict screen already
+has between its title and its charts. Older results without per-bar tempo
+drop out of the Insights charts.
+
 ## 2026-09-25 — Tempo words read off a photograph: a line and a bar, not a bar number
 
 **Context.** The owner chose to have tempo markings read from the photograph as

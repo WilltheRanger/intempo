@@ -8,7 +8,6 @@ import { AddPieceSheet } from '../../components/pieces/AddPieceSheet';
 import {
   EmptyState,
   PageHeader,
-  PrimaryButton,
   ScreenContainer,
   SecondaryButton,
   Text,
@@ -18,10 +17,10 @@ import { useInsights } from '../../data/hooks/useInsights';
 import { useLibrary } from '../../data/hooks/usePieces';
 import { useRecentTakes } from '../../data/hooks/useLatestTake';
 import { describeLoadError } from '../../data/describeLoadError';
-import { BORDER_WIDTH, colors, fontFamily, radii, spacing, ICON_SIZE, ICON_STROKE_WIDTH } from '../../design';
+import { colors, fontFamily, spacing, ICON_SIZE, ICON_STROKE_WIDTH } from '../../design';
 import { readTendency } from '../../lib/insights/tendency';
 import { sessionTrendFrom } from '../../lib/insights/sessionTrend';
-import { barsLabel, worthALook } from '../../lib/insights/passageDrift';
+import { barsLabel, worthALook } from '../../lib/insights/passageTempo';
 import type { TabScreenNavigation } from '../../navigation/types';
 import { PitchTrendChart } from '../../components/charts/PitchTrendChart';
 import { SessionTrendChart } from '../../components/charts/SessionTrendChart';
@@ -136,7 +135,7 @@ export function InsightsScreen() {
   const sessionTrend = sessionTrendFrom(history, insights.tolerance);
   const worth = worthALook(insights.pieces, history, insights.tolerance);
   const focus = worth?.piece ?? null;
-  const drift = worth?.drift ?? null;
+  const passages = worth?.tempo ?? null;
   const others = insights.pieces;
   // How in tune, take by take (`lib/insights/pitchTrend.ts`); nothing at all
   // until a take has been read for pitch.
@@ -172,7 +171,7 @@ export function InsightsScreen() {
       {sessionTrend ? (
         <SessionTrendChart
           trend={sessionTrend}
-          area
+          height={150}
           accessibilityLabel={tendency.spoken}
           style={styles.chart}
         />
@@ -181,57 +180,6 @@ export function InsightsScreen() {
           {tendency.detail}
         </Text>
       )}
-
-      {focus ? (
-        <FadeIn index={0}>
-          {/*
-            **The one card on the screen**, because it is the one thing here
-            that is a recommendation rather than a reading: a piece, where in it
-            the trouble is, and the button that goes and practises it.
-          */}
-          <View style={styles.card}>
-            <Text variant="eyebrow" color="textTertiary" style={styles.eyebrowCaps}>
-              Worth a look
-            </Text>
-            <Text variant="pieceTitle" numberOfLines={2} style={styles.cardTitle}>
-              {focus.title}
-            </Text>
-            {drift ? (
-              <>
-                <View style={styles.passages}>
-                  <PassageChart
-                    drift={drift}
-                    accessibilityLabel={`${focus.title}, passage by passage. ${drift.sentence}`}
-                  />
-                </View>
-                <Text variant="metadata" color="textSecondary" style={styles.sentence}>
-                  {drift.sentence}
-                </Text>
-                <PrimaryButton
-                  label={
-                    drift.practice
-                      ? `Practice ${barsLabel(drift.practice).toLowerCase()}`
-                      : 'Practice it again'
-                  }
-                  onPress={() => practise(focus.pieceId, drift.practice?.from)}
-                  style={styles.cardAction}
-                />
-              </>
-            ) : (
-              <>
-                <Text variant="metadata" color="textSecondary" style={styles.sentence}>
-                  {focusReason(focus.sessions)}
-                </Text>
-                <PrimaryButton
-                  label="Practice it"
-                  onPress={() => practise(focus.pieceId)}
-                  style={styles.cardAction}
-                />
-              </>
-            )}
-          </View>
-        </FadeIn>
-      ) : null}
 
       {/*
         **Pitch, beside the timing** (the owner, 2026-09-25): how far the
@@ -255,6 +203,64 @@ export function InsightsScreen() {
             />
           ) : null}
         </View>
+      ) : null}
+
+      {focus ? (
+        <FadeIn index={0}>
+          {/*
+            **Under "In tune"** (the owner, 2026-09-25: "put worth a look
+            below"): the readings first, what to do about them after — and the
+            button the lowest thing on the page, nearest the thumb.
+
+            **Not a card, and not the black button** (the owner, 2026-09-25:
+            "fix the visual hierarchy"). It was the one card on the screen,
+            with the screen's one solid button in it — the darkest thing on
+            the page, so the eye went there before the finding in the title.
+            It is a section like "In tune" now, and its action the outlined
+            button: still the thing to do next, no longer the first thing seen.
+          */}
+          <View style={styles.worth}>
+            <Text variant="eyebrow" color="textTertiary" style={styles.eyebrowCaps}>
+              Worth a look
+            </Text>
+            <Text variant="pieceTitle" numberOfLines={2} style={styles.worthTitle}>
+              {focus.title}
+            </Text>
+            {passages ? (
+              <>
+                <View style={styles.passages}>
+                  <PassageChart
+                    tempo={passages}
+                    accessibilityLabel={`${focus.title}, passage by passage. ${passages.sentence}`}
+                  />
+                </View>
+                <Text variant="metadata" color="textSecondary" style={styles.sentence}>
+                  {passages.sentence}
+                </Text>
+                <SecondaryButton
+                  label={
+                    passages.practice
+                      ? `Practice ${barsLabel(passages.practice).toLowerCase()}`
+                      : 'Practice it again'
+                  }
+                  onPress={() => practise(focus.pieceId, passages.practice?.from)}
+                  style={styles.worthAction}
+                />
+              </>
+            ) : (
+              <>
+                <Text variant="metadata" color="textSecondary" style={styles.sentence}>
+                  {focusReason(focus.sessions)}
+                </Text>
+                <SecondaryButton
+                  label="Practice it"
+                  onPress={() => practise(focus.pieceId)}
+                  style={styles.worthAction}
+                />
+              </>
+            )}
+          </View>
+        </FadeIn>
       ) : null}
 
       {/*
@@ -332,15 +338,10 @@ const styles = StyleSheet.create({
   chart: {
     marginTop: 22,
   },
-  card: {
+  worth: {
     marginTop: spacing['2xl'],
-    padding: spacing.lg,
-    borderRadius: radii.lg,
-    borderWidth: BORDER_WIDTH,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
   },
-  cardTitle: {
+  worthTitle: {
     marginTop: 7,
   },
   passages: {
@@ -349,8 +350,8 @@ const styles = StyleSheet.create({
   sentence: {
     marginTop: spacing.md,
   },
-  cardAction: {
-    marginTop: 14,
+  worthAction: {
+    marginTop: spacing.lg,
   },
   toggle: {
     flexDirection: 'row',

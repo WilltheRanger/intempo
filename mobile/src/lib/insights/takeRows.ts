@@ -26,6 +26,26 @@ export function takeRowWords(take: TakeResult): string {
 }
 
 /**
+ * Whether a take's row carries a verdict, or says there was none to give — a
+ * take the analysis refused or could not time. **The owner, 2026-09-25**: the
+ * loudest words under the score were three refusals in full ink. A refusal
+ * recedes; a reading leads.
+ */
+export function takeRowIsVerdict(take: TakeResult): boolean {
+  return take.failure === null && take.status === 'ok';
+}
+
+/**
+ * Each row's date, or null where the row above already said it: three takes
+ * today read "Today" once, not three times down the left edge.
+ */
+export function rowDates(labels: readonly (string | null)[]): (string | null)[] {
+  return labels.map((label, index) =>
+    index > 0 && label !== null && label === labels[index - 1] ? null : label,
+  );
+}
+
+/**
  * The link under the rows: "See all 11" when every take is loaded, "See the
  * last 12" when the piece has more than were fetched — a link that says "all"
  * and lists twelve of forty is a wrong fact. Null when there is nothing more

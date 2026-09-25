@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { TakeResult } from '../../data/types';
-import { moreTakesLabel, takeRowWords } from './takeRows';
+import { moreTakesLabel, rowDates, takeRowIsVerdict, takeRowWords } from './takeRows';
 
 function take(over: Partial<TakeResult>): TakeResult {
   return {
@@ -40,5 +40,38 @@ describe('moreTakesLabel', () => {
   it('is nothing when the rows already show every take loaded', () => {
     expect(moreTakesLabel(3, 3)).toBeNull();
     expect(moreTakesLabel(9, 2)).toBeNull();
+  });
+});
+
+describe('takeRowIsVerdict', () => {
+  it('is a take the analysis read', () => {
+    expect(takeRowIsVerdict(take({}))).toBe(true);
+  });
+
+  it('is not a take it refused or could not time', () => {
+    expect(takeRowIsVerdict(take({ status: 'not_played' }))).toBe(false);
+    expect(takeRowIsVerdict(take({ status: 'alignment_failed' }))).toBe(false);
+    expect(takeRowIsVerdict(take({ failure: { recoverable: true, reason: null } }))).toBe(false);
+  });
+});
+
+describe('rowDates', () => {
+  it('says a day once, on its first row', () => {
+    expect(rowDates(['Today', 'Today', 'Today', 'Yesterday', '3 days', '3 days'])).toEqual([
+      'Today',
+      null,
+      null,
+      'Yesterday',
+      '3 days',
+      null,
+    ]);
+  });
+
+  it('says it again when the same words come back after another day', () => {
+    expect(rowDates(['Today', 'Yesterday', 'Today'])).toEqual(['Today', 'Yesterday', 'Today']);
+  });
+
+  it('leaves an unknown date unknown rather than folding it', () => {
+    expect(rowDates([null, null])).toEqual([null, null]);
   });
 });

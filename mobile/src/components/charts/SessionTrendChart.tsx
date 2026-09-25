@@ -15,20 +15,24 @@ import { useReducedMotion } from '../../lib/useReducedMotion';
  * daily and a calendar axis draws the gaps as flat stretches nobody played.
  * The axis reads "Take 1" to "Take N".
  *
- * The anatomy is the redesign's: the on-tempo band either side of the beat,
- * the beat as a line through it, the takes joined by a gold line with a dot on
- * each and a larger ringed dot on the latest, and — on Insights, where the
- * chart is the screen's subject — a faint wash between the line and the beat.
- * The vertical span is fitted to the takes (`trendRange`), so a musician who
- * rushes sees the drift at full size rather than in the top half of a
- * symmetric axis.
+ * The anatomy is the redesign's: the on-tempo band either side of the
+ * target, the target as a line through it, and the takes joined by a gold line
+ * with a dot on each and a larger ringed dot on the latest. Each point is how
+ * fast the take went against the tempo set for it (`sessionTrend.ts`). The
+ * vertical span is fitted to the takes (`trendRange`), so a musician who plays
+ * fast sees it at full size rather than in the top half of a symmetric axis.
+ *
+ * **No wash under the line** (the owner, 2026-09-25): tinting from the line to
+ * the target drew the largest shape on Insights out of the space between two
+ * numbers — with every take pinned to the floor, a slab of beige between the
+ * title and everything else.
  *
  * The line draws itself in and the dots follow; with Reduce Motion it is
  * simply there.
  */
 
-/** The left-hand column the axis words sit in. */
-const GUTTER = 50;
+/** The left-hand column the axis words sit in: room for "On tempo" at 12pt. */
+const GUTTER = 58;
 
 /** The latest take's dot, and the others'. */
 const LATEST_RADIUS = 5.5;
@@ -50,8 +54,6 @@ export interface SessionTrendChartProps {
   accessibilityLabel: string;
   /** The plot's height in points. Insights draws it large; a card, smaller. */
   height?: number;
-  /** The wash between the line and the beat. */
-  area?: boolean;
   /**
    * Smaller dots and a thinner line, for a chart inside a card
    * (`redesign/PieceDetail.dc.html`). The latest dot is ringed in the card's
@@ -65,7 +67,6 @@ export function SessionTrendChart({
   trend,
   accessibilityLabel,
   height = 190,
-  area = false,
   compact = false,
   style,
 }: SessionTrendChartProps) {
@@ -117,7 +118,6 @@ export function SessionTrendChart({
   }, [draw, reduceMotion, points.length, line]);
 
   const dashOffset = draw.interpolate({ inputRange: [0, 1], outputRange: [length, 0] });
-  const fade = draw.interpolate({ inputRange: [0, 0.4, 1], outputRange: [0, 0, 1] });
   const dotsIn = draw.interpolate({ inputRange: [0, 0.76, 1], outputRange: [0, 0, 1] });
 
   const labels = axisLabels(
@@ -152,13 +152,6 @@ export function SessionTrendChart({
               stroke={colors.chartRule}
               strokeWidth={BORDER_WIDTH}
             />
-            {area ? (
-              <AnimatedPath
-                d={`${line} L ${latest.x.toFixed(2)} ${zeroY.toFixed(2)} L ${points[0].x.toFixed(2)} ${zeroY.toFixed(2)} Z`}
-                fill={colors.accent}
-                opacity={Animated.multiply(fade, 0.1)}
-              />
-            ) : null}
             <AnimatedPath
               d={line}
               fill="none"
@@ -193,17 +186,17 @@ export function SessionTrendChart({
         ) : null}
 
         {/* The axis words, in the gutter, at the heights they name. */}
-        {labels.ahead && zeroY > LABEL_CLEARANCE ? (
+        {labels.faster && zeroY > LABEL_CLEARANCE ? (
           <Text variant="caption" color="textTertiary" style={[styles.axis, { top: 0 }]}>
-            Ahead
+            Faster
           </Text>
         ) : null}
         <Text variant="caption" color="textTertiary" style={[styles.axis, { top: zeroY - 7 }]}>
-          On beat
+          On tempo
         </Text>
-        {labels.behind && height - zeroY > LABEL_CLEARANCE ? (
+        {labels.slower && height - zeroY > LABEL_CLEARANCE ? (
           <Text variant="caption" color="textTertiary" style={[styles.axis, { bottom: 0 }]}>
-            Behind
+            Slower
           </Text>
         ) : null}
       </View>

@@ -1,10 +1,16 @@
 import type { TakeResult, Tolerance } from '../../data/types';
-import { readMeasure } from '../verdict/measureReading';
-import { trendRange, type TrendRange } from './sessionTrend';
+import { barTempo } from '../verdict/barTempo';
+import { median, trendRange, type TrendRange } from './sessionTrend';
 
 /**
- * One piece's drift across its length, for Insights' "Worth a look" card
+ * One piece's tempo across its length, for Insights' "Worth a look"
  * (`redesign/Insights.dc.html`).
+ *
+ * **Tempo, not drift** — see `sessionTrend.ts`. Drift grows along a take held
+ * steadily slow, so its last passage was always the "worst" and the sentence
+ * under the chart said "You slow down at the end" of a piece played at one
+ * speed throughout. Each bar's own tempo against the tempo set for it says
+ * where the playing actually changed.
  *
  * **Passages of bars, where the prototype says "lines".** Its chart runs
  * "First line" to "Last line" and its button says "Practice the last line",
@@ -21,13 +27,16 @@ export interface Passage {
   /** First and last bar of the passage. */
   from: number;
   to: number;
-  /** Mean drift across it, percent of a beat, rush-positive. */
+  /**
+   * How far from the tempo set for it, percent, faster-positive: the median
+   * of its bars across the takes averaged.
+   */
   value: number;
   /** Outside the on-tempo band: a passage the pipeline would call off. */
   off: boolean;
 }
 
-export interface PassageDrift {
+export interface PassageTempo {
   passages: Passage[];
   range: TrendRange;
   /** One sentence about the shape. */
@@ -44,11 +53,11 @@ const MIN_BARS_PER_PASSAGE = 2;
 /** How many of the piece's newest takes are averaged. */
 const TAKES_AVERAGED = 5;
 
-export function passageDrift(
+export function passageTempo(
   takes: readonly TakeResult[],
   pieceId: string,
   tolerance: Tolerance | null,
-): PassageDrift | null {
+): PassageTempo | null {
   const recent = takes
     .filter((take) => take.pieceId === pieceId && take.failure === null && take.measures.length > 0)
     .sort((a, b) => Date.parse(b.recordedAt) - Date.parse(a.recordedAt))
@@ -57,9 +66,10 @@ export function passageDrift(
   const byBar = new Map<number, number[]>();
   for (const take of recent) {
     for (const measure of take.measures) {
-      if (!readMeasure(measure).showsDeviation) continue;
+      const tempo = barTempo(measure, take.targetBpm, take.tempoBeatUnit, null);
+      if (tempo === null || !Number.isFinite(tempo.deviationPct)) continue;
       const list = byBar.get(measure.measure) ?? [];
-      list.push(measure.deviationPct);
+      list.push(tempo.deviationPct);
       byBar.set(measure.measure, list);
     }
   }
@@ -77,7 +87,7 @@ export function passageDrift(
       Math.round(((index + 1) * bars.length) / count),
     );
     const values = slice.flatMap((bar) => byBar.get(bar) ?? []);
-    const value = values.reduce((sum, v) => sum + v, 0) / values.length;
+    const value = median(values) ?? 0;
     passages.push({
       from: slice[0],
       to: slice[slice.length - 1],
@@ -86,13 +96,17 @@ export function passageDrift(
     });
   }
 
-  const practice = passages
+  const worst = passages
     .filter((passage) => passage.off)
     .reduce<Passage | null>(
-      (worst, passage) =>
-        worst === null || Math.abs(passage.value) >= Math.abs(worst.value) ? passage : worst,
+      (held, passage) =>
+        held === null || Math.abs(passage.value) >= Math.abs(held.value) ? passage : held,
       null,
     );
+  const whole = allTheWay(passages, range0.bandTop - range0.bandBottom);
+  // A piece played at one wrong speed throughout has no passage to single out:
+  // the button practises the whole of it again.
+  const practice = whole === null ? worst : null;
 
   return {
     passages,
@@ -100,18 +114,18 @@ export function passageDrift(
       passages.map((passage) => passage.value),
       tolerance,
     ),
-    sentence: sentenceFor(passages, practice),
+    sentence: whole ?? sentenceFor(passages, practice),
     practice,
   };
 }
 
 /**
- * Which piece the card recommends, and its drift.
+ * Which piece is worth a look, and its tempo passage by passage.
  *
  * `pieces` comes most-drift-first from the server, and the first one is the
  * natural answer — but only if the recent takes can show *where* in it the
- * drift is. A piece whose takes have all aged out of the recent list would get
- * a card with no chart and no bars to practise, over a piece just below it
+ * trouble is. A piece whose takes have all aged out of the recent list would
+ * get a section with no chart and no bars to practise, over a piece just below it
  * that has both. So the first piece that can be drawn wins, and the top piece
  * with no chart is the fallback.
  */
@@ -119,19 +133,41 @@ export function worthALook<P extends { pieceId: string; tolerance: Tolerance | n
   pieces: readonly P[],
   takes: readonly TakeResult[],
   fallbackTolerance: Tolerance | null,
-): { piece: P; drift: PassageDrift | null } | null {
+): { piece: P; tempo: PassageTempo | null } | null {
   for (const piece of pieces) {
-    const drift = passageDrift(takes, piece.pieceId, piece.tolerance ?? fallbackTolerance);
-    if (drift) {
-      return { piece, drift };
+    const tempo = passageTempo(takes, piece.pieceId, piece.tolerance ?? fallbackTolerance);
+    if (tempo) {
+      return { piece, tempo };
     }
   }
-  return pieces[0] ? { piece: pieces[0], drift: null } : null;
+  return pieces[0] ? { piece: pieces[0], tempo: null } : null;
 }
 
 /** "Bars 21–24", or "Bar 7" for a passage of one. */
 export function barsLabel(passage: Pick<Passage, 'from' | 'to'>): string {
   return passage.from === passage.to ? `Bar ${passage.from}` : `Bars ${passage.from}–${passage.to}`;
+}
+
+/**
+ * "Slower than your tempo all the way through.", or null: every passage off
+ * the same way, and no further apart than the on-tempo band is wide. Naming
+ * the last passage of a piece played at one slow speed — which the rules
+ * below would, since one of them has to be the furthest — sends a musician to
+ * practise bars that are no worse than the rest.
+ */
+function allTheWay(passages: readonly Passage[], bandWidth: number): string | null {
+  const values = passages.map((passage) => passage.value);
+  if (!passages.every((passage) => passage.off)) {
+    return null;
+  }
+  const faster = values.every((value) => value > 0);
+  const slower = values.every((value) => value < 0);
+  if ((!faster && !slower) || Math.max(...values) - Math.min(...values) > bandWidth) {
+    return null;
+  }
+  return faster
+    ? 'Faster than your tempo all the way through.'
+    : 'Slower than your tempo all the way through.';
 }
 
 function sentenceFor(passages: readonly Passage[], practice: Passage | null): string {

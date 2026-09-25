@@ -16,8 +16,14 @@ import {
   spacing,
 } from '../../design';
 import { formatLastPracticedShort } from '../../lib/format';
-import { historyLabel } from '../../lib/insights/pieceHistory';
-import { moreTakesLabel, TAKES_SHOWN, takeRowWords } from '../../lib/insights/takeRows';
+import { historyCount } from '../../lib/insights/pieceHistory';
+import {
+  moreTakesLabel,
+  rowDates,
+  TAKES_SHOWN,
+  takeRowIsVerdict,
+  takeRowWords,
+} from '../../lib/insights/takeRows';
 import type { RootNavigation } from '../../navigation/types';
 
 export interface PracticeHistoryProps {
@@ -38,33 +44,45 @@ export interface PracticeHistoryProps {
  * Three rows, then "See all" in place — the same expand-in-place Insights
  * uses for "See all pieces", with the same turning chevron. Draws nothing for
  * a piece nobody has recorded.
+ *
+ * **Verdicts lead** (the owner, 2026-09-25, circling this section). It had
+ * two headings — "YOUR TAKES" and a 16pt "14 takes since September 13" the
+ * size of the rows under it — and its loudest words were three refusals in
+ * full ink, running straight on into the rows below. Now: one heading with
+ * the count beside it; a reading in ink and a refusal in grey; a day's date
+ * said once; and a gap before the piece's own rows, so the two lists read as
+ * two.
  */
 export function PracticeHistory({ history }: PracticeHistoryProps) {
   const navigation = useNavigation<RootNavigation>();
   const [open, setOpen] = useState(false);
-  const label = historyLabel(history);
+  const count = historyCount(history);
 
-  if (!label) {
+  if (!count) {
     return null;
   }
 
   const takes = history.recent;
   const shown = open ? takes : takes.slice(0, TAKES_SHOWN);
   const more = moreTakesLabel(history.takes, takes.length);
+  const dates = shown.map((take) => formatLastPracticedShort(take.recordedAt));
+  const shownDates = rowDates(dates);
 
   return (
     <View style={styles.section}>
-      <Text variant="eyebrow" color="textTertiary" style={styles.caps}>
-        Your takes
-      </Text>
-      <Text variant="body" style={styles.count}>
-        {label}
-      </Text>
+      <View style={styles.heading}>
+        <Text variant="eyebrow" color="textTertiary" style={styles.caps}>
+          Your takes
+        </Text>
+        <Text variant="metadataSmall" color="textTertiary" style={styles.count}>
+          {count}
+        </Text>
+      </View>
 
       <View style={styles.rows}>
-        {shown.map((take) => {
+        {shown.map((take, index) => {
           const words = takeRowWords(take);
-          const when = formatLastPracticedShort(take.recordedAt);
+          const when = dates[index];
           return (
             <Pressable
               key={take.id}
@@ -73,10 +91,15 @@ export function PracticeHistory({ history }: PracticeHistoryProps) {
               accessibilityLabel={`Take from ${when}: ${words}`}
               style={({ pressed }) => [styles.take, pressed && styles.pressed]}
             >
-              <Text variant="metadataSmall" color="textSecondary" style={styles.when}>
-                {when}
+              <Text variant="metadataSmall" color="textTertiary" style={styles.when}>
+                {shownDates[index] ?? ''}
               </Text>
-              <Text variant="metadata" numberOfLines={1} style={styles.words}>
+              <Text
+                variant="rowLabel"
+                color={takeRowIsVerdict(take) ? 'textPrimary' : 'textSecondary'}
+                numberOfLines={1}
+                style={styles.words}
+              >
                 {words}
               </Text>
               <TrailingChevron />
@@ -113,15 +136,24 @@ export function PracticeHistory({ history }: PracticeHistoryProps) {
 const styles = StyleSheet.create({
   section: {
     marginTop: spacing.xl,
+    // The break between this list and the piece's own rows under it — the
+    // same hairline-ruled rows, so without it they read as one list.
+    marginBottom: spacing['2xl'],
+  },
+  heading: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: spacing.md,
   },
   caps: {
     textTransform: 'uppercase',
   },
   count: {
-    marginTop: 6,
+    fontVariant: ['tabular-nums'],
   },
   rows: {
-    marginTop: spacing.md,
+    marginTop: spacing.sm,
   },
   take: {
     flexDirection: 'row',
