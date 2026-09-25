@@ -83,7 +83,8 @@ const styles = StyleSheet.create({
   word: {
     width: 84,
     textAlign: 'right',
-    fontSize: 11,
-    lineHeight: 14,
+    // 12 is the app's smallest size (`typography.caption`).
+    fontSize: 12,
+    lineHeight: 16,
   },
 });

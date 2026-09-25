@@ -106,7 +106,7 @@ const styles = StyleSheet.create({
   },
   track: {
     height: TRACK,
-    backgroundColor: colors.border,
+    backgroundColor: colors.chartRule,
   },
   fill: {
     position: 'absolute',

@@ -188,8 +188,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   markedLabel: {
-    fontSize: 11,
-    lineHeight: 14,
+    // 12 is the app's smallest size (`typography.caption`).
+    fontSize: 12,
+    lineHeight: 16,
     marginBottom: 4,
   },
   markedTick: {

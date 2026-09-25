@@ -95,7 +95,7 @@ export function TrendLine({
               y1={HEIGHT / 2}
               x2={VIEW_WIDTH}
               y2={HEIGHT / 2}
-              stroke={colors.borderStrong}
+              stroke={colors.chartRule}
               strokeWidth={BORDER_WIDTH}
             />
             <Polyline
