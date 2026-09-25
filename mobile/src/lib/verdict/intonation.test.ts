@@ -67,35 +67,33 @@ describe('the chart', () => {
 });
 
 describe('the lines under "In tune"', () => {
-  it('names the longest stretch clearly off the same way', () => {
+  it('names the longest stretch clearly off the same way, and nothing else', () => {
     const measures = [bar(1, 2), bar(2, -5), bar(3, 8), bar(4, -40), bar(5, -35), bar(6, 3)];
 
-    expect(pitchLines(measures, TAKE).summary).toBe(
-      'Most bars within 15 cents of your tuning; bars 4–5 sat flat.',
-    );
+    expect(pitchLines(measures, TAKE).summary).toBe('Bars 4–5 flat');
   });
 
   it('says a single bar as a bar', () => {
-    const measures = [bar(1, 2), bar(2, 45), bar(3, -1)];
+    expect(pitchLines([bar(1, 2), bar(2, 45), bar(3, -1)], TAKE).summary).toBe('Bar 2 sharp');
+  });
 
-    expect(pitchLines(measures, TAKE).summary).toBe(
-      'Most bars within 15 cents of your tuning; bar 2 sat sharp.',
+  it('says how the take sat when no bar was clearly off', () => {
+    expect(pitchLines([bar(1, 2), bar(2, -5)], TAKE).summary).toBe('In tune throughout');
+    expect(pitchLines([bar(1, 2), bar(2, 22), bar(3, 5)], TAKE).summary).toBe('Mostly in tune');
+    expect(pitchLines([bar(1, 22), bar(2, -25), bar(3, 5)], TAKE).summary).toBe(
+      'A little off in places',
     );
   });
 
-  it('gives the typical distance when most bars were not in tune', () => {
-    const measures = [bar(1, 22), bar(2, -25), bar(3, 5)];
-
-    expect(pitchLines(measures, TAKE).summary).toBe(
-      'Your notes sat about 14 cents from your tuning.',
-    );
-  });
-
-  it('says the tuning only when it is worth saying', () => {
-    expect(pitchLines([bar(1, 0)], TAKE).tuning).toBe('Tuned 25 cents sharp of A = 440.');
-    expect(pitchLines([bar(1, 0)], { ...TAKE, tuningCents: -25 }).tuning).toBe(
-      'Tuned 25 cents flat of A = 440.',
-    );
+  it('gives the tuning as a caption only when it is worth saying', () => {
+    expect(pitchLines([bar(1, 0)], TAKE).tuning).toBe('Tuned 25¢ sharp');
+    expect(pitchLines([bar(1, 0)], { ...TAKE, tuningCents: -25 }).tuning).toBe('Tuned 25¢ flat');
     expect(pitchLines([bar(1, 0)], { ...TAKE, tuningCents: 6 }).tuning).toBeNull();
+  });
+
+  it('stays short', () => {
+    const lines = pitchLines([bar(1, 2), bar(2, 45), bar(3, -60), bar(4, -70)], TAKE);
+    expect(lines.summary.length).toBeLessThanOrEqual(20);
+    expect((lines.tuning ?? '').length).toBeLessThanOrEqual(20);
   });
 });

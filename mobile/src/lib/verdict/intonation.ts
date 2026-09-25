@@ -88,17 +88,19 @@ function longestOffRun(
   return best;
 }
 
-/** Share of the bars read that must be in tune for "most bars" to be true. */
+/** Share of the bars read that must be in tune for "mostly in tune" to be true. */
 const MOST = 0.6;
 
 /**
- * The line under "In tune", and the tuning line when the whole take sat off
- * A = 440 — "Most bars within 15 cents of your tuning; bars 17–18 sat flat."
- * and "Tuned 25 cents sharp of A = 440."
+ * The line under "In tune", and the tuning as a caption when the whole take
+ * sat off A = 440: "Bars 17–18 flat" and "Tuned 25¢ sharp".
  *
- * The run named is the longest stretch of consecutive bars clearly off the
- * same way — the place worth practising — and it is left out when there is
- * none.
+ * **Short, because the chart says the rest** (the owner, 2026-09-25: "too
+ * wordy", over "Most bars within 15 cents of your tuning; bars 17–18 sat
+ * flat." and "Tuned 25 cents sharp of A = 440."). The line names the one
+ * place worth practising — the longest stretch of consecutive bars clearly
+ * off the same way — and only when there is none says how the take sat as a
+ * whole.
  */
 export function pitchLines(
   measures: readonly MeasureVerdict[],
@@ -107,24 +109,24 @@ export function pitchLines(
   const read = measures.filter(
     (m): m is MeasureVerdict & { pitchCents: number } => m.pitchCents !== null,
   );
-  const inTune = read.filter((m) => pitchBand(m.pitchCents, take) === 'in_tune').length;
-  const base =
-    read.length > 0 && inTune / read.length >= MOST
-      ? `Most bars within ${Math.round(take.inTuneCents)} cents of your tuning`
-      : `Your notes sat about ${Math.round(take.spreadCents)} cents from your tuning`;
-
   const best = longestOffRun(read, take);
-  const summary = best
-    ? `${base}; ${
-        best.first === best.last ? `bar ${best.first}` : `bars ${best.first}–${best.last}`
-      } sat ${best.sharp ? 'sharp' : 'flat'}.`
-    : `${base}.`;
+  let summary: string;
+  if (best) {
+    const where = best.first === best.last ? `Bar ${best.first}` : `Bars ${best.first}–${best.last}`;
+    summary = `${where} ${best.sharp ? 'sharp' : 'flat'}`;
+  } else {
+    const inTune = read.filter((m) => pitchBand(m.pitchCents, take) === 'in_tune').length;
+    summary =
+      inTune === read.length
+        ? 'In tune throughout'
+        : inTune / Math.max(1, read.length) >= MOST
+          ? 'Mostly in tune'
+          : 'A little off in places';
+  }
 
   const tuning =
     Math.abs(take.tuningCents) >= take.tuningWorthSayingCents
-      ? `Tuned ${Math.round(Math.abs(take.tuningCents))} cents ${
-          take.tuningCents > 0 ? 'sharp' : 'flat'
-        } of A = 440.`
+      ? `Tuned ${Math.round(Math.abs(take.tuningCents))}¢ ${take.tuningCents > 0 ? 'sharp' : 'flat'}`
       : null;
   return { summary, tuning };
 }

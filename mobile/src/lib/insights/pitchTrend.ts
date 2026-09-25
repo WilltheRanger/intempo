@@ -60,9 +60,10 @@ export function pitchTrendFrom(takes: readonly TakeResult[]): PitchTrend | null 
 }
 
 /**
- * The sentence under "In tune": where the latest take sat, and whether that is
- * closer than where the run started. Works from one take too, which is what a
- * musician with a single take read for pitch is told.
+ * The line under "In tune" on Insights: where the latest take sat, and which
+ * way it has gone since the earliest — "Within 15¢ of your tuning · closer
+ * than before". Short, as the verdict's is (the owner, 2026-09-25: "too
+ * wordy"). Works from one take too.
  */
 export function pitchTrendLine(takes: readonly TakeResult[]): string | null {
   const read = takes.filter(
@@ -74,18 +75,18 @@ export function pitchTrendLine(takes: readonly TakeResult[]): string | null {
   }
   const where =
     newest.spreadCents <= newest.inTuneCents
-      ? `Your notes sit within ${Math.round(newest.inTuneCents)} cents of your tuning.`
-      : `Your notes sit about ${Math.round(newest.spreadCents)} cents from your tuning.`;
+      ? `Within ${Math.round(newest.inTuneCents)}¢ of your tuning`
+      : `About ${Math.round(newest.spreadCents)}¢ off your tuning`;
   const oldest = read[read.length - 1]?.intonation;
   if (!oldest || read.length < MINIMUM_POINTS) {
     return where;
   }
   const change = oldest.spreadCents - newest.spreadCents;
   if (change >= CHANGE_WORTH_SAYING_CENTS) {
-    return `${where} Closer than your earliest take.`;
+    return `${where} · closer than before`;
   }
   if (change <= -CHANGE_WORTH_SAYING_CENTS) {
-    return `${where} Further out than your earliest take.`;
+    return `${where} · further out than before`;
   }
   return where;
 }
