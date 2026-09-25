@@ -550,6 +550,7 @@ function toTake(
     untimedReason: m.untimed_reason ?? null,
     playedBpm: typeof m.played_bpm === 'number' ? m.played_bpm : null,
     pitchCents: typeof m.pitch_cents === 'number' ? m.pitch_cents : null,
+    targetBpm: typeof m.target_bpm === 'number' ? m.target_bpm : null,
   }));
 
   return {

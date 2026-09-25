@@ -311,3 +311,122 @@ def test_a_page_with_no_marking_is_untouched() -> None:
     assert not any(n.under_tempo_change for n in result.per_note)
     assert not any(m.uneven for m in result.per_measure)
     assert result.verdict == "Steady all the way through."
+
+
+# ---------------------------------------------------------------------------
+# A step to a new tempo: "più mosso", "meno mosso", a new metronome mark
+# (the owner, 2026-09-25: "how am I supposed to account for tempo variations")
+# ---------------------------------------------------------------------------
+
+
+def _stepped(
+    changes: list[TempoChange],
+    bpm_of_bar,
+    target: float = 104.0,
+    marked: int | None = 104,
+    bars: int = 12,
+):
+    """Quarters, each bar played at `bpm_of_bar(bar)`, through the timeline,
+    the deltas, the bar tempi and the verdict as `analyze()` runs them."""
+    from app.services.alignment import CleanedAlignment
+    from app.services.analysis import _summarize_measures, bar_pacing
+    from app.services.classification import compute_deltas, generate_verdict
+
+    score = _score(changes, measures=bars).model_copy(update={"bpm_hint": marked})
+    timeline = build_timeline(score, target)
+    detected, t = [], 0.0
+    for i in range(bars * 4):
+        detected.append(t)
+        t += 60.0 / bpm_of_bar(i // 4 + 1)
+    matched = [(i, i) for i in range(bars * 4)]
+    onsets = np.asarray(detected)
+    deltas = compute_deltas(CleanedAlignment(matched=matched), onsets, timeline, target)
+    tempi = bar_pacing(matched, onsets, timeline, target)
+    verdict = generate_verdict(
+        deltas, target, tempo_spans=tempo_change_spans(score), tempi=tempi
+    )
+    bars_out = _summarize_measures(deltas, tempi.by_bar, None, tempi.targets, target)
+    return verdict, {m.measure_number: m for m in bars_out}
+
+
+MENO = TempoChange(measure_number=5, kind="new_tempo", text="meno mosso", bpm=88)
+
+
+def test_a_new_tempo_played_as_marked_is_steady() -> None:
+    verdict, bars = _stepped([MENO], lambda bar: 88.0 if bar >= 5 else 104.0)
+
+    assert verdict.text == "Steady all the way through."
+    assert bars[8].played_bpm == pytest.approx(88.0, abs=1.0)
+    assert bars[8].target_bpm == 88.0
+    assert bars[2].target_bpm is None
+
+
+def test_the_same_take_with_nothing_marked_is_named() -> None:
+    """What the owner's piece got: the slower section read as dragging."""
+    verdict, _ = _stepped([], lambda bar: 88.0 if bar >= 5 else 104.0)
+
+    assert verdict.direction.value == "drag"
+    assert verdict.start_measure == 5
+
+
+def test_playing_through_a_meno_mosso_at_the_old_tempo_ran_ahead() -> None:
+    verdict, _ = _stepped([MENO], lambda bar: 104.0)
+
+    assert verdict.direction.value == "rush"
+    assert (verdict.start_measure, verdict.end_measure) == (5, 12)
+    assert verdict.text == "Bars 5–12 went at 104."
+
+
+def test_a_new_tempo_scales_with_the_tempo_the_take_is_practised_at() -> None:
+    """Marked 104, meno mosso 88, practised at half: 52, then 44."""
+    verdict, bars = _stepped(
+        [MENO], lambda bar: 44.0 if bar >= 5 else 52.0, target=52.0
+    )
+
+    assert verdict.text == "Steady all the way through."
+    assert bars[8].target_bpm == 44.0
+
+
+def test_a_piece_with_no_marked_tempo_takes_the_number_as_stated() -> None:
+    verdict, bars = _stepped(
+        [MENO], lambda bar: 88.0 if bar >= 5 else 96.0, target=96.0, marked=None
+    )
+
+    assert verdict.text == "Steady all the way through."
+    assert bars[8].target_bpm == 88.0
+
+
+def test_tempo_primo_returns_to_the_opening() -> None:
+    changes = [MENO, TempoChange(measure_number=9, kind="a_tempo", text="Tempo I")]
+    verdict, bars = _stepped(changes, lambda bar: 88.0 if 5 <= bar < 9 else 104.0)
+
+    assert verdict.text == "Steady all the way through."
+    assert bars[10].target_bpm is None
+
+
+def test_a_tempo_after_a_rit_inside_a_meno_mosso_returns_to_the_meno_mosso() -> None:
+    score = _score(
+        [
+            MENO,
+            TempoChange(measure_number=7, kind="ritardando", text="poco rit."),
+            TempoChange(measure_number=9, kind="a_tempo", text="a tempo"),
+        ],
+        measures=12,
+    )
+    from app.services.score_schema import targets_by_measure
+
+    targets = targets_by_measure(score.model_copy(update={"bpm_hint": 104}), 104.0)
+
+    assert [targets[m] for m in (4, 5, 7, 9, 12)] == [104.0, 88.0, 88.0, 88.0, 88.0]
+    assert measures_under_tempo_change(score) == {7, 8}
+
+
+def test_a_new_tempo_with_no_number_is_not_judged_against_one() -> None:
+    """"Meno mosso" and nothing else: slower, by an amount the page does not
+    give. Those bars are left unjudged, as a `rit.`'s are — there is no
+    number to be a distance from."""
+    unstated = TempoChange(measure_number=5, kind="new_tempo", text="meno mosso")
+    verdict, bars = _stepped([unstated], lambda bar: 80.0 if bar >= 5 else 104.0)
+
+    assert verdict.direction.value == "on"
+    assert bars[8].under_tempo_change

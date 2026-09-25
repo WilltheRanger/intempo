@@ -12,6 +12,7 @@ import {
   directionFor,
   displayTempoBpm,
   displayTempoValue,
+  formatTempo,
   tempoUnitLabel,
   verdictColorFor,
 } from '../tempo';
@@ -65,16 +66,28 @@ export interface BarTempo {
 }
 
 /**
+ * The tempo a bar is judged against: its own where the page moved it ("meno
+ * mosso 88", `MeasureVerdict.targetBpm`), the take's everywhere else.
+ */
+export function barTarget(measure: MeasureVerdict, takeTargetBpm: number): number {
+  return measure.targetBpm != null && measure.targetBpm > 0 ? measure.targetBpm : takeTargetBpm;
+}
+
+/**
  * A bar's tempo, or null where there is none to show — an older result, a
  * bar with too few notes to time, or one the page said not to judge (a
  * `rit.`, a held fermata), which keeps its existing reading.
+ *
+ * Against the bar's own target (`barTarget`): a bar of a meno mosso at 88,
+ * played at 88, is on it — "On your 88" — not 16 under the opening's 104.
  */
 export function barTempo(
   measure: MeasureVerdict,
-  targetBpm: number,
+  takeTargetBpm: number,
   unit: TempoBeatUnit | null | undefined,
   tolerance: Tolerance | null,
 ): BarTempo | null {
+  const targetBpm = barTarget(measure, takeTargetBpm);
   if (
     measure.playedBpm === null ||
     !(measure.playedBpm > 0) ||
@@ -183,10 +196,25 @@ export interface TempoTick {
   isTarget: boolean;
 }
 
+/** A stretch of the take at one target, along the take from `from` to `to`. */
+export interface TargetStep {
+  from: number;
+  to: number;
+  /** In the page's beat unit. */
+  bpm: number;
+}
+
 export interface TempoLineData {
   /** Runs of consecutive bars with a tempo; a bar without one breaks the line. */
   runs: TempoPoint[][];
+  /** The opening's target. */
   target: number;
+  /**
+   * The target along the take: one step for a piece that never changes tempo,
+   * one more for each "meno mosso" or new metronome mark, each changing
+   * halfway between the last bar before it and the first bar under it.
+   */
+  steps: TargetStep[];
   /** The axis, bottom and top, in the page's beat unit. */
   min: number;
   max: number;
@@ -233,25 +261,84 @@ export function tempoLine(
     return null;
   }
   const target = displayTempoBpm(targetBpm, unit);
-  const low = Math.min(target, ...all.map((p) => p.bpm));
-  const high = Math.max(target, ...all.map((p) => p.bpm));
+  const steps = targetSteps(measures, targetBpm, unit);
+  const targets = [...new Set(steps.map((step) => step.bpm))];
+  const low = Math.min(...targets, ...all.map((p) => p.bpm));
+  const high = Math.max(...targets, ...all.map((p) => p.bpm));
   const pad = Math.max((high - low) * 0.12, 2);
   const min = low - pad;
   const max = high + pad;
 
-  // The target is always labelled. The take's own ends are labelled too,
-  // unless they would sit on top of the target's label.
+  // Every target is labelled, the opening's first so it wins a crowded
+  // gutter. The take's own ends are labelled too, unless they would sit on
+  // top of a target's label.
   const crowded = (max - min) * 0.2;
-  const ticks: TempoTick[] = [{ bpm: target, label: `${target}`, isTarget: true }];
+  const clear = (bpm: number, taken: number[]) => taken.every((t) => Math.abs(bpm - t) > crowded);
+  const labelled: number[] = [];
+  for (const bpm of [target, ...targets.filter((t) => t !== target)]) {
+    if (labelled.length === 0 || clear(bpm, labelled)) labelled.push(bpm);
+  }
+  const ticks: TempoTick[] = labelled.map((bpm) => ({ bpm, label: `${bpm}`, isTarget: true }));
   const top = Math.round(high);
   const bottom = Math.round(low);
-  if (top - target > crowded) {
+  if (clear(top, labelled)) {
     ticks.unshift({ bpm: top, label: `${top}`, isTarget: false });
   }
-  if (target - bottom > crowded) {
+  if (clear(bottom, labelled)) {
     ticks.push({ bpm: bottom, label: `${bottom}`, isTarget: false });
   }
-  return { runs, target, min, max, ticks };
+  ticks.sort((a, b) => b.bpm - a.bpm);
+  return { runs, target, steps, min, max, ticks };
+}
+
+/**
+ * The target along the take, as steps: a new one wherever a bar's target
+ * differs from the bar before's, changing halfway between them.
+ */
+function targetSteps(
+  measures: readonly MeasureVerdict[],
+  takeTargetBpm: number,
+  unit: TempoBeatUnit | null | undefined,
+): TargetStep[] {
+  const last = Math.max(1, measures.length - 1);
+  const steps: TargetStep[] = [];
+  measures.forEach((measure, index) => {
+    const bpm = displayTempoBpm(barTarget(measure, takeTargetBpm), unit);
+    const current = steps[steps.length - 1];
+    if (current && current.bpm === bpm) return;
+    const at = index === 0 ? 0 : (index - 0.5) / last;
+    if (current) current.to = at;
+    steps.push({ from: at, to: 1, bpm });
+  });
+  return steps;
+}
+
+/**
+ * What the line says aloud: "Tempo by bar, against your 104 BPM" — and where
+ * the page changes tempo, each target in turn: "against 104, then 88 from bar
+ * 9, then 104 from bar 17".
+ */
+export function tempoLineLabel(
+  measures: readonly MeasureVerdict[],
+  takeTargetBpm: number,
+  unit: TempoBeatUnit | null | undefined,
+): string {
+  const parts: string[] = [];
+  let previous: number | null = null;
+  for (const measure of measures) {
+    const bpm = barTarget(measure, takeTargetBpm);
+    if (bpm === previous) continue;
+    parts.push(
+      previous === null
+        ? formatTempo(bpm, unit)
+        : `then ${displayTempoBpm(bpm, unit)} from bar ${measure.measure}`,
+    );
+    previous = bpm;
+  }
+  if (parts.length <= 1) {
+    return `Tempo by bar, against your ${parts[0] ?? formatTempo(takeTargetBpm, unit)}`;
+  }
+  return `Tempo by bar, against ${parts.join(', ')}`;
 }
 
 /** Where a tempo sits on a line drawn `height` tall, 0 at the top. */

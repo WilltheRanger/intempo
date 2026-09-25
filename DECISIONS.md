@@ -1,5 +1,39 @@
 # InTempo Decisions
 
+## 2026-09-25 — Tempo changes: a stated new tempo is judged against, per bar
+
+**Context.** The owner: "How am I supposed to account for tempo variations or
+where it says poco". The schema knew `rit.`, `accel.` and `a tempo`, and
+refused to judge the bars under a gradual change — but nothing ever filled it:
+the live reader (homr) reads notes, not words, the MusicXML importer ignored
+`<words>`, and there was no way to add one by hand. A step to a new tempo —
+"più mosso", "meno mosso", a new metronome mark — was not representable at
+all, so a meno mosso played as marked was every bar after it "dragging".
+
+**Decision** (the owner chose both routes in, and a stated BPM for a step).
+- `TempoChange` gains `new_tempo` with an optional `bpm`, in the terms of the
+  piece's marked tempo (`bpm_hint`), so it scales with the tempo a take is
+  practised at. No number ("meno mosso" alone) leaves those bars unjudged, as a
+  `rit.`'s are.
+- `score_schema.tempo_in_force` walks the markings: each pushes the tempo it
+  leaves, `a tempo` pops one, "Tempo I" returns to the opening. The timeline
+  advances each bar at its own tempo; bar tempi are fitted against steady
+  beats so the pace is a real BPM; each bar, the verdict's run and the stored
+  `PerMeasure.target_bpm` use the bar's own target.
+- A passage take carries every marking before its entry bar, in order, rather
+  than the last one — the tempo in force at bar 20 depends on the stack.
+- The verdict screen draws the target as steps and judges each bar's card and
+  chart bar against its own target.
+
+**Alternatives.** A step stored as a ratio rather than a BPM — rejected,
+musicians think in the number printed. A new tempo with no number judged
+against the player's own pace in that section — deferred; nothing to judge is
+honest where the page gives nothing. Carrying the last marking plus a
+synthesised one — rejected for carrying all of them, which reproduces the page.
+
+**Trade-offs.** A result stored before this has no per-bar targets and draws
+as before. The bars' colour bands still measure drift since the first note.
+
 ## 2026-09-25 — The verdict line spares settling in and winding down
 
 **Context.** The owner: "does the app count for when you start to play

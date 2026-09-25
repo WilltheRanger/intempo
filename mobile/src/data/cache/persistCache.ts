@@ -38,8 +38,10 @@ export const CACHE_KEY = 'intempo.library-cache';
  * and passed — so the tab the app builds at launch read `.spreadCents` off
  * nothing and threw, on every launch, until the saved readings aged out a day
  * later: the crash left nothing mounted to fetch fresh ones.
+ *
+ * 3, the same day: bars gained `targetBpm`, the tempo a "meno mosso" sets.
  */
-export const CACHE_SHAPE = 2;
+export const CACHE_SHAPE = 3;
 
 /**
  * How long a saved library is still worth showing.

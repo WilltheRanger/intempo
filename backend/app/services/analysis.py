@@ -149,6 +149,12 @@ class PerMeasure(BaseModel):
     #: where nothing in the bar could be read, or the take said nothing about
     #: pitch.
     pitch_cents: float | None = None
+    #: The tempo this bar was meant at, where the page moved it — "meno
+    #: mosso", a new metronome mark (`score_schema.targets_by_measure`),
+    #: scaled to the take's own target. `None` where the bar is at the take's
+    #: target, which is every bar of a piece that never changes tempo, and
+    #: every bar of a result stored before this existed.
+    target_bpm: float | None = None
 
 
 class IntonationSummary(BaseModel):
@@ -271,6 +277,8 @@ def _summarize_measures(
     deltas: list[Delta],
     tempi: Mapping[int, float] | None = None,
     pitch: Mapping[int, float] | None = None,
+    targets: Mapping[int, float] | None = None,
+    target_bpm: float | None = None,
 ) -> list[PerMeasure]:
     by_measure: dict[int, list[Delta]] = defaultdict(list)
     for d in deltas:
@@ -306,9 +314,17 @@ def _summarize_measures(
                 untimed_reason=_shared_untimed_reason(group, timed),
                 played_bpm=(tempi or {}).get(measure_number),
                 pitch_cents=(pitch or {}).get(measure_number),
+                target_bpm=_moved_target((targets or {}).get(measure_number), target_bpm),
             )
         )
     return summaries
+
+
+def _moved_target(bar: float | None, take: float | None) -> float | None:
+    """A bar's target where the page moved it off the take's, else None."""
+    if bar is None or take is None or abs(bar - take) < 0.05:
+        return None
+    return round(bar, 1)
 
 
 def bar_pacing(
@@ -331,15 +347,31 @@ def bar_pacing(
         if 0 <= e < len(timeline.notes)
         and not (timeline.notes[e].is_grace_note or timeline.notes[e].after_grace_note)
     ]
-    written = [float(timeline.onsets[e]) for _, e in kept]
+    # **Beats at one tempo, not the timeline's seconds.** The timeline moves
+    # each bar to the tempo the page sets for it (`build_timeline`), so a
+    # "meno mosso" played exactly as marked keeps pace with it — and a tempo
+    # read as `target / pace` would call it the opening's. Against steady
+    # beats the pace *is* the tempo, and each bar is then compared with its
+    # own target (`targets`).
+    beat_s = 60.0 / target_bpm if target_bpm > 0 else 0.5
+    written = [
+        float(timeline.onsets[e])
+        if timeline.notes[e].written_beats is None
+        else float(timeline.notes[e].written_beats) * beat_s
+        for _, e in kept
+    ]
     played = [float(onsets[d]) for d, _ in kept]
     bars = [timeline.notes[e].measure_number for _, e in kept]
     new_stretch = [bool(timeline.notes[e].after_fermata) for _, e in kept]
+    targets = {
+        n.measure_number: round(60.0 / n.beat_s, 2) for n in timeline.notes if n.beat_s
+    }
     return BarTempi(
         by_bar=tempo_by_bar(written, played, bars, target_bpm, new_stretch=new_stretch),
         across=lambda first, last: tempo_across_bars(
             written, played, bars, target_bpm, first, last, new_stretch=new_stretch
         ),
+        targets=targets,
     )
 
 
@@ -2292,7 +2324,9 @@ def analyze(
         verdict=verdict.text,
         verdict_direction=verdict.direction,
         per_note=per_note,
-        per_measure=_summarize_measures(deltas, pacing.by_bar, in_tune.by_bar),
+        per_measure=_summarize_measures(
+            deltas, pacing.by_bar, in_tune.by_bar, pacing.targets, target_bpm
+        ),
         intonation=_intonation_summary(in_tune, cfg),
         trend=trend,
         n_detected_onsets=raw.n_detected,

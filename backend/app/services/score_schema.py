@@ -29,7 +29,7 @@ Dynamics = Literal[
 RepeatType = Literal["repeat", "first_ending", "second_ending"]
 #: `a_tempo` covers "a tempo", "Tempo I" and "tempo primo" — anything whose
 #: job is to end a change rather than start one.
-TempoChangeKind = Literal["ritardando", "accelerando", "a_tempo"]
+TempoChangeKind = Literal["ritardando", "accelerando", "a_tempo", "new_tempo"]
 
 # Duration: spec lists "quarter | eighth | half | sixteenth | dotted_quarter | ..."
 # The "..." means "and the obvious extensions." Closed list of the
@@ -709,6 +709,16 @@ class TempoChange(_Strict):
     #: What is actually printed — "rit.", "poco rall.", "a tempo", "Tempo I".
     #: Carried so a screen can quote the page rather than paraphrase it.
     text: str = Field(min_length=1, max_length=40)
+    #: For `new_tempo` — "più mosso", "meno mosso", a new metronome mark — the
+    #: tempo it sets, in quarter notes per minute, **in the terms of the
+    #: piece's own marked tempo** (`bpm_hint`): a take practised at half the
+    #: marked tempo plays the new section at half of this too
+    #: (`targets_by_measure`). Absolute where the piece has no marked tempo.
+    #:
+    #: None where the page says "slower" without saying how much: those bars
+    #: are then not judged at all, as a `rit.`'s are, because there is no
+    #: number to be a distance from. Ignored for every other kind.
+    bpm: float | None = Field(default=None, gt=0, le=400)
 
 
 class Repeat(_Strict):
@@ -1202,12 +1212,16 @@ def tempo_change_spans(score: ScoreJson) -> list[TempoSpan]:
     )
     spans: list[TempoSpan] = []
     for index, change in enumerate(changes):
-        if change.kind == "a_tempo":
+        # A step to a stated tempo is judged against that tempo
+        # (`targets_by_measure`), not left unjudged; and `a_tempo` only ends.
+        if change.kind == "a_tempo" or (change.kind == "new_tempo" and change.bpm):
             continue
-        following = next(
-            (c.measure_number for c in changes[index + 1 :]
-             if c.measure_number > change.measure_number),
-            None,
+        # The next marking in order ends this one, even one printed in the same
+        # bar: that is how a passage take carries the markings before its entry
+        # bar (`start_at`), all stamped on the entry bar in the order printed,
+        # and a `rit.` the page had already ended must not run on from there.
+        following = (
+            changes[index + 1].measure_number if index + 1 < len(changes) else None
         )
         # Up to the measure before the next marking, or to the end of the page.
         end = (following - 1) if following is not None else last_measure
@@ -1229,3 +1243,60 @@ def measures_under_tempo_change(score: ScoreJson) -> set[int]:
     for span in tempo_change_spans(score):
         covered.update(range(span.start_measure, span.end_measure + 1))
     return covered
+
+
+#: "Tempo I", "Tempo primo", "1o Tempo": back to the opening, not one step back.
+_TEMPO_PRIMO = re.compile(r"\b(tempo\s*(i|1|primo|1o|1º)|1\s*[oº°]?\s*tempo|primo\s+tempo)\b", re.I)
+
+
+def tempo_in_force(score: ScoreJson) -> dict[int, float | None]:
+    """The stated tempo each measure is played at, in the piece's own terms.
+
+    None is the piece's opening tempo — whatever the musician chose to take it
+    at. A number is a `new_tempo`'s stated BPM (see `TempoChange.bpm`).
+
+    **A change remembers what it changed from**, because that is what "a
+    tempo" returns to: after a `rit.`, the tempo before the `rit.`; after a
+    "meno mosso", the tempo before that; after a `rit.` inside a meno mosso,
+    the meno mosso. So each marking pushes the tempo it leaves, and `a_tempo`
+    pops one. "Tempo I" is the exception the name states, and goes back to
+    the opening. A gradual change leaves the stated tempo where it was: the
+    bars under it are not judged against a number at all
+    (`measures_under_tempo_change`).
+    """
+    by_measure: dict[int, list[TempoChange]] = {}
+    for change in score.tempo_changes:
+        by_measure.setdefault(change.measure_number, []).append(change)
+
+    current: float | None = None
+    left: list[float | None] = []
+    out: dict[int, float | None] = {}
+    for measure in sorted({m.measure_number for m in score.measures}):
+        for change in by_measure.get(measure, []):
+            if change.kind == "a_tempo":
+                if _TEMPO_PRIMO.search(change.text):
+                    current, left = None, []
+                else:
+                    current = left.pop() if left else None
+                continue
+            left.append(current)
+            if change.kind == "new_tempo" and change.bpm:
+                current = float(change.bpm)
+        out[measure] = current
+    return out
+
+
+def targets_by_measure(score: ScoreJson, target_bpm: float) -> dict[int, float]:
+    """The tempo each measure is judged against, for a take at `target_bpm`.
+
+    `target_bpm` is what the musician chose for the opening. A stated tempo
+    change scales with it — a meno mosso marked 88 in a piece marked 104,
+    practised at 52, is played at 44 — through the piece's marked tempo
+    (`bpm_hint`); a piece with none takes the stated number as it stands.
+    """
+    reference = float(score.bpm_hint) if score.bpm_hint else target_bpm
+    scale = target_bpm / reference if reference > 0 else 1.0
+    return {
+        measure: target_bpm if stated is None else stated * scale
+        for measure, stated in tempo_in_force(score).items()
+    }

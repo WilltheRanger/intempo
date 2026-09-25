@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Literal
 
@@ -344,7 +344,10 @@ def compute_deltas(
         expected_ms = timeline.onsets[exp_i] * 1000.0
         actual_ms = (detected[det_i] - anchors[position]) * 1000.0
         delta_ms = actual_ms - expected_ms
-        delta_pct = (delta_ms / beat_ms) * 100.0 if beat_ms else 0.0
+        # A share of *this bar's* beat: under a "meno mosso" the beat is longer,
+        # and the same few milliseconds are a smaller part of it.
+        note_beat_ms = note.beat_s * 1000.0 if note.beat_s else beat_ms
+        delta_pct = (delta_ms / note_beat_ms) * 100.0 if note_beat_ms else 0.0
         # Under a written change the grid bands are not softened, they are
         # refused: they measure distance from a steady beat and the page has
         # said the beat is not steady. Forcing `on` here is also what keeps a
@@ -467,6 +470,13 @@ class BarTempi:
 
     by_bar: Mapping[int, float]
     across: Callable[[int, int], float | None]
+    #: The tempo each bar is judged against, where the page changes it
+    #: ("meno mosso", a new metronome mark: `score_schema.targets_by_measure`).
+    #: A bar not listed is judged against the take's target.
+    targets: Mapping[int, float] = field(default_factory=dict)
+
+    def target(self, bar: int, target_bpm: float) -> float:
+        return self.targets.get(bar, target_bpm)
 
 
 #: The fewest consecutive notes that make a drift worth naming on their own.
@@ -583,7 +593,7 @@ def _longest_bar_run(
     for bar, bpm in sorted(tempi.by_bar.items()):
         if bpm <= 0 or not timed.get(bar) or bar in changed:
             continue
-        pct = (1.0 - bpm / target_bpm) * 100.0
+        pct = (1.0 - bpm / tempi.target(bar, target_bpm)) * 100.0
         band = classify_band(pct, config=config)
         sign = 0 if band is Band.on else (1 if pct > 0 else -1)
         bars.append((bar, sign, band, timed[bar]))
@@ -735,9 +745,10 @@ def describe_tempo_change(
     # Verbatim, dot included. "rit." is how it is printed and how a musician
     # reads it; stripping the abbreviation's own full stop gives "your rit
     # lurched", which is not English.
-    marking = covering.text.strip() or (
-        "ritardando" if covering.kind == "ritardando" else "accelerando"
-    )
+    marking = covering.text.strip() or {
+        "ritardando": "ritardando",
+        "accelerando": "accelerando",
+    }.get(covering.kind, "tempo change")
     where = (
         f"bar {uneven[0]}"
         if len(uneven) == 1
@@ -791,12 +802,15 @@ def generate_verdict(
         by_bars, spared = _longest_bar_run(judged, tempi, target_bpm, cfg, edges)
         if by_bars is not None:
             played = tempi.across(by_bars.first, by_bars.last)
+            # Against the tempo the run was meant at: inside a "meno mosso" at
+            # 88, a stretch at 100 ran ahead, however it compares with 104.
+            meant = tempi.target(by_bars.first, target_bpm)
             return _run_verdict(
                 rushing=by_bars.rushing,
                 start_m=by_bars.first,
                 end_m=by_bars.last,
-                difference=None if played is None else played - target_bpm,
-                target_bpm=target_bpm,
+                difference=None if played is None else played - meant,
+                target_bpm=meant,
                 lurch=lurch,
             )
 

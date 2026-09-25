@@ -7,7 +7,15 @@ to be told anything about it.
 
 from __future__ import annotations
 
-from app.services.score_schema import Measure, Note, Repeat, ScoreJson, TempoChange
+from app.services.score_schema import (
+    Measure,
+    Note,
+    Repeat,
+    ScoreJson,
+    TempoChange,
+    measures_under_tempo_change,
+    tempo_in_force,
+)
 from app.services.start_at import start_from_measure
 
 
@@ -86,9 +94,9 @@ def test_a_tempo_change_still_in_force_is_carried_to_the_entry_bar() -> None:
     ]
 
 
-def test_only_the_last_change_before_the_entry_bar_is_carried() -> None:
-    # A `rit.` cancelled by an `a tempo` before the cut is over; carrying both
-    # would put two markings on one bar.
+def test_a_change_ended_before_the_entry_bar_stays_ended() -> None:
+    # A `rit.` cancelled by an `a tempo` before the cut is over. Both are
+    # carried, in order, and the `a tempo` ends the `rit.` again at bar 4.
     score = _score(
         tempo_changes=[
             TempoChange(measure_number=1, kind="ritardando", text="rit."),
@@ -98,7 +106,8 @@ def test_only_the_last_change_before_the_entry_bar_is_carried() -> None:
 
     trimmed = start_from_measure(score, 4)
 
-    assert [(c.measure_number, c.kind) for c in trimmed.tempo_changes] == [(4, "a_tempo")]
+    assert measures_under_tempo_change(trimmed) == set()
+    assert set(tempo_in_force(trimmed).values()) == {None}
 
 
 def test_a_change_printed_on_the_entry_bar_wins_over_the_carried_one() -> None:
@@ -111,7 +120,27 @@ def test_a_change_printed_on_the_entry_bar_wins_over_the_carried_one() -> None:
 
     trimmed = start_from_measure(score, 4)
 
-    assert [(c.measure_number, c.kind) for c in trimmed.tempo_changes] == [(4, "a_tempo")]
+    assert measures_under_tempo_change(trimmed) == set()
+
+
+def test_the_tempo_in_force_at_the_entry_bar_is_the_page_s() -> None:
+    """A meno mosso, then a `rit.` inside it, cut after the `rit.`: the
+    `a tempo` that follows returns to the meno mosso, as it does on the page.
+    Carrying the last marking alone would have returned it to the opening."""
+    score = _score(
+        tempo_changes=[
+            TempoChange(measure_number=1, kind="new_tempo", text="meno mosso", bpm=88),
+            TempoChange(measure_number=3, kind="ritardando", text="rit."),
+            TempoChange(measure_number=5, kind="a_tempo", text="a tempo"),
+        ]
+    )
+
+    whole = tempo_in_force(score)
+    trimmed = tempo_in_force(start_from_measure(score, 4))
+
+    assert all(trimmed[m] == whole[m] for m in trimmed)
+    assert trimmed[5] == 88
+    assert 4 in measures_under_tempo_change(start_from_measure(score, 4))
 
 
 def test_changes_after_the_entry_bar_are_untouched() -> None:

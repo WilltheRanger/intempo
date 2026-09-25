@@ -1423,6 +1423,7 @@ function buildFixtureTake(): TakeResult | null {
       untimedReason: m.untimedReason ?? null,
       playedBpm: m.bpm ?? null,
       pitchCents: m.pitch ?? null,
+      targetBpm: null,
     };
   });
 

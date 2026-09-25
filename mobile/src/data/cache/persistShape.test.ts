@@ -27,7 +27,7 @@ import { CACHE_SHAPE } from './persistCache';
  * optional. Nested types other than a take's bars and pitch are left out;
  * those two are the ones the screens read field by field.
  */
-const SHAPE = 2;
+const SHAPE = 3;
 
 const TAKE: Record<keyof TakeResult, true> = {
   comparisonKey: true,
@@ -58,6 +58,7 @@ const BAR: Record<keyof MeasureVerdict, true> = {
   measure: true,
   playedBpm: true,
   pitchCents: true,
+  targetBpm: true,
   noteCount: true,
   deviationPct: true,
   band: true,
@@ -126,7 +127,7 @@ describe('the launch cache', () => {
   it('is numbered for the shape of what it saves', () => {
     // Read so the lists are not dead code; the compiler is what checks them.
     const fields = [TAKE, BAR, PITCH, READINGS, ACCOUNT, PIECE].map((t) => Object.keys(t).length);
-    expect(fields).toEqual([22, 12, 6, 9, 11, 15]);
+    expect(fields).toEqual([22, 13, 6, 9, 11, 15]);
     expect(CACHE_SHAPE, 'a saved type changed: bump CACHE_SHAPE and SHAPE together').toBe(SHAPE);
   });
 });
