@@ -12,6 +12,11 @@
 # before the note chain (#142–#144). Two further refused takes belong to
 # another account and are not listed: a verdict would count against its free
 # allowance, and it is not the owner's to spend.
+#
+# 2026-09-25, again — the same fifteen, after #146: a short take is read from
+# the bar it was recorded from (one had been given "rushed bars 42–45" from a
+# take started at bar 7), and a take whose notes the pitch track hears at the
+# page's pitches is no longer told it was not played.
 5d6011ba-dd06-4b81-884a-86eff4ab565d
 44975f56-1b8a-473a-8e5a-e06d1d0f7a1e
 2aac1ba8-595a-433f-bec2-a49077bbf359
