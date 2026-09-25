@@ -24,6 +24,7 @@ import {
   timedMeasureRange,
 } from '../../lib/verdict/measureReading';
 import { openingMeasure } from '../../lib/verdict/measureChart';
+import { appVerdictForBar, tempoLine } from '../../lib/verdict/barTempo';
 import { passageLabel } from '../../lib/verdict/passage';
 import {
   failureTitle,
@@ -39,6 +40,7 @@ import { useSubmitCorrection } from '../../data/hooks/useCorrections';
 import { CorrectionPrompt, type CorrectionState } from './CorrectionPrompt';
 import { MeasureBars } from './MeasureBars';
 import { MeasureCard } from './MeasureCard';
+import { TempoLine } from './TempoLine';
 import { TrendLine } from './TrendLine';
 import { TakePlayback } from './TakePlayback';
 import { loadStateFor } from '../../lib/loadState';
@@ -78,7 +80,7 @@ export function VerdictScreen() {
   );
   const submitCorrection = useSubmitCorrection();
 
-  function correct(measure: MeasureVerdict, choice: UserVerdict) {
+  function correct(measure: MeasureVerdict, choice: UserVerdict, appVerdict: UserVerdict) {
     setCorrections((current) => ({
       ...current,
       [measure.measure]: { kind: 'sending', choice },
@@ -92,7 +94,9 @@ export function VerdictScreen() {
             // Sent as the app's own word for it, so the pair is stored
             // together — the dataset exists to compare the two, and storing
             // only the correction loses what it was correcting.
-            app_verdict: appVerdictFor(measure),
+            // What the card showed — the bar's tempo, where it has one
+            // (`appVerdictForBar`).
+            app_verdict: appVerdict,
             user_verdict: choice,
           },
         ],
@@ -316,6 +320,12 @@ export function VerdictScreen() {
     take.measures.length;
   const opening = openingMeasure(take.measures);
   const chosen = take.measures.find((m) => m.measure === (selected ?? opening)) ?? null;
+  const chosenAppVerdict = chosen
+    ? appVerdictForBar(chosen, take.targetBpm, take.tempoBeatUnit, take.tolerance)
+    : null;
+  // "Across the take" in BPM where the take carries its bars' tempi; an older
+  // result draws the drift line it always did.
+  const tempo = tempoLine(take.measures, take.targetBpm, take.tempoBeatUnit);
 
   /*
     **The redesign's verdict** (`redesign/Verdict.dc.html`, 2026-09-23): the
@@ -389,23 +399,38 @@ export function VerdictScreen() {
 
       <RuledHeading label="Across the take" style={styles.ruled} />
       {/*
-        No sentence under this one. The chart names its own axes — Target on
-        the rule, ahead and behind either side of it — so prose explaining it
-        would only repeat what it already says.
+        No sentence under this one. The chart names its own axes — the target
+        tempo on its rule, the take's fastest and slowest beside it — so prose
+        explaining it would only repeat what it already says.
       */}
-      <TrendLine
-        trend={take.trend}
-        tolerance={take.tolerance}
-        firstMeasure={firstMeasure}
-        lastMeasure={lastMeasure}
-        accessibilityLabel={describeTrendRange(firstMeasure, lastMeasure)}
-      />
+      {tempo ? (
+        <TempoLine
+          line={tempo}
+          firstMeasure={take.measures[0].measure}
+          lastMeasure={take.measures[take.measures.length - 1].measure}
+          accessibilityLabel={`Tempo by bar, against your ${formatTempo(
+            take.targetBpm,
+            take.tempoBeatUnit,
+          )}`}
+        />
+      ) : (
+        <TrendLine
+          trend={take.trend}
+          tolerance={take.tolerance}
+          firstMeasure={firstMeasure}
+          lastMeasure={lastMeasure}
+          accessibilityLabel={describeTrendRange(firstMeasure, lastMeasure)}
+        />
+      )}
 
       <RuledHeading label="Bar by bar" style={styles.ruled} />
       <MeasureBars
         measures={take.measures}
         selected={chosen?.measure ?? null}
         onSelect={setSelected}
+        targetBpm={take.targetBpm}
+        tempoBeatUnit={take.tempoBeatUnit}
+        tolerance={take.tolerance}
       />
 
       {chosen ? (
@@ -413,6 +438,8 @@ export function VerdictScreen() {
           <MeasureCard
             measure={chosen}
             tolerance={take.tolerance}
+            targetBpm={take.targetBpm}
+            tempoBeatUnit={take.tempoBeatUnit}
             correction={
               /*
                 Only where the app made a claim about the playing. A bar under
@@ -421,9 +448,11 @@ export function VerdictScreen() {
               */
               canCorrect(chosen) ? (
                 <CorrectionPrompt
-                  appVerdict={appVerdictFor(chosen)}
+                  appVerdict={chosenAppVerdict ?? appVerdictFor(chosen)}
                   state={corrections[chosen.measure] ?? { kind: 'idle' }}
-                  onChoose={(choice) => correct(chosen, choice)}
+                  onChoose={(choice) =>
+                    correct(chosen, choice, chosenAppVerdict ?? appVerdictFor(chosen))
+                  }
                 />
               ) : null
             }

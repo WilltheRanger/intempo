@@ -91,6 +91,13 @@ class Delta:
     #: reason was known at exactly this line and thrown away one field short of
     #: the screen that needed it.
     untimed_reason: UntimedReason | None = None
+    #: Which stretch of the musician's pulse this note was measured in: it
+    #: counts up each time the reference re-anchors (`pulse_anchors`, and a
+    #: skip in a pairing made by pitch). Deltas are drift *within* a stretch,
+    #: so anything fitting a line through them — `insights.steadiness` — has
+    #: to fit one per stretch: across a re-anchor the delta jumps, and one line
+    #: through the jump measured the jump.
+    pulse: int = 0
 
 
 def classify_band(delta_pct: float, *, config: AudioConfig | None = None) -> Band:
@@ -327,6 +334,8 @@ def compute_deltas(
 
     uneven = uneven_measures(cleaned, detected, timeline, config=cfg)
 
+    # A new stretch wherever the reference moves.
+    pulse = np.concatenate([[0], np.cumsum(np.diff(anchors) != 0)]) if anchors.size else anchors
     deltas: list[Delta] = []
     for position, (det_i, exp_i) in enumerate(cleaned.matched):
         note = timeline.notes[exp_i]
@@ -378,6 +387,7 @@ def compute_deltas(
                 band=band,
                 direction=_direction(delta_pct, band),
                 is_slur_interior=note.is_slur_interior,
+                pulse=int(pulse[position]),
                 untimed_reason=reason,
                 under_tempo_change=note.under_tempo_change,
                 uneven=note.measure_number in uneven,

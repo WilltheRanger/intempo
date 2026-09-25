@@ -21,6 +21,7 @@ function measure(over: Partial<MeasureVerdict> = {}): MeasureVerdict {
     uneven: false,
     timedNoteCount: 4,
     untimedReason: null,
+    playedBpm: null,
     ...over,
   };
 }

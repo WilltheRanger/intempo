@@ -546,6 +546,7 @@ function toTake(
     uneven: m.uneven === true,
     timedNoteCount: m.timed_note_count ?? null,
     untimedReason: m.untimed_reason ?? null,
+    playedBpm: typeof m.played_bpm === 'number' ? m.played_bpm : null,
   }));
 
   return {

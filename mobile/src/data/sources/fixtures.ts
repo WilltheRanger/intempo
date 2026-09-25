@@ -1183,20 +1183,23 @@ const FIXTURE_MEASURES: {
   timedNotes?: number;
   /** Which of the three it was, when the whole bar went unjudged. */
   untimedReason?: UntimedReason;
+  /** The tempo the bar was played at, against the take's 96. */
+  bpm?: number;
 }[] = [
-  { measure: 1, notes: 4, dragPct: -1.2, band: 'on' },
-  { measure: 2, notes: 4, dragPct: -2.8, band: 'on' },
-  { measure: 3, notes: 4, dragPct: -4.4, band: 'on' },
-  { measure: 4, notes: 4, dragPct: -7.9, band: 'slight' },
-  { measure: 5, notes: 4, dragPct: -11.6, band: 'rush_drag' },
-  { measure: 6, notes: 4, dragPct: -14.8, band: 'rush_drag' },
-  { measure: 7, notes: 4, dragPct: -16.2, band: 'rush_drag' },
-  { measure: 8, notes: 4, dragPct: -12.1, band: 'rush_drag' },
-  { measure: 9, notes: 4, dragPct: -8.4, band: 'slight' },
-  { measure: 10, notes: 4, dragPct: -5.1, band: 'slight' },
-  { measure: 11, notes: 4, dragPct: 22.4, band: 'on', underTempoChange: true },
+  { measure: 1, notes: 4, dragPct: -1.2, band: 'on', bpm: 97 },
+  { measure: 2, notes: 4, dragPct: -2.8, band: 'on', bpm: 98 },
+  { measure: 3, notes: 4, dragPct: -4.4, band: 'on', bpm: 99 },
+  { measure: 4, notes: 4, dragPct: -7.9, band: 'slight', bpm: 101 },
+  { measure: 5, notes: 4, dragPct: -11.6, band: 'rush_drag', bpm: 104 },
+  { measure: 6, notes: 4, dragPct: -14.8, band: 'rush_drag', bpm: 106 },
+  { measure: 7, notes: 4, dragPct: -16.2, band: 'rush_drag', bpm: 105 },
+  { measure: 8, notes: 4, dragPct: -12.1, band: 'rush_drag', bpm: 102 },
+  { measure: 9, notes: 4, dragPct: -8.4, band: 'slight', bpm: 99 },
+  { measure: 10, notes: 4, dragPct: -5.1, band: 'slight', bpm: 98 },
+  { measure: 11, notes: 4, dragPct: 22.4, band: 'on', bpm: 88, underTempoChange: true },
   {
     measure: 12,
+    bpm: 82,
     notes: 4,
     dragPct: 31.8,
     band: 'on',
@@ -1401,6 +1404,7 @@ function buildFixtureTake(): TakeResult | null {
       uneven: m.uneven === true,
       timedNoteCount: m.timedNotes ?? m.notes,
       untimedReason: m.untimedReason ?? null,
+      playedBpm: m.bpm ?? null,
     };
   });
 

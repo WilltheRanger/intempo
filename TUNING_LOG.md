@@ -6,6 +6,49 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-09-25 — Each bar's tempo, for charts in BPM; unevenness against the player's own pace
+
+**Real take.** The owner's first working take through the app (Elijah, bass,
+104): steady-ish at 90 BPM with two stops. The verdict screen's "Across the
+take" sat on its floor from bar 2, bar 22's card said "More than a beat
+behind", and the lead line said "Right on average, uneven note to note". All
+three read the same number: each note's lateness from where it would fall had
+the take held 104 from its first note — 6% of a beat in bar 1, 305% by bar 11,
+773% by bar 24. The owner asked for the graph in BPM.
+
+### What changed
+
+- **`insights.tempo_by_bar` → `PerMeasure.played_bpm`.** Each bar is its
+  notes plus the next bar's first (downbeat to downbeat); one with fewer than
+  three borrows the bar before. The slope is **Theil–Sen** — the median of the
+  slopes between every two notes — over pairs whose gap implies a tempo inside
+  `alignment.MIN_TEMPO_RATIO`–`MAX_TEMPO_RATIO` of the target, within a
+  stretch the page times (a fermata starts a new one). Least squares was tried
+  first and read a skip to the last note as 142 BPM, and one stray attack as
+  148; splitting at the pulse's own re-anchors cut ordinary gaps and read a
+  bar as 43.
+
+      owner's take, bars 1–25 (Theil–Sen):
+      104 97 104 102 101 103 | 93 86 81 | 95 102 101 98 97 | 82 – 104 81 95 78 75 88 72 79 79
+
+- **`insights.steadiness`** is detrended per stretch of the pulse
+  (`Delta.pulse`, new) against written time. One line through deltas that
+  re-anchor at a stop measured the jump: 140% for this take, now 36%. Note
+  values are grouped by the same residuals (`detrended`): raw, the half notes
+  "lagged" 210% because they come late in the page.
+- **`lead_finding`** drops "Right on average, uneven note to note" when a
+  tempo difference is itself worth saying. This take now leads "You slowed
+  down by 15 BPM." (drift outranks tempo by design); the earlier take (1940)
+  "You played at 98, not 104."
+
+### Regression
+
+- Six clips: verdict, per-note, per-measure, trend identical; `played_bpm`
+  added (60.0 on the clean clips, 60.4–60.5 rushing, 59.5–59.6 dragging); a
+  one-value `by_note_value` now reads 0.0 (against its own pace). Not shown by
+  the app.
+- The owner's two takes: verdicts unchanged.
+
 ## 2026-09-25 — "Not played" is not said of a take the alignment refuses anyway
 
 **Real takes, the second re-run** (#147, on the analysis of #146). 2aac1ba8

@@ -181,7 +181,15 @@ export function displayTempoBpm(
   quarterBpm: number,
   unit: TempoBeatUnit | null | undefined,
 ): number {
-  return Math.round(quarterBpm / BEATS[unit ?? 'quarter']);
+  return Math.round(displayTempoValue(quarterBpm, unit));
+}
+
+/** The same, unrounded — for plotting, where rounding would step the line. */
+export function displayTempoValue(
+  quarterBpm: number,
+  unit: TempoBeatUnit | null | undefined,
+): number {
+  return quarterBpm / BEATS[unit ?? 'quarter'];
 }
 
 /** A displayed metronome number returned to the quarter-note timing clock. */

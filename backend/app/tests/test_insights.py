@@ -19,6 +19,7 @@ from app.services.insights import (
     played_tempo,
     standout_note_value,
     steadiness,
+    tempo_by_bar,
     tempo_drift,
     timing_by_note_value,
 )
@@ -441,3 +442,143 @@ class TestLeadFinding:
 
     def test_a_nonsense_target_reports_nothing(self):
         assert lead_finding(self._insights(tempo_difference_bpm=20.0), 0.0) is None
+
+
+    def test_right_on_average_is_not_said_of_a_take_that_was_off_tempo(self):
+        """The owner's take at 90 against 104 (2026-09-25) was told "Right on
+        average, uneven note to note": its spread outweighed the tempo."""
+        out = lead_finding(
+            self._insights(
+                played_bpm=90.0, tempo_difference_bpm=-14.0, steadiness_pct=36.0
+            ),
+            104.0,
+        )
+
+        assert out is not None and out.kind == "tempo"
+        assert out.text == "You played at 90, not 104."
+
+
+class TestSteadinessPerStretch:
+    """Deltas are drift within a stretch of the pulse and jump where it
+    re-anchors; one line through a take with a pause measured the jump."""
+
+    def test_a_steady_take_with_a_pause_in_it_is_steady(self):
+        # Two stretches, each drifting evenly at the same slow pace, the
+        # second starting again from zero after the pause.
+        first = [i * 12.0 for i in range(12)]
+        second = [i * 12.0 for i in range(12)]
+        positions = [float(i) for i in range(24)]
+        pulses = [0] * 12 + [1] * 12
+
+        per_stretch = steadiness(first + second, positions=positions, pulses=pulses)
+        one_line = steadiness(first + second)
+
+        assert per_stretch is not None and per_stretch < 0.5
+        assert one_line is not None and one_line > 30
+
+    def test_note_values_are_read_against_the_players_own_pace(self):
+        """Steady at 90 against 104, the notes late in the page are the most
+        behind the target — so half notes placed there "lagged" by 210% of a
+        beat. Against the take's own line, nothing stands out."""
+        n = 24
+        written = np.arange(n, dtype=float)
+        deltas = list(written * 15.0)  # a steady drift, note after note
+        beats = [1.0] * 16 + [2.0] * 8  # the long notes come last
+        out = insights_for(
+            [(i, i) for i in range(n)],
+            0.4 + written * 1.15,
+            written,
+            104.0,
+            deltas,
+            list(zip(beats, deltas, strict=True)),
+            positions=list(written * 1000),
+            pulses=[0] * n,
+        )
+
+        assert out.standout_value is None
+
+
+class TestTempoByBar:
+    """The tempo each bar was played at — what the verdict's charts plot."""
+
+    @staticmethod
+    def _bars(per_bar_bpm: list[float], notes_per_bar: int = 4, target: float = 104.0):
+        """Quarter notes, each bar played at its own tempo."""
+        written, played, bars = [], [], []
+        t_w = t_p = 0.0
+        for b, bpm in enumerate(per_bar_bpm, start=1):
+            for _ in range(notes_per_bar):
+                written.append(t_w)
+                played.append(t_p)
+                bars.append(b)
+                t_w += 60.0 / target
+                t_p += 60.0 / bpm
+        return written, played, bars
+
+    def test_a_steady_take_under_the_target_is_that_tempo_in_every_bar(self):
+        """The take whose chart floored: steady at 90 against 104."""
+        written, played, bars = self._bars([90.0] * 8)
+
+        tempi = tempo_by_bar(written, played, bars, 104.0)
+
+        assert set(tempi) == set(range(1, 9))
+        assert all(v == pytest.approx(90.0, abs=0.2) for v in tempi.values())
+
+    def test_a_take_that_slows_shows_where(self):
+        written, played, bars = self._bars([104.0] * 4 + [80.0] * 4)
+
+        tempi = tempo_by_bar(written, played, bars, 104.0)
+
+        assert tempi[2] == pytest.approx(104.0, abs=0.2)
+        assert tempi[7] == pytest.approx(80.0, abs=0.2)
+
+    def test_a_bar_of_one_note_borrows_the_bar_before(self):
+        """A tempo from one interval is one note's timing: the owner's last
+        bar, one note paired early, read 264 BPM."""
+        written, played, bars = self._bars([100.0] * 3)
+        written.append(written[-1] + 60.0 / 104.0)
+        played.append(played[-1] + 0.1)  # the last note, far too early
+        bars.append(4)
+
+        tempi = tempo_by_bar(written, played, bars, 104.0)
+
+        assert tempi[4] < 200
+        assert tempi[1] == pytest.approx(100.0, abs=0.2)
+
+    def test_a_fermata_is_not_read_as_the_bar_dragging(self):
+        written, played, bars = self._bars([104.0] * 4)
+        # The first note of bar 3 comes after a hold the page does not time.
+        cut = bars.index(3)
+        played = played[:cut] + [p + 2.0 for p in played[cut:]]
+        new_stretch = [i == cut for i in range(len(written))]
+
+        tempi = tempo_by_bar(written, played, bars, 104.0, new_stretch=new_stretch)
+
+        assert tempi[2] == pytest.approx(104.0, abs=0.2)
+
+    def test_nothing_to_say_is_an_empty_answer(self):
+        assert tempo_by_bar([], [], [], 104.0) == {}
+        assert tempo_by_bar([0.0, 1.0], [0.0, 1.0], [1, 1], 0.0) == {}
+
+    def test_a_skip_to_the_last_note_is_not_read_as_a_fast_bar(self):
+        """The owner's take went from bar 24 to its last note with two notes
+        unheard between: least squares read the last bar as 142 BPM."""
+        written, played, bars = self._bars([96.0] * 6)
+        # Bar 7: its first note on time, then the final note far too early —
+        # the notes between were never played.
+        step = 60.0 / 104.0
+        written += [written[-1] + step, written[-1] + 5 * step]
+        played += [played[-1] + 60.0 / 96.0, played[-1] + 60.0 / 96.0 + 0.6]
+        bars += [7, 8]
+
+        tempi = tempo_by_bar(written, played, bars, 104.0)
+
+        assert all(v < 120 for v in tempi.values()), tempi
+
+    def test_one_stray_attack_does_not_spike_its_bar(self):
+        written, played, bars = self._bars([100.0] * 6)
+        played[13] -= 0.25  # one note of bar 4 heard a quarter-second early
+
+        tempi = tempo_by_bar(written, played, bars, 104.0)
+
+        assert tempi[4] == pytest.approx(100.0, abs=5.0)

@@ -8,9 +8,10 @@ import {
 } from 'react-native';
 
 import { Text } from '../../components/primitives';
-import type { MeasureVerdict } from '../../data/types';
+import type { MeasureVerdict, TempoBeatUnit, Tolerance } from '../../data/types';
 import { BORDER_WIDTH, colors } from '../../design';
 import { chartBarWidth } from '../../lib/chartBars';
+import { barTempo, tempoChartBars } from '../../lib/verdict/barTempo';
 import { barIndexAt, measureChartBars, type ChartBar } from '../../lib/verdict/measureChart';
 import { readMeasure } from '../../lib/verdict/measureReading';
 
@@ -34,12 +35,28 @@ export function MeasureBars({
   measures,
   selected,
   onSelect,
+  targetBpm,
+  tempoBeatUnit,
+  tolerance,
 }: {
   measures: MeasureVerdict[];
   selected: number | null;
   onSelect: (measure: number) => void;
+  /**
+   * The take's target, so each bar can be drawn by its tempo against it
+   * (`lib/verdict/barTempo.ts`); an older result without tempi draws the
+   * deviation chart it always did.
+   */
+  targetBpm: number;
+  tempoBeatUnit: TempoBeatUnit | null | undefined;
+  tolerance: Tolerance | null;
 }) {
-  const bars = useMemo(() => measureChartBars(measures), [measures]);
+  const bars = useMemo(
+    () =>
+      tempoChartBars(measures, targetBpm, tempoBeatUnit, tolerance) ??
+      measureChartBars(measures),
+    [measures, targetBpm, tempoBeatUnit, tolerance],
+  );
   const [width, setWidth] = useState(0);
 
   const node = useRef<View>(null);
@@ -104,7 +121,10 @@ export function MeasureBars({
         role="slider"
         aria-label={
           current
-            ? `Bar ${current.measure} of ${bars.length}: ${readMeasure(current).label}`
+            ? `Bar ${current.measure} of ${bars.length}: ${
+                barTempo(current, targetBpm, tempoBeatUnit, tolerance)?.spoken ??
+                readMeasure(current).label
+              }`
             : 'Bar by bar'
         }
         aria-valuemin={1}
