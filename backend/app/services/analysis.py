@@ -443,10 +443,12 @@ def why_not_played(
        the rest of the pipeline to call the wrong piece. A page of one
        repeated pitch cannot use this rule — a real open-string take against
        a misread page looks the same.
-    3. **Less steady than an instrument, and not the page's rhythm either** →
-       not played. Talking. Instruments held a pitch after 0.87 or more of
-       attacks — sixteenths against a misread page too — and fit the page's
-       rhythm at 0.93 or more even when misread.
+    3. **Less steady than an instrument, and not the page's rhythm either,
+       though near enough for a verdict** → not played. Talking. Synthetic
+       instruments held a pitch after 0.87 or more of attacks — sixteenths
+       against a misread page too — and fit the page's rhythm at 0.93 or more
+       even when misread. A real double bass held one after 0.59–0.69, so a
+       take the alignment refuses anyway is left to say so.
 
     Everything else is left to the rest of the pipeline, exactly as before.
     See `pitch_evidence` for the two shares and `[pitch]` in config.toml for
@@ -469,8 +471,16 @@ def why_not_played(
         return "no_pitch"
     if evidence.page_classes >= 2 and evidence.one_pitch_share >= p.one_pitch:
         return "one_pitch"
+    # **Only where the alignment would give a verdict.** Talking needs this
+    # rule because it fit a page at 0.47, over `broken_quality`; under it the
+    # alignment refuses the take anyway, and a real double bass holds a pitch
+    # after 0.59–0.69 of its attacks — the take the chain reads perfectly,
+    # 0.66. Five of the owner's bass takes the timing could not pair were told
+    # "Try again closer to your instrument" by this rule on the re-run of
+    # 2026-09-25. Refused either way; the alignment's sentence is the true one.
     if (
         evidence.tonal_share < p.played_tonal
+        and not is_alignment_broken(quality, config=config)
         and quality < config.alignment.warn_quality
     ):
         return "not_tonal"

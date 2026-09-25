@@ -6,6 +6,41 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-09-25 — "Not played" is not said of a take the alignment refuses anyway
+
+**Real takes, the second re-run** (#147, on the analysis of #146). 2aac1ba8
+lost its false "rushed bars 42–45" and 242082ca its "not played" — it is now
+refused for too much sound, which it has (91 attacks for 75 notes). But read
+from bar 7, 2aac1ba8's timing paired one note, and `not_tonal` then told it
+"Try again closer to your instrument": tonal 0.48, under `played_tonal`, at
+quality 0.000. So did four more bass takes the timing could not pair, at
+0.59–0.69 — the band the owner's accepted take sits in (0.66).
+
+**Rule 3 (`not_tonal`) now fires only between `broken_quality` and
+`warn_quality`**, where the alignment would otherwise give a verdict. That is
+the case it was written for: talking fit a page at 0.47 and was given one.
+Under 0.4 the alignment refuses the take anyway, and says why.
+
+    take      tonal  quality  was                  now
+    2aac1ba8  0.48   0.000    not played           refused by the alignment
+    a54ccd57  0.69   0.000    not played           refused by the alignment
+    068323bd  0.60   0.000    not played           refused by the alignment
+    ae148002  0.59   0.000    not played           refused by the alignment
+    b83e75e4  0.62   0.000    not played           refused by the alignment
+    talking   0.35   0.47     not played           not played (unchanged)
+
+`no_pitch` (under 0.3 — a metronome, a room) and `one_pitch` are unchanged:
+five takes of 0.00–0.27 stay not played, and their audio would say whether
+that is right.
+
+### Regression
+
+- `test_nothing_played_on_the_measured_numbers`: every measured case holds;
+  three added (two real bass takes, talking fit for a verdict).
+- Whole takes: a metronome, a knock and talking are still refused; talking
+  on its own at 0.22 was already `alignment_failed`.
+- Six clips: untouched (every one is over `warn_quality`).
+
 ## 2026-09-25 — The first re-run of real takes: a fragment read from its start, and "not played" asked of the pitch track
 
 **Real takes, fifteen of them.** Every refused take on the owner's account was

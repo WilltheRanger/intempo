@@ -22,6 +22,10 @@ export function postCorrections(
 ): Promise<unknown> {
   return apiFetch(`/v1/analyses/${analysisId}/corrections`, {
     method: 'POST',
-    body: JSON.stringify({ corrections }),
+    // The object, not its JSON: `apiFetch` serialises. This was
+    // `JSON.stringify({ corrections })`, encoded twice, so the server was sent
+    // a JSON *string* and refused it (422) — and every "What did you hear?"
+    // tap since the prompt shipped said "Something went wrong at our end".
+    body: { corrections },
   });
 }

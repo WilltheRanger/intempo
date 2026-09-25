@@ -1369,7 +1369,9 @@ nothing else covers `backend/`. Named here rather than left to be found.
   it elsewhere. The first re-run of real takes put bar 7 at bars 42–45.
 - **Real bass is less "tonal" than synthetic bass.** The chroma heard a pitch
   after 0.59–0.69 of a real bass's attacks, 0.87+ of a synthetic one's. Ask
-  the pitch track (`_heard_by_pitch`) before telling anyone they did not play.
+  the pitch track (`_heard_by_pitch`) before telling anyone they did not play,
+  and let the alignment speak for a take it refuses anyway (`not_tonal` only
+  fires over `broken_quality`).
 - TUNING_LOG.md 2026-09-25 has every number.
 
 ## The capture path (2026-08-24) — what an audit of it found

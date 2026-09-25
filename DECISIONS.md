@@ -32,6 +32,12 @@ was placed before; pitch can still place it (`_placed_by_pitch`). Four real
 bass takes are still called not played: too few paired notes to be beyond
 chance, and no audio here to find out why.
 
+**Amended the same day, after the second re-run.** `not_tonal` fires only over
+`broken_quality`. Under it the alignment refuses the take anyway; the rule
+existed for talking that fit well enough for a verdict (0.47), and a real
+bass the timing cannot pair is as "untonal" (0.48–0.69) as talking. A voice
+under 0.4 is now told what the alignment tells anything it cannot match.
+
 ## 2026-09-25 — Old takes are re-judged from their playback copy; a replay is found by pitch
 
 **Context.** Every one of the 17 takes in the live project was refused by the

@@ -246,7 +246,10 @@ one_pitch = 0.9
 # quality 0.47 at best. Every instrument take held 0.87 or more — including
 # sixteenths against a page a third off everywhere, a misread clef, which must
 # not be called silence. A voice steadier than that is not caught here, and is
-# refused by the alignment instead.
+# refused by the alignment instead. Only over `alignment.broken_quality`, where
+# the alignment would otherwise give a verdict: a real double bass on a phone
+# holds a pitch after 0.59–0.69 of attacks (2026-09-25), and one the timing
+# cannot pair is refused by the alignment, not told it was not played.
 played_tonal = 0.8
 # **A pairing whose pitches line up is trusted, and its timing reported rather
 # than refused.** The first real take this pipeline heard (a double bass,
