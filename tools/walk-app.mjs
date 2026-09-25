@@ -245,21 +245,21 @@ else fail(`the worth-a-look button opened Record without a start bar: ${await pa
   **A recorded take opens its verdict** — from the piece, which is where the
   list of them lives now.
 
-  It moved twice: Today's "Recent practice" card, then Insights' "Recent
-  sessions", and with the redesign it is the piece's own "See takes"
-  (`redesign/PieceDetail.dc.html`), which lays that piece's takes out under
-  its chart. Same rule, one screen along; what matters is that a row reaches
-  `/analyses/`, not which screen it was tapped on.
+  It moved three times: Today's "Recent practice" card, then Insights' "Recent
+  sessions", then the piece's own "See takes" under its chart — and since
+  2026-09-25 the takes are rows on the piece with nothing to open first
+  ("Your takes", `PracticeHistory.tsx`), each labelled with what its verdict
+  said rather than a tempo. Same rule, one screen along; what matters is that
+  a row reaches `/analyses/`, not which screen it was tapped on.
 */
 await open('pieces/fixture-bach-bwv1001');
-await page.getByRole('button', { name: /^See takes$/ }).first().click({ timeout: 10000 });
 await page
-  .getByRole('button', { name: /^Take from .*\d+ BPM/ })
+  .getByRole('button', { name: /^Take from / })
   .first()
   .click({ timeout: 10000 });
 await waitFor('the take row to open a verdict', async () => (await path()).startsWith('/analyses/'));
-if ((await path()).startsWith('/analyses/')) pass(`a take under the piece's chart → ${await path()}`);
-else fail(`a take under the piece's chart → ${await path()}, expected an analysis`);
+if ((await path()).startsWith('/analyses/')) pass(`a take on the piece → ${await path()}`);
+else fail(`a take on the piece → ${await path()}, expected an analysis`);
 
 /*
   **Today's one action starts a take.** The screen has exactly one button
@@ -455,11 +455,12 @@ if (onInsights === null) fail('no window headline on Insights at all');
 else pass(`Insights states the window as a habit: "${onInsights}"`);
 
 // A single take is not a habit. The tendency wording must not appear in a row
-// that describes one recording — which live under a piece's "See takes" now.
+// that describes one recording — which are the rows under "Your takes" on a
+// piece now, each named for what its own verdict said.
 await open('pieces/fixture-bach-bwv1001');
-await page.getByRole('button', { name: /^See takes$/ }).first().click({ timeout: 10000 });
-await page.waitForTimeout(300);
-const row = (await leaves()).find((l) => /^\d+\s*BPM\s*·/.test(l)) ?? null;
+const takeRow = page.getByRole('button', { name: /^Take from / }).first();
+await takeRow.waitFor({ timeout: 10000 }).catch(() => {});
+const row = (await takeRow.count()) > 0 ? await takeRow.getAttribute('aria-label') : null;
 if (row === null) {
   fail('Piece detail: no take row found to check');
 } else if (HEADLINES.some((h) => row.includes(h))) {
