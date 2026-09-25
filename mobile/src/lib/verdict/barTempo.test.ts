@@ -23,6 +23,7 @@ function bar(measure: number, playedBpm: number | null, over: Partial<MeasureVer
   const value: MeasureVerdict = {
     measure,
     playedBpm,
+    pitchCents: null,
     noteCount: 4,
     // The pile-up the charts used to plot: huge, and always behind.
     deviationPct: -300,

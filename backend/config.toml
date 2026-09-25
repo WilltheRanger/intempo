@@ -279,6 +279,29 @@ confirmed_min_notes = 8
 # pitches is matched by chance, and cannot say which note is which.
 confirmed_min_pitches = 3
 
+[intonation]
+# How in tune a take was, in cents, against the musician's own tuning — the
+# pitch chart on the verdict and on Insights (the owner, 2026-09-25). See
+# `services/intonation.py`. Measured on the owner's two real bass takes
+# (phone microphone): the median note sat 14–15 cents from the take's own
+# tuning, the takes themselves 25 cents sharp and 25 flat of A = 440.
+#
+# A bar whose notes sat within this many cents of the player's tuning is in
+# tune. 15: the spread of a steady player on these takes, and about the
+# smallest difference a listener hears between two held notes.
+in_tune_cents = 15.0
+# ...within this many, slightly off; beyond it, clearly off.
+slight_cents = 30.0
+# A note further than this from its written pitch, after the tuning, is not a
+# reading of that note: another note, the last one still ringing, or the
+# tracker slipping. A fifth of the owner's bass notes read that far off, which
+# per-note listening confirms was the previous note ringing into the window.
+not_this_note_cents = 100.0
+# Fewer measured notes than this and the take says nothing about pitch.
+min_notes = 8
+# A whole take this far from A = 440 is told so ("Tuned 25 cents sharp").
+tuning_worth_saying_cents = 10.0
+
 [calibration]
 # 2-second BPM calibration clip (§4). Values belong in remote config.
 min_duration_s = 1.0

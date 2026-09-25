@@ -6,6 +6,40 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-09-25 — Intonation, new: `[intonation]` and what it was measured on
+
+New thresholds, no existing one changed. `services/intonation.py` reads each
+paired note from 60 ms after its attack to 30 ms before the next, as the
+median of the YIN track, octave-folded.
+
+**The owner's two real bass takes** (Opus, phone microphone):
+
+    take   tuning vs A440   typical note from tuning   notes kept / paired
+    0313   +25.1 cents      15.7 cents                 67 / 88
+    1940   -25.7 cents      14.7 cents                 76 / 85
+
+- Per note, before dropping: 61% within ±50 cents of written (octave-folded),
+  19% beyond ±100 — the previous note ringing into the window far more than a
+  wrong note. Against the take's own tuning, 51% within ±25.
+- 68 of 88 notes of 0313 read an octave *below* written: the bass sounding
+  where it sounds. Folding is what makes that invisible.
+- Bars, 0313: mostly within ±20; bars 17–18 at −50 and −94 (the slow ending);
+  bar 2 at +53.
+
+**Thresholds** (`config.toml` `[intonation]`): in tune ≤ 15 cents, slightly
+off ≤ 30, a note beyond 100 from the tuning is not that note, at least 8 notes
+for a take to say anything, tuning said when ≥ 10 off A = 440.
+
+**Synthetic check** (`test_intonation.py`): a violin line detuned +20 cents,
+bar 3 a further −40 — read as tuned +20 (±6), bar 3 at −40 (±10), the others
+within ±10.
+
+**Regression:** every existing field of the six fixture clips is unchanged;
+they only gain the new ones. The synthesised pitch reads as it was made — in
+tune: 01, 02, 03 and 06 tuned +5.4 cents with a spread of 0.0–0.1 (under the
+10 cents that would be said); 04 (slurred) and 05 (one long open string) have
+too few notes to read, and say nothing about pitch.
+
 ## 2026-09-25 — Wording only: the run sentence gives where and the tempo; the lead never repeats it
 
 No threshold changed. The owner found the verdict's top saying one thing three

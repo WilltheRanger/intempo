@@ -46,6 +46,7 @@ from app.services.alignment import (
     typical_gap,
 )
 from app.services.audio_config import AudioConfig, load_audio_config
+from app.services.intonation import Intonation, intonation_of, note_cents
 from app.services.insights import (
     Insights,
     insights_for,
@@ -143,6 +144,30 @@ class PerMeasure(BaseModel):
     #: without bound. `None` where the bar had too few paired notes, and on a
     #: result stored before this field existed.
     played_bpm: float | None = None
+    #: How far this bar's notes sat from the player's own tuning, in cents —
+    #: the median note, positive sharp (`services/intonation.py`). `None`
+    #: where nothing in the bar could be read, or the take said nothing about
+    #: pitch.
+    pitch_cents: float | None = None
+
+
+class IntonationSummary(BaseModel):
+    """How in tune the take was, against the player's own tuning.
+
+    The thresholds travel with the take, as `Tolerance` does, so a chart drawn
+    from a stored result uses the bands it was measured with.
+    """
+
+    #: The take's tuning against A = 440, in cents. Positive is sharp.
+    tuning_cents: float
+    #: The typical note's distance from that tuning, either way, in cents.
+    spread_cents: float
+    #: Notes measured.
+    notes: int
+    #: `[intonation]` in config.toml, as this take was read.
+    in_tune_cents: float
+    slight_cents: float
+    tuning_worth_saying_cents: float
 
 
 class Tolerance(BaseModel):
@@ -200,6 +225,9 @@ class AnalysisResult(BaseModel):
     #: Every field inside is independently nullable: a short take has a pace
     #: and a spread but no trustworthy drift.
     insights: Insights = Field(default_factory=Insights)
+    #: How in tune the take was (`services/intonation.py`); `None` when too
+    #: few notes could be read for pitch, and on results stored before it.
+    intonation: IntonationSummary | None = None
     #: Which takes may be compared with which, stamped by the runner.
     #:
     #: **Not computed here**, because `analyze` is given audio and a score and
@@ -240,7 +268,9 @@ def _shared_untimed_reason(
 
 
 def _summarize_measures(
-    deltas: list[Delta], tempi: Mapping[int, float] | None = None
+    deltas: list[Delta],
+    tempi: Mapping[int, float] | None = None,
+    pitch: Mapping[int, float] | None = None,
 ) -> list[PerMeasure]:
     by_measure: dict[int, list[Delta]] = defaultdict(list)
     for d in deltas:
@@ -275,6 +305,7 @@ def _summarize_measures(
                 timed_note_count=len(timed),
                 untimed_reason=_shared_untimed_reason(group, timed),
                 played_bpm=(tempi or {}).get(measure_number),
+                pitch_cents=(pitch or {}).get(measure_number),
             )
         )
     return summaries
@@ -309,6 +340,52 @@ def bar_pacing(
         across=lambda first, last: tempo_across_bars(
             written, played, bars, target_bpm, first, last, new_stretch=new_stretch
         ),
+    )
+
+
+def _intonation(
+    matched: list[tuple[int, int]],
+    attacks_s: np.ndarray,
+    timeline: ExpectedTimeline,
+    pitch: _Pitch,
+    config: AudioConfig,
+) -> Intonation:
+    """`intonation.intonation_of` for this pairing, on the take's pitch track.
+
+    Grace notes are left out: too short to hold a pitch the track can read,
+    and placed by this code's estimate rather than the page.
+    """
+    if pitch.track is None:
+        return Intonation()
+    kept = [
+        (d, e)
+        for d, e in matched
+        if 0 <= e < len(timeline.notes) and not timeline.notes[e].is_grace_note
+    ]
+    written = np.array(
+        [pitch_evidence.midi(timeline.notes[e].pitch) or np.nan for _, e in kept],
+        dtype=float,
+    )
+    cents = note_cents(
+        pitch.track, pitch.sr, np.array([attacks_s[d] for d, _ in kept]), written
+    )
+    return intonation_of(
+        cents, [timeline.notes[e].measure_number for _, e in kept], config.intonation
+    )
+
+
+def _intonation_summary(
+    measured: Intonation, config: AudioConfig
+) -> IntonationSummary | None:
+    if measured.tuning_cents is None or measured.spread_cents is None:
+        return None
+    return IntonationSummary(
+        tuning_cents=measured.tuning_cents,
+        spread_cents=measured.spread_cents,
+        notes=measured.notes,
+        in_tune_cents=config.intonation.in_tune_cents,
+        slight_cents=config.intonation.slight_cents,
+        tuning_worth_saying_cents=config.intonation.tuning_worth_saying_cents,
     )
 
 
@@ -2179,6 +2256,9 @@ def analyze(
     # One pacing for the sentence and the chart, so the run the sentence names
     # is the one the chart draws off the target.
     pacing = bar_pacing(cleaned.matched, onsets, timeline, target_bpm)
+    # How in tune, from the pitch track the matcher already read, at the
+    # paired attacks on the recording's clock (`origin`).
+    in_tune = _intonation(cleaned.matched, onsets + origin, timeline, pitch, cfg)
     verdict = generate_verdict(
         deltas,
         target_bpm,
@@ -2212,7 +2292,8 @@ def analyze(
         verdict=verdict.text,
         verdict_direction=verdict.direction,
         per_note=per_note,
-        per_measure=_summarize_measures(deltas, pacing.by_bar),
+        per_measure=_summarize_measures(deltas, pacing.by_bar, in_tune.by_bar),
+        intonation=_intonation_summary(in_tune, cfg),
         trend=trend,
         n_detected_onsets=raw.n_detected,
         n_expected_onsets=raw.n_expected,

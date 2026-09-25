@@ -1185,21 +1185,32 @@ const FIXTURE_MEASURES: {
   untimedReason?: UntimedReason;
   /** The tempo the bar was played at, against the take's 96. */
   bpm?: number;
+  /** Cents from the player's own tuning, sharp-positive. */
+  pitch?: number;
 }[] = [
-  { measure: 1, notes: 4, dragPct: -1.2, band: 'on', bpm: 97 },
-  { measure: 2, notes: 4, dragPct: -2.8, band: 'on', bpm: 98 },
-  { measure: 3, notes: 4, dragPct: -4.4, band: 'on', bpm: 99 },
-  { measure: 4, notes: 4, dragPct: -7.9, band: 'slight', bpm: 100 },
-  { measure: 5, notes: 4, dragPct: -11.6, band: 'rush_drag', bpm: 104 },
-  { measure: 6, notes: 4, dragPct: -14.8, band: 'rush_drag', bpm: 106 },
-  { measure: 7, notes: 4, dragPct: -16.2, band: 'rush_drag', bpm: 105 },
-  { measure: 8, notes: 4, dragPct: -12.1, band: 'rush_drag', bpm: 102 },
-  { measure: 9, notes: 4, dragPct: -8.4, band: 'slight', bpm: 99 },
-  { measure: 10, notes: 4, dragPct: -5.1, band: 'slight', bpm: 98 },
-  { measure: 11, notes: 4, dragPct: 22.4, band: 'on', bpm: 88, underTempoChange: true },
+  { measure: 1, notes: 4, dragPct: -1.2, band: 'on', bpm: 97, pitch: 4 },
+  { measure: 2, notes: 4, dragPct: -2.8, band: 'on', bpm: 98, pitch: -6 },
+  { measure: 3, notes: 4, dragPct: -4.4, band: 'on', bpm: 99, pitch: 9 },
+  { measure: 4, notes: 4, dragPct: -7.9, band: 'slight', bpm: 100, pitch: 2 },
+  { measure: 5, notes: 4, dragPct: -11.6, band: 'rush_drag', bpm: 104, pitch: 12 },
+  { measure: 6, notes: 4, dragPct: -14.8, band: 'rush_drag', bpm: 106, pitch: -8 },
+  { measure: 7, notes: 4, dragPct: -16.2, band: 'rush_drag', bpm: 105, pitch: -34 },
+  { measure: 8, notes: 4, dragPct: -12.1, band: 'rush_drag', bpm: 102, pitch: -41 },
+  { measure: 9, notes: 4, dragPct: -8.4, band: 'slight', bpm: 99, pitch: -18 },
+  { measure: 10, notes: 4, dragPct: -5.1, band: 'slight', bpm: 98, pitch: 5 },
+  {
+    measure: 11,
+    notes: 4,
+    dragPct: 22.4,
+    band: 'on',
+    bpm: 88,
+    pitch: 7,
+    underTempoChange: true,
+  },
   {
     measure: 12,
     bpm: 82,
+    pitch: -3,
     notes: 4,
     dragPct: 31.8,
     band: 'on',
@@ -1320,6 +1331,9 @@ export const fixtureTakeSource: TakeSource = {
     // the same measurement the verdict screen draws, rather than a second set
     // of numbers invented here.
     const DRIFT = [1, 0.82, 1.45, 0.71, 0.6, 0.44, 0.38];
+    // Intonation settling too, more slowly: the typical note 20 cents from
+    // the player's tuning a fortnight ago, 9 now.
+    const PITCH_SPREAD = [9, 11, 13, 12, 16, 18, 20];
     const DAY_MS = 24 * 60 * 60 * 1000;
     const recordedAt = Date.parse(take.recordedAt);
 
@@ -1329,6 +1343,9 @@ export const fixtureTakeSource: TakeSource = {
       id: index === 0 ? take.id : `${take.id}-session-${index}`,
       recordedAt: new Date(recordedAt - index * 3 * DAY_MS).toISOString(),
       trend: take.trend.map((value) => value * scale),
+      intonation: take.intonation
+        ? { ...take.intonation, spreadCents: PITCH_SPREAD[index] }
+        : null,
     }));
   },
 
@@ -1405,6 +1422,7 @@ function buildFixtureTake(): TakeResult | null {
       timedNoteCount: m.timedNotes ?? m.notes,
       untimedReason: m.untimedReason ?? null,
       playedBpm: m.bpm ?? null,
+      pitchCents: m.pitch ?? null,
     };
   });
 
@@ -1454,6 +1472,16 @@ function buildFixtureTake(): TakeResult | null {
     // the wire would be a demo of a screen the product does not have.
     trend: measures.filter(wasTimed).map((m) => m.deviationPct),
     tolerance: FIXTURE_TOLERANCE,
+    // Tuned a little sharp, the way a string drifts up in a warm room; bars
+    // 7–8 sat flat — the shift the sample's timing also stumbles over.
+    intonation: {
+      tuningCents: 14,
+      spreadCents: 9,
+      notes: 46,
+      inTuneCents: 15,
+      slightCents: 30,
+      tuningWorthSayingCents: 10,
+    },
     missedNotes: 1,
     extraNotes: 0,
   };
