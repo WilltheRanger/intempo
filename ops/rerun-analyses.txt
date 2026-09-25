@@ -1,0 +1,29 @@
+# Takes to run through the deployed analysis again, one analysis id per line.
+#
+# A change to this file on main runs `.github/workflows/rerun-analyses.yml`,
+# which calls the deployed worker for every id below and overwrites each
+# take's verdict (`backend/scripts/rerun_analyses.py` says how and why). The
+# workflow can also be started by hand from the Actions tab; this file is for
+# when it cannot be, and so that every re-run is a reviewed commit.
+#
+# Ids only: they name rows, and grant nothing without the owner's sign-in.
+#
+# 2026-09-25 — the owner's fifteen takes, every one refused by the analysis
+# before the note chain (#142–#144). Two further refused takes belong to
+# another account and are not listed: a verdict would count against its free
+# allowance, and it is not the owner's to spend.
+5d6011ba-dd06-4b81-884a-86eff4ab565d
+44975f56-1b8a-473a-8e5a-e06d1d0f7a1e
+2aac1ba8-595a-433f-bec2-a49077bbf359
+3bc2e100-6b6e-4e54-8aea-72abff437cc9
+b83e75e4-c412-45cc-a7b9-353a78134656
+8c4e2c8a-f819-4625-9648-03a08537b925
+df79eb8a-2506-4367-bc9f-6627a3b70739
+96631347-b28d-41a0-b61e-93275ab75a88
+777f44e2-0637-455d-ad39-64847597794a
+242082ca-81db-48d3-b116-26b0177a6bf9
+ae148002-9fc3-4bd2-b5bf-59c810fe4427
+4cc0bad2-7b65-42e6-b130-6a5c802797bf
+068323bd-78dc-49f7-b309-c57c1ac18635
+a54ccd57-638a-41cf-b241-313e608c1b3b
+99aecbad-e57a-47a9-9046-1c8d50d3c3ee
