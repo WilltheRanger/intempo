@@ -31,7 +31,7 @@ from typing import Final
 
 from app.services.ocr.meter import quarter_beats
 from app.services.ocr.validate import infer_beats_per_measure
-from app.services.tempo_words import tempo_word
+from app.services.tempo_words import one_per_bar, tempo_word
 from app.services.score_schema import (
     DURATION_BEATS,
     PITCH_PATTERN,
@@ -1501,27 +1501,14 @@ def _tempo_changes(
     """The tempo changes, in the finished page's bar numbers, one per bar.
 
     A bar often prints its words and its metronome mark as two directions —
-    "meno mosso" and "♩ = 88" — which are one change: the words, with the
-    number.
+    "meno mosso" and "♩ = 88" — which are one change (`tempo_words.one_per_bar`).
     """
-    by_bar: dict[int, tuple[str, str, float | None]] = {}
+    placed = []
     for index, kind, text, bpm in marks:
         bar = bar_at(index)
-        if bar is None:
-            continue
-        held = by_bar.get(bar)
-        if held is None:
-            by_bar[bar] = (kind, text, bpm)
-        elif kind == "new_tempo" and held[0] == "new_tempo":
-            by_bar[bar] = (
-                "new_tempo",
-                held[1] if held[2] is None else text,
-                bpm if bpm is not None else held[2],
-            )
-    return [
-        TempoChange(measure_number=bar, kind=kind, text=text, bpm=bpm)  # type: ignore[arg-type]
-        for bar, (kind, text, bpm) in sorted(by_bar.items())
-    ]
+        if bar is not None:
+            placed.append((bar, kind, text, bpm))
+    return one_per_bar(placed)  # type: ignore[arg-type]
 
 
 def score_json_from_musicxml(

@@ -439,3 +439,78 @@ def test_anything_the_sdk_raises_becomes_a_provider_failure(monkeypatch) -> None
     # The type survives, so a real bug in here still says what it was rather
     # than hiding as "could not read the page".
     assert "RuntimeError" in str(raised.value)
+
+
+# ---- ask: a question about images, answered as text ------------------------
+
+
+def test_ask_sends_each_image_after_its_label_and_the_question_last(install_fake) -> None:
+    fake = install_fake(
+        claude_sonnet_provider, _FakeResponse(content=[_FakePart(text='{"marks": []}')])
+    )
+
+    answer = claude_sonnet_provider.ask(
+        [("Line 1", b"one"), ("Line 2", b"two")],
+        "Which tempo words?",
+        max_tokens=512,
+        timeout_s=30,
+    )
+
+    assert answer == '{"marks": []}'
+    (call,) = fake.messages.calls
+    content = call["messages"][0]["content"]
+    assert [part["type"] for part in content] == ["text", "image", "text", "image", "text"]
+    assert content[0]["text"] == "Line 1"
+    assert content[-1]["text"] == "Which tempo words?"
+    assert call["max_tokens"] == 512
+    assert call["timeout"] == 30
+    # A question about a page is perception, as a transcription is: no
+    # billed thinking eating the answer's budget.
+    assert call["thinking"] == {"type": "disabled"}
+
+
+def test_ask_sends_an_unlabelled_image_alone(install_fake) -> None:
+    fake = install_fake(claude_sonnet_provider, _FakeResponse(content=[_FakePart(text="{}")]))
+
+    claude_sonnet_provider.ask([(None, b"page")], "?", media_type="image/png")
+
+    content = fake.messages.calls[0]["messages"][0]["content"]
+    assert [part["type"] for part in content] == ["image", "text"]
+    assert content[0]["source"]["media_type"] == "image/png"
+
+
+def test_ask_refuses_an_answer_that_was_cut_off(install_fake) -> None:
+    install_fake(
+        claude_sonnet_provider,
+        _FakeResponse(content=[_FakePart(text='{"marks": [')], stop_reason="max_tokens"),
+    )
+
+    with pytest.raises(OCRProviderError, match="cut off"):
+        claude_sonnet_provider.ask([(None, b"page")], "?")
+
+
+def test_ask_turns_anything_the_sdk_raises_into_a_provider_failure(monkeypatch) -> None:
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "sk-ant-stand-in")
+
+    class _Boom:
+        class messages:
+            @staticmethod
+            def create(**_kwargs):
+                raise RuntimeError("something nobody planned for")
+
+    provider = _provider()
+    provider._client = _Boom()
+
+    with pytest.raises(OCRProviderError, match="RuntimeError"):
+        provider.ask([(None, b"page")], "?")
+
+
+def test_ask_without_a_key_is_a_provider_failure(monkeypatch) -> None:
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "")
+
+    with pytest.raises(OCRProviderError, match="ANTHROPIC_API_KEY"):
+        _provider().ask([(None, b"page")], "?")
