@@ -14,39 +14,23 @@ import type { PieceHistory } from '../../data/sources/types';
  * headline written about a different piece never appears.
  */
 
-/** "12 takes", "1 take". */
-export function takeCountLabel(takes: number): string {
-  return takes === 1 ? '1 take' : `${takes} takes`;
-}
-
 /**
- * "since 3 March", or null when the date is not known to be the real start.
+ * The count beside "Your takes": "14 since Sep 13", or "14" when the start is
+ * not known to be the real one.
  *
  * `PieceHistory.since` is already null when the count hit the page ceiling —
- * see `getPieceHistory`. This is the formatting half, and it refuses an
- * unparseable date for the same reason: a card reading "since Invalid Date" is
- * worse than one that just says how many.
+ * see `getPieceHistory` — and an unparseable date is refused for the same
+ * reason: "since Invalid Date" is worse than the count alone. The heading
+ * already says they are takes.
  */
-export function practiceSince(since: string | null): string | null {
-  if (!since) {
-    return null;
-  }
-  const date = new Date(since);
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-  return `since ${date.toLocaleDateString(undefined, {
-    day: 'numeric',
-    month: 'long',
-  })}`;
-}
-
-/** The line over the history: how many takes, and since when if that is known. */
-export function historyLabel(history: PieceHistory): string | null {
+export function historyCount(history: PieceHistory): string | null {
   if (history.takes === 0) {
     return null;
   }
-  const since = practiceSince(history.since);
-  const count = takeCountLabel(history.takes);
-  return since ? `${count} ${since}` : count;
+  const date = history.since ? new Date(history.since) : null;
+  if (!date || Number.isNaN(date.getTime())) {
+    return String(history.takes);
+  }
+  const short = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return `${history.takes} since ${short}`;
 }

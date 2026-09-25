@@ -5,34 +5,34 @@ import { Text } from '../../components/primitives';
 import { BORDER_WIDTH, colors } from '../../design';
 import { chartBarWidth } from '../../lib/chartBars';
 import { axisLabels, plotFraction } from '../../lib/insights/sessionTrend';
-import type { PassageDrift } from '../../lib/insights/passageDrift';
+import type { PassageTempo } from '../../lib/insights/passageTempo';
 
-/** The left-hand column the axis words sit in. */
-const GUTTER = 48;
+/** The left-hand column the axis words sit in, as the trend chart's. */
+const GUTTER = 58;
 
 /** The shortest bar drawn, so a passage on the beat is still a mark. */
 const MIN_BAR = 4;
 
 /**
- * A piece's drift passage by passage, first bar to last
+ * A piece's tempo passage by passage, first bar to last
  * (`redesign/Insights.dc.html`, "Worth a look").
  *
- * A bar per passage from the beat, up for ahead and down for behind, over the
- * on-tempo band. Gold where the passage is off the beat, the neutral `steady`
+ * A bar per passage from the target, up for faster and down for slower, over
+ * the on-tempo band (`passageTempo.ts`). Gold where the passage is off the beat, the neutral `steady`
  * where it is not — so the eye goes to the passages worth practising and the
  * rest still shows the piece's whole length.
  */
 export function PassageChart({
-  drift,
+  tempo,
   accessibilityLabel,
   height = 90,
 }: {
-  drift: PassageDrift;
+  tempo: PassageTempo;
   accessibilityLabel: string;
   height?: number;
 }) {
   const [width, setWidth] = useState(0);
-  const { range, passages } = drift;
+  const { range, passages } = tempo;
   const yOf = (value: number) => plotFraction(value, range) * height;
   const zeroY = yOf(0);
   const plotWidth = Math.max(0, width - GUTTER);
@@ -79,17 +79,17 @@ export function PassageChart({
               );
             })
           : null}
-        {labels.ahead ? (
+        {labels.faster ? (
           <Text variant="caption" color="textTertiary" style={[styles.axis, { top: 0 }]}>
-            Ahead
+            Faster
           </Text>
         ) : null}
         <Text variant="caption" color="textTertiary" style={[styles.axis, { top: zeroY - 7 }]}>
-          On beat
+          On tempo
         </Text>
-        {labels.behind ? (
+        {labels.slower ? (
           <Text variant="caption" color="textTertiary" style={[styles.axis, { bottom: 0 }]}>
-            Behind
+            Slower
           </Text>
         ) : null}
       </View>

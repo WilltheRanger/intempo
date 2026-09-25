@@ -1327,9 +1327,10 @@ export const fixtureTakeSource: TakeSource = {
     //
     // The shape is a musician getting better and having one bad night: drift
     // shrinking session by session, with an outlier a week back. Derived from
-    // the real take by scaling its own trend, so every point on the chart is
-    // the same measurement the verdict screen draws, rather than a second set
-    // of numbers invented here.
+    // the real take by scaling its own trend — and, since Insights plots tempo,
+    // each bar's distance from the target by the same factor — so every point
+    // on the chart is the same measurement the verdict screen draws, rather
+    // than a second set of numbers invented here.
     const DRIFT = [1, 0.82, 1.45, 0.71, 0.6, 0.44, 0.38];
     // Intonation settling too, more slowly: the typical note 20 cents from
     // the player's tuning a fortnight ago, 9 now.
@@ -1343,6 +1344,11 @@ export const fixtureTakeSource: TakeSource = {
       id: index === 0 ? take.id : `${take.id}-session-${index}`,
       recordedAt: new Date(recordedAt - index * 3 * DAY_MS).toISOString(),
       trend: take.trend.map((value) => value * scale),
+      measures: take.measures.map((measure) =>
+        measure.playedBpm === null
+          ? measure
+          : { ...measure, playedBpm: take.targetBpm + (measure.playedBpm - take.targetBpm) * scale },
+      ),
       intonation: take.intonation
         ? { ...take.intonation, spreadCents: PITCH_SPREAD[index] }
         : null,

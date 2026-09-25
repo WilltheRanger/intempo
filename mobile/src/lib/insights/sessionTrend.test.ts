@@ -12,13 +12,35 @@ const TOLERANCE: Tolerance = {
   dragging_outer_pct: 20,
 };
 
-function take(over: Partial<TakeResult> = {}): TakeResult {
+/**
+ * A take whose bars were played `bars` percent off a target of 100. Each
+ * bar's drift is a wild figure on purpose — the series must be read from the
+ * tempo, and a test that passed on either would not show which.
+ */
+function take(over: Partial<TakeResult> & { bars?: number[] } = {}): TakeResult {
+  const { bars = [2, 4, 6], ...rest } = over;
   return {
     id: 't1',
     recordedAt: '2026-09-01T10:00:00Z',
     failure: null,
-    trend: [2, 4, 6],
-    ...over,
+    targetBpm: 100,
+    trend: bars.map(() => -500),
+    measures: bars.map((pct, index) => ({
+      measure: index + 1,
+      playedBpm: 100 + pct,
+      targetBpm: null,
+      pitchCents: null,
+      noteCount: 4,
+      deviationPct: -300 * (index + 1),
+      band: 'severe',
+      direction: 'drag',
+      verdict: 'dragging',
+      underTempoChange: false,
+      uneven: false,
+      timedNoteCount: 4,
+      untimedReason: null,
+    })),
+    ...rest,
   } as unknown as TakeResult;
 }
 
@@ -38,13 +60,25 @@ describe('building the series', () => {
     expect(trend?.points.map((p) => p.id)).toEqual(['a', 'b', 'c']);
   });
 
-  it('summarises each session as the mean of its own rolling trend', () => {
-    // The same measurement the verdict screen draws as a line, summarised --
-    // not a second figure computed differently, which is how two screens end
-    // up disagreeing about one take.
-    const trend = sessionTrendFrom([take({ trend: [0, 10, 20] }), take({ id: 't2', trend: [-6, -6] })], TOLERANCE);
+  it('summarises each session as the median of its bars’ tempo against the target', () => {
+    // The measurement the verdict's charts draw, summarised -- not drift,
+    // which a take held slow grows along its length until every take sits on
+    // the chart's floor.
+    const trend = sessionTrendFrom(
+      [take({ bars: [0, 10, 20] }), take({ id: 't2', bars: [-6, -6, 40] })],
+      TOLERANCE,
+    );
 
-    expect(trend?.points.map((p) => p.value)).toEqual([10, -6]);
+    expect(trend?.points.map((p) => Number(p.value.toFixed(6)))).toEqual([10, -6]);
+  });
+
+  it('judges a bar against the tempo the page set for it', () => {
+    // A meno mosso at 88, played at 88, is on its target -- not 12 under 100.
+    const meno = take({ bars: [0, 0] });
+    meno.measures.push({ ...meno.measures[0], measure: 3, playedBpm: 88, targetBpm: 88 });
+    const trend = sessionTrendFrom([meno, take({ id: 't2' })], TOLERANCE);
+
+    expect(trend?.points[0].value).toBe(0);
   });
 
   it('leaves out a run that failed', () => {
@@ -66,9 +100,9 @@ describe('building the series', () => {
     expect(trend?.points.map((p) => p.id)).toEqual(['ok-1', 'ok-2']);
   });
 
-  it('leaves out a take the pipeline produced no trend for', () => {
+  it('leaves out a take with no bar to time', () => {
     const trend = sessionTrendFrom(
-      [take({ id: 'empty', trend: [] }), take({ id: 'a' }), take({ id: 'b', recordedAt: '2026-09-02T10:00:00Z' })],
+      [take({ id: 'empty', bars: [] }), take({ id: 'a' }), take({ id: 'b', recordedAt: '2026-09-02T10:00:00Z' })],
       TOLERANCE,
     );
 
@@ -87,7 +121,7 @@ describe('building the series', () => {
     // The chart used to be scaled to the outer threshold so that its top edge
     // meant "severe". The redesign fits the axis to the takes instead, and the
     // on-tempo band — the take's own inner thresholds — is what says where
-    // "off the beat" begins.
+    // "off tempo" begins.
     const trend = sessionTrendFrom([take(), take({ id: 't2' })], TOLERANCE);
     expect(trend?.range.bandTop).toBe(5);
     expect(trend?.range.bandBottom).toBe(-5);
@@ -102,19 +136,19 @@ describe('which points get a dot', () => {
     sessionTrendFrom(
       values.map((value, index) => take({
         id: `t${index}`,
-        trend: [value],
+        bars: [value],
         recordedAt: `2026-09-0${index + 1}T10:00:00Z`,
       })),
       TOLERANCE,
     );
 
   it('plots every take, oldest first', () => {
-    expect(series([2, 9, -5, 3])?.points.map((p) => p.value)).toEqual([2, 9, -5, 3]);
+    expect(series([2, 9, -5, 3])?.points.map((p) => Number(p.value.toFixed(6)))).toEqual([2, 9, -5, 3]);
   });
 });
 
 describe('the span a take chart draws', () => {
-  it('fits a musician who rushes, rather than spending half the chart behind the beat', () => {
+  it('fits a musician who plays fast, rather than spending half the chart on slower', () => {
     const range = trendRange([2, 6, 11, 14], TOLERANCE);
     expect(range.top).toBeGreaterThan(14);
     // The band still shows below the line, and not much more.
@@ -129,24 +163,43 @@ describe('the span a take chart draws', () => {
     expect([range.bandTop, range.bandBottom]).toEqual([5, -5]);
   });
 
+  it('keeps the band a band when every take was on tempo', () => {
+    // Fitted tightly, takes inside the band made the band the whole plot.
+    const range = trendRange([1, 2, 3], TOLERANCE);
+    const band = range.bandTop - range.bandBottom;
+    expect(band / (range.top - range.bottom)).toBeLessThanOrEqual(0.4);
+    // Leaning a little fast, it leans a little up: more room above than below.
+    expect(range.top).toBeGreaterThan(-range.bottom);
+  });
+
+  it('keeps the target mid-plot when the takes sit on it', () => {
+    const range = trendRange([-2, 0, 2], TOLERANCE);
+    expect(Math.abs(range.top + range.bottom)).toBeLessThan(1e-9);
+  });
+
+  it('lengthens a short span toward the side the takes lean', () => {
+    const range = trendRange([-6, -7, -6], TOLERANCE);
+    expect(-range.bottom).toBeGreaterThan(range.top * 2);
+  });
+
   it('does not let one wild take flatten the rest', () => {
     expect(trendRange([3, 4, 200], TOLERANCE).top).toBeLessThan(40);
   });
 
   it('names only the directions somebody played in', () => {
     const rushing = [2, 6, 11, 14];
-    expect(axisLabels(rushing, trendRange(rushing, TOLERANCE))).toEqual({ ahead: true, behind: false });
+    expect(axisLabels(rushing, trendRange(rushing, TOLERANCE))).toEqual({ faster: true, slower: false });
     const dragging = [-12, -3, 1];
-    expect(axisLabels(dragging, trendRange(dragging, TOLERANCE))).toEqual({ ahead: false, behind: true });
+    expect(axisLabels(dragging, trendRange(dragging, TOLERANCE))).toEqual({ faster: false, slower: true });
   });
 });
 
 describe('placing a value on the plot', () => {
   const range = trendRange([-10, 10], TOLERANCE);
 
-  it('puts ahead of the beat above the line', () => {
+  it('puts faster above the line', () => {
     // Rush-positive is up, which means negating: SVG's y grows downward, and
-    // "ahead" is the top of every other tempo drawing in the app.
+    // Faster is the top of every other tempo drawing in the app.
     expect(plotFraction(10, range)).toBeLessThan(plotFraction(0, range));
     expect(plotFraction(-10, range)).toBeGreaterThan(plotFraction(0, range));
   });
