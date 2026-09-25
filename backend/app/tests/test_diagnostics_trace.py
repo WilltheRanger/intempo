@@ -99,7 +99,9 @@ def test_each_rule_is_named_for_the_evidence_that_trips_it() -> None:
 
     assert rule(0.0, 0.3, 1.0) == "no_pitch"
     assert rule(1.0, 1.0, 1.0) == "one_pitch"
-    assert rule(0.5, 0.3, 0.2) == "not_tonal"
+    assert rule(0.5, 0.3, 0.5) == "not_tonal"
+    # Under `broken_quality` the alignment refuses it, and says why.
+    assert rule(0.5, 0.3, 0.2) is None
     assert rule(1.0, 0.3, 1.0) is None
 
 

@@ -185,6 +185,13 @@ CFG = load_audio_config()
         ("a stand rung three times", _evidence(1.00, 0.00, one=1.0), 0.0, 3, False),
         ("four notes of a different piece", _evidence(1.00, 0.00, one=0.33), 0.0, 3, True),
         ("a beeping metronome", _evidence(1.00, 0.19, one=1.0), 1.0, 33, False),
+        # Real double bass takes, the re-run of 2026-09-25 (TUNING_LOG.md): as
+        # tonal as the take the chain reads perfectly (0.66), and refused by
+        # the alignment — which is what they are told, not "not played".
+        ("a bass take timing could not pair", _evidence(0.69, 0.20), 0.0, 67, True),
+        ("a bass take from bar 7, unpaired", _evidence(0.48, 0.00), 0.0, 29, True),
+        # Talking as near the page's rhythm as it came stays not played.
+        ("talking, fit for a verdict", _evidence(0.69, 0.03), 0.47, 26, False),
     ],
 )
 def test_nothing_played_on_the_measured_numbers(case, evidence, quality, detected, played) -> None:
