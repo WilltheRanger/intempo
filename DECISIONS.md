@@ -20,7 +20,9 @@ Original pages / Rename.
   lengthened toward the side the takes lean. A piece played at one wrong
   speed throughout says so ("Slower than your tempo all the way through.")
   and offers the whole piece rather than naming its last passage.
-- "Worth a look" is a section like "In tune", its action the outlined button.
+- "Worth a look" is a section like "In tune", its action the outlined button,
+  and it sits below "In tune" (the owner, the same evening: "put worth a look
+  below") — the readings first, what to do about them last, nearest the thumb.
 - "Your takes": one heading with the count beside it; a reading in ink, a
   refusal in grey; a day's date said once; a gap before the piece's own rows.
 

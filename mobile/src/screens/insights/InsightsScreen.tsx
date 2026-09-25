@@ -181,9 +181,37 @@ export function InsightsScreen() {
         </Text>
       )}
 
+      {/*
+        **Pitch, beside the timing** (the owner, 2026-09-25): how far the
+        typical note sat from their own tuning, take by take. A reading, not a
+        recommendation, so no card — the section is its label, its sentence
+        and its line.
+      */}
+      {pitchLine ? (
+        <View style={styles.pitch}>
+          <Text variant="eyebrow" color="textTertiary" style={styles.eyebrowCaps}>
+            In tune
+          </Text>
+          <Text variant="metadata" color="textSecondary" style={styles.pitchSentence}>
+            {pitchLine}
+          </Text>
+          {pitchTrend ? (
+            <PitchTrendChart
+              trend={pitchTrend}
+              accessibilityLabel={`In tune, take by take. ${pitchLine}`}
+              style={styles.pitchChart}
+            />
+          ) : null}
+        </View>
+      ) : null}
+
       {focus ? (
         <FadeIn index={0}>
           {/*
+            **Under "In tune"** (the owner, 2026-09-25: "put worth a look
+            below"): the readings first, what to do about them after — and the
+            button the lowest thing on the page, nearest the thumb.
+
             **Not a card, and not the black button** (the owner, 2026-09-25:
             "fix the visual hierarchy"). It was the one card on the screen,
             with the screen's one solid button in it — the darkest thing on
@@ -233,30 +261,6 @@ export function InsightsScreen() {
             )}
           </View>
         </FadeIn>
-      ) : null}
-
-      {/*
-        **Pitch, beside the timing** (the owner, 2026-09-25): how far the
-        typical note sat from their own tuning, take by take. A reading, not a
-        recommendation, so no card — the section is its label, its sentence
-        and its line.
-      */}
-      {pitchLine ? (
-        <View style={styles.pitch}>
-          <Text variant="eyebrow" color="textTertiary" style={styles.eyebrowCaps}>
-            In tune
-          </Text>
-          <Text variant="metadata" color="textSecondary" style={styles.pitchSentence}>
-            {pitchLine}
-          </Text>
-          {pitchTrend ? (
-            <PitchTrendChart
-              trend={pitchTrend}
-              accessibilityLabel={`In tune, take by take. ${pitchLine}`}
-              style={styles.pitchChart}
-            />
-          ) : null}
-        </View>
       ) : null}
 
       {/*
