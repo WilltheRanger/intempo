@@ -17,6 +17,8 @@ import { readMeasure } from '../../lib/verdict/measureReading';
 
 const HEIGHT = 68;
 const HALF = HEIGHT / 2;
+/** Room at the right for "sharp" and "flat", when a chart names its ends. */
+const DIRECTION_GUTTER = 40;
 
 /**
  * "Measure by measure" as one chart (`redesign/Verdict.dc.html`): a bar per
@@ -38,6 +40,10 @@ export function MeasureBars({
   targetBpm,
   tempoBeatUnit,
   tolerance,
+  chart,
+  describe,
+  name = 'Bar',
+  ends,
 }: {
   measures: MeasureVerdict[];
   selected: number | null;
@@ -50,14 +56,29 @@ export function MeasureBars({
   targetBpm: number;
   tempoBeatUnit: TempoBeatUnit | null | undefined;
   tolerance: Tolerance | null;
+  /**
+   * Other bars to draw over the same measures — "In tune"'s pitch
+   * (`lib/verdict/intonation.ts`) — sharing the selection, so either chart
+   * opens the same bar in the card.
+   */
+  chart?: ChartBar[];
+  /** What a selected bar is read out as, when `chart` draws something else. */
+  describe?: (measure: MeasureVerdict) => string;
+  /** How the slider names a bar to assistive tech: "Bar 3 of 12", "Pitch in bar 3 of 12". */
+  name?: string;
+  /** What up and down mean, beside the chart — "sharp" and "flat". */
+  ends?: { up: string; down: string };
 }) {
   const bars = useMemo(
     () =>
+      chart ??
       tempoChartBars(measures, targetBpm, tempoBeatUnit, tolerance) ??
       measureChartBars(measures),
-    [measures, targetBpm, tempoBeatUnit, tolerance],
+    [chart, measures, targetBpm, tempoBeatUnit, tolerance],
   );
-  const [width, setWidth] = useState(0);
+  const [measured, setWidth] = useState(0);
+  // The bars' own width: the chart's, less the gutter its ends are named in.
+  const width = Math.max(0, measured - (ends ? DIRECTION_GUTTER : 0));
 
   const node = useRef<View>(null);
   const at = bars.findIndex((bar) => bar.measure === selected);
@@ -121,9 +142,11 @@ export function MeasureBars({
         role="slider"
         aria-label={
           current
-            ? `Bar ${current.measure} of ${bars.length}: ${
-                barTempo(current, targetBpm, tempoBeatUnit, tolerance)?.spoken ??
-                readMeasure(current).label
+            ? `${name} ${current.measure} of ${bars.length}: ${
+                describe
+                  ? describe(current)
+                  : (barTempo(current, targetBpm, tempoBeatUnit, tolerance)?.spoken ??
+                    readMeasure(current).label)
               }`
             : 'Bar by bar'
         }
@@ -137,7 +160,27 @@ export function MeasureBars({
         }
         {...pan.panHandlers}
       >
-        <View style={styles.rule} pointerEvents="none" />
+        <View style={[styles.rule, ends ? styles.ruleShort : null]} pointerEvents="none" />
+        {ends ? (
+          <>
+            <Text
+              variant="caption"
+              color="textTertiary"
+              style={[styles.direction, styles.directionUp]}
+              pointerEvents="none"
+            >
+              {ends.up}
+            </Text>
+            <Text
+              variant="caption"
+              color="textTertiary"
+              style={[styles.direction, styles.directionDown]}
+              pointerEvents="none"
+            >
+              {ends.down}
+            </Text>
+          </>
+        ) : null}
         {step > 0
           ? bars.map((bar, index) => {
               const left = index * step + (step - barWidth) / 2;
@@ -174,7 +217,7 @@ export function MeasureBars({
             })
           : null}
       </View>
-      <View style={styles.ends}>
+      <View style={[styles.ends, ends ? styles.endsShort : null]}>
         <Text variant="caption" color="textTertiary" style={styles.number}>
           Bar {bars[0]?.measure ?? ''}
         </Text>
@@ -224,6 +267,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginTop: 6,
+  },
+  endsShort: {
+    marginRight: DIRECTION_GUTTER,
+  },
+  ruleShort: {
+    right: DIRECTION_GUTTER,
+  },
+  direction: {
+    position: 'absolute',
+    right: 0,
+    width: DIRECTION_GUTTER - 6,
+    textAlign: 'right',
+  },
+  directionUp: {
+    top: -2,
+  },
+  directionDown: {
+    bottom: -2,
   },
   number: {
     fontSize: 12,

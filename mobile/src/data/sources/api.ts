@@ -22,14 +22,16 @@ import type {
   AnalysisResultJson,
   AnalysisStatus,
   Band,
+  IntonationSummaryJson,
   MeasureVerdict,
   PerMeasureResult,
   Piece,
   PieceInsight,
   PracticeInsights,
   ScoreResponse,
-  Tolerance,
+  TakeIntonation,
   TakeResult,
+  Tolerance,
 } from '../types';
 import { toMusician } from './musician';
 import type {
@@ -547,6 +549,7 @@ function toTake(
     timedNoteCount: m.timed_note_count ?? null,
     untimedReason: m.untimed_reason ?? null,
     playedBpm: typeof m.played_bpm === 'number' ? m.played_bpm : null,
+    pitchCents: typeof m.pitch_cents === 'number' ? m.pitch_cents : null,
   }));
 
   return {
@@ -570,8 +573,26 @@ function toTake(
     // Already rush-positive from the pipeline — the one field that isn't flipped.
     trend: result.trend ?? [],
     tolerance: result.tolerance ?? null,
+    intonation: toIntonation(result.intonation),
     missedNotes: result.n_missed_notes ?? 0,
     extraNotes: result.n_extra_notes ?? 0,
+  };
+}
+
+/** The stored intonation summary in the app's shape, or null. */
+export function toIntonation(
+  json: IntonationSummaryJson | null | undefined,
+): TakeIntonation | null {
+  if (!json || typeof json.spread_cents !== 'number') {
+    return null;
+  }
+  return {
+    tuningCents: json.tuning_cents,
+    spreadCents: json.spread_cents,
+    notes: json.notes,
+    inTuneCents: json.in_tune_cents,
+    slightCents: json.slight_cents,
+    tuningWorthSayingCents: json.tuning_worth_saying_cents,
   };
 }
 
@@ -611,6 +632,7 @@ function toFailedTake(
     measures: [],
     trend: [],
     tolerance: null,
+    intonation: null,
     missedNotes: 0,
     extraNotes: 0,
   };

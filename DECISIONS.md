@@ -1,5 +1,36 @@
 # InTempo Decisions
 
+## 2026-09-25 — Pitch: how in tune, in cents, against the player's own tuning
+
+**Context.** The owner: "for insights let's add pitch variation as a graph".
+Asked, they chose how in tune (cents, per bar) over wrong notes or wobble on
+held notes; on each take's verdict and across takes on Insights; against their
+own tuning rather than A = 440.
+
+**Decision.** `services/intonation.py` reads each paired note's sustained
+pitch off the YIN track the matcher already computes (no extra cost), folds it
+into the nearest octave (a bass sounds an octave under the page; YIN slips
+octaves), takes the take's median as its tuning, drops notes more than a
+semitone from it (the previous note still ringing), and reports each bar's
+median against the tuning plus the take's spread. Stored as
+`PerMeasure.pitch_cents` and `AnalysisResult.intonation`, with its thresholds
+(`[intonation]`), as `tolerance` travels. The verdict gets "In tune" under
+"Bar by bar" — the same bars and selection, sharp up and flat down — and the
+card says the bar's pitch beside its tempo; Insights gets the typical note's
+distance from the tuning, take by take, the in-tune band shaded.
+
+**Alternatives considered.**
+- *Against A = 440.* The owner's two takes were tuned 25 sharp and 25 flat:
+  every bar would have read the tuning, once per bar.
+- *Per note.* A fifth of the owner's bass notes read more than a semitone off
+  — measurement, not playing. Per-bar medians are what the data supports.
+- *A separate pitch endpoint for Insights.* Insights already aggregates takes
+  on the client; a take-level summary in the result is all it needs.
+
+**Trade-offs accepted.** Phone-microphone bass is the hard case; the numbers
+are medians of a noisy read, and stated as such only in the tuning log. Takes
+analysed before this carry no pitch until re-run.
+
 ## 2026-09-25 — Readability: greys with headroom, 12pt floor, chart lines at 3:1
 
 **Context.** The owner: "the design of our app is kind of hard to read and

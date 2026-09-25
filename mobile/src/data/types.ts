@@ -583,6 +583,25 @@ export interface PerMeasureResult {
    * and null for a bar with too few paired notes to time.
    */
   played_bpm?: number | null;
+  /**
+   * How far this bar's notes sat from the player's own tuning, in cents,
+   * sharp-positive (`services/intonation.py`). Absent on results stored
+   * before 2026-09-25; null where nothing in the bar could be read.
+   */
+  pitch_cents?: number | null;
+}
+
+/**
+ * How in tune a take was, as the pipeline stores it. The thresholds travel
+ * with the take, as `Tolerance` does.
+ */
+export interface IntonationSummaryJson {
+  tuning_cents: number;
+  spread_cents: number;
+  notes: number;
+  in_tune_cents: number;
+  slight_cents: number;
+  tuning_worth_saying_cents: number;
 }
 
 /**
@@ -633,6 +652,8 @@ export interface AnalysisResultJson {
    * has a pace and a spread but no trustworthy drift.
    */
   insights?: AnalysisInsights | null;
+  /** How in tune the take was. Absent on older results; null with too few notes. */
+  intonation?: IntonationSummaryJson | null;
 }
 
 /** One written note value, and how it was timed across the take. */
@@ -881,6 +902,11 @@ export interface MeasureVerdict {
    * bar with too few notes to time. See `lib/verdict/barTempo.ts`.
    */
   playedBpm: number | null;
+  /**
+   * How far the bar's notes sat from the player's tuning, in cents,
+   * sharp-positive, or null. See `lib/verdict/intonation.ts`.
+   */
+  pitchCents: number | null;
   noteCount: number;
   /** Percentage of one beat, normalised to **rush-positive**: ahead is up. */
   deviationPct: number;
@@ -999,8 +1025,22 @@ export interface TakeResult {
   trend: number[];
   /** What this take was judged by. Null on older analyses. */
   tolerance: Tolerance | null;
+  /** How in tune it was, or null — an older result, or too few notes read. */
+  intonation: TakeIntonation | null;
   missedNotes: number;
   extraNotes: number;
+}
+
+/** How in tune a take was, against the player's own tuning, in cents. */
+export interface TakeIntonation {
+  /** Where the take was tuned against A = 440. Positive is sharp. */
+  tuningCents: number;
+  /** The typical note's distance from that tuning. */
+  spreadCents: number;
+  notes: number;
+  inTuneCents: number;
+  slightCents: number;
+  tuningWorthSayingCents: number;
 }
 
 /** The signed-in musician, as the UI needs them. */

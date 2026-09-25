@@ -23,7 +23,9 @@ import { readTendency } from '../../lib/insights/tendency';
 import { sessionTrendFrom } from '../../lib/insights/sessionTrend';
 import { barsLabel, worthALook } from '../../lib/insights/passageDrift';
 import type { TabScreenNavigation } from '../../navigation/types';
+import { PitchTrendChart } from '../../components/charts/PitchTrendChart';
 import { SessionTrendChart } from '../../components/charts/SessionTrendChart';
+import { pitchTrendFrom, pitchTrendLine } from '../../lib/insights/pitchTrend';
 import { PassageChart } from './PassageChart';
 import { PieceInsightRow } from './PieceInsightRow';
 import { firstStep, focusReason, windowLabel } from './copy';
@@ -136,6 +138,10 @@ export function InsightsScreen() {
   const focus = worth?.piece ?? null;
   const drift = worth?.drift ?? null;
   const others = insights.pieces;
+  // How in tune, take by take (`lib/insights/pitchTrend.ts`); nothing at all
+  // until a take has been read for pitch.
+  const pitchLine = pitchTrendLine(history);
+  const pitchTrend = pitchTrendFrom(history);
 
   function practise(pieceId: string, startAt?: number) {
     navigation.navigate('Record', startAt === undefined ? { pieceId } : { pieceId, startAt });
@@ -225,6 +231,30 @@ export function InsightsScreen() {
             )}
           </View>
         </FadeIn>
+      ) : null}
+
+      {/*
+        **Pitch, beside the timing** (the owner, 2026-09-25): how far the
+        typical note sat from their own tuning, take by take. A reading, not a
+        recommendation, so no card — the section is its label, its sentence
+        and its line.
+      */}
+      {pitchLine ? (
+        <View style={styles.pitch}>
+          <Text variant="eyebrow" color="textTertiary" style={styles.eyebrowCaps}>
+            In tune
+          </Text>
+          <Text variant="metadata" color="textSecondary" style={styles.pitchSentence}>
+            {pitchLine}
+          </Text>
+          {pitchTrend ? (
+            <PitchTrendChart
+              trend={pitchTrend}
+              accessibilityLabel={`In tune, take by take. ${pitchLine}`}
+              style={styles.pitchChart}
+            />
+          ) : null}
+        </View>
       ) : null}
 
       {/*
@@ -341,6 +371,15 @@ const styles = StyleSheet.create({
   },
   list: {
     marginTop: 14,
+  },
+  pitch: {
+    marginTop: spacing['2xl'],
+  },
+  pitchSentence: {
+    marginTop: 6,
+  },
+  pitchChart: {
+    marginTop: spacing.md,
   },
   rows: {
     marginTop: 7,

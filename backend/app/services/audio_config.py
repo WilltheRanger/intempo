@@ -131,6 +131,17 @@ class PitchConfig:
 
 
 @dataclass(frozen=True)
+class IntonationConfig:
+    """See `[intonation]` in config.toml and `services/intonation.py`."""
+
+    in_tune_cents: float = 15.0
+    slight_cents: float = 30.0
+    not_this_note_cents: float = 100.0
+    min_notes: int = 8
+    tuning_worth_saying_cents: float = 10.0
+
+
+@dataclass(frozen=True)
 class TrendConfig:
     window: int
 
@@ -170,6 +181,8 @@ class AudioConfig:
     intake: IntakeConfig = IntakeConfig()
     #: Defaulted for the same reason as `intake`.
     pitch: PitchConfig = PitchConfig()
+    #: Defaulted for the same reason as `intake`.
+    intonation: IntonationConfig = IntonationConfig()
 
 
 def _parse(raw: dict) -> AudioConfig:
@@ -227,6 +240,7 @@ def _parse(raw: dict) -> AudioConfig:
             max_duration_s=float(raw.get("intake", {}).get("max_duration_s", 600.0)),
         ),
         pitch=_pitch(raw.get("pitch", {})),
+        intonation=_intonation(raw.get("intonation", {})),
         calibration=CalibrationConfig(
             min_duration_s=float(cal["min_duration_s"]),
             max_duration_s=float(cal["max_duration_s"]),
@@ -238,6 +252,21 @@ def _parse(raw: dict) -> AudioConfig:
             octave_ambiguity_threshold=float(cal["octave_ambiguity_threshold"]),
             bpm_min=float(cal["bpm_min"]),
             bpm_max=float(cal["bpm_max"]),
+        ),
+    )
+
+
+def _intonation(row: dict) -> IntonationConfig:
+    default = IntonationConfig()
+    return IntonationConfig(
+        in_tune_cents=float(row.get("in_tune_cents", default.in_tune_cents)),
+        slight_cents=float(row.get("slight_cents", default.slight_cents)),
+        not_this_note_cents=float(
+            row.get("not_this_note_cents", default.not_this_note_cents)
+        ),
+        min_notes=int(row.get("min_notes", default.min_notes)),
+        tuning_worth_saying_cents=float(
+            row.get("tuning_worth_saying_cents", default.tuning_worth_saying_cents)
         ),
     )
 

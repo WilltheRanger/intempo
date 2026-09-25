@@ -2,10 +2,16 @@ import type { ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { Text } from '../../components/primitives';
-import type { MeasureVerdict, TempoBeatUnit, Tolerance } from '../../data/types';
+import type {
+  MeasureVerdict,
+  TakeIntonation,
+  TempoBeatUnit,
+  Tolerance,
+} from '../../data/types';
 import { BORDER_WIDTH, colors, radii, spacing } from '../../design';
 import { barTempo, tempoScale } from '../../lib/verdict/barTempo';
 import { deviationWords } from '../../lib/verdict/deviationWords';
+import { pitchWords } from '../../lib/verdict/intonation';
 import { readMeasure } from '../../lib/verdict/measureReading';
 import { DeviationBar } from '../insights/DeviationBar';
 import { TempoScale } from './TempoScale';
@@ -30,12 +36,15 @@ export function MeasureCard({
   targetBpm,
   tempoBeatUnit,
   correction,
+  intonation = null,
 }: {
   measure: MeasureVerdict;
   tolerance: Tolerance | null;
   targetBpm: number;
   tempoBeatUnit: TempoBeatUnit | null | undefined;
   correction: ReactNode;
+  /** The take's pitch bands, so the bar's pitch can be said beside its tempo. */
+  intonation?: TakeIntonation | null;
 }) {
   const reading = readMeasure(measure);
   // The bar's tempo against the target where there is one — "85 BPM", "19
@@ -43,11 +52,18 @@ export function MeasureCard({
   // the first note, which a steadily slower take grows without bound: bar 22
   // of the owner's take was "More than a beat behind" (2026-09-25).
   const tempo = barTempo(measure, targetBpm, tempoBeatUnit, tolerance);
-  const detail = tempo
+  const timing = tempo
     ? tempo.detail
     : reading.revealsFigure
       ? deviationWords(measure.deviationPct, measure.direction)
       : null;
+  // Its pitch, where the take was read for it: "17 under your 104 · 12 cents
+  // flat". One line, because it is one bar.
+  const pitch =
+    intonation && measure.pitchCents !== null
+      ? pitchWords(measure.pitchCents, intonation)
+      : null;
+  const detail = [timing, pitch].filter(Boolean).join(' · ') || null;
 
   const tone = tempo ? tempo.tone : reading.tone;
 

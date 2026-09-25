@@ -25,6 +25,7 @@ import {
 } from '../../lib/verdict/measureReading';
 import { openingMeasure } from '../../lib/verdict/measureChart';
 import { appVerdictForBar, tempoLine } from '../../lib/verdict/barTempo';
+import { pitchChartBars, pitchLines, pitchWords } from '../../lib/verdict/intonation';
 import { passageLabel } from '../../lib/verdict/passage';
 import {
   failureTitle,
@@ -323,6 +324,10 @@ export function VerdictScreen() {
   // "Across the take" in BPM where the take carries its bars' tempi; an older
   // result draws the drift line it always did.
   const tempo = tempoLine(take.measures, take.targetBpm, take.tempoBeatUnit);
+  // "In tune": each bar's pitch against the player's own tuning, where the
+  // take carries it (`lib/verdict/intonation.ts`); left out otherwise.
+  const pitchBars = pitchChartBars(take.measures, take.intonation);
+  const pitch = take.intonation && pitchBars ? pitchLines(take.measures, take.intonation) : null;
 
   /*
     **The redesign's verdict** (`redesign/Verdict.dc.html`, 2026-09-23): the
@@ -430,10 +435,48 @@ export function VerdictScreen() {
         tolerance={take.tolerance}
       />
 
+      {/*
+        **Pitch, beside the tempo it was played at** (the owner, 2026-09-25).
+        The same bars, the same selection: tapping either chart opens that bar
+        in the card below, which says both.
+      */}
+      {take.intonation && pitchBars && pitch ? (
+        <>
+          <RuledHeading label="In tune" style={styles.ruled} />
+          <Text variant="metadata" color="textSecondary" style={styles.pitchSummary}>
+            {pitch.summary}
+          </Text>
+          {pitch.tuning ? (
+            <Text variant="metadataSmall" color="textTertiary" style={styles.pitchTuning}>
+              {pitch.tuning}
+            </Text>
+          ) : null}
+          <View style={styles.pitchChart}>
+            <MeasureBars
+              measures={take.measures}
+              selected={chosen?.measure ?? null}
+              onSelect={setSelected}
+              targetBpm={take.targetBpm}
+              tempoBeatUnit={take.tempoBeatUnit}
+              tolerance={take.tolerance}
+              chart={pitchBars}
+              name="Pitch in bar"
+              describe={(m) =>
+                m.pitchCents === null
+                  ? 'Not read'
+                  : pitchWords(m.pitchCents, take.intonation!)
+              }
+              ends={{ up: 'sharp', down: 'flat' }}
+            />
+          </View>
+        </>
+      ) : null}
+
       {chosen ? (
         <View style={styles.card}>
           <MeasureCard
             measure={chosen}
+            intonation={take.intonation}
             tolerance={take.tolerance}
             targetBpm={take.targetBpm}
             tempoBeatUnit={take.tempoBeatUnit}
@@ -520,6 +563,15 @@ const styles = StyleSheet.create({
   },
   playback: {
     marginTop: spacing.lg,
+  },
+  pitchSummary: {
+    marginTop: spacing.xs,
+  },
+  pitchTuning: {
+    marginTop: spacing.xs,
+  },
+  pitchChart: {
+    marginTop: spacing.md,
   },
   ruled: {
     marginTop: 22,
