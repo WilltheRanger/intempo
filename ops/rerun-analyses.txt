@@ -17,6 +17,11 @@
 # the bar it was recorded from (one had been given "rushed bars 42–45" from a
 # take started at bar 7), and a take whose notes the pitch track hears at the
 # page's pitches is no longer told it was not played.
+#
+# 2026-09-25, a third time — after #148 and #149: "not played" is only said of
+# a take the alignment would otherwise judge, and every take gets each bar's
+# tempo for the verdict's BPM charts. The owner's first working take through
+# the app (de5493f3) joins the list, so its charts are drawn in BPM too.
 5d6011ba-dd06-4b81-884a-86eff4ab565d
 44975f56-1b8a-473a-8e5a-e06d1d0f7a1e
 2aac1ba8-595a-433f-bec2-a49077bbf359
@@ -32,3 +37,4 @@ ae148002-9fc3-4bd2-b5bf-59c810fe4427
 068323bd-78dc-49f7-b309-c57c1ac18635
 a54ccd57-638a-41cf-b241-313e608c1b3b
 99aecbad-e57a-47a9-9046-1c8d50d3c3ee
+de5493f3-5267-4046-a24b-d6a623ba116c
