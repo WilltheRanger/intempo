@@ -1346,6 +1346,18 @@ nothing else covers `backend/`. Named here rather than left to be found.
   second pass read where notes belong by interpolating through the first
   pass's pairs, and so kept every arbitrary choice the first made between two
   equal pitches. A running median of their offsets does not.
+- **An even rhythm hides a wrong pairing.** A bar played twice scored 0.998
+  with 29 of 32 notes paired to the wrong attack; a hold scored 0.966 with the
+  first half one note early. Quality cannot see it; pitch can — so the chain
+  audits well-read takes too (`_audited_by_chain`).
+- **A restart invents notes, twice over.** Check both copies are heard: four
+  open strings refused as a replay of bar 4 came straight back as a first try
+  at bar 5.
+- **Only a pairing made by pitch can say a bar was skipped.** One made by
+  timing that lost notes to a live room looks the same.
+- **A passage is chosen to fit.** Never trust a share of *its* notes alone;
+  hold it to the take's own attacks, and let it choose bars, not override a
+  refusal.
 - TUNING_LOG.md 2026-09-25 has every number.
 
 ## The capture path (2026-08-24) — what an audit of it found
