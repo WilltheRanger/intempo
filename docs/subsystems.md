@@ -1372,6 +1372,12 @@ nothing else covers `backend/`. Named here rather than left to be found.
   the pitch track (`_heard_by_pitch`) before telling anyone they did not play,
   and let the alignment speak for a take it refuses anyway (`not_tonal` only
   fires over `broken_quality`).
+- **Deltas are drift from the target since the first note.** Right beside a
+  click; unbounded for a take held at another tempo (773% of a beat by bar
+  24). Never chart them per bar or group them by note value raw — use
+  `played_bpm` for charts and `insights.detrended` for comparisons.
+- **Real onsets need a robust fit.** Least squares on a bar's notes read one
+  stray attack as 148 BPM; `tempo_by_bar` uses Theil–Sen over believable gaps.
 - TUNING_LOG.md 2026-09-25 has every number.
 
 ## The capture path (2026-08-24) — what an audit of it found

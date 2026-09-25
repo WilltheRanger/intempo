@@ -1,5 +1,36 @@
 # InTempo Decisions
 
+## 2026-09-25 — The verdict's charts plot each bar's tempo; the title still answers the click
+
+**Context.** The owner's first working take (steady at ~90 against 104, two
+stops) drew "Across the take" on its floor from bar 2 and told bar 22 "More
+than a beat behind": every per-bar figure on the screen was lateness from the
+target held since the first note, which a steadily slower take grows without
+bound. The owner asked for the graph in BPM, and chose (asked, 2026-09-25): a
+scale fitted to the take with the target labelled; the bar chart and card in
+BPM too; the false "Right on average" line fixed.
+
+**Decision.** The backend reports each bar's tempo (`PerMeasure.played_bpm`,
+Theil–Sen, see TUNING_LOG). The app plots it (`TempoLine`), draws the bars by
+their distance from the target (`barTempo.tempoChartBars`, coloured by the
+same tolerance bands applied to tempo), and the card reads "85 BPM · 19 under
+your 104". "What did you hear?" records the tempo reading as what the app
+said, since that is what the card showed. An older result without tempi draws
+the old charts.
+
+**Alternatives considered.**
+- *Rescale the drift chart.* It would stop flooring and still plot a pile-up
+  nobody hears as a tempo.
+- *Move the title and the server's sentence to tempo as well.* They answer a
+  real question — did the take fall behind the click — and the fixtures'
+  "dragging" clip (59.5 against 60) is exactly that: imperceptible per bar,
+  a quarter-beat behind by bar 8. Changing the verdict engine is a larger
+  decision than a chart.
+
+**Trade-offs accepted.** Two readings on one screen: the title can say
+"dragged" of a take whose bars sit a hair under the target line. They agree
+in direction; the title is about the click, the charts about the bars.
+
 ## 2026-09-25 — Timing reads a short take from where its page begins; the pitch track can say somebody played
 
 **Context.** The first re-run of real takes through the new analysis gave one

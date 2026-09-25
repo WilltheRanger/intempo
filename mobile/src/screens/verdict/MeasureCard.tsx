@@ -2,8 +2,9 @@ import type { ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { Text } from '../../components/primitives';
-import type { MeasureVerdict, Tolerance } from '../../data/types';
+import type { MeasureVerdict, TempoBeatUnit, Tolerance } from '../../data/types';
 import { BORDER_WIDTH, colors, radii, spacing } from '../../design';
+import { barTempo } from '../../lib/verdict/barTempo';
 import { deviationWords } from '../../lib/verdict/deviationWords';
 import { readMeasure } from '../../lib/verdict/measureReading';
 import { DeviationBar } from '../insights/DeviationBar';
@@ -23,16 +24,27 @@ import { DeviationBar } from '../insights/DeviationBar';
 export function MeasureCard({
   measure,
   tolerance,
+  targetBpm,
+  tempoBeatUnit,
   correction,
 }: {
   measure: MeasureVerdict;
   tolerance: Tolerance | null;
+  targetBpm: number;
+  tempoBeatUnit: TempoBeatUnit | null | undefined;
   correction: ReactNode;
 }) {
   const reading = readMeasure(measure);
-  const detail = reading.revealsFigure
-    ? deviationWords(measure.deviationPct, measure.direction)
-    : null;
+  // The bar's tempo against the target where there is one — "85 BPM", "19
+  // under your 104" — rather than how far it sat behind a target held since
+  // the first note, which a steadily slower take grows without bound: bar 22
+  // of the owner's take was "More than a beat behind" (2026-09-25).
+  const tempo = barTempo(measure, targetBpm, tempoBeatUnit, tolerance);
+  const detail = tempo
+    ? tempo.detail
+    : reading.revealsFigure
+      ? deviationWords(measure.deviationPct, measure.direction)
+      : null;
 
   return (
     <View style={styles.card} accessible={false}>
@@ -41,14 +53,20 @@ export function MeasureCard({
           {measure.measure}
         </Text>
         <DeviationBar
-          deviationPct={reading.showsDeviation ? measure.deviationPct : 0}
+          deviationPct={
+            tempo ? tempo.deviationPct : reading.showsDeviation ? measure.deviationPct : 0
+          }
           tolerance={tolerance}
-          fill={reading.tone}
-          accessibilityLabel={reading.accessibilityLabel}
+          fill={tempo ? tempo.tone : reading.tone}
+          accessibilityLabel={tempo ? tempo.spoken : reading.accessibilityLabel}
           style={styles.bar}
         />
-        <Text variant="body" color={reading.tone} style={styles.verdict}>
-          {reading.label}
+        <Text
+          variant="body"
+          color={tempo ? tempo.tone : reading.tone}
+          style={styles.verdict}
+        >
+          {tempo ? tempo.label : reading.label}
         </Text>
       </View>
       {detail ? (
@@ -87,7 +105,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   verdict: {
-    width: 78,
+    // At least the width "Rushing" needs, and wider for "106 BPM".
+    minWidth: 78,
     textAlign: 'right',
     fontSize: 15,
     lineHeight: 20,

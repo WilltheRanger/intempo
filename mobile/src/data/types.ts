@@ -577,6 +577,12 @@ export interface PerMeasureResult {
   under_tempo_change?: boolean;
   /** Somewhere in this measure the change lurched rather than flowed. */
   uneven?: boolean;
+  /**
+   * The tempo this bar was played at, in BPM (`insights.tempo_by_bar`) — what
+   * the verdict's charts plot. Absent on a result stored before 2026-09-25,
+   * and null for a bar with too few paired notes to time.
+   */
+  played_bpm?: number | null;
 }
 
 /**
@@ -870,6 +876,11 @@ export interface PracticeInsights {
 /** One measure's timing, as the verdict screen shows it. */
 export interface MeasureVerdict {
   measure: number;
+  /**
+   * The tempo this bar was played at, in BPM, or null — an older result, or a
+   * bar with too few notes to time. See `lib/verdict/barTempo.ts`.
+   */
+  playedBpm: number | null;
   noteCount: number;
   /** Percentage of one beat, normalised to **rush-positive**: ahead is up. */
   deviationPct: number;

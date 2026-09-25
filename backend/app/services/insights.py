@@ -36,6 +36,8 @@ from __future__ import annotations
 import numpy as np
 from pydantic import BaseModel
 
+from app.services.alignment import MAX_TEMPO_RATIO, MIN_TEMPO_RATIO
+
 #: Below this many matched notes, none of these are reported at all.
 #:
 #: A line through three points is not a pace and a spread over three deltas is
@@ -167,7 +169,12 @@ def tempo_drift(
     return closing - opening
 
 
-def steadiness(delta_pcts: list[float]) -> float | None:
+def steadiness(
+    delta_pcts: list[float],
+    *,
+    positions: list[float] | None = None,
+    pulses: list[int] | None = None,
+) -> float | None:
     """How much the timing varies around the take's *own* pace, in % of a beat.
 
     The number the verdict cannot carry. Two takes averaging zero are not the
@@ -189,14 +196,140 @@ def steadiness(delta_pcts: list[float]) -> float | None:
     is tight at 60 BPM and loose at 160, so a figure in milliseconds cannot be
     compared with the same musician's take last week at a different tempo,
     which is the comparison this exists to make possible.
+
+    **And detrended per stretch of the pulse** (`pulses`, from
+    `Delta.pulse`), against written time (`positions`) rather than note count.
+    The deltas re-anchor where the musician's pulse breaks, so one line through
+    a take with a pause in it was a line through a sawtooth: the owner's take
+    of 2026-09-25, steady at 90 against 104 with two pauses, scored 140 — the
+    most "uneven" take this app had measured — and was told "Right on average,
+    uneven note to note." A stretch too short for a line of its own counts
+    around its own mean.
     """
     if len(delta_pcts) < MIN_NOTES_FOR_INSIGHT:
         return None
+    return float(np.std(detrended(delta_pcts, positions=positions, pulses=pulses)))
 
+
+def detrended(
+    delta_pcts: list[float],
+    *,
+    positions: list[float] | None = None,
+    pulses: list[int] | None = None,
+) -> np.ndarray:
+    """Each delta's departure from its own stretch's line — see `steadiness`.
+
+    What a note did against the musician's own pulse, rather than against a
+    target tempo held from the first note. Grouping raw deltas by note value
+    compared *where in the take* each value fell: on the owner's take at 90
+    against 104, the half notes come late in the page and were "lagging" by
+    210% of a beat.
+    """
     series = np.asarray(delta_pcts, dtype=float)
-    index = np.arange(series.size, dtype=float)
-    slope, intercept = np.polyfit(index, series, 1)
-    return float(np.std(series - (slope * index + intercept)))
+    x = (
+        np.asarray(positions, dtype=float)
+        if positions is not None and len(positions) == series.size
+        else np.arange(series.size, dtype=float)
+    )
+    groups = (
+        np.asarray(pulses)
+        if pulses is not None and len(pulses) == series.size
+        else np.zeros(series.size, dtype=int)
+    )
+    residuals = np.empty_like(series)
+    for group in np.unique(groups):
+        mask = groups == group
+        if mask.sum() >= 3 and float(np.ptp(x[mask])) > 0:
+            slope, intercept = np.polyfit(x[mask], series[mask], 1)
+            residuals[mask] = series[mask] - (slope * x[mask] + intercept)
+        else:
+            residuals[mask] = series[mask] - float(np.mean(series[mask]))
+    return residuals
+
+
+#: A bar is timed from its own notes and the first note of the next bar, so
+#: the length of its last note counts; one with fewer borrows the bar before.
+#: Three, not two: a tempo from one interval is one note's timing, and a
+#: last note paired early read the owner's final bar as 264 BPM.
+MIN_NOTES_FOR_BAR_TEMPO = 3
+
+
+def tempo_by_bar(
+    written: list[float],
+    played: list[float],
+    bars: list[int],
+    target_bpm: float,
+    *,
+    new_stretch: list[bool] | None = None,
+) -> dict[int, float]:
+    """The tempo each bar was played at, in BPM, keyed by bar number.
+
+    **What the verdict's charts plot**, at the owner's request (2026-09-25):
+    "have the graph show in a scale of BPM". The per-note deltas are drift
+    from where each note would fall at the target tempo from the first note
+    on, so a take held steadily at 90 against 104 grows a beat late every
+    seven beats — 773% of a beat by bar 24 — and a chart of them sits on its
+    floor from bar 2. A bar's own tempo is the same take said the way a
+    musician hears it: bars 1–6 at 102, slowing to 87 by bar 9, back to 105.
+
+    `written` and `played` are paired notes' written and played times in
+    seconds, in written order; `bars` their bar numbers. Each bar is its notes
+    plus the next bar's first note — downbeat to downbeat — fitted by least
+    squares, and one with fewer than `MIN_NOTES_FOR_BAR_TEMPO` points borrows
+    the bar before. `new_stretch` marks notes the page does not time from the
+    note before (after a fermata: the held length is not written); the fit is
+    pooled within stretches, so a fermata is not read as the bar dragging.
+
+    **Robust, because a real take is noisy.** The slope is Theil–Sen's — the
+    median of the slopes between every two of the window's notes — rather than
+    least squares, and a pair whose gap implies a tempo outside
+    `alignment.MIN_TEMPO_RATIO`–`MAX_TEMPO_RATIO` of the target (the range the
+    matcher itself believes) is left out: that gap is a stop or a skip, not a
+    pace. Least squares on the owner's take (2026-09-25) read its last bar,
+    reached with two notes unheard, as 142 BPM, and a bar with one stray
+    attack as 148.
+    """
+    if target_bpm <= 0 or len(written) < 2:
+        return {}
+    w = np.asarray(written, dtype=float)
+    p = np.asarray(played, dtype=float)
+    b = np.asarray(bars)
+    order = np.argsort(w, kind="stable")
+    w, p, b = w[order], p[order], b[order]
+    breaks = (
+        np.asarray(new_stretch, dtype=bool)[order]
+        if new_stretch is not None and len(new_stretch) == w.size
+        else np.zeros(w.size, dtype=bool)
+    )
+    stretch = np.cumsum(breaks)
+
+    def pace(idx: np.ndarray) -> float | None:
+        """Seconds played per second written: the median pairwise slope,
+        within a stretch, over gaps a believable tempo explains."""
+        slopes = []
+        for i, a in enumerate(idx):
+            for c in idx[i + 1 :]:
+                if stretch[a] != stretch[c]:
+                    continue
+                dw, dp = w[c] - w[a], p[c] - p[a]
+                if dw > 0 and dp > 0 and MIN_TEMPO_RATIO <= dw / dp <= MAX_TEMPO_RATIO:
+                    slopes.append(dp / dw)
+        return float(np.median(slopes)) if slopes else None
+
+    tempi: dict[int, float] = {}
+    numbers = list(dict.fromkeys(b.tolist()))
+    for k, bar in enumerate(numbers):
+        idx = np.flatnonzero(b == bar)
+        following = np.flatnonzero(b == numbers[k + 1])[:1] if k + 1 < len(numbers) else idx[:0]
+        window = np.concatenate([idx, following])
+        back = k - 1
+        while window.size < MIN_NOTES_FOR_BAR_TEMPO and back >= 0:
+            window = np.concatenate([np.flatnonzero(b == numbers[back]), window])
+            back -= 1
+        slope = pace(window) if window.size >= MIN_NOTES_FOR_BAR_TEMPO else None
+        if slope is not None:
+            tempi[int(bar)] = round(target_bpm / slope, 1)
+    return tempi
 
 
 def insights_for(
@@ -208,6 +341,8 @@ def insights_for(
     by_note: list[tuple[float, float]] | None = None,
     *,
     target_bpm_for_lead: float | None = None,
+    positions: list[float] | None = None,
+    pulses: list[int] | None = None,
 ) -> Insights:
     """Everything above, or an empty `Insights` for a take too small to describe.
 
@@ -217,6 +352,18 @@ def insights_for(
     would throw away the two that are.
     """
     played = played_tempo(matched, detected, expected, target_bpm)
+    # Note values against the musician's own pulse, not the target's: see
+    # `detrended`. Only when the two lists are the same notes, which is how
+    # `analyze` builds them.
+    if (
+        by_note
+        and positions is not None
+        and len(by_note) == len(delta_pcts) >= MIN_NOTES_FOR_INSIGHT
+    ):
+        residuals = detrended(delta_pcts, positions=positions, pulses=pulses)
+        by_note = [
+            (beats, float(r)) for (beats, _), r in zip(by_note, residuals, strict=True)
+        ]
     values = timing_by_note_value(by_note or [])
     built = Insights(
         by_note_value=values,
@@ -228,7 +375,7 @@ def insights_for(
         )(tempo_drift(matched, detected, expected, target_bpm)),
         steadiness_pct=(
             lambda s: None if s is None else round(s, 1)
-        )(steadiness(delta_pcts)),
+        )(steadiness(delta_pcts, positions=positions, pulses=pulses)),
     )
     # Ranked last, because it ranks the fields above and cannot be computed
     # until they exist. Returned on a copy rather than mutated, so `Insights`
@@ -484,6 +631,13 @@ def lead_finding(insights: Insights, target_bpm: float) -> Finding | None:
     worth_saying = [c for c in candidates if c.weight > 1.0]
     if not worth_saying:
         return None
+    # **"Right on average" is not said of a take whose average was off.** The
+    # owner's take at 90 against 104 (2026-09-25) led with it: its spread
+    # cleared its threshold seven times over, the tempo three — real playing
+    # is far less even than the synthetic takes `NOTABLE_STEADINESS_PCT` was
+    # set against. A tempo worth saying is a tempo the sentence would deny.
+    if any(c.kind == "tempo" for c in worth_saying):
+        worth_saying = [c for c in worth_saying if c.kind != "steadiness"]
     return max(worth_saying, key=lambda c: c.weight)
 
 
