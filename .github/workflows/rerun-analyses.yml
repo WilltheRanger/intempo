@@ -1,7 +1,8 @@
 name: Re-run analyses
 
-# Runs takes through the deployed analysis again, by id. Run by hand, from the
-# Actions tab or the API, never on a push: it overwrites verdicts.
+# Runs takes through the deployed analysis again, by id: by hand, from the
+# Actions tab or the API, or when `ops/rerun-analyses.txt` changes on main —
+# never on any other push, because it overwrites verdicts.
 #
 # See `backend/scripts/rerun_analyses.py` for why and what it does. This file
 # exists so it can run where the Modal token already is, without a developer
@@ -14,6 +15,11 @@ on:
         description: "Analysis ids, separated by commas or spaces"
         required: true
         type: string
+  # For when it cannot be started by hand: the ids are the file's.
+  push:
+    branches: [main]
+    paths:
+      - "ops/rerun-analyses.txt"
 
 permissions:
   contents: read
@@ -47,6 +53,9 @@ jobs:
           ANALYSIS_IDS: ${{ inputs.analysis_ids }}
         run: |
           set -eo pipefail
+          if [ -z "$ANALYSIS_IDS" ]; then
+            ANALYSIS_IDS="$(grep -v '^[[:space:]]*#' ../ops/rerun-analyses.txt | tr '\n' ' ')"
+          fi
           python scripts/rerun_analyses.py "$ANALYSIS_IDS" 2>&1 | tee /tmp/rerun.log
           {
             echo "### Re-run"
