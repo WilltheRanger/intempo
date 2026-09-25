@@ -106,6 +106,18 @@ class Settings:
     #: `ocr_corrector` so that silence is visible rather than assumed.
     OCR_CORRECTOR: str = os.getenv("OCR_CORRECTOR", "claude-sonnet-5")
 
+    #: The vision model asked which tempo words a photographed page prints —
+    #: "poco rit.", "a tempo", "♩ = 88" — when the reading carries none, which
+    #: is every page homr reads (`ocr/tempo_marks.py`). One short call per such
+    #: page, a few thousand input tokens.
+    #:
+    #: **On by default, on the owner's standing word on API costs** (2026-08-30,
+    #: the corrector's) and their choice on 2026-09-25 that the app should read
+    #: tempo markings from the photograph as well as take them by hand. Set it
+    #: to the empty string to turn it off; a build with no `ANTHROPIC_API_KEY`
+    #: behaves as though it were off, and `/v1/ready` reports `ocr_tempo_reader`.
+    OCR_TEMPO_READER: str = os.getenv("OCR_TEMPO_READER", "claude-sonnet-5")
+
 
 
     #: How many pages may be read at once.

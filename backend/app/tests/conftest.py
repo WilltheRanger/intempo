@@ -20,6 +20,10 @@ os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "test-service-role-key")
 # Entering the app's lifespan would otherwise analyse a synthetic take on a
 # thread behind whatever the test is doing. `test_warmup.py` turns it on.
 os.environ.setdefault("ANALYSIS_WARMUP", "0")
+# Every transcription test would otherwise ask a real model for the page's
+# tempo words the moment a machine running them has `ANTHROPIC_API_KEY` set.
+# `test_tempo_marks.py` turns it on against a stand-in.
+os.environ.setdefault("OCR_TEMPO_READER", "")
 
 import jwt  # noqa: E402  (env vars must land before app imports)
 import pytest  # noqa: E402

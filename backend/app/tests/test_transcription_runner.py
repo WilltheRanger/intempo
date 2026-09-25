@@ -537,3 +537,65 @@ def test_a_still_running_call_is_recognised_by_name_not_by_class() -> None:
     assert _is_still_running(OutputNotFinished())
     assert not _is_still_running(RuntimeError("homr is not installed"))
     assert not _is_still_running(ValueError("Invalid metadata value"))
+
+
+# ---- the tempo words homr does not read ------------------------------------
+
+
+def test_the_pages_tempo_words_are_stored_with_the_reading(table, monkeypatch) -> None:
+    """homr reads notes, not "poco rit." — the worker asks for the words and
+    stores them with the reading (`ocr/tempo_marks.py`)."""
+    from app.config import settings
+    from app.services.ocr import pipeline, tempo_marks
+
+    class _Reader:
+        def ask(self, images, prompt, **_kw) -> str:
+            # A stand-in answer, not a recorded one.
+            return '{"marks": [{"line": 2, "bar": 1, "text": "poco rit."}]}'
+
+    monkeypatch.setitem(pipeline.PROVIDER_REGISTRY, "stand-in", _Reader())
+    monkeypatch.setattr(settings, "OCR_TEMPO_READER", "stand-in", raising=False)
+    monkeypatch.setattr(tempo_marks, "crop_systems", lambda page, source=None: [])
+    read = ScoreJson(
+        clef="bass",
+        time_signature="4/4",
+        ocr_confidence=0.88,
+        measures=[
+            Measure(
+                measure_number=n,
+                system=0 if n <= 2 else 1,
+                notes=[Note(pitch="C3", duration="whole")],
+            )
+            for n in (1, 2, 3, 4)
+        ],
+    )
+    monkeypatch.setattr(runner, "parse_sheet_music", lambda *a, **k: read)
+
+    runner.run_transcription(SCORE_ID)
+
+    final = _final(table)
+    assert final["transcription_status"] == "done"
+    assert final["score_json"]["tempo_changes"] == [
+        {"measure_number": 3, "kind": "ritardando", "text": "poco rit.", "bpm": None}
+    ]
+
+
+def test_only_the_first_page_can_carry_the_pieces_heading(monkeypatch) -> None:
+    table = _Table(
+        {"id": SCORE_ID, "user_id": "u", "source_image_urls": [IMAGE_URL, IMAGE_URL]}
+    )
+    monkeypatch.setattr(runner, "get_service_client", lambda: _Client(table))
+    monkeypatch.setattr(runner, "readable_url", lambda url: url)
+    monkeypatch.setattr(runner, "download_image", lambda url, **_kw: b"\x89PNG\r\n\x1a\n")
+    monkeypatch.setattr(runner, "parse_sheet_music", lambda *a, **k: _score())
+    first_pages: list[bool] = []
+
+    def recorded(score, page, **kw):
+        first_pages.append(kw["first_page"])
+        return score
+
+    monkeypatch.setattr(runner, "with_tempo_marks", recorded)
+
+    runner.run_transcription(SCORE_ID)
+
+    assert first_pages == [True, False]

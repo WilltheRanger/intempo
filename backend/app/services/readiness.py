@@ -283,6 +283,52 @@ def _corrector_check() -> Check:
     )
 
 
+def _tempo_reader_check() -> Check:
+    """Whether tempo words can be read off a photographed page.
+
+    A configuration check, like `_corrector_check` and with its caveat: when
+    pages are read on Modal it is that container's key that counts. Never
+    blocking — a page read without it has no tempo changes, which is what every
+    photographed page had before, and they can be marked by hand.
+    """
+    from app.config import settings
+    from app.services.ocr.tempo_marks import tempo_reader
+
+    named = settings.OCR_TEMPO_READER.strip()
+    if not named:
+        return Check(
+            name="ocr_tempo_reader",
+            ok=True,
+            detail="OCR_TEMPO_READER is empty, so tempo words are not read from photographs.",
+            blocking=False,
+        )
+    provider = tempo_reader()
+    if provider is None:
+        return Check(
+            name="ocr_tempo_reader",
+            ok=False,
+            detail=f"OCR_TEMPO_READER names {named!r}, which cannot be asked about a page.",
+            blocking=False,
+        )
+    setting = getattr(provider, "api_key_setting", "")
+    has_key = bool(getattr(settings, setting, "")) if setting else True
+    return Check(
+        name="ocr_tempo_reader",
+        ok=has_key,
+        detail=(
+            f"{named} is configured to read tempo words from photographs. "
+            "Configured, not exercised."
+            if has_key
+            else (
+                f"OCR_TEMPO_READER is {named} but {setting} is not set in this "
+                "process. Pages read on Modal use that container's secret; if it "
+                "is missing there too, no tempo words are read from photographs."
+            )
+        ),
+        blocking=False,
+    )
+
+
 def _configuration_checks() -> list[Check]:
     """Settings only. No network, so this half always answers.
 
@@ -409,6 +455,7 @@ def _configuration_checks() -> list[Check]:
         )
 
     checks.append(_corrector_check())
+    checks.append(_tempo_reader_check())
 
     # A reader can live here or behind the page runtime. The production
     # deployment deliberately keeps homr off this 512 MB process and sends

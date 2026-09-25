@@ -1189,3 +1189,21 @@ def test_it_is_wired_into_the_readiness_report() -> None:
     # Specifically: extended into the result, not merely defined.
     assert "checks.extend(_transcription_dispatch_check())" in code
     assert "checks.extend(_transcription_runtime_checks())" in code
+
+
+@pytest.mark.parametrize(
+    ("named", "key", "ok"),
+    [("claude-sonnet-5", "present", True), ("claude-sonnet-5", "", False), ("", "", True), ("homr", "present", False)],
+)
+def test_the_tempo_reader_is_reported_and_never_blocks(
+    monkeypatch: pytest.MonkeyPatch, named: str, key: str, ok: bool
+) -> None:
+    """A page read without it has no tempo changes — what every photographed
+    page had before it existed — so it is worth seeing and not worth a 503."""
+    monkeypatch.setattr(_settings(), "OCR_TEMPO_READER", named, raising=False)
+    monkeypatch.setattr(_settings(), "ANTHROPIC_API_KEY", key)
+
+    (found,) = [c for c in readiness.check().checks if c.name == "ocr_tempo_reader"]
+
+    assert found.ok is ok
+    assert found.blocking is False

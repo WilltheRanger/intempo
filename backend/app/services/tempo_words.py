@@ -20,9 +20,10 @@ change; only the caller knows whether a word is at the top of the piece.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 
-from app.services.score_schema import TempoChangeKind
+from app.services.score_schema import TempoChange, TempoChangeKind
 
 #: Back to the opening: before "a tempo", which it also contains.
 _PRIMO = re.compile(r"\b(tempo\s*(i|1|primo|1o|1º)|1\s*[oº°]?\s*tempo|primo\s+tempo)\b", re.I)
@@ -71,3 +72,28 @@ def tempo_word(words: str, *, heading: bool = False) -> TempoWord | None:
     if not heading and _NEW_TEMPO.search(text):
         return TempoWord("new_tempo", text)
     return None
+
+
+def one_per_bar(marks: Iterable[tuple[int, TempoChangeKind, str, float | None]]) -> list[TempoChange]:
+    """Tempo marks as (bar, kind, text, bpm), made into one change per bar.
+
+    A bar often prints its words and its metronome mark apart — "meno mosso"
+    and "♩ = 88" — which are one change: the words, with the number. Otherwise
+    the first mark at a bar is kept: two changes at one bar would leave the
+    order between them to chance (`applyTempoMarkEdit` holds the same rule).
+    """
+    by_bar: dict[int, tuple[TempoChangeKind, str, float | None]] = {}
+    for bar, kind, text, bpm in marks:
+        held = by_bar.get(bar)
+        if held is None:
+            by_bar[bar] = (kind, text, bpm)
+        elif kind == "new_tempo" and held[0] == "new_tempo":
+            by_bar[bar] = (
+                "new_tempo",
+                held[1] if held[2] is None else text,
+                bpm if bpm is not None else held[2],
+            )
+    return [
+        TempoChange(measure_number=bar, kind=kind, text=text, bpm=bpm)
+        for bar, (kind, text, bpm) in sorted(by_bar.items())
+    ]

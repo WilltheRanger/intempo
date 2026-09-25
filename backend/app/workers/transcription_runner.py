@@ -32,6 +32,7 @@ from app.models.score import TRANSCRIPTION_IN_PROGRESS
 from app.config import settings
 from app.db import get_service_client
 from app.services.ocr import OCRError, parse_sheet_music
+from app.services.ocr.tempo_marks import with_tempo_marks
 from app.services.ocr.pages import join_pages
 from app.services.score_pages import PAGE_COLUMNS, pages_of
 from app.services.storage_origin import storage_origin
@@ -593,6 +594,16 @@ def _read_one_page(
         # than the page it came from, which is the entire point of the cut.
         score = parse_sheet_music(
             page, media_type=media_type, on_stage=report, source=image_bytes
+        )
+        # The words homr does not read — "poco rit.", "a tempo", "♩ = 88" —
+        # asked of a vision model when the reading has none. Never raises: a
+        # page whose words could not be read is kept as it was read.
+        score = with_tempo_marks(
+            score,
+            page,
+            media_type=media_type,
+            source=image_bytes,
+            first_page=page_number == 1,
         )
     except HTTPException as exc:
         # `page_image` speaks in HTTP status codes because its other caller is

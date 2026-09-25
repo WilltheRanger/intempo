@@ -1,5 +1,39 @@
 # InTempo Decisions
 
+## 2026-09-25 — Tempo words read off a photograph: a line and a bar, not a bar number
+
+**Context.** The owner chose to have tempo markings read from the photograph as
+well as marked by hand. The vision readers are already asked for them in the
+transcription prompt, but the reader in use is homr, which reads notes and not
+words — its MusicXML carries no `<words>` and no `<sound tempo>`. So every
+photographed part arrived with no tempo changes, and "poco rit." went unread.
+
+**Decision.** One more call per page, to the model `OCR_TEMPO_READER` names
+(Claude Sonnet 5 by default), **only when the reading has no tempo changes**.
+The model is asked which tempo words and metronome marks are printed and where,
+as *line k, bar j of that line*; the reading's own line breaks (homr writes
+`<print new-system>`) turn that into a bar number. When the page cuts into as
+many lines as the reading found, the lines are sent one by one, labelled;
+otherwise the page is sent whole. Which words are a change is still
+`tempo_words.tempo_word`'s call, not the model's. The tempo over the first bar
+of the first page fills `tempo_marking` and `bpm_hint` when the reading left
+them empty.
+
+**Alternatives.** *Ask for bar numbers.* Counting to bar 37 on a photograph is
+where a model goes wrong, and a `rit.` two bars early looks exactly as right as
+one in the right place. *Ask homr.* It has no text recognition to ask. *Always
+ask, even when the reading has markings.* It pays to second-guess a reader that
+was asked the same question.
+
+**Trade-offs accepted.** A page costs one more short call (a few thousand input
+tokens) and a few seconds, with no progress stage of its own, because a new
+stage is new copy on the scan screen. A mark the model places on a bar the
+reading has no bar for is dropped rather than clamped. It needs
+`ANTHROPIC_API_KEY` in the Modal secret, where pages are read; without it the
+pass logs and does nothing, and the bar editor is still there. No model answer
+had been recorded when this was built, so the tests use stand-in answers
+labelled as such.
+
 ## 2026-09-25 — Marking a tempo change by hand, in the bar editor
 
 **Context.** The analysis can judge a "meno mosso" at its own tempo (#163),

@@ -109,6 +109,65 @@ class ClaudeProvider:
             input_tokens * self._input_price + output_tokens * self._output_price
         ) / 1_000_000
 
+    def ask(
+        self,
+        images: list[tuple[str | None, bytes]],
+        prompt: str,
+        *,
+        media_type: str = "image/jpeg",
+        max_tokens: int = 1024,
+        timeout_s: float | None = None,
+    ) -> str:
+        """A question about some images, answered as text.
+
+        For the passes that are not a transcription — `tempo_marks` asks where
+        "poco rit." is printed, and wants a few lines back rather than a score.
+        Each image may carry a label sent just before it ("Line 3"), so the
+        answer can say which image it means. Raises `OCRProviderError` on any
+        failure, as `parse` does.
+
+        `timeout_s` bounds the request. The SDK's own default is ten minutes,
+        which a pass that is optional must not be able to add to a scan.
+        """
+        content: list[dict] = []
+        for label, image in images:
+            if label:
+                content.append({"type": "text", "text": label})
+            content.append(
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": media_type,
+                        "data": base64.standard_b64encode(image).decode("ascii"),
+                    },
+                }
+            )
+        content.append({"type": "text", "text": prompt})
+        try:
+            extra: dict = {}
+            if self._thinking is not None:
+                extra["thinking"] = self._thinking
+            if timeout_s is not None:
+                extra["timeout"] = timeout_s
+            response = self._get_client().messages.create(
+                model=self.model,
+                max_tokens=max_tokens,
+                **extra,
+                messages=[{"role": "user", "content": content}],
+            )
+        except Exception as exc:  # noqa: BLE001 — the boundary `parse` explains
+            if isinstance(exc, OCRProviderError):
+                raise
+            raise OCRProviderError(f"{self.name}: {type(exc).__name__}: {exc}") from exc
+        if getattr(response, "stop_reason", None) == "max_tokens":
+            raise OCRProviderError(f"{self.name}: the answer was cut off at {max_tokens} tokens")
+        parts = getattr(response, "content", None) or []
+        text = getattr(parts[0], "text", None) if parts else None
+        if text is None:
+            raise OCRProviderError(f"{self.name}: no text in the answer")
+        return text
+
     def parse(
         self,
         image_bytes: bytes,

@@ -75,6 +75,11 @@ DEFAULT_IS_RIGHT: dict[str, str] = {
     "{self.name}: empty response text": (
         "As above, from the other vision provider."
     ),
+    "{self.name}: no text in the answer": (
+        "Raised only by `ClaudeProvider.ask`, whose one caller is "
+        "`tempo_marks.read_tempo_marks`: it catches everything and keeps the "
+        "reading as it was, so this never becomes a sentence on a score."
+    ),
     "no <part> element — this is not a MusicXML score": (
         "The import route's words about a musician's own file, answered as a "
         "422 by `POST /v1/scores/import`. It never reaches this table; homr's "
