@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { FALL_SPAN, FALL_START, MIN_START, SETTLED_WASH, fallStops, washAt } from './heroFall';
+import {
+  FALL_SPAN,
+  FALL_START,
+  MAX_START,
+  MIN_START,
+  SETTLED_WASH,
+  fallStops,
+  washAt,
+} from './heroFall';
 
 const HEIGHT = 844;
 
@@ -12,16 +20,19 @@ describe('fallStops', () => {
     expect(washAt(stops, 0.3)).toBe(0);
   });
 
-  it('stays where the prototype put it for copy that starts low', () => {
-    const stops = fallStops(HEIGHT, 0.7 * HEIGHT);
-    expect(stops[1][0]).toBe(FALL_START);
+  it('follows copy that starts low down to its floor, and no further', () => {
+    // Today without "Recent results" (2026-09-25): the label at about 67%.
+    const lower = fallStops(HEIGHT, 0.67 * HEIGHT);
+    expect(lower[1][0]).toBeGreaterThan(FALL_START);
+    expect(washAt(lower, 0.67)).toBeGreaterThanOrEqual(SETTLED_WASH);
+    expect(fallStops(HEIGHT, 0.9 * HEIGHT)[1][0]).toBe(MAX_START);
   });
 
   it('moves the prototype’s own layout only a little', () => {
     // Its sample puts the label at about 59%, just below where the shorter
-    // run has settled, so the fall rises by a point of the height, not more.
+    // run has settled, so the fall moves by a point or two of the height.
     const stops = fallStops(HEIGHT, 0.59 * HEIGHT);
-    expect(FALL_START - stops[1][0]).toBeLessThan(0.02);
+    expect(Math.abs(FALL_START - stops[1][0])).toBeLessThan(0.02);
     expect(washAt(stops, 0.59)).toBeGreaterThanOrEqual(SETTLED_WASH);
   });
 
