@@ -1287,6 +1287,34 @@ nothing else covers `backend/`. Named here rather than left to be found.
   *infinite* wait, not a long one, and refusing a musician on poor cellular who
   would have had sound at twenty seconds is worse than making them wait.
 
+- **A context can say `running` with its clock stopped, and one shared context
+  makes that permanent (2026-09-26).** The owner's iPhone, on the page-review
+  screen straight after photographing a page: *"Audio couldn't start. Tap
+  Listen to retry. (AudioStartTimeout: context running after 2030ms)"*. The
+  cause in the parentheses is `startTimeout` naming the state, which it was
+  written to do and which paid for itself on its first real report: not
+  `suspended` (a refused resume), not `interrupted` (iOS taking the session),
+  but a clock stopped underneath a state that says it is fine. What stopped it
+  is not known — the camera taking the audio session, or the category moving
+  between `play-and-record` and `playback` under a running context, are the
+  two candidates, and neither can be seen from Chromium.
+
+  **The advice in the sentence could not work.** The page keeps one context
+  for its whole life (`context.web.ts`), and a retry asks it to resume, which
+  on a `running` context does nothing — so every Listen, count-in and
+  metronome after it scheduled onto a clock that never reached them, until the
+  page was reloaded. `audio/clockStart.ts` now kicks a context that has said
+  `running` for half a second without its clock moving (suspend; the watch
+  loop's resume brings it back), and if the clock still has not moved by the
+  deadline the context is let go (`abandonAudioContext`), so the retry builds a
+  new one inside the tap. A context that was merely `suspended` or
+  `interrupted` is kept — the retry's gesture is what it was waiting for.
+
+  Two things to carry. **One shared context trades a leak for a single point
+  of failure**, and the trade is only safe with a way to replace it. And
+  **retry advice is a claim** — check that the thing retried can go
+  differently the second time.
+
 - **A centred container silently breaks `space-between` (2026-09-19).** The
   record sheet's settings block had `alignItems: 'center'`, which shrink-wraps
   every child to its own content — so the metronome row, laid out

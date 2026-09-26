@@ -1,4 +1,10 @@
-import { audioContext, resumeAudio } from './audio/context.web';
+import { clockStopped, startStep } from './audio/clockStart';
+import {
+  abandonAudioContext,
+  audioContext,
+  kickAudio,
+  resumeAudio,
+} from './audio/context.web';
 import { prepareForPlayback } from './audio/session.web';
 import { listenFailure, startTimeout } from './score/listenFailure';
 import type { Schedule } from './score/schedule';
@@ -35,25 +41,82 @@ import { beginSampledPlayback } from './score/sampledPlayback';
  */
 const END_SWEEP_SLACK_MS = 50;
 
+/** How often to look, while waiting for the audio clock to start. */
+const START_POLL_MS = 120;
+
 /**
- * How long to give the audio clock to start moving, in wall-clock ms.
+ * One playback's wait for the audio clock to start moving, shared by both
+ * voices. The rule is `audio/clockStart.ts`; this is the bookkeeping around it.
  *
- * **The failure this catches is a context that never runs.** `resume()` is a
+ * **The failure this catches is a clock that never moves.** `resume()` is a
  * promise nobody awaits and a browser may simply refuse it — Safari parks a
  * context in `interrupted` after a phone call, another app, or the page being
  * backgrounded, and a context created outside a gesture is born `suspended`.
- * When that happens `currentTime` is frozen, so *both* end conditions fail
- * open: `tick` compares against a value that never grows, and `sweepForEnd`
- * deliberately re-checks the audio clock and re-arms. The button says Stop for
- * a piece that never started, forever, and pressing it stops silence.
+ * And a context can say `running` while its clock stands still, which is what
+ * an iPhone reported on 2026-09-26 (`clockStart.ts`). Either way `currentTime`
+ * is frozen, so *both* end conditions fail open: `tick` compares against a
+ * value that never grows, and `sweepForEnd` deliberately re-checks the audio
+ * clock and re-arms. The button says Stop for a piece that never started,
+ * forever, and pressing it stops silence.
  *
- * Measured against **wall** time on purpose. The audio clock is the thing
- * under suspicion, so it cannot also be the judge.
+ * **A hidden page explains a frozen clock, so it does not count.** iOS
+ * suspends the context along with the page; the musician has not been failed,
+ * they have walked away. Time spent hidden is given back rather than spent, so
+ * coming back to a piece that never started still gets its full window.
  */
-const START_TIMEOUT_MS = 2000;
-
-/** How often to look, while waiting for it. */
-const START_POLL_MS = 120;
+function clockWatch(context: AudioContext) {
+  let visibleSince = Date.now();
+  let runningSince = visibleSince;
+  let kicked = false;
+  return {
+    /** One look, having resumed or kicked the context as the look calls for. */
+    look(started: boolean): 'started' | 'wait' | 'give-up' {
+      const now = Date.now();
+      if (typeof document !== 'undefined' && document.hidden) {
+        visibleSince = now;
+        runningSince = now;
+      }
+      if (context.state !== 'running') {
+        runningSince = now;
+      }
+      const step = startStep({
+        started,
+        state: context.state,
+        visibleMs: now - visibleSince,
+        runningMs: now - runningSince,
+        kicked,
+      });
+      if (step === 'kick') {
+        kicked = true;
+        kickAudio(context);
+        return 'wait';
+      }
+      // A refused resume is not permanent: the gesture that was missing a
+      // moment ago may have arrived, and asking costs nothing when running.
+      if (step === 'wait') {
+        resumeAudio(context);
+      }
+      return step;
+    },
+    /** The sentence for giving up, naming the state the clock was left in. */
+    failure(): string {
+      return listenFailure(
+        'starting',
+        startTimeout(context.state, Date.now() - visibleSince),
+      );
+    },
+    /**
+     * After giving up: let the context go if its clock stopped, so the retry
+     * the sentence asks for gets a new one. Called after the playback has
+     * disconnected its own nodes, so nothing is torn down under it.
+     */
+    release(): void {
+      if (clockStopped(context.state, kicked)) {
+        abandonAudioContext(context);
+      }
+    },
+  };
+}
 
 /** Schedule and play a score, returning a handle that can stop it. */
 export function playSchedule(
@@ -123,7 +186,7 @@ export function playSchedule(
         source.buffer = buffer;
         source.connect(context.destination);
         const startedAt = context.currentTime + 0.08;
-        let visibleSince = Date.now();
+        const watch = clockWatch(context);
         let timer: ReturnType<typeof setInterval> | undefined;
         const cleanup = () => {
           clearInterval(timer);
@@ -144,20 +207,11 @@ export function playSchedule(
               finish();
               return;
             }
-            if (elapsed <= 0) {
-              if (typeof document !== 'undefined' && document.hidden)
-                visibleSince = Date.now();
-              if (Date.now() - visibleSince > START_TIMEOUT_MS) {
-                onError?.(
-                  listenFailure(
-                    'starting',
-                    startTimeout(context.state, Date.now() - visibleSince),
-                  ),
-                );
-                finish();
-                return;
-              }
-              resumeAudio(context);
+            if (elapsed <= 0 && watch.look(false) === 'give-up') {
+              onError?.(watch.failure());
+              finish();
+              watch.release();
+              return;
             }
             onProgress?.(
               Math.min(schedule.durationS, Math.max(0, elapsed)),
@@ -268,7 +322,7 @@ export function playSchedule(
   let frame = 0;
   let sweep: ReturnType<typeof setTimeout> | undefined;
   let startCheck: ReturnType<typeof setTimeout> | undefined;
-  let visibleSince = Date.now();
+  const watch = clockWatch(context);
 
   function tick() {
     if (stopped) {
@@ -324,26 +378,18 @@ export function playSchedule(
    * already passed `startedAt` and never reaches here; one that never got going
    * has not, and waiting for it forever is the bug.
    *
-   * Each look also asks the context to run again. A refused resume is not
-   * permanent: the gesture that was missing a moment ago may have arrived, and
-   * asking costs nothing when it is already running.
+   * Each look also asks the context to run again, or kicks one whose clock
+   * stopped while it said `running` — see `clockWatch`.
    */
   function watchForStart() {
-    if (stopped || context.currentTime > startedAt) {
+    if (stopped) {
       return;
     }
-    // **A hidden page explains a frozen clock, so it does not count.** iOS
-    // suspends the context along with the page; the musician has not been
-    // failed, they have walked away. Time spent hidden is given back rather
-    // than spent, so coming back to a piece that never started still gets its
-    // full two seconds to begin.
-    if (typeof document !== 'undefined' && document.hidden) {
-      visibleSince = Date.now();
-      startCheck = setTimeout(watchForStart, START_POLL_MS);
+    const step = watch.look(context.currentTime > startedAt);
+    if (step === 'started') {
       return;
     }
-    if (Date.now() - visibleSince < START_TIMEOUT_MS) {
-      resumeAudio(context);
+    if (step === 'wait') {
       startCheck = setTimeout(watchForStart, START_POLL_MS);
       return;
     }
@@ -354,10 +400,9 @@ export function playSchedule(
     // person who could report the fault with nothing to report: a control that
     // resets itself and never says why reads as a control that does nothing.
     // The sampled voice two hundred lines up has always said something here.
-    onError?.(
-      listenFailure('starting', startTimeout(context.state, Date.now() - visibleSince)),
-    );
+    onError?.(watch.failure());
     finish();
+    watch.release();
   }
 
   function finish() {
