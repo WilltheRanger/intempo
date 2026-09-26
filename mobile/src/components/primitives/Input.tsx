@@ -1,7 +1,9 @@
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import {
   Platform,
+  Pressable,
   StyleSheet,
+  Text as NativeText,
   TextInput,
   View,
   type StyleProp,
@@ -17,6 +19,7 @@ import {
   spacing,
   typography,
 } from '../../design';
+import { acceptsCompletion } from '../../lib/autofill';
 import { Text } from './Text';
 
 /**
@@ -28,6 +31,28 @@ const NO_INNER_OUTLINE = Platform.select({
   web: { outlineStyle: 'none', outlineWidth: 0 },
   default: {},
 }) as TextStyle;
+
+/**
+ * On the web, a press on the suggestion must not take focus from the field.
+ *
+ * A mousedown moves focus to whatever was pressed, the field blurs, and the
+ * suggestion — drawn only while the field has focus — unmounts under the
+ * finger. That is exactly how the composer list this replaces once did
+ * nothing at all (`ComposerField`, 2026-09). Cancelling the mousedown keeps
+ * focus where the typing is. Native has no such event, and needs none.
+ */
+const KEEP_FOCUS = (
+  Platform.OS === 'web'
+    ? { onMouseDown: (event: { preventDefault(): void }) => event.preventDefault() }
+    : {}
+) as object;
+
+/**
+ * Spaces that measure as spaces. A browser drops a trailing space from a line
+ * of text, so "Ludwig " would measure as "Ludwig" and the suggestion would
+ * start on top of the space the musician just typed.
+ */
+const measured = (text: string) => text.replace(/ /g, '\u00a0');
 
 export interface InputProps {
   label: string;
@@ -64,16 +89,26 @@ export interface InputProps {
   returnKeyType?: TextInputProps['returnKeyType'];
   onSubmitEditing?: TextInputProps['onSubmitEditing'];
   /**
-   * Focus and blur, passed straight through.
-   *
-   * Added for `ComposerField`, which shows its suggestions only while the
-   * field has focus — a list that stays after you have tapped away is a list
-   * that will not go away.
+   * Focus and blur, passed straight through — composed with the field's own
+   * focus ring and its suggestion, which is drawn only while it has focus.
    */
   onFocus?: TextInputProps['onFocus'];
   onBlur?: TextInputProps['onBlur'];
   editable?: boolean;
   style?: StyleProp<ViewStyle>;
+  /**
+   * Says "(optional)" beside the label — the owner, 2026-09-26: on the
+   * add-a-piece screens, everything but the title.
+   */
+  optional?: boolean;
+  /**
+   * The rest of a suggestion, drawn in grey straight after what is typed
+   * (`lib/autofill.ts`). Accepted by a tap on it, Return, Tab, or → at the
+   * end of the text; any other key carries on typing.
+   */
+  completion?: string | null;
+  /** Called when the suggestion is accepted. The caller sets the value. */
+  onAcceptCompletion?: () => void;
 }
 
 /**
@@ -102,8 +137,39 @@ export function Input({
   onBlur,
   editable = true,
   style,
+  optional = false,
+  completion = null,
+  onAcceptCompletion,
 }: InputProps) {
   const [focused, setFocused] = useState(false);
+  const input = useRef<TextInput>(null);
+  // Where the cursor is, so → accepts only from the end of the text.
+  const [cursor, setCursor] = useState<number | null>(null);
+  // How wide what is typed is, and how wide the box is: the suggestion starts
+  // where the text ends, and is not drawn when there is no room for it.
+  const [typedWidth, setTypedWidth] = useState<number | null>(null);
+  const [boxWidth, setBoxWidth] = useState(0);
+
+  // Only while typing here: grey text in a field you have left reads as
+  // something you wrote.
+  const offering = Boolean(completion) && focused && editable;
+  const textStyle = [
+    serif ? styles.serifText : styles.sansText,
+    large && styles.largeText,
+  ];
+  const insetLeft = BORDER_WIDTH + (large ? spacing.lg : FIELD_PADDING);
+  const insetRight =
+    BORDER_WIDTH + (actionInside && action ? ACTION_ROOM : large ? spacing.lg : FIELD_PADDING);
+  const ghostLeft = typedWidth === null ? null : insetLeft + typedWidth;
+  const hasRoom = ghostLeft !== null && boxWidth - insetRight - ghostLeft >= MIN_GHOST_ROOM;
+
+  function accept() {
+    if (!completion) return;
+    onAcceptCompletion?.();
+    // Keep the keyboard where it is. Deferred so it lands after a browser has
+    // finished handling the press, if it moved focus anyway.
+    setTimeout(() => input.current?.focus(), 0);
+  }
 
   return (
     <View style={style}>
@@ -115,12 +181,16 @@ export function Input({
         */}
         <Text variant="caption" color="textTertiary" style={styles.label}>
           {label}
+          {/* Lower case, so it reads as a note on the name rather than part of it. */}
+          {/* A plain nested text, so it inherits the label's size and colour. */}
+          {optional ? <NativeText style={styles.optional}> (optional)</NativeText> : null}
         </Text>
         {actionInside ? null : action}
       </View>
 
-      <View>
+      <View onLayout={(event) => setBoxWidth(event.nativeEvent.layout.width)}>
         <TextInput
+          ref={input}
           value={value}
           onChangeText={onChangeText}
           // **Composed, not replaced.** This field draws its own focus ring, so
@@ -138,18 +208,39 @@ export function Input({
           placeholder={placeholder}
           placeholderTextColor={colors.textTertiary}
           underlineColorAndroid="transparent"
-          accessibilityLabel={label}
+          accessibilityLabel={optional ? `${label}, optional` : label}
+          accessibilityHint={offering ? `Suggests ${value}${completion}. Press return to accept.` : undefined}
           secureTextEntry={secureTextEntry}
           keyboardType={keyboardType}
           autoCapitalize={autoCapitalize}
           autoComplete={autoComplete}
           textContentType={textContentType}
           returnKeyType={returnKeyType}
-          onSubmitEditing={onSubmitEditing}
+          // **Return accepts first, then does what it always did.** While a
+          // suggestion is showing, the field keeps focus on Return and takes
+          // the suggestion; with none, Return is the caller's.
+          onSubmitEditing={(event) => {
+            if (offering) {
+              accept();
+              return;
+            }
+            onSubmitEditing?.(event);
+          }}
+          submitBehavior={offering ? 'submit' : undefined}
+          blurOnSubmit={offering ? false : undefined}
+          onKeyPress={(event) => {
+            const atEnd = cursor === null || cursor >= value.length;
+            if (offering && acceptsCompletion(event.nativeEvent.key, atEnd)) {
+              // Tab would otherwise move focus to the next field.
+              (event as unknown as { preventDefault?: () => void }).preventDefault?.();
+              accept();
+            }
+          }}
+          onSelectionChange={(event) => setCursor(event.nativeEvent.selection.end)}
           editable={editable}
           style={[
             styles.field,
-            serif ? styles.serifText : styles.sansText,
+            ...textStyle,
             large && styles.large,
             actionInside && action ? styles.roomForAction : null,
             focused && styles.focused,
@@ -157,11 +248,51 @@ export function Input({
             NO_INNER_OUTLINE,
           ]}
         />
+        {offering ? (
+          <View pointerEvents="box-none" style={styles.ghostLayer}>
+            {/* What is typed, invisible, to find where it ends. */}
+            <NativeText
+              numberOfLines={1}
+              accessible={false}
+              importantForAccessibility="no-hide-descendants"
+              onLayout={(event) => setTypedWidth(event.nativeEvent.layout.width)}
+              style={[...textStyle, styles.measure, { left: insetLeft }]}
+            >
+              {measured(value)}
+            </NativeText>
+            {hasRoom ? (
+              <View {...KEEP_FOCUS} style={[styles.ghost, { left: ghostLeft, right: insetRight }]}>
+                {/*
+                  Accepted on the press going down, not up: a finger that
+                  lands on it has chosen it, and nothing can take the
+                  suggestion away between the two.
+                */}
+                <Pressable
+                  onPressIn={accept}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Use ${value}${completion}`}
+                  style={styles.ghostPress}
+                >
+                  <NativeText numberOfLines={1} style={[...textStyle, styles.ghostText]}>
+                    {measured(completion ?? '')}
+                  </NativeText>
+                </Pressable>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
         {actionInside && action ? <View style={styles.insideAction}>{action}</View> : null}
       </View>
     </View>
   );
 }
+
+/** The field's own horizontal padding, which the suggestion lines up with. */
+const FIELD_PADDING = 14;
+/** Room kept on the right for an action drawn inside the field. */
+const ACTION_ROOM = 64;
+/** Narrower than this and the suggestion is not worth drawing. */
+const MIN_GHOST_ROOM = 12;
 
 const styles = StyleSheet.create({
   labelRow: {
@@ -176,9 +307,13 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     textTransform: 'uppercase',
   },
+  optional: {
+    textTransform: 'none',
+    letterSpacing: 0,
+  },
   field: {
     minHeight: 48,
-    paddingHorizontal: 14,
+    paddingHorizontal: FIELD_PADDING,
     paddingVertical: spacing.sm,
     backgroundColor: colors.surface,
     borderRadius: radii.md,
@@ -198,11 +333,38 @@ const styles = StyleSheet.create({
     minHeight: 56,
     paddingHorizontal: spacing.lg,
     borderRadius: 14,
+  },
+  largeText: {
     fontSize: 21,
     lineHeight: 26,
   },
   roomForAction: {
-    paddingRight: 64,
+    paddingRight: ACTION_ROOM,
+  },
+  ghostLayer: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    overflow: 'hidden',
+  },
+  measure: {
+    position: 'absolute',
+    top: 0,
+    opacity: 0,
+  },
+  ghost: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+  },
+  ghostPress: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  ghostText: {
+    color: colors.textTertiary,
   },
   insideAction: {
     position: 'absolute',

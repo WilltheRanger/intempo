@@ -17,6 +17,7 @@ import { clefFor } from '../../lib/instrument';
 import { beatsPerMeasure } from '../../lib/notation/reading';
 import type { RootNavigation } from '../../navigation/types';
 import { ComposerField } from '../../components/pieces/ComposerField';
+import { TitleField } from '../../components/pieces/TitleField';
 
 /** The backend's `bpm_hint` bounds. Rejecting here saves a round trip. */
 const MIN_BPM = 20;
@@ -140,28 +141,27 @@ export function ManualPieceForm() {
         backLabel="Back"
       />
 
-      <Input
-        label="Title"
+      <TitleField
         value={title}
         onChangeText={setTitle}
-        placeholder="Sonata No. 1 in G minor"
-        serif
-        autoCapitalize="words"
-        returnKeyType="next"
+        composer={composer}
+        onComposerChange={setComposer}
         style={styles.first}
       />
       <ComposerField value={composer} onChangeText={setComposer} style={styles.field} />
       <Input
         label="Movement"
+        optional
         value={movement}
         onChangeText={setMovement}
-        placeholder="I. Adagio (optional)"
+        placeholder="I. Adagio"
         autoCapitalize="words"
         returnKeyType="next"
         style={styles.field}
       />
       <Input
         label="Time signature"
+        optional
         value={timeSignature}
         onChangeText={setTimeSignature}
         placeholder="4/4"
@@ -171,6 +171,7 @@ export function ManualPieceForm() {
       />
       <Input
         label="Tempo"
+        optional
         value={bpm}
         onChangeText={setBpm}
         placeholder="beats per minute"
