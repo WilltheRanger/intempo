@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  abandonAudioContext,
   audioContext,
+  kickAudio,
   resetAudioContextForTests,
   resumeAudio,
 } from './context.web';
@@ -19,9 +21,21 @@ import {
 class StubContext {
   state: 'running' | 'suspended' | 'closed' = 'running';
   resumes = 0;
+  suspends = 0;
+  closes = 0;
   resume() {
     this.resumes += 1;
     this.state = 'running';
+    return Promise.resolve();
+  }
+  suspend() {
+    this.suspends += 1;
+    this.state = 'suspended';
+    return Promise.resolve();
+  }
+  close() {
+    this.closes += 1;
+    this.state = 'closed';
     return Promise.resolve();
   }
 }
@@ -133,5 +147,56 @@ describe('the shared audio context', () => {
     } as unknown as AudioContext;
 
     expect(() => resumeAudio(hostile)).not.toThrow();
+  });
+});
+
+describe('a context whose clock stopped (2026-09-26)', () => {
+  it('is kicked by suspending it, for the caller to resume', () => {
+    const context = audioContext() as unknown as StubContext;
+
+    kickAudio(context as unknown as AudioContext);
+
+    expect(context.suspends).toBe(1);
+    expect(context.state).toBe('suspended');
+  });
+
+  it('never throws when the browser refuses the kick', () => {
+    const hostile = {
+      state: 'running',
+      suspend() {
+        throw new Error('not allowed');
+      },
+    } as unknown as AudioContext;
+
+    expect(() => kickAudio(hostile)).not.toThrow();
+  });
+
+  it('is let go, so the next Listen builds a new one', () => {
+    // A retry inside the tap is the one place iOS lets a new context start,
+    // and handing the stopped one back again is what made every retry fail.
+    const stopped = audioContext() as unknown as StubContext;
+
+    abandonAudioContext(stopped as unknown as AudioContext);
+
+    expect(stopped.closes).toBe(1);
+    const next = audioContext();
+    expect(next).not.toBe(stopped);
+    expect(built).toHaveLength(2);
+    // And the new one is shared from then on, like the first.
+    expect(audioContext()).toBe(next);
+  });
+
+  it('lets go only of the shared one', () => {
+    // A playback still holding a context this module has already replaced
+    // must not take the new one down with it.
+    const old = audioContext() as unknown as StubContext;
+    abandonAudioContext(old as unknown as AudioContext);
+    const current = audioContext() as unknown as StubContext;
+
+    abandonAudioContext(old as unknown as AudioContext);
+
+    expect(audioContext()).toBe(current);
+    expect(current.closes).toBe(0);
+    expect(old.closes).toBe(1);
   });
 });

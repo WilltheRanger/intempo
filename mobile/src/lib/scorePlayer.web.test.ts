@@ -3,6 +3,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetAudioContextForTests } from './audio/context.web';
 import type { Schedule } from './score/schedule';
 
+// The instrument voices load a bank and render it before they start. Neither is
+// what these tests are about, so both hand back two seconds of silence at once:
+// what is left is the start, which is where an iPhone failed on 2026-09-26.
+vi.mock('./score/soundfontBank', () => ({ loadSoundfont: async () => ({}) }));
+vi.mock('./score/soundfontRender', () => ({
+  renderSoundfont: async () => ({
+    pcm: new Int16Array(2 * 8000 * 2),
+    sampleRate: 8000,
+    channels: 2,
+    durationS: 2,
+  }),
+}));
+
 /**
  * Playing a score in a browser — the two rules that make Listen work *twice*.
  *
@@ -68,8 +81,22 @@ class StubContext {
   createPeriodicWave() {
     return {};
   }
+  createBuffer(_channels: number, length: number) {
+    return { getChannelData: () => new Float32Array(length) };
+  }
+  createBufferSource() {
+    return Object.assign(new StubNode(), { buffer: null, onended: null });
+  }
+  suspends = 0;
+  /** A browser that will not resume this context outside a gesture. */
+  refuseResume = false;
   resume() {
-    this.state = 'running';
+    if (!this.refuseResume) this.state = 'running';
+    return Promise.resolve();
+  }
+  suspend() {
+    this.suspends += 1;
+    this.state = 'suspended';
     return Promise.resolve();
   }
   close() {
@@ -260,6 +287,105 @@ describe('playing a score in a browser', () => {
 
     expect(onEnd).toHaveBeenCalledTimes(1);
     expect(handle.isPlaying()).toBe(false);
+  });
+
+  it('kicks a clock that stopped under a running context, and plays once it moves', async () => {
+    /*
+      **Reported from an iPhone on 2026-09-26**: "Audio couldn't start. Tap
+      Listen to retry. (AudioStartTimeout: context running after 2030ms)". A
+      context that says `running` with its clock still is not waiting for a
+      resume — it already has one — so after half a second of it the context
+      is suspended, and the next look's resume starts it again.
+    */
+    const playSchedule = await loadPlaySchedule();
+    const onEnd = vi.fn();
+    const onError = vi.fn();
+    const handle = playSchedule(twoSeconds(), { onEnd, onError });
+
+    vi.advanceTimersByTime(400);
+    expect(contexts[0].suspends).toBe(0);
+
+    vi.advanceTimersByTime(200);
+    expect(contexts[0].suspends).toBe(1);
+
+    // Resumed by the next look, and this time the clock goes.
+    vi.advanceTimersByTime(200);
+    expect(contexts[0].state).toBe('running');
+    audioNow += 0.5;
+    vi.advanceTimersByTime(2000);
+
+    expect(onError).not.toHaveBeenCalled();
+    expect(onEnd).not.toHaveBeenCalled();
+    expect(handle.isPlaying()).toBe(true);
+  });
+
+  it('lets a clock that stays stopped go, so the retry plays on a new context', async () => {
+    // What made the report's own advice a lie: every retry was handed the
+    // same stopped context, and resuming a running context does nothing.
+    const playSchedule = await loadPlaySchedule();
+    const onError = vi.fn();
+    playSchedule(twoSeconds(), { onError });
+
+    vi.advanceTimersByTime(3000);
+
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError.mock.calls[0][0]).toContain('Tap Listen to retry.');
+    expect(contexts[0].suspends).toBe(1);
+    expect(contexts[0].closed).toBe(true);
+
+    // The retry, inside a tap: a new context, and its clock runs.
+    const onEnd = vi.fn();
+    const handle = playSchedule(twoSeconds(), { onEnd, onError });
+    expect(contexts).toHaveLength(2);
+    audioNow += 0.5;
+    vi.advanceTimersByTime(3000);
+
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(handle.isPlaying()).toBe(true);
+  });
+
+  it('keeps a context that stayed suspended, for the retry to resume in the tap', async () => {
+    // Suspended or interrupted all along is a resume being refused, and the
+    // retry's tap is the gesture it was waiting for. Replacing it would spend
+    // one of the page's few contexts for nothing.
+    const playSchedule = await loadPlaySchedule();
+    const onError = vi.fn();
+    playSchedule(twoSeconds(), { onError });
+    contexts[0].state = 'suspended';
+    contexts[0].refuseResume = true;
+
+    vi.advanceTimersByTime(3000);
+
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(contexts[0].suspends).toBe(0);
+    expect(contexts[0].closed).toBe(false);
+    playSchedule(twoSeconds(), { onError });
+    expect(contexts).toHaveLength(1);
+  });
+
+  it('does the same for an instrument’s voice, which is where it was reported', async () => {
+    // The report was a double bass on the page-review screen: the sampled
+    // voice, with its own start loop. Same rule, same recovery.
+    const playSchedule = await loadPlaySchedule();
+    const onError = vi.fn();
+    playSchedule(twoSeconds(), { voice: 'double_bass', onError });
+    await vi.advanceTimersByTimeAsync(0); // the bank and the render
+
+    await vi.advanceTimersByTimeAsync(3000);
+
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError.mock.calls[0][0]).toContain('AudioStartTimeout: context running');
+    expect(contexts[0].suspends).toBe(1);
+    expect(contexts[0].closed).toBe(true);
+
+    const handle = playSchedule(twoSeconds(), { voice: 'double_bass', onError });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(contexts).toHaveLength(2);
+    audioNow += 0.5;
+    await vi.advanceTimersByTimeAsync(3000);
+
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(handle.isPlaying()).toBe(true);
   });
 
   it('keeps waiting while the page is hidden, however long that is', async () => {

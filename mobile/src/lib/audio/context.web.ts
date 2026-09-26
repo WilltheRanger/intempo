@@ -134,6 +134,47 @@ export function resumeAudio(context: AudioContext): void {
 }
 
 /**
+ * Suspend a context whose clock has stopped while it says `running`, so the
+ * caller's next resume starts it again (`clockStart.ts`). Never throws, and
+ * does not wait: the promise is a hint and the state is the fact, and the
+ * caller is already polling the state.
+ */
+export function kickAudio(context: AudioContext): void {
+  try {
+    void context.suspend().catch(() => {});
+  } catch {
+    // An engine that refuses to suspend leaves the context as it was; the
+    // caller's deadline still ends the wait.
+  }
+}
+
+/**
+ * Let go of a context whose clock stopped and would not start again, so the
+ * next `audioContext()` — the retry, inside a tap — builds a new one.
+ *
+ * **The exception to this module's rule, and a narrow one.** One context for
+ * the life of the page is right because a new one costs a slot iOS may not
+ * give back. A context whose clock has stopped is already a lost slot: keeping
+ * it means every Listen, count-in and metronome for the rest of the page
+ * schedules onto a clock that never reaches them (`clockStart.ts`, 2026-09-26).
+ *
+ * Closed as well as forgotten, so the stopped render thread is released if
+ * WebKit will release it. Only the shared context is let go: a caller holding
+ * one this module has already replaced has nothing to hand back.
+ */
+export function abandonAudioContext(context: AudioContext): void {
+  if (shared !== context) {
+    return;
+  }
+  shared = null;
+  try {
+    void context.close().catch(() => {});
+  } catch {
+    // Already closing, or an engine that refuses; it is forgotten either way.
+  }
+}
+
+/**
  * Forget the context so the next call builds a new one.
  *
  * @test-seam the module holds one lazily-built `AudioContext` for the life of
