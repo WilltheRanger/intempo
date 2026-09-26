@@ -308,6 +308,28 @@ min_notes = 8
 # A whole take this far from A = 440 is told so ("Tuned 25 cents sharp").
 tuning_worth_saying_cents = 10.0
 
+[mistakes]
+# Two mistakes the timing verdict cannot see, named for the player (the owner,
+# 2026-09-26): a wrong note, and an entrance miscounted after a rest. See
+# `services/player_mistakes.py`. **Synthetic only** — nothing here has heard a
+# real wrong note yet.
+#
+# More than this share of a take's notes heard as other notes is not a take
+# full of mistakes but a page read in the wrong clef or key, and none are named.
+wrong_note_max_share = 0.25
+# A note is named wrong only if, after the take's own tuning, it sits within
+# this many semitones of a semitone other than the written one — as close to
+# that note as a player's right notes sit to theirs. The owner's bass measured
+# 14.7–15.7 cents typical from its tuning (`[intonation]`). Was 0.3, which told
+# the owner a B♭ played 72 cents sharp in a fast chromatic run was a B (28
+# cents from it): see TUNING_LOG, 2026-09-26.
+clear_note_semitones = 0.2
+# An entrance after a rest of a bar or more is named when it comes in at least
+# this many quarter beats early or late, at the take's own pace around the rest.
+# Under one so a whole beat measured at 0.98 is named; over a half so half a
+# beat, which is phrasing, is not.
+rest_entry_min_beats = 0.75
+
 [calibration]
 # 2-second BPM calibration clip (§4). Values belong in remote config.
 min_duration_s = 1.0

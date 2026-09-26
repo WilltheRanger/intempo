@@ -40,8 +40,10 @@ export const CACHE_KEY = 'intempo.library-cache';
  * later: the crash left nothing mounted to fetch fresh ones.
  *
  * 3, the same day: bars gained `targetBpm`, the tempo a "meno mosso" sets.
+ *
+ * 4, 2026-09-26: takes gained `wrongNotes` and `restEntries`.
  */
-export const CACHE_SHAPE = 3;
+export const CACHE_SHAPE = 4;
 
 /**
  * How long a saved library is still worth showing.

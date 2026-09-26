@@ -27,6 +27,7 @@ import { openingMeasure } from '../../lib/verdict/measureChart';
 import { appVerdictForBar, tempoLine, tempoLineLabel } from '../../lib/verdict/barTempo';
 import { pitchChartBars, pitchLines, pitchWords } from '../../lib/verdict/intonation';
 import { passageLabel } from '../../lib/verdict/passage';
+import { restEntriesLine, wrongNotesInBar, wrongNotesLine } from '../../lib/verdict/mistakes';
 import {
   failureTitle,
   intakeRefusal,
@@ -328,6 +329,10 @@ export function VerdictScreen() {
   // take carries it (`lib/verdict/intonation.ts`); left out otherwise.
   const pitchBars = pitchChartBars(take.measures, take.intonation);
   const pitch = take.intonation && pitchBars ? pitchLines(take.measures, take.intonation) : null;
+  // Worded in `lib/verdict/mistakes.ts`; either may be absent.
+  const mistakeLines = [wrongNotesLine(take.wrongNotes), restEntriesLine(take.restEntries)].filter(
+    (line): line is string => line !== null,
+  );
 
   /*
     **The redesign's verdict** (`redesign/Verdict.dc.html`, 2026-09-23): the
@@ -382,6 +387,19 @@ export function VerdictScreen() {
           {take.finding.text}
         </Text>
       ) : null}
+      {/*
+        **What the timing cannot see** (the owner, 2026-09-26): notes heard
+        clearly as other notes, and a rest counted wrong. The same weight as
+        the finding — each is a sentence about this take's playing — and only
+        when the timing could be read at all.
+      */}
+      {!take.lowConfidence
+        ? mistakeLines.map((line) => (
+            <Text key={line} variant="body" style={styles.finding}>
+              {line}
+            </Text>
+          ))
+        : null}
 
       {/* Three facts, ruled above and below, in the redesign's columns. */}
       <View style={styles.facts}>
@@ -474,6 +492,7 @@ export function VerdictScreen() {
           <MeasureCard
             measure={chosen}
             intonation={take.intonation}
+            wrongNotes={wrongNotesInBar(take.wrongNotes, chosen.measure)}
             tolerance={take.tolerance}
             targetBpm={take.targetBpm}
             tempoBeatUnit={take.tempoBeatUnit}

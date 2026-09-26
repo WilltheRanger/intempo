@@ -144,6 +144,15 @@ class IntonationConfig:
 
 
 @dataclass(frozen=True)
+class MistakesConfig:
+    """See `[mistakes]` in config.toml and `services/player_mistakes.py`."""
+
+    wrong_note_max_share: float = 0.25
+    clear_note_semitones: float = 0.2
+    rest_entry_min_beats: float = 0.75
+
+
+@dataclass(frozen=True)
 class TrendConfig:
     window: int
 
@@ -185,6 +194,8 @@ class AudioConfig:
     pitch: PitchConfig = PitchConfig()
     #: Defaulted for the same reason as `intake`.
     intonation: IntonationConfig = IntonationConfig()
+    #: Defaulted for the same reason as `intake`.
+    mistakes: MistakesConfig = MistakesConfig()
 
 
 def _parse(raw: dict) -> AudioConfig:
@@ -244,6 +255,7 @@ def _parse(raw: dict) -> AudioConfig:
         ),
         pitch=_pitch(raw.get("pitch", {})),
         intonation=_intonation(raw.get("intonation", {})),
+        mistakes=_mistakes(raw.get("mistakes", {})),
         calibration=CalibrationConfig(
             min_duration_s=float(cal["min_duration_s"]),
             max_duration_s=float(cal["max_duration_s"]),
@@ -255,6 +267,21 @@ def _parse(raw: dict) -> AudioConfig:
             octave_ambiguity_threshold=float(cal["octave_ambiguity_threshold"]),
             bpm_min=float(cal["bpm_min"]),
             bpm_max=float(cal["bpm_max"]),
+        ),
+    )
+
+
+def _mistakes(row: dict) -> MistakesConfig:
+    default = MistakesConfig()
+    return MistakesConfig(
+        wrong_note_max_share=float(
+            row.get("wrong_note_max_share", default.wrong_note_max_share)
+        ),
+        clear_note_semitones=float(
+            row.get("clear_note_semitones", default.clear_note_semitones)
+        ),
+        rest_entry_min_beats=float(
+            row.get("rest_entry_min_beats", default.rest_entry_min_beats)
         ),
     )
 

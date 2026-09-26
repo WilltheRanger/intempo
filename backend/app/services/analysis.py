@@ -25,7 +25,9 @@ from pydantic import BaseModel, Field
 
 from app.services import audio as audio_svc
 from app.services import pitch_evidence
+from app.services.player_mistakes import miscounted_rests, wrong_notes
 from app.services.alignment import (
+    MIN_ONSETS_TO_ESTIMATE_TEMPO,
     MIN_TEMPO_RATIO,
     MIN_TRIM_GAIN,
     align_chain,
@@ -209,6 +211,25 @@ class Tolerance(BaseModel):
         )
 
 
+class WrongNoteOut(BaseModel):
+    """A note heard clearly as another note (`player_mistakes.wrong_notes`)."""
+
+    measure_number: int
+    heard: str
+    written: str
+
+
+class RestEntryOut(BaseModel):
+    """An entrance after a rest that came in early or late
+    (`player_mistakes.miscounted_rests`)."""
+
+    rest_measure: int
+    measure_number: int
+    #: Quarter beats off at the take's own pace: negative is early.
+    beats: float
+    bar_beats: float | None = None
+
+
 class AnalysisResult(BaseModel):
     status: Status
     quality: float = Field(ge=0.0, le=1.0)
@@ -234,6 +255,11 @@ class AnalysisResult(BaseModel):
     #: How in tune the take was (`services/intonation.py`); `None` when too
     #: few notes could be read for pitch, and on results stored before it.
     intonation: IntonationSummary | None = None
+    #: Mistakes the timing verdict cannot see (the owner, 2026-09-26): notes
+    #: heard clearly as another note, and entrances after a rest that came in
+    #: early or late. Empty on results stored before them.
+    wrong_notes: list[WrongNoteOut] = Field(default_factory=list)
+    rest_entries: list[RestEntryOut] = Field(default_factory=list)
     #: Which takes may be compared with which, stamped by the runner.
     #:
     #: **Not computed here**, because `analyze` is given audio and a score and
@@ -428,6 +454,7 @@ def _why_alignment_failed(
     *,
     optional: np.ndarray | None = None,
     reclaimable: np.ndarray | None = None,
+    clean_timing: float = 1.0,
 ) -> str:
     """Say which failure this is, when it can be told apart.
 
@@ -469,6 +496,20 @@ def _why_alignment_failed(
             "Your take is longer than this page. Check its repeats, and any "
             "rest bar with a number over it."
         )
+
+    # **A take that stopped after a handful of notes.** Every note it has sits
+    # on the page, in order and in time — `subsequence`, and timing at least as
+    # clean as a take given a verdict without a warning — and there are too few
+    # to measure a tempo from (`MIN_ONSETS_TO_ESTIMATE_TEMPO`). It fell through
+    # to the sentence below: six clean notes of a page's opening, then a stop,
+    # were told "Only 6 of 32 notes came through. Move the mic closer." — to a
+    # musician whose microphone had heard every one of them (2026-09-26).
+    if (
+        raw.subsequence
+        and raw.timing_quality >= clean_timing
+        and onsets.size < MIN_ONSETS_TO_ESTIMATE_TEMPO
+    ):
+        return f"Only {onsets.size} notes. Play a little further to be timed."
 
     # Far fewer attacks than the page writes. A take that is simply *short* no
     # longer arrives here — `align_dtw` matches a passage against the passage
@@ -2263,7 +2304,12 @@ def analyze(
             quality=round(raw.quality, 3),
             tolerance=Tolerance.of(cfg),
             verdict=_why_alignment_failed(
-                raw, onsets, expected, optional=optional, reclaimable=reclaimable
+                raw,
+                onsets,
+                expected,
+                optional=optional,
+                reclaimable=reclaimable,
+                clean_timing=cfg.alignment.warn_quality,
             ),
             n_detected_onsets=raw.n_detected,
             n_expected_onsets=raw.n_expected,
@@ -2291,6 +2337,26 @@ def analyze(
     # How in tune, from the pitch track the matcher already read, at the
     # paired attacks on the recording's clock (`origin`).
     in_tune = _intonation(cleaned.matched, onsets + origin, timeline, pitch, cfg)
+    # What the timing cannot see: a note that was another note, and a rest
+    # counted wrong. On the same pitch track and the same pairing.
+    wrong = wrong_notes(
+        cleaned.matched,
+        onsets + origin,
+        timeline,
+        pitch,
+        score,
+        max_share=cfg.mistakes.wrong_note_max_share,
+        min_relative=cfg.pitch.min_relative,
+        clear_semitones=cfg.mistakes.clear_note_semitones,
+        tuning_semitones=(in_tune.tuning_cents or 0.0) / 100.0,
+    )
+    rests = miscounted_rests(
+        cleaned.matched,
+        onsets,
+        timeline,
+        score,
+        min_beats=cfg.mistakes.rest_entry_min_beats,
+    )
     verdict = generate_verdict(
         deltas,
         target_bpm,
@@ -2328,6 +2394,19 @@ def analyze(
             deltas, pacing.by_bar, in_tune.by_bar, pacing.targets, target_bpm
         ),
         intonation=_intonation_summary(in_tune, cfg),
+        wrong_notes=[
+            WrongNoteOut(measure_number=w.measure_number, heard=w.heard, written=w.written)
+            for w in wrong
+        ],
+        rest_entries=[
+            RestEntryOut(
+                rest_measure=r.rest_measure,
+                measure_number=r.measure_number,
+                beats=r.beats,
+                bar_beats=r.bar_beats,
+            )
+            for r in rests
+        ],
         trend=trend,
         n_detected_onsets=raw.n_detected,
         n_expected_onsets=raw.n_expected,

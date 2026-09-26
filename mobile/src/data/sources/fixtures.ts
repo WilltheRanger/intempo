@@ -1491,6 +1491,13 @@ function buildFixtureTake(): TakeResult | null {
     },
     missedNotes: 1,
     extraNotes: 0,
+    // One wrong note, so the line under the verdict and the bar card's naming
+    // of it are seen by the gates that run on fixtures. An E where G minor's
+    // page has E♭ — the key-signature slip the owner's question was about. No
+    // rest entry: this page has no rest to miscount, and inventing one would
+    // put a rest in the demo's verdict that its score does not have.
+    wrongNotes: [{ bar: 6, heard: 'E', written: 'Eb' }],
+    restEntries: [],
   };
 }
 
