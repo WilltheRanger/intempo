@@ -16,16 +16,29 @@ wrong, and the ones next to them that must stay right.
     plays a bar twice              0 extra, 29 notes paired wrongly     4 extra, steady
 
 See TUNING_LOG.md 2026-09-25 (second entry).
+
+Asked again (2026-09-26), "what can the player do that can mess up the
+reading", on a bass as well:
+
+    habit                          before                               now
+    stops after a few notes        "Only 6 of 32 notes came through.    "Only 6 notes. Play a little
+                                   Move the mic closer."                further to be timed."
+
+A plucked bass stopped after two bars looked like a third finding and was not:
+the synthetic pluck was cut off dead, and the click was the "note". Faded
+out, the take reads correctly — and is kept below as a guard.
 """
 
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from app.services.alignment import CleanedAlignment, ExpectedNote, ExpectedTimeline
 from app.services.analysis import _not_reached, analyze
 from app.services.classification import skipped_ahead
-from app.tests.audio_helpers import synth_bowed_take
+from app.tests.audio_helpers import synth_bowed_take, synth_plucked_take
+from app.services.score_schema import ScoreJson
 from app.tests.test_note_chain import BEAT, BPM, SR, _hz, _page, _tune
 
 TUNE = _tune(101)  # 32 quarter notes, 8 bars of G major
@@ -254,3 +267,189 @@ def test_a_stretch_of_the_page_is_held_to_the_take_s_own_attacks() -> None:
     lucky = _Confirmed(notes=12, paired=12, pitches=6, asked=32, asked_in_passage=13, attacks=24)
     assert _placed_by_pitch(fits, cfg)
     assert not _placed_by_pitch(lucky, cfg)
+
+
+# ---- stopping early ---------------------------------------------------------------
+
+
+def test_a_take_that_stops_after_a_few_notes_is_told_so_not_to_move_the_mic() -> None:
+    """Six clean notes of the opening, in time, then a stop: too few to time,
+    and every one of them heard — the microphone is not what went wrong."""
+    result, _ = _analyse(TUNE[:6], GRID[:6])
+
+    assert result.status == "alignment_failed"
+    assert result.verdict == "Only 6 notes. Play a little further to be timed."
+
+
+def test_a_short_take_that_did_not_come_through_still_names_the_mic() -> None:
+    """The sentence the short take was given is still right for a take that
+    ran the length of the page and was half heard."""
+    notes = TUNE[::5]
+    result, _ = _analyse(notes, GRID[: len(TUNE)][::5])
+
+    assert result.status == "alignment_failed"
+    assert "Move the mic closer" in (result.verdict or "")
+
+
+# ---- a plucked bass, stopped part-way ---------------------------------------------------
+
+_BASS_STEPS = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+
+
+def _bass_page(sounding: list[int], per_bar: int, duration: str) -> ScoreJson:
+    """A bass part, written an octave above where it sounds."""
+    written = [m + 12 for m in sounding]
+    return ScoreJson.model_validate(
+        {
+            "time_signature": "4/4",
+            "clef": "bass",
+            "repeats": [],
+            "ocr_confidence": 1.0,
+            "measures": [
+                {
+                    "measure_number": k + 1,
+                    "notes": [
+                        {"pitch": f"{_BASS_STEPS[m % 12]}{m // 12 - 1}", "duration": duration}
+                        for m in written[per_bar * k : per_bar * (k + 1)]
+                    ],
+                    "slurs": [],
+                }
+                for k in range(len(written) // per_bar)
+            ],
+        }
+    )
+
+
+def test_two_plucked_bars_of_a_page_are_judged_on_the_bars_played() -> None:
+    """Pizzicato, fast, and stopped halfway: the last note rings on over the
+    bars that were never played, and none of that ring may become their notes."""
+    rng = np.random.default_rng(7)
+    scale = [m for m in range(29, 51) if m % 12 in (10, 0, 2, 3, 5, 7, 9)]
+    at, sounding = 6, []
+    for _ in range(32):
+        sounding.append(scale[at])
+        at = int(np.clip(at + rng.choice([-2, -1, -1, 1, 1, 2, 3, -3]), 0, len(scale) - 1))
+    bpm = 131.0
+    eighth = 60.0 / bpm / 2
+    played = sounding[:16]  # two of four bars
+    y = synth_plucked_take(
+        list(0.5 + np.arange(16) * eighth), [_hz(m) for m in played], sr=SR
+    )
+
+    result = analyze((y, SR), _bass_page(sounding, 8, "eighth"), bpm, instrument="double_bass")
+
+    assert result.status == "ok", result.verdict
+    assert [m.measure_number for m in result.per_measure] == [1, 2]
+    assert result.n_missed_notes == 0
+
+
+# ---- wrong notes (the owner, 2026-09-26: "name them") ------------------------------
+
+
+def _wrong(result) -> list[tuple[int, str, str]]:
+    return [(w.measure_number, w.heard, w.written) for w in result.wrong_notes]
+
+
+def test_a_clean_take_names_no_wrong_notes() -> None:
+    result, _ = _analyse(TUNE, GRID[:N])
+    assert result.wrong_notes == []
+
+
+def test_forgetting_a_sharp_in_the_key_is_named_note_by_note() -> None:
+    """Every F♯ played as F: four notes, a semitone flat, and "Steady all the
+    way through." was all the take was told."""
+    forgot = [m - 1 if m % 12 == 6 else m for m in TUNE]
+    sharps = [k // 4 + 1 for k, m in enumerate(TUNE) if m % 12 == 6]
+
+    result, _ = _analyse(forgot, GRID[:N])
+
+    assert _wrong(result) == [(bar, "F", "F#") for bar in sharps]
+
+
+def test_one_wrong_note_is_named_in_its_bar() -> None:
+    notes = list(TUNE)
+    notes[13] += 3  # bar 4
+    result, _ = _analyse(notes, GRID[:N])
+
+    assert [w.measure_number for w in result.wrong_notes] == [4]
+
+
+def test_an_octave_is_not_a_wrong_note() -> None:
+    result, _ = _analyse([m + 12 for m in TUNE], GRID[:N])
+    assert result.wrong_notes == []
+
+
+@pytest.mark.parametrize("sharp", [0.5, 0.72])
+def test_a_note_out_of_tune_is_not_called_another_note(sharp: float) -> None:
+    """Half-way between two semitones is out of tune — the pitch chart's to
+    say — and not a claim that the player played another note.
+
+    0.72 is the owner's own: a B♭ in bar 14 of a real bass take, 72 cents
+    sharp in a fast chromatic run, which the first version of this rule told
+    them was a B. Nearer B than B♭, but no nearer it than a right note sits to
+    its own, which is what "clearly another note" has to mean."""
+    y = synth_bowed_take(
+        list(GRID[:N]),
+        freqs_hz=[_hz(m + (sharp if k == 13 else 0.0)) for k, m in enumerate(TUNE)],
+        sr=SR,
+    )
+    result = analyze((y, SR), PAGE, BPM, instrument="violin")
+    assert result.wrong_notes == []
+
+
+def test_the_note_before_heard_again_is_not_named() -> None:
+    """On a real bass a fifth of the notes read as the previous one, still
+    ringing into the window. A note heard as its neighbour is never accused."""
+    notes = list(TUNE)
+    k = next(i for i in range(1, N - 1) if TUNE[i] % 12 != TUNE[i - 1] % 12)
+    notes[k] = TUNE[k - 1]
+    result, _ = _analyse(notes, GRID[:N])
+    assert result.wrong_notes == []
+
+
+def test_a_page_read_in_the_wrong_key_names_nothing() -> None:
+    """Every note a tone high is not thirty-two mistakes; it is a page read in
+    the wrong clef or key, and naming them would send the player the wrong way."""
+    result, _ = _analyse([m + 2 for m in TUNE], GRID[:N])
+    assert result.wrong_notes == []
+
+
+# ---- miscounted rests (the owner, 2026-09-26: "say it") -----------------------------
+
+
+def _page_with_rest() -> ScoreJson:
+    """Bars 1–4 of the tune, two bars' rest, then bars 5–8 as bars 7–10."""
+    d = PAGE.model_dump()
+    rest = [{"measure_number": n, "notes": [{"pitch": "rest", "duration": "whole"}], "slurs": []} for n in (5, 6)]
+    after = [dict(m, measure_number=m["measure_number"] + 2) for m in d["measures"][4:]]
+    return ScoreJson.model_validate({**d, "measures": d["measures"][:4] + rest + after})
+
+
+def _entering(shift_beats: float, pace: float = 1.0) -> list:
+    grid = 0.6 + np.arange(N) * BEAT * pace
+    times = np.concatenate([grid[:16], grid[16:] + shift_beats * BEAT * pace])
+    y = synth_bowed_take(list(times), freqs_hz=[_hz(m) for m in TUNE], sr=SR)
+    result = analyze((y, SR), _page_with_rest(), BPM, instrument="violin")
+    return [(e.rest_measure, e.measure_number, e.beats, e.bar_beats) for e in result.rest_entries]
+
+
+def test_a_rest_counted_right_is_not_named() -> None:
+    assert _entering(8) == []
+
+
+def test_coming_in_a_bar_early_after_a_rest_is_named() -> None:
+    assert _entering(4) == [(5, 7, -4.0, 4.0)]
+
+
+def test_coming_in_a_beat_late_after_a_rest_is_named() -> None:
+    assert _entering(9) == [(5, 7, 1.0, 4.0)]
+
+
+def test_half_a_beat_is_phrasing_not_a_miscount() -> None:
+    assert _entering(8.5) == []
+
+
+def test_a_slow_take_counts_its_rest_at_its_own_pace() -> None:
+    """Played at two-thirds of the tempo, rest and all: in proportion, and so
+    counted right."""
+    assert _entering(8, pace=1.5) == []

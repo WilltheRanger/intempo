@@ -168,6 +168,45 @@ def synth_bowed_take(
     return np.clip(y, -1.0, 1.0).astype(np.float32)
 
 
+def synth_plucked_take(
+    onset_times_s: Sequence[float],
+    freqs_hz: Sequence[float],
+    *,
+    sr: int = 22050,
+    ring_s: float = 0.45,
+    noise: float = MIC_NOISE_FLOOR,
+) -> np.ndarray:
+    """A pizzicato passage: each note struck, then left to ring and die away.
+
+    Every other helper here bows, and a bowed note stops when the bow does. A
+    plucked bass string rings on for a second and more after the last note —
+    the property that made a correct two-bar take look like more music than it
+    was (`analysis._recover_missed_onsets`, 2026-09-26). Harmonics die faster
+    than the fundamental, as a real string's do.
+    """
+    total_s = (max(onset_times_s) if len(onset_times_s) else 0.0) + 4 * ring_s + 0.5
+    y = np.zeros(int(total_s * sr), dtype=np.float64)
+    for onset, freq in zip(onset_times_s, freqs_hz, strict=True):
+        n = min(int(4 * ring_s * sr), y.size - int(onset * sr))
+        t = np.arange(n) / sr
+        note = sum(
+            (1.0 / k) * np.sin(2 * np.pi * k * freq * t) * np.exp(-t / (ring_s / k**0.5))
+            for k in range(1, 9)
+            if k * freq < sr / 2
+        )
+        # Faded out rather than cut: a note stopped dead is a click, and a click
+        # is an attack the detector is right to report.
+        fade = min(n, int(0.1 * sr))
+        if fade:
+            note[-fade:] *= 0.5 * (1 + np.cos(np.linspace(0, np.pi, fade)))
+        start = int(onset * sr)
+        y[start : start + n] += note
+    y = y / max(1e-9, float(np.abs(y).max())) * 0.6
+    if noise:
+        y = y + np.random.default_rng(13).normal(0, noise, y.size)
+    return np.clip(y, -1.0, 1.0).astype(np.float32)
+
+
 def bass_scale(n: int, *, root_hz: float = OPEN_E1) -> list[float]:
     """`n` pitches walking up and down a major scale from `root_hz`.
 

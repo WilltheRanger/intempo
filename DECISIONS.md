@@ -1,5 +1,58 @@
 # InTempo Decisions
 
+## 2026-09-26 — Two mistakes the verdict could not see: named only on clear evidence
+
+**Context.** The owner asked what a player can do that the reading misses,
+then chose to be told about two of them. Probed on synthetic takes: forgetting
+the F♯ in the key (four notes of thirty-two a semitone flat) came back "Steady
+all the way through."; coming in a bar early after a two-bar rest came back
+the same, because every bar's own tempo was right and nothing measured the
+silence between them. A third finding came up in the same probe: six clean
+notes of a page's opening, then a stop, were told "Only 6 of 32 notes came
+through. Move the mic closer." — to a take whose microphone had heard every
+note.
+
+**Decision.**
+- **Wrong notes** (`services/player_mistakes.py`), on the pitch track and the
+  pairing the analysis already has. A note is named only when two readings
+  agree it was another note: the chroma after the attack held one pitch class
+  steadily, and the pitch track, after the take's own tuning, sits within
+  `[mistakes] clear_note_semitones` of that same semitone. It is not named
+  when the written note sounded too, when the heard note is the note before or
+  after (a real bass rings into the next note on a fifth of its notes), when
+  it is the written note in another octave, or when more than a quarter of the
+  take would be named — that is a page read in the wrong key or clef, not a
+  take full of mistakes. The verdict says "2 notes weren’t what’s written:
+  bars 5 and 7."; the bar's card says "We heard F where the page has F♯."
+- **Rests** — an entrance after a rest of a bar or more, measured against the
+  written gap at the pace the take kept either side of it (so a slow take is
+  not "late"). "You came in a bar early after the rest at bar 5."; a whole
+  number of bars is said as bars, because a rest is counted in bars. Not
+  after a fermata, and not under a written tempo change.
+- **The short take** gets its own sentence when every note it has is on the
+  page in order and in time: "Only 6 notes. Play a little further to be
+  timed."
+- The lines sit under the verdict's finding and are not shown on a
+  low-confidence take, the same rule as the finding.
+
+**Alternatives.** Show a note's pitch as a chart of cents and let the player
+infer the mistake — the pitch chart already does that, and a semitone reads
+as "out of tune" there, which is the wrong lesson. Mark wrong notes on the
+score — more to build, and the verdict screen has no score view of its own.
+Say a rest miscount in beats only — "4 beats early" is a sum the player has
+to do; "a bar early" is how they count it.
+
+**Trade-offs.** A wrong note is missed rather than guessed at: a note played
+between two semitones, a note the pitch track could not read, and a wrong
+note that happens to be its neighbour's pitch are all silent. The first
+version, run on the owner's two real bass takes, named one note — a B♭ read
+72 cents sharp in a fast chromatic run — and the threshold was tightened from
+30 cents to 20 until nothing on those takes was named. Two other notes on
+them read cleanly as the neighbouring semitone and are held back only by the
+written note's share of the chroma; they may be real wrong notes, and nobody
+has listened to them yet (TUNING_LOG, 2026-09-26). Nothing here has heard a
+wrong note played by a person.
+
 ## 2026-09-25 — Insights plots tempo, not drift; the piece's takes lead with verdicts
 
 **Context.** The owner circled both screens: "fix the visual hierarchy". From

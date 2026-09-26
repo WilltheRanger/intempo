@@ -37,6 +37,7 @@ export function MeasureCard({
   tempoBeatUnit,
   correction,
   intonation = null,
+  wrongNotes = [],
 }: {
   measure: MeasureVerdict;
   tolerance: Tolerance | null;
@@ -45,6 +46,8 @@ export function MeasureCard({
   correction: ReactNode;
   /** The take's pitch bands, so the bar's pitch can be said beside its tempo. */
   intonation?: TakeIntonation | null;
+  /** This bar's notes heard as other notes: "We heard F where the page has F♯." */
+  wrongNotes?: string[];
 }) {
   const reading = readMeasure(measure);
   // The bar's tempo against the target where there is one — "85 BPM", "19
@@ -103,6 +106,17 @@ export function MeasureCard({
           {detail}
         </Text>
       ) : null}
+      {/*
+        What the bar was played as, where a note was clearly another one — the
+        owner's choice (2026-09-26) to name them. In ink rather than grey: it
+        is the one line here about the notes rather than the time, and a
+        misread page is fixed from exactly this bar.
+      */}
+      {wrongNotes.map((line) => (
+        <Text key={line} variant="metadataSmall" style={styles.detail}>
+          {line}
+        </Text>
+      ))}
       {correction ? <View style={styles.correction}>{correction}</View> : null}
     </View>
   );

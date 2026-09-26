@@ -577,6 +577,17 @@ function toTake(
     intonation: toIntonation(result.intonation),
     missedNotes: result.n_missed_notes ?? 0,
     extraNotes: result.n_extra_notes ?? 0,
+    wrongNotes: (result.wrong_notes ?? []).map((w) => ({
+      bar: w.measure_number,
+      heard: w.heard,
+      written: w.written,
+    })),
+    restEntries: (result.rest_entries ?? []).map((r) => ({
+      restBar: r.rest_measure,
+      bar: r.measure_number,
+      beats: r.beats,
+      barBeats: r.bar_beats ?? null,
+    })),
   };
 }
 
@@ -636,6 +647,8 @@ function toFailedTake(
     intonation: null,
     missedNotes: 0,
     extraNotes: 0,
+    wrongNotes: [],
+    restEntries: [],
   };
 }
 

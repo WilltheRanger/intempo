@@ -667,6 +667,25 @@ export interface AnalysisResultJson {
   insights?: AnalysisInsights | null;
   /** How in tune the take was. Absent on older results; null with too few notes. */
   intonation?: IntonationSummaryJson | null;
+  /** Notes heard clearly as another note. Absent on older results. */
+  wrong_notes?: WrongNoteJson[];
+  /** Entrances after a rest that came in early or late. Absent on older results. */
+  rest_entries?: RestEntryJson[];
+}
+
+/** `analysis.WrongNoteOut`: pitch names without an octave, "F#" and "Bb". */
+export interface WrongNoteJson {
+  measure_number: number;
+  heard: string;
+  written: string;
+}
+
+/** `analysis.RestEntryOut`. `beats` is negative for early. */
+export interface RestEntryJson {
+  rest_measure: number;
+  measure_number: number;
+  beats: number;
+  bar_beats: number | null;
 }
 
 /** One written note value, and how it was timed across the take. */
@@ -1048,6 +1067,30 @@ export interface TakeResult {
   intonation: TakeIntonation | null;
   missedNotes: number;
   extraNotes: number;
+  /**
+   * Mistakes the timing verdict cannot see (the owner, 2026-09-26): notes
+   * heard clearly as another note, and rests counted wrong. Empty on older
+   * results. Worded by `lib/verdict/mistakes.ts`.
+   */
+  wrongNotes: WrongNote[];
+  restEntries: RestEntry[];
+}
+
+export interface WrongNote {
+  bar: number;
+  heard: string;
+  written: string;
+}
+
+export interface RestEntry {
+  /** The first bar of the rest. */
+  restBar: number;
+  /** The bar the entrance is in. */
+  bar: number;
+  /** Quarter beats off at the take's own pace: negative is early. */
+  beats: number;
+  /** Quarter beats in a bar of the rest, when known. */
+  barBeats: number | null;
 }
 
 /** How in tune a take was, against the player's own tuning, in cents. */

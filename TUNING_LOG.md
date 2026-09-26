@@ -6,6 +6,82 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-09-26 — Player mistakes, new: `[mistakes]`, and 0.3 → 0.2 on the first real take
+
+New thresholds, no existing one changed. `services/player_mistakes.py` names
+wrong notes and miscounted rests (DECISIONS, 2026-09-26).
+
+- `wrong_note_max_share = 0.25` — more than this share of paired notes named
+  wrong names none: a page read in the wrong key or clef.
+- `clear_note_semitones = 0.2` — after the take's own tuning, a note must sit
+  within this of a semitone other than the written one. **First written as
+  0.3**, from synthetic takes alone; see the owner's takes below.
+- `rest_entry_min_beats = 0.75` — an entrance after a rest named when this many
+  quarter beats off at the take's own pace. A whole beat late measured 0.98,
+  half a beat (phrasing) 0.5.
+
+### Synthetic takes (`test_playing_habits.py`, 8 bars of quarters, violin and bass)
+
+    take                                   named
+    clean                                  nothing
+    every F♯ played as F                   4 notes, "F" for "F#", in their bars
+    one note a minor third high            bar 4
+    the tune an octave up                  nothing
+    one note 50 cents sharp                nothing
+    one note 72 cents sharp                nothing (named at 0.3)
+    one note played as the note before     nothing
+    every note a tone high                 nothing (over a quarter: wrong key)
+    two-bar rest counted right             nothing
+    came in 4 beats early                  rest at bar 5, −4 beats, bar of 4
+    came in 1 beat late                    rest at bar 5, +1 beat
+    came in half a beat late               nothing
+    whole take at 2/3 speed, rest in step  nothing
+    six clean notes, then a stop           "Only 6 notes. Play a little further to be timed."
+
+### The owner's two real bass takes (Opus, phone microphone, locally)
+
+At 0.3, take 0313 named one note: bar 14, "B where the page has B♭". The
+note is the B♭2 of a fast chromatic run with octave leaps (B2 B3 B♭3 B♭2 A2
+…), 0.28 semitones from B after the take's +25-cent tuning — 2 cents inside
+the threshold — with B♭ still at 0.48 of the chroma, 0.02 under "the written
+note sounded too". A B♭ played 72 cents sharp on the shift down is as likely
+as a B, and the rule's standard is *clearly*. The owner's typical note sits
+14.7–15.7 cents from their tuning (`[intonation]`); 0.2 asks a wrong note to
+sit about as close to its semitone as their right notes sit to theirs.
+
+Every note on either take read as a semitone other than the written one, and
+what kept it back (dist = semitones from the heard semitone; wrel = the written
+class's share of the chroma):
+
+    take  bar  written → heard  dist  wrel  held back by
+    0313   3   Eb3 → D          0.05  0.29  the note before/after
+    0313  11   Gb3 → G          0.15  0.60  written note sounded too
+    0313  11   G4, Gb4          0.18–0.43   between / no chroma reading
+    0313  12   F3, Eb3, D4      0.19–0.38   several
+    0313  14   Bb2 → B          0.28  0.48  **named at 0.3**; between at 0.2
+    0313  14   A3 → Bb          0.44  1.00  several
+    0313  18   D3, Db3, C3      0.13–0.40   neighbour / written note sounded
+    0313  20   C3 → B           0.20  0.70  neighbour, written note sounded
+    0313  25   D3 → C#          0.34  1.00  several
+    1940  12   D3 → C#          0.23  0.44  the note before/after
+    1940  20   B2 → Bb          0.15  0.55  written note sounded too
+    1940  21   E3 → C           0.27  0.34  the two readings disagree
+
+**Listen to these before loosening anything:** 0313 bar 11's G♭3 and 1940 bar
+20's B2 read cleanly as the semitone beside them (0.15) and are held back only
+by the chroma. 1940 bar 20's is a B♮ in B♭ major — exactly the accidental a
+player forgets. They may be real wrong notes this rule is too cautious to name.
+
+Rests: the page has no whole bar of rest — bar 24's three and a half beats
+end inside the bar — so there is nothing on either take for the rule to judge,
+and a rest shorter than a bar is outside it by design.
+
+### Regression
+
+- Six clips: every verdict identical; none names a wrong note or a rest.
+- The owner's takes: verdicts identical ("Bars 13–25 went at 81.", "Bars
+  15–24 went at 96."); at 0.2, nothing named.
+
 ## 2026-09-25 — Settling in and winding down: `[tolerance] settling_bars = 2`, new
 
 New threshold, no existing one changed. The owner asked whether the app allows
