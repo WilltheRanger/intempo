@@ -4,11 +4,11 @@ import { File as FSFile } from 'expo-file-system';
 import { FileMusic } from '../../components/icons';
 import { useGoBack } from '../../navigation/useGoBack';
 import { ComposerField } from '../../components/pieces/ComposerField';
+import { TitleField } from '../../components/pieces/TitleField';
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import {
-  Input,
   PageHeader,
   PrimaryButton,
   ScreenContainer,
@@ -267,14 +267,11 @@ export function ImportFileScreen() {
         </View>
       ) : chosen !== null ? (
         <>
-          <Input
-            label="Title"
+          <TitleField
             value={title}
             onChangeText={setTitle}
-            placeholder="Sonata No. 1 in G minor"
-            serif
-            autoCapitalize="words"
-            returnKeyType="next"
+            composer={composer}
+            onComposerChange={setComposer}
             style={styles.first}
           />
           {/*

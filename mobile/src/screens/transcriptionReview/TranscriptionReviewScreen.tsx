@@ -2,6 +2,7 @@ import { useNavigation } from '@react-navigation/native';
 import { ChevronLeft, ChevronRight } from '../../components/icons';
 import { useGoBack } from '../../navigation/useGoBack';
 import { ComposerField } from '../../components/pieces/ComposerField';
+import { TitleField } from '../../components/pieces/TitleField';
 import { useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
@@ -186,13 +187,11 @@ export function TranscriptionReviewScreen() {
         </Text>
       ) : (
         <>
-          <Input
-            label="Title"
+          <TitleField
             value={title}
             onChangeText={setTitle}
-            placeholder="Sonata No. 1 in G minor"
-            serif
-            autoCapitalize="words"
+            composer={composer}
+            onComposerChange={setComposer}
             style={styles.first}
           />
           {/* The commonest way a piece enters the library, and it had the
@@ -205,9 +204,10 @@ export function TranscriptionReviewScreen() {
 
           <Input
             label="Movement"
+            optional
             value={movement}
             onChangeText={setMovement}
-            placeholder="I. Adagio (optional)"
+            placeholder="I. Adagio"
             autoCapitalize="words"
             style={styles.field}
           />

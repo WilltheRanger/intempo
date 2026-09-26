@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { canonical, COMPOSERS, normalise, searchComposers } from './composers';
+import { canonical, COMPOSERS, normalise } from './composers';
 
 describe('normalise', () => {
   it('makes the punctuated ways of writing Bach one string', () => {
@@ -52,35 +52,6 @@ describe('canonical', () => {
     expect(canonical('Anna Clyne')).toBeNull();
     expect(canonical('')).toBeNull();
     expect(canonical(null)).toBeNull();
-  });
-});
-
-describe('searchComposers', () => {
-  it('puts a surname match first', () => {
-    // "bee" should reach Beethoven before anyone whose forename starts that
-    // way: a musician thinks in surnames, and so does the spine of the book.
-    expect(searchComposers('bee')[0].surname).toBe('Beethoven');
-    expect(searchComposers('kreu')[0].surname).toBe('Kreutzer');
-  });
-
-  it('still finds someone by their forename or an alias', () => {
-    expect(searchComposers('wolfgang').map((c) => c.surname)).toContain('Mozart');
-    expect(searchComposers('shostakovitch').map((c) => c.surname)).toContain('Shostakovich');
-  });
-
-  it('browses when nothing has been typed', () => {
-    // Opening the picker with an empty field is browsing, and a browser needs
-    // something to browse.
-    expect(searchComposers('').length).toBeGreaterThan(0);
-  });
-
-  it('finds an accented name from an unaccented query', () => {
-    expect(searchComposers('sevcik')[0].surname).toBe('Ševčík');
-    expect(searchComposers('dvorak')[0].surname).toBe('Dvořák');
-  });
-
-  it('returns nothing for a name it does not have', () => {
-    expect(searchComposers('zzzz')).toEqual([]);
   });
 });
 

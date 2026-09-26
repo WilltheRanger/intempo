@@ -124,7 +124,7 @@ function keysFor(composer: Composer): string[] {
  * **Exact match only.** A prefix match here would rewrite "Bar" into
  * "Barber" mid-keystroke, and a fuzzy one would decide that a living
  * composer's name was a misspelling of a dead one. Suggesting is
- * `searchComposers`; this is for deciding whether a *saved* name is a known
+ * `autofill.completeComposer`; this is for deciding whether a *saved* name is a known
  * person — which cover to show, and how to group a library.
  */
 export function canonical(name: string | null | undefined): Composer | null {
@@ -136,34 +136,4 @@ export function canonical(name: string | null | undefined): Composer | null {
     return null;
   }
   return COMPOSERS.find((c) => keysFor(c).includes(key)) ?? null;
-}
-
-/**
- * Composers to offer for what has been typed so far.
- *
- * Surname first, because that is how a musician thinks of them and how the
- * spine of the book is printed — a search for "bee" should reach Beethoven
- * before it reaches anyone whose *forename* starts that way. Within each group
- * the list keeps its own order, which is roughly how often the music is
- * played.
- *
- * An empty query returns the whole list rather than nothing: opening the picker
- * with no text is browsing, and a browser needs something to browse.
- */
-export function searchComposers(query: string, limit = 8): Composer[] {
-  const key = normalise(query);
-  if (!key) {
-    return COMPOSERS.slice(0, limit);
-  }
-
-  const surnameMatch: Composer[] = [];
-  const anywhere: Composer[] = [];
-  for (const composer of COMPOSERS) {
-    if (normalise(composer.surname).startsWith(key)) {
-      surnameMatch.push(composer);
-    } else if (keysFor(composer).some((k) => k.includes(key))) {
-      anywhere.push(composer);
-    }
-  }
-  return [...surnameMatch, ...anywhere].slice(0, limit);
 }

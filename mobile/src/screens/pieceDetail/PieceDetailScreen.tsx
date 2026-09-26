@@ -244,9 +244,10 @@ export function PieceDetailScreen() {
           />
           <Input
             label="Movement"
+            optional
             value={draftMovement}
             onChangeText={setDraftMovement}
-            placeholder="I. Adagio (optional)"
+            placeholder="I. Adagio"
             autoCapitalize="words"
             style={styles.editField}
           />

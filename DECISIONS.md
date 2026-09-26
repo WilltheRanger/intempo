@@ -1,5 +1,44 @@
 # InTempo Decisions
 
+## 2026-09-26 — Title and composer suggest inline, in grey; every field but the title says "(optional)"
+
+**Context.** The owner asked for two things on the add-a-piece screens:
+"(optional)" beside everything but the title, and "an auto fill feature for
+pieces and composer where when you type a letter it gives you a
+recommendation in the typing bar kind of like Google Docs". The composer
+field already suggested — as up to five rows with dates under the field — and
+the title field suggested nothing, because the app had no list of titles.
+
+**Decision** (the owner chose each from options):
+- **Inline.** The rest of the best match is drawn in grey straight after
+  what is typed, inside the field (`Input`'s `completion`). Accepted by a tap
+  on it, by Return (which then does what it always did on the next press), by
+  Tab, or by → at the end of the text. Any other key carries on typing.
+  Shown only while the field has focus.
+- **The composer rows go.** One suggestion, the same as the title's. "Bee"
+  offers *thoven*; accepting writes "Ludwig van Beethoven", the spelling the
+  library groups by.
+- **Titles come from the musician's library first, then a built-in list** of
+  about 280 string pieces (`lib/repertoire.ts`) — method-book pieces, études,
+  concertos, sonatas, orchestral and chamber parts — each with its composer,
+  spelled as `composers.ts` spells them. Accepting a title fills the composer
+  field only when it is empty.
+- **"(optional)"** beside Composer, Movement, Time signature and Tempo,
+  lower case in the label's own size and grey. Also on the piece screen's
+  rename form, which shares the composer field.
+
+**Alternatives.** Keep the rows with dates (the owner chose one suggestion
+over two mechanisms). Search an online catalogue for titles (every keystroke
+to a third party, and no suggestion offline). Accept by swiping the field
+(nothing on screen says you can).
+
+**Trade-offs.** Only a completion of what was typed can be drawn inline, so a
+title is found by how it starts: "Bach cello suite" finds nothing, where the
+rows could have matched anywhere. Two works with one title offer the first in
+list order. The list is curated and will always be incomplete; nothing is
+refused for not being on it. The grey text is aligned by measuring the typed
+text in the field's own font — checked on the web build; iOS is untested.
+
 ## 2026-09-26 — Two mistakes the verdict could not see: named only on clear evidence
 
 **Context.** The owner asked what a player can do that the reading misses,
