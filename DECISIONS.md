@@ -1,6 +1,6 @@
 # InTempo Decisions
 
-## 2026-09-29 — A first-time walk's critique, fixed: eight earlier calls reversed
+## 2026-09-29 — A first-time walk's critique, fixed: nine earlier calls reversed
 
 **Context.** The owner asked for the app to be tried "as a first time user who
 knows nothing" and critiqued, then said "fix all of the issues" (the CLAUDE.md
@@ -13,6 +13,12 @@ session does not undo them back.
   answer chosen, so Next worked without reading the question. Now nothing is
   chosen and Next waits. The "where did you hear about us" step also waits, but
   has a quiet Skip: it is our question, not the musician's.
+- **What the app does is a screen, not a sentence.** A sentence under the
+  Welcome's title was the first fix; the owner: "make a separate screen on what
+  intempo does instead of writing that no one will read". Onboarding now opens
+  on "How InTempo works": three small drawings (a page in the camera's corners,
+  a sound, the result screen's own bar chart) with one short line each. Then
+  "Let's get you set up", back to its one short line.
 - **An empty Library has an action.** It said only that nothing was there; now
   "Add your first piece" opens the same sheet as +. The no-matches search state
   lost its "Clear search" button instead: the field's own ✕ and Cancel are
@@ -29,9 +35,12 @@ session does not undo them back.
 - **The result screen's charts carry a colour key.** Green, ochre and red bars
   meant nothing to someone who had not read the code. Each chart gets a row of
   swatches with words, in the tertiary text colour so it recedes.
-- **"What did you hear?" answers are bordered buttons**, not bare words. As
-  words they read as a sentence, not as a choice. The app's own reading is
-  said in the question ("We read it as rushing") and outlined in the accent.
+- **"What did you hear?" answers are one segmented row**, not bare words. As
+  words they read as a sentence, not as a choice; as four bordered buttons they
+  wrapped to two lines, and the owner said "they should all be on one line".
+  They use `SegmentedControl`'s track (a sunken well, the app's reading as the
+  raised tile) with button semantics, since every press sends an answer. The
+  app's reading is also said in the question ("We read it as rushing").
 - **A blank title is refused at the field**, in red under it, not in a
   sentence at the foot of the form. The placeholder now starts "e.g.": in the
   title's serif, the bare example read as a title already filled in.

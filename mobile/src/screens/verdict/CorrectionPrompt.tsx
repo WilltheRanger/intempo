@@ -5,7 +5,15 @@ import { FadeIn, PopIn } from '../../components/motion';
 import { Text } from '../../components/primitives/Text';
 import type { UserVerdict } from '../../data/types';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
-import { BORDER_WIDTH, ICON_SIZE, colors, fontFamily, radii, spacing } from '../../design';
+import {
+  BORDER_WIDTH,
+  ICON_SIZE,
+  MIN_TOUCH_TARGET,
+  colors,
+  fontFamily,
+  radii,
+  spacing,
+} from '../../design';
 import {
   CORRECTION_CHOICES,
   correctionAcknowledgement,
@@ -39,11 +47,14 @@ const CHECK_GAP = spacing.sm;
  * screen a musician actually works from (§3 law 10). A row is already tapped
  * to see its figure; this is what else is behind that tap.
  *
- * **Words, not chips.** Rounded pills are exceptions in this app rather than
- * the styling language (§3 law 6), and four of them under every opened row
- * would be four more containers doing work a type scale does: the chosen
- * answer is ink, the others recede to tertiary. Ochre marks the app's own
- * answer, which is the accent's job — active state, nothing else.
+ * **One row, the app's segmented track** (the owner, 2026-09-29: "they should
+ * all be on one line"). Four separate bordered buttons wrapped to two lines
+ * inside the bar card, and before that four bare words read as a sentence
+ * rather than a choice. This is the control the app already uses for one
+ * answer out of four (`SegmentedControl`, Profile's Instrument and Metronome):
+ * a sunken well, the four answers sharing its width equally, and the current
+ * one a raised tile. Buttons rather than tabs underneath, because each press
+ * sends an answer, the one already raised included.
  *
  * The app's verdict starts selected because it is a correction, not a survey:
  * a musician who agrees taps the thing already highlighted and that agreement
@@ -87,7 +98,7 @@ export function CorrectionPrompt({
             onPress={onChange}
             accessibilityRole="button"
             accessibilityLabel="Change your answer"
-            style={({ pressed }) => [styles.change, pressed && styles.choicePressed]}
+            style={({ pressed }) => [styles.change, pressed && styles.changePressed]}
           >
             <Text variant="metadataSmall" color="accentText" style={styles.appsChoice}>
               Change
@@ -141,17 +152,18 @@ export function CorrectionPrompt({
               style={({ pressed }) => [
                 styles.choice,
                 (chosen || isApps) && styles.choiceApps,
-                pressed && !busy && styles.choicePressed,
+                pressed && !busy && (chosen || isApps ? styles.raisedPressed : styles.choicePressed),
               ]}
             >
               <Text
                 variant="metadata"
+                numberOfLines={1}
                 color={
-                  chosen || isApps ? 'accentText' : busy ? 'textTertiary' : 'textSecondary'
+                  chosen || isApps ? 'textPrimary' : busy ? 'textTertiary' : 'textSecondary'
                 }
-                // The app's own reading, weighted as well as coloured: the
-                // redesign marks it both ways, so it is not colour alone.
-                style={chosen || isApps ? styles.appsChoice : undefined}
+                // Raised and weighted, as `SegmentedControl` marks its current
+                // option: the tile and the weight say which, not colour alone.
+                style={[styles.choiceLabel, (chosen || isApps) && styles.appsChoice]}
               >
                 {correctionWord(choice)}
               </Text>
@@ -177,36 +189,41 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.md,
   },
   question: {
-    paddingBottom: spacing.xs,
+    paddingBottom: spacing.sm,
   },
+  /** `SegmentedControl`'s track: one well, the answers sharing its width. */
   choices: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    // Not `space-between`: three answers on one line and one on the next would
-    // be spread to the edges and read as a different control.
-    columnGap: spacing.sm,
-    rowGap: spacing.sm,
-  },
-  /**
-   * **A button that looks like one** (2026-09-29): a solid fill and a hairline,
-   * the ordinary control of §3 law 6. Four bare words read as a sentence, and a
-   * first-time walk did not know they could be pressed.
-   */
-  choice: {
-    // 44pt tall, the platform minimum; the word itself is 13pt.
-    minHeight: 44,
-    justifyContent: 'center',
-    paddingHorizontal: spacing.md,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfacePressed,
     borderWidth: BORDER_WIDTH,
     borderColor: colors.border,
-    borderRadius: radii.sm,
+    borderRadius: radii.md,
+    padding: 3,
+    gap: 2,
+  },
+  choice: {
+    flex: 1,
+    minHeight: MIN_TOUCH_TARGET,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 9,
   },
   choiceApps: {
-    borderColor: colors.accent,
+    backgroundColor: colors.surface,
   },
   choicePressed: {
+    backgroundColor: colors.border,
+  },
+  /** The raised tile answers the finger too: pressing it sends agreement. */
+  raisedPressed: {
+    opacity: 0.6,
+  },
+  changePressed: {
     opacity: 0.55,
+  },
+  choiceLabel: {
+    fontSize: 13,
+    lineHeight: 18,
   },
   appsChoice: {
     fontFamily: fontFamily.sansMedium,

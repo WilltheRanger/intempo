@@ -11,7 +11,7 @@ import { OnboardingFlow, type OnboardingAnswers } from './OnboardingFlow';
  *
  * **The main path again** (owner's call, 2026-09-23 — `DECISIONS.md`): an
  * account is created first, and opening its confirmation link lands here, on
- * "Let's get you set up". From 2026-09-08 the questions ran before the sign-up
+ * "How InTempo works" and then "Let's get you set up". From 2026-09-08 the questions ran before the sign-up
  * form and waited on the device for a session; that draft and the hook that
  * applied it are gone with the order that needed them.
  *

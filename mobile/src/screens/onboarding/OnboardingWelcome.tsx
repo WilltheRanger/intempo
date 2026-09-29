@@ -14,10 +14,11 @@ export interface OnboardingWelcomeProps {
 }
 
 /**
- * Before the first question (`redesign/OnboardWelcome.dc.html`): what the app
- * does, shown rather than said — a photographed page being read and its tempo
- * found — and how long the questions will take. It is the first thing a new
- * account sees once its confirmation link is opened.
+ * Before the first question (`redesign/OnboardWelcome.dc.html`): a
+ * photographed page being read and its tempo found, and how long the questions
+ * will take. What the app is for is the screen before this one
+ * (`OnboardingHowItWorks`): it was a sentence here for a day, and the owner
+ * asked for a screen instead of a sentence nobody reads (2026-09-29).
  *
  * The prototype's "I already have an account" is not drawn: the questions come
  * after the account now, so there is always one.
@@ -37,14 +38,7 @@ export function OnboardingWelcome({ onNext }: OnboardingWelcomeProps) {
       <Text variant="displayTitle" accessibilityRole="header" style={styles.title}>
         Let’s get you set up
       </Text>
-      {/*
-        **What the app is, before anything is asked** (2026-09-29). A first-time
-        walk found the name and the purpose first appeared on question four:
-        someone who installed it on a friend's word had no idea what the six
-        questions were for.
-      */}
       <Text variant="body" color="textSecondary" style={styles.lede}>
-        InTempo listens while you play and shows where you rushed or dragged.{' '}
         {count} quick questions, then your first piece.
       </Text>
     </CentredScreen>

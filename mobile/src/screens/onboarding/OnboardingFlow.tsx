@@ -22,6 +22,7 @@ import {
 } from '../../lib/onboardingSteps';
 import type { SceneDirection } from '../../navigation/sceneMotion';
 import { ListeningIllustration } from './ListeningIllustration';
+import { OnboardingHowItWorks } from './OnboardingHowItWorks';
 import { OnboardingWelcome } from './OnboardingWelcome';
 import { StepFrame, type StepAction } from './StepFrame';
 
@@ -45,11 +46,12 @@ export interface OnboardingFlowProps {
   onFinish: (answers: OnboardingAnswers) => void;
 }
 
-type Place = 'welcome' | OnboardingStep;
+type Place = 'about' | 'welcome' | OnboardingStep;
 
 /**
  * The redesign's onboarding (`redesign/OnboardWelcome.dc.html` through
- * `OnboardPhoto.dc.html`): Welcome, then one question a screen — name,
+ * `OnboardPhoto.dc.html`): what the app does (`OnboardingHowItWorks`, 2026-09-29),
+ * Welcome, then one question a screen — name,
  * instrument, learning or teaching, the microphone, where you heard of us, a
  * photograph.
  *
@@ -79,7 +81,7 @@ export function OnboardingFlow({
   onFinish,
 }: OnboardingFlowProps) {
   const saved = usePreferences();
-  const [place, setPlace] = useState<Place>('welcome');
+  const [place, setPlace] = useState<Place>('about');
   const [direction, setDirection] = useState<SceneDirection>('none');
   const [name, setName] = useState(initial.name);
   const [instrument, setInstrument] = useState(initial.instrument);
@@ -128,6 +130,10 @@ export function OnboardingFlow({
     }
     const asset = result.assets[0];
     setPhoto({ uri: asset.uri, mimeType: asset.mimeType ?? 'image/jpeg' });
+  }
+
+  if (place === 'about') {
+    return <OnboardingHowItWorks onNext={() => go('welcome', 'forward')} />;
   }
 
   if (place === 'welcome') {
