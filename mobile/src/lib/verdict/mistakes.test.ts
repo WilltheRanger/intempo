@@ -4,7 +4,7 @@ import type { RestEntry } from '../../data/types';
 import {
   describeOffset,
   displayPitch,
-  mistakesSummary,
+  mistakeBars,
   restEntriesInBar,
   wrongNotesInBar,
 } from './mistakes';
@@ -53,21 +53,17 @@ describe('saying a rest was miscounted', () => {
   });
 });
 
-describe('the one line under the verdict', () => {
-  const rest = (restBar: number): RestEntry => ({ restBar, bar: restBar + 1, beats: 1, barBeats: 4 });
+describe('the bars the chart marks', () => {
+  const rest = (restBar: number, bar: number): RestEntry => ({ restBar, bar, beats: 1, barBeats: 4 });
   const wrong = (bar: number) => ({ bar, heard: 'F', written: 'F#' });
 
-  it('says nothing when nothing went wrong', () => {
-    expect(mistakesSummary(0, [], [])).toBeNull();
+  it('marks nothing when nothing went wrong', () => {
+    expect(mistakeBars([], []).size).toBe(0);
   });
 
-  it('names a missed note and a wrong note differently, so they cannot read as one', () => {
-    expect(mistakesSummary(1, [wrong(6)], [])).toBe('1 note missed · 1 wrong note, bar 6');
-  });
-
-  it('counts each kind and lists its bars once, in order', () => {
-    expect(mistakesSummary(3, [wrong(7), wrong(5), wrong(7)], [rest(12), rest(20)])).toBe(
-      '3 notes missed · 3 wrong notes, bars 5 and 7 · 2 rests miscounted, bars 12 and 20',
-    );
+  it('marks a wrong note’s bar and the bar an entrance landed in, once each', () => {
+    expect([...mistakeBars([wrong(6), wrong(6)], [rest(10, 12)])].sort((a, b) => a - b)).toEqual([
+      6, 12,
+    ]);
   });
 });

@@ -16,6 +16,8 @@ import { barIndexAt, measureChartBars, type ChartBar } from '../../lib/verdict/m
 import { readMeasure } from '../../lib/verdict/measureReading';
 
 const HEIGHT = 68;
+/** The dot under a bar with a mistake in it. */
+const MARK = 5;
 const HALF = HEIGHT / 2;
 /**
  * Room at the right for what up and down mean — "faster" and "slower", or
@@ -48,6 +50,7 @@ export function MeasureBars({
   describe,
   name = 'Bar',
   ends,
+  marked,
 }: {
   measures: MeasureVerdict[];
   selected: number | null;
@@ -72,6 +75,12 @@ export function MeasureBars({
   name?: string;
   /** What up and down mean, beside the chart — "faster" and "slower", "sharp" and "flat". */
   ends?: { up: string; down: string };
+  /**
+   * Bars with something else wrong in them — a note heard as another, an
+   * entrance after a miscounted rest (`mistakeBars`): a dot under each. The
+   * bar's card says what it was.
+   */
+  marked?: ReadonlySet<number>;
 }) {
   const bars = useMemo(
     () =>
@@ -151,7 +160,7 @@ export function MeasureBars({
                   ? describe(current)
                   : (barTempo(current, targetBpm, tempoBeatUnit, tolerance)?.spoken ??
                     readMeasure(current).label)
-              }`
+              }${marked?.has(current.measure) ? ', and a mistake to look at' : ''}`
             : 'Bar by bar'
         }
         aria-valuemin={1}
@@ -221,6 +230,20 @@ export function MeasureBars({
             })
           : null}
       </View>
+      {marked && marked.size > 0 && step > 0 ? (
+        // A row of its own under the chart rather than inside it, where a bar
+        // drawn down to the floor would cover it.
+        <View style={[styles.marks, ends ? styles.endsShort : null]} pointerEvents="none">
+          {bars.map((bar, index) =>
+            marked.has(bar.measure) ? (
+              <View
+                key={bar.measure}
+                style={[styles.mark, { left: index * step + step / 2 - MARK / 2 }]}
+              />
+            ) : null,
+          )}
+        </View>
+      ) : null}
       <View style={[styles.ends, ends ? styles.endsShort : null]}>
         <Text variant="caption" color="textTertiary" style={styles.number}>
           Bar {bars[0]?.measure ?? ''}
@@ -266,6 +289,18 @@ const styles = StyleSheet.create({
     borderWidth: BORDER_WIDTH,
     borderColor: colors.chartRule,
     borderRadius: 4,
+  },
+  marks: {
+    height: MARK,
+    marginTop: 6,
+  },
+  mark: {
+    position: 'absolute',
+    top: 0,
+    width: MARK,
+    height: MARK,
+    borderRadius: MARK / 2,
+    backgroundColor: colors.textSecondary,
   },
   ends: {
     flexDirection: 'row',

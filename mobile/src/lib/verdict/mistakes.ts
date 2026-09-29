@@ -15,14 +15,6 @@ export function displayPitch(name: string): string {
   return name.replace(/#/g, '♯').replace(/(?<=[A-G])b/g, '♭');
 }
 
-/** "bar 5", "bars 5 and 7", "bars 2, 3, 4 and 6". */
-function barList(bars: number[]): string {
-  const unique = [...new Set(bars)].sort((a, b) => a - b);
-  if (unique.length === 1) return `bar ${unique[0]}`;
-  const head = unique.slice(0, -1).join(', ');
-  return `bars ${head} and ${unique[unique.length - 1]}`;
-}
-
 /** The bar card's own words for each wrong note in it: "We heard F where the page has F♯." */
 export function wrongNotesInBar(notes: readonly WrongNote[], bar: number): string[] {
   return notes
@@ -69,35 +61,17 @@ export function restEntriesInBar(entries: readonly RestEntry[], bar: number): st
 }
 
 /**
- * The one grey line under the verdict, or null when nothing went wrong:
- * "1 note missed · 1 wrong note, bar 6 · 1 rest miscounted, bar 12".
+ * The bars the chart puts a dot under: those with a note heard as another,
+ * and those an entrance after a miscounted rest landed in — the bar whose card
+ * then says what it was (`wrongNotesInBar`, `restEntriesInBar`).
  *
- * **One line, three counts** (the owner, 2026-09-29: the result screen was
- * "way too wordy and hard to read"). It replaces two full sentences under the
- * title and a "Missed" figure in a row of facts — which sat directly under
- * "1 note wasn't what's written" and, both reading "1 note", looked like the
- * same thing said twice. A missed note is one not heard at all; a wrong note
- * is one heard clearly as another; they are named differently here so they
- * cannot be mistaken for each other. What each was is in the bar's card.
+ * **A dot, not a line of words** (the owner, 2026-09-29, circling "1 note
+ * missed · 1 wrong note, bar 6" under the title as more to read before the
+ * picture). The chart is already where a musician looks for a bar.
  */
-export function mistakesSummary(
-  missedNotes: number,
+export function mistakeBars(
   wrongNotes: readonly WrongNote[],
   restEntries: readonly RestEntry[],
-): string | null {
-  const parts: string[] = [];
-  if (missedNotes > 0) {
-    parts.push(missedNotes === 1 ? '1 note missed' : `${missedNotes} notes missed`);
-  }
-  if (wrongNotes.length > 0) {
-    const noun = wrongNotes.length === 1 ? 'wrong note' : 'wrong notes';
-    parts.push(`${wrongNotes.length} ${noun}, ${barList(wrongNotes.map((note) => note.bar))}`);
-  }
-  if (restEntries.length > 0) {
-    const noun = restEntries.length === 1 ? 'rest miscounted' : 'rests miscounted';
-    parts.push(
-      `${restEntries.length} ${noun}, ${barList(restEntries.map((entry) => entry.restBar))}`,
-    );
-  }
-  return parts.length > 0 ? parts.join(' · ') : null;
+): ReadonlySet<number> {
+  return new Set([...wrongNotes.map((note) => note.bar), ...restEntries.map((entry) => entry.bar)]);
 }

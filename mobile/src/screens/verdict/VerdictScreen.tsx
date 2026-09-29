@@ -23,8 +23,7 @@ import { openingMeasure } from '../../lib/verdict/measureChart';
 import { appVerdictForBar, tempoChartBars } from '../../lib/verdict/barTempo';
 import { pitchChartBars, pitchWord } from '../../lib/verdict/intonation';
 import { headlinePassage, practiceLabel } from '../../lib/verdict/passage';
-import { mistakesSummary, restEntriesInBar, wrongNotesInBar } from '../../lib/verdict/mistakes';
-import { takeRowWords } from '../../lib/insights/takeRows';
+import { mistakeBars, restEntriesInBar, wrongNotesInBar } from '../../lib/verdict/mistakes';
 import {
   failureTitle,
   intakeRefusal,
@@ -318,20 +317,20 @@ export function VerdictScreen() {
   const tempoEnds = tempoChartBars(take.measures, take.targetBpm, take.tempoBeatUnit, take.tolerance)
     ? { up: 'faster', down: 'slower' }
     : { up: 'ahead', down: 'behind' };
-  // One grey line of what went wrong besides the timing (`lib/verdict/mistakes.ts`).
-  const mistakes = take.lowConfidence
-    ? null
-    : mistakesSummary(take.missedNotes, take.wrongNotes, take.restEntries);
+  // Bars with a note heard as another or an entrance after a miscounted rest:
+  // a dot under each on the chart; the bar's card says what it was.
+  const marked = mistakeBars(take.wrongNotes, take.restEntries);
   // The bars the verdict is about, which the main button practises.
   const passage = take.lowConfidence ? null : headlinePassage(take.headline);
   const recordAgain = () => navigation.replace('Record', { pieceId: take.pieceId });
 
   /*
     **The redesign's verdict, cut down** (the owner, 2026-09-29: "way too
-    wordy and hard to read"). The verdict as the title and one line under it;
-    what else went wrong as one grey line; the recording; one chart of every
-    bar, tempo or pitch; the tapped bar opened in a card underneath; and the
-    passage the verdict found as the button. It had grown to 118 words, three
+    wordy and hard to read", and then circling what was still under the
+    title). The verdict as a title that fits one line; the recording; one
+    chart of every bar, tempo or pitch, with a dot under any bar holding a
+    wrong note or a miscounted rest; the tapped bar opened in a card
+    underneath; and the passage the verdict found as the button. It had grown to 118 words, three
     charts of the same bars, two colour keys and nine ruled lines — see
     `DECISIONS.md`, 2026-09-29.
 
@@ -388,20 +387,19 @@ export function VerdictScreen() {
         {take.lowConfidence ? 'Timing is uncertain' : formatTakeVerdict(take.measures, take.direction)}
       </Text>
       {/*
-        **One line under the title** (2026-09-29). There were up to four: the
-        headline, a finding about a note value, and a sentence each for wrong
-        notes and miscounted rests — the verdict said three times before any
-        picture. The line is the take row's own words ("Bars 5–8 at 104, not
-        96 BPM"), so the piece's list of takes and this screen agree.
+        **Nothing under the title but the chart** (the owner, 2026-09-29,
+        circling the two lines that were here on a phone). "Bars 5–8 at 104,
+        not 96 BPM" said the title again in numbers — the chart shows which
+        bars, the card their tempo, and the button names them — and "1 note
+        missed · 1 wrong note, bar 6" was a list to read before the picture.
+        A wrong note or a miscounted rest is now a dot under its bar.
+
+        A take too hard to hear keeps its line: it is the only thing that
+        says what to do about it.
       */}
-      <Text variant="body" color="textSecondary" style={styles.headline}>
-        {take.lowConfidence
-          ? 'Hard to hear. Try a quieter room, closer to the mic.'
-          : takeRowWords(take)}
-      </Text>
-      {mistakes ? (
-        <Text variant="metadataSmall" color="textTertiary" style={styles.mistakes}>
-          {mistakes}
+      {take.lowConfidence ? (
+        <Text variant="body" color="textSecondary" style={styles.headline}>
+          Hard to hear. Try a quieter room, closer to the mic.
         </Text>
       ) : null}
 
@@ -442,6 +440,7 @@ export function VerdictScreen() {
             tempoBeatUnit={take.tempoBeatUnit}
             tolerance={take.tolerance}
             chart={pitchBars}
+            marked={marked}
             name="Pitch in bar"
             describe={(m) =>
               m.pitchCents == null || !take.intonation
@@ -458,6 +457,7 @@ export function VerdictScreen() {
             targetBpm={take.targetBpm}
             tempoBeatUnit={take.tempoBeatUnit}
             tolerance={take.tolerance}
+            marked={marked}
             ends={tempoEnds}
           />
         )}
@@ -505,9 +505,6 @@ export function VerdictScreen() {
 const styles = StyleSheet.create({
   headline: {
     marginTop: 10,
-  },
-  mistakes: {
-    marginTop: spacing.sm,
   },
   playback: {
     marginTop: spacing.xl,

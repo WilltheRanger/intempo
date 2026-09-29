@@ -17,8 +17,8 @@ const CARD_HEIGHT = 230;
  * be told something. A spinner in that moment says only "something is
  * happening"; the shape of the answer says "it's this, nearly ready".
  *
- * **The shape of the screen as it is now** (2026-09-29): the title, its one
- * line and the grey one, one chart, and the bar's card — not the line chart
+ * **The shape of the screen as it is now** (2026-09-29): the title, one
+ * chart, and the bar's card — not the line chart
  * and forty-row list it drew until then, which moved the page under the
  * musician's eyes the moment the answer arrived.
  */
@@ -26,12 +26,9 @@ export function VerdictSkeleton() {
   return (
     <View>
       <FadeIn>
-        {/* The title wraps to two lines more often than not — "You rushed in
-            the middle" doesn't fit one. */}
-        <Skeleton height={34} width="88%" style={styles.gapMd} />
-        <Skeleton height={34} width="52%" style={styles.gapSm} />
-        <Skeleton height={16} width="72%" style={styles.gapLg} />
-        <Skeleton height={13} width="58%" style={styles.gapSm} />
+        {/* The title, which fits one line now ("Rushed in the middle"), and
+            nothing under it but the chart. */}
+        <Skeleton height={34} width="86%" style={styles.gapMd} />
       </FadeIn>
 
       <FadeIn index={1} style={styles.section}>
@@ -49,7 +46,5 @@ const styles = StyleSheet.create({
   section: {
     marginTop: spacing['2xl'],
   },
-  gapSm: { marginTop: spacing.sm },
   gapMd: { marginTop: spacing.md },
-  gapLg: { marginTop: spacing.lg },
 });

@@ -55,6 +55,16 @@ for a label the sentence already carries.
 **Result.** 56 words, one screen, one chart, three ruled lines. The loading
 skeleton draws the same shape. The bundle fell 3 KB.
 
+**Then cut again the same day** (the owner, on a phone, circling the two lines
+still under the title and "You rushed in the / middle" breaking with one word
+under it: "so many examples of this excessive wordiness and squishing"). The
+title lost "You" and "towards" so every one fits a phone's line
+(`tempo.test.ts` holds them to 21 characters); "Bars 5–8 at 104, not 96 BPM"
+went, because the chart shows the bars, the card their tempo and the button
+names them; and the grey mistakes line became a dot under each bar holding a
+wrong note or a miscounted rest (`mistakeBars`), whose card says what it was.
+The missed-note count is no longer on this screen. 40 words.
+
 ---
 
 ## 2026-09-29 — A first-time walk's critique, fixed: ten earlier calls reversed
