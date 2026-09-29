@@ -6,7 +6,7 @@ import { prepareForPlayback } from '../../lib/audio/session';
 /**
  * Play a picked file before sending it, and say where it has got to.
  *
- * The same mechanism as `HeldTakePlayer` — an `<audio>` element on an object
+ * The same mechanism as `useTakeAudio.web.ts` — an `<audio>` element on an object
  * URL — with the position reported, so the waveform can fill as it plays.
  * `prepareForPlayback` first, which is what keeps a play here from leaving the
  * page in a category WebKit refuses capture under (`docs/subsystems.md`,

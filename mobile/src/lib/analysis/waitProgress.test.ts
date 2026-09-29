@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  elapsedLabel,
   isTakingLong,
   LONG_WAIT_MS,
   progressFor,
@@ -74,25 +73,6 @@ describe('a run the app cannot place', () => {
       expect(label).toBe('Matching what you played against the score');
     },
   );
-});
-
-describe('the elapsed clock', () => {
-  it.each([
-    [0, '0:00'],
-    [999, '0:00'],
-    [1_000, '0:01'],
-    [9_000, '0:09'],
-    [60_000, '1:00'],
-    [95_000, '1:35'],
-    [155_000, '2:35'],
-    [3_600_000, '60:00'],
-  ])('renders %ims as %s', (ms, expected) => {
-    expect(elapsedLabel(ms)).toBe(expected);
-  });
-
-  it('never renders a negative clock', () => {
-    expect(elapsedLabel(-5_000)).toBe('0:00');
-  });
 });
 
 describe('a wait that has gone on', () => {

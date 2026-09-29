@@ -1,5 +1,61 @@
 # InTempo Decisions
 
+## 2026-09-29 — A take is heard before it is sent, and its tempo is a trend line
+
+**Context.** Two complaints from the owner on the same day. The result's
+chart: "the bar by bar measurement in general doesn't make sense … like a
+graph or something … to show the trend". And the screens between Stop and
+the result: they "don't fit common UX practices". Stop sent the take at
+once — uploading it and spending one of the month's free analyses on a take
+the musician may already have known was wrong — and the wait showed a title,
+a sentence, a bar, a spinner beside a running clock and, after three
+minutes, a second sentence, with no way off it.
+
+**Decision** (both choices the owner's, from two offered each):
+- **The tempo is a line over an on-tempo band** (`lib/verdict/trend.ts`,
+  `TrendChart`). Each bar's tempo is averaged with its neighbours, because a
+  single bar is a handful of notes and its own figure is the least reliable
+  number the app shows. The band is the take's inner tolerance around the
+  target, following the target where the page changes tempo. The line is ink
+  inside the band and takes the verdict's gold or red only outside it. Pitch
+  is the same picture in cents, behind the same switch. Tapping or dragging
+  anywhere picks the bar under the finger and shades its passage, and one
+  line says it: "Bars 5–8 · about 104, aiming for 96". Nothing is picked at
+  first; the verdict's own passage is shaded.
+- **The question is about the passage, not a bar**: "How did bars 5–8
+  sound?", with the one answer sent for each judged bar in it. The per-bar
+  card, its tempo scale and "What did you hear?" are gone.
+- **Stop holds the take**, with a play button and a scrubber and two
+  choices, Analyse and Record again. Nothing is uploaded or counted until
+  Analyse. Back asks first ("Discard this take? It hasn't been analysed.").
+- **The wait is a bar and one line**: "Analysing", the bar, and the stage in
+  words. A spinner stands in only where no stage can be placed. The clock is
+  gone. Once the server has the take, "Leave while it works" goes to Today,
+  which already resumes an accepted analysis (`pendingAnalysis`). From that
+  point back and closing the tab no longer ask.
+- **One player for both** (`ScrubPlayer`), on an engine chosen per platform
+  (`useTakeAudio`). On the web it is the browser's own `<audio>`, because
+  `expo-audio` will not open the `blob:` URL of a take that has not been sent
+  (measured, `heldTake.web.ts`); on native it is `expo-audio`. The wide "Hear
+  it" button that a failed upload used to show is this player too.
+
+**Reversed on purpose.** The bars chart and its card (2026-09-25, cut down
+earlier today); the send-on-Stop that every take went through; the wait's
+running clock and live spinner (added because the bar sits still through the
+long "listening" leg). That stillness is the trade accepted: the bar still
+moves only on real stages, and the line under it names the stage.
+
+**Alternatives.** A bar per measure coloured by band (what it replaces); a
+running-average band with no target; sending on Stop and offering playback
+on the result (the owner chose to hear it first); keeping the clock on the
+wait.
+
+**Not done.** A take recorded on a native build has no URL to play from
+(`heldTake.ts`), so its review shows the length and no player. An older result
+saved without per-bar tempi has no line, and keeps the bars chart it had.
+
+---
+
 ## 2026-09-29 — The result screen cut to one line, one chart and the passage as its button
 
 **Context.** The owner: the result screen "needs to be more simplified its way

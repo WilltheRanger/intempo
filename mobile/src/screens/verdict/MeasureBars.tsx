@@ -51,6 +51,7 @@ export function MeasureBars({
   name = 'Bar',
   ends,
   marked,
+  span,
 }: {
   measures: MeasureVerdict[];
   selected: number | null;
@@ -81,6 +82,11 @@ export function MeasureBars({
    * bar's card says what it was.
    */
   marked?: ReadonlySet<number>;
+  /**
+   * The passage the selected bar belongs to (`lib/verdict/barPassage.ts`),
+   * outlined as one: a tap picks out bars 5–8, not bar 7 alone.
+   */
+  span?: { from: number; to: number } | null;
 }) {
   const bars = useMemo(
     () =>
@@ -143,6 +149,11 @@ export function MeasureBars({
   }
 
   const step = bars.length > 0 ? width / bars.length : 0;
+  // One outline: around the passage when there is one, else the bar alone.
+  const spanFrom = span ? bars.findIndex((bar) => bar.measure === span.from) : -1;
+  const spanTo = span ? bars.findIndex((bar) => bar.measure === span.to) : -1;
+  const outlineFrom = spanFrom >= 0 && spanTo >= spanFrom ? spanFrom : at;
+  const outlineTo = spanFrom >= 0 && spanTo >= spanFrom ? spanTo : at;
   const barWidth = chartBarWidth(step);
   const current = at >= 0 ? measures[at] : null;
 
@@ -203,12 +214,15 @@ export function MeasureBars({
                 // against the chart, and a static wrapper is a zero-height box
                 // that `bottom: HALF` would resolve against instead.
                 <Fragment key={bar.measure}>
-                  {index === at ? (
+                  {index === outlineFrom ? (
                     <View
                       pointerEvents="none"
                       style={[
                         styles.outline,
-                        { left: left - 3, width: barWidth + 6 },
+                        {
+                          left: left - 3,
+                          width: (outlineTo - outlineFrom) * step + barWidth + 6,
+                        },
                       ]}
                     />
                   ) : null}

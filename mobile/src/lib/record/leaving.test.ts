@@ -83,6 +83,23 @@ describe('leaving the record screen', () => {
     }
   });
 
+  it('asks before throwing away a take being heard back before it is sent', () => {
+    const answer = leavingRecord({ phase: 'review', unsentTake: true });
+    expect(answer.kind).toBe('confirm');
+    if (answer.kind !== 'confirm') return;
+    expect(answer.title).toBe('Discard this take?');
+    expect(answer.cancelLabel).toBe('Keep it');
+  });
+
+  it('lets the musician leave once the server has the take', () => {
+    // The analysis carries on without the screen; Today picks it up.
+    expect(leavingRecord({ phase: 'analysing', unsentTake: true, accepted: true }).kind).toBe(
+      'leave',
+    );
+    // Before the server has it, the bytes are only on this device.
+    expect(leavingRecord({ phase: 'analysing', unsentTake: true }).kind).toBe('confirm');
+  });
+
   it('guards a browser refresh while audio is live or waiting to be sent', () => {
     expect(
       shouldGuardBrowserExit({ phase: 'recording', unsentTake: false }),
@@ -93,6 +110,17 @@ describe('leaving the record screen', () => {
     expect(
       shouldGuardBrowserExit({ phase: 'ready', unsentTake: true }),
     ).toBe(true);
+    // A take after Stop, not yet sent, is the one copy there is.
+    expect(
+      shouldGuardBrowserExit({ phase: 'review', unsentTake: true }),
+    ).toBe(true);
+  });
+
+  it('lets the browser close once the server has the take', () => {
+    // The analysis is remembered in storage and resumes on Today.
+    expect(
+      shouldGuardBrowserExit({ phase: 'analysing', unsentTake: true, accepted: true }),
+    ).toBe(false);
   });
 
   it('does not interrupt a harmless browser exit', () => {

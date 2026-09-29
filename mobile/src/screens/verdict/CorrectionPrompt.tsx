@@ -34,6 +34,8 @@ export interface CorrectionPromptProps {
   onChoose: (choice: UserVerdict) => void;
   /** Back to the question, from the thanks. */
   onChange: () => void;
+  /** The question, e.g. "How did bars 5–8 sound?". */
+  question?: string;
 }
 
 /** The check's column, so the answer line sits under the thanks, not the check. */
@@ -66,6 +68,7 @@ export function CorrectionPrompt({
   state,
   onChoose,
   onChange,
+  question = 'What did you hear?',
 }: CorrectionPromptProps) {
   if (state.kind === 'sent') {
     const thanks = correctionAcknowledgement(state.choice);
@@ -120,7 +123,7 @@ export function CorrectionPrompt({
         screen reader ("Rushing, what this app read").
       */}
       <Text variant="metadataSmall" color="textTertiary" style={styles.question}>
-        What did you hear?
+        {question}
       </Text>
 
       <View style={styles.choices}>

@@ -19,22 +19,30 @@ import type { MeasureVerdict, TakeResult, UserVerdict } from '../../data/types';
 import { MIN_TOUCH_TARGET, spacing } from '../../design';
 import { formatTakeVerdict } from '../../lib/tempo';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
-import { openingMeasure } from '../../lib/verdict/measureChart';
-import { appVerdictForBar, tempoChartBars } from '../../lib/verdict/barTempo';
-import { pitchChartBars, pitchWord } from '../../lib/verdict/intonation';
+import { appVerdictForBar, barTempo } from '../../lib/verdict/barTempo';
+import { readMeasure } from '../../lib/verdict/measureReading';
+import { takePitchTrend, tempoTrend } from '../../lib/verdict/trend';
+import { pitchWord } from '../../lib/verdict/intonation';
 import { headlinePassage, practiceLabel } from '../../lib/verdict/passage';
 import { mistakeBars, restEntriesInBar, wrongNotesInBar } from '../../lib/verdict/mistakes';
+import {
+  barsLabel,
+  pitchPassageAt,
+  pitchPassageLine,
+  tempoPassageAt,
+  tempoPassageLine,
+} from '../../lib/verdict/barPassage';
 import {
   failureTitle,
   intakeRefusal,
   nothingUsableTitle,
 } from '../../lib/verdict/failureTitle';
-import { appVerdictFor, canCorrect } from '../../lib/verdict/correction';
+import { canCorrect } from '../../lib/verdict/correction';
 import { success } from '../../lib/haptics';
 import { useSubmitCorrection } from '../../data/hooks/useCorrections';
 import { CorrectionPrompt, type CorrectionState } from './CorrectionPrompt';
 import { MeasureBars } from './MeasureBars';
-import { MeasureCard } from './MeasureCard';
+import { TrendChart } from './TrendChart';
 import { TakePlayback } from './TakePlayback';
 import { loadStateFor } from '../../lib/loadState';
 
@@ -62,71 +70,48 @@ export function VerdictScreen() {
   const [view, setView] = useState<'tempo' | 'pitch'>('tempo');
 
   /*
-    Where each measure's correction has got to, keyed by measure number.
-
-    **Kept here rather than in the row** so it survives collapsing and
-    reopening a row — someone who taps away and comes back should see that
-    they already answered, not be asked again. Not persisted beyond the
-    screen: the server appends rather than replaces, so a second answer is a
-    second opinion and both are data, but re-asking within one sitting reads
-    as the app having forgotten.
+    **One question for the take, not one per bar** (2026-09-29). Where it has
+    got to; not persisted beyond the screen — the server appends rather than
+    replaces, so a second answer is a second opinion and both are data.
   */
-  const [corrections, setCorrections] = useState<Record<number, CorrectionState>>(
-    {},
-  );
+  const [answer, setAnswer] = useState<CorrectionState>({ kind: 'idle' });
   const submitCorrection = useSubmitCorrection();
 
-  function correct(measure: MeasureVerdict, choice: UserVerdict, appVerdict: UserVerdict) {
-    setCorrections((current) => ({
-      ...current,
-      [measure.measure]: { kind: 'sending', choice },
-    }));
+  /**
+   * The musician's answer about a passage, sent as one correction per bar in
+   * it — the shape the dataset has always had, so every threshold is still
+   * checked bar by bar. Each is sent with the app's own reading of that bar
+   * (`appVerdictForBar`): the dataset exists to compare the two.
+   */
+  function answerFor(bars: readonly MeasureVerdict[], choice: UserVerdict, reading: (m: MeasureVerdict) => UserVerdict) {
+    setAnswer({ kind: 'sending', choice });
     submitCorrection.mutate(
       {
         analysisId: params.analysisId,
-        corrections: [
-          {
-            measure_number: measure.measure,
-            // Sent as the app's own word for it, so the pair is stored
-            // together — the dataset exists to compare the two, and storing
-            // only the correction loses what it was correcting.
-            // What the card showed — the bar's tempo, where it has one
-            // (`appVerdictForBar`).
-            app_verdict: appVerdict,
-            user_verdict: choice,
-          },
-        ],
+        corrections: bars.map((m) => ({
+          measure_number: m.measure,
+          app_verdict: reading(m),
+          user_verdict: choice,
+        })),
       },
       {
         onSuccess: () => {
           // Felt as well as seen: the answer arrived.
           success();
-          setCorrections((current) => ({
-            ...current,
-            [measure.measure]: { kind: 'sent', choice },
-          }));
+          setAnswer({ kind: 'sent', choice });
         },
         onError: (error: unknown) =>
-          setCorrections((current) => ({
-            ...current,
-            [measure.measure]: {
-              kind: 'failed',
-              /*
-                The error's own words, matching `ProfileScreen`'s convention
-                for the same shape of write. **Not `describeLoadError`**: that
-                exists for a screen that could not *load*, and its fallback is
-                "Check your connection and try again" — which replaced the
-                hook's own "Sending feedback needs the backend. This build is
-                running on sample data." with a guess that is both wrong and
-                unactionable. That is the exact substitution `describeError.ts`
-                was written to stop, and it reappeared one caller over.
-              */
-              message:
-                error instanceof Error
-                  ? error.message
-                  : 'Couldn’t send. Try again.',
-            },
-          })),
+          setAnswer({
+            kind: 'failed',
+            /*
+              The error's own words, matching `ProfileScreen`'s convention for
+              the same shape of write. **Not `describeLoadError`**, whose
+              fallback replaced the hook's own "Sending feedback needs the
+              backend. This build is running on sample data." with a guess
+              that was both wrong and unactionable (`describeError.ts`).
+            */
+            message: error instanceof Error ? error.message : 'Couldn’t send. Try again.',
+          }),
       },
     );
   }
@@ -303,26 +288,56 @@ export function VerdictScreen() {
     );
   }
 
-  const opening = openingMeasure(take.measures);
-  const chosen = take.measures.find((m) => m.measure === (selected ?? opening)) ?? null;
-  const chosenAppVerdict = chosen
-    ? appVerdictForBar(chosen, take.targetBpm, take.tempoBeatUnit, take.tolerance)
-    : null;
-  // Each bar's pitch against the player's own tuning, where the take carries
-  // it (`lib/verdict/intonation.ts`); without it there is no Pitch to switch to.
-  const pitchBars = pitchChartBars(take.measures, take.intonation);
-  const showingPitch = view === 'pitch' && pitchBars !== null;
-  // What up and down mean on the chart. An older result without bar tempi
-  // draws how far ahead or behind the beat each bar sat, not its tempo.
-  const tempoEnds = tempoChartBars(take.measures, take.targetBpm, take.tempoBeatUnit, take.tolerance)
-    ? { up: 'faster', down: 'slower' }
-    : { up: 'ahead', down: 'behind' };
+  const reading = (m: MeasureVerdict) =>
+    appVerdictForBar(m, take.targetBpm, take.tempoBeatUnit, take.tolerance);
+  // The take as a trend (`lib/verdict/trend.ts`): its tempo, and its pitch
+  // where it was read. Without a pitch trend there is no Pitch to switch to.
+  const tempoLine = tempoTrend(take.measures, take.targetBpm, take.tempoBeatUnit, take.tolerance);
+  const pitchLine = takePitchTrend(take.measures, take.intonation);
+  const showingPitch = view === 'pitch' && pitchLine !== null;
   // Bars with a note heard as another or an entrance after a miscounted rest:
   // a dot under each on the chart; the bar's card says what it was.
   const marked = mistakeBars(take.wrongNotes, take.restEntries);
   // The bars the verdict is about, which the main button practises.
   const passage = take.lowConfidence ? null : headlinePassage(take.headline);
   const recordAgain = () => navigation.replace('Record', { pieceId: take.pieceId });
+  // The passage around the bar the musician tapped, in whichever reading the
+  // chart is showing; nothing until they tap (`lib/verdict/barPassage.ts`).
+  const tempoSpan =
+    selected !== null && !showingPitch
+      ? tempoPassageAt(take.measures, selected, take.targetBpm, take.tempoBeatUnit, take.tolerance)
+      : null;
+  const pitchSpan =
+    selected !== null && showingPitch && take.intonation
+      ? pitchPassageAt(take.measures, selected, take.intonation)
+      : null;
+  const span = tempoSpan ?? pitchSpan;
+  // Shaded before any tap: the passage the verdict found, so the question and
+  // the button that name it point at something on the graph.
+  const shaded = span ?? (showingPitch ? null : passage);
+  const spanLine = tempoSpan
+    ? tempoPassageLine(tempoSpan)
+    : pitchSpan
+      ? pitchPassageLine(pitchSpan)
+      : null;
+  // What else went wrong inside it, said for the bar it happened in.
+  const spanMistakes = span
+    ? take.measures
+        .filter((m) => m.measure >= span.from && m.measure <= span.to)
+        .flatMap((m) =>
+          [
+            ...wrongNotesInBar(take.wrongNotes, m.measure),
+            ...restEntriesInBar(take.restEntries, m.measure),
+          ].map((line) => (span.from === span.to ? line : `Bar ${m.measure}: ${line}`)),
+        )
+    : [];
+  // The one question: about the passage the verdict found, or about the
+  // whole take when it found none. Only over bars the app made a claim about.
+  const askedBars = take.measures.filter(
+    (m) => canCorrect(m) && (!passage || (m.measure >= passage.from && m.measure <= passage.to)),
+  );
+  const askedReading: UserVerdict =
+    take.direction === 'rush' ? 'rushing' : take.direction === 'drag' ? 'dragging' : 'on_tempo';
 
   /*
     **The redesign's verdict, cut down** (the owner, 2026-09-29: "way too
@@ -410,17 +425,17 @@ export function VerdictScreen() {
       ) : null}
 
       {/*
-        **One chart** (2026-09-29). There were three of the same bars: the
-        take as a tempo line, the bars as a chart, and pitch as a second chart,
-        each with its heading, its "Bar 1 … 13" and, for two of them, a colour
-        key. The line said nothing the bars did not, and was the one you could
-        not tap. Pitch is the same bars read another way, so it is a switch on
-        this chart rather than a chart of its own (the owner's choice). The
-        colours are explained by the bar you tap, not by a key.
+        **One graph, and a trend rather than bars** (the owner, 2026-09-29:
+        "the bar by bar measurement in general doesn't make sense … like a
+        graph … to show the trend"). The take's tempo as a line across the
+        band around the target, ink inside it and gold or red outside; pitch
+        is the same picture, behind a switch rather than in a chart of its
+        own. An older result saved without bar tempi has no line to draw and
+        keeps the bars it was drawn with.
       */}
-      {pitchBars ? (
+      {pitchLine ? (
         <SegmentedControl
-          label="Chart"
+          label="Graph"
           options={[
             { value: 'tempo', label: 'Tempo' },
             { value: 'pitch', label: 'Pitch' },
@@ -430,71 +445,78 @@ export function VerdictScreen() {
           style={styles.switch}
         />
       ) : null}
-      <View style={pitchBars ? styles.chartUnderSwitch : styles.chart}>
-        {showingPitch && pitchBars ? (
-          <MeasureBars
+      <View style={pitchLine ? styles.chartUnderSwitch : styles.chart}>
+        {showingPitch && pitchLine ? (
+          <TrendChart
+            data={pitchLine}
             measures={take.measures}
-            selected={chosen?.measure ?? null}
+            selected={selected}
             onSelect={setSelected}
-            targetBpm={take.targetBpm}
-            tempoBeatUnit={take.tempoBeatUnit}
-            tolerance={take.tolerance}
-            chart={pitchBars}
+            span={span}
             marked={marked}
+            ends={{ up: 'sharp', down: 'flat' }}
             name="Pitch in bar"
             describe={(m) =>
               m.pitchCents == null || !take.intonation
                 ? 'Not read'
                 : pitchWord(m.pitchCents, take.intonation)
             }
-            ends={{ up: 'sharp', down: 'flat' }}
+          />
+        ) : tempoLine ? (
+          <TrendChart
+            data={tempoLine}
+            measures={take.measures}
+            selected={selected}
+            onSelect={setSelected}
+            span={shaded}
+            marked={marked}
+            ends={{ up: 'faster', down: 'slower' }}
+            name="Bar"
+            describe={(m) =>
+              barTempo(m, take.targetBpm, take.tempoBeatUnit, take.tolerance)?.spoken ??
+              readMeasure(m).label
+            }
           />
         ) : (
           <MeasureBars
             measures={take.measures}
-            selected={chosen?.measure ?? null}
+            selected={selected}
             onSelect={setSelected}
+            span={span}
             targetBpm={take.targetBpm}
             tempoBeatUnit={take.tempoBeatUnit}
             tolerance={take.tolerance}
             marked={marked}
-            ends={tempoEnds}
+            ends={{ up: 'ahead', down: 'behind' }}
           />
         )}
       </View>
 
-      {chosen ? (
-        <View style={styles.card}>
-          <MeasureCard
-            measure={chosen}
-            intonation={take.intonation}
-            wrongNotes={wrongNotesInBar(take.wrongNotes, chosen.measure)}
-            restEntries={restEntriesInBar(take.restEntries, chosen.measure)}
-            tolerance={take.tolerance}
-            targetBpm={take.targetBpm}
-            tempoBeatUnit={take.tempoBeatUnit}
-            correction={
-              /*
-                Only where the app made a claim about the playing. A bar under
-                a `rit.`, a held fermata or an ornament was never judged, so
-                there is nothing to agree or disagree with.
-              */
-              canCorrect(chosen) ? (
-                <CorrectionPrompt
-                  appVerdict={chosenAppVerdict ?? appVerdictFor(chosen)}
-                  state={corrections[chosen.measure] ?? { kind: 'idle' }}
-                  onChoose={(choice) =>
-                    correct(chosen, choice, chosenAppVerdict ?? appVerdictFor(chosen))
-                  }
-                  onChange={() =>
-                    setCorrections((current) => ({
-                      ...current,
-                      [chosen.measure]: { kind: 'idle' },
-                    }))
-                  }
-                />
-              ) : null
-            }
+      {/*
+        **The passage, in one line, when a bar is tapped** (2026-09-29) — no
+        card open on a bar nobody chose. "Bars 5–8 · about 104, aiming for
+        96": a passage and a round figure, which is what a musician practises
+        and as precise as a few bars' timing honestly is.
+      */}
+      {spanLine ? (
+        <View style={styles.span}>
+          <Text variant="body">{spanLine}</Text>
+          {spanMistakes.map((line) => (
+            <Text key={line} variant="metadataSmall" color="textSecondary" style={styles.spanMistake}>
+              {line}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+
+      {askedBars.length > 0 ? (
+        <View style={styles.question}>
+          <CorrectionPrompt
+            question={passage ? `How did ${barsLabel(passage).toLowerCase()} sound?` : 'How did that sound?'}
+            appVerdict={askedReading}
+            state={answer}
+            onChoose={(choice) => answerFor(askedBars, choice, reading)}
+            onChange={() => setAnswer({ kind: 'idle' })}
           />
         </View>
       ) : null}
@@ -528,8 +550,14 @@ const styles = StyleSheet.create({
   chartUnderSwitch: {
     marginTop: spacing.xl,
   },
-  card: {
-    marginTop: spacing.xl,
+  span: {
+    marginTop: spacing.lg,
+  },
+  spanMistake: {
+    marginTop: spacing.xs,
+  },
+  question: {
+    marginTop: spacing['2xl'],
   },
   /** "Record again" under the passage: quiet, and still a 44pt target. */
   quiet: {

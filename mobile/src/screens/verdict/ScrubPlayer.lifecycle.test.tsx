@@ -15,15 +15,13 @@ vi.mock('react', () => ({
   useMemo: (fn: () => unknown) => fn(),
 }));
 vi.mock('@react-navigation/native', () => ({ useFocusEffect: mock.focus }));
-vi.mock('@tanstack/react-query', () => ({
-  useQuery: () => ({ data: 'https://example.invalid/private.wav' }),
-}));
 vi.mock('expo-audio', () => ({
   useAudioPlayer: () => ({ pause: mock.pause, play: mock.play, seekTo: mock.seek }),
   useAudioPlayerStatus: () => ({ isLoaded: true, duration: 10, currentTime: 0 }),
 }));
 vi.mock('react-native', () => ({
   View: 'view',
+  Pressable: 'pressable',
   StyleSheet: { create: (x: unknown) => x },
   // The track takes a finger. `create` is called at render, so it has to
   // return something with `panHandlers` to spread.
@@ -37,18 +35,23 @@ vi.mock('react-native', () => ({
 // See `ListenButton.test.tsx`: the specifier has to be the one the
 // component actually imports.
 vi.mock('../../components/icons', () => ({ Pause: 'pause', Play: 'play' }));
-vi.mock('../../components/primitives', () => ({
-  LoadingState: 'loading', SecondaryButton: 'button', SectionHeader: 'header', Text: 'text',
+vi.mock('../../components/primitives', () => ({ Text: 'text' }));
+vi.mock('../../design', () => ({
+  BORDER_WIDTH: 1,
+  ICON_SIZE: { md: 20 },
+  ICON_STROKE_WIDTH: 2,
+  MIN_TOUCH_TARGET: 44,
+  colors: {},
+  radii: {},
+  spacing: {},
 }));
-vi.mock('../../data/sources', () => ({ takeSource: {} }));
-vi.mock('../../design', () => ({ BORDER_WIDTH: 1, colors: {}, radii: {}, spacing: {} }));
 vi.mock('../../lib/audio/session', () => ({ prepareForPlayback: mock.prepare }));
-import { TakePlayback } from './TakePlayback';
+import { ScrubPlayer } from './ScrubPlayer';
 
 beforeEach(() => { vi.clearAllMocks(); mock.prepare.mockResolvedValue(undefined); });
 
 it('pauses an existing recording when navigation blurs a mounted result', () => {
-  TakePlayback({ analysisId: 'take' });
+  ScrubPlayer({ uri: 'https://example.invalid/private.wav' });
   const blur = mock.focus.mock.calls[0][0]();
   blur();
   expect(mock.pause).toHaveBeenCalledOnce();
@@ -63,9 +66,9 @@ it('pauses an existing recording when navigation blurs a mounted result', () => 
  * width in, touch position through the responder, seconds out to `seekTo`.
  */
 it('seeks the player when the track is touched', () => {
-  const tree = TakePlayback({ analysisId: 'take' });
-  // Section -> player -> the track, whose layout sets the width the touch is
-  // read against. Without it every touch reads as position zero.
+  const tree = ScrubPlayer({ uri: 'https://example.invalid/private.wav' });
+  // Row -> rail -> the track, whose layout sets the width the touch is read
+  // against. Without it every touch reads as position zero.
   const track = tree.props.children[1].props.children[0];
   track.props.onLayout({ nativeEvent: { layout: { width: 120 } } });
 
@@ -83,7 +86,7 @@ it('seeks the player when the track is touched', () => {
  * recording, so the guard was a rewind.
  */
 it('does not seek on a track it has not measured', () => {
-  TakePlayback({ analysisId: 'take' });
+  ScrubPlayer({ uri: 'https://example.invalid/private.wav' });
   mock.pan.current!.onPanResponderGrant({ nativeEvent: { locationX: 60 } });
   expect(mock.seek).not.toHaveBeenCalled();
 });
@@ -91,10 +94,10 @@ it('does not seek on a track it has not measured', () => {
 it('does not start delayed playback after leaving the result', async () => {
   let finish!: () => void;
   mock.prepare.mockImplementation(() => new Promise<void>((resolve) => { finish = resolve; }));
-  const tree = TakePlayback({ analysisId: 'take' });
+  const tree = ScrubPlayer({ uri: 'https://example.invalid/private.wav' });
   const blur = mock.focus.mock.calls[0][0]();
-  // Section -> player -> playback button; invoke the real component handler.
-  const button = tree.props.children[1].props.children[2];
+  // Row -> the play button; invoke the real component handler.
+  const button = tree.props.children[0];
   button.props.onPress();
   blur();
   finish();

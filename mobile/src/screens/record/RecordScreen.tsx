@@ -22,6 +22,7 @@ import {
   EmptyState,
   LinkRow,
   LoadingState,
+  PrimaryButton,
   ScreenContainer,
   SecondaryButton,
   Text,
@@ -57,7 +58,7 @@ import { playheadAt } from '../../lib/record/playhead';
 import type { CaptureReport } from '../../lib/audio/capture';
 import { readTakeFailure } from '../../lib/audio/takeFailure';
 import { heldTakeUrl, releaseHeldTake } from '../../lib/audio/heldTake';
-import { HeldTakePlayer } from './HeldTakePlayer';
+import { ScrubPlayer } from '../verdict/ScrubPlayer';
 import { microphonePermissionRecovery } from '../../lib/audio/permission';
 import { buildMarker } from '../../lib/platform/buildMarker';
 import { isHomeScreenApp } from '../../lib/audio/microphoneFailure';
@@ -78,11 +79,7 @@ import {
   MIN_TOUCH_TARGET,
   spacing,
 } from '../../design';
-import {
-  elapsedLabel,
-  isTakingLong,
-  progressFor,
-} from '../../lib/analysis/waitProgress';
+import { isTakingLong, progressFor } from '../../lib/analysis/waitProgress';
 import { BottomSheet } from '../../components/overlays/BottomSheet';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import { displayTempoBpm, tempoUnitLabel } from '../../lib/tempo';
@@ -304,6 +301,17 @@ export function RecordScreen() {
   } | null>(null);
   const [pendingTake, setPendingTake] = useState(false);
   /**
+   * The server has the take and is analysing it — set on the first stage it
+   * reports, which the real source reports only after the analysis is
+   * remembered (`rememberPendingAnalysis`). From here leaving is safe: the run
+   * carries on without the screen and Today picks the result up. A ref for the
+   * guards, which read it inside a navigation, and state for the button.
+   */
+  const accepted = useRef(false);
+  const [canLeave, setCanLeave] = useState(false);
+  /** The take after Stop has finished writing and can be heard and sent. */
+  const [takeReady, setTakeReady] = useState(false);
+  /**
    * A URL for the take being held, so it can be heard before it is sent.
    *
    * **The screen says the take is safe and had no way to show it.** "Your take
@@ -395,6 +403,7 @@ export function RecordScreen() {
           // line above the navigation that fires this listener.
           unsentTake: unsent.current !== null,
           pieceTitle: piece?.title,
+          accepted: accepted.current,
         });
         if (answer.kind !== 'confirm') {
           return;
@@ -419,6 +428,7 @@ export function RecordScreen() {
         !shouldGuardBrowserExit({
           phase: phaseRef.current,
           unsentTake: unsent.current !== null,
+          accepted: accepted.current,
         })
       ) {
         return;
@@ -545,7 +555,11 @@ export function RecordScreen() {
     }
 
     impact(ImpactFeedbackStyle.Medium);
-    goPhase('analysing');
+    // **Straight to the review**, before the recording is finished writing:
+    // the tap is answered at once, and a second tap on a button that has
+    // already gone cannot restart anything. The player and Analyse wait for
+    // the take below.
+    goPhase('review');
 
     let recording;
     try {
@@ -576,7 +590,25 @@ export function RecordScreen() {
 
     setTruncated(recording.truncated);
     setKeptSeconds(recording.seconds);
-    await send(recording);
+    // **Heard before it is sent** (the owner, 2026-09-29: the listening page
+    // "doesn't fit common UX practices"). Every voice recorder lets you play a
+    // take back before you keep it; this one sent it the instant Stop was
+    // pressed, spending a free analysis on a take the musician already knew
+    // was wrong. Nothing is uploaded, and nothing counts, until Analyse.
+    if (!mounted.current) return;
+    unsent.current = recording;
+    holdForListening(recording.audio);
+    setTakeReady(true);
+  }
+
+  /** Throw the reviewed take away and go back to the start of a new one. */
+  function discardReview() {
+    unsent.current = null;
+    setTakeReady(false);
+    holdForListening(null);
+    setTruncated(false);
+    setElapsedMs(0);
+    goPhase('ready');
   }
 
   /**
@@ -627,8 +659,19 @@ export function RecordScreen() {
     // visible retry state, but it makes both navigation and browser-exit guards
     // truthful during the vulnerable gap before the server accepts the take.
     unsent.current = recording;
+    setTakeReady(false);
+    accepted.current = false;
+    setCanLeave(false);
+    setAnalysisStage(null);
     goPhase('analysing');
     setProblem(null);
+    const onStage = (stage: string | null) => {
+      if (!accepted.current) {
+        accepted.current = true;
+        if (mounted.current) setCanLeave(true);
+      }
+      if (mounted.current) setAnalysisStage(stage);
+    };
     try {
       const analysisId = await takeSubmissionSource.submit({
         // A piece is a score; the id is the same row.
@@ -648,7 +691,7 @@ export function RecordScreen() {
         // bar was played first.
         fromMeasure: entryBar,
         capture: recording.capture,
-      }, { onStage: setAnalysisStage });
+      }, { onStage });
       unsent.current = null;
       setPendingTake(false);
       holdForListening(null);
@@ -660,6 +703,10 @@ export function RecordScreen() {
       // from before the take and invite a fourth performance the server will
       // refuse.
       void queryClient.invalidateQueries({ queryKey: meKeys.all });
+      // **Left while it worked.** The screen is gone, so there is nothing to
+      // replace, and the remembered analysis is how Today finds the result —
+      // forgetting it here would lose the only pointer to it.
+      if (!mounted.current) return;
       navigation.replace('Verdict', { analysisId });
       // The verdict now owns the hand-off. Clear after the navigation is
       // dispatched so a refresh in the gap still recovers the accepted take.
@@ -706,6 +753,8 @@ export function RecordScreen() {
       // still be on screen under a sentence about uploading.
       setCanReload(failure.recovery === 'reload' && canReloadPage());
       setElapsedMs(0);
+      accepted.current = false;
+      setCanLeave(false);
       goPhase('ready');
     }
   }
@@ -735,6 +784,7 @@ export function RecordScreen() {
   // is on it, and the count-in would move it a second time.
   const countingIn = phase === 'counting_in';
   const capturing = countingIn || recording;
+  const reviewing = phase === 'review';
 
   /**
    * What the take bar says while the microphone is open.
@@ -1180,44 +1230,44 @@ export function RecordScreen() {
 
   if (phase === 'analysing') {
     /*
-      **Three things move here, and each of them is true.**
+      **One bar, what it is doing, and a way out** (the owner, 2026-09-29:
+      this page "doesn't fit common UX practices").
 
-      This was a title and one line of static text, held for the whole run —
-      about 150 seconds against the deployed instance. Nothing on it changed,
-      so it was indistinguishable from a hang, and that is what was reported.
+      It had a title, a sentence, the bar, a spinner beside a running clock
+      and, after three minutes, another sentence — five things moving or
+      speaking at once on a screen whose only news is "not yet". What every
+      upload or export screen shows is a bar and one line under it saying what
+      is happening, so that is what is left.
 
       The bar advances on legs the runner actually reports (`waitProgress`),
-      the clock counts real elapsed seconds, and the indicator says the app is
-      still asking. None of the three is a timer dressed as progress: where
-      there is no leg to place — an older deployment, a run not yet picked up —
-      the bar is *absent* rather than empty, because an empty bar claims "no
-      progress yet", which is both more than the app knows and the exact
-      reading this screen exists to avoid.
+      never on a timer. Where there is no leg to place — an older deployment,
+      a run not yet picked up — a spinner stands in for it, because an empty
+      bar claims "no progress yet", which is more than the app knows.
 
-      One dominant focal point (§3 law 4): the title. The rail is a hairline
-      the width of the text column, the clock is tertiary metadata, and the
-      long-wait line appears only when it has something to add.
+      **Leaving is offered once it is safe**: after the server has the take,
+      the analysis runs without this screen and Today shows it when it lands.
+      Before that the take exists only here, and back still asks.
     */
     const { label, through } = progressFor(analysisStage);
     return (
       <ScreenContainer scrollable={false} contentStyle={styles.centred}>
         <View>
-          <Text variant="heroTitle">Listening back</Text>
-          <Text variant="body" color="textSecondary" style={styles.subtitle}>
-            {truncated
-              ? `First ${Math.floor(keptSeconds / 60)} minutes kept. ${label}.`
-              : `${label}.`}
-          </Text>
-          {through === null ? null : (
+          <Text variant="heroTitle">Analysing</Text>
+          {through === null ? (
+            <View style={styles.waitPending}>
+              <ActivityIndicator
+                size="small"
+                color={colors.textTertiary}
+                accessibilityLabel="Analysing your take"
+              />
+            </View>
+          ) : (
             /*
               **The role goes on the rail, not on a wrapper round the text.**
               `role="progressbar"` with a label overrides its own content for a
               screen reader, so wrapping the title and the line in one hid both
-              and announced a name instead. The rail carries the role and the
-              leg is in its name — `accessibilityValue` is dropped entirely by
-              react-native-web, checked on the built bundle, so nothing here
-              may depend on it — and the sentence above stays ordinary text
-              that is read as ordinary text.
+              and announced a name instead. `accessibilityValue` is dropped by
+              react-native-web, so the leg is in the name.
             */
             <View
               accessibilityRole="progressbar"
@@ -1227,22 +1277,26 @@ export function RecordScreen() {
               <View style={[styles.waitFill, { width: `${through * 100}%` }]} />
             </View>
           )}
-          <View style={styles.waitFoot}>
-            <ActivityIndicator size="small" color={colors.textTertiary} />
-            <Text variant="metadata" color="textTertiary">
-              {elapsedLabel(waitingMs)}
-            </Text>
-          </View>
-          {isTakingLong(waitingMs) ? (
-            <Text
-              variant="metadata"
-              color="textTertiary"
-              style={styles.subtitle}
-            >
-              Still going. Your take is safe.
-            </Text>
-          ) : null}
+          <Text variant="metadata" color="textSecondary" style={styles.waitLabel}>
+            {isTakingLong(waitingMs) ? `${label}. Taking longer than usual.` : label}
+          </Text>
         </View>
+        {canLeave ? (
+          <Pressable
+            onPress={() => navigation.popTo('Tabs', { screen: 'Today' } as never)}
+            accessibilityRole="button"
+            style={({ pressed }) => [
+              styles.quiet,
+              styles.leave,
+              { bottom: spacing['3xl'] + insets.bottom },
+              pressed && styles.quietPressed,
+            ]}
+          >
+            <Text variant="metadata" color="textSecondary">
+              Leave while it works
+            </Text>
+          </Pressable>
+        ) : null}
       </ScreenContainer>
     );
   }
@@ -1277,7 +1331,7 @@ export function RecordScreen() {
             have, and the pre-flight checks. Gone during a take, like every
             other control that cannot change it.
           */}
-          {!capturing ? (
+          {!capturing && !reviewing ? (
             <Pressable
               onPress={() => setShowMore(true)}
               accessibilityRole="button"
@@ -1304,12 +1358,12 @@ export function RecordScreen() {
           revealSignal={revealStart}
           // The entry bar is written onto the take, so it locks with the
           // tempo and the mode the moment recording starts.
-          disabled={recording || isStarting}
+          disabled={recording || isStarting || reviewing}
         />
       ) : null}
 
       <View style={[styles.panel, { paddingBottom: spacing['2xl'] + insets.bottom }]}>
-        {!capturing && heard ? (
+        {!capturing && !reviewing && heard ? (
           <>
             <ListenPlayer
               score={heard}
@@ -1418,6 +1472,28 @@ export function RecordScreen() {
           </View>
         ) : null}
 
+        {reviewing ? (
+          <View style={styles.review}>
+            {/*
+              A take from a native build has no URL to play from
+              (`heldTake.ts`), so it is shown by its length alone rather than
+              with a player that would do nothing.
+            */}
+            {heldUrl ? (
+              <ScrubPlayer uri={heldUrl} />
+            ) : (
+              <Text variant="metadata" color="textSecondary" style={styles.reviewLength}>
+                {takeReady ? `${formatElapsed(keptSeconds * 1000)} recorded` : '…'}
+              </Text>
+            )}
+            {truncated ? (
+              <Text variant="caption" color="textTertiary" style={styles.reviewNote}>
+                Only the first {Math.floor(keptSeconds / 60)} minutes were kept.
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
+
         {/*
           **The one failure the app cannot fix gets directions, not a
           sentence.** A refused microphone is followed with a permissions
@@ -1485,7 +1561,9 @@ export function RecordScreen() {
           take they can play is the same thing demonstrated.
         */}
         {pendingTake && heldUrl ? (
-          <HeldTakePlayer url={heldUrl} style={styles.action} />
+          <View style={styles.action}>
+            <ScrubPlayer uri={heldUrl} />
+          </View>
         ) : null}
         {pendingTake ? (
           <SecondaryButton
@@ -1501,13 +1579,42 @@ export function RecordScreen() {
         ) : null}
 
         <View style={styles.recordGap} />
-        <RecordButton
-          active={recording}
-          countingIn={false}
-          busy={isStarting}
-          disabled={!recording && Boolean(limitMessage)}
-          onPress={() => void (recording ? stop() : start())}
-        />
+        {reviewing ? (
+          <>
+            {/*
+              **Analyse is the only thing that spends anything.** The take is
+              uploaded, and counted against the month's free analyses, from
+              this tap and not from Stop.
+            */}
+            <PrimaryButton
+              label="Analyse"
+              onPress={() => {
+                const take = unsent.current;
+                if (take) void send(take);
+              }}
+              disabled={!takeReady || Boolean(limitMessage)}
+              loading={!takeReady}
+            />
+            <Pressable
+              onPress={discardReview}
+              disabled={!takeReady}
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.quiet, pressed && styles.quietPressed]}
+            >
+              <Text variant="metadata" color="textSecondary">
+                Record again
+              </Text>
+            </Pressable>
+          </>
+        ) : (
+          <RecordButton
+            active={recording}
+            countingIn={false}
+            busy={isStarting}
+            disabled={!recording && Boolean(limitMessage)}
+            onPress={() => void (recording ? stop() : start())}
+          />
+        )}
 
         {/*
           The quota, as a standing note under the button rather than a
@@ -1927,12 +2034,43 @@ const styles = StyleSheet.create({
     height: '100%',
     backgroundColor: colors.textSecondary,
   },
-  /** The clock and the live indicator, on one line under the rail. */
-  waitFoot: {
+  /** The spinner's slot, the rail's height and place, so nothing moves when a leg arrives. */
+  waitPending: {
+    marginTop: spacing.lg,
+    alignItems: 'flex-start',
+  },
+  waitLabel: {
     marginTop: spacing.md,
-    flexDirection: 'row',
+  },
+  /** After Stop: the take to hear, in the place the settings were. */
+  review: {
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.lg,
+  },
+  reviewLength: {
+    textAlign: 'center',
+    fontVariant: ['tabular-nums'],
+  },
+  reviewNote: {
+    marginTop: spacing.md,
+  },
+  /**
+   * A text button: the second choice beside a primary one, and a way off the
+   * wait. No fill and no border (§3 law 6), 44pt tall, dimmed while pressed.
+   */
+  quiet: {
+    minHeight: MIN_TOUCH_TARGET,
     alignItems: 'center',
-    gap: spacing.sm,
+    justifyContent: 'center',
+    marginTop: spacing.sm,
+  },
+  quietPressed: {
+    opacity: 0.55,
+  },
+  leave: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
   },
   /**
    * The ruled row `PlaybackSettings` already draws for "Start at", because
