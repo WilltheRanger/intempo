@@ -308,24 +308,25 @@ export function verdictColorFor(band: Band): ColorToken {
 type Span = 'start' | 'middle' | 'end' | 'throughout';
 
 /*
- * **One line at the title's size** (the owner, 2026-09-29, circling "You
- * rushed in the / middle" on a phone). With "You" and "towards" every one of
- * these broke onto a second line at 390pt, leaving a word alone under it; the
- * longest now, "Dragged in the middle", measures 328 of the 342 points a
- * phone gives it. `tempo.test.ts` holds them under 22 characters.
+ * **One line on a phone** (the owner, 2026-09-29, circling "You rushed in the
+ * / middle"). "You" stays — the owner's call, over "Rushed in the middle" —
+ * and the result screen sets these at 31pt, where the longest, "You dragged
+ * in the middle", is 332 of the 342 points a 390pt phone gives it. "At the
+ * end", not "towards the end", which fits at no size worth a title.
+ * `tempo.test.ts` holds every one to 25 characters.
  */
 const RUSH_HEADLINES: Record<Span, string> = {
-  start: 'Rushed at the start',
-  middle: 'Rushed in the middle',
-  end: 'Rushed at the end',
-  throughout: 'Rushed throughout',
+  start: 'You rushed at the start',
+  middle: 'You rushed in the middle',
+  end: 'You rushed at the end',
+  throughout: 'You rushed throughout',
 };
 
 const DRAG_HEADLINES: Record<Span, string> = {
-  start: 'Dragged at the start',
-  middle: 'Dragged in the middle',
-  end: 'Dragged at the end',
-  throughout: 'Dragged throughout',
+  start: 'You dragged at the start',
+  middle: 'You dragged in the middle',
+  end: 'You dragged at the end',
+  throughout: 'You dragged throughout',
 };
 
 /**
@@ -335,7 +336,7 @@ const DRAG_HEADLINES: Record<Span, string> = {
  * do — one recording can't see a habit. Insights is where a pattern across
  * sessions gets to make that claim.
  *
- * Slight drift gets the gentler "Drifted ahead": at that band the
+ * Slight drift gets the gentler "Tempo drifted ahead": at that band the
  * pipeline is inside the tolerance where the spec says not to claim certainty,
  * so naming the player would be more confident than the measurement.
  *
@@ -343,13 +344,13 @@ const DRAG_HEADLINES: Record<Span, string> = {
  * the server's verdict). A bar's band is how far it sits from the grid since
  * the first note, so a take that came in slow and then kept time has every
  * bar after its entrance banded late — and the settling-in the owner asked to
- * be spared (2026-09-25) would title "Dragged throughout" a take whose
+ * be spared (2026-09-25) would title "You dragged throughout" a take whose
  * sentence reads "Steady all the way through."
  */
 export function formatTakeVerdict(measures: MeasureVerdict[], direction?: Direction): string {
   const off = measures.filter((m) => m.band !== 'on');
   if (direction === 'on' || measures.length === 0 || off.length === 0) {
-    return 'Held the tempo';
+    return 'You held the tempo';
   }
 
   const ahead = off.filter((m) => m.direction === 'rush').length;
@@ -358,7 +359,7 @@ export function formatTakeVerdict(measures: MeasureVerdict[], direction?: Direct
 
   const worst = off.some((m) => m.band === 'rush_drag' || m.band === 'severe');
   if (!worst) {
-    return drifting === 'ahead' ? 'Drifted ahead' : 'Drifted behind';
+    return drifting === 'ahead' ? 'Tempo drifted ahead' : 'Tempo drifted behind';
   }
 
   const headlines = drifting === 'ahead' ? RUSH_HEADLINES : DRAG_HEADLINES;

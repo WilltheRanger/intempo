@@ -167,17 +167,17 @@ describe('the title over one take', () => {
   const settled = [bar(1, 'severe'), bar(2, 'severe'), bar(3, 'severe'), bar(4, 'severe')];
 
   it('reads the bars when the sentence under it named a stretch', () => {
-    expect(formatTakeVerdict(settled, 'drag')).toBe('Dragged throughout');
-    expect(formatTakeVerdict(settled)).toBe('Dragged throughout');
+    expect(formatTakeVerdict(settled, 'drag')).toBe('You dragged throughout');
+    expect(formatTakeVerdict(settled)).toBe('You dragged throughout');
   });
 
   it('agrees with the sentence when it found nothing to name', () => {
-    expect(formatTakeVerdict(settled, 'on')).toBe('Held the tempo');
+    expect(formatTakeVerdict(settled, 'on')).toBe('You held the tempo');
   });
 
   // The owner circled "You rushed in the / middle" on a phone (2026-09-29): a
-  // title that breaks leaves one word under it. 21 characters is what fits the
-  // 342 points of a 390pt phone at the title's size.
+  // title that breaks leaves one word under it. 25 characters is what fits the
+  // 342 points of a 390pt phone at the result title's 31pt.
   it('fits one line, wherever the take went wrong and whichever way', () => {
     const titles = new Set<string>();
     for (const direction of ['rush', 'drag'] as const) {
@@ -191,6 +191,6 @@ describe('the title over one take', () => {
     }
     titles.add(formatTakeVerdict(settled, 'on'));
     expect(titles.size).toBeGreaterThanOrEqual(8);
-    for (const title of titles) expect(title.length, title).toBeLessThanOrEqual(21);
+    for (const title of titles) expect(title.length, title).toBeLessThanOrEqual(25);
   });
 });

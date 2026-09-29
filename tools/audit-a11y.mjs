@@ -129,7 +129,7 @@ const ROUTES = [
     },
   ],
   // The payoff of the whole app, and the route the first sweep missed.
-  ['Verdict', 'analyses/fixture-take-1', { expect: 'Rushed' }],
+  ['Verdict', 'analyses/fixture-take-1', { expect: 'rushed' }],
   // **A take of a passage rather than a whole page**, which is what practice
   // looks like and what the pipeline has measured since `align_dtw` learned
   // subsequence matching. The screen names the bars for a take that did not

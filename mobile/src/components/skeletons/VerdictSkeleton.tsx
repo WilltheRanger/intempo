@@ -26,9 +26,9 @@ export function VerdictSkeleton() {
   return (
     <View>
       <FadeIn>
-        {/* The title, which fits one line now ("Rushed in the middle"), and
+        {/* The title, which fits one line now ("You rushed in the middle"), and
             nothing under it but the chart. */}
-        <Skeleton height={34} width="86%" style={styles.gapMd} />
+        <Skeleton height={30} width="86%" style={styles.gapMd} />
       </FadeIn>
 
       <FadeIn index={1} style={styles.section}>

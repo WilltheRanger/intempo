@@ -383,7 +383,7 @@ export function VerdictScreen() {
             : navigation.popTo('PieceDetail', { pieceId: take.pieceId })
         }
       />
-      <Text variant="screenTitle" accessibilityRole="header">
+      <Text variant="screenTitle" accessibilityRole="header" style={styles.title}>
         {take.lowConfidence ? 'Timing is uncertain' : formatTakeVerdict(take.measures, take.direction)}
       </Text>
       {/*
@@ -503,6 +503,16 @@ export function VerdictScreen() {
 }
 
 const styles = StyleSheet.create({
+  /**
+   * 31pt rather than the screen title's 36, so every verdict fits one line on
+   * a phone with "You" in it (the owner, 2026-09-29): "You dragged in the
+   * middle" is 332 of 342 points here, and broke as "…in the / middle" at 36.
+   */
+  title: {
+    fontSize: 31,
+    lineHeight: 36,
+    letterSpacing: -0.5,
+  },
   headline: {
     marginTop: 10,
   },
