@@ -5,7 +5,14 @@ import type {
   Tolerance,
 } from '../../data/types';
 import type { ColorToken } from '../../design';
-import { FALLBACK_INNER_PCT, bandFor, displayTempoBpm, verdictColorFor } from '../tempo';
+import {
+  FALLBACK_INNER_PCT,
+  FALLBACK_OUTER_PCT,
+  bandFor,
+  displayTempoBpm,
+  displayTempoValue,
+  verdictColorFor,
+} from '../tempo';
 import { barTarget } from './barTempo';
 import { pitchBand, pitchTone } from './intonation';
 import { readMeasure } from './measureReading';
@@ -38,8 +45,12 @@ export interface TrendPoint {
 export interface TrendBand {
   at: number;
   centre: number;
+  /** The band: inside it the line is ink. */
   low: number;
   high: number;
+  /** Past these the line is red rather than gold. */
+  farLow: number;
+  farHigh: number;
 }
 
 export interface TrendData {
@@ -116,14 +127,25 @@ export function tempoTrend(
       : sign > 0
         ? tolerance.rushing_inner_pct
         : tolerance.dragging_inner_pct) / 100;
+  // Where `bandFor` stops calling it slight: gold inside, red beyond.
+  const far = (sign: 1 | -1) =>
+    (tolerance === null
+      ? FALLBACK_OUTER_PCT / 2
+      : sign > 0
+        ? tolerance.rushing_mid_pct
+        : tolerance.dragging_mid_pct) / 100;
 
   const band = measures.map((m, i) => {
     const target = barTarget(m, takeTarget);
     return {
       at: along(i, count),
-      centre: displayTempoBpm(target, unit),
-      low: displayTempoBpm(target * (1 - inner(-1)), unit),
-      high: displayTempoBpm(target * (1 + inner(1)), unit),
+      // Unrounded: a whole-beat edge would put the colour change up to half
+      // a beat from where the tolerance actually is, and step the line.
+      centre: displayTempoValue(target, unit),
+      low: displayTempoValue(target * (1 - inner(-1)), unit),
+      high: displayTempoValue(target * (1 + inner(1)), unit),
+      farLow: displayTempoValue(target * (1 - far(-1)), unit),
+      farHigh: displayTempoValue(target * (1 + far(1)), unit),
     };
   });
   const points = measures.map((m, i) => {
@@ -134,7 +156,7 @@ export function tempoTrend(
     return {
       measure: m.measure,
       at: along(i, count),
-      value: displayTempoBpm(value, unit),
+      value: displayTempoValue(value, unit),
       tone: tier === 'on' ? null : verdictColorFor(tier),
     };
   });
@@ -143,7 +165,13 @@ export function tempoTrend(
     ...runs.flat().map((p) => p.value),
     ...band.flatMap((b) => [b.low, b.high]),
   ]);
-  return { runs, band, min, max, centreLabel: String(band[0].centre) };
+  return {
+    runs,
+    band,
+    min,
+    max,
+    centreLabel: String(displayTempoBpm(barTarget(measures[0], takeTarget), unit)),
+  };
 }
 
 /** The take's pitch as a trend, in cents against the player's tuning, or null with fewer than two bars read. */
@@ -161,6 +189,8 @@ export function takePitchTrend(
     centre: 0,
     low: -take.inTuneCents,
     high: take.inTuneCents,
+    farLow: -take.slightCents,
+    farHigh: take.slightCents,
   }));
   const points = measures.map((m, i) => {
     const value = smoothed[i];
@@ -191,4 +221,98 @@ export function trendY(value: number, data: TrendData, height: number): number {
 export function barAtAlong(at: number, count: number): number {
   if (count <= 1) return 0;
   return Math.max(0, Math.min(count - 1, Math.round(at * (count - 1))));
+}
+
+/** A point on the graph, in its own pixels. */
+export interface PlotPoint {
+  x: number;
+  y: number;
+}
+
+const px = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * The line through a run of points as one smooth curve (the owner,
+ * 2026-09-29: the straight segments read as a spreadsheet).
+ *
+ * **Monotone cubic (Fritsch–Carlson), not a spline that is merely smooth.**
+ * An ordinary curve through these points overshoots: between a bar at 104 and
+ * one at 106 it would bulge to 107, drawing a rush nobody played. This one
+ * never goes above or below the two bars it joins, so every height on the line
+ * is one the take actually reached.
+ */
+export function smoothPath(points: readonly PlotPoint[]): string {
+  if (points.length === 0) return '';
+  const first = points[0];
+  if (points.length === 1) return `M ${px(first.x)},${px(first.y)}`;
+  const n = points.length;
+  const dx: number[] = [];
+  const slope: number[] = [];
+  for (let i = 0; i < n - 1; i += 1) {
+    dx.push(points[i + 1].x - points[i].x);
+    slope.push(dx[i] === 0 ? 0 : (points[i + 1].y - points[i].y) / dx[i]);
+  }
+  const tangent: number[] = new Array(n);
+  tangent[0] = slope[0];
+  tangent[n - 1] = slope[n - 2];
+  for (let i = 1; i < n - 1; i += 1) {
+    // A peak or a trough is flat on top, which is what keeps it from overshooting.
+    tangent[i] = slope[i - 1] * slope[i] <= 0 ? 0 : (slope[i - 1] + slope[i]) / 2;
+  }
+  for (let i = 0; i < n - 1; i += 1) {
+    if (slope[i] === 0) {
+      tangent[i] = 0;
+      tangent[i + 1] = 0;
+      continue;
+    }
+    const a = tangent[i] / slope[i];
+    const b = tangent[i + 1] / slope[i];
+    const size = a * a + b * b;
+    if (size > 9) {
+      const k = 3 / Math.sqrt(size);
+      tangent[i] = k * a * slope[i];
+      tangent[i + 1] = k * b * slope[i];
+    }
+  }
+  let d = `M ${px(first.x)},${px(first.y)}`;
+  for (let i = 0; i < n - 1; i += 1) {
+    const from = points[i];
+    const to = points[i + 1];
+    const third = dx[i] / 3;
+    d +=
+      ` C ${px(from.x + third)},${px(from.y + tangent[i] * third)}` +
+      ` ${px(to.x - third)},${px(to.y - tangent[i + 1] * third)}` +
+      ` ${px(to.x)},${px(to.y)}`;
+  }
+  return d;
+}
+
+/**
+ * Everything above and below the band, as one shape to clip to — so the line
+ * turns gold exactly where it crosses the band's edge rather than at the next
+ * bar, and red exactly where it crosses the far edge.
+ *
+ * Two closed regions, each running along the band's edge and out past the
+ * graph's top or bottom, following the target where the page changes tempo.
+ */
+export function outsidePath(
+  band: readonly TrendBand[],
+  edge: 'near' | 'far',
+  toX: (at: number) => number,
+  toY: (value: number) => number,
+  height: number,
+): string {
+  if (band.length === 0) return '';
+  const high = band.map((b) => ({ x: toX(b.at), y: toY(edge === 'near' ? b.high : b.farHigh) }));
+  const low = band.map((b) => ({ x: toX(b.at), y: toY(edge === 'near' ? b.low : b.farLow) }));
+  const left = high[0].x;
+  const right = high[high.length - 1].x;
+  const above = -height;
+  const below = height * 2;
+  const along = (points: { x: number; y: number }[]) =>
+    points.map((p) => `L ${px(p.x)},${px(p.y)}`).join(' ');
+  return (
+    `M ${px(left)},${px(above)} L ${px(right)},${px(above)} ${along([...high].reverse())} Z ` +
+    `M ${px(left)},${px(below)} L ${px(right)},${px(below)} ${along([...low].reverse())} Z`
+  );
 }

@@ -54,6 +54,20 @@ wait.
 (`heldTake.ts`), so its review shows the length and no player. An older result
 saved without per-bar tempi has no line, and keeps the bars chart it had.
 
+**Then redrawn the same day** (the owner: "the graph could look better in some
+way"; three versions drawn on the sample take, the owner chose "A · Refined
+line" and asked for it taller). A monotone curve instead of straight segments
+(`smoothPath`, which cannot peak above the bar that made it). Gold and red are
+clipped to the band's edges (`outsidePath`) rather than decided per segment,
+so the colour changes exactly where the line leaves the band, with a faint
+tint of the same colour between the line and the target. The graph is 220pt
+tall and full width, with its labels inside it. The passage block became an
+accent on a rail under the graph, which also dots the bars that could not be
+timed. It is plotted from unrounded tempi (`displayTempoValue`), because
+whole beats stepped the line. The alternatives were the gap to the target
+filled as an area, with the band edges dotted, and green/gold/red background
+zones like heart-rate zones.
+
 ---
 
 ## 2026-09-29 — The result screen cut to one line, one chart and the passage as its button

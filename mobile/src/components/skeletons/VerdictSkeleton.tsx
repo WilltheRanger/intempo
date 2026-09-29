@@ -7,7 +7,7 @@ import { Skeleton } from '../primitives/Skeleton';
 /** The player: the round button beside its rail. */
 const PLAYER_HEIGHT = 48;
 /** The trend graph with its axis under it, as `TrendChart` draws it. */
-const CHART_HEIGHT = 162;
+const CHART_HEIGHT = 270;
 /** The question under the graph and its four answers. */
 const QUESTION_HEIGHT = 110;
 

@@ -48,7 +48,7 @@ export function verdictFor(band: Band, direction: Direction): Verdict {
  * being tuned. `backend/app/tests/test_fallback_bands.py` fires on the day
  * they diverge and states both answers.
  */
-const FALLBACK_OUTER_PCT = 20;
+export const FALLBACK_OUTER_PCT = 20;
 
 /**
  * Where a chart's full deflection sits for one signed deviation.
