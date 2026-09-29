@@ -37,6 +37,7 @@ import { appVerdictFor, canCorrect } from '../../lib/verdict/correction';
 import { success } from '../../lib/haptics';
 import { useSubmitCorrection } from '../../data/hooks/useCorrections';
 import { CorrectionPrompt, type CorrectionState } from './CorrectionPrompt';
+import { ChartKey, PITCH_KEY, TEMPO_KEY } from './ChartKey';
 import { MeasureBars } from './MeasureBars';
 import { MeasureCard } from './MeasureCard';
 import { TempoLine } from './TempoLine';
@@ -61,6 +62,7 @@ import { loadStateFor } from '../../lib/loadState';
 export function VerdictScreen() {
   const navigation = useNavigation<RootNavigation>();
   const { params } = useRoute<RouteProp<RootStackParamList, 'Verdict'>>();
+  const fromTakes = params.from === 'takes';
   /** The measure the chart has open; null until chosen, meaning `openingMeasure`. */
   const [selected, setSelected] = useState<number | null>(null);
 
@@ -363,9 +365,18 @@ export function VerdictScreen() {
         `navigate` pushed a second copy of it on top of this one — whose own
         back then came here again (see `useGoBack`).
       */}
+      {/*
+        From a piece's list of takes, back is that list (2026-09-29): the takes
+        have their own page now, and skipping past it to the piece would lose
+        the musician's place in it.
+      */}
       <BackLink
-        label="Back to the piece"
-        onPress={() => navigation.popTo('PieceDetail', { pieceId: take.pieceId })}
+        label={fromTakes ? 'Back to your takes' : 'Back to the piece'}
+        onPress={() =>
+          fromTakes
+            ? navigation.popTo('PieceTakes', { pieceId: take.pieceId })
+            : navigation.popTo('PieceDetail', { pieceId: take.pieceId })
+        }
       />
       <Text variant="screenTitle" accessibilityRole="header">
         {take.lowConfidence ? 'Timing is uncertain' : formatTakeVerdict(take.measures, take.direction)}
@@ -417,7 +428,7 @@ export function VerdictScreen() {
         </View>
       ) : null}
 
-      <RuledHeading label="Across the take" style={styles.ruled} />
+      <RuledHeading label="Across the take, in BPM" style={styles.ruled} />
       {/*
         No sentence under this one. The chart names its own axes — the target
         tempo on its rule, the take's fastest and slowest beside it — so prose
@@ -449,6 +460,7 @@ export function VerdictScreen() {
         tempoBeatUnit={take.tempoBeatUnit}
         tolerance={take.tolerance}
       />
+      <ChartKey items={TEMPO_KEY} />
 
       {/*
         **Pitch, beside the tempo it was played at** (the owner, 2026-09-25).
@@ -483,6 +495,7 @@ export function VerdictScreen() {
               }
               ends={{ up: 'sharp', down: 'flat' }}
             />
+            <ChartKey items={PITCH_KEY} />
           </View>
         </>
       ) : null}
@@ -545,7 +558,8 @@ function Fact({ label, value }: { label: string; value: string }) {
  * the sections are read in order, not scanned for.
  */
 function noteLabel(count: number): string {
-  return count === 1 ? '1 note missed' : `${count} notes missed`;
+  // Under the label "Missed", so the word is not said twice (2026-09-29).
+  return count === 1 ? '1 note' : `${count} notes`;
 }
 
 const styles = StyleSheet.create({

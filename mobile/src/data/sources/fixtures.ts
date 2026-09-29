@@ -195,6 +195,34 @@ const DEMO_SCORE: ScoreJson = {
 };
 
 /**
+ * **Each piece in its own key** (2026-09-29). Three sample pieces shared
+ * `DEMO_SCORE`, a D-major scale — so a first-time walk saw Bach's G-minor
+ * sonata drawn with two sharps and two different pieces on the shelf with the
+ * same picture. Same shape as the demo (two bars of quarters and a whole
+ * note), so nothing that counts bars or beats moves; only the notes and the
+ * key.
+ */
+function demoIn(key: string, bar1: string[], bar2: string[], last: string): ScoreJson {
+  return {
+    ...DEMO_SCORE,
+    key_signature: key,
+    measures: [
+      { measure_number: 1, notes: bar1.map(quarter), slurs: [] },
+      { measure_number: 2, notes: bar2.map(quarter), slurs: [] },
+      {
+        measure_number: 3,
+        notes: [{ pitch: last, duration: 'whole', tied_to_next: false }],
+        slurs: [],
+      },
+    ],
+  };
+}
+
+const G_MINOR_SCORE = demoIn('G minor', ['G4', 'A4', 'Bb4', 'C5'], ['D5', 'C5', 'Bb4', 'A4'], 'G4');
+const G_MAJOR_SCORE = demoIn('G major', ['G4', 'A4', 'B4', 'C5'], ['D5', 'C5', 'B4', 'A4'], 'G4');
+const G_MAJOR_ARPEGGIO_SCORE = demoIn('G major', ['G4', 'B4', 'D5', 'G5'], ['F#5', 'D5', 'B4', 'A4'], 'G4');
+
+/**
  * A reading that is internally consistent and wrong, which is the pair of
  * failures `proposals.ts` exists for.
  *
@@ -553,8 +581,10 @@ const FIXTURE_PIECES: FixturePiece[] = [
     // since `getCurrentPiece` resolves through the newest analysis.
     practicedDaysAgo: 0,
     thumbnail: require('../../../assets/fixtures/04_handwritten_clean.jpg'),
-    markedBpm: MARKED_BPM,
-    score: DEMO_SCORE,
+    // The tempo its sample take was timed against, so the record screen
+    // and the result agree (they said 92 and 96, 2026-09-29).
+    markedBpm: 96,
+    score: G_MINOR_SCORE,
   },
   {
     id: 'fixture-kreutzer-02',
@@ -653,7 +683,7 @@ const FIXTURE_PIECES: FixturePiece[] = [
     practicedDaysAgo: 8,
     thumbnail: require('../../../assets/fixtures/02_medium_printed.jpg'),
     markedBpm: MARKED_BPM,
-    score: DEMO_SCORE,
+    score: G_MAJOR_ARPEGGIO_SCORE,
   },
   {
     id: 'fixture-massenet-meditation',
@@ -708,7 +738,7 @@ const FIXTURE_PIECES: FixturePiece[] = [
     practicedDaysAgo: 3,
     thumbnail: null,
     markedBpm: MARKED_BPM,
-    score: DEMO_SCORE,
+    score: G_MAJOR_SCORE,
     // The photograph is gone *because* the reading was accepted. Saying so
     // keeps the two facts from disagreeing — the score screen stops asking a
     // musician to confirm a reading they have already confirmed.
@@ -1352,6 +1382,9 @@ export const fixtureTakeSource: TakeSource = {
       intonation: take.intonation
         ? { ...take.intonation, spreadCents: PITCH_SPREAD[index] }
         : null,
+      // Each take's own sentence (2026-09-29): scaled copies that all said
+      // "Bars 5–8 went at 104." read on the piece page as one take three times.
+      headline: sessionHeadline(take, scale),
     }));
   },
 
@@ -1404,6 +1437,19 @@ function asPassageFrom(take: TakeResult, first: number): TakeResult {
       measure: measure.measure + shift,
     })),
   };
+}
+
+/**
+ * What a scaled copy of the sample take would be told: the rushed bars at
+ * their own tempo, or steady once the push is inside the tolerance.
+ */
+function sessionHeadline(take: TakeResult, scale: number): string {
+  const rushed = take.measures.filter((m) => m.measure >= 5 && m.measure <= 8 && m.playedBpm !== null);
+  if (rushed.length === 0) return take.headline;
+  const mean =
+    rushed.reduce((sum, m) => sum + (m.playedBpm as number), 0) / rushed.length;
+  const played = Math.round(take.targetBpm + (mean - take.targetBpm) * scale);
+  return played - take.targetBpm <= 3 ? 'Steady all the way through.' : `Bars 5–8 went at ${played}.`;
 }
 
 /** The sample take, built fresh so `recordedAt` is always recent. */

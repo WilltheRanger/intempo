@@ -90,7 +90,7 @@ function regular(palette: Palette, { overContent, bar }: MaterialContext): Glass
     specular: !overContent && !bar,
     separator: true,
     edge: true,
-    fill: overContent ? palette.glassTintOverContent : palette.glassTint,
+    fill: overContent ? palette.glassTintOverContent : bar ? palette.glassTintBar : palette.glassTint,
   };
 }
 

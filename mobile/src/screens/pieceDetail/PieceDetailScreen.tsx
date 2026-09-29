@@ -4,6 +4,7 @@ import {
   FileMusic,
   Images,
   Layers,
+  Mic,
   MoreVertical,
   PencilLine,
   Trash2,
@@ -18,7 +19,6 @@ import { SheetOptionRow } from '../../components/overlays/SheetOptionRow';
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
 import { ScoreBand } from '../../components/score/ScoreBand';
 import { PieceLinkRow } from './PieceLinkRow';
-import { PracticeHistory } from './PracticeHistory';
 import { usePieceHistory } from '../../data/hooks/useLatestTake';
 import {
   BackLink,
@@ -41,6 +41,7 @@ import {
 import type { Piece } from '../../data/types';
 import { BORDER_WIDTH, colors, spacing } from '../../design';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
+import { historyCount } from '../../lib/insights/pieceHistory';
 import { loadStateFor } from '../../lib/loadState';
 
 /**
@@ -178,6 +179,9 @@ export function PieceDetailScreen() {
   const readingFailed = piece.transcriptionStatus === 'failed';
   const canPractice = hasNotation && !stillReading && !readingFailed;
   const needsNotation = !hasNotation && !hasPages && !stillReading;
+  // "7 since Sep 11", or null for a piece nobody has recorded — which then has
+  // no row, rather than a row that opens an empty page.
+  const takesCount = history.data ? historyCount(history.data) : null;
 
   return (
     /*
@@ -333,16 +337,6 @@ export function PieceDetailScreen() {
         where a musician deciding how to play the piece reaches for it.
       */}
 
-      {/*
-        **What happened last time, and how it has gone.** This screen knew
-        nothing about the piece's own past — Today answers that across the
-        library, Insights across thirty days, and the screen a musician opens
-        *because* they are about to play this piece answered neither about it.
-        See `PracticeHistory`, which draws nothing at all for a piece nobody
-        has recorded.
-      */}
-      {history.data ? <PracticeHistory history={history.data} /> : null}
-
       {needsNotation ? (
         <Card style={styles.notationCard}>
           <Text variant="sectionLabel" color="textSecondary">
@@ -377,6 +371,22 @@ export function PieceDetailScreen() {
         thing done to a piece most often after a scan, and it was two taps deep.
       */}
       <View style={styles.accessRows}>
+        {/*
+          **Your takes, as a row like the others** (the owner, 2026-09-29: "lets
+          make your takes a different page and kind of like the buttons below").
+          The takes were a headed list above these rows — two lists of ruled
+          rows, one on the other — and now open on their own page
+          (`PieceTakesScreen`). First, because it is the row opened most: what
+          happened last time is why a musician comes back to a piece.
+        */}
+        {takesCount ? (
+          <PieceLinkRow
+            icon={Mic}
+            label="Your takes"
+            description={takesCount}
+            onPress={() => navigation.navigate('PieceTakes', { pieceId: piece.id })}
+          />
+        ) : null}
         {/*
           A scan in flight, or one that failed, needs a way back to the screen
           that says so. Without this the only route to it was the one time the
@@ -535,7 +545,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   accessRows: {
-    marginTop: 14,
+    marginTop: spacing.xl,
   },
   head: {
     paddingTop: spacing.md,

@@ -165,7 +165,7 @@ describe('the headline comes from the practice, not from one take', () => {
     expect(insights!.meanDeviationPct).toBeCloseTo(0, 9);
     expect(insights!.spreadPct).toBeCloseTo(18, 9);
     expect(insights!.direction).toBe('on');
-    expect(readTendency(insights!).title).toBe('Your tempo wanders');
+    expect(readTendency(insights!).title).toBe('Your tempo wanders within a take');
   });
 
   it('says the same thing whichever order two opposite takes arrive in', async () => {
@@ -181,7 +181,7 @@ describe('the headline comes from the practice, not from one take', () => {
 
     expect(first!.verdict).toBe(second!.verdict);
     expect(first!.direction).toBe('on');
-    expect(readTendency(first!).title).toBe('Your tempo wanders');
+    expect(readTendency(first!).title).toBe('Your tempo wanders within a take');
   });
 
   it('still names the direction when the takes agree about one', async () => {

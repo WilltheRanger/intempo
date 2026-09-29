@@ -4,11 +4,9 @@ import { failureTitle, intakeRefusal, nothingUsableTitle } from '../verdict/fail
 /**
  * "Your takes" on a piece as rows — the owner's choice of 2026-09-25, over a
  * card with a chart in it that competed with the score for the top of the
- * page. Each row is when, and what that take's verdict said.
+ * page. Each row is when, and what that take's verdict said. The rows have
+ * their own page since 2026-09-29 (`PieceTakesScreen`).
  */
-
-/** How many rows show before "See all". */
-export const TAKES_SHOWN = 3;
 
 /**
  * What a take's verdict said, in a row's width: the sentence under its title
@@ -22,7 +20,16 @@ export function takeRowWords(take: TakeResult): string {
   if (take.status !== 'ok') {
     return nothingUsableTitle(take.status);
   }
-  return take.headline.trim().replace(/\.$/, '') || 'Take';
+  const words = take.headline.trim().replace(/\.$/, '') || 'Take';
+  // **With its unit and what it was aiming for** (2026-09-29). "Bars 5–8 went
+  // at 104" three times down a page said nothing a first-time reader could
+  // weigh: 104 what, and against what? The verdict screen gives both; a row
+  // now does too.
+  const run = /^(.*) went at (\d+)$/.exec(words);
+  if (run && Number.isFinite(take.targetBpm) && Number(run[2]) !== Math.round(take.targetBpm)) {
+    return `${run[1]} at ${run[2]}, not ${Math.round(take.targetBpm)} BPM`;
+  }
+  return words;
 }
 
 /**
@@ -46,14 +53,14 @@ export function rowDates(labels: readonly (string | null)[]): (string | null)[] 
 }
 
 /**
- * The link under the rows: "See all 11" when every take is loaded, "See the
- * last 12" when the piece has more than were fetched — a link that says "all"
- * and lists twelve of forty is a wrong fact. Null when there is nothing more
- * to show.
+ * The line under a piece's takes when it has more than were fetched: "The
+ * last 12 of 40". The page lists every take it has, so it has no "See all";
+ * this is what stops twelve rows passing for all forty. Null when every take
+ * is on the page.
  */
-export function moreTakesLabel(total: number, loaded: number): string | null {
-  if (loaded <= TAKES_SHOWN) {
+export function olderTakesNote(total: number, loaded: number): string | null {
+  if (loaded >= total) {
     return null;
   }
-  return loaded >= total ? `See all ${total}` : `See the last ${loaded}`;
+  return `The last ${loaded} of ${total}`;
 }

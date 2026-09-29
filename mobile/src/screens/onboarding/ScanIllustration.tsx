@@ -212,10 +212,24 @@ export function ScanIllustration() {
       </Animated.View>
 
       <Animated.View style={[styles.found, found]}>
-        <Text style={styles.foundNote}>♩</Text>
+        <QuarterNote height={15} color={colors.accentOnDark} />
         <Text style={styles.foundTempo}>= 76</Text>
       </Animated.View>
     </View>
+  );
+}
+
+/**
+ * A quarter note, drawn. The ♩ character was set in a font that lacks it, and
+ * the fallback's advance left a wide gap before "= 76" (2026-09-29).
+ */
+function QuarterNote({ height, color }: { height: number; color: string }) {
+  const width = height * 0.5;
+  return (
+    <Svg width={width} height={height} viewBox="0 0 6 12" accessible={false}>
+      <Ellipse cx={2.4} cy={9.9} rx={2.3} ry={1.65} transform="rotate(-20 2.4 9.9)" fill={color} />
+      <Line x1={4.45} y1={9.4} x2={4.45} y2={0.6} stroke={color} strokeWidth={0.8} />
+    </Svg>
   );
 }
 
@@ -263,7 +277,23 @@ function Page({ ink }: { ink: Ink }) {
         fontSize={8}
         fill={ink.tempo}
       >
-        Adagio  ♩ = 76
+        Adagio
+      </SvgText>
+      {/* The ♩ glyph comes from a fallback font with a wide advance, which left
+          a gap after it; a drawn note sits where it should. */}
+      <G transform="translate(49 50)" fill={ink.tempo} stroke={ink.tempo}>
+        <Ellipse cx={1.9} cy={-1.4} rx={1.9} ry={1.35} transform="rotate(-20 1.9 -1.4)" stroke="none" />
+        <Line x1={3.6} y1={-1.8} x2={3.6} y2={-8} strokeWidth={0.6} />
+      </G>
+      <SvgText
+        x={56}
+        y={50}
+        fontFamily={fontFamily.serifRegular}
+        fontStyle="italic"
+        fontSize={8}
+        fill={ink.tempo}
+      >
+        = 76
       </SvgText>
       {WELCOME_STAVES.map((staff, index) => (
         <G key={staff.y} transform={`translate(${STAFF_LEFT} ${staff.y})`}>
@@ -402,12 +432,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-  },
-  foundNote: {
-    fontFamily: fontFamily.serifRegular,
-    fontSize: 15,
-    lineHeight: 17,
-    color: colors.accentOnDark,
   },
   foundTempo: {
     fontFamily: fontFamily.sansMedium,

@@ -51,6 +51,8 @@ export type RootStackParamList = {
   Transcribe: undefined;
   TranscriptionReview: undefined;
   PieceDetail: { pieceId: string };
+  /** Every take of one piece, behind the piece screen's "Your takes" row. */
+  PieceTakes: { pieceId: string };
   /**
    * A saved piece's own score — the engraving, the photograph, or both.
    *
@@ -103,8 +105,12 @@ export type RootStackParamList = {
   UploadRecording: { pieceId: string };
   /** The daily warmup. Reads the instrument from preferences, so no params. */
   Warmup: undefined;
-  /** The analysis to show. Everything else comes from the API. */
-  Verdict: { analysisId: string };
+  /**
+   * The analysis to show. Everything else comes from the API. `from: 'takes'`
+   * when it was opened from a piece's list of takes, so its back link says so
+   * and returns there rather than past it.
+   */
+  Verdict: { analysisId: string; from?: 'takes' };
 };
 
 export type TabParamList = {

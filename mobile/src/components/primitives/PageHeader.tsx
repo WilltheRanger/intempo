@@ -1,9 +1,8 @@
-import { ChevronLeft } from '../icons';
 import type { ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { spacing } from '../../design';
-import { IconButton } from './IconButton';
+import { BackLink } from './BackLink';
 import { Text } from './Text';
 
 export interface PageHeaderProps {
@@ -85,7 +84,14 @@ export function PageHeader({
             instead leaves the glyph in exactly the same place and gives the
             button all 44 points back.
           */}
-          <IconButton icon={ChevronLeft} label={backLabel} onPress={onBack} />
+          {/*
+            **Words, the same as the piece, record and result screens**
+            (2026-09-29). This drew a bare round chevron while those drew "‹
+            Back to the piece", so a first-time walk met two ways back across
+            the app; every screen already passes a label that names where it
+            goes, and it was only ever read to screen readers.
+          */}
+          <BackLink label={backLabel} onPress={onBack} />
         </View>
       ) : null}
 
@@ -118,10 +124,8 @@ const styles = StyleSheet.create({
   backRow: {
     flexDirection: 'row',
     marginBottom: spacing.sm,
-    // Out to the gutter, so the glyph lines up with the title below it rather
-    // than sitting indented by its own padding. On the row because putting it
-    // on the button costs the button 12pt of touch target — see above.
-    marginLeft: -spacing.md,
+    // No offset of its own: `BackLink` carries the few points that line its
+    // chevron up with the title, as it does on every screen that used it.
   },
   titleRow: {
     flexDirection: 'row',

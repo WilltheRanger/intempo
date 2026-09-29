@@ -14,10 +14,11 @@ export interface OnboardingWelcomeProps {
 }
 
 /**
- * Before the first question (`redesign/OnboardWelcome.dc.html`): what the app
- * does, shown rather than said — a photographed page being read and its tempo
- * found — and how long the questions will take. It is the first thing a new
- * account sees once its confirmation link is opened.
+ * Before the first question (`redesign/OnboardWelcome.dc.html`): a
+ * photographed page being read and its tempo found, and how long the questions
+ * will take. What the app is for is the screen before this one
+ * (`OnboardingHowItWorks`): it was a sentence here for a day, and the owner
+ * asked for a screen instead of a sentence nobody reads (2026-09-29).
  *
  * The prototype's "I already have an account" is not drawn: the questions come
  * after the account now, so there is always one.
@@ -53,7 +54,7 @@ const styles = StyleSheet.create({
   },
   lede: {
     marginTop: spacing.md,
-    maxWidth: 290,
+    maxWidth: 320,
     textAlign: 'center',
   },
 });

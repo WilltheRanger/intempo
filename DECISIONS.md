@@ -1,5 +1,70 @@
 # InTempo Decisions
 
+## 2026-09-29 — A first-time walk's critique, fixed: ten earlier calls reversed
+
+**Context.** The owner asked for the app to be tried "as a first time user who
+knows nothing" and critiqued, then said "fix all of the issues" (the CLAUDE.md
+§2 go-ahead). Most fixes are copy or a missing explanation. Eight reverse a
+choice an earlier session made on purpose, and are recorded here so the next
+session does not undo them back.
+
+**Decisions.**
+- **No default role in onboarding.** The role step used to arrive with one
+  answer chosen, so Next worked without reading the question. Now nothing is
+  chosen and Next waits. The "where did you hear about us" step also waits, but
+  has a quiet Skip: it is our question, not the musician's.
+- **What the app does is a screen, not a sentence.** A sentence under the
+  Welcome's title was the first fix; the owner: "make a separate screen on what
+  intempo does instead of writing that no one will read". Onboarding now opens
+  on "How InTempo works": three small drawings (a page in the camera's corners,
+  a sound, the result screen's own bar chart) with one short line each. Then
+  "Let's get you set up", back to its one short line.
+- **A piece's takes are a page behind a row.** They were a headed list of
+  three with "See all" above Digital score, Original pages and Rename: two lists
+  of ruled rows stacked. The owner: "lets make your takes a different page and
+  kind of like the buttons below. It simplifies the app and makes it more
+  readable". Now "Your takes · 7 since Sep 11" is the first of the piece's rows
+  and opens `PieceTakesScreen`, which lists every loaded take (no "See all")
+  and says "The last 12 of 40" when there are more. A take opened from there
+  says "Back to your takes" and returns there.
+- **An empty Library has an action.** It said only that nothing was there; now
+  "Add your first piece" opens the same sheet as +. The no-matches search state
+  lost its "Clear search" button instead: the field's own ✕ and Cancel are
+  inches above it.
+- **The add sheet explains its four ways in.** Four bare labels were four
+  guesses. Each has one line, and "Add manually" says what it cannot do
+  (nothing to listen to or be timed on), because that is what surprises.
+- **PageHeader's back is a text link** ("‹ Back to library"), the same
+  BackLink the pushed screens use, not a bare chevron in a circle. A new
+  user read the chevron as decoration.
+- **The tab bar gets its own heavier tint** (`glassTintBar`, 94%), because at
+  the shared tint the Profile rows showed through the labels. It stays glass
+  and still carries no gradient (§3 law 6); `material.test.ts` holds both.
+- **The result screen's charts carry a colour key.** Green, ochre and red bars
+  meant nothing to someone who had not read the code. Each chart gets a row of
+  swatches with words, in the tertiary text colour so it recedes.
+- **"What did you hear?" answers are one segmented row**, not bare words. As
+  words they read as a sentence, not as a choice; as four bordered buttons they
+  wrapped to two lines, and the owner said "they should all be on one line".
+  They use `SegmentedControl`'s track (a sunken well, the app's reading as the
+  raised tile) with button semantics, since every press sends an answer. The
+  app's reading is also said in the question ("We read it as rushing").
+- **A blank title is refused at the field**, in red under it, not in a
+  sentence at the foot of the form. The placeholder now starts "e.g.": in the
+  title's serif, the bare example read as a title already filled in.
+
+**Not changed, on purpose.** Profile keeps "Bass" rather than "Double bass":
+beside Violin, Viola and Cello it cannot be misread, and
+`instrumentLabels.test.ts` already holds the short label for the segment's
+width. The record screen's empty space is the three-bar sample score, not the
+layout. The Today photograph needs a new picture, not code.
+
+**Trade-offs.** Two more required choices in onboarding (role, source) costs a
+tap for people who would have taken the default; a wrong default was the worse
+outcome, because it silently shapes the advice.
+
+---
+
 ## 2026-09-26 — Title and composer suggest inline, in grey; every field but the title says "(optional)"
 
 **Context.** The owner asked for two things on the add-a-piece screens:

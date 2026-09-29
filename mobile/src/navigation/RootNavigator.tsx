@@ -34,6 +34,7 @@ import { ProofReadScreen } from '../screens/proofRead/ProofReadScreen';
 import { OnboardingDone } from '../screens/onboarding/OnboardingDone';
 import { OnboardingScreen } from '../screens/onboarding/OnboardingScreen';
 import { PieceScoreScreen } from '../screens/pieceScore/PieceScoreScreen';
+import { PieceTakesScreen } from '../screens/pieceDetail/PieceTakesScreen';
 import { RecordScreen } from '../screens/record/RecordScreen';
 import { TempoScreen } from '../screens/tempo/TempoScreen';
 import { UploadRecordingScreen } from '../screens/upload/UploadRecordingScreen';
@@ -343,6 +344,7 @@ function SignedInApp() {
         getId={({ params }) => params?.pieceId}
       />
       <Stack.Screen name="PieceScore" component={PieceScoreScreen} />
+      <Stack.Screen name="PieceTakes" component={PieceTakesScreen} />
       <Stack.Screen name="MeasureEdit" component={MeasureEditScreen} />
       <Stack.Screen name="ProofRead" component={ProofReadScreen} />
       <Stack.Screen name="ChangeEmail" component={ChangeEmailScreen} />

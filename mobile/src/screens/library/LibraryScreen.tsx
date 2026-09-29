@@ -141,7 +141,7 @@ export function LibraryScreen() {
         pieces={pieces}
         results={results}
         query={query}
-        onClearSearch={() => setQuery('')}
+        onAddPiece={() => setAddSheetVisible(true)}
         onRetry={() => void refresh()}
         retrying={library.isFetching}
         onTouchPiece={(piece) => {
@@ -214,7 +214,8 @@ interface LibraryContentProps {
   pieces: Piece[];
   results: Piece[];
   query: string;
-  onClearSearch: () => void;
+  /** Opens the add sheet, from the empty library. */
+  onAddPiece: () => void;
   onOpenPiece: (piece: Piece) => void;
   onTouchPiece: (piece: Piece) => void;
   /** Fetch again after a failure — see the comment on the error state below. */
@@ -235,7 +236,7 @@ function LibraryContent({
   pieces,
   results,
   query,
-  onClearSearch,
+  onAddPiece,
   onOpenPiece,
   onTouchPiece,
   onRetry,
@@ -272,11 +273,18 @@ function LibraryContent({
 
   if (pieces.length === 0) {
     return (
-      // No action here, and no description: the primary Add piece button sits
-      // directly above, so "Add a piece and it will appear here" was telling a
-      // musician to do the thing already on screen. The title is the whole of
-      // what this state has to say.
-      <EmptyState icon={Library} title="No pieces yet" />
+      // **With its own way in, and in the middle of the page** (2026-09-29).
+      // This had no action on the argument that the + above was enough; a
+      // first-time walk found a page that was a title and a void, and Insights'
+      // empty state — which does offer the step — centred where this sat at the
+      // top. The two now look and act alike.
+      <EmptyState
+        fill
+        icon={Library}
+        title="No pieces yet"
+        actionLabel="Add your first piece"
+        onActionPress={onAddPiece}
+      />
     );
   }
 
@@ -285,9 +293,9 @@ function LibraryContent({
       <EmptyState
         icon={Search}
         title="No matches"
+        // No button: the field's own ✕ and Cancel already clear it, and a
+        // third way to do the same thing was one too many (2026-09-29).
         description={`Nothing matches “${query.trim()}”.`}
-        actionLabel="Clear search"
-        onActionPress={onClearSearch}
       />
     );
   }

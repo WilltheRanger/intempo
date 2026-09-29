@@ -156,10 +156,13 @@ export function readTendency(summary: WindowSummary): TendencyReading {
     // that is what is left.
     const out = `${Math.round(summary.spreadPct)}%`;
     return {
-      title: 'Your tempo wanders',
+      // "Within a take" (2026-09-29): the chart under this plots one tempo
+      // per take, which can sit steadily on one side while each take swings
+      // both ways inside it. A first-time walk read the two as disagreeing.
+      title: 'Your tempo wanders within a take',
       detail: `${out} off the beat either way, across ${count}.`,
       showsSpread: true,
-      spoken: `Your tempo wanders, about ${out} off the beat on either side, across ${count}`,
+      spoken: `Your tempo wanders within a take, about ${out} off the beat on either side, across ${count}`,
     };
   }
 

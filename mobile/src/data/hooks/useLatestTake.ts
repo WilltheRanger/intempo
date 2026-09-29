@@ -65,7 +65,7 @@ export function usePieceHistory(pieceId: string) {
  *
  * It does not *guarantee* the card is there on the first frame - a cold, slow
  * connection will still resolve after the screen mounts. It removes the common
- * case rather than the possibility, which is why `PracticeHistory` still has
+ * case rather than the possibility, which is why `PieceTakesScreen` still has
  * to be able to arrive late.
  */
 export function prefetchPieceHistory(

@@ -5,8 +5,8 @@ import type { Instrument } from '../data/types';
  * the order, what each step needs before Next, and the choices two of them
  * offer. A rules module because a rule in a `.tsx` is a rule nothing checks.
  *
- * Welcome comes before the first step and Done after the last; neither is a
- * question, so neither is on the progress bar — which is why the bar has six
+ * "How InTempo works" and Welcome come before the first step and Done after
+ * the last; none is a question, so none is on the progress bar — which is why the bar has six
  * segments and the Welcome says "six quick questions".
  */
 export const ONBOARDING_STEPS = [
@@ -41,7 +41,7 @@ export interface StepAnswers {
 }
 
 export const ROLE_CHOICES: ReadonlyArray<{ value: PracticeRole; title: string; detail: string }> = [
-  { value: 'learning', title: "I'm learning", detail: 'Only you see your takes' },
+  { value: 'learning', title: 'I’m learning', detail: 'Only you see your takes' },
   { value: 'teaching', title: 'I teach', detail: 'Follow your students’ practice' },
 ];
 

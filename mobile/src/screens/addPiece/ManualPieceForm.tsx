@@ -85,11 +85,14 @@ export function ManualPieceForm() {
   const [timeSignature, setTimeSignature] = useState('');
   const [bpm, setBpm] = useState('');
   const [error, setError] = useState<string | null>(null);
+  // Said at the title field rather than by the button (2026-09-29).
+  const [titleError, setTitleError] = useState<string | null>(null);
 
   async function submit() {
     const trimmedTitle = title.trim();
     if (!trimmedTitle) {
-      setError('Add a title.');
+      setError(null);
+      setTitleError('Add a title.');
       return;
     }
 
@@ -143,7 +146,11 @@ export function ManualPieceForm() {
 
       <TitleField
         value={title}
-        onChangeText={setTitle}
+        onChangeText={(next) => {
+          setTitle(next);
+          setTitleError(null);
+        }}
+        error={titleError}
         composer={composer}
         onComposerChange={setComposer}
         style={styles.first}

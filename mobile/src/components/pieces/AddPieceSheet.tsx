@@ -12,7 +12,13 @@ export interface AddPieceSheetProps {
 }
 
 /**
- * **Four labels, and no line under any of them.**
+ * **Back to a line under each, but only lines that add something** (2026-09-29).
+ * A first-time walk could not tell which of the four to pick, what kind of
+ * file the third meant, or that the fourth gives a piece with no notes. The
+ * lines below answer exactly those; the ones removed before only said each
+ * label again, and that argument still holds.
+ *
+ * **Four labels, and no line under any of them** — the earlier state:
  *
  * Each one carried a description and each description said the label again:
  * "Photograph sheet music / Use the camera on the pages in front of you",
@@ -27,10 +33,30 @@ export interface AddPieceSheetProps {
  * It was required once, which is how all four of these came to exist.
  */
 const OPTIONS = [
-  { option: 'scan' as const, icon: Camera, label: 'Photograph sheet music' },
-  { option: 'import' as const, icon: Images, label: 'Choose photos' },
-  { option: 'notation' as const, icon: FileMusic, label: 'Open a score file' },
-  { option: 'manual' as const, icon: PencilLine, label: 'Enter it by hand' },
+  {
+    option: 'scan' as const,
+    icon: Camera,
+    label: 'Photograph sheet music',
+    description: 'Recommended. The app reads the notes from the page.',
+  },
+  {
+    option: 'import' as const,
+    icon: Images,
+    label: 'Choose photos',
+    description: 'Pages you have already photographed.',
+  },
+  {
+    option: 'notation' as const,
+    icon: FileMusic,
+    label: 'Open a score file',
+    description: 'MusicXML, from MuseScore, Sibelius or Finale.',
+  },
+  {
+    option: 'manual' as const,
+    icon: PencilLine,
+    label: 'Enter it by hand',
+    description: 'A title and tempo only: nothing to listen to or be timed on.',
+  },
 ];
 
 /**
@@ -58,6 +84,7 @@ export function AddPieceSheet({
           key={entry.option}
           icon={entry.icon}
           label={entry.label}
+          description={entry.description}
           divided={rowDivided(index)}
           onPress={() => onSelect(entry.option)}
         />

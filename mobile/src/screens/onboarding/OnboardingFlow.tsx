@@ -22,6 +22,7 @@ import {
 } from '../../lib/onboardingSteps';
 import type { SceneDirection } from '../../navigation/sceneMotion';
 import { ListeningIllustration } from './ListeningIllustration';
+import { OnboardingHowItWorks } from './OnboardingHowItWorks';
 import { OnboardingWelcome } from './OnboardingWelcome';
 import { StepFrame, type StepAction } from './StepFrame';
 
@@ -45,11 +46,12 @@ export interface OnboardingFlowProps {
   onFinish: (answers: OnboardingAnswers) => void;
 }
 
-type Place = 'welcome' | OnboardingStep;
+type Place = 'about' | 'welcome' | OnboardingStep;
 
 /**
  * The redesign's onboarding (`redesign/OnboardWelcome.dc.html` through
- * `OnboardPhoto.dc.html`): Welcome, then one question a screen — name,
+ * `OnboardPhoto.dc.html`): what the app does (`OnboardingHowItWorks`, 2026-09-29),
+ * Welcome, then one question a screen — name,
  * instrument, learning or teaching, the microphone, where you heard of us, a
  * photograph.
  *
@@ -79,13 +81,14 @@ export function OnboardingFlow({
   onFinish,
 }: OnboardingFlowProps) {
   const saved = usePreferences();
-  const [place, setPlace] = useState<Place>('welcome');
+  const [place, setPlace] = useState<Place>('about');
   const [direction, setDirection] = useState<SceneDirection>('none');
   const [name, setName] = useState(initial.name);
   const [instrument, setInstrument] = useState(initial.instrument);
-  // One of the two is always chosen, as the prototype draws it: learning is
-  // what nearly everybody arriving here is doing.
-  const [role, setRole] = useState<PracticeRole>(saved.practiceRole ?? 'learning');
+  // **Nothing chosen until the musician chooses** (2026-09-29). This was
+  // "learning" from the start, so a teacher tapping Next through the flow was
+  // filed as a student without being asked.
+  const [role, setRole] = useState<PracticeRole | null>(saved.practiceRole);
   const [source, setSource] = useState<FoundVia | null>(saved.foundVia);
   const [photo, setPhoto] = useState(initial.photo);
   const [asking, setAsking] = useState(false);
@@ -127,6 +130,10 @@ export function OnboardingFlow({
     }
     const asset = result.assets[0];
     setPhoto({ uri: asset.uri, mimeType: asset.mimeType ?? 'image/jpeg' });
+  }
+
+  if (place === 'about') {
+    return <OnboardingHowItWorks onNext={() => go('welcome', 'forward')} />;
   }
 
   if (place === 'welcome') {
@@ -190,7 +197,7 @@ export function OnboardingFlow({
           primary={{
             ...next,
             onPress: () => {
-              preferences.setPracticeRole(role);
+              if (role) preferences.setPracticeRole(role);
               forward('role');
             },
           }}
@@ -265,11 +272,21 @@ export function OnboardingFlow({
         <StepFrame
           {...frame}
           title="How did you find us?"
+          // Next is the way on, held until something is chosen; skipping is
+          // the quiet line under it, as "Not now" is a step earlier. "Skip" as
+          // the big black button read as the thing to do.
           primary={{
             ...next,
-            label: source ? 'Next' : 'Skip',
+            disabled: source === null,
             onPress: () => {
               preferences.setFoundVia(source);
+              forward('source');
+            },
+          }}
+          secondary={{
+            label: 'Skip',
+            onPress: () => {
+              preferences.setFoundVia(null);
               forward('source');
             },
           }}
@@ -307,8 +324,16 @@ export function OnboardingFlow({
       return (
         <StepFrame
           {...frame}
-          title="Add a photo"
-          primary={{ label: 'Finish', onPress: () => onFinish(current()), loading: busy }}
+          // "A photo" in an app whose main act is photographing music read as
+          // "photograph your music". And with none chosen, Finish and "Do this
+          // later" did the same thing: the button now chooses one, and the
+          // quiet line finishes without (2026-09-29).
+          title="Add a profile photo"
+          primary={
+            shown
+              ? { label: 'Finish', onPress: () => onFinish(current()), loading: busy }
+              : { label: 'Choose a photo', onPress: () => void pickPhoto(), disabled: busy }
+          }
           secondary={
             shown
               ? undefined
@@ -329,16 +354,20 @@ export function OnboardingFlow({
                 <Camera size={ICON_SIZE.xl} strokeWidth={ICON_STROKE_WIDTH} color={colors.textTertiary} />
               )}
             </Pressable>
-            <Pressable
-              onPress={() => void pickPhoto()}
-              accessibilityRole="button"
-              style={({ pressed }) => [styles.photoButton, pressed && styles.choicePressed]}
-            >
-              <Images size={ICON_SIZE.md} strokeWidth={ICON_STROKE_WIDTH} color={colors.textPrimary} />
-              <Text variant="metadata" style={styles.photoButtonLabel}>
-                {shown ? 'Change' : 'Choose a photo'}
-              </Text>
-            </Pressable>
+            {/* Only once there is a photo to change: before that, the button
+                at the bottom is the one way to choose. */}
+            {shown ? (
+              <Pressable
+                onPress={() => void pickPhoto()}
+                accessibilityRole="button"
+                style={({ pressed }) => [styles.photoButton, pressed && styles.choicePressed]}
+              >
+                <Images size={ICON_SIZE.md} strokeWidth={ICON_STROKE_WIDTH} color={colors.textPrimary} />
+                <Text variant="metadata" style={styles.photoButtonLabel}>
+                  Change
+                </Text>
+              </Pressable>
+            ) : null}
           </View>
         </StepFrame>
       );

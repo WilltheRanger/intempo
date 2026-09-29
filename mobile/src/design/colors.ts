@@ -206,6 +206,15 @@ export const lightColors = {
    */
   glassTint: 'rgba(251, 249, 244, 0.80)',
   /**
+   * The bottom bar's own tint: more opaque than `glassTint` (2026-09-29).
+   * At 0.80 a first-time walk could still read the text scrolling beneath it
+   * — "Haptic feedback" under the Profile tab's label — which is the thing
+   * `glassTint` says the content must not survive as. The bar is the one
+   * surface always over moving text, so it alone takes the heavier tint; the
+   * blur is unchanged and it still carries no gradient (§3 law 6).
+   */
+  glassTintBar: 'rgba(251, 249, 244, 0.94)',
+  /**
    * `glassTint` already composited over `bg`, fully opaque.
    *
    * What a glass surface becomes when the person has Reduce Transparency on —
@@ -437,6 +446,8 @@ export const darkColors: Palette = {
    * `textPrimary` measures **9.11:1**; over black it is 17.87:1.
    */
   glassTint: 'rgba(26, 23, 20, 0.80)',
+  /** The bottom bar's tint, as in the light palette: see there. */
+  glassTintBar: 'rgba(26, 23, 20, 0.94)',
   /** `glassTint` over `bg`, opaque. What Reduce Transparency settles to. */
   glassOpaque: '#191613',
   /**

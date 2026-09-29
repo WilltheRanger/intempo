@@ -106,7 +106,7 @@ describe('readTendency', () => {
       tolerance: TOLERANCE,
     });
 
-    expect(reading.title).toBe('Your tempo wanders');
+    expect(reading.title).toBe('Your tempo wanders within a take');
     // The chart says "both sides" better than a clause can; the words carry
     // the one thing a picture cannot, which is how far.
     expect(reading.detail).toContain('either way');
