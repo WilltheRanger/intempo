@@ -27,16 +27,19 @@ export const VERDICT_STATES = [
     // Changed 2026-09-16 with the headings. The body used to open by
     // restating the heading, so what it matches on now is the part that only
     // this state says: whether trying again is worth the time.
-    says: /Not your playing\. Try again/i,
-    needle: 'Not your playing. Try again',
+    // Changed again 2026-09-29: the line under the heading went in the owner's
+    // sweep (the button says Try again), so the heading is what this state
+    // alone says.
+    says: /Something went wrong on our end/i,
+    needle: 'Something went wrong on our end',
     offers: /^Try again$/i,
   },
   {
     id: 'fixture-take-unrecoverable',
     what: 'a failure that will not come back',
     label: 'Verdict — failed for good',
-    says: /Not your playing\. Record it again/i,
-    needle: 'Not your playing. Record it again',
+    says: /This recording couldn.t be processed/i,
+    needle: 'couldn’t be processed',
     offers: /^Record again$/i,
   },
   {
@@ -50,8 +53,10 @@ export const VERDICT_STATES = [
     // copy, and the distinction it guards is unchanged — a silent take says
     // the microphone heard nothing, a page with no notes says the piece has
     // none to compare against.
-    says: /no sound reached the microphone/i,
-    needle: 'No sound reached the microphone',
+    // 2026-09-29: the sentence's opening repeated the heading and went; what
+    // is left of it, and the heading itself, say the microphone heard nothing.
+    says: /nothing reached the microphone/i,
+    needle: 'Nothing reached the microphone',
     offers: /^Record again$/i,
   },
   {

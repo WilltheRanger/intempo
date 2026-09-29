@@ -1,4 +1,6 @@
 import type { TakeResult } from '../../data/types';
+import { asLabel } from '../library/pieceStatus';
+import { formatTakeVerdict } from '../tempo';
 import { failureTitle, intakeRefusal, nothingUsableTitle } from '../verdict/failureTitle';
 
 /**
@@ -43,13 +45,36 @@ export function takeRowIsVerdict(take: TakeResult): boolean {
 }
 
 /**
- * Each row's date, or null where the row above already said it: three takes
- * today read "Today" once, not three times down the left edge.
+ * A row's title: the take's own result title as a label ("Rushed in the
+ * middle", "Held the tempo") — the words its result opens with — or the
+ * heading of a take that gave no reading. Replaced the sentence under the
+ * title, which down a page read "Bars 5–8 at 104, not 96 BPM" six times; the
+ * figure has its own column now.
  */
-export function rowDates(labels: readonly (string | null)[]): (string | null)[] {
-  return labels.map((label, index) =>
-    index > 0 && label !== null && label === labels[index - 1] ? null : label,
-  );
+export function takeRowTitle(take: TakeResult): string {
+  if (!takeRowIsVerdict(take)) return takeRowWords(take);
+  if (take.lowConfidence) return 'Timing is uncertain';
+  return asLabel(formatTakeVerdict(take.measures, take.direction));
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * When a take was, for its row — on every row (a row left blank because the
+ * one above said the same read as a missing date, 2026-09-29): "Today",
+ * "Yesterday", "3 days ago" within the week, then the date itself, with the
+ * year once it is not this one.
+ */
+export function takeDateLabel(iso: string, now: Date = new Date()): string {
+  const when = new Date(iso);
+  if (Number.isNaN(when.getTime())) return '';
+  const day = (d: Date) => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+  const days = Math.round((day(now) - day(when)) / 86_400_000);
+  if (days <= 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  if (days < 7) return `${days} days ago`;
+  const date = `${MONTHS[when.getMonth()]} ${when.getDate()}`;
+  return when.getFullYear() === now.getFullYear() ? date : `${date}, ${when.getFullYear()}`;
 }
 
 /**

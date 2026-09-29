@@ -95,7 +95,7 @@ function runsOf(points: readonly (TrendPoint | null)[]): TrendPoint[][] {
   return runs;
 }
 
-function range(values: readonly number[]): { min: number; max: number } {
+function rangeOf(values: readonly number[]): { min: number; max: number } {
   const low = Math.min(...values);
   const high = Math.max(...values);
   const pad = Math.max((high - low) * 0.12, 1);
@@ -161,7 +161,7 @@ export function tempoTrend(
     };
   });
   const runs = runsOf(points);
-  const { min, max } = range([
+  const { min, max } = rangeOf([
     ...runs.flat().map((p) => p.value),
     ...band.flatMap((b) => [b.low, b.high]),
   ]);
@@ -204,7 +204,7 @@ export function takePitchTrend(
     };
   });
   const runs = runsOf(points);
-  const { min, max } = range([
+  const { min, max } = rangeOf([
     ...runs.flat().map((p) => p.value),
     ...band.flatMap((b) => [b.low, b.high]),
   ]);
@@ -315,4 +315,32 @@ export function outsidePath(
     `M ${px(left)},${px(above)} L ${px(right)},${px(above)} ${along([...high].reverse())} Z ` +
     `M ${px(left)},${px(below)} L ${px(right)},${px(below)} ${along([...low].reverse())} Z`
   );
+}
+
+/**
+ * Any series — takes one after another — as a trend over a fixed band, for
+ * the graphs that are not a take bar by bar (Insights, a piece's takes).
+ *
+ * Unsmoothed: each point is already a whole take's reading, and averaging a
+ * take with its neighbours would draw a take nobody played. The range is the
+ * caller's where it has fitted one (`trendRange`), and otherwise every point
+ * and the band with a little room.
+ */
+export function seriesTrend(
+  values: readonly number[],
+  band: Omit<TrendBand, 'at'>,
+  toneOf: (value: number) => ColorToken | null,
+  range?: { min: number; max: number },
+): TrendData | null {
+  if (values.length < 2) return null;
+  const count = values.length;
+  const run = values.map((value, i) => ({
+    measure: i + 1,
+    at: along(i, count),
+    value,
+    tone: toneOf(value),
+  }));
+  const edges = [{ ...band, at: 0 }, { ...band, at: 1 }];
+  const { min, max } = range ?? rangeOf([...values, band.low, band.high]);
+  return { runs: [run], band: edges, min, max, centreLabel: null };
 }

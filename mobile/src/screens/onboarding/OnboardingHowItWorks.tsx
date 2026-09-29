@@ -53,7 +53,7 @@ export function OnboardingHowItWorks({ onNext }: OnboardingHowItWorksProps) {
         <FadeIn index={2} style={styles.row}>
           <BarsArt />
           <Text variant="pieceTitle" style={styles.line}>
-            See where you rushed or dragged
+            See where you rushed
           </Text>
         </FadeIn>
       </View>

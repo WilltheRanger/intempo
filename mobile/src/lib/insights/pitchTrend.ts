@@ -1,4 +1,5 @@
 import type { TakeResult } from '../../data/types';
+import { seriesTrend, type TrendData } from '../verdict/trend';
 
 /**
  * "In tune" on Insights: how far the typical note sat from the player's own
@@ -21,6 +22,8 @@ export interface PitchTrend {
   points: PitchPoint[];
   /** The newest take's in-tune band, drawn under the line. */
   inTuneCents: number;
+  /** Past this the line is red rather than gold. */
+  slightCents: number;
   /** What the top of the chart stands for, in cents. */
   top: number;
 }
@@ -55,15 +58,16 @@ export function pitchTrendFrom(takes: readonly TakeResult[]): PitchTrend | null 
   return {
     points,
     inTuneCents: newest.inTuneCents,
+    slightCents: newest.slightCents,
     top: Math.max(TOP_FLOOR_CENTS, newest.slightCents, Math.ceil((highest * 1.2) / 5) * 5),
   };
 }
 
 /**
- * The line under "In tune" on Insights: where the latest take sat, and which
- * way it has gone since the earliest — "Within 15¢ of your tuning · closer
- * than before". Short, as the verdict's is (the owner, 2026-09-25: "too
- * wordy"). Works from one take too.
+ * The line under "In tune" on Insights, in three words or fewer (the owner,
+ * 2026-09-29: "Within 15 cents of your tuning · closer than before" was
+ * jargon). Which way it has gone since the earliest take when that moved;
+ * otherwise where the latest sits. The graph under it has the figures.
  */
 export function pitchTrendLine(takes: readonly TakeResult[]): string | null {
   const read = takes.filter(
@@ -73,25 +77,29 @@ export function pitchTrendLine(takes: readonly TakeResult[]): string | null {
   if (!newest) {
     return null;
   }
-  const where =
-    newest.spreadCents <= newest.inTuneCents
-      ? `Within ${Math.round(newest.inTuneCents)} cents of your tuning`
-      : `About ${Math.round(newest.spreadCents)} cents off your tuning`;
   const oldest = read[read.length - 1]?.intonation;
-  if (!oldest || read.length < MINIMUM_POINTS) {
-    return where;
+  if (oldest && read.length >= MINIMUM_POINTS) {
+    const change = oldest.spreadCents - newest.spreadCents;
+    if (change >= CHANGE_WORTH_SAYING_CENTS) return 'Closer than before';
+    if (change <= -CHANGE_WORTH_SAYING_CENTS) return 'Further out than before';
   }
-  const change = oldest.spreadCents - newest.spreadCents;
-  if (change >= CHANGE_WORTH_SAYING_CENTS) {
-    return `${where} · closer than before`;
-  }
-  if (change <= -CHANGE_WORTH_SAYING_CENTS) {
-    return `${where} · further out than before`;
-  }
-  return where;
+  return newest.spreadCents <= newest.inTuneCents
+    ? 'In tune'
+    : `About ${Math.round(newest.spreadCents)} cents off`;
 }
 
-/** Where a point sits down the chart: 0 at the top, 1 at the bottom (in tune). */
-export function pitchY(cents: number, trend: PitchTrend): number {
-  return 1 - Math.max(0, Math.min(1, cents / trend.top));
+/**
+ * Takes one after another, as the result screen's kind of graph: cents from
+ * the player's own tuning, the in-tune band along the floor, gold past it and
+ * red past the "slightly off" distance.
+ */
+export function pitchTrendData(trend: PitchTrend): TrendData | null {
+  const { inTuneCents, slightCents } = trend;
+  return seriesTrend(
+    trend.points.map((point) => point.spreadCents),
+    { centre: 0, low: 0, high: inTuneCents, farLow: -slightCents, farHigh: slightCents },
+    (cents) => (cents <= inTuneCents ? null : cents <= slightCents ? 'verdictMid' : 'verdictBad'),
+    // A little under zero, so a take right on the tuning is not on the edge.
+    { min: -trend.top * 0.06, max: trend.top },
+  );
 }

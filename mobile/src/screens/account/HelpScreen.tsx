@@ -19,7 +19,7 @@ import { BORDER_WIDTH, colors, spacing } from '../../design';
 
 interface Copy {
   title: string;
-  detail: string;
+  detail: string | null;
 }
 
 function copyFor(report: ConnectionReport | null, checking: boolean): Copy {
@@ -31,8 +31,10 @@ function copyFor(report: ConnectionReport | null, checking: boolean): Copy {
   }
   if (!IS_LIVE_BACKEND) {
     return {
-      title: 'Sample mode',
-      detail: 'Sample data. Not connected.',
+      // Said once (the owner's sweep, 2026-09-29): "Sample mode" over
+      // "Sample data. Not connected." was the same fact twice.
+      title: 'Sample data',
+      detail: null,
     };
   }
   if (!report) {
@@ -113,9 +115,11 @@ export function HelpScreen() {
 
       <Card>
         <Text variant="pieceTitle">{status.title}</Text>
-        <Text variant="body" color="textSecondary" style={styles.detail}>
-          {status.detail}
-        </Text>
+        {status.detail ? (
+          <Text variant="body" color="textSecondary" style={styles.detail}>
+            {status.detail}
+          </Text>
+        ) : null}
         <PrimaryButton
           label={checking ? 'Checking…' : 'Check again'}
           onPress={() => void runCheck()}

@@ -18,7 +18,6 @@ import { BORDER_WIDTH, colors, radii, spacing } from '../../design';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import {
   proposalsFor,
-  proposalsSummary,
   type Proposal,
 } from '../../lib/notation/proposals';
 import type { RootStackParamList } from '../../navigation/types';
@@ -161,10 +160,9 @@ export function ProofReadScreen() {
         backLabel="Back to score"
       />
 
-      <Text variant="body" color="textSecondary" style={styles.summary}>
-        {proposalsSummary(proposals.length)}
-      </Text>
-
+      {/* The count is said once, at the foot, where it goes down as you
+          answer ("2 left"); a second copy at the top said it before a row
+          was read (the owner's sweep, 2026-09-29). */}
       {proposals.map((proposal, index) => (
         <ProposalRow
           key={proposal.id}
@@ -283,10 +281,6 @@ function Answer({
 }
 
 const styles = StyleSheet.create({
-  summary: {
-    marginTop: spacing.lg,
-    marginBottom: spacing.sm,
-  },
   row: {
     paddingVertical: ROW_PADDING_VERTICAL,
   },

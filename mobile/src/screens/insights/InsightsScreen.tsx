@@ -19,13 +19,13 @@ import { useRecentTakes } from '../../data/hooks/useLatestTake';
 import { describeLoadError } from '../../data/describeLoadError';
 import { colors, fontFamily, spacing, ICON_SIZE, ICON_STROKE_WIDTH } from '../../design';
 import { readTendency } from '../../lib/insights/tendency';
-import { sessionTrendFrom } from '../../lib/insights/sessionTrend';
+import { axisLabels, sessionTrendData, sessionTrendFrom } from '../../lib/insights/sessionTrend';
 import { barsLabel, worthALook } from '../../lib/insights/passageTempo';
 import type { TabScreenNavigation } from '../../navigation/types';
-import { PitchTrendChart } from '../../components/charts/PitchTrendChart';
-import { SessionTrendChart } from '../../components/charts/SessionTrendChart';
-import { pitchTrendFrom, pitchTrendLine } from '../../lib/insights/pitchTrend';
-import { PassageChart } from './PassageChart';
+import { TrendPlot } from '../../components/charts/TrendPlot';
+import { PieceHeading } from '../../components/pieces/PieceHeading';
+import { pitchTrendData, pitchTrendFrom, pitchTrendLine } from '../../lib/insights/pitchTrend';
+import { tempoTrend } from '../../lib/verdict/trend';
 import { PieceInsightRow } from './PieceInsightRow';
 import { firstStep, focusReason, windowLabel } from './copy';
 import { useAddPieceOption } from '../../navigation/useAddPieceOption';
@@ -141,6 +141,33 @@ export function InsightsScreen() {
   // until a take has been read for pitch.
   const pitchLine = pitchTrendLine(history);
   const pitchTrend = pitchTrendFrom(history);
+  // Both drawn the way the result screen draws a take (`TrendPlot`).
+  const sessionData = sessionTrend ? sessionTrendData(sessionTrend, insights.tolerance) : null;
+  const sessionEnds = sessionTrend
+    ? axisLabels(sessionTrend.points.map((point) => point.value), sessionTrend.range)
+    : null;
+  const pitchData = pitchTrend ? pitchTrendData(pitchTrend) : null;
+  // "Worth a look" shows the piece's last take, with the passage to practise
+  // marked on its rail — the picture the result screen gave, where the bars it
+  // drew here said "bar by bar" in a form the owner rejected (2026-09-29).
+  const lastTake = focus
+    ? (history.find((take) => take.pieceId === focus.pieceId && take.failure === null) ?? null)
+    : null;
+  const lastLine = lastTake
+    ? tempoTrend(lastTake.measures, lastTake.targetBpm, lastTake.tempoBeatUnit, lastTake.tolerance)
+    : null;
+  const practiceSpan = (() => {
+    const practice = passages?.practice;
+    if (!lastTake || !practice) return null;
+    const bars = lastTake.measures.map((m) => m.measure);
+    const along = (bar: number) => {
+      const index = bars.indexOf(bar);
+      return index < 0 || bars.length < 2 ? null : index / (bars.length - 1);
+    };
+    const from = along(practice.from);
+    const to = along(practice.to);
+    return from === null || to === null ? null : { from, to };
+  })();
 
   function practise(pieceId: string, startAt?: number) {
     navigation.navigate('Record', startAt === undefined ? { pieceId } : { pieceId, startAt });
@@ -168,13 +195,19 @@ export function InsightsScreen() {
         calendar axis draws the gaps as flat stretches nobody played. Without
         two takes there is no line, and the sentence carries the finding alone.
       */}
-      {sessionTrend ? (
-        <SessionTrendChart
-          trend={sessionTrend}
-          height={150}
-          accessibilityLabel={tendency.spoken}
-          style={styles.chart}
-        />
+      {sessionTrend && sessionData ? (
+        <View style={styles.chart} accessible accessibilityRole="image" accessibilityLabel={tendency.spoken}>
+          <TrendPlot
+            data={sessionData}
+            height={140}
+            ends={{
+              up: sessionEnds?.faster ? 'faster' : undefined,
+              down: sessionEnds?.slower ? 'slower' : undefined,
+            }}
+            centreLabel="on tempo"
+          />
+          <TakeAxis count={sessionTrend.points.length} />
+        </View>
       ) : (
         <Text variant="body" color="textSecondary" style={styles.detail}>
           {tendency.detail}
@@ -195,12 +228,16 @@ export function InsightsScreen() {
           <Text variant="metadata" color="textSecondary" style={styles.pitchSentence}>
             {pitchLine}
           </Text>
-          {pitchTrend ? (
-            <PitchTrendChart
-              trend={pitchTrend}
-              accessibilityLabel={`In tune, take by take. ${pitchLine}`}
+          {pitchTrend && pitchData ? (
+            <View
               style={styles.pitchChart}
-            />
+              accessible
+              accessibilityRole="image"
+              accessibilityLabel={`In tune, take by take. ${pitchLine}`}
+            >
+              <TrendPlot data={pitchData} height={110} ends={{ up: 'further off' }} centreLabel="in tune" />
+              <TakeAxis count={pitchTrend.points.length} />
+            </View>
           ) : null}
         </View>
       ) : null}
@@ -223,20 +260,37 @@ export function InsightsScreen() {
             <Text variant="eyebrow" color="textTertiary" style={styles.eyebrowCaps}>
               Worth a look
             </Text>
-            <Text variant="pieceTitle" numberOfLines={2} style={styles.worthTitle}>
-              {focus.title}
-            </Text>
+            <PieceHeading
+              title={focus.title}
+              variant="heroTitle"
+              containerStyle={styles.worthTitle}
+            />
             {passages ? (
               <>
-                <View style={styles.passages}>
-                  <PassageChart
-                    tempo={passages}
-                    accessibilityLabel={`${focus.title}, passage by passage. ${passages.sentence}`}
-                  />
-                </View>
-                <Text variant="metadata" color="textSecondary" style={styles.sentence}>
-                  {passages.sentence}
-                </Text>
+                {lastLine ? (
+                  <View
+                    style={styles.passages}
+                    accessible
+                    accessibilityRole="image"
+                    accessibilityLabel={`${focus.title}, your last take. ${passages.sentence}`}
+                  >
+                    <TrendPlot
+                      data={lastLine}
+                      height={90}
+                      centreLabel={lastLine.centreLabel}
+                      rail={{ span: practiceSpan }}
+                    />
+                    <Text variant="caption" color="textTertiary" style={styles.lastTake}>
+                      Your last take
+                    </Text>
+                  </View>
+                ) : null}
+                {/* The button names the bars; the sentence is said only when it would not. */}
+                {passages.practice ? null : (
+                  <Text variant="metadata" color="textSecondary" style={styles.sentence}>
+                    {passages.sentence}
+                  </Text>
+                )}
                 <SecondaryButton
                   label={
                     passages.practice
@@ -323,6 +377,20 @@ export function InsightsScreen() {
   );
 }
 
+/** "Take 1" at the left of a graph of takes, "Take N" at the right. */
+function TakeAxis({ count }: { count: number }) {
+  return (
+    <View style={styles.axis}>
+      <Text variant="caption" color="textTertiary">
+        Take 1
+      </Text>
+      <Text variant="caption" color="textTertiary">
+        Take {count}
+      </Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   eyebrow: {
     textTransform: 'uppercase',
@@ -345,7 +413,15 @@ const styles = StyleSheet.create({
     marginTop: 7,
   },
   passages: {
-    marginTop: 14,
+    marginTop: spacing.lg,
+  },
+  lastTake: {
+    marginTop: 2,
+  },
+  axis: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 6,
   },
   sentence: {
     marginTop: spacing.md,

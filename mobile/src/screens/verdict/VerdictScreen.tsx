@@ -35,6 +35,7 @@ import {
 import {
   failureTitle,
   intakeRefusal,
+  nothingUsableDetail,
   nothingUsableTitle,
 } from '../../lib/verdict/failureTitle';
 import { canCorrect } from '../../lib/verdict/correction';
@@ -233,13 +234,10 @@ export function VerdictScreen() {
             match on, and it is one file because the last time they were two
             the walk and the audit went out of step for a push.
           */
-          description={
-            refused
-              ? refused.description
-              : take.failure.recoverable
-                ? 'Not your playing. Try again.'
-                : 'Not your playing. Record it again.'
-          }
+          // Nothing under the heading but a refusal's own directions (the
+          // owner's sweep, 2026-09-29): "Not your playing. Try again." sat
+          // over a button that says Try again.
+          description={refused ? refused.description : undefined}
         />
         {take.recordingAvailable ? (
           <TakePlayback analysisId={take.id} />
@@ -279,7 +277,7 @@ export function VerdictScreen() {
         <EmptyState
           fill
           title={nothingUsableTitle(take.status)}
-          description={take.headline}
+          description={nothingUsableDetail(take.status, take.headline) ?? undefined}
         />
         {take.recordingAvailable ? (
           <TakePlayback analysisId={take.id} />

@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import type { TakeResult } from '../../data/types';
-import { olderTakesNote, rowDates, takeRowIsVerdict, takeRowWords } from './takeRows';
+import {
+  olderTakesNote,
+  takeDateLabel,
+  takeRowIsVerdict,
+  takeRowTitle,
+  takeRowWords,
+} from './takeRows';
 
 function take(over: Partial<TakeResult>): TakeResult {
   return {
@@ -60,23 +66,37 @@ describe('takeRowIsVerdict', () => {
   });
 });
 
-describe('rowDates', () => {
-  it('says a day once, on its first row', () => {
-    expect(rowDates(['Today', 'Today', 'Today', 'Yesterday', '3 days', '3 days'])).toEqual([
-      'Today',
-      null,
-      null,
-      'Yesterday',
-      '3 days',
-      null,
-    ]);
+describe('takeRowTitle', () => {
+  it("is the take's result title without the You", () => {
+    const rushed = take({
+      direction: 'rush',
+      lowConfidence: false,
+      measures: [
+        { measure: 1, band: 'on', direction: 'on' },
+        { measure: 2, band: 'rush_drag', direction: 'rush' },
+        { measure: 3, band: 'on', direction: 'on' },
+      ] as TakeResult['measures'],
+    });
+    expect(takeRowTitle(rushed)).toBe('Rushed in the middle');
   });
 
-  it('says it again when the same words come back after another day', () => {
-    expect(rowDates(['Today', 'Yesterday', 'Today'])).toEqual(['Today', 'Yesterday', 'Today']);
+  it('says a refusal the way the row always did', () => {
+    expect(takeRowTitle(take({ status: 'not_played' }))).toBe('We didn’t hear you play');
+  });
+});
+
+describe('takeDateLabel', () => {
+  const now = new Date(2026, 8, 29, 20, 0);
+  const at = (days: number) => new Date(2026, 8, 29 - days, 9, 0).toISOString();
+
+  it('says the recent days in words', () => {
+    expect(takeDateLabel(at(0), now)).toBe('Today');
+    expect(takeDateLabel(at(1), now)).toBe('Yesterday');
+    expect(takeDateLabel(at(3), now)).toBe('3 days ago');
   });
 
-  it('leaves an unknown date unknown rather than folding it', () => {
-    expect(rowDates([null, null])).toEqual([null, null]);
+  it('dates everything older, with the year when it is not this one', () => {
+    expect(takeDateLabel(at(7), now)).toBe('Sep 22');
+    expect(takeDateLabel(new Date(2025, 11, 30).toISOString(), now)).toBe('Dec 30, 2025');
   });
 });

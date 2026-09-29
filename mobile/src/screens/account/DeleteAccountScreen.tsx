@@ -1,11 +1,10 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { useGoBack } from '../../navigation/useGoBack';
 
 import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
 import {
-  Card,
   Input,
   PageHeader,
   PrimaryButton,
@@ -57,18 +56,11 @@ export function DeleteAccountScreen() {
         backLabel="Back to profile"
       />
 
+      {/* One line where there was a line, a boxed list and the same warning
+          again in the dialog (the owner's sweep, 2026-09-29). */}
       <Text variant="body" color="textSecondary" style={styles.lede}>
-        This can’t be undone.
+        Your pieces and recordings go with it.
       </Text>
-
-      <Card emphasis style={styles.card}>
-        <Text variant="button">What will be removed</Text>
-        <View style={styles.list}>
-          <Bullet>your profile and photo</Bullet>
-          <Bullet>every piece in your library</Bullet>
-          <Bullet>practice recordings, timing results, and corrections</Bullet>
-        </View>
-      </Card>
 
       <Input
         label="Type DELETE to confirm"
@@ -106,36 +98,10 @@ export function DeleteAccountScreen() {
   );
 }
 
-function Bullet({ children }: { children: string }) {
-  return (
-    <View style={styles.bulletRow}>
-      <Text variant="body" color="textSecondary">
-        •
-      </Text>
-      <Text variant="body" color="textSecondary" style={styles.bulletCopy}>
-        {children}
-      </Text>
-    </View>
-  );
-}
 
 const styles = StyleSheet.create({
   lede: {
     marginTop: spacing.md,
-  },
-  card: {
-    marginTop: spacing['2xl'],
-  },
-  list: {
-    marginTop: spacing.md,
-    gap: spacing.sm,
-  },
-  bulletRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  bulletCopy: {
-    flex: 1,
   },
   input: {
     marginTop: spacing['2xl'],

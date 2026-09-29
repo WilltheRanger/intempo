@@ -444,7 +444,7 @@ await open('insights');
 const insightsText = await leaves();
 
 const HEADLINES = [
-  'Your tempo wanders within a take',
+  'Your tempo wanders',
   'You tend to rush',
   'You tend to drag',
   'You drift slightly ahead',

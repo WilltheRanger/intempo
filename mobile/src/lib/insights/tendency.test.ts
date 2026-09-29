@@ -106,7 +106,7 @@ describe('readTendency', () => {
       tolerance: TOLERANCE,
     });
 
-    expect(reading.title).toBe('Your tempo wanders within a take');
+    expect(reading.title).toBe('Your tempo wanders');
     // The chart says "both sides" better than a clause can; the words carry
     // the one thing a picture cannot, which is how far.
     expect(reading.detail).toContain('either way');
@@ -166,7 +166,7 @@ describe('readTendency', () => {
 });
 
 describe('readPieceWord', () => {
-  it('says Uneven rather than On tempo for a piece with no direction', () => {
+  it('says the tempo wandered rather than that it held, for a piece with no direction', () => {
     expect(
       readPieceWord({
         meanDeviationPct: 1.4,
@@ -174,7 +174,7 @@ describe('readPieceWord', () => {
         tolerance: TOLERANCE,
         verdict: 'on_tempo',
       }),
-    ).toBe('Uneven');
+    ).toBe('Tempo wandered');
   });
 
   it('keeps the verdict word everywhere else', () => {
@@ -185,7 +185,7 @@ describe('readPieceWord', () => {
         tolerance: TOLERANCE,
         verdict: 'rushing',
       }),
-    ).toBe('Rushing');
+    ).toBe('Rushed');
   });
 });
 

@@ -159,7 +159,7 @@ export function readTendency(summary: WindowSummary): TendencyReading {
       // "Within a take" (2026-09-29): the chart under this plots one tempo
       // per take, which can sit steadily on one side while each take swings
       // both ways inside it. A first-time walk read the two as disagreeing.
-      title: 'Your tempo wanders within a take',
+      title: 'Your tempo wanders',
       detail: `${out} off the beat either way, across ${count}.`,
       showsSpread: true,
       spoken: `Your tempo wanders within a take, about ${out} off the beat on either side, across ${count}`,
@@ -191,7 +191,7 @@ export function readPieceWord(piece: {
   tolerance: Tolerance | null;
   verdict: Verdict;
 }): string {
-  return tempoWanders(piece) ? 'Uneven' : VERDICT_WORDS[piece.verdict];
+  return tempoWanders(piece) ? 'Tempo wandered' : VERDICT_WORDS[piece.verdict];
 }
 
 /**
@@ -220,12 +220,17 @@ export function pieceWordTone(piece: {
   }
 }
 
+/**
+ * In the result screen's words, not a meter's (the owner, 2026-09-29: the
+ * Library's "Slight drag" under a slider bar was the old vocabulary beside a
+ * result that says "You rushed in the middle").
+ */
 const VERDICT_WORDS: Record<Verdict, string> = {
-  on_tempo: 'On tempo',
-  slight_rush: 'Slight rush',
-  rushing: 'Rushing',
-  slight_drag: 'Slight drag',
-  dragging: 'Dragging',
+  on_tempo: 'Held the tempo',
+  slight_rush: 'A little fast',
+  rushing: 'Rushed',
+  slight_drag: 'A little slow',
+  dragging: 'Dragged',
 };
 
 /**

@@ -1,6 +1,13 @@
 import type { TakeResult, Tolerance } from '../../data/types';
-import { FALLBACK_INNER_PCT, sharedFullScaleFor } from '../tempo';
+import {
+  FALLBACK_INNER_PCT,
+  FALLBACK_OUTER_PCT,
+  bandFor,
+  sharedFullScaleFor,
+  verdictColorFor,
+} from '../tempo';
 import { barTempo } from '../verdict/barTempo';
+import { seriesTrend, type TrendData } from '../verdict/trend';
 
 /**
  * Recent sessions, as a series a chart can draw.
@@ -170,21 +177,6 @@ export function trendRange(values: readonly number[], tolerance: Tolerance | nul
 }
 
 /**
- * Where a value sits vertically, as 0 (top) to 1 (bottom).
- *
- * **Faster goes up**, which means negating: SVG's y grows downward and faster
- * is the top of every other tempo drawing in this app.
- * Clamped, because a line leaving the box is worse than one touching its edge.
- */
-export function plotFraction(value: number, range: TrendRange): number {
-  const span = range.top - range.bottom;
-  if (!(span > 0)) {
-    return 0.5;
-  }
-  return Math.max(0, Math.min(1, (range.top - value) / span));
-}
-
-/**
  * Which ends of the axis get a word: "Faster" only when something was faster
  * than the band, "Slower" only when something was slower. A label over an
  * empty stretch of axis names a direction nobody played in.
@@ -197,4 +189,32 @@ export function axisLabels(
     faster: values.some((value) => value > range.bandTop),
     slower: values.some((value) => value < range.bandBottom),
   };
+}
+
+/**
+ * The takes as the result screen's kind of graph (`TrendPlot`): the band is
+ * the take's inner tolerance around the tempo set, the line turns gold past
+ * it and red past the middle one — the same cuts a verdict colours a bar by,
+ * so a take drawn gold here is one its own result would call off.
+ */
+export function sessionTrendData(trend: SessionTrend, tolerance: Tolerance | null): TrendData | null {
+  const farRush = tolerance?.rushing_mid_pct ?? FALLBACK_OUTER_PCT / 2;
+  const farDrag = tolerance?.dragging_mid_pct ?? FALLBACK_OUTER_PCT / 2;
+  const { top, bottom } = trend.range;
+  return seriesTrend(
+    // Pinned to the span: one wild take touches the edge rather than leaving
+    // the graph, and still reads as the colour it earned.
+    trend.points.map((point) => Math.max(bottom, Math.min(top, point.value))),
+    {
+      centre: 0,
+      low: trend.range.bandBottom,
+      high: trend.range.bandTop,
+      farLow: -farDrag,
+      farHigh: farRush,
+    },
+    (value) => {
+      const band = bandFor(value, tolerance);
+      return band === 'on' ? null : verdictColorFor(band);
+    },
+  );
 }

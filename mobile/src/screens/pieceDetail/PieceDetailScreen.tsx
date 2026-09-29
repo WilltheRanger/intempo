@@ -14,6 +14,7 @@ import { StyleSheet, View } from 'react-native';
 import { ComposerField } from '../../components/pieces/ComposerField';
 
 import { BottomSheet } from '../../components/overlays/BottomSheet';
+import { PieceHeading } from '../../components/pieces/PieceHeading';
 import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
 import { SheetOptionRow } from '../../components/overlays/SheetOptionRow';
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
@@ -205,15 +206,18 @@ export function PieceDetailScreen() {
         The redesign's head (`redesign/PieceDetail.dc.html`): a way back in
         words, the title, and the piece's options as a bare glyph beside it.
         The composer is no longer written here — the piece is recognised by
-        its title and by the music under it, and the composer is one tap away
-        under Rename.
+        its title and by the music under it, and the composer is under Rename
+        in the ⋮ menu.
       */}
       <View style={styles.head}>
         <BackLink label="Back to library" onPress={goBack} />
         <View style={styles.titleRow}>
-          <Text variant="heroTitle" accessibilityRole="header" style={styles.title}>
-            {piece.title}
-          </Text>
+          <PieceHeading
+            title={piece.title}
+            variant="heroTitle"
+            header
+            containerStyle={styles.title}
+          />
           <IconButton
             icon={MoreVertical}
             label="Piece options"
@@ -366,9 +370,10 @@ export function PieceDetailScreen() {
 
       {/*
         **Ruled rows on the page, not a card**, each a glyph, a name and one
-        line about what is behind it (`redesign/PieceDetail.dc.html`). Rename is
-        one of them now rather than a line in the options sheet: it is the
-        thing done to a piece most often after a scan, and it was two taps deep.
+        line about what is behind it (`redesign/PieceDetail.dc.html`). Rename
+        went back into the ⋮ sheet in the owner's sweep (2026-09-29): a row
+        beside "Your takes" and the score read as one more place to go, where
+        it is something done to the piece.
       */}
       <View style={styles.accessRows}>
         {/*
@@ -436,11 +441,6 @@ export function PieceDetailScreen() {
             }
           />
         ) : null}
-        <PieceLinkRow
-          icon={PencilLine}
-          label="Rename"
-          onPress={() => startEditing(piece)}
-        />
       </View>
 
       <BottomSheet
@@ -449,8 +449,16 @@ export function PieceDetailScreen() {
         title={piece.title}
       >
         <SheetOptionRow
-          icon={Trash2}
+          icon={PencilLine}
           divided={false}
+          label="Rename"
+          onPress={() => {
+            setMenuVisible(false);
+            startEditing(piece);
+          }}
+        />
+        <SheetOptionRow
+          icon={Trash2}
           label="Delete piece"
           description={piece.lastPracticedAt ? 'And all its takes' : undefined}
           onPress={() => {
@@ -558,8 +566,6 @@ const styles = StyleSheet.create({
   },
   title: {
     flex: 1,
-    fontSize: 26,
-    lineHeight: 31,
   },
   // A 44pt target whatever the title does. Not pulled out to the gutter line
   // as the prototype draws it: this screen's column clips at the gutter on

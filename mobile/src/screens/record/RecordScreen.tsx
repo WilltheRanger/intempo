@@ -59,6 +59,7 @@ import type { CaptureReport } from '../../lib/audio/capture';
 import { readTakeFailure } from '../../lib/audio/takeFailure';
 import { heldTakeUrl, releaseHeldTake } from '../../lib/audio/heldTake';
 import { ScrubPlayer } from '../verdict/ScrubPlayer';
+import { PieceHeading } from '../../components/pieces/PieceHeading';
 import { microphonePermissionRecovery } from '../../lib/audio/permission';
 import { buildMarker } from '../../lib/platform/buildMarker';
 import { isHomeScreenApp } from '../../lib/audio/microphoneFailure';
@@ -1323,9 +1324,12 @@ export function RecordScreen() {
       <View style={styles.header}>
         <BackLink label="Back to the piece" onPress={goBack} />
         <View style={styles.titleRow}>
-          <Text variant="heroTitle" style={styles.title} numberOfLines={2}>
-            {piece.title}
-          </Text>
+          <PieceHeading
+            title={piece.title}
+            variant="heroTitle"
+            numberOfLines={2}
+            containerStyle={styles.title}
+          />
           {/*
             The two doors that are not settings — upload a take you already
             have, and the pre-flight checks. Gone during a take, like every

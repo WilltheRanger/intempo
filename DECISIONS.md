@@ -1,5 +1,56 @@
 # InTempo Decisions
 
+## 2026-09-29 — Insights, Your takes and the Library in the result screen's language; the wordiness sweep
+
+**Context.** Once the result screen had a trend line and "You rushed in the
+middle", everything around it looked a generation older: Insights drew
+straight segments with a squeezed axis column ("30 / cents / off") and a
+bar-per-passage chart, the kind the owner had just called meaningless; "Your
+takes" was six rows of "Bars 5–8 at 10x, not 96 BPM" with one row missing its
+date; Library tiles said "Slight drag" over a slider bar. The owner saw
+mock-ups of each and chose: Insights and Your takes as drawn, Library tiles
+"words only", the empty Today "Add your first piece", and all sixteen items of
+the earlier sweep. A matching player for Listen and the take was drawn and
+declined ("I don't get the point").
+
+**Decision.**
+- **One drawing for every trend** (`components/charts/TrendPlot`): the result
+  screen's band, clipped gold/red and monotone curve, labels inside the graph,
+  the rail. `TrendChart` (the result) is now `TrendPlot` plus the finger and
+  the bar axis. `seriesTrend` turns takes-one-after-another into the same data.
+- **Insights:** both graphs redrawn with it (`sessionTrendData`,
+  `pitchTrendData`); "Worth a look" is the piece's last take with the passage
+  on its rail and the Practice button — its sentence only where the button
+  does not name bars. Title "Your tempo wanders"; the pitch line three words.
+- **Your takes:** the passage two or more verdicts open on, take by take
+  (`lib/insights/takesTrend.ts`), with one line saying which way it went; rows
+  are date, the take's own title, and the passage's tempo; every row dated
+  (`takeDateLabel`).
+- **Library and Insights' list:** the last take's title ("Rushed in the
+  middle", `pieceStatus`), else the aggregate in the same vocabulary
+  (`readPieceWord`: "Held the tempo", "A little fast", "Tempo wandered"), else
+  nothing — never "Not played yet", which the grouping already says and which
+  would be false of a piece played before the recent takes. No slider bar.
+- **Titles:** `lib/pieceTitle.ts` splits the catalogue number off to a small
+  line and breaks a long name before its key ("Sonata No. 1 / in G minor",
+  never "in G / minor"), via `PieceHeading` on Today, the piece, Record, the
+  score and Insights.
+- **The sweep:** empty Today "Add your first piece"; "See where you rushed";
+  failed results keep only their heading (and a refusal's own directions);
+  a silent take's line is "Is it muted?"; the score's check is one row ("8 bars
+  look off · Check"); Check the reading keeps only "2 left"; "1 free take left
+  this month"; Download and Delete account one line each; Help "Sample data";
+  Rename into the piece's ⋮ menu.
+
+**Removed.** `SessionTrendChart`, `PitchTrendChart`, `PassageChart`,
+`DeviationBar`, `plotFraction`, `pitchY`, `rowDates`, `proposalsSummary`.
+
+**Not done.** The shelf's tiles keep their full title (two narrow lines); the
+split is for headings. Library shows a last-take title only for pieces among
+the 20 most recent takes, the aggregate word otherwise.
+
+---
+
 ## 2026-09-29 — A take is heard before it is sent, and its tempo is a trend line
 
 **Context.** Two complaints from the owner on the same day. The result's

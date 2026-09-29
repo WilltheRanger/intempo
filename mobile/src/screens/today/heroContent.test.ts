@@ -40,7 +40,9 @@ describe('with a piece to continue', () => {
     const hero = heroContentFor({ piece: piece(), workingBpm: 92 });
 
     expect(hero.label).toBe('Recommended');
-    expect(hero.title).toBe('Sonata No. 1 in G minor, BWV 1001');
+    // The name alone; its catalogue number leads the line under it.
+    expect(hero.title).toBe('Sonata No. 1 in G minor');
+    expect(hero.meta?.startsWith('BWV 1001')).toBe(true);
     expect(hero.meta).toContain('J. S. Bach');
     expect(hero.meta).toContain('I. Adagio');
     expect(hero.meta).toContain('92');
@@ -95,7 +97,7 @@ describe('with nothing in the library', () => {
     const hero = heroContentFor({ piece: null, workingBpm: 0 });
 
     expect(hero.label).toBeTruthy();
-    expect(hero.title).toBe('What are you working on?');
+    expect(hero.title).toBe('Add your first piece');
     // The title asks; the button answers, and does not repeat it.
     expect(hero.title).not.toContain(hero.actionLabel);
     expect(hero.actionLabel).toBe('Add a piece');

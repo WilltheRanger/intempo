@@ -16,6 +16,8 @@ import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
 import { Text } from '../../components/primitives/Text';
 import { describeLoadError } from '../../data/describeLoadError';
 import { useInsights } from '../../data/hooks/useInsights';
+import { useRecentTakes } from '../../data/hooks/useLatestTake';
+import { lastTakeByPiece } from '../../lib/library/pieceStatus';
 import { prefetchPieceHistory } from '../../data/hooks/useLatestTake';
 import {
   prefetchPiece,
@@ -23,7 +25,7 @@ import {
   useLibrary,
   useRetranscribe,
 } from '../../data/hooks/usePieces';
-import type { Piece, PieceInsight } from '../../data/types';
+import type { Piece, PieceInsight, TakeResult } from '../../data/types';
 import { BORDER_WIDTH, colors, spacing } from '../../design';
 import { groupByRecency, searchLibrary } from '../../lib/library';
 import type {
@@ -40,14 +42,16 @@ export function LibraryScreen() {
   const navigation = useNavigation<TabScreenNavigation<'Library'>>();
   const queryClient = useQueryClient();
   const library = useLibrary();
-  // Each tile's tempo rail: how this piece has sat against the beat across
-  // the insights window. Shared cache with the Insights tab, and a tile with
-  // no takes in the window simply draws no rail.
+  // Each tile's line: how the piece last went (`pieceStatus`). The recent
+  // takes and the insights window are both shared caches with Insights, so on
+  // a phone that has opened it this costs nothing.
   const insights = useInsights();
   const insightByPiece = useMemo(
     () => new Map((insights.data?.pieces ?? []).map((entry) => [entry.pieceId, entry])),
     [insights.data],
   );
+  const recentTakes = useRecentTakes(20);
+  const lastTakes = useMemo(() => lastTakeByPiece(recentTakes.data ?? []), [recentTakes.data]);
 
   async function refresh() {
     await library.refetch();
@@ -159,6 +163,7 @@ export function LibraryScreen() {
         }}
         busyPieceId={busyPieceId}
         insightByPiece={insightByPiece}
+        lastTakes={lastTakes}
         onReadAgain={(piece) => {
           setActionError(null);
           readAgain.mutate(piece.id, {
@@ -228,6 +233,8 @@ interface LibraryContentProps {
   /** The one piece with something running, if any. */
   busyPieceId: string | null;
   insightByPiece: ReadonlyMap<string, PieceInsight>;
+  /** Each piece's newest take, for the line under its title. */
+  lastTakes: ReadonlyMap<string, TakeResult>;
 }
 
 function LibraryContent({
@@ -245,6 +252,7 @@ function LibraryContent({
   onDiscard,
   busyPieceId,
   insightByPiece,
+  lastTakes,
 }: LibraryContentProps) {
   if (load === 'loading') {
     return (
@@ -376,6 +384,7 @@ function LibraryContent({
                 <PieceTile
                   piece={piece}
                   insight={insightByPiece.get(piece.id) ?? null}
+                  lastTake={lastTakes.get(piece.id) ?? null}
                   onPress={() => onOpenPiece(piece)}
                   onPressIn={() => onTouchPiece(piece)}
                   onReadAgain={() => onReadAgain(piece)}

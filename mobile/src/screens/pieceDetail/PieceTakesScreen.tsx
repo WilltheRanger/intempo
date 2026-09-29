@@ -11,14 +11,15 @@ import {
 import { TrailingChevron } from '../../components/primitives/TrailingChevron';
 import { usePieceHistory } from '../../data/hooks/useLatestTake';
 import { BORDER_WIDTH, colors, MIN_TOUCH_TARGET, spacing } from '../../design';
-import { formatLastPracticedShort } from '../../lib/format';
+import { TrendPlot } from '../../components/charts/TrendPlot';
 import { historyCount } from '../../lib/insights/pieceHistory';
 import {
   olderTakesNote,
-  rowDates,
+  takeDateLabel,
   takeRowIsVerdict,
-  takeRowWords,
+  takeRowTitle,
 } from '../../lib/insights/takeRows';
+import { rowTempo, takesTrend } from '../../lib/insights/takesTrend';
 import { loadStateFor } from '../../lib/loadState';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
 import { useGoBack } from '../../navigation/useGoBack';
@@ -38,8 +39,14 @@ import { useGoBack } from '../../navigation/useGoBack';
  * "all". When the piece has more takes than were fetched, a line under the
  * rows says so rather than letting twelve pass for forty.
  *
- * A reading is in ink and a refusal in grey; a day's date is said once
- * (`rowDates`); the rows open the take's verdict.
+ * **A graph first, because the page's question is "am I getting better?"**
+ * (the owner, 2026-09-29): the passage the takes keep naming, take by take,
+ * drawn the way the result screen draws a take (`lib/insights/takesTrend.ts`),
+ * with one line saying which way it went. The rows under it are when, the
+ * take's own title, and the passage's tempo — where six of seven used to read
+ * "Bars 5–8 at 10x, not 96 BPM". Every row has its date.
+ *
+ * A reading is in ink and a refusal in grey; the rows open the take's verdict.
  */
 export function PieceTakesScreen() {
   const navigation = useNavigation<RootNavigation>();
@@ -82,9 +89,8 @@ export function PieceTakesScreen() {
     );
   }
 
-  const dates = takes.map((take) => formatLastPracticedShort(take.recordedAt));
-  const shownDates = rowDates(dates);
   const older = olderTakesNote(history.data.takes, takes.length);
+  const trend = takesTrend(takes);
 
   return (
     <ScreenContainer>
@@ -93,20 +99,53 @@ export function PieceTakesScreen() {
         {count}
       </Text>
 
+      {trend ? (
+        <View
+          style={styles.trend}
+          accessible
+          accessibilityRole="image"
+          accessibilityLabel={[trend.title, trend.finding].filter(Boolean).join('. ')}
+        >
+          <Text variant="caption" color="textTertiary" style={styles.trendTitle}>
+            {trend.title}
+          </Text>
+          <TrendPlot
+            data={trend.data}
+            height={130}
+            ends={{ up: 'faster', down: 'slower' }}
+            centreLabel={trend.target === null ? 'on tempo' : String(trend.target)}
+          />
+          <View style={styles.axis}>
+            <Text variant="caption" color="textTertiary">
+              {takeDateLabel(takes[takes.length - 1].recordedAt)}
+            </Text>
+            <Text variant="caption" color="textTertiary">
+              {takeDateLabel(takes[0].recordedAt)}
+            </Text>
+          </View>
+          {trend.finding ? (
+            <Text variant="body" style={styles.finding}>
+              {trend.finding}
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
+
       <View style={styles.rows}>
-        {takes.map((take, index) => {
-          const words = takeRowWords(take);
-          const when = dates[index];
+        {takes.map((take) => {
+          const title = takeRowTitle(take);
+          const when = takeDateLabel(take.recordedAt);
+          const tempo = rowTempo(take, trend?.passage ?? null);
           return (
             <Pressable
               key={take.id}
               onPress={() => navigation.navigate('Verdict', { analysisId: take.id, from: 'takes' })}
               accessibilityRole="button"
-              accessibilityLabel={`Take from ${when}: ${words}`}
+              accessibilityLabel={`Take from ${when}: ${title}${tempo === null ? '' : `, ${tempo} BPM`}`}
               style={({ pressed }) => [styles.take, pressed && styles.pressed]}
             >
               <Text variant="metadataSmall" color="textTertiary" style={styles.when}>
-                {shownDates[index] ?? ''}
+                {when}
               </Text>
               <Text
                 variant="rowLabel"
@@ -114,8 +153,13 @@ export function PieceTakesScreen() {
                 numberOfLines={1}
                 style={styles.words}
               >
-                {words}
+                {title}
               </Text>
+              {tempo === null ? null : (
+                <Text variant="metadata" color="textSecondary" style={styles.tempo}>
+                  {tempo}
+                </Text>
+              )}
               <TrailingChevron />
             </Pressable>
           );
@@ -136,8 +180,25 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
     fontVariant: ['tabular-nums'],
   },
+  trend: {
+    marginTop: spacing.xl,
+  },
+  trendTitle: {
+    marginBottom: spacing.sm,
+  },
+  axis: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 6,
+  },
+  finding: {
+    marginTop: spacing.md,
+  },
+  tempo: {
+    fontVariant: ['tabular-nums'],
+  },
   rows: {
-    marginTop: spacing['2xl'],
+    marginTop: spacing.xl,
     borderBottomWidth: BORDER_WIDTH,
     borderBottomColor: colors.border,
   },
@@ -151,7 +212,7 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
   },
   when: {
-    width: 64,
+    width: 84,
     fontVariant: ['tabular-nums'],
   },
   words: {

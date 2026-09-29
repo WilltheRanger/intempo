@@ -60,6 +60,21 @@ export function nothingUsableTitle(status: Exclude<ResultStatus, 'ok'>): string 
 }
 
 /**
+ * The line under that heading: the pipeline's own sentence, less an opening
+ * that says what the heading already did — "No sound reached the microphone."
+ * under "Nothing reached the microphone" (the owner's sweep, 2026-09-29) —
+ * leaving "Is it muted?". Null when nothing is left to say.
+ */
+export function nothingUsableDetail(
+  status: Exclude<ResultStatus, 'ok'>,
+  headline: string | null | undefined,
+): string | null {
+  const text = (headline ?? '').trim();
+  const rest = status === 'no_onsets' ? text.replace(/^No sound reached the microphone\.\s*/i, '') : text;
+  return rest || null;
+}
+
+/**
  * A take refused before the decoder ever saw it, in words a musician can act on.
  *
  * **These codes had nowhere to go, and the default was wrong for all of them.**

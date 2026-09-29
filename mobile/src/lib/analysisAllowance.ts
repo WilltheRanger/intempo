@@ -59,8 +59,10 @@ export function describeLastFreeAnalysis(
   // that is about the allowance, not for the one with an instrument in hand.
   // Said as what is left rather than as "Last free analysis", which a
   // first-time walk read as a warning before a note had been played
-  // (2026-09-29). Same fact, and the reset date still with it.
-  return `1 free analysis left this month. More ${whenAnalysisAllowanceResets(usage.resets_at)}.`;
+  // (2026-09-29). The reset date went in the owner's sweep the same day: it
+  // belongs to the screen about the allowance, and "take" is the word the
+  // musician is holding.
+  return '1 free take left this month';
 }
 
 /**

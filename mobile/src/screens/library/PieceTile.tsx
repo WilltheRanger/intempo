@@ -4,17 +4,16 @@ import { Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-nativ
 import { PressableScale } from '../../components/motion';
 import { Text } from '../../components/primitives/Text';
 import { ScoreBand } from '../../components/score/ScoreBand';
-import type { Piece, PieceInsight } from '../../data/types';
+import type { Piece, PieceInsight, TakeResult } from '../../data/types';
 import { BORDER_WIDTH, MIN_TOUCH_TARGET, colors, radii, spacing } from '../../design';
 import { formatLastPracticedShort, joinMetadata } from '../../lib/format';
-import { pieceWordTone, readPieceWord, tempoWanders } from '../../lib/insights/tendency';
+import { pieceStatus } from '../../lib/library/pieceStatus';
 import {
   DISCARD_LABEL,
   READ_AGAIN_LABEL,
   tileMessage,
   tileState,
 } from '../../lib/library/tileState';
-import { DeviationBar } from '../insights/DeviationBar';
 
 /** Small enough that a tile is a spine, large enough that the notes are notes. */
 const TILE_SCALE = 0.62;
@@ -39,6 +38,8 @@ export interface PieceTileProps {
    * is not the same as on the beat.
    */
   insight?: PieceInsight | null;
+  /** The piece's newest take, for the line under its title. */
+  lastTake?: TakeResult | null;
   onPress: () => void;
   /** The finger landing, before the tap: where the piece starts loading. */
   onPressIn?: () => void;
@@ -85,6 +86,7 @@ export interface PieceTileProps {
 export function PieceTile({
   piece,
   insight = null,
+  lastTake = null,
   onPress,
   onPressIn,
   onReadAgain,
@@ -112,6 +114,7 @@ export function PieceTile({
   const state = tileState(piece);
   const message = tileMessage(state);
   const unreadable = state.kind === 'unreadable';
+  const status = unreadable ? null : pieceStatus({ lastTake, insight });
 
   return (
     <PressableScale
@@ -120,7 +123,7 @@ export function PieceTile({
       accessibilityRole="button"
       // The composer and the date are no longer drawn — the redesign's tile is
       // the page, the title and the rail — but they are still worth hearing.
-      accessibilityLabel={[piece.title, meta, insight ? readPieceWord(insight) : null]
+      accessibilityLabel={[piece.title, meta, status]
         .filter(Boolean)
         .join(', ')}
       activeScale={0.98}
@@ -181,28 +184,17 @@ export function PieceTile({
       <Text variant="pieceTitle" numberOfLines={2} style={styles.title}>
         {piece.title}
       </Text>
-      {insight && !unreadable ? (
-        <View style={styles.rail}>
-          {/*
-            **The rail's word, on screen** (2026-09-29). The bar alone was a
-            line with a tick that a first-time walk could not read; the word
-            was only ever given to screen readers.
-          */}
-          <Text
-            variant="metadataSmall"
-            color={pieceWordTone(insight)}
-            style={styles.railWord}
-            accessible={false}
-          >
-            {readPieceWord(insight)}
-          </Text>
-          <DeviationBar
-            deviationPct={insight.meanDeviationPct}
-            spreadPct={tempoWanders(insight) ? insight.spreadPct : undefined}
-            tolerance={insight.tolerance}
-            accessibilityLabel={`${readPieceWord(insight)} across ${piece.title}`}
-          />
-        </View>
+      {/*
+        **How it last went, in the result screen's words** (the owner,
+        2026-09-29, "words only"): "Rushed in the middle", where there is a
+        reading to say it from. It replaced a verdict word
+        over a slider bar ("Slight drag"), the old vocabulary. No date: the
+        shelf is already grouped by when.
+      */}
+      {status ? (
+        <Text variant="metadataSmall" color="textSecondary" numberOfLines={1} style={styles.status} accessible={false}>
+          {status}
+        </Text>
       ) : null}
 
       {/*
@@ -314,11 +306,7 @@ const styles = StyleSheet.create({
   },
   // Pinned to the bottom of the tile, so the rails of two tiles side by side
   // line up whether their titles took one line or two.
-  railWord: {
-    marginBottom: spacing.xs,
-  },
-  rail: {
-    marginTop: 'auto',
-    paddingTop: 11,
+  status: {
+    marginTop: spacing.xs,
   },
 });

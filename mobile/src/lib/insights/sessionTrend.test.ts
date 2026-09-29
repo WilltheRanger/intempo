@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import type { TakeResult, Tolerance } from '../../data/types';
-import { axisLabels, plotFraction, sessionTrendFrom, trendRange } from './sessionTrend';
+import { trendY } from '../verdict/trend';
+import { axisLabels, sessionTrendData, sessionTrendFrom, trendRange } from './sessionTrend';
 
 const TOLERANCE: Tolerance = {
   rushing_inner_pct: 5,
@@ -194,22 +195,34 @@ describe('the span a take chart draws', () => {
   });
 });
 
-describe('placing a value on the plot', () => {
-  const range = trendRange([-10, 10], TOLERANCE);
+describe('the takes as a graph', () => {
+  const trend = {
+    points: [-10, 0, 3, 10, 500].map((value, i) => ({ id: `t${i}`, at: `2026-09-0${i + 1}`, value })),
+    range: trendRange([-10, 10], TOLERANCE),
+  };
+  const data = sessionTrendData(trend, TOLERANCE)!;
+  const y = (i: number) => trendY(data.runs[0][i].value, data, 100);
 
   it('puts faster above the line', () => {
-    // Rush-positive is up, which means negating: SVG's y grows downward, and
-    // Faster is the top of every other tempo drawing in the app.
-    expect(plotFraction(10, range)).toBeLessThan(plotFraction(0, range));
-    expect(plotFraction(-10, range)).toBeGreaterThan(plotFraction(0, range));
+    // Rush-positive is up: SVG's y grows downward, and faster is the top of
+    // every other tempo drawing in the app.
+    expect(y(3)).toBeLessThan(y(1));
+    expect(y(0)).toBeGreaterThan(y(1));
   });
 
-  it('pins a value past the span to the edge', () => {
-    expect(plotFraction(500, range)).toBe(0);
-    expect(plotFraction(-500, range)).toBe(1);
+  it('pins a wild take to the fitted span, so it cannot flatten the rest', () => {
+    expect(data.runs[0][4].value).toBe(trend.range.top);
+    expect(y(4)).toBeLessThan(y(3));
   });
 
-  it('centres rather than dividing by zero', () => {
-    expect(plotFraction(5, { top: 0, bottom: 0, bandTop: 0, bandBottom: 0 })).toBe(0.5);
+  it('colours a take the way its own result would', () => {
+    // 3% is inside the 5% band; 10% is past the 10% middle cut.
+    expect(data.runs[0].map((p) => p.tone)).toEqual([
+      'verdictMid',
+      null,
+      null,
+      'verdictMid',
+      'verdictBad',
+    ]);
   });
 });

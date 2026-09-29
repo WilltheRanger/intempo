@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { TakeIntonation, TakeResult } from '../../data/types';
-import { pitchTrendFrom, pitchTrendLine, pitchY } from './pitchTrend';
+import { pitchTrendData, pitchTrendFrom, pitchTrendLine } from './pitchTrend';
 
 const BANDS: TakeIntonation = {
   tuningCents: 0,
@@ -61,25 +61,25 @@ describe('pitchTrendFrom', () => {
 });
 
 describe('pitchTrendLine', () => {
-  it('says the latest take in cents, and whether it is closer than the start', () => {
-    expect(pitchTrendLine(takes([9, 12, 20]))).toBe(
-      'Within 15 cents of your tuning · closer than before',
-    );
-    expect(pitchTrendLine(takes([22, 12]))).toBe('About 22 cents off your tuning · further out than before');
-    expect(pitchTrendLine(takes([22, 21]))).toBe('About 22 cents off your tuning');
+  it('says which way it went, in a few words', () => {
+    expect(pitchTrendLine(takes([9, 12, 20]))).toBe('Closer than before');
+    expect(pitchTrendLine(takes([22, 12]))).toBe('Further out than before');
   });
 
-  it('works from one take, and says nothing with none', () => {
-    expect(pitchTrendLine(takes([9]))).toBe('Within 15 cents of your tuning');
+  it('says where the latest sits when nothing moved', () => {
+    expect(pitchTrendLine(takes([22, 21]))).toBe('About 22 cents off');
+    expect(pitchTrendLine(takes([9]))).toBe('In tune');
     expect(pitchTrendLine(takes([null]))).toBeNull();
   });
 });
 
-describe('pitchY', () => {
-  it('puts in tune at the bottom and clamps past the top', () => {
-    const trend = pitchTrendFrom(takes([0, 30]))!;
+describe('pitchTrendData', () => {
+  it('draws the in-tune band along the floor, gold past it and red past slight', () => {
+    const data = pitchTrendData(pitchTrendFrom(takes([9, 20, 40]))!)!;
 
-    expect(pitchY(0, trend)).toBe(1);
-    expect(pitchY(trend.top * 2, trend)).toBe(0);
+    expect(data.band[0]).toMatchObject({ low: 0, high: 15, farHigh: 30 });
+    // Oldest first: 40 (red), 20 (gold), 9 (in tune).
+    expect(data.runs[0].map((p) => p.tone)).toEqual(['verdictBad', 'verdictMid', null]);
+    expect(data.min).toBeLessThan(0);
   });
 });
