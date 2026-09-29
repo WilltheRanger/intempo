@@ -47,8 +47,16 @@ const WEB = join(ROOT, 'mobile', 'dist', '_expo', 'static', 'js', 'web');
  * the waveform) and the photographic Sign in. That is the app growing, not a
  * regression: no new dependency, no barrel import. 580 still trips on the
  * ~180 KB an icon barrel costs.
+ *
+ * **Raised to 590 on 2026-09-29, at a measured 581.** Since 2026-09-23 the app
+ * gained the title and composer suggestions with their built-in list of 276
+ * works, the named wrong notes and rest entries on the verdict, a colour key
+ * under both result charts, the "How InTempo works" onboarding screen with
+ * three small drawings, and a piece's own takes page. Features the owner asked
+ * for, not a regression: no new dependency, no barrel import (`Mic` comes by
+ * path through `components/icons`). 590 still trips on an icon barrel.
  */
-const BUDGET_KB = 580;
+const BUDGET_KB = 590;
 
 function mainBundle() {
   if (!existsSync(WEB)) {
