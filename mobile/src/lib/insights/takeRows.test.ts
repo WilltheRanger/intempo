@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { TakeResult } from '../../data/types';
-import { moreTakesLabel, rowDates, takeRowIsVerdict, takeRowWords } from './takeRows';
+import { olderTakesNote, rowDates, takeRowIsVerdict, takeRowWords } from './takeRows';
 
 function take(over: Partial<TakeResult>): TakeResult {
   return {
@@ -37,15 +37,14 @@ describe('takeRowWords', () => {
   });
 });
 
-describe('moreTakesLabel', () => {
-  it('says all only when all are loaded', () => {
-    expect(moreTakesLabel(11, 11)).toBe('See all 11');
-    expect(moreTakesLabel(40, 12)).toBe('See the last 12');
+describe('olderTakesNote', () => {
+  it('says how many of how many when not every take was fetched', () => {
+    expect(olderTakesNote(40, 12)).toBe('The last 12 of 40');
   });
 
-  it('is nothing when the rows already show every take loaded', () => {
-    expect(moreTakesLabel(3, 3)).toBeNull();
-    expect(moreTakesLabel(9, 2)).toBeNull();
+  it('is nothing when every take is on the page', () => {
+    expect(olderTakesNote(11, 11)).toBeNull();
+    expect(olderTakesNote(3, 3)).toBeNull();
   });
 });
 

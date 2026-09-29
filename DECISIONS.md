@@ -1,6 +1,6 @@
 # InTempo Decisions
 
-## 2026-09-29 — A first-time walk's critique, fixed: nine earlier calls reversed
+## 2026-09-29 — A first-time walk's critique, fixed: ten earlier calls reversed
 
 **Context.** The owner asked for the app to be tried "as a first time user who
 knows nothing" and critiqued, then said "fix all of the issues" (the CLAUDE.md
@@ -19,6 +19,14 @@ session does not undo them back.
   on "How InTempo works": three small drawings (a page in the camera's corners,
   a sound, the result screen's own bar chart) with one short line each. Then
   "Let's get you set up", back to its one short line.
+- **A piece's takes are a page behind a row.** They were a headed list of
+  three with "See all" above Digital score, Original pages and Rename: two lists
+  of ruled rows stacked. The owner: "lets make your takes a different page and
+  kind of like the buttons below. It simplifies the app and makes it more
+  readable". Now "Your takes · 7 since Sep 11" is the first of the piece's rows
+  and opens `PieceTakesScreen`, which lists every loaded take (no "See all")
+  and says "The last 12 of 40" when there are more. A take opened from there
+  says "Back to your takes" and returns there.
 - **An empty Library has an action.** It said only that nothing was there; now
   "Add your first piece" opens the same sheet as +. The no-matches search state
   lost its "Clear search" button instead: the field's own ✕ and Cancel are

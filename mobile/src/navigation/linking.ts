@@ -57,6 +57,7 @@ export const screenConfig: LinkingOptions<RootStackParamList>['config'] = {
       // A piece and the things that belong to it.
       PieceDetail: 'pieces/:pieceId',
       PieceScore: 'pieces/:pieceId/score',
+      PieceTakes: 'pieces/:pieceId/takes',
       // **A parameter that is not a string** (`Record.startAt` below is the other).
       //
       // `MeasureEdit` takes `measureNumber: number`, and a URL parameter always

@@ -62,6 +62,7 @@ import { loadStateFor } from '../../lib/loadState';
 export function VerdictScreen() {
   const navigation = useNavigation<RootNavigation>();
   const { params } = useRoute<RouteProp<RootStackParamList, 'Verdict'>>();
+  const fromTakes = params.from === 'takes';
   /** The measure the chart has open; null until chosen, meaning `openingMeasure`. */
   const [selected, setSelected] = useState<number | null>(null);
 
@@ -364,9 +365,18 @@ export function VerdictScreen() {
         `navigate` pushed a second copy of it on top of this one — whose own
         back then came here again (see `useGoBack`).
       */}
+      {/*
+        From a piece's list of takes, back is that list (2026-09-29): the takes
+        have their own page now, and skipping past it to the piece would lose
+        the musician's place in it.
+      */}
       <BackLink
-        label="Back to the piece"
-        onPress={() => navigation.popTo('PieceDetail', { pieceId: take.pieceId })}
+        label={fromTakes ? 'Back to your takes' : 'Back to the piece'}
+        onPress={() =>
+          fromTakes
+            ? navigation.popTo('PieceTakes', { pieceId: take.pieceId })
+            : navigation.popTo('PieceDetail', { pieceId: take.pieceId })
+        }
       />
       <Text variant="screenTitle" accessibilityRole="header">
         {take.lowConfidence ? 'Timing is uncertain' : formatTakeVerdict(take.measures, take.direction)}

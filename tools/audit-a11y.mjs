@@ -79,6 +79,7 @@ const ROUTES = [
   ['Piece that could not be read', 'pieces/fixture-reading-failed'],
   ['Score that could not be read', 'pieces/fixture-reading-failed/score'],
   ['Score', 'pieces/fixture-clef-change-study/score'],
+  ['Your takes', 'pieces/fixture-bach-bwv1001/takes'],
   ['Bar editor', 'pieces/fixture-clef-change-study/bars/3'],
   // The proof-reading screen, on the one fixture that gives it anything to
   // say: a note the violin cannot play in a bar that adds up, and a bar that

@@ -248,11 +248,15 @@ else fail(`the worth-a-look button opened Record without a start bar: ${await pa
   It moved three times: Today's "Recent practice" card, then Insights' "Recent
   sessions", then the piece's own "See takes" under its chart — and since
   2026-09-25 the takes are rows on the piece with nothing to open first
-  ("Your takes", `PracticeHistory.tsx`), each labelled with what its verdict
-  said rather than a tempo. Same rule, one screen along; what matters is that
-  a row reaches `/analyses/`, not which screen it was tapped on.
+  ("Your takes"), each labelled with what its verdict said rather than a
+  tempo — and since 2026-09-29 behind a "Your takes" row on the piece, on a
+  page of their own (`PieceTakesScreen.tsx`). Walked through that row, so the
+  door is checked as well as the list. What matters is that a row reaches
+  `/analyses/`, not which screen it was tapped on.
 */
 await open('pieces/fixture-bach-bwv1001');
+await page.getByRole('button', { name: 'Your takes' }).first().click({ timeout: 10000 });
+await waitFor('the Your takes row to open the list', async () => (await path()).endsWith('/takes'));
 await page
   .getByRole('button', { name: /^Take from / })
   .first()
@@ -440,7 +444,7 @@ await open('insights');
 const insightsText = await leaves();
 
 const HEADLINES = [
-  'Your tempo wanders',
+  'Your tempo wanders within a take',
   'You tend to rush',
   'You tend to drag',
   'You drift slightly ahead',
@@ -455,9 +459,9 @@ if (onInsights === null) fail('no window headline on Insights at all');
 else pass(`Insights states the window as a habit: "${onInsights}"`);
 
 // A single take is not a habit. The tendency wording must not appear in a row
-// that describes one recording — which are the rows under "Your takes" on a
-// piece now, each named for what its own verdict said.
-await open('pieces/fixture-bach-bwv1001');
+// that describes one recording — which are the rows of a piece's "Your
+// takes" page now, each named for what its own verdict said.
+await open('pieces/fixture-bach-bwv1001/takes');
 const takeRow = page.getByRole('button', { name: /^Take from / }).first();
 await takeRow.waitFor({ timeout: 10000 }).catch(() => {});
 const row = (await takeRow.count()) > 0 ? await takeRow.getAttribute('aria-label') : null;
@@ -1091,7 +1095,12 @@ await page.getByRole('button', { name: 'More' }).first().click({ timeout: 15000 
 await page.waitForTimeout(400);
 await page.getByRole('button', { name: PRACTICE_SETUP_REOPEN }).first().click();
 await waitForText('the pre-flight to reopen', (l) => l.includes(PRACTICE_SETUP_HEADING));
-await page.getByRole('button', { name: /Back to the piece/i }).first().click();
+// A link since PageHeader took `BackLink` (2026-09-29); either role walks.
+await page
+  .getByRole('link', { name: /Back to the piece/i })
+  .or(page.getByRole('button', { name: /Back to the piece/i }))
+  .first()
+  .click();
 await tempoRow().waitFor({ timeout: 15000 });
 if ((await path()).endsWith('/record'))
   pass('reopening the checks comes back to the controls, not out of the flow');
