@@ -5,7 +5,7 @@ import { FadeIn, PopIn } from '../../components/motion';
 import { Text } from '../../components/primitives/Text';
 import type { UserVerdict } from '../../data/types';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
-import { ICON_SIZE, colors, fontFamily, spacing } from '../../design';
+import { BORDER_WIDTH, ICON_SIZE, colors, fontFamily, radii, spacing } from '../../design';
 import {
   CORRECTION_CHOICES,
   correctionAcknowledgement,
@@ -102,8 +102,14 @@ export function CorrectionPrompt({
 
   return (
     <View style={styles.block}>
+      {/*
+        **Says what the app read, in words** (2026-09-29). Its reading was
+        marked only by a gold word among four, which a first-time walk could
+        not tell apart from a selection — the screen reader was the one reader
+        told what it meant.
+      */}
       <Text variant="metadataSmall" color="textTertiary" style={styles.question}>
-        What did you hear?
+        What did you hear? We read it as {correctionWord(appVerdict).toLowerCase()}.
       </Text>
 
       <View style={styles.choices}>
@@ -134,6 +140,7 @@ export function CorrectionPrompt({
               }
               style={({ pressed }) => [
                 styles.choice,
+                (chosen || isApps) && styles.choiceApps,
                 pressed && !busy && styles.choicePressed,
               ]}
             >
@@ -175,16 +182,28 @@ const styles = StyleSheet.create({
   choices: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    // Not `space-between`: three words on one line and one on the next would
+    // Not `space-between`: three answers on one line and one on the next would
     // be spread to the edges and read as a different control.
-    columnGap: 18,
-    rowGap: spacing.xs,
+    columnGap: spacing.sm,
+    rowGap: spacing.sm,
   },
+  /**
+   * **A button that looks like one** (2026-09-29): a solid fill and a hairline,
+   * the ordinary control of §3 law 6. Four bare words read as a sentence, and a
+   * first-time walk did not know they could be pressed.
+   */
   choice: {
-    // 44pt of height across the whole word, which is the tap target — the text
-    // itself is 13pt and would otherwise be a target nobody can hit.
+    // 44pt tall, the platform minimum; the word itself is 13pt.
     minHeight: 44,
     justifyContent: 'center',
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.surface,
+    borderWidth: BORDER_WIDTH,
+    borderColor: colors.border,
+    borderRadius: radii.sm,
+  },
+  choiceApps: {
+    borderColor: colors.accent,
   },
   choicePressed: {
     opacity: 0.55,

@@ -37,7 +37,14 @@ export function OnboardingWelcome({ onNext }: OnboardingWelcomeProps) {
       <Text variant="displayTitle" accessibilityRole="header" style={styles.title}>
         Let’s get you set up
       </Text>
+      {/*
+        **What the app is, before anything is asked** (2026-09-29). A first-time
+        walk found the name and the purpose first appeared on question four:
+        someone who installed it on a friend's word had no idea what the six
+        questions were for.
+      */}
       <Text variant="body" color="textSecondary" style={styles.lede}>
+        InTempo listens while you play and shows where you rushed or dragged.{' '}
         {count} quick questions, then your first piece.
       </Text>
     </CentredScreen>
@@ -53,7 +60,7 @@ const styles = StyleSheet.create({
   },
   lede: {
     marginTop: spacing.md,
-    maxWidth: 290,
+    maxWidth: 320,
     textAlign: 'center',
   },
 });

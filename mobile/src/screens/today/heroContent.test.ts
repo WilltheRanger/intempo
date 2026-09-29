@@ -95,8 +95,9 @@ describe('with nothing in the library', () => {
     const hero = heroContentFor({ piece: null, workingBpm: 0 });
 
     expect(hero.label).toBeTruthy();
-    expect(hero.title).toBe('Add your first piece');
-    expect(hero.detail).toBeNull();
+    expect(hero.title).toBe('What are you working on?');
+    // The title asks; the button answers, and does not repeat it.
+    expect(hero.title).not.toContain(hero.actionLabel);
     expect(hero.actionLabel).toBe('Add a piece');
     expect(hero.action).toBe('add');
   });

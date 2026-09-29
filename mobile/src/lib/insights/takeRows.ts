@@ -22,7 +22,16 @@ export function takeRowWords(take: TakeResult): string {
   if (take.status !== 'ok') {
     return nothingUsableTitle(take.status);
   }
-  return take.headline.trim().replace(/\.$/, '') || 'Take';
+  const words = take.headline.trim().replace(/\.$/, '') || 'Take';
+  // **With its unit and what it was aiming for** (2026-09-29). "Bars 5–8 went
+  // at 104" three times down a page said nothing a first-time reader could
+  // weigh: 104 what, and against what? The verdict screen gives both; a row
+  // now does too.
+  const run = /^(.*) went at (\d+)$/.exec(words);
+  if (run && Number.isFinite(take.targetBpm) && Number(run[2]) !== Math.round(take.targetBpm)) {
+    return `${run[1]} at ${run[2]}, not ${Math.round(take.targetBpm)} BPM`;
+  }
+  return words;
 }
 
 /**

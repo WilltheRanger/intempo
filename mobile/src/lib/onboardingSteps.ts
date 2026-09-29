@@ -41,7 +41,7 @@ export interface StepAnswers {
 }
 
 export const ROLE_CHOICES: ReadonlyArray<{ value: PracticeRole; title: string; detail: string }> = [
-  { value: 'learning', title: "I'm learning", detail: 'Only you see your takes' },
+  { value: 'learning', title: 'I’m learning', detail: 'Only you see your takes' },
   { value: 'teaching', title: 'I teach', detail: 'Follow your students’ practice' },
 ];
 

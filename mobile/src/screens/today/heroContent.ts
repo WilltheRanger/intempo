@@ -61,9 +61,11 @@ export interface HeroInput {
  */
 const NOTHING_YET: HeroContent = {
   label: 'Start here',
-  title: 'Add your first piece',
+  // A question the button answers, rather than the button's own words said
+  // twice ("Add your first piece" over "Add a piece", 2026-09-29).
+  title: 'What are you working on?',
   meta: null,
-  detail: null,
+  detail: 'Photograph a page of it to begin.',
   actionLabel: 'Add a piece',
   action: 'add',
 };

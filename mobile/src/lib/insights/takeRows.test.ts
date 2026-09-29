@@ -13,8 +13,14 @@ function take(over: Partial<TakeResult>): TakeResult {
 }
 
 describe('takeRowWords', () => {
-  it('is the verdict’s own sentence, as a label', () => {
-    expect(takeRowWords(take({}))).toBe('Bars 13–25 went at 81');
+  it('is the verdict’s own sentence, as a label, with its unit and target', () => {
+    expect(takeRowWords(take({ targetBpm: 88 }))).toBe('Bars 13–25 at 81, not 88 BPM');
+  });
+
+  it('keeps any other sentence as it is', () => {
+    expect(takeRowWords(take({ headline: 'Steady all the way through.', targetBpm: 88 }))).toBe(
+      'Steady all the way through',
+    );
   });
 
   it('is the heading of a take that gave no verdict', () => {

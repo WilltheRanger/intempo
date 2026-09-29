@@ -106,7 +106,7 @@ export function PitchTrendChart({ trend, accessibilityLabel, style }: PitchTrend
           style={[styles.axis, { top: EDGE - 8 }]}
           pointerEvents="none"
         >
-          {`${trend.top}¢ off`}
+          {`${trend.top} cents off`}
         </Text>
         <Text
           variant="caption"

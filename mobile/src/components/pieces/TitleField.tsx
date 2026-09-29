@@ -15,6 +15,8 @@ export interface TitleFieldProps {
   style?: StyleProp<ViewStyle>;
   returnKeyType?: 'next' | 'done';
   onSubmitEditing?: () => void;
+  /** Said under the field, e.g. "Add a title." */
+  error?: string | null;
 }
 
 /**
@@ -38,6 +40,7 @@ export function TitleField({
   style,
   returnKeyType = 'next',
   onSubmitEditing,
+  error = null,
 }: TitleFieldProps) {
   // Usually already cached: the Library tab asked for it. Until it answers,
   // the built-in list is offered on its own.
@@ -52,7 +55,10 @@ export function TitleField({
       label="Title"
       value={value}
       onChangeText={onChangeText}
-      placeholder="Sonata No. 1 in G minor"
+      // "e.g.": set in the title's own serif, the bare example read as a
+      // title already filled in, and a first-time walk pressed Add without
+      // typing one (2026-09-29).
+      placeholder="e.g. Sonata No. 1 in G minor"
       serif
       autoCapitalize="words"
       // Off, so a browser's own list of past entries does not open over ours.
@@ -65,6 +71,7 @@ export function TitleField({
         onChangeText(offer.value);
         if (!composer.trim() && offer.composer) onComposerChange(offer.composer);
       }}
+      error={error}
       style={style}
     />
   );

@@ -37,6 +37,7 @@ import { appVerdictFor, canCorrect } from '../../lib/verdict/correction';
 import { success } from '../../lib/haptics';
 import { useSubmitCorrection } from '../../data/hooks/useCorrections';
 import { CorrectionPrompt, type CorrectionState } from './CorrectionPrompt';
+import { ChartKey, PITCH_KEY, TEMPO_KEY } from './ChartKey';
 import { MeasureBars } from './MeasureBars';
 import { MeasureCard } from './MeasureCard';
 import { TempoLine } from './TempoLine';
@@ -417,7 +418,7 @@ export function VerdictScreen() {
         </View>
       ) : null}
 
-      <RuledHeading label="Across the take" style={styles.ruled} />
+      <RuledHeading label="Across the take, in BPM" style={styles.ruled} />
       {/*
         No sentence under this one. The chart names its own axes — the target
         tempo on its rule, the take's fastest and slowest beside it — so prose
@@ -449,6 +450,7 @@ export function VerdictScreen() {
         tempoBeatUnit={take.tempoBeatUnit}
         tolerance={take.tolerance}
       />
+      <ChartKey items={TEMPO_KEY} />
 
       {/*
         **Pitch, beside the tempo it was played at** (the owner, 2026-09-25).
@@ -483,6 +485,7 @@ export function VerdictScreen() {
               }
               ends={{ up: 'sharp', down: 'flat' }}
             />
+            <ChartKey items={PITCH_KEY} />
           </View>
         </>
       ) : null}
@@ -545,7 +548,8 @@ function Fact({ label, value }: { label: string; value: string }) {
  * the sections are read in order, not scanned for.
  */
 function noteLabel(count: number): string {
-  return count === 1 ? '1 note missed' : `${count} notes missed`;
+  // Under the label "Missed", so the word is not said twice (2026-09-29).
+  return count === 1 ? '1 note' : `${count} notes`;
 }
 
 const styles = StyleSheet.create({

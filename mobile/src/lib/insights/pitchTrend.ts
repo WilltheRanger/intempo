@@ -75,8 +75,8 @@ export function pitchTrendLine(takes: readonly TakeResult[]): string | null {
   }
   const where =
     newest.spreadCents <= newest.inTuneCents
-      ? `Within ${Math.round(newest.inTuneCents)}¢ of your tuning`
-      : `About ${Math.round(newest.spreadCents)}¢ off your tuning`;
+      ? `Within ${Math.round(newest.inTuneCents)} cents of your tuning`
+      : `About ${Math.round(newest.spreadCents)} cents off your tuning`;
   const oldest = read[read.length - 1]?.intonation;
   if (!oldest || read.length < MINIMUM_POINTS) {
     return where;

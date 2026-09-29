@@ -87,8 +87,8 @@ describe('the lines under "In tune"', () => {
   });
 
   it('gives the tuning as a caption only when it is worth saying', () => {
-    expect(pitchLines([bar(1, 0)], TAKE).tuning).toBe('Tuned 25¢ sharp');
-    expect(pitchLines([bar(1, 0)], { ...TAKE, tuningCents: -25 }).tuning).toBe('Tuned 25¢ flat');
+    expect(pitchLines([bar(1, 0)], TAKE).tuning).toBe('Tuned 25 cents sharp');
+    expect(pitchLines([bar(1, 0)], { ...TAKE, tuningCents: -25 }).tuning).toBe('Tuned 25 cents flat');
     expect(pitchLines([bar(1, 0)], { ...TAKE, tuningCents: 6 }).tuning).toBeNull();
   });
 

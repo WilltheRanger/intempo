@@ -87,6 +87,8 @@ export function ImportFileScreen() {
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Said at the title field rather than by the button (2026-09-29).
+  const [titleError, setTitleError] = useState<string | null>(null);
   const [chosen, setChosen] = useState<Chosen | null>(null);
   const [part, setPart] = useState<string | null>(null);
   const [title, setTitle] = useState('');
@@ -156,7 +158,8 @@ export function ImportFileScreen() {
     }
     const trimmed = title.trim();
     if (!trimmed) {
-      setError('Add a title.');
+      setError(null);
+      setTitleError('Add a title.');
       return;
     }
 
@@ -269,7 +272,11 @@ export function ImportFileScreen() {
         <>
           <TitleField
             value={title}
-            onChangeText={setTitle}
+            onChangeText={(next) => {
+              setTitle(next);
+              setTitleError(null);
+            }}
+            error={titleError}
             composer={composer}
             onComposerChange={setComposer}
             style={styles.first}

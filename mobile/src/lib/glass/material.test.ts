@@ -70,11 +70,14 @@ describe.each(palettes)('glassMaterial (%s palette)', (_name, palette) => {
     }
   });
 
-  it('keeps the page tint on the bar — only the catch is a bar rule', () => {
-    // The bar over the app's own page is ordinary glass on an ordinary ground,
-    // so it keeps `glassTint`. Over a screen's own content it still takes the
-    // lighter tint, which is a fact about the ground and not about the bar.
-    expect(glassMaterial(false, palette, { bar: true }).fill).toBe(palette.glassTint);
+  it('gives the bar its own heavier tint over the page', () => {
+    // This was `glassTint`, and at 0.80 the text scrolling under the bar
+    // stayed readable — "Haptic feedback" under the Profile tab's own label
+    // (2026-09-29). The bar is the one surface always over moving text, so it
+    // alone takes `glassTintBar`. Over a screen's own content (the Today
+    // photograph) it still takes the lighter tint: a fact about the ground.
+    expect(glassMaterial(false, palette, { bar: true }).fill).toBe(palette.glassTintBar);
+    expect(glassMaterial(false, palette).fill).toBe(palette.glassTint);
     expect(
       glassMaterial(false, palette, { bar: true, overContent: true }).fill,
     ).toBe(palette.glassTintOverContent);

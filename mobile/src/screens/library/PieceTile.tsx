@@ -7,7 +7,7 @@ import { ScoreBand } from '../../components/score/ScoreBand';
 import type { Piece, PieceInsight } from '../../data/types';
 import { BORDER_WIDTH, MIN_TOUCH_TARGET, colors, radii, spacing } from '../../design';
 import { formatLastPracticedShort, joinMetadata } from '../../lib/format';
-import { readPieceWord, tempoWanders } from '../../lib/insights/tendency';
+import { pieceWordTone, readPieceWord, tempoWanders } from '../../lib/insights/tendency';
 import {
   DISCARD_LABEL,
   READ_AGAIN_LABEL,
@@ -183,6 +183,19 @@ export function PieceTile({
       </Text>
       {insight && !unreadable ? (
         <View style={styles.rail}>
+          {/*
+            **The rail's word, on screen** (2026-09-29). The bar alone was a
+            line with a tick that a first-time walk could not read; the word
+            was only ever given to screen readers.
+          */}
+          <Text
+            variant="metadataSmall"
+            color={pieceWordTone(insight)}
+            style={styles.railWord}
+            accessible={false}
+          >
+            {readPieceWord(insight)}
+          </Text>
           <DeviationBar
             deviationPct={insight.meanDeviationPct}
             spreadPct={tempoWanders(insight) ? insight.spreadPct : undefined}
@@ -301,6 +314,9 @@ const styles = StyleSheet.create({
   },
   // Pinned to the bottom of the tile, so the rails of two tiles side by side
   // line up whether their titles took one line or two.
+  railWord: {
+    marginBottom: spacing.xs,
+  },
   rail: {
     marginTop: 'auto',
     paddingTop: 11,

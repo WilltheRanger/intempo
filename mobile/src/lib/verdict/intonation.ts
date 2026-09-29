@@ -126,7 +126,9 @@ export function pitchLines(
 
   const tuning =
     Math.abs(take.tuningCents) >= take.tuningWorthSayingCents
-      ? `Tuned ${Math.round(Math.abs(take.tuningCents))}¢ ${take.tuningCents > 0 ? 'sharp' : 'flat'}`
+      ? // "cents", not "¢", which a first-time walk read as jargon (2026-09-29).
+        // Still within the owner's twenty characters ("too wordy", 2026-09-25).
+        `Tuned ${Math.round(Math.abs(take.tuningCents))} cents ${take.tuningCents > 0 ? 'sharp' : 'flat'}`
       : null;
   return { summary, tuning };
 }

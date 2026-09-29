@@ -33,7 +33,7 @@ describe('describeLastFreeAnalysis', () => {
     // a screen a musician reads with an instrument up, so its wording is
     // expected to get shorter over time; what must not change is that the
     // last free take is the one it speaks on, and that it says so.
-    expect(describeLastFreeAnalysis(usage())).toContain('Last free analysis');
+    expect(describeLastFreeAnalysis(usage())).toContain('1 free analysis left this month');
   });
 
   it('is silent while the count still has slack', () => {
@@ -136,7 +136,7 @@ describe('describeAnalysisCost', () => {
   });
 
   it('names the last one as the last one', () => {
-    expect(describeAnalysisCost(usage())).toContain('Last free analysis');
+    expect(describeAnalysisCost(usage())).toContain('1 free analysis left this month');
   });
 
   it('leaves a spent allowance to the refusal', () => {
@@ -150,7 +150,7 @@ describe('describeAnalysisCost', () => {
 
   it('does not pluralise a single free analysis', () => {
     expect(describeAnalysisCost(usage({ used: 0, limit: 1, remaining: 1 }))).toContain(
-      'Last free analysis',
+      '1 free analysis left this month',
     );
   });
 });

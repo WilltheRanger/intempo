@@ -109,6 +109,12 @@ export interface InputProps {
   completion?: string | null;
   /** Called when the suggestion is accepted. The caller sets the value. */
   onAcceptCompletion?: () => void;
+  /**
+   * What is wrong with this field, said under it, with the border in the same
+   * colour (2026-09-29). A form's error printed by its button left a first-
+   * time walk looking at the wrong place for what to fix.
+   */
+  error?: string | null;
 }
 
 /**
@@ -140,6 +146,7 @@ export function Input({
   optional = false,
   completion = null,
   onAcceptCompletion,
+  error = null,
 }: InputProps) {
   const [focused, setFocused] = useState(false);
   const input = useRef<TextInput>(null);
@@ -244,6 +251,7 @@ export function Input({
             large && styles.large,
             actionInside && action ? styles.roomForAction : null,
             focused && styles.focused,
+            error ? styles.invalid : null,
             !editable && styles.disabled,
             NO_INNER_OUTLINE,
           ]}
@@ -283,6 +291,16 @@ export function Input({
         ) : null}
         {actionInside && action ? <View style={styles.insideAction}>{action}</View> : null}
       </View>
+      {error ? (
+        <Text
+          variant="metadataSmall"
+          color="verdictBad"
+          style={styles.error}
+          accessibilityLiveRegion="polite"
+        >
+          {error}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -375,6 +393,12 @@ const styles = StyleSheet.create({
   },
   focused: {
     borderColor: colors.accent,
+  },
+  invalid: {
+    borderColor: colors.verdictBad,
+  },
+  error: {
+    marginTop: spacing.xs,
   },
   disabled: {
     color: colors.textTertiary,

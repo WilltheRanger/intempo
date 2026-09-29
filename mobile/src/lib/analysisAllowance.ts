@@ -57,7 +57,10 @@ export function describeLastFreeAnalysis(
   // Two lines of centred prose under the record button for one fact. The
   // fact is which take this is; the reset date is a detail for the screen
   // that is about the allowance, not for the one with an instrument in hand.
-  return `Last free analysis. Next one ${whenAnalysisAllowanceResets(usage.resets_at)}.`;
+  // Said as what is left rather than as "Last free analysis", which a
+  // first-time walk read as a warning before a note had been played
+  // (2026-09-29). Same fact, and the reset date still with it.
+  return `1 free analysis left this month. More ${whenAnalysisAllowanceResets(usage.resets_at)}.`;
 }
 
 /**

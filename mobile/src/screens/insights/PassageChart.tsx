@@ -94,15 +94,25 @@ export function PassageChart({
         ) : null}
       </View>
       <View style={styles.ends}>
+        {/*
+          Each column is a passage, so each end names its passage's bars:
+          "Bars 1–2 … Bars 9–10" under five columns rather than "Bar 1 … Bar 10",
+          which read as ten bars drawn as five (2026-09-29).
+        */}
         <Text variant="caption" color="textTertiary">
-          Bar {passages[0]?.from}
+          {barsLabel(passages[0])}
         </Text>
         <Text variant="caption" color="textTertiary">
-          Bar {passages[passages.length - 1]?.to}
+          {barsLabel(passages[passages.length - 1])}
         </Text>
       </View>
     </View>
   );
+}
+
+function barsLabel(passage: { from: number; to: number } | undefined): string {
+  if (!passage) return '';
+  return passage.from === passage.to ? `Bar ${passage.from}` : `Bars ${passage.from}–${passage.to}`;
 }
 
 const styles = StyleSheet.create({
