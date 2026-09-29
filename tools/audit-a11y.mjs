@@ -134,8 +134,10 @@ const ROUTES = [
   // looks like and what the pipeline has measured since `align_dtw` learned
   // subsequence matching. The screen names the bars for a take that did not
   // open the page, and every other fixture starts at bar 1 — so that branch
-  // was unreachable in the build this audit runs against.
-  ['Verdict — a passage', 'analyses/fixture-take-passage', { expect: 'Bars 9 to 21' }],
+  // was unreachable in the build this audit runs against. Since 2026-09-29
+  // the bars are named by the chart's own axis ("Bar 9 … 21"), not a row of
+  // facts.
+  ['Verdict — a passage', 'analyses/fixture-take-passage', { expect: 'Bar 9' }],
   // **Its other three states, none of which had ever been on a screen.**
   // `VerdictScreen` branches twice on `failure` — recoverable and not are
   // different sentences and different buttons — and again on a status that is

@@ -2,7 +2,7 @@ import { useNavigation, useRoute, type RouteProp } from '@react-navigation/nativ
 import { useGoBack } from '../../navigation/useGoBack';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import {
   BackLink,
@@ -10,24 +10,21 @@ import {
   PageHeader,
   PrimaryButton,
   ScreenContainer,
+  SegmentedControl,
   Text,
-  RuledHeading,
 } from '../../components/primitives';
 import { VerdictSkeleton } from '../../components/skeletons';
 import { takeSource } from '../../data/sources';
 import type { MeasureVerdict, TakeResult, UserVerdict } from '../../data/types';
-import { BORDER_WIDTH, colors, spacing } from '../../design';
-import { formatTakeVerdict, formatTempo } from '../../lib/tempo';
+import { MIN_TOUCH_TARGET, spacing } from '../../design';
+import { formatTakeVerdict } from '../../lib/tempo';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
-import {
-  describeTrendRange,
-  timedMeasureRange,
-} from '../../lib/verdict/measureReading';
 import { openingMeasure } from '../../lib/verdict/measureChart';
-import { appVerdictForBar, tempoLine, tempoLineLabel } from '../../lib/verdict/barTempo';
-import { pitchChartBars, pitchLines, pitchWords } from '../../lib/verdict/intonation';
-import { passageLabel } from '../../lib/verdict/passage';
-import { restEntriesLine, wrongNotesInBar, wrongNotesLine } from '../../lib/verdict/mistakes';
+import { appVerdictForBar, tempoChartBars } from '../../lib/verdict/barTempo';
+import { pitchChartBars, pitchWord } from '../../lib/verdict/intonation';
+import { headlinePassage, practiceLabel } from '../../lib/verdict/passage';
+import { mistakesSummary, restEntriesInBar, wrongNotesInBar } from '../../lib/verdict/mistakes';
+import { takeRowWords } from '../../lib/insights/takeRows';
 import {
   failureTitle,
   intakeRefusal,
@@ -37,11 +34,8 @@ import { appVerdictFor, canCorrect } from '../../lib/verdict/correction';
 import { success } from '../../lib/haptics';
 import { useSubmitCorrection } from '../../data/hooks/useCorrections';
 import { CorrectionPrompt, type CorrectionState } from './CorrectionPrompt';
-import { ChartKey, PITCH_KEY, TEMPO_KEY } from './ChartKey';
 import { MeasureBars } from './MeasureBars';
 import { MeasureCard } from './MeasureCard';
-import { TempoLine } from './TempoLine';
-import { TrendLine } from './TrendLine';
 import { TakePlayback } from './TakePlayback';
 import { loadStateFor } from '../../lib/loadState';
 
@@ -65,6 +59,8 @@ export function VerdictScreen() {
   const fromTakes = params.from === 'takes';
   /** The measure the chart has open; null until chosen, meaning `openingMeasure`. */
   const [selected, setSelected] = useState<number | null>(null);
+  /** Which of the two readings the one chart draws. */
+  const [view, setView] = useState<'tempo' | 'pitch'>('tempo');
 
   /*
     Where each measure's correction has got to, keyed by measure number.
@@ -308,44 +304,40 @@ export function VerdictScreen() {
     );
   }
 
-  // The chart's x axis, so the ends of the line name measures that can be
-  // found in the list below it — and specifically the measures the line
-  // *reaches*. `trend` drops untimed and slur-interior notes, so labelling
-  // this from the whole take captioned the ends with bars the line stops
-  // short of. See `timedMeasureRange`.
-  const covered = timedMeasureRange(take.measures);
-  const firstMeasure = covered?.first ?? take.measures[0]?.measure ?? 1;
-  const lastMeasure =
-    covered?.last ??
-    take.measures[take.measures.length - 1]?.measure ??
-    take.measures.length;
   const opening = openingMeasure(take.measures);
   const chosen = take.measures.find((m) => m.measure === (selected ?? opening)) ?? null;
   const chosenAppVerdict = chosen
     ? appVerdictForBar(chosen, take.targetBpm, take.tempoBeatUnit, take.tolerance)
     : null;
-  // "Across the take" in BPM where the take carries its bars' tempi; an older
-  // result draws the drift line it always did.
-  const tempo = tempoLine(take.measures, take.targetBpm, take.tempoBeatUnit);
-  // "In tune": each bar's pitch against the player's own tuning, where the
-  // take carries it (`lib/verdict/intonation.ts`); left out otherwise.
+  // Each bar's pitch against the player's own tuning, where the take carries
+  // it (`lib/verdict/intonation.ts`); without it there is no Pitch to switch to.
   const pitchBars = pitchChartBars(take.measures, take.intonation);
-  const pitch = take.intonation && pitchBars ? pitchLines(take.measures, take.intonation) : null;
-  // Worded in `lib/verdict/mistakes.ts`; either may be absent.
-  const mistakeLines = [wrongNotesLine(take.wrongNotes), restEntriesLine(take.restEntries)].filter(
-    (line): line is string => line !== null,
-  );
+  const showingPitch = view === 'pitch' && pitchBars !== null;
+  // What up and down mean on the chart. An older result without bar tempi
+  // draws how far ahead or behind the beat each bar sat, not its tempo.
+  const tempoEnds = tempoChartBars(take.measures, take.targetBpm, take.tempoBeatUnit, take.tolerance)
+    ? { up: 'faster', down: 'slower' }
+    : { up: 'ahead', down: 'behind' };
+  // One grey line of what went wrong besides the timing (`lib/verdict/mistakes.ts`).
+  const mistakes = take.lowConfidence
+    ? null
+    : mistakesSummary(take.missedNotes, take.wrongNotes, take.restEntries);
+  // The bars the verdict is about, which the main button practises.
+  const passage = take.lowConfidence ? null : headlinePassage(take.headline);
+  const recordAgain = () => navigation.replace('Record', { pieceId: take.pieceId });
 
   /*
-    **The redesign's verdict** (`redesign/Verdict.dc.html`, 2026-09-23): the
-    piece, the verdict as the title, one sentence, three facts on a ruled row,
-    the take as a line, every measure as one chart, and the selected measure
-    opened in a card underneath.
+    **The redesign's verdict, cut down** (the owner, 2026-09-29: "way too
+    wordy and hard to read"). The verdict as the title and one line under it;
+    what else went wrong as one grey line; the recording; one chart of every
+    bar, tempo or pitch; the tapped bar opened in a card underneath; and the
+    passage the verdict found as the button. It had grown to 118 words, three
+    charts of the same bars, two colour keys and nine ruled lines — see
+    `DECISIONS.md`, 2026-09-29.
 
-    It replaces a list of one row per measure, which on a real piece was forty
-    rows to scroll for the three that mattered. The chart opens on the measure
-    most worth practising (`openingMeasure`), which is what the "Try bar 7
-    again" sentence used to point at in words.
+    It replaced a list of one row per measure, which on a real piece was
+    forty rows to scroll for the three that mattered. The chart opens on the
+    measure most worth practising (`openingMeasure`).
 
     One control at the top the prototype does not draw: "‹ Back to the piece".
     A verdict opened from a piece's history in the home-screen app has no
@@ -354,22 +346,36 @@ export function VerdictScreen() {
   return (
     <ScreenContainer
       footer={
-        <PrimaryButton
-          label="Record again"
-          onPress={() => navigation.replace('Record', { pieceId: take.pieceId })}
-        />
+        /*
+          **The passage the verdict found, not the whole piece again** (the
+          owner's choice, 2026-09-29). The screen names bars 5–8 and its only
+          button used to record everything from bar 1. "Record again" stays,
+          quieter, under it — and is the only action when the verdict names no
+          bars.
+        */
+        passage ? (
+          <View>
+            <PrimaryButton
+              label={practiceLabel(passage)}
+              onPress={() =>
+                navigation.replace('Record', { pieceId: take.pieceId, startAt: passage.from })
+              }
+            />
+            <Pressable
+              onPress={recordAgain}
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.quiet, pressed && styles.quietPressed]}
+            >
+              <Text variant="metadata" color="textTertiary">
+                Record again
+              </Text>
+            </Pressable>
+          </View>
+        ) : (
+          <PrimaryButton label="Record again" onPress={recordAgain} />
+        )
       }
     >
-      {/*
-        `popTo`, not `navigate`: a verdict is reached *from* the piece, and
-        `navigate` pushed a second copy of it on top of this one — whose own
-        back then came here again (see `useGoBack`).
-      */}
-      {/*
-        From a piece's list of takes, back is that list (2026-09-29): the takes
-        have their own page now, and skipping past it to the piece would lose
-        the musician's place in it.
-      */}
       <BackLink
         label={fromTakes ? 'Back to your takes' : 'Back to the piece'}
         onPress={() =>
@@ -381,46 +387,23 @@ export function VerdictScreen() {
       <Text variant="screenTitle" accessibilityRole="header">
         {take.lowConfidence ? 'Timing is uncertain' : formatTakeVerdict(take.measures, take.direction)}
       </Text>
-
+      {/*
+        **One line under the title** (2026-09-29). There were up to four: the
+        headline, a finding about a note value, and a sentence each for wrong
+        notes and miscounted rests — the verdict said three times before any
+        picture. The line is the take row's own words ("Bars 5–8 at 104, not
+        96 BPM"), so the piece's list of takes and this screen agree.
+      */}
       <Text variant="body" color="textSecondary" style={styles.headline}>
         {take.lowConfidence
           ? 'Hard to hear. Try a quieter room, closer to the mic.'
-          : take.headline}
+          : takeRowWords(take)}
       </Text>
-      {/*
-        What the verdict cannot say: the tempo actually played, a take that
-        sped up, or the note value that behaves differently from the rest —
-        ranked per take in `services/insights.lead_finding`, and only when
-        there is one. Body weight, a continuation of the sentence above.
-      */}
-      {take.finding ? (
-        <Text variant="body" style={styles.finding}>
-          {take.finding.text}
+      {mistakes ? (
+        <Text variant="metadataSmall" color="textTertiary" style={styles.mistakes}>
+          {mistakes}
         </Text>
       ) : null}
-      {/*
-        **What the timing cannot see** (the owner, 2026-09-26): notes heard
-        clearly as other notes, and a rest counted wrong. The same weight as
-        the finding — each is a sentence about this take's playing — and only
-        when the timing could be read at all.
-      */}
-      {!take.lowConfidence
-        ? mistakeLines.map((line) => (
-            <Text key={line} variant="body" style={styles.finding}>
-              {line}
-            </Text>
-          ))
-        : null}
-
-      {/* Three facts, ruled above and below, in the redesign's columns. */}
-      <View style={styles.facts}>
-        <Fact label="Target" value={formatTempo(take.targetBpm, take.tempoBeatUnit)} />
-        <Fact label="Passage" value={passageLabel(take.measures) ?? '—'} />
-        <Fact
-          label="Missed"
-          value={take.missedNotes > 0 ? noteLabel(take.missedNotes) : 'None'}
-        />
-      </View>
 
       {take.recordingAvailable ? (
         <View style={styles.playback}>
@@ -428,77 +411,57 @@ export function VerdictScreen() {
         </View>
       ) : null}
 
-      <RuledHeading label="Across the take, in BPM" style={styles.ruled} />
       {/*
-        No sentence under this one. The chart names its own axes — the target
-        tempo on its rule, the take's fastest and slowest beside it — so prose
-        explaining it would only repeat what it already says.
+        **One chart** (2026-09-29). There were three of the same bars: the
+        take as a tempo line, the bars as a chart, and pitch as a second chart,
+        each with its heading, its "Bar 1 … 13" and, for two of them, a colour
+        key. The line said nothing the bars did not, and was the one you could
+        not tap. Pitch is the same bars read another way, so it is a switch on
+        this chart rather than a chart of its own (the owner's choice). The
+        colours are explained by the bar you tap, not by a key.
       */}
-      {tempo ? (
-        <TempoLine
-          line={tempo}
-          firstMeasure={take.measures[0].measure}
-          lastMeasure={take.measures[take.measures.length - 1].measure}
-          accessibilityLabel={tempoLineLabel(take.measures, take.targetBpm, take.tempoBeatUnit)}
+      {pitchBars ? (
+        <SegmentedControl
+          label="Chart"
+          options={[
+            { value: 'tempo', label: 'Tempo' },
+            { value: 'pitch', label: 'Pitch' },
+          ]}
+          value={showingPitch ? 'pitch' : 'tempo'}
+          onChange={setView}
+          style={styles.switch}
         />
-      ) : (
-        <TrendLine
-          trend={take.trend}
-          tolerance={take.tolerance}
-          firstMeasure={firstMeasure}
-          lastMeasure={lastMeasure}
-          accessibilityLabel={describeTrendRange(firstMeasure, lastMeasure)}
-        />
-      )}
-
-      <RuledHeading label="Bar by bar" style={styles.ruled} />
-      <MeasureBars
-        measures={take.measures}
-        selected={chosen?.measure ?? null}
-        onSelect={setSelected}
-        targetBpm={take.targetBpm}
-        tempoBeatUnit={take.tempoBeatUnit}
-        tolerance={take.tolerance}
-      />
-      <ChartKey items={TEMPO_KEY} />
-
-      {/*
-        **Pitch, beside the tempo it was played at** (the owner, 2026-09-25).
-        The same bars, the same selection: tapping either chart opens that bar
-        in the card below, which says both.
-      */}
-      {take.intonation && pitchBars && pitch ? (
-        <>
-          <RuledHeading label="In tune" style={styles.ruled} />
-          <Text variant="metadata" color="textSecondary" style={styles.pitchSummary}>
-            {pitch.summary}
-          </Text>
-          {pitch.tuning ? (
-            <Text variant="caption" color="textTertiary" style={styles.pitchTuning}>
-              {pitch.tuning}
-            </Text>
-          ) : null}
-          <View style={styles.pitchChart}>
-            <MeasureBars
-              measures={take.measures}
-              selected={chosen?.measure ?? null}
-              onSelect={setSelected}
-              targetBpm={take.targetBpm}
-              tempoBeatUnit={take.tempoBeatUnit}
-              tolerance={take.tolerance}
-              chart={pitchBars}
-              name="Pitch in bar"
-              describe={(m) =>
-                m.pitchCents == null
-                  ? 'Not read'
-                  : pitchWords(m.pitchCents, take.intonation!)
-              }
-              ends={{ up: 'sharp', down: 'flat' }}
-            />
-            <ChartKey items={PITCH_KEY} />
-          </View>
-        </>
       ) : null}
+      <View style={pitchBars ? styles.chartUnderSwitch : styles.chart}>
+        {showingPitch && pitchBars ? (
+          <MeasureBars
+            measures={take.measures}
+            selected={chosen?.measure ?? null}
+            onSelect={setSelected}
+            targetBpm={take.targetBpm}
+            tempoBeatUnit={take.tempoBeatUnit}
+            tolerance={take.tolerance}
+            chart={pitchBars}
+            name="Pitch in bar"
+            describe={(m) =>
+              m.pitchCents == null || !take.intonation
+                ? 'Not read'
+                : pitchWord(m.pitchCents, take.intonation)
+            }
+            ends={{ up: 'sharp', down: 'flat' }}
+          />
+        ) : (
+          <MeasureBars
+            measures={take.measures}
+            selected={chosen?.measure ?? null}
+            onSelect={setSelected}
+            targetBpm={take.targetBpm}
+            tempoBeatUnit={take.tempoBeatUnit}
+            tolerance={take.tolerance}
+            ends={tempoEnds}
+          />
+        )}
+      </View>
 
       {chosen ? (
         <View style={styles.card}>
@@ -506,6 +469,7 @@ export function VerdictScreen() {
             measure={chosen}
             intonation={take.intonation}
             wrongNotes={wrongNotesInBar(take.wrongNotes, chosen.measure)}
+            restEntries={restEntriesInBar(take.restEntries, chosen.measure)}
             tolerance={take.tolerance}
             targetBpm={take.targetBpm}
             tempoBeatUnit={take.tempoBeatUnit}
@@ -538,76 +502,37 @@ export function VerdictScreen() {
   );
 }
 
-/** One of the three facts under the verdict. */
-function Fact({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.fact}>
-      <Text variant="eyebrow" color="textTertiary" style={styles.factLabel}>
-        {label}
-      </Text>
-      <Text variant="body" style={styles.factValue}>
-        {value}
-      </Text>
-    </View>
-  );
-}
-
-/**
- * A section's name over a rule — the redesign's section heading: sentence
- * case at 13pt rather than a tracked capital eyebrow, because on this screen
- * the sections are read in order, not scanned for.
- */
-function noteLabel(count: number): string {
-  // Under the label "Missed", so the word is not said twice (2026-09-29).
-  return count === 1 ? '1 note' : `${count} notes`;
-}
-
 const styles = StyleSheet.create({
   headline: {
     marginTop: 10,
   },
-  finding: {
+  mistakes: {
     marginTop: spacing.sm,
   },
-  facts: {
-    flexDirection: 'row',
-    marginTop: spacing.lg,
-    paddingVertical: spacing.md,
-    borderTopWidth: BORDER_WIDTH,
-    borderBottomWidth: BORDER_WIDTH,
-    borderColor: colors.border,
-  },
-  fact: {
-    flex: 1,
-    minWidth: 0,
-  },
-  factLabel: {
-    letterSpacing: 0.9,
-    textTransform: 'uppercase',
-  },
-  factValue: {
-    marginTop: spacing.xs,
-    fontSize: 15,
-    lineHeight: 20,
-    fontVariant: ['tabular-nums'],
-  },
   playback: {
-    marginTop: spacing.lg,
+    marginTop: spacing.xl,
   },
-  pitchSummary: {
-    marginTop: spacing.xs,
+  switch: {
+    marginTop: spacing['2xl'],
   },
-  pitchTuning: {
-    marginTop: spacing.xs,
+  chart: {
+    marginTop: spacing['2xl'],
   },
-  pitchChart: {
-    marginTop: spacing.md,
-  },
-  ruled: {
-    marginTop: 22,
-    marginBottom: spacing.lg,
+  chartUnderSwitch: {
+    marginTop: spacing.xl,
   },
   card: {
     marginTop: spacing.xl,
+  },
+  /** "Record again" under the passage: quiet, and still a 44pt target. */
+  quiet: {
+    alignSelf: 'center',
+    justifyContent: 'center',
+    minHeight: MIN_TOUCH_TARGET,
+    paddingHorizontal: spacing.lg,
+    marginTop: spacing.xs,
+  },
+  quietPressed: {
+    opacity: 0.55,
   },
 });

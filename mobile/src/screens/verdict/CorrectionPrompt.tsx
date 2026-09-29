@@ -114,13 +114,13 @@ export function CorrectionPrompt({
   return (
     <View style={styles.block}>
       {/*
-        **Says what the app read, in words** (2026-09-29). Its reading was
-        marked only by a gold word among four, which a first-time walk could
-        not tell apart from a selection — the screen reader was the one reader
-        told what it meant.
+        **The question alone** (2026-09-29). "We read it as rushing." was added
+        after it for a day, which gave the answer away twice: the raised tile
+        in the row below already says what the app read, and names it for a
+        screen reader ("Rushing, what this app read").
       */}
       <Text variant="metadataSmall" color="textTertiary" style={styles.question}>
-        What did you hear? We read it as {correctionWord(appVerdict).toLowerCase()}.
+        What did you hear?
       </Text>
 
       <View style={styles.choices}>

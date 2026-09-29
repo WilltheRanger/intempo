@@ -1,5 +1,62 @@
 # InTempo Decisions
 
+## 2026-09-29 — The result screen cut to one line, one chart and the passage as its button
+
+**Context.** The owner: the result screen "needs to be more simplified its way
+too wordy and hard to read, harshly audit it". Measured on the sample take it
+was 118 words over about one and a half screens: three charts of the same
+thirteen bars (the take as a tempo line, the bars, pitch), two colour keys of
+eight labels (four of them the same ideas renamed for pitch), nine ruled
+lines, "96" printed four times, four statements under the title before any
+picture, and a row of facts whose "Missed: 1 note" sat under "1 note wasn't
+what's written" — two different counts that read as one said twice. Its only
+button recorded the whole piece while the screen named bars 5–8.
+
+**Decision** (audit shown to the owner, plan approved; the two choices are
+theirs):
+- **One line under the title**, the take row's own words ("Bars 5–8 at 104,
+  not 96 BPM"). The lead finding ("Your sixteenth notes ran ahead.") is no
+  longer shown here.
+- **One grey line for what else went wrong**: "1 note missed · 1 wrong note,
+  bar 6 · 1 rest miscounted, bar 12" (`mistakesSummary`). A missed note and a
+  wrong note are named differently so they cannot read as one. What each was
+  is said in its bar's card, rests included (`restEntriesInBar`).
+- **The facts row is gone** (Target / Passage / Missed). The target is in
+  the line and on the card's scale; the passage is the chart's own axis.
+- **One chart, with a Tempo / Pitch switch** (the owner's choice over pitch
+  only in the card). The tempo line ("Across the take") is gone: it drew the
+  same numbers as the bars and could not be tapped. No colour keys: the
+  tapped bar's card says what its colour means. The chart names both ends in
+  either reading ("faster"/"slower", "sharp"/"flat"), so switching does not
+  move the bars.
+- **The card says each thing once**: "Bar 7 · 105 BPM" and the scale, without
+  "9 over your 96"; pitch as "Played a little flat", not "34 cents flat"; the
+  question as "What did you hear?" without "We read it as rushing", which the
+  raised answer already says.
+- **The main button practises the passage** (the owner's choice): "Practice
+  bars 5–8" opens the recorder at bar 5; "Record again" stays, quieter, under
+  it, and is the only button when the verdict names no bars. The range is read
+  from the server's sentence (`headlinePassage`), because that is the only
+  place it reaches the app, and the line above the button shows the same
+  words.
+
+**Reversed on purpose.** The take's tempo line (2026-09-25), the "In tune"
+chart as its own section with its summary and tuning caption (2026-09-25),
+the facts row (2026-09-23), the colour keys and "We read it as…" (2026-09-29,
+earlier today). The pitch data is all still drawn; the tuning offset
+("Tuned 14 cents sharp") is not said on this screen any more.
+
+**Alternatives.** Pitch only in the bar card (the owner chose the switch);
+keeping "Record again" as the main button (the owner chose the passage);
+adding the verdict's bar range to the API instead of reading the sentence —
+the better data path, not taken yet because it is a backend and schema change
+for a label the sentence already carries.
+
+**Result.** 56 words, one screen, one chart, three ruled lines. The loading
+skeleton draws the same shape. The bundle fell 3 KB.
+
+---
+
 ## 2026-09-29 — A first-time walk's critique, fixed: ten earlier calls reversed
 
 **Context.** The owner asked for the app to be tried "as a first time user who

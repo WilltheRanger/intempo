@@ -17,8 +17,12 @@ import { readMeasure } from '../../lib/verdict/measureReading';
 
 const HEIGHT = 68;
 const HALF = HEIGHT / 2;
-/** Room at the right for "sharp" and "flat", when a chart names its ends. */
-const DIRECTION_GUTTER = 40;
+/**
+ * Room at the right for what up and down mean — "faster" and "slower", or
+ * "sharp" and "flat" — so the tempo and pitch readings of the chart are the
+ * same width and switching between them does not move the bars.
+ */
+const DIRECTION_GUTTER = 50;
 
 /**
  * "Measure by measure" as one chart (`redesign/Verdict.dc.html`): a bar per
@@ -66,7 +70,7 @@ export function MeasureBars({
   describe?: (measure: MeasureVerdict) => string;
   /** How the slider names a bar to assistive tech: "Bar 3 of 12", "Pitch in bar 3 of 12". */
   name?: string;
-  /** What up and down mean, beside the chart — "sharp" and "flat". */
+  /** What up and down mean, beside the chart — "faster" and "slower", "sharp" and "flat". */
   ends?: { up: string; down: string };
 }) {
   const bars = useMemo(

@@ -23,19 +23,6 @@ function barList(bars: number[]): string {
   return `bars ${head} and ${unique[unique.length - 1]}`;
 }
 
-/**
- * The line under the verdict for wrong notes, or null for none:
- * "1 note wasn’t what’s written: bar 5." /
- * "2 notes weren’t what’s written: bars 5 and 7."
- */
-export function wrongNotesLine(notes: readonly WrongNote[]): string | null {
-  if (notes.length === 0) return null;
-  const where = barList(notes.map((note) => note.bar));
-  return notes.length === 1
-    ? `1 note wasn’t what’s written: ${where}.`
-    : `${notes.length} notes weren’t what’s written: ${where}.`;
-}
-
 /** The bar card's own words for each wrong note in it: "We heard F where the page has F♯." */
 export function wrongNotesInBar(notes: readonly WrongNote[], bar: number): string[] {
   return notes
@@ -70,15 +57,47 @@ export function describeOffset(beats: number, barBeats: number | null): string {
 }
 
 /**
- * The line under the verdict for rests counted wrong, or null for none. One
- * rest is said in full — "You came in a bar early after the rest at bar 5." —
- * two are joined, and more are listed by bar.
+ * The bar card's words for a rest counted wrong, in the bar the entrance is
+ * in: "You came in a bar early after the rest." Said where it happened rather
+ * than as a sentence under the verdict (2026-09-29): the verdict's own line is
+ * one short list, and the detail belongs to the bar.
  */
-export function restEntriesLine(entries: readonly RestEntry[]): string | null {
-  if (entries.length === 0) return null;
-  const said = (entry: RestEntry) =>
-    `${describeOffset(entry.beats, entry.barBeats)} after the rest at bar ${entry.restBar}`;
-  if (entries.length === 1) return `You came in ${said(entries[0])}.`;
-  if (entries.length === 2) return `You came in ${said(entries[0])}, and ${said(entries[1])}.`;
-  return `You miscounted ${entries.length} rests: ${barList(entries.map((entry) => entry.restBar))}.`;
+export function restEntriesInBar(entries: readonly RestEntry[], bar: number): string[] {
+  return entries
+    .filter((entry) => entry.bar === bar)
+    .map((entry) => `You came in ${describeOffset(entry.beats, entry.barBeats)} after the rest.`);
+}
+
+/**
+ * The one grey line under the verdict, or null when nothing went wrong:
+ * "1 note missed · 1 wrong note, bar 6 · 1 rest miscounted, bar 12".
+ *
+ * **One line, three counts** (the owner, 2026-09-29: the result screen was
+ * "way too wordy and hard to read"). It replaces two full sentences under the
+ * title and a "Missed" figure in a row of facts — which sat directly under
+ * "1 note wasn't what's written" and, both reading "1 note", looked like the
+ * same thing said twice. A missed note is one not heard at all; a wrong note
+ * is one heard clearly as another; they are named differently here so they
+ * cannot be mistaken for each other. What each was is in the bar's card.
+ */
+export function mistakesSummary(
+  missedNotes: number,
+  wrongNotes: readonly WrongNote[],
+  restEntries: readonly RestEntry[],
+): string | null {
+  const parts: string[] = [];
+  if (missedNotes > 0) {
+    parts.push(missedNotes === 1 ? '1 note missed' : `${missedNotes} notes missed`);
+  }
+  if (wrongNotes.length > 0) {
+    const noun = wrongNotes.length === 1 ? 'wrong note' : 'wrong notes';
+    parts.push(`${wrongNotes.length} ${noun}, ${barList(wrongNotes.map((note) => note.bar))}`);
+  }
+  if (restEntries.length > 0) {
+    const noun = restEntries.length === 1 ? 'rest miscounted' : 'rests miscounted';
+    parts.push(
+      `${restEntries.length} ${noun}, ${barList(restEntries.map((entry) => entry.restBar))}`,
+    );
+  }
+  return parts.length > 0 ? parts.join(' · ') : null;
 }

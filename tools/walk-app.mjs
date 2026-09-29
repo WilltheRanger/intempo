@@ -898,6 +898,32 @@ console.log('\n## Telling the app it got a bar wrong');
   else fail('a correction with no backend was neither sent nor refused in words');
 }
 
+/*
+ * **The result's main button practises the passage it found** (2026-09-29).
+ * The verdict names bars 5–8, and the button used to record the whole piece
+ * from bar 1. It has to open the recorder at the passage's first bar — a
+ * label that says "bars 5–8" over a take that starts at bar 1 is the same
+ * wrong fact the screen was rebuilt to stop saying.
+ */
+{
+  await open('analyses/fixture-take-1');
+  const practise = page.getByRole('button', { name: /^Practice bars? \d/ }).first();
+  const named = ((await practise.textContent({ timeout: 15000 }).catch(() => null)) ?? '').trim();
+  const first = /(\d+)/.exec(named)?.[1] ?? null;
+  if (!first) {
+    fail(`the result has no passage button (read "${named}")`);
+  } else {
+    await practise.click();
+    await waitFor('the passage button to open the recorder', async () =>
+      (await path()).endsWith('/record'),
+    );
+    const search = await page.evaluate(() => location.search);
+    if ((await path()).endsWith('/record') && new RegExp(`startAt=${first}\\b`).test(search))
+      pass(`"${named}" opens the recorder at bar ${first}`);
+    else fail(`"${named}" opened ${await path()}${search}, not the recorder at bar ${first}`);
+  }
+}
+
 console.log('\n## A take that did not come back with a verdict');
 
 /*
@@ -1367,8 +1393,14 @@ console.log('\n## A take that records');
     // `/measures|tempo|rushed|dragged/`, which the record screen satisfies on
     // its own — its Tempo row is right there above the button — so the check
     // passed without the take going anywhere, including under a mutation that
-    // stopped the worklet delivering a single sample.
-    const verdict = await awaitLine((l) => /across the take|bar by bar/i.test(l), 20000);
+    // stopped the worklet delivering a single sample. It was then the
+    // chart headings "Across the take" and "Bar by bar", which the screen
+    // stopped drawing on 2026-09-29; the bar card's question and the
+    // passage button are the verdict's alone.
+    const verdict = await awaitLine(
+      (l) => /^What did you hear\?$|^Practice bars? \d/i.test(l),
+      20000,
+    );
     if (verdict) pass('a real take is accepted and comes back with a reading');
     else fail('a real take produced neither a complaint nor a result');
   }

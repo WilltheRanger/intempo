@@ -11,7 +11,7 @@ import type {
 import { BORDER_WIDTH, colors, radii, spacing } from '../../design';
 import { barTempo, tempoScale } from '../../lib/verdict/barTempo';
 import { deviationWords } from '../../lib/verdict/deviationWords';
-import { pitchWords } from '../../lib/verdict/intonation';
+import { pitchWord } from '../../lib/verdict/intonation';
 import { readMeasure } from '../../lib/verdict/measureReading';
 import { DeviationBar } from '../insights/DeviationBar';
 import { TempoScale } from './TempoScale';
@@ -19,8 +19,8 @@ import { TempoScale } from './TempoScale';
 /**
  * The measure the chart has selected (`redesign/Verdict.dc.html`): "Bar 24"
  * and its tempo, a scale with the musician's tempo notched in the middle and
- * the bar's as a dot (`TempoScale`), how far under or over, and — where the
- * app made a claim — "What did you hear?". An older result with no tempo
+ * the bar's as a dot (`TempoScale`), its pitch in a word, and — where the app
+ * made a claim — "What did you hear?". An older result with no tempo
  * keeps the bar of how far it sat from the beat.
  *
  * **A card, and the one on this screen that earns it** (§3 law 3): it is a
@@ -38,6 +38,7 @@ export function MeasureCard({
   correction,
   intonation = null,
   wrongNotes = [],
+  restEntries = [],
 }: {
   measure: MeasureVerdict;
   tolerance: Tolerance | null;
@@ -48,24 +49,24 @@ export function MeasureCard({
   intonation?: TakeIntonation | null;
   /** This bar's notes heard as other notes: "We heard F where the page has F♯." */
   wrongNotes?: string[];
+  /** An entrance in this bar after a rest counted wrong: "You came in a beat early after the rest." */
+  restEntries?: string[];
 }) {
   const reading = readMeasure(measure);
-  // The bar's tempo against the target where there is one — "85 BPM", "19
-  // under your 104" — rather than how far it sat behind a target held since
-  // the first note, which a steadily slower take grows without bound: bar 22
-  // of the owner's take was "More than a beat behind" (2026-09-25).
+  // The bar's tempo against the target where there is one: "105 BPM" in the
+  // head and the scale under it.
   const tempo = barTempo(measure, targetBpm, tempoBeatUnit, tolerance);
+  // **No sentence repeating the scale** (2026-09-29). "9 over your 96" said a
+  // third time what "105 BPM" and a dot beside the 96 notch already said. An
+  // older result with no bar tempo has no scale, so it keeps its words.
   const timing = tempo
-    ? tempo.detail
+    ? null
     : reading.revealsFigure
       ? deviationWords(measure.deviationPct, measure.direction)
       : null;
-  // Its pitch, where the take was read for it: "17 under your 104 · 12 cents
-  // flat". One line, because it is one bar.
+  // Its pitch, in words rather than cents: "Played a little flat".
   const pitch =
-    intonation && measure.pitchCents != null
-      ? pitchWords(measure.pitchCents, intonation)
-      : null;
+    intonation && measure.pitchCents != null ? pitchWord(measure.pitchCents, intonation) : null;
   const detail = [timing, pitch].filter(Boolean).join(' · ') || null;
 
   const tone = tempo ? tempo.tone : reading.tone;
@@ -108,11 +109,12 @@ export function MeasureCard({
       ) : null}
       {/*
         What the bar was played as, where a note was clearly another one — the
-        owner's choice (2026-09-26) to name them. In ink rather than grey: it
+        owner's choice (2026-09-26) to name them — and an entrance after a rest
+        counted wrong, which is said here rather than under the verdict. In ink rather than grey: it
         is the one line here about the notes rather than the time, and a
         misread page is fixed from exactly this bar.
       */}
-      {wrongNotes.map((line) => (
+      {[...wrongNotes, ...restEntries].map((line) => (
         <Text key={line} variant="metadataSmall" style={styles.detail}>
           {line}
         </Text>
