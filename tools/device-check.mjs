@@ -514,7 +514,9 @@ async function checkAudioOut(browser) {
   if (await metronome.count()) {
     await metronome.click();
     await page.waitForTimeout(600);
-    const visual = page.locator('[aria-label^="Visual."]').first();
+    // The option's whole label since its line underneath went (2026-09-30):
+    // it was "Visual. A silent pulse on screen." and matched on the prefix.
+    const visual = page.locator('[aria-label="Visual"]').first();
     if (await visual.count()) {
       await visual.click();
       await page.waitForTimeout(2500);

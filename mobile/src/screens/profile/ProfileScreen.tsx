@@ -25,7 +25,7 @@ import type { Musician } from '../../data/types';
 import { preferences, usePreferences } from '../../data/preferences';
 import type { Instrument, MetronomeMode } from '../../data/types';
 import { describeLoadError } from '../../data/describeLoadError';
-import { metronomeChoices } from '../../lib/record/metronomeChoice';
+import { HEADPHONES_WARNING, metronomeChoices } from '../../lib/record/metronomeChoice';
 import {
   ProfilePhotoSaveError,
   saveProfilePhoto,
@@ -346,7 +346,7 @@ export function ProfileScreen() {
         />
         {settings.metronomeMode === 'audio_with_headphones' ? (
           <Text variant="metadataSmall" color="textTertiary" style={styles.settingCaveat}>
-            Use headphones, or the click ends up in the recording.
+            {HEADPHONES_WARNING}
           </Text>
         ) : null}
       </View>

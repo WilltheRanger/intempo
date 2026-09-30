@@ -214,7 +214,7 @@ export function OnboardingFlow({
                   accessibilityRole="radio"
                   aria-checked={selected}
                   accessibilityState={{ selected }}
-                  accessibilityLabel={`${choice.title}. ${choice.detail}`}
+                  accessibilityLabel={choice.title}
                   style={({ pressed }) => [
                     styles.roleChoice,
                     selected && styles.chosen,
@@ -223,12 +223,6 @@ export function OnboardingFlow({
                 >
                   <Text variant="pieceTitle" color={selected ? 'actionText' : 'textPrimary'}>
                     {choice.title}
-                  </Text>
-                  <Text
-                    variant="metadataSmall"
-                    style={[styles.roleDetail, { color: selected ? colors.onDarkMuted : colors.textTertiary }]}
-                  >
-                    {choice.detail}
                   </Text>
                 </Pressable>
               );
@@ -401,9 +395,6 @@ const styles = StyleSheet.create({
     borderWidth: BORDER_WIDTH,
     borderColor: colors.border,
     backgroundColor: colors.surface,
-  },
-  roleDetail: {
-    marginTop: spacing.xs,
   },
   chosen: {
     backgroundColor: colors.actionBg,
