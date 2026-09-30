@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
+import backendConfig from '../../../../backend/config.toml?raw';
 import {
+  MAX_ANALYSED_SECONDS,
   MAX_TAKE_SECONDS,
   MAX_UPLOAD_BYTES,
   maxTakeSamples,
@@ -60,5 +62,38 @@ describe('how long a take may be', () => {
     expect(maxTakeSamples(48000, 2)).toBeLessThanOrEqual(
       maxTakeSamples(48000, 1),
     );
+  });
+});
+
+/**
+ * The third limit: what the analysis will read. At 44.1 and 48 kHz the upload
+ * limit is tighter and hid it; below about 43.7 kHz it is the one that binds,
+ * and without it a take between ten and fifteen minutes was refused after it
+ * had been played.
+ */
+describe('a take the analysis will accept', () => {
+  it('is the limit the backend applies at intake', () => {
+    const intake = backendConfig.match(/^\[intake\][^[]*?^max_duration_s = ([\d.]+)/m);
+    expect(intake).not.toBeNull();
+    expect(Number(intake?.[1])).toBe(MAX_ANALYSED_SECONDS);
+  });
+
+  it.each([8000, 16000, 22050, 24000, 32000, 44100, 48000, 96000])(
+    'never runs past it at %i Hz',
+    (rate) => {
+      expect(maxTakeSamples(rate, 1) / rate).toBeLessThanOrEqual(MAX_ANALYSED_SECONDS);
+    },
+  );
+
+  it('is what binds on a hands-free Bluetooth headset', () => {
+    // 16 kHz mono: 50 MB would be 27 minutes and memory allows fifteen.
+    expect(maxTakeSamples(16000, 1)).toBe(16000 * MAX_ANALYSED_SECONDS);
+  });
+
+  it('leaves the usual rates exactly as they were', () => {
+    // The bytes still bind at 44.1 and 48 kHz, so nothing changes for them.
+    const byUpload = Math.floor((MAX_UPLOAD_BYTES - 44) / 2);
+    expect(maxTakeSamples(48000, 1)).toBe(byUpload);
+    expect(maxTakeSamples(44100, 1)).toBe(byUpload);
   });
 });
