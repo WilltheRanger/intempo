@@ -95,6 +95,11 @@ export interface InputProps {
   onFocus?: TextInputProps['onFocus'];
   onBlur?: TextInputProps['onBlur'];
   editable?: boolean;
+  /**
+   * The most characters the field takes — the server's own limit, from
+   * `lib/fieldLimits.ts`, so text it would refuse cannot be typed or pasted.
+   */
+  maxLength?: number;
   style?: StyleProp<ViewStyle>;
   /**
    * Says "(optional)" beside the label — the owner, 2026-09-26: on the
@@ -142,6 +147,7 @@ export function Input({
   onFocus,
   onBlur,
   editable = true,
+  maxLength,
   style,
   optional = false,
   completion = null,
@@ -223,6 +229,7 @@ export function Input({
           autoComplete={autoComplete}
           textContentType={textContentType}
           returnKeyType={returnKeyType}
+          maxLength={maxLength}
           // **Return accepts first, then does what it always did.** While a
           // suggestion is showing, the field keeps focus on Return and takes
           // the suggestion; with none, Return is the caller's.

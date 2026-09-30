@@ -69,6 +69,7 @@ import {
   usualPrinted,
   type TempoMarkChoice,
 } from './tempoMarkEdit';
+import { FIELD_LIMITS } from '../../lib/fieldLimits';
 
 /**
  * Fixing a measure whose durations do not add up.
@@ -882,6 +883,7 @@ export function MeasureEditScreen() {
             <View style={styles.tempoPrinted}>
               <Input
                 label="As printed"
+                maxLength={FIELD_LIMITS.printedTempo}
                 value={sheetPrinted}
                 onChangeText={setSheetPrinted}
                 placeholder={usualPrinted(sheetChoice, sheetBpm, tempoBefore) || 'meno mosso'}

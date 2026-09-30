@@ -44,6 +44,7 @@ import { BORDER_WIDTH, colors, spacing } from '../../design';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
 import { historyCount } from '../../lib/insights/pieceHistory';
 import { loadStateFor } from '../../lib/loadState';
+import { FIELD_LIMITS } from '../../lib/fieldLimits';
 
 /**
  * How tall the score band across the top of the screen is.
@@ -237,6 +238,7 @@ export function PieceDetailScreen() {
         <Card style={styles.editCard}>
           <Input
             label="Title"
+            maxLength={FIELD_LIMITS.pieceTitle}
             value={draftTitle}
             onChangeText={setDraftTitle}
             placeholder="Composition title"
@@ -252,6 +254,7 @@ export function PieceDetailScreen() {
           />
           <Input
             label="Movement"
+            maxLength={FIELD_LIMITS.movement}
             optional
             value={draftMovement}
             onChangeText={setDraftMovement}

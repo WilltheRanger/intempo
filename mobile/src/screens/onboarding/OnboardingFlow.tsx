@@ -25,6 +25,7 @@ import { ListeningIllustration } from './ListeningIllustration';
 import { OnboardingHowItWorks } from './OnboardingHowItWorks';
 import { OnboardingWelcome } from './OnboardingWelcome';
 import { StepFrame, type StepAction } from './StepFrame';
+import { FIELD_LIMITS } from '../../lib/fieldLimits';
 
 /** The answers that go to the account. */
 export interface OnboardingAnswers {
@@ -160,6 +161,7 @@ export function OnboardingFlow({
         >
           <Input
             label="Name"
+            maxLength={FIELD_LIMITS.displayName}
             value={name}
             onChangeText={setName}
             placeholder="First name"
