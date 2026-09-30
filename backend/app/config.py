@@ -107,9 +107,10 @@ class Settings:
     OCR_CORRECTOR: str = os.getenv("OCR_CORRECTOR", "claude-sonnet-5")
 
     #: The vision model asked which tempo words a photographed page prints —
-    #: "poco rit.", "a tempo", "♩ = 88" — when the reading carries none, which
-    #: is every page homr reads (`ocr/tempo_marks.py`). One short call per such
-    #: page, a few thousand input tokens.
+    #: "poco rit.", "a tempo", "♩ = 88" — and, in the same call since
+    #: 2026-09-30, its dynamics (p, f, crescendos), when the reading carries
+    #: none, which is every page homr reads (`ocr/tempo_marks.py`). One short
+    #: call per such page, a few thousand input tokens and at most 2,048 out.
     #:
     #: **On by default, on the owner's standing word on API costs** (2026-08-30,
     #: the corrector's) and their choice on 2026-09-25 that the app should read
