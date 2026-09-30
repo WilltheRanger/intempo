@@ -27,6 +27,8 @@ import { PieceHeading } from '../../components/pieces/PieceHeading';
 import { pitchTrendData, pitchTrendFrom, pitchTrendLine } from '../../lib/insights/pitchTrend';
 import { tempoTrend } from '../../lib/verdict/trend';
 import { notesHabitFrom } from '../../lib/insights/notesHabit';
+import { insightsProgress } from '../../lib/insights/readiness';
+import { TakeDots } from './TakeDots';
 import { NoteRow } from '../../components/charts/NoteRow';
 import { PieceInsightRow } from './PieceInsightRow';
 import { firstStep, focusReason, windowLabel } from './copy';
@@ -128,6 +130,33 @@ export function InsightsScreen() {
           onClose={() => setAddSheetVisible(false)}
           onSelect={handleSelectOption}
         />
+      </ScreenContainer>
+    );
+  }
+
+  // Five takes before anything is said (`lib/insights/readiness.ts`): a trend
+  // through two points is a guess, and the tab counts down instead.
+  const progress = insightsProgress(recentTakes.data, insights.sessions);
+  if (!progress.ready) {
+    return (
+      <ScreenContainer onRefresh={refresh}>
+        <PageHeader title="Insights" />
+        <EmptyState
+          fill
+          icon={ChartLine}
+          title={progress.title}
+          actionLabel="Record a take"
+          actionTone="primary"
+          onActionPress={() => {
+            if (progress.lastPieceId) {
+              navigation.navigate('Record', { pieceId: progress.lastPieceId });
+              return;
+            }
+            navigation.navigate('Library');
+          }}
+        >
+          <TakeDots done={progress.counted} of={progress.needed} />
+        </EmptyState>
       </ScreenContainer>
     );
   }
