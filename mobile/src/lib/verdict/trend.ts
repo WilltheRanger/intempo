@@ -245,6 +245,22 @@ export function smoothPath(points: readonly PlotPoint[]): string {
   if (points.length === 0) return '';
   const first = points[0];
   if (points.length === 1) return `M ${px(first.x)},${px(first.y)}`;
+  const tangent = monotoneTangents(points);
+  let d = `M ${px(first.x)},${px(first.y)}`;
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const from = points[i];
+    const to = points[i + 1];
+    const third = (to.x - from.x) / 3;
+    d +=
+      ` C ${px(from.x + third)},${px(from.y + tangent[i] * third)}` +
+      ` ${px(to.x - third)},${px(to.y - tangent[i + 1] * third)}` +
+      ` ${px(to.x)},${px(to.y)}`;
+  }
+  return d;
+}
+
+/** The slope `smoothPath` gives the curve at each point. */
+function monotoneTangents(points: readonly PlotPoint[]): number[] {
   const n = points.length;
   const dx: number[] = [];
   const slope: number[] = [];
@@ -274,17 +290,95 @@ export function smoothPath(points: readonly PlotPoint[]): string {
       tangent[i + 1] = k * b * slope[i];
     }
   }
-  let d = `M ${px(first.x)},${px(first.y)}`;
-  for (let i = 0; i < n - 1; i += 1) {
+  return tangent;
+}
+
+/**
+ * Where the curve `smoothPath` draws runs between two xs: its highest and
+ * lowest y there, or null where it does not reach.
+ *
+ * Exact rather than sampled: each piece is a monotone cubic, so on it the
+ * curve's highest and lowest points are at its ends — the points in between
+ * and wherever the span cuts a piece.
+ */
+export function curveSpan(
+  points: readonly PlotPoint[],
+  fromX: number,
+  toX: number,
+): { top: number; bottom: number } | null {
+  if (points.length === 0) return null;
+  const lo = Math.max(fromX, points[0].x);
+  const hi = Math.min(toX, points[points.length - 1].x);
+  if (lo > hi) return null;
+  if (points.length === 1) return { top: points[0].y, bottom: points[0].y };
+  const tangent = monotoneTangents(points);
+  const yAt = (x: number) => {
+    let i = 0;
+    while (i < points.length - 2 && x > points[i + 1].x) i += 1;
     const from = points[i];
     const to = points[i + 1];
-    const third = dx[i] / 3;
-    d +=
-      ` C ${px(from.x + third)},${px(from.y + tangent[i] * third)}` +
-      ` ${px(to.x - third)},${px(to.y - tangent[i + 1] * third)}` +
-      ` ${px(to.x)},${px(to.y)}`;
-  }
-  return d;
+    const h = to.x - from.x;
+    if (h === 0) return from.y;
+    const t = (x - from.x) / h;
+    const t2 = t * t;
+    const t3 = t2 * t;
+    return (
+      (2 * t3 - 3 * t2 + 1) * from.y +
+      (t3 - 2 * t2 + t) * h * tangent[i] +
+      (-2 * t3 + 3 * t2) * to.y +
+      (t3 - t2) * h * tangent[i + 1]
+    );
+  };
+  const ys = [yAt(lo), yAt(hi), ...points.filter((p) => p.x > lo && p.x < hi).map((p) => p.y)];
+  return { top: Math.min(...ys), bottom: Math.max(...ys) };
+}
+
+/**
+ * Where the word on the target line — "in tune", "on tempo", "96" — goes,
+ * as the top of its line of text: beside the target, and never across the
+ * graph's own line.
+ *
+ * **The owner, 2026-09-30, of Insights' in-tune graph: "some overlap".**
+ * The word went under the target when the line finished above it, and over it
+ * otherwise; but in-tune is the graph's floor, so "under" had no room, the
+ * word was pushed back up onto the target — and the take that ended in tune
+ * ended in the middle of it. Now it tries each side of the target, then just
+ * above and just below where the line runs beneath it (`line`, from
+ * `curveSpan`), and takes the first that fits between `minTop` and `maxTop`
+ * without touching the line.
+ */
+export function centreLabelTop({
+  centreY,
+  endY,
+  line,
+  minTop,
+  maxTop,
+  textHeight,
+  clearance,
+}: {
+  centreY: number;
+  /** Where the line ends, which decides the side of the target to try first. */
+  endY: number;
+  /** Where the line runs under the word, top and bottom, or null if it does not. */
+  line: { top: number; bottom: number } | null;
+  minTop: number;
+  maxTop: number;
+  textHeight: number;
+  /** The gap to keep from the target and from the line (with its end dot). */
+  clearance: number;
+}): number {
+  const under = centreY + clearance;
+  const over = centreY - clearance - textHeight;
+  const sides = endY < centreY ? [under, over] : [over, under];
+  const candidates = line
+    ? [...sides, line.top - clearance - textHeight, line.bottom + clearance]
+    : sides;
+  const fits = (top: number) =>
+    top >= minTop &&
+    top <= maxTop &&
+    (!line || top + textHeight + clearance <= line.top || top >= line.bottom + clearance);
+  const chosen = candidates.find(fits);
+  return chosen ?? Math.max(minTop, Math.min(maxTop, sides[0]));
 }
 
 /**

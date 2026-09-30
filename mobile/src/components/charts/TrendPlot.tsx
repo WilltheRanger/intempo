@@ -4,6 +4,8 @@ import Svg, { Circle, ClipPath, Defs, G, Line, Path } from 'react-native-svg';
 
 import { BORDER_WIDTH, colors } from '../../design';
 import {
+  centreLabelTop,
+  curveSpan,
   outsidePath,
   smoothPath,
   trendY,
@@ -19,6 +21,9 @@ const RAIL_HEIGHT = 22;
 const RAIL_Y = 5;
 const MARK_Y = 16;
 const MARK = 2.5;
+/** The words' line height (`caption`), and the gap they keep from any line. */
+const LABEL_HEIGHT = 16;
+const LABEL_CLEARANCE = 5;
 
 export interface TrendPlotProps {
   data: TrendData;
@@ -58,6 +63,8 @@ export interface TrendPlotProps {
  */
 export function TrendPlot({ data, height, ends, centreLabel, selected, rail }: TrendPlotProps) {
   const [width, setWidth] = useState(0);
+  // The centre word's width, measured once it has drawn; a guess until then.
+  const [labelWidth, setLabelWidth] = useState(60);
   // Inset by the end dot, so a line that ends at the edge ends on a whole dot.
   const inset = STROKE + 1;
   const x = (along: number) => inset + along * Math.max(0, width - inset * 2);
@@ -103,11 +110,34 @@ export function TrendPlot({ data, height, ends, centreLabel, selected, rail }: T
   const near = `near${id}`;
   const far = `far${id}`;
   const centreY = data.band.length ? y(data.band[data.band.length - 1].centre) : height / 2;
-  // The label sits at the right edge, where the line ends: under the target
-  // when the line finishes above it, over it otherwise, so the two never cross.
+  // The label sits at the right edge, where the line ends, beside the target
+  // and clear of wherever the line runs beneath it (`centreLabelTop`).
   const lastRun = data.runs[data.runs.length - 1];
   const endY = lastRun ? y(lastRun[lastRun.length - 1].value) : centreY;
-  const labelTop = endY < centreY ? centreY + 4 : centreY - 20;
+  const under = curves
+    .map(({ run }) =>
+      curveSpan(
+        run.map((p) => ({ x: x(p.at), y: y(p.value) })),
+        width - labelWidth,
+        width,
+      ),
+    )
+    .filter((span): span is { top: number; bottom: number } => span !== null);
+  const labelTop = centreLabelTop({
+    centreY,
+    endY,
+    line: under.length
+      ? {
+          top: Math.min(...under.map((span) => span.top)) - (STROKE + 0.5),
+          bottom: Math.max(...under.map((span) => span.bottom)) + (STROKE + 0.5),
+        }
+      : null,
+    // Clear of the words at the top and bottom, where there are any.
+    minTop: ends?.up ? 18 : 0,
+    maxTop: height - (ends?.down ? 20 : LABEL_HEIGHT),
+    textHeight: LABEL_HEIGHT,
+    clearance: LABEL_CLEARANCE,
+  });
 
   return (
     <View onLayout={handleLayout}>
@@ -221,8 +251,12 @@ export function TrendPlot({ data, height, ends, centreLabel, selected, rail }: T
           <Text
             variant="caption"
             color="textSecondary"
-            style={[styles.end, { top: Math.max(18, Math.min(height - 20, labelTop)) }]}
+            style={[styles.end, { top: labelTop }]}
             pointerEvents="none"
+            onLayout={(event) => {
+              const next = Math.ceil(event.nativeEvent.layout.width);
+              setLabelWidth((current) => (current === next ? current : next));
+            }}
           >
             {centreLabel}
           </Text>
