@@ -38,8 +38,16 @@ describe('deep linking', () => {
     expect(missing, `these screens have no URL: ${missing.join(', ')}`).toEqual([]);
   });
 
-  it('gives Today the bare path, so a cold start does not redirect', () => {
-    expect(pathsByScreen().Today).toBe('');
+  it('gives the Library the bare path, so a cold start does not redirect', () => {
+    expect(pathsByScreen().Library).toBe('');
+  });
+
+  it('still answers the Library’s old address', () => {
+    // `/library` was the Library's path while Today held `/` (until
+    // 2026-09-30). A bookmark or a link sent to a teacher still says it.
+    const tabs = (screenConfig?.screens as Record<string, { screens?: Record<string, unknown> }>)
+      .Tabs.screens as Record<string, { alias?: string[] }>;
+    expect(tabs.Library.alias).toContain('library');
   });
 
   it('never gives two screens the same path', () => {

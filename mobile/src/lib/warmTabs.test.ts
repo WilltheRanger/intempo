@@ -37,16 +37,16 @@ function fakeClock() {
 }
 
 describe('warmTabs', () => {
-  it('builds every other tab, lightest first and Library last', () => {
+  it('builds every other tab, and never the Library, which is the first screen', () => {
     const clock = fakeClock();
     const built: string[] = [];
     warmTabs((tab) => built.push(tab), clock.schedule);
     clock.advance(10_000);
-    expect(built).toEqual(['Profile', 'Insights', 'Library']);
-    expect(WARM_ORDER).not.toContain('Today');
+    expect(built).toEqual(['Profile', 'Insights']);
+    expect(WARM_ORDER).not.toContain('Library');
   });
 
-  it('waits for Today, then leaves room between builds for a tap', () => {
+  it('waits for the Library, then leaves room between builds for a tap', () => {
     const clock = fakeClock();
     const built: string[] = [];
     warmTabs((tab) => built.push(tab), clock.schedule);

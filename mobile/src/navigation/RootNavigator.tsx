@@ -40,7 +40,6 @@ import { TempoScreen } from '../screens/tempo/TempoScreen';
 import { UploadRecordingScreen } from '../screens/upload/UploadRecordingScreen';
 import { ProfileScreen } from '../screens/profile/ProfileScreen';
 import { ScannerScreen } from '../screens/scanner/ScannerScreen';
-import { TodayScreen } from '../screens/today/TodayScreen';
 import { TranscribeScreen } from '../screens/transcribe/TranscribeScreen';
 import { TranscriptionReviewScreen } from '../screens/transcriptionReview/TranscriptionReviewScreen';
 import { VerdictScreen } from '../screens/verdict/VerdictScreen';
@@ -118,7 +117,7 @@ function TabScene({ children }: { children: ReactNode }) {
   // React Navigation correctly hides inactive scenes from screen readers, but
   // on web aria-hidden does not remove descendant buttons from the keyboard
   // order. A musician tabbing through Insights could therefore land on every
-  // control in the invisible Today and Library screens first. HTML inert is
+  // control in the invisible Library and Profile screens first. HTML inert is
   // the platform primitive that blocks focus, pointer input and accessibility
   // exposure together. Native keeps its own equivalent flags.
   if (Platform.OS === 'web') {
@@ -142,14 +141,6 @@ function TabScene({ children }: { children: ReactNode }) {
     >
       {content}
     </View>
-  );
-}
-
-function TodayTab() {
-  return (
-    <TabScene>
-      <TodayScreen />
-    </TabScene>
   );
 }
 
@@ -183,7 +174,6 @@ function TabNavigator() {
       tabBar={(props) => <BottomTabBar {...props} />}
       screenOptions={{ headerShown: false }}
     >
-      <Tab.Screen name="Today" component={TodayTab} />
       <Tab.Screen name="Library" component={LibraryTab} />
       <Tab.Screen name="Insights" component={InsightsTab} />
       <Tab.Screen name="Profile" component={ProfileTab} />

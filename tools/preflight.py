@@ -403,7 +403,7 @@ def build_the_ios_bundle() -> tuple[str, bool, float]:
 def audit_the_empty_account() -> list[tuple[str, bool, float]]:
     """The state every musician meets first, which no other build here has.
 
-    Today, Library and Insights are otherwise always seen with a library, a
+    Library and Insights are otherwise always seen with a library, a
     take and thirty days of trend behind them. That gap cost a real bug on
     2026-09-02 — Today saying "Nothing to practice yet" above a fully built
     daily warmup it was hiding — found by hand, because reaching the state took
@@ -431,7 +431,6 @@ def audit_the_empty_account() -> list[tuple[str, bool, float]]:
             "node",
             str(ROOT / "tools" / "audit-a11y.mjs"),
             str(port),
-            "Today",
             "Library",
             "Insights",
             "Profile",
@@ -439,7 +438,7 @@ def audit_the_empty_account() -> list[tuple[str, bool, float]]:
         return [
             built,
             run("accessibility, empty account", empty, MOBILE),
-            # Four routes, so the second appearance costs seconds rather than
+            # Three routes, so the second appearance costs seconds rather than
             # the ninety the full sweep does. Worth those seconds: an empty
             # state is mostly type on a bare ground, which is precisely the
             # composition where reaching for the wrong token leaves nothing

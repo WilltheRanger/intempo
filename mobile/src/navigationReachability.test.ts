@@ -119,15 +119,10 @@ describe('every screen has a way in', () => {
   });
 
   it('has the tabs as tabs rather than pushed screens', () => {
-    // `Tabs` is the one route the navigator opens itself, and the four
+    // `Tabs` is the one route the navigator opens itself, and the three
     // destinations live inside it. A tab that had become a pushed screen would
     // pass the rule above for the wrong reason.
     expect(routeNames('RootStackParamList')).toContain('Tabs');
-    expect(routeNames('TabParamList').sort()).toEqual([
-      'Insights',
-      'Library',
-      'Profile',
-      'Today',
-    ]);
+    expect(routeNames('TabParamList').sort()).toEqual(['Insights', 'Library', 'Profile']);
   });
 });

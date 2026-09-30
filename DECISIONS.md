@@ -1,5 +1,31 @@
 # InTempo Decisions
 
+## 2026-09-30 — The Library is the first screen; Today is gone
+
+**Context:** the owner asked for a Today redesign, then turned down four looks for it (a full-screen cover, a next-step card, a week summary, a dark stage). Their reason: "the structure and pages make today lack purpose or anything to add." They were right about the structure. Today had become a photograph with one piece on it and a Practice button. That piece was the Library's own `getCurrentPiece`, and the photograph carried no information. Every earlier block on the screen (recent takes, a snapshot, a queue, the warmup) had already moved to the tab it duplicated.
+
+**Decision:** the owner chose **B** from `LibraryHome.dc.html`: no Today tab, and the Library opens first.
+
+At the top of the Library, one ruled Continue row holds three things:
+- the piece;
+- why it is up next, in the shelf's own words (`pieceStatus`);
+- a Practice button.
+
+Three tabs remain: Library, Insights, Profile. The rules for the row are in `lib/library/continueLine.ts`, with tests. Three things Today carried moved with it:
+- the pending-take hand-off line;
+- tab warming;
+- the `/` address. `/library` stays as an alias.
+
+**Alternatives considered:**
+- **A: Today as tonight's practice plan** (warm up, fix, keep up). It gives the tab a job, but it invents a routine the app would have to rank well to deserve, and the owner preferred fewer screens.
+- **Keeping Today with a new look:** four looks were rejected for the same reason, which was structure, not styling.
+
+**Trade-offs accepted:**
+- **The app no longer tells anyone what to practise beyond "continue".** The Continue row is the most recently played piece, not a recommendation.
+- **The rehearsal-room photograph leaves the app.** The only photograph left is on Sign in.
+- **The chrome-tone machinery (`chromeTone.ts`, `darkGround`) now has no screen that declares a dark ground.** It is kept because the bar is drawn over whatever is beneath it, and the next dark full-bleed screen needs only the prop.
+
+---
 ## 2026-09-30 — A session's expiry is read in the device's time
 
 **Context:** the live auth logs showed one account's client sending 35 token refreshes in six seconds, three times in half an hour. Each burst ended in a 429 from Supabase, and each was followed by a fresh password sign-in.

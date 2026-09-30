@@ -1,7 +1,6 @@
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import {
   ChartLine,
-  House,
   Library,
   User,
   type LucideIcon,
@@ -35,7 +34,6 @@ import { useReducedMotion } from '../lib/useReducedMotion';
 import type { TabParamList } from './types';
 
 const TAB_ICONS: Record<keyof TabParamList, LucideIcon> = {
-  Today: House,
   Library,
   Insights: ChartLine,
   Profile: User,
@@ -155,7 +153,7 @@ export function BottomTabBar({
   const bottomGap = tabBarFloatBottom(insets);
   // **What is behind the capsule right now**, which the screen under it works
   // out and reports — not which screen it is. A route is a name; the tone is
-  // about a rectangle, and Today is a photograph for exactly one viewport.
+  // about a rectangle, and a screen can be dark for only part of its height.
   // `chromeTone.ts` holds the rule and what it cost to learn it.
   const tone = useChromeTone();
   const palette = tone === 'onDark' ? darkColors : colors;
@@ -179,7 +177,7 @@ export function BottomTabBar({
         const focused = state.index === index;
         const { options } = descriptors[route.key];
         const label = options.title ?? route.name;
-        const Icon = TAB_ICONS[route.name as keyof TabParamList] ?? House;
+        const Icon = TAB_ICONS[route.name as keyof TabParamList] ?? Library;
 
         function handlePress() {
           const event = navigation.emit({

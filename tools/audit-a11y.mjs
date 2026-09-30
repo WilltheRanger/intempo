@@ -61,8 +61,7 @@ const LARGE_BOLD_PX = 18.66;
 const LARGE_CONTRAST = 3;
 
 const ROUTES = [
-  ['Today', ''],
-  ['Library', 'library'],
+  ['Library', ''],
   ['Insights', 'insights'],
   ['Profile', 'profile'],
   ['Piece detail', 'pieces/fixture-bach-bwv1001'],
@@ -743,11 +742,16 @@ function declaredPaths() {
     'utf8',
   );
   const config = source.slice(source.indexOf('screens: {'));
-  // One pattern covers both forms: `Today: ''` and `Library: 'library'`, and
-  // the `path: 'pieces/:pieceId/bars/:measureNumber'` of the `{ path, parse }`
+  // One pattern covers both forms: `Insights: 'insights'`, and the
+  // `path: 'pieces/:pieceId/bars/:measureNumber'` of the `{ path, parse }`
   // form used where a parameter is not a string. `parse` and `stringify` are
-  // functions rather than string literals, so they do not match.
-  const declared = [...config.matchAll(/^\s*\w+:\s*'([^']*)',$/gm)].map((m) => m[1]);
+  // functions rather than string literals, so they do not match. The second
+  // catches a `{ path, alias }` written on one line — the Library's, whose
+  // `alias` is an old address rather than a route of its own.
+  const declared = [
+    ...[...config.matchAll(/^\s*\w+:\s*'([^']*)',$/gm)].map((m) => m[1]),
+    ...[...config.matchAll(/\{\s*path:\s*'([^']*)',\s*alias:/g)].map((m) => m[1]),
+  ];
   return [...new Set(declared)];
 }
 
@@ -886,7 +890,7 @@ let failures = 0;
 /**
  * Which routes to run, when only some of them make sense.
  *
- * `node tools/audit-a11y.mjs 4323 Today Library Insights Profile` audits four
+ * `node tools/audit-a11y.mjs 4323 Library Insights Profile` audits three
  * names and skips the rest. There is exactly one caller with a reason: the
  * **empty-account** build (`EXPO_PUBLIC_FIXTURES=empty`), where every route
  * naming a `fixture-…` id points at a piece that does not exist, so sweeping

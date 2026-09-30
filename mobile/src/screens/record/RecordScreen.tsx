@@ -1285,7 +1285,7 @@ export function RecordScreen() {
         </View>
         {canLeave ? (
           <Pressable
-            onPress={() => navigation.popTo('Tabs', { screen: 'Today' } as never)}
+            onPress={() => navigation.popTo('Tabs', { screen: 'Library' } as never)}
             accessibilityRole="button"
             style={({ pressed }) => [
               styles.quiet,
