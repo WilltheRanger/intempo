@@ -23,8 +23,10 @@ import { appVerdictForBar, barTempo } from '../../lib/verdict/barTempo';
 import { readMeasure } from '../../lib/verdict/measureReading';
 import { takePitchTrend, tempoTrend } from '../../lib/verdict/trend';
 import { pitchWord } from '../../lib/verdict/intonation';
+import { namedMarks, noteDetail, notesLine, takeNoteMarks } from '../../lib/verdict/pitchByNote';
+import { NoteRow } from '../../components/charts/NoteRow';
 import { headlinePassage, practiceLabel } from '../../lib/verdict/passage';
-import { mistakeBars, restEntriesInBar, wrongNotesInBar } from '../../lib/verdict/mistakes';
+import { mistakeBars, mistakesInPassage } from '../../lib/verdict/mistakes';
 import {
   barsLabel,
   pitchPassageAt,
@@ -69,6 +71,8 @@ export function VerdictScreen() {
   const [selected, setSelected] = useState<number | null>(null);
   /** Which of the two readings the one chart draws. */
   const [view, setView] = useState<'tempo' | 'pitch'>('tempo');
+  /** The written note tapped under the pitch graph, by MIDI number. */
+  const [note, setNote] = useState<number | null>(null);
 
   /*
     **One question for the take, not one per bar** (2026-09-29). Where it has
@@ -295,7 +299,12 @@ export function VerdictScreen() {
   const showingPitch = view === 'pitch' && pitchLine !== null;
   // Bars with a note heard as another or an entrance after a miscounted rest:
   // a dot under each on the chart; the bar's card says what it was.
-  const marked = mistakeBars(take.wrongNotes, take.restEntries);
+  const mistakes = mistakeBars(take.wrongNotes, take.restEntries);
+  // Which written notes ran sharp or flat, under the pitch graph
+  // (`lib/verdict/pitchByNote.ts`); a tapped one marks its bars instead.
+  const noteMarks = showingPitch ? takeNoteMarks(take.intonation) : [];
+  const tappedNote = noteMarks.find((m) => m.midi === note) ?? null;
+  const marked = tappedNote ? new Set(tappedNote.bars) : mistakes;
   // The bars the verdict is about, which the main button practises.
   const passage = take.lowConfidence ? null : headlinePassage(take.headline);
   const recordAgain = () => navigation.replace('Record', { pieceId: take.pieceId });
@@ -319,16 +328,7 @@ export function VerdictScreen() {
       ? pitchPassageLine(pitchSpan)
       : null;
   // What else went wrong inside it, said for the bar it happened in.
-  const spanMistakes = span
-    ? take.measures
-        .filter((m) => m.measure >= span.from && m.measure <= span.to)
-        .flatMap((m) =>
-          [
-            ...wrongNotesInBar(take.wrongNotes, m.measure),
-            ...restEntriesInBar(take.restEntries, m.measure),
-          ].map((line) => (span.from === span.to ? line : `Bar ${m.measure}: ${line}`)),
-        )
-    : [];
+  const spanMistakes = span ? mistakesInPassage(take.wrongNotes, take.restEntries, span) : [];
   // The one question: about the passage the verdict found, or about the
   // whole take when it found none. Only over bars the app made a claim about.
   const askedBars = take.measures.filter(
@@ -439,7 +439,10 @@ export function VerdictScreen() {
             { value: 'pitch', label: 'Pitch' },
           ]}
           value={showingPitch ? 'pitch' : 'tempo'}
-          onChange={setView}
+          onChange={(next) => {
+            setNote(null);
+            setView(next);
+          }}
           style={styles.switch}
         />
       ) : null}
@@ -449,7 +452,10 @@ export function VerdictScreen() {
             data={pitchLine}
             measures={take.measures}
             selected={selected}
-            onSelect={setSelected}
+            onSelect={(bar) => {
+              setNote(null);
+              setSelected(bar);
+            }}
             span={span}
             marked={marked}
             ends={{ up: 'sharp', down: 'flat' }}
@@ -507,6 +513,31 @@ export function VerdictScreen() {
         </View>
       ) : null}
 
+      {/*
+        **Which notes, under which bars** (the owner, 2026-09-30, "Result +
+        Insights"): the take's written notes low to high, each where it sat
+        against the player's tuning. One line names the notes that stand out;
+        a tapped note says itself there instead and marks its bars on the
+        graph's rail above.
+      */}
+      {noteMarks.length > 0 && take.intonation ? (
+        <View style={styles.notes}>
+          <Text variant="body" style={styles.notesLine}>
+            {tappedNote ? noteDetail(tappedNote) : notesLine(noteMarks, 'take')}
+          </Text>
+          <NoteRow
+            marks={noteMarks}
+            inTuneCents={take.intonation.inTuneCents}
+            named={namedMarks(noteMarks).map((m) => m.midi)}
+            selected={note}
+            onSelect={(midi) => {
+              setSelected(null);
+              setNote(midi);
+            }}
+          />
+        </View>
+      ) : null}
+
       {askedBars.length > 0 ? (
         <View style={styles.question}>
           <CorrectionPrompt
@@ -550,6 +581,12 @@ const styles = StyleSheet.create({
   },
   span: {
     marginTop: spacing.lg,
+  },
+  notes: {
+    marginTop: spacing['2xl'],
+  },
+  notesLine: {
+    marginBottom: spacing.md,
   },
   spanMistake: {
     marginTop: spacing.xs,

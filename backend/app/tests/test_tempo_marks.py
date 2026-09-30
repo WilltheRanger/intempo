@@ -24,10 +24,15 @@ from app.services.ocr.base import OCRProviderError
 from app.services.ocr.claude_provider import ClaudeProvider
 from app.services.ocr.tempo_marks import (
     PageTempo,
+    PlacedDynamic,
+    PrintedDynamic,
     PrintedMark,
+    apply_page_dynamics,
     apply_page_tempo,
     bars_by_line,
+    dynamics_in,
     marks_in,
+    place_dynamics,
     place_marks,
     read_tempo_marks,
     with_tempo_marks,
@@ -411,13 +416,41 @@ def test_a_reading_with_no_tempo_words_gains_the_pages(configured) -> None:
     assert (read.tempo_marking, read.bpm_hint) == ("Andante", 76)
 
 
-def test_a_reading_that_already_has_tempo_words_is_not_asked_about_again(configured) -> None:
-    # A vision reader is asked for them in its own prompt; a second call
-    # would pay to second-guess it.
+def test_a_reading_with_its_own_tempo_words_and_dynamics_is_not_asked_about_again(
+    configured,
+) -> None:
+    # An imported file carries both; a second call would pay to second-guess it.
     score = _score([4], tempo_changes=[TempoChange(measure_number=2, kind="ritardando", text="rit.")])
+    score = score.model_copy(
+        update={
+            "measures": [
+                score.measures[0].model_copy(
+                    update={"notes": [Note(pitch="C3", duration="whole", dynamics="p")]}
+                ),
+                *score.measures[1:],
+            ]
+        }
+    )
 
     assert with_tempo_marks(score, b"page") is score
     assert configured.asks == []
+
+
+def test_a_reading_with_tempo_words_and_no_dynamics_gains_only_the_dynamics(configured) -> None:
+    """A vision reader writes its own tempo words and, told not to, no dynamics
+    (2026-09-30): it is asked, and its tempo words stand."""
+    configured.answer = json.dumps(
+        {
+            "marks": [{"line": 1, "bar": 3, "text": "a tempo"}],
+            "dynamics": [{"line": 1, "bar": 1, "mark": "mf"}],
+        }
+    )
+    score = _score([4], tempo_changes=[TempoChange(measure_number=2, kind="ritardando", text="rit.")])
+
+    read = with_tempo_marks(score, b"page")
+
+    assert read.tempo_changes == score.tempo_changes
+    assert read.measures[0].notes[0].dynamics == "mf"
 
 
 def test_a_failure_anywhere_keeps_the_reading(configured, monkeypatch) -> None:
@@ -453,3 +486,171 @@ def test_the_default_reader_is_one_that_can_be_asked(monkeypatch) -> None:
     monkeypatch.setattr(settings, "OCR_TEMPO_READER", "claude-sonnet-5", raising=False)
 
     assert isinstance(tempo_marks.tempo_reader(), ClaudeProvider)
+
+
+# ---- dynamics (2026-09-30) ---------------------------------------------------
+
+
+def _bars(*bars: list[str]) -> ScoreJson:
+    """One line of bars, each a list of pitches ("rest" for a rest), quarters."""
+    return ScoreJson(
+        clef="bass",
+        time_signature="4/4",
+        ocr_confidence=0.9,
+        measures=[
+            Measure(
+                measure_number=i + 1,
+                system=0,
+                notes=[Note(pitch=p, duration="quarter") for p in pitches],
+            )
+            for i, pitches in enumerate(bars)
+        ],
+    )
+
+
+def test_the_prompt_asks_for_dynamics_beside_the_tempo_words() -> None:
+    prompt = tempo_marks._prompt(as_lines=False)
+
+    assert '"dynamics"' in prompt
+    assert "crescendo" in prompt and "diminuendo" in prompt
+    # Quiet to loud, the way a musician lists them.
+    assert prompt.index("ppp") < prompt.index("mf") < prompt.index("fff")
+
+
+def test_dynamics_are_read_from_the_answer() -> None:
+    answer = json.dumps(
+        {
+            "marks": [],
+            "dynamics": [
+                {"line": 1, "bar": 1, "mark": "p"},
+                {"line": 1, "bar": 2, "mark": "cresc.", "to_line": 1, "to_bar": 4},
+                {"line": 2, "bar": 1, "mark": "Diminuendo"},
+            ],
+        }
+    )
+
+    assert dynamics_in(answer) == [
+        PrintedDynamic(1, 1, "p"),
+        PrintedDynamic(1, 2, "crescendo", 1, 4),
+        PrintedDynamic(2, 1, "diminuendo"),
+    ]
+
+
+def test_a_word_that_is_not_a_dynamic_is_left_out() -> None:
+    """An invented mark is a musician told they missed it."""
+    answer = json.dumps(
+        {
+            "dynamics": [
+                {"line": 1, "bar": 1, "mark": "dolce"},
+                {"line": 1, "bar": 2, "mark": "poco f"},
+                {"line": 1, "bar": 3, "mark": "sfz"},
+                {"line": 0, "bar": 1, "mark": "p"},
+                {"line": 1, "bar": True, "mark": "p"},
+            ]
+        }
+    )
+
+    assert dynamics_in(answer) == [PrintedDynamic(1, 3, "sfz")]
+
+
+def test_an_answer_without_dynamics_has_none() -> None:
+    assert dynamics_in('{"marks": []}') == []
+    assert dynamics_in("not json") == []
+
+
+def test_a_hairpin_with_half_an_end_has_no_end() -> None:
+    answer = json.dumps({"dynamics": [{"line": 1, "bar": 1, "mark": "dim.", "to_bar": 3}]})
+
+    assert dynamics_in(answer) == [PrintedDynamic(1, 1, "diminuendo")]
+
+
+def test_dynamics_are_placed_at_bar_numbers() -> None:
+    lines = [[1, 2, 3, 4], [5, 6, 7]]
+
+    placed = place_dynamics(
+        [
+            PrintedDynamic(2, 2, "f"),
+            PrintedDynamic(1, 3, "crescendo", 2, 1),
+            PrintedDynamic(3, 1, "p"),
+            PrintedDynamic(2, 3, "diminuendo", 1, 1),
+        ],
+        lines,
+    )
+
+    assert placed == [
+        PlacedDynamic(6, "f"),
+        PlacedDynamic(3, "crescendo", 5),
+        # A hairpin that ends before it starts keeps its start and runs on.
+        PlacedDynamic(7, "diminuendo"),
+    ]
+
+
+def test_a_dynamic_lands_on_the_first_sounding_note_of_its_bar() -> None:
+    score = _bars(["rest", "C3", "D3"], ["E3", "F3"], ["G3", "rest"])
+
+    read = apply_page_dynamics(
+        score,
+        [PlacedDynamic(1, "p"), PlacedDynamic(2, "crescendo", 3), PlacedDynamic(3, "f")],
+    )
+
+    first, second, third = (m.notes for m in read.measures)
+    assert [n.dynamics for n in first] == [None, "p", None]
+    assert second[0].hairpin == "crescendo"
+    # The hairpin reaches the last sounding note of its end bar, and the f
+    # printed in that bar still lands on the first.
+    assert third[0].hairpin_end is True and third[0].dynamics == "f"
+
+
+def test_a_bar_keeps_the_first_dynamic_printed_in_it() -> None:
+    read = apply_page_dynamics(_bars(["C3"]), [PlacedDynamic(1, "p"), PlacedDynamic(1, "f")])
+
+    assert read.measures[0].notes[0].dynamics == "p"
+
+
+def test_a_reading_with_dynamics_of_its_own_keeps_them() -> None:
+    """An imported file's are the engraver's, note by note."""
+    score = _bars(["C3", "D3"])
+    score = score.model_copy(
+        update={
+            "measures": [
+                score.measures[0].model_copy(
+                    update={
+                        "notes": [
+                            Note(pitch="C3", duration="quarter"),
+                            Note(pitch="D3", duration="quarter", dynamics="ff"),
+                        ]
+                    }
+                )
+            ]
+        }
+    )
+
+    assert apply_page_dynamics(score, [PlacedDynamic(1, "p")]) is score
+
+
+def test_a_bar_of_rests_takes_no_dynamic() -> None:
+    score = _bars(["rest"], ["C3"])
+
+    read = apply_page_dynamics(score, [PlacedDynamic(1, "p")])
+
+    assert read is score
+
+
+def test_a_photographed_page_gains_its_dynamics(configured) -> None:
+    configured.answer = json.dumps(
+        {
+            "marks": [],
+            "dynamics": [
+                {"line": 1, "bar": 1, "mark": "p"},
+                {"line": 1, "bar": 2, "mark": "crescendo", "to_line": 1, "to_bar": 3},
+                {"line": 1, "bar": 4, "mark": "f"},
+            ],
+        }
+    )
+
+    read = with_tempo_marks(_score([4]), b"page")
+
+    notes = [m.notes[0] for m in read.measures]
+    assert [n.dynamics for n in notes] == ["p", None, None, "f"]
+    assert notes[1].hairpin == "crescendo" and notes[2].hairpin_end is True
+    assert read.tempo_changes == []

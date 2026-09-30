@@ -615,6 +615,21 @@ export interface IntonationSummaryJson {
   in_tune_cents: number;
   slight_cents: number;
   tuning_worth_saying_cents: number;
+  /** Each written note read at least twice, low to high. Absent before 2026-09-30. */
+  by_note?: NoteIntonationJson[];
+  /** Readings a note needs to be shown for this take on its own. */
+  by_note_show_notes?: number;
+}
+
+/** One written note's pitch across a take, as the pipeline stores it. */
+export interface NoteIntonationJson {
+  /** As the page spells it: "Eb3", "F#4". */
+  pitch: string;
+  midi: number;
+  /** Median against the take's tuning, in cents. Positive is sharp. */
+  cents: number;
+  notes: number;
+  bars: number[];
 }
 
 /**
@@ -688,14 +703,20 @@ export interface RestEntryJson {
   bar_beats: number | null;
 }
 
-/** One written note value, and how it was timed across the take. */
+/** One written note value, and how long it was held across the take. */
 export interface NoteValueTiming {
   beats: number;
   /** What a musician calls it, or null for a length with no plain name. */
   label: string | null;
   note_count: number;
-  /** Mean delta for this value, in percent of a beat. Negative is early. */
-  mean_delta_pct: number;
+  /**
+   * Against the pace of the music around it, in percent of its written
+   * length. Positive is held long. Absent on takes before 2026-09-30, which
+   * carried a position error instead.
+   */
+  length_pct?: number;
+  /** The share of its notes on that side. */
+  same_side_share?: number;
 }
 
 /**
@@ -1103,6 +1124,23 @@ export interface TakeIntonation {
   inTuneCents: number;
   slightCents: number;
   tuningWorthSayingCents: number;
+  /** Each written note read at least twice, low to high; empty before 2026-09-30. */
+  byNote: NoteIntonation[];
+  /** Readings a note needs to be shown for this take on its own. */
+  byNoteShowNotes: number;
+}
+
+/** One written note's pitch across a take, against the take's tuning. */
+export interface NoteIntonation {
+  /** As the page spells it: "Eb3", "F#4". */
+  pitch: string;
+  midi: number;
+  /** Positive is sharp. */
+  cents: number;
+  /** Readings kept. */
+  notes: number;
+  /** The bars it was read in, in order. */
+  bars: number[];
 }
 
 /** The signed-in musician, as the UI needs them. */

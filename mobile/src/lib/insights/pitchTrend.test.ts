@@ -10,6 +10,8 @@ const BANDS: TakeIntonation = {
   inTuneCents: 15,
   slightCents: 30,
   tuningWorthSayingCents: 10,
+  byNote: [],
+  byNoteShowNotes: 4,
 };
 
 /** Newest first, as `getRecentTakes` returns them. */

@@ -26,6 +26,10 @@ import { TrendPlot } from '../../components/charts/TrendPlot';
 import { PieceHeading } from '../../components/pieces/PieceHeading';
 import { pitchTrendData, pitchTrendFrom, pitchTrendLine } from '../../lib/insights/pitchTrend';
 import { tempoTrend } from '../../lib/verdict/trend';
+import { notesHabitFrom } from '../../lib/insights/notesHabit';
+import { insightsProgress } from '../../lib/insights/readiness';
+import { TakeDots } from './TakeDots';
+import { NoteRow } from '../../components/charts/NoteRow';
 import { PieceInsightRow } from './PieceInsightRow';
 import { firstStep, focusReason, windowLabel } from './copy';
 import { useAddPieceOption } from '../../navigation/useAddPieceOption';
@@ -130,6 +134,33 @@ export function InsightsScreen() {
     );
   }
 
+  // Five takes before anything is said (`lib/insights/readiness.ts`): a trend
+  // through two points is a guess, and the tab counts down instead.
+  const progress = insightsProgress(recentTakes.data, insights.sessions);
+  if (!progress.ready) {
+    return (
+      <ScreenContainer onRefresh={refresh}>
+        <PageHeader title="Insights" />
+        <EmptyState
+          fill
+          icon={ChartLine}
+          title={progress.title}
+          actionLabel="Record a take"
+          actionTone="primary"
+          onActionPress={() => {
+            if (progress.lastPieceId) {
+              navigation.navigate('Record', { pieceId: progress.lastPieceId });
+              return;
+            }
+            navigation.navigate('Library');
+          }}
+        >
+          <TakeDots done={progress.counted} of={progress.needed} />
+        </EmptyState>
+      </ScreenContainer>
+    );
+  }
+
   const history = recentTakes.data ?? [];
   const tendency = readTendency(insights);
   const sessionTrend = sessionTrendFrom(history, insights.tolerance);
@@ -147,6 +178,9 @@ export function InsightsScreen() {
     ? axisLabels(sessionTrend.points.map((point) => point.value), sessionTrend.range)
     : null;
   const pitchData = pitchTrend ? pitchTrendData(pitchTrend) : null;
+  // Which written notes run sharp or flat across takes
+  // (`lib/insights/notesHabit.ts`); nothing until two takes were read by note.
+  const notesHabit = notesHabitFrom(history);
   // "Worth a look" shows the piece's last take, with the passage to practise
   // marked on its rail — the picture the result screen gave, where the bars it
   // drew here said "bar by bar" in a form the owner rejected (2026-09-29).
@@ -238,6 +272,35 @@ export function InsightsScreen() {
               <TrendPlot data={pitchData} height={110} ends={{ up: 'further off' }} centreLabel="in tune" />
               <TakeAxis count={pitchTrend.points.length} />
             </View>
+          ) : null}
+        </View>
+      ) : null}
+
+      {/*
+        **By note, under "In tune"** (the owner, 2026-09-30, "Result +
+        Insights"): which written notes run sharp or flat, pooled across the
+        takes, and named only where most of them agree — the result screen's
+        note row as a habit rather than a take.
+      */}
+      {notesHabit ? (
+        <View style={styles.pitch}>
+          <Text variant="eyebrow" color="textTertiary" style={styles.eyebrowCaps}>
+            By note
+          </Text>
+          <Text variant="metadata" color="textSecondary" style={styles.pitchSentence}>
+            {notesHabit.line}
+          </Text>
+          <View style={styles.pitchChart}>
+            <NoteRow
+              marks={notesHabit.marks}
+              inTuneCents={notesHabit.inTuneCents}
+              named={notesHabit.named}
+            />
+          </View>
+          {notesHabit.caption ? (
+            <Text variant="caption" color="textTertiary" style={styles.notesCaption}>
+              {notesHabit.caption}
+            </Text>
           ) : null}
         </View>
       ) : null}
@@ -457,6 +520,9 @@ const styles = StyleSheet.create({
   },
   pitchChart: {
     marginTop: spacing.md,
+  },
+  notesCaption: {
+    marginTop: spacing.sm,
   },
   rows: {
     marginTop: 7,

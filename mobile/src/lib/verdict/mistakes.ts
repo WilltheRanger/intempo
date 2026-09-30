@@ -15,14 +15,15 @@ export function displayPitch(name: string): string {
   return name.replace(/#/g, '♯').replace(/(?<=[A-G])b/g, '♭');
 }
 
-/** The bar card's own words for each wrong note in it: "We heard F where the page has F♯." */
+/**
+ * Each wrong note in a bar, as briefly as it can be said: "E instead of E♭"
+ * (the owner, 2026-09-30, of "We heard E where the page has E♭.": "still too
+ * wordy"). The dot under the bar already says something happened there.
+ */
 export function wrongNotesInBar(notes: readonly WrongNote[], bar: number): string[] {
   return notes
     .filter((note) => note.bar === bar)
-    .map(
-      (note) =>
-        `We heard ${displayPitch(note.heard)} where the page has ${displayPitch(note.written)}.`,
-    );
+    .map((note) => `${displayPitch(note.heard)} instead of ${displayPitch(note.written)}`);
 }
 
 /**
@@ -49,15 +50,37 @@ export function describeOffset(beats: number, barBeats: number | null): string {
 }
 
 /**
- * The bar card's words for a rest counted wrong, in the bar the entrance is
- * in: "You came in a bar early after the rest." Said where it happened rather
- * than as a sentence under the verdict (2026-09-29): the verdict's own line is
- * one short list, and the detail belongs to the bar.
+ * A rest counted wrong, in the bar the entrance is in: "came in a bar early".
+ * "Came in" says it followed a rest; `mistakesInPassage` capitalises it when
+ * it stands alone.
  */
 export function restEntriesInBar(entries: readonly RestEntry[], bar: number): string[] {
   return entries
     .filter((entry) => entry.bar === bar)
-    .map((entry) => `You came in ${describeOffset(entry.beats, entry.barBeats)} after the rest.`);
+    .map((entry) => `came in ${describeOffset(entry.beats, entry.barBeats)}`);
+}
+
+/**
+ * What else went wrong inside a tapped passage, one line per mistake: "Bar 6:
+ * E instead of E♭", "Bar 9: came in a beat late" — or, when the passage is one
+ * bar, the finding alone, since the line above already names the bar.
+ */
+export function mistakesInPassage(
+  wrongNotes: readonly WrongNote[],
+  restEntries: readonly RestEntry[],
+  passage: { from: number; to: number },
+): string[] {
+  const out: string[] = [];
+  for (let bar = passage.from; bar <= passage.to; bar += 1) {
+    for (const line of [...wrongNotesInBar(wrongNotes, bar), ...restEntriesInBar(restEntries, bar)]) {
+      out.push(
+        passage.from === passage.to
+          ? line.charAt(0).toUpperCase() + line.slice(1)
+          : `Bar ${bar}: ${line}`,
+      );
+    }
+  }
+  return out;
 }
 
 /**

@@ -26,6 +26,8 @@ const INTONATION: TakeIntonation = {
   inTuneCents: 15,
   slightCents: 30,
   tuningWorthSayingCents: 10,
+  byNote: [],
+  byNoteShowNotes: 4,
 };
 
 function bar(measure: number, playedBpm: number | null, over: Partial<MeasureVerdict> = {}) {

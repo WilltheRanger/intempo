@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { LucideIcon } from '../icons';
 import { StyleSheet, View } from 'react-native';
 
@@ -67,6 +68,11 @@ export interface EmptyStateProps {
    */
   secondaryLabel?: string;
   onSecondaryPress?: () => void;
+  /**
+   * Something to see between the words and the action — Insights' five dots
+   * counting to its fifth take. A picture of progress, not more words.
+   */
+  children?: ReactNode;
 }
 
 /** Shown when a screen has nothing to display. Plain and unapologetic. */
@@ -82,6 +88,7 @@ export function EmptyState({
   hint,
   secondaryLabel,
   onSecondaryPress,
+  children,
 }: EmptyStateProps) {
   const Action = actionTone === 'primary' ? PrimaryButton : SecondaryButton;
   return (
@@ -104,6 +111,8 @@ export function EmptyState({
           {description}
         </Text>
       ) : null}
+
+      {children ? <View style={styles.extra}>{children}</View> : null}
 
       {hint ? (
         <Text variant="metadataSmall" color="textTertiary" style={styles.hint}>
@@ -156,6 +165,9 @@ const styles = StyleSheet.create({
   hint: {
     marginTop: spacing.lg,
     textAlign: 'center',
+  },
+  extra: {
+    marginTop: spacing.lg,
   },
   action: {
     marginTop: spacing.xl,

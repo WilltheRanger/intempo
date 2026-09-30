@@ -11,7 +11,7 @@ import { readMeasure } from './measureReading';
  * bar's tempo is the shakiest number the app has — a handful of notes — so a
  * card of "Bar 7 · 105 BPM" on a scale was precision the measurement did not
  * have. A tap now selects the run of neighbouring bars that went the same way
- * and says it once: "Bars 5–8 · about 104, aiming for 96".
+ * and says it once: "Bars 5–8 were fast".
  */
 
 /** How a bar went, in the terms a passage is grouped by. */
@@ -67,23 +67,12 @@ export function tempoPassageAt(
   target: number,
   unit: TempoBeatUnit | null | undefined,
   tolerance: Tolerance | null,
-): (BarPassage<TempoKind> & { bpm: number | null; aim: number | null }) | null {
+): BarPassage<TempoKind> | null {
   const index = measures.findIndex((m) => m.measure === measure);
   if (index < 0) return null;
   const kinds = measures.map((m) => tempoKind(m, target, unit, tolerance));
   const [first, last] = runAround(kinds, index);
-  const tempi = measures
-    .slice(first, last + 1)
-    .map((m) => barTempo(m, target, unit, tolerance))
-    .filter((t): t is NonNullable<typeof t> => t !== null);
-  const bpm = tempi.length ? Math.round(tempi.reduce((sum, t) => sum + t.bpm, 0) / tempi.length) : null;
-  return {
-    from: measures[first].measure,
-    to: measures[last].measure,
-    kind: kinds[index],
-    bpm,
-    aim: tempi.length ? tempi[0].target : null,
-  };
+  return { from: measures[first].measure, to: measures[last].measure, kind: kinds[index] };
 }
 
 /** The pitch passage around a bar: its neighbours also in tune, or also sharp, or also flat. */
@@ -104,28 +93,35 @@ export function barsLabel(passage: { from: number; to: number }): string {
   return passage.from === passage.to ? `Bar ${passage.from}` : `Bars ${passage.from}–${passage.to}`;
 }
 
-/** "Bars 5–8 · about 104, aiming for 96", "Bars 1–4 · on tempo". */
-export function tempoPassageLine(
-  passage: BarPassage<TempoKind> & { bpm: number | null; aim: number | null },
-): string {
+/**
+ * The tapped passage in a few words: "Bars 5–8 were fast", "Bars 1–4 were on
+ * tempo".
+ *
+ * **The finding, no number** (the owner, 2026-09-30). "Bars 15–24 · about 95,
+ * aiming for 104" was jargon, and "Bars 5–8 were fast: 104 beats a minute,
+ * not 96" was still too wordy. The graph already draws how far the line went
+ * and labels the target, so the line only has to say which way.
+ */
+export function tempoPassageLine(passage: BarPassage<TempoKind>): string {
   const where = barsLabel(passage);
-  if (passage.kind === 'untimed') return `${where} · not timed`;
-  if (passage.kind === 'on') return `${where} · on tempo`;
-  if (passage.bpm !== null && passage.aim !== null) {
-    return `${where} · about ${passage.bpm}, aiming for ${passage.aim}`;
-  }
-  return `${where} · ${passage.kind === 'rush' ? 'ahead' : 'behind'}`;
+  const were = passage.from === passage.to ? 'was' : 'were';
+  if (passage.kind === 'untimed') return `${where} ${were}n't timed`;
+  if (passage.kind === 'on') return `${where} ${were} on tempo`;
+  return `${where} ${were} ${passage.kind === 'rush' ? 'fast' : 'slow'}`;
 }
 
-/** "Bars 7–8 · played flat", "Bars 1–6 · in tune". */
+/** "Bars 7–8 were flat", "Bars 1–6 were in tune", "Bar 3's pitch couldn't be read". */
 export function pitchPassageLine(passage: BarPassage<PitchKind>): string {
   const where = barsLabel(passage);
+  const single = passage.from === passage.to;
   switch (passage.kind) {
     case 'in_tune':
-      return `${where} · in tune`;
+      return `${where} ${single ? 'was' : 'were'} in tune`;
     case 'unread':
-      return `${where} · pitch not read`;
+      return single
+        ? `${where}'s pitch couldn't be read`
+        : `The pitch of ${where.toLowerCase()} couldn't be read`;
     default:
-      return `${where} · played ${passage.kind}`;
+      return `${where} ${single ? 'was' : 'were'} ${passage.kind}`;
   }
 }

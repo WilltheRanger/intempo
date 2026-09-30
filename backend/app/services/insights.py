@@ -34,6 +34,7 @@ plausible on every screen it reaches.
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import NamedTuple
 
 import numpy as np
 from pydantic import BaseModel
@@ -75,10 +76,11 @@ class Insights(BaseModel):
     #: Spread of the per-note timing deltas, as a percentage of one beat.
     #: Low is even playing, whatever the average was.
     steadiness_pct: float | None = None
-    #: The take split by written note value, longest first.
+    #: The take split by written note value, longest first: how long each was
+    #: held against the notes of other lengths around it.
     by_note_value: list["NoteValueTiming"] = []
-    #: The one written value that behaves differently from the rest, if any —
-    #: "your quarters are fine and your sixteenths run away".
+    #: The one written value held consistently long or short, if any — "you
+    #: hurried your sixteenths", with the quarters around them steady.
     standout_value: "NoteValueTiming | None" = None
     #: The single most unusual thing about this take, ranked across all of the
     #: above, or `None` when nothing clears its own threshold. `None` is the
@@ -411,7 +413,7 @@ def insights_for(
     expected: np.ndarray,
     target_bpm: float,
     delta_pcts: list[float],
-    by_note: list[tuple[float, float]] | None = None,
+    intervals: list[NoteInterval] | None = None,
     *,
     target_bpm_for_lead: float | None = None,
     positions: list[float] | None = None,
@@ -426,19 +428,7 @@ def insights_for(
     would throw away the two that are.
     """
     played = played_tempo(matched, detected, expected, target_bpm)
-    # Note values against the musician's own pulse, not the target's: see
-    # `detrended`. Only when the two lists are the same notes, which is how
-    # `analyze` builds them.
-    if (
-        by_note
-        and positions is not None
-        and len(by_note) == len(delta_pcts) >= MIN_NOTES_FOR_INSIGHT
-    ):
-        residuals = detrended(delta_pcts, positions=positions, pulses=pulses)
-        by_note = [
-            (beats, float(r)) for (beats, _), r in zip(by_note, residuals, strict=True)
-        ]
-    values = timing_by_note_value(by_note or [])
+    values = timing_by_note_value(intervals or [])
     built = Insights(
         by_note_value=values,
         standout_value=standout_note_value(values),
@@ -472,15 +462,27 @@ def insights_for(
 #: sixteenths" off four sixteenths is telling them about four notes.
 MIN_NOTES_PER_VALUE = 6
 
-#: How far a note value's average must sit from the take's own average before
-#: it is called out, in percent of a beat.
+#: How much longer or shorter than written a note value must be held, against
+#: the notes of other lengths around it, before it is named — in percent of its
+#: own written length.
 #:
-#: A starting value that wants a real recording and an ear, like everything in
-#: `[tolerance]`. It is deliberately above the tolerance bands' `inner` 5.0:
-#: the claim being made is not "these notes were off" — the verdict already
-#: says that — but "these notes were off *differently from the rest*", which
-#: has to clear the noise between groups before it is worth a sentence.
-NOTE_VALUE_STANDOUT_PCT = 6.0
+#: 8: a quarter at 100 BPM held 48 ms long, which a listener hears as a note
+#: leaning on the next one. On the owner's two real bass takes (2026-09-30)
+#: the largest was the half notes of one take at +9.7%, and it fails
+#: `NOTE_LENGTH_SAME_SIDE` — five of nine long — so neither take names one.
+NOTE_LENGTH_STANDOUT_PCT = 8.0
+
+#: ...and at least this share of that value's notes must lean the same way.
+#: A median can be carried by a few long notes; a habit is most of them.
+NOTE_LENGTH_SAME_SIDE = 0.7
+
+#: How far either side of a note, in its own beats, the local pace is read
+#: from — about a bar of 4/4 each way.
+NOTE_LENGTH_WINDOW_BEATS = 4.0
+#: The share of that window notes of *other* lengths must fill before a note is
+#: measured. Below it the window is the note's own value played at some pace,
+#: and how long it was held cannot be told from how fast the bar went.
+NOTE_LENGTH_MIN_OTHERS = 0.25
 
 #: Written lengths in beats, and what a musician calls them.
 #:
@@ -502,82 +504,126 @@ _NOTE_VALUE_NAMES: dict[float, str] = {
 }
 
 
+class NoteInterval(NamedTuple):
+    """One note held until the next: as written, and as played."""
+
+    #: The note's written length in beats — the value it is grouped under.
+    beats: float
+    #: Where it sits on the page, in written milliseconds.
+    at_ms: float
+    written_ms: float
+    played_ms: float
+    #: The stretch of pulse it was measured in (`classification.Delta.pulse`).
+    pulse: int
+
+
 class NoteValueTiming(BaseModel):
-    """How one written note value was timed, across the whole take."""
+    """How long one written note value was held, across the whole take."""
 
     beats: float
     #: What a musician calls it, or `None` for a length with no plain name.
     label: str | None = None
     note_count: int
-    #: Mean timing delta for this value, in percent of a beat. Negative is early.
-    mean_delta_pct: float
+    #: The median note of this value against the notes of other lengths around
+    #: it, in percent of its written length. Positive is held long.
+    length_pct: float
+    #: The share of its notes on the median's side: how much of a habit it is.
+    same_side_share: float
 
 
-def timing_by_note_value(
-    per_note: list[tuple[float, float]],
-) -> list[NoteValueTiming]:
+def timing_by_note_value(intervals: list[NoteInterval]) -> list[NoteValueTiming]:
     """The take split by what was written, longest value first.
 
     **The insight a metronome cannot give.** A metronome tells a musician they
     were fast; it cannot tell them *their quarters were fine and their
     sixteenths ran away*, which is the difference between "practise this" and
-    "practise this bit, slowly". The pipeline has always known the written
-    length of every note and has never grouped by it.
+    "practise this bit, slowly".
 
-    `per_note` is `(beats, delta_pct)` for the timed notes only — the same set
-    the verdict is built from, so the two cannot disagree about which notes
-    counted.
+    **How long each note was held, against the pace of the music around it**
+    — the time from its attack to the next as a share of what was written,
+    divided by the same share for everything else within
+    `NOTE_LENGTH_WINDOW_BEATS`, weighted by length. This replaced grouping each
+    note's position error (2026-09-30), which told the owner's two bass takes
+    their half notes "lagged" in one and "ran ahead" in the other: a position
+    carries every note before it, and the half notes of that piece all sit in
+    the bars where it slowed.
+
+    **Weighted by length, not the neighbours' median.** Four hurried
+    sixteenths beside a quarter are most of its neighbours and a quarter of its
+    bar; a median of them made the quarter "held long" by the sixteenths'
+    share. The time they fill is what sets the pace a listener hears.
+
+    **Only where other lengths are around it.** A bar of nothing but half
+    notes played slowly is a slow bar, and whether its half notes were held
+    long cannot be told from that — `NOTE_LENGTH_MIN_OTHERS`.
+
+    `intervals` are the timed, unslurred notes whose next note was also timed
+    and heard, in page order.
     """
-    grouped: dict[float, list[float]] = {}
-    for beats, delta_pct in per_note:
-        grouped.setdefault(round(float(beats), 4), []).append(float(delta_pct))
+    usable = [i for i in intervals if i.written_ms > 0 and i.played_ms > 0 and i.beats > 0]
+    if not usable:
+        return []
+    at = np.array([i.at_ms for i in usable])
+    written = np.array([i.written_ms for i in usable])
+    played = np.array([i.played_ms for i in usable])
+    pulse = np.array([i.pulse for i in usable])
+    value = np.array([round(float(i.beats), 4) for i in usable])
+    # Page order, so each window is a slice: `at` only ever rises.
+    order = np.argsort(at, kind="stable")
+    at, written, played, pulse, value = (a[order] for a in (at, written, played, pulse, value))
 
-    out = [
-        NoteValueTiming(
-            beats=beats,
-            label=_NOTE_VALUE_NAMES.get(beats),
-            note_count=len(deltas),
-            mean_delta_pct=round(float(np.mean(deltas)), 1),
+    relative: dict[float, list[float]] = {}
+    for k in range(at.size):
+        reach = NOTE_LENGTH_WINDOW_BEATS * written[k] / value[k]
+        lo = int(np.searchsorted(at, at[k] - reach, side="left"))
+        hi = int(np.searchsorted(at, at[k] + reach, side="right"))
+        near = np.arange(lo, hi)
+        near = near[(near != k) & (pulse[near] == pulse[k])]
+        total = float(written[near].sum())
+        others = float(written[near][value[near] != value[k]].sum())
+        if total <= 0 or others < NOTE_LENGTH_MIN_OTHERS * total:
+            continue
+        pace = float(played[near].sum()) / total
+        relative.setdefault(float(value[k]), []).append(
+            float(played[k] / written[k] / pace - 1.0)
         )
-        for beats, deltas in grouped.items()
-        if len(deltas) >= MIN_NOTES_PER_VALUE
-    ]
+
+    out = []
+    for beats, values in relative.items():
+        if len(values) < MIN_NOTES_PER_VALUE:
+            continue
+        median = float(np.median(values))
+        side = np.sign(median)
+        out.append(
+            NoteValueTiming(
+                beats=beats,
+                label=_NOTE_VALUE_NAMES.get(beats),
+                note_count=len(values),
+                length_pct=round(median * 100.0, 1),
+                same_side_share=round(
+                    float(np.mean([np.sign(v) == side and side != 0 for v in values])), 2
+                ),
+            )
+        )
     return sorted(out, key=lambda v: v.beats, reverse=True)
 
 
 def standout_note_value(
     values: list[NoteValueTiming],
 ) -> NoteValueTiming | None:
-    """The one written value that behaves differently from the rest, if any.
+    """The written value held consistently long or short, if any.
 
-    **Different from the take's own average, not different from zero.** A take
-    that rushed throughout has every value rushing, and naming one of them
-    would be reporting the verdict twice under a new heading. What is worth a
-    sentence is the value that departs from what this musician did everywhere
-    else — the sixteenths in an otherwise steady take.
-
-    Needs at least two groups to compare, and the comparison excludes the
-    candidate from the baseline it is measured against, so a value that
-    dominates the page cannot make itself stand out from an average it
-    supplies most of.
+    Already against the notes around it, so a take that was fast throughout
+    — every value short by the same share — has nothing standing out, and a
+    page of one value alone has nothing to measure against.
     """
-    if len(values) < 2:
-        return None
-
-    best: NoteValueTiming | None = None
-    best_gap = NOTE_VALUE_STANDOUT_PCT
-
-    for candidate in values:
-        others = [v for v in values if v is not candidate]
-        weight = sum(v.note_count for v in others)
-        if weight == 0:
-            continue
-        baseline = sum(v.mean_delta_pct * v.note_count for v in others) / weight
-        gap = abs(candidate.mean_delta_pct - baseline)
-        if gap > best_gap:
-            best, best_gap = candidate, gap
-
-    return best
+    habits = [
+        v
+        for v in values
+        if abs(v.length_pct) >= NOTE_LENGTH_STANDOUT_PCT
+        and v.same_side_share >= NOTE_LENGTH_SAME_SIDE
+    ]
+    return max(habits, key=lambda v: abs(v.length_pct), default=None)
 
 
 # `Insights` names `NoteValueTiming` before it is defined, which pydantic
@@ -605,7 +651,7 @@ def standout_note_value(
 #:     they set.
 #:   * **Drift**, lower, because changing speed within one take is a worse
 #:     habit than holding a different one and is harder to feel from inside.
-#:   * **Note value**, reusing the standout threshold, since a value has
+#:   * **Note value**, at its own standout threshold, since a value has
 #:     already had to clear it to be a candidate.
 #:   * **Steadiness**, at the tolerance bands' own `inner` figure: departure
 #:     from your own pace by more than the app calls "on" for a single note.
@@ -687,24 +733,16 @@ def lead_finding(
 
     standout = insights.standout_value
     if standout is not None:
-        others = [v for v in insights.by_note_value if v is not standout]
-        weight_total = sum(v.note_count for v in others)
-        baseline = (
-            sum(v.mean_delta_pct * v.note_count for v in others) / weight_total
-            if weight_total
-            else 0.0
-        )
-        gap = standout.mean_delta_pct - baseline
         name = standout.label or f"{standout.beats:g}-beat notes"
         candidates.append(
             Finding(
                 kind="note_value",
                 text=(
-                    f"Your {name} ran ahead."
-                    if gap < 0
-                    else f"Your {name} lagged."
+                    f"You held your {name} too long."
+                    if standout.length_pct > 0
+                    else f"You hurried your {name}."
                 ),
-                weight=abs(gap) / NOTE_VALUE_STANDOUT_PCT,
+                weight=abs(standout.length_pct) / NOTE_LENGTH_STANDOUT_PCT,
             )
         )
 

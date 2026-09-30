@@ -33,17 +33,27 @@ missed one can still be marked by hand in the bar editor.
 
 **Best effort, never raises.** A page whose words could not be read is read
 exactly as it was before this existed.
+
+**And its dynamics, in the same question** (2026-09-30). None of the owner's
+23 pieces carried a single p or f — homr reads none and the transcription
+prompt tells the vision readers not to — so nothing could be said about
+playing them. The same look at the page now lists them too: p, f and the rest
+where they are printed, and crescendos and diminuendos, hairpin or word, from
+the bar they start to the bar they end. They land on the first note of their
+bar — bar-level is what a level can be judged at, and what Listen plays — and
+only on a reading that has none, as the tempo words do.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import get_args
 
 from app.services.ocr.base import json_object_in
 from app.services.page_image import crop_systems
-from app.services.score_schema import DURATION_BEATS, ScoreJson, TempoChange
+from app.services.score_schema import DURATION_BEATS, Dynamics, ScoreJson, TempoChange
 from app.services.tempo_words import one_per_bar, tempo_word
 
 log = logging.getLogger("intempo.ocr")
@@ -51,8 +61,23 @@ log = logging.getLogger("intempo.ocr")
 #: The note values a printed metronome mark counts, as the schema names them.
 _UNITS = ("whole", "half", "dotted_half", "quarter", "dotted_quarter", "eighth", "dotted_eighth")
 
-#: A few marks, a few lines each. Far more than a page prints.
-_MAX_TOKENS = 1024
+#: A few tempo marks and a page of dynamics, a line each. More than a page prints.
+_MAX_TOKENS = 2048
+
+#: The static marks the schema holds, as printed.
+_DYNAMICS = frozenset(get_args(Dynamics))
+#: A crescendo or diminuendo, hairpin or word, as the model may name it.
+_HAIRPINS: dict[str, str] = {
+    "crescendo": "crescendo",
+    "cresc": "crescendo",
+    "cresc.": "crescendo",
+    "diminuendo": "diminuendo",
+    "dim": "diminuendo",
+    "dim.": "diminuendo",
+    "decrescendo": "diminuendo",
+    "decresc": "diminuendo",
+    "decresc.": "diminuendo",
+}
 
 #: How long the page waits for its words. The scan is finished without them,
 #: so a slow answer costs the musician time for something optional.
@@ -80,7 +105,20 @@ Answer with JSON only, in this shape:
 "text" is the printed words exactly, without the metronome mark. "bpm" is the \
 number of a metronome mark and "unit" the note value beside it — one of \
 {units} — or both null when none is printed. If there are no tempo markings, \
-answer {{"marks": []}}."""
+"marks" is [].
+
+Separately, list every DYNAMIC printed on the music in "dynamics", placed the \
+same way: a loudness mark ({dynamics}) where it is printed, and every \
+crescendo or diminuendo — a hairpin, or the word cresc., dim. or decresc. — \
+from the bar it starts to the bar it ends:
+{{"dynamics": [{{"line": 1, "bar": 1, "mark": "p"}}, {{"line": 2, "bar": 3, "mark": "crescendo", "to_line": 2, "to_bar": 5}}]}}
+
+"mark" is one of the loudness marks above, "crescendo" or "diminuendo", and \
+nothing else: leave out words like dolce, subito or poco, and give only the \
+mark they go with. If a hairpin's end is not clear, leave out "to_line" and \
+"to_bar". If there are no dynamics, "dynamics" is [].
+
+Answer with ONE JSON object holding both lists: {{"marks": [...], "dynamics": [...]}}."""
 
 
 def _prompt(*, as_lines: bool) -> str:
@@ -90,7 +128,17 @@ def _prompt(*, as_lines: bool) -> str:
         if as_lines
         else " of the page, and count only lines of music"
     )
-    return _PROMPT.format(lines_hint=hint, units=", ".join(f'"{u}"' for u in _UNITS))
+    return _PROMPT.format(
+        lines_hint=hint,
+        units=", ".join(f'"{u}"' for u in _UNITS),
+        dynamics=", ".join(sorted(_DYNAMICS, key=_loudness)),
+    )
+
+
+def _loudness(mark: str) -> tuple[int, str]:
+    """Quiet to loud, for listing them in the order a musician reads them."""
+    order = ["ppp", "pp", "p", "mp", "mf", "f", "ff", "fff"]
+    return (order.index(mark), mark) if mark in order else (len(order), mark)
 
 
 @dataclass(frozen=True)
@@ -110,6 +158,8 @@ class PageTempo:
     """What one page prints for tempo, in that page's bar numbers."""
 
     changes: list[TempoChange]
+    #: The page's dynamics, at bar numbers, in the order printed.
+    dynamics: list["PlacedDynamic"] = field(default_factory=list)
     #: The piece's own tempo, printed over the first bar of the first page —
     #: "Allegro", "♩ = 104". Not a change: it is what the changes change.
     heading_words: str | None = None
@@ -158,6 +208,151 @@ def marks_in(answer: str) -> list[PrintedMark]:
         if text or bpm is not None:
             found.append(PrintedMark(line, bar, text, bpm, unit))  # type: ignore[arg-type]
     return found
+
+
+@dataclass(frozen=True)
+class PrintedDynamic:
+    """One dynamic as the model placed it: where it starts, and a hairpin's end."""
+
+    line: int
+    bar: int
+    #: A loudness mark from the schema's list, "crescendo" or "diminuendo".
+    mark: str
+    to_line: int | None = None
+    to_bar: int | None = None
+
+
+@dataclass(frozen=True)
+class PlacedDynamic:
+    """A dynamic at a bar number; a hairpin with the bar it reaches, if known."""
+
+    measure: int
+    mark: str
+    to_measure: int | None = None
+
+
+def _position(value: object) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 1 else None
+
+
+def dynamics_in(answer: str) -> list[PrintedDynamic]:
+    """The dynamics a model's answer names, leaving out any it did not state properly.
+
+    **Only the schema's marks.** A word the model reports as a dynamic that is
+    not one — "dolce", "poco", "sub." — is dropped here, the way `tempo_word`
+    decides what a tempo word is: it is the page's loudness that is judged
+    against, and an invented mark is a musician told they missed it.
+    """
+    try:
+        data = json.loads(json_object_in(answer))
+    except (ValueError, TypeError):
+        return []
+    raw = data.get("dynamics") if isinstance(data, dict) else None
+    if not isinstance(raw, list):
+        return []
+    found: list[PrintedDynamic] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        line, bar = _position(item.get("line")), _position(item.get("bar"))
+        written = item.get("mark")
+        if line is None or bar is None or not isinstance(written, str):
+            continue
+        word = written.strip()
+        if word in _DYNAMICS:
+            found.append(PrintedDynamic(line, bar, word))
+        elif word.lower() in _HAIRPINS:
+            to_line, to_bar = _position(item.get("to_line")), _position(item.get("to_bar"))
+            if to_line is None or to_bar is None:
+                to_line = to_bar = None
+            found.append(PrintedDynamic(line, bar, _HAIRPINS[word.lower()], to_line, to_bar))
+    return found
+
+
+def place_dynamics(dynamics: list[PrintedDynamic], lines: list[list[int]]) -> list[PlacedDynamic]:
+    """The dynamics at bar numbers, as the tempo marks are placed.
+
+    A hairpin whose end the reading has no bar for, or which ends before it
+    starts, keeps its start and loses its end: it then runs to the next
+    dynamic, which is what the schema does with an open one.
+    """
+
+    def measure(line: int, bar: int) -> int | None:
+        if line > len(lines) or bar > len(lines[line - 1]):
+            return None
+        return lines[line - 1][bar - 1]
+
+    placed: list[PlacedDynamic] = []
+    for d in dynamics:
+        start = measure(d.line, d.bar)
+        if start is None:
+            log.info(
+                "a dynamic %r was placed at line %d, bar %d, which the reading has "
+                "no bar for; leaving it out",
+                d.mark,
+                d.line,
+                d.bar,
+            )
+            continue
+        end = measure(d.to_line, d.to_bar) if d.to_line and d.to_bar else None
+        placed.append(PlacedDynamic(start, d.mark, end if end is not None and end >= start else None))
+    return placed
+
+
+def apply_page_dynamics(score: ScoreJson, dynamics: list[PlacedDynamic]) -> ScoreJson:
+    """The reading with the page's dynamics, if it had none.
+
+    **Only a reading with none.** An imported file's dynamics are the
+    engraver's, placed on the note they stand under; a model's are a bar at a
+    time, and never replace them. Each lands on the first sounding note of its
+    bar — a hairpin's end on the last of the bar it reaches — and a bar already
+    carrying one keeps the first.
+    """
+    if not dynamics or any(
+        n.dynamics is not None or n.hairpin is not None for m in score.measures for n in m.notes
+    ):
+        return score
+    notes = {
+        m.measure_number: [i for i, n in enumerate(m.notes) if n.pitch != "rest"]
+        for m in score.measures
+    }
+    edits: dict[tuple[int, int], dict] = {}
+
+    def edit(measure: int, which: int, **fields) -> None:
+        sounding = notes.get(measure) or []
+        if not sounding:
+            return
+        key = (measure, sounding[which])
+        held = edits.setdefault(key, {})
+        for name, value in fields.items():
+            held.setdefault(name, value)
+
+    for d in dynamics:
+        if d.mark in _DYNAMICS:
+            edit(d.measure, 0, dynamics=d.mark)
+        else:
+            edit(d.measure, 0, hairpin=d.mark)
+            if d.to_measure is not None:
+                edit(d.to_measure, -1, hairpin_end=True)
+    if not edits:
+        return score
+    measures = []
+    for m in score.measures:
+        mine = {i: f for (number, i), f in edits.items() if number == m.measure_number}
+        if not mine:
+            measures.append(m)
+            continue
+        measures.append(
+            m.model_copy(
+                update={
+                    "notes": [
+                        n.model_copy(update=mine[i]) if i in mine else n
+                        for i, n in enumerate(m.notes)
+                    ]
+                }
+            )
+        )
+    return score.model_copy(update={"measures": measures})
 
 
 def bars_by_line(score: ScoreJson) -> list[list[int]]:
@@ -288,7 +483,14 @@ def read_tempo_marks(
     except Exception as exc:  # noqa: BLE001 — best effort, by the module's contract
         log.warning("could not read the tempo words on this page: %s", exc)
         return None
-    return place_marks(marks_in(answer), lines, first_page=first_page)
+    placed = place_marks(marks_in(answer), lines, first_page=first_page)
+    return PageTempo(
+        changes=placed.changes,
+        dynamics=place_dynamics(dynamics_in(answer), lines),
+        heading_words=placed.heading_words,
+        heading_bpm=placed.heading_bpm,
+        heading_unit=placed.heading_unit,
+    )
 
 
 def apply_page_tempo(score: ScoreJson, tempo: PageTempo) -> ScoreJson:
@@ -321,8 +523,16 @@ def with_tempo_marks(
     source: bytes | None = None,
     first_page: bool = True,
 ) -> ScoreJson:
-    """The reading, with the page's tempo words if it had none. Never raises."""
-    if score.tempo_changes:
+    """The reading, with the page's tempo words and dynamics where it had none.
+
+    Never raises. Asked when either is missing — a reading with its own tempo
+    words and its own dynamics is not asked at all — and each is applied only
+    where the reading had none.
+    """
+    has_dynamics = any(
+        n.dynamics is not None or n.hairpin is not None for m in score.measures for n in m.notes
+    )
+    if score.tempo_changes and has_dynamics:
         return score
     try:
         tempo = read_tempo_marks(
@@ -330,14 +540,16 @@ def with_tempo_marks(
         )
         if tempo is None:
             return score
-        read = apply_page_tempo(score, tempo)
+        read = score if score.tempo_changes else apply_page_tempo(score, tempo)
+        read = apply_page_dynamics(read, tempo.dynamics)
     except Exception:  # noqa: BLE001 — a page is never lost over its words
         log.exception("reading the tempo words failed; keeping the reading as it was")
         return score
     if read is not score:
         log.info(
-            "tempo words on this page: %s",
+            "tempo words on this page: %s; dynamics: %d",
             ", ".join(f"bar {c.measure_number} {c.text!r}" for c in read.tempo_changes)
             or f"the piece's tempo only ({read.tempo_marking or read.bpm_hint})",
+            len(tempo.dynamics),
         )
     return read

@@ -141,6 +141,9 @@ class IntonationConfig:
     not_this_note_cents: float = 100.0
     min_notes: int = 8
     tuning_worth_saying_cents: float = 10.0
+    by_note_within_cents: float = 50.0
+    by_note_min_notes: int = 2
+    by_note_show_notes: int = 4
 
 
 @dataclass(frozen=True)
@@ -295,6 +298,11 @@ def _intonation(row: dict) -> IntonationConfig:
             row.get("not_this_note_cents", default.not_this_note_cents)
         ),
         min_notes=int(row.get("min_notes", default.min_notes)),
+        by_note_within_cents=float(
+            row.get("by_note_within_cents", default.by_note_within_cents)
+        ),
+        by_note_min_notes=int(row.get("by_note_min_notes", default.by_note_min_notes)),
+        by_note_show_notes=int(row.get("by_note_show_notes", default.by_note_show_notes)),
         tuning_worth_saying_cents=float(
             row.get("tuning_worth_saying_cents", default.tuning_worth_saying_cents)
         ),

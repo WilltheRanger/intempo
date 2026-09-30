@@ -118,6 +118,78 @@ class TestIntonationOf:
         assert out.by_bar == {}
 
 
+class TestByNote:
+    """Which written notes run sharp or flat — the owner's E-flats (2026-09-30)."""
+
+    def test_a_sharp_note_stands_out_against_the_take_tuning(self):
+        """Tuned 25 sharp; the E-flats a further 20 above that, the rest on it."""
+        pitches = ["D3", "Eb3", "F3"] * 5
+        cents = np.array([25.0, 45.0, 25.0] * 5)
+
+        out = intonation_of(cents, [1, 1, 2] * 5, CONFIG, pitches=pitches)
+
+        by = {n.pitch: n for n in out.by_note}
+        assert by["Eb3"].cents == pytest.approx(20.0)
+        assert by["D3"].cents == pytest.approx(0.0)
+        assert by["Eb3"].notes == 5
+        assert by["Eb3"].bars == (1,)
+        assert by["F3"].bars == (2,)
+
+    def test_an_octave_apart_is_two_notes(self):
+        """An open string and the same letter stopped an octave up: two fingers."""
+        pitches = ["G2", "G3"] * 5
+        cents = np.array([-20.0, 20.0] * 5)
+
+        out = intonation_of(cents, [1] * 10, CONFIG, pitches=pitches)
+
+        assert [n.pitch for n in out.by_note] == ["G2", "G3"]
+        assert out.by_note[0].cents == pytest.approx(-20.0)
+        assert out.by_note[1].cents == pytest.approx(20.0)
+
+    def test_low_to_high(self):
+        pitches = ["F3", "C3", "A3", "D3"] * 4
+        out = intonation_of(np.zeros(16), [1] * 16, CONFIG, pitches=pitches)
+
+        assert [n.midi for n in out.by_note] == [48, 50, 53, 57]
+
+    def test_enharmonics_are_one_note_named_as_the_page_mostly_writes_it(self):
+        pitches = ["Eb3"] * 3 + ["D#3"] * 2 + ["C3"] * 5
+        out = intonation_of(np.zeros(10), [1] * 10, CONFIG, pitches=pitches)
+
+        eb = next(n for n in out.by_note if n.midi == 51)
+        assert eb.pitch == "Eb3"
+        assert eb.notes == 5
+
+    def test_a_note_read_too_few_times_is_left_out(self):
+        pitches = ["C3"] * 9 + ["Eb3"] * (CONFIG.by_note_min_notes - 1)
+        cents = np.array([0.0] * 9 + [30.0] * (CONFIG.by_note_min_notes - 1))
+
+        out = intonation_of(cents, [1] * cents.size, CONFIG, pitches=pitches)
+
+        assert [n.pitch for n in out.by_note] == ["C3"]
+
+    def test_a_reading_nearer_another_note_does_not_count_toward_it(self):
+        """The owner's 0313 E-flats: the -98 was the D before them ringing on.
+
+        The bars keep a reading that far off, which one bar's median absorbs;
+        four readings of one note cannot, and it would read them in tune.
+        """
+        pitches = ["C3"] * 8 + ["Eb3"] * 5
+        cents = np.array([0.0] * 8 + [20.0, 29.0, -20.0, -98.0, 24.0])
+
+        out = intonation_of(cents, [1] * 13, CONFIG, pitches=pitches)
+
+        eb = next(n for n in out.by_note if n.pitch == "Eb3")
+        assert eb.notes == 4
+        assert eb.cents == pytest.approx(22.0)
+        assert out.notes == 13
+
+    def test_without_pitches_there_is_nothing_by_note(self):
+        out = intonation_of(np.zeros(10), [1] * 10, CONFIG)
+
+        assert out.by_note == ()
+
+
 def _page(pitches: list[list[str]]) -> ScoreJson:
     return ScoreJson(
         clef="treble",
@@ -165,3 +237,36 @@ def test_end_to_end_a_detuned_take_reads_its_tuning_and_its_flat_bar():
     assert by_bar[3] == pytest.approx(-40.0, abs=10.0)
     for bar in (1, 2, 4):
         assert by_bar[bar] == pytest.approx(0.0, abs=10.0)
+
+
+def test_end_to_end_a_sharp_note_is_named_by_note():
+    """Every C-sharp 30 cents above an otherwise in-tune violin line.
+
+    Through `analyze` to the payload: the C-sharp is the one written note that
+    reads sharp against the take's tuning, and it names the bars it is in.
+    """
+    bars = [
+        ["A4", "B4", "C#5", "D5"],
+        ["E5", "D5", "C#5", "B4"],
+        ["A4", "B4", "C#5", "D5"],
+        ["E5", "D5", "C#5", "B4"],
+    ]
+    page = _page(bars)
+    bpm = 90.0
+    beat = 60.0 / bpm
+    written = [p for bar in bars for p in bar]
+    freqs = [
+        440.0 * 2 ** ((midi(p) - 69 + (30.0 if p == "C#5" else 0.0) / 100.0) / 12)
+        for p in written
+    ]
+    onsets = [0.3 + i * beat for i in range(len(written))]
+    y = synth_bowed_take(onsets, sr=SR, freqs_hz=freqs, note_dur_s=beat * 0.95)
+
+    result = analyze((y, SR), page, bpm, instrument="violin")
+
+    assert result.intonation is not None
+    by = {n.pitch: n for n in result.intonation.by_note}
+    assert by["C#5"].cents == pytest.approx(30.0, abs=8.0)
+    assert by["C#5"].bars == [1, 2, 3, 4]
+    for other in ("B4", "D5"):
+        assert by[other].cents == pytest.approx(0.0, abs=8.0)
