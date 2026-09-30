@@ -51,6 +51,7 @@ from app.services.audio_config import AudioConfig, load_audio_config
 from app.services.intonation import Intonation, intonation_of, note_cents
 from app.services.insights import (
     Insights,
+    NoteInterval,
     insights_for,
     tempo_across_bars,
     tempo_by_bar,
@@ -159,6 +160,18 @@ class PerMeasure(BaseModel):
     target_bpm: float | None = None
 
 
+class NoteIntonationOut(BaseModel):
+    """One written note's pitch across a take: `intonation.NoteIntonation`."""
+
+    #: As the page spells it: "Eb3", "F#4".
+    pitch: str
+    midi: int
+    #: Median against the take's tuning, in cents. Positive is sharp.
+    cents: float
+    notes: int
+    bars: list[int]
+
+
 class IntonationSummary(BaseModel):
     """How in tune the take was, against the player's own tuning.
 
@@ -176,6 +189,12 @@ class IntonationSummary(BaseModel):
     in_tune_cents: float
     slight_cents: float
     tuning_worth_saying_cents: float
+    #: Each written note read at least twice, low to high — which notes run
+    #: sharp or flat, rather than which bars. Empty on a take analysed before
+    #: it was reported (2026-09-30).
+    by_note: list[NoteIntonationOut] = []
+    #: How many readings a note needs to be shown for this take on its own.
+    by_note_show_notes: int = 4
 
 
 class Tolerance(BaseModel):
@@ -401,6 +420,60 @@ def bar_pacing(
     )
 
 
+def _held_intervals(deltas: list[Delta], timeline: ExpectedTimeline) -> list[NoteInterval]:
+    """Each timed, unslurred note held until the next one, as written and played.
+
+    Only where the next note was heard and timed in the same stretch of pulse,
+    and only where nothing sits between them: a rest after a note is not part
+    of how long it was held, so an interval longer than the note's written
+    length at the local tempo is left out rather than read as a held note.
+    """
+    by_index = {d.global_index: d for d in deltas}
+    notes = timeline.notes
+    out: list[NoteInterval] = []
+    for d in sorted(deltas, key=lambda d: d.global_index):
+        after = by_index.get(d.global_index + 1)
+        if (
+            after is None
+            or not (d.timed and after.timed)
+            or d.is_slur_interior
+            or after.is_slur_interior
+            or d.pulse != after.pulse
+            or not 0 <= d.global_index + 1 < len(notes)
+        ):
+            continue
+        note = notes[d.global_index]
+        if note.beats <= 0 or after.expected_ms <= d.expected_ms:
+            continue
+        out.append(
+            NoteInterval(
+                beats=note.beats,
+                at_ms=d.expected_ms,
+                written_ms=after.expected_ms - d.expected_ms,
+                played_ms=after.actual_ms - d.actual_ms,
+                pulse=d.pulse,
+            )
+        )
+    return _without_rests(out)
+
+
+def _without_rests(intervals: list[NoteInterval]) -> list[NoteInterval]:
+    """Drop the intervals a rest or a tie lengthens past their note.
+
+    Read against the neighbours' milliseconds per written beat, since the
+    tempo can change along the page: an interval half again as long per beat
+    as the notes around it has something written in it besides its note.
+    """
+    per_beat = [i.written_ms / i.beats for i in intervals]
+    kept = []
+    for k, interval in enumerate(intervals):
+        around = per_beat[max(0, k - 4) : k] + per_beat[k + 1 : k + 5]
+        if around and per_beat[k] > 1.5 * float(np.median(around)):
+            continue
+        kept.append(interval)
+    return kept
+
+
 def _intonation(
     matched: list[tuple[int, int]],
     attacks_s: np.ndarray,
@@ -428,7 +501,10 @@ def _intonation(
         pitch.track, pitch.sr, np.array([attacks_s[d] for d, _ in kept]), written
     )
     return intonation_of(
-        cents, [timeline.notes[e].measure_number for _, e in kept], config.intonation
+        cents,
+        [timeline.notes[e].measure_number for _, e in kept],
+        config.intonation,
+        pitches=[timeline.notes[e].pitch for _, e in kept],
     )
 
 
@@ -444,6 +520,13 @@ def _intonation_summary(
         in_tune_cents=config.intonation.in_tune_cents,
         slight_cents=config.intonation.slight_cents,
         tuning_worth_saying_cents=config.intonation.tuning_worth_saying_cents,
+        by_note_show_notes=config.intonation.by_note_show_notes,
+        by_note=[
+            NoteIntonationOut(
+                pitch=n.pitch, midi=n.midi, cents=n.cents, notes=n.notes, bars=list(n.bars)
+            )
+            for n in measured.by_note
+        ],
     )
 
 
@@ -2423,20 +2506,9 @@ def analyze(
             # Not the slurred notes: their timing is the player's, which is
             # why the verdict and the trend leave them out too.
             [d.delta_pct for d in deltas if d.timed and not d.is_slur_interior],
-            # Paired with the written length of the note each delta belongs
-            # to, so the take can be grouped by what was on the page. The
-            # lookup is by `global_index` because `deltas` is already filtered
-            # and `timeline.notes` is not.
-            [
-                (
-                    timeline.notes[d.global_index].beats
-                    if 0 <= d.global_index < len(timeline.notes)
-                    else 0.0,
-                    d.delta_pct,
-                )
-                for d in deltas
-                if d.timed and not d.is_slur_interior
-            ],
+            # How long each note was held against how long it was written, for
+            # the note values: see `insights.timing_by_note_value`.
+            _held_intervals(deltas, timeline),
             target_bpm_for_lead=target_bpm,
             # Where each of those deltas sits on the page and which stretch of
             # the pulse it was measured in: see `insights.steadiness`.

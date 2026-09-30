@@ -307,6 +307,22 @@ not_this_note_cents = 100.0
 min_notes = 8
 # A whole take this far from A = 440 is told so ("Tuned 25 cents sharp").
 tuning_worth_saying_cents = 10.0
+# Which written notes run sharp or flat — by note, not by bar (2026-09-30).
+#
+# A reading this far or further from the take's tuning is not counted toward
+# its written note: half a semitone is nearer the next note than this one.
+# Tighter than `not_this_note_cents`, which a bar can afford and a note read
+# four times cannot — the owner's 0313 E-flats read +20, +29, -20 and -98, the
+# -98 the D before them ringing on, and it alone put them in tune.
+by_note_within_cents = 50.0
+# Reported with fewer readings than this: nothing. Two, so Insights can pool a
+# note across takes that each heard it only a few times.
+by_note_min_notes = 2
+# Shown on the take's own screen with at least this many readings. Travels
+# with the take. 4: on the owner's two bass takes it shows six and seven
+# written notes, and the one it names in each — B-flat at +32, E-flat at +17
+# — has every reading but one on the same side of the tuning.
+by_note_show_notes = 4
 
 [mistakes]
 # Two mistakes the timing verdict cannot see, named for the player (the owner,

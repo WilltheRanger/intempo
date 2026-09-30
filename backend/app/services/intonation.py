@@ -18,6 +18,14 @@ fundamental; YIN slips an octave on a few notes in a hundred. None of that is
 intonation. Every distance is folded into the nearest octave, ±600 cents,
 before anything is read from it.
 
+**By written note too, because which note is the lesson.** A bar that is flat
+says where; that every E-flat in the piece sits sharp says what to fix — the
+finger that reaches for it. The owner's two bass takes, tuned 25 cents apart,
+put their E-flats 20 and 17 cents above the rest of the take and their Ds and
+Fs within 2 (2026-09-30). Grouped by the note as written, octave and all: an
+open string and the same letter stopped an octave up are different fingers,
+and folding them together hides both.
+
 **Per bar, by median, with the far notes left out.** On the owner's bass take a
 fifth of the notes read more than a semitone from their written pitch — the
 previous note still ringing into the window, far more often than a wrong note.
@@ -29,13 +37,13 @@ What is measured lives here; the thresholds are `[intonation]` in config.toml.
 
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 
 import numpy as np
 
 from app.services.audio_config import IntonationConfig
-from app.services.pitch_evidence import HOP
+from app.services.pitch_evidence import HOP, midi
 
 #: Listen from this long after an attack: a bow's first 60 ms is noise and
 #: scrape before it is a pitch.
@@ -94,6 +102,22 @@ def note_cents(
 
 
 @dataclass(frozen=True)
+class NoteIntonation:
+    """How one written note sat across the take, against the take's tuning."""
+
+    #: The note as the page spells it — "Eb3", "F#4" — the most common spelling
+    #: where the page writes it two ways.
+    pitch: str
+    midi: int
+    #: The median of its readings, against the take's tuning. Positive is sharp.
+    cents: float
+    #: Readings kept.
+    notes: int
+    #: The bars it was read in, in order.
+    bars: tuple[int, ...]
+
+
+@dataclass(frozen=True)
 class Intonation:
     """A take's pitch, against the player's own tuning."""
 
@@ -108,14 +132,20 @@ class Intonation:
     by_bar: dict[int, float] = field(default_factory=dict)
     #: Notes measured and kept.
     notes: int = 0
+    #: Each written note read at least `by_note_min_notes` times, low to high.
+    by_note: tuple[NoteIntonation, ...] = ()
 
 
 def intonation_of(
     cents: np.ndarray,
     bars: list[int],
     config: IntonationConfig,
+    pitches: list[str | None] | None = None,
 ) -> Intonation:
-    """The take's tuning, its spread and each bar's pitch, from `note_cents`.
+    """The take's tuning, its spread, each bar's pitch and each note's.
+
+    `pitches` is each note as written, in the order of `cents`; without it
+    there is nothing to group by note and `by_note` is empty.
 
     Nothing at all when fewer than `min_notes` notes were measured: a pitch
     chart of three notes is three notes' noise.
@@ -139,4 +169,51 @@ def intonation_of(
         spread_cents=round(float(np.median(np.abs(relative[kept]))), 1),
         by_bar={bar: round(float(np.median(v)), 1) for bar, v in sorted(per_bar.items())},
         notes=int(kept.sum()),
+        by_note=_by_note(relative, measured, bars, pitches, config) if pitches else (),
+    )
+
+
+def _by_note(
+    relative: np.ndarray,
+    measured: np.ndarray,
+    bars: list[int],
+    pitches: list[str | None],
+    config: IntonationConfig,
+) -> tuple[NoteIntonation, ...]:
+    """Each written note's median, where it was read often enough to mean it.
+
+    **Within half a semitone, not the bars' semitone.** A bar is the median of
+    every note in it and absorbs one reading that was the last note still
+    ringing; a written note may have four readings, and one of them decides
+    the median. The owner's 0313 take read its E-flats +20, +29, -20 and -98
+    — the -98 the D before it — and kept, it put the E-flats in tune. A reading
+    `by_note_within_cents` or further off is nearer another note than this one.
+
+    Grouped by MIDI number, so an E-flat the page also writes as D-sharp is one
+    note, named the way the page writes it most. Every note read at least
+    `by_note_min_notes` times is reported, so Insights can pool a note across
+    takes that each read it a few times; the take's own screen shows only
+    those read `by_note_show_notes` times, which travels with the take.
+    """
+    readings: dict[int, list[float]] = defaultdict(list)
+    where: dict[int, set[int]] = defaultdict(set)
+    spellings: dict[int, Counter[str]] = defaultdict(Counter)
+    near = measured & (np.abs(relative) < config.by_note_within_cents)
+    for value, keep, bar, pitch in zip(relative, near, bars, pitches, strict=True):
+        number = midi(pitch) if keep and pitch else None
+        if number is None:
+            continue
+        readings[number].append(float(value))
+        where[number].add(int(bar))
+        spellings[number][pitch] += 1
+    return tuple(
+        NoteIntonation(
+            pitch=spellings[number].most_common(1)[0][0],
+            midi=number,
+            cents=round(float(np.median(values)), 1),
+            notes=len(values),
+            bars=tuple(sorted(where[number])),
+        )
+        for number, values in sorted(readings.items())
+        if len(values) >= config.by_note_min_notes
     )

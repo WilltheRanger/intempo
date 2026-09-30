@@ -17,6 +17,7 @@ import { stableImage } from '../../lib/imageSource';
 import { verdictFor } from '../../lib/tempo';
 import { judgeAggregate } from '../../lib/insights/tendency';
 import { wasTimed } from '../../lib/verdict/measureReading';
+import { BY_NOTE_SHOW_NOTES } from '../../lib/verdict/pitchByNote';
 import type {
   AnalysisResponse,
   AnalysisResultJson,
@@ -605,6 +606,14 @@ export function toIntonation(
     inTuneCents: json.in_tune_cents,
     slightCents: json.slight_cents,
     tuningWorthSayingCents: json.tuning_worth_saying_cents,
+    byNote: (json.by_note ?? []).map((n) => ({
+      pitch: n.pitch,
+      midi: n.midi,
+      cents: n.cents,
+      notes: n.notes,
+      bars: n.bars,
+    })),
+    byNoteShowNotes: json.by_note_show_notes ?? BY_NOTE_SHOW_NOTES,
   };
 }
 

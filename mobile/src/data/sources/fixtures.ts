@@ -1537,6 +1537,21 @@ function buildFixtureTake(): TakeResult | null {
       inTuneCents: 15,
       slightCents: 30,
       tuningWorthSayingCents: 10,
+      // G minor on the violin, read by note: the E-flats reach sharp, as the
+      // owner's bass E-flats did (2026-09-30), and the rest sit where the
+      // player tuned. The high G, read three times, is below the take's
+      // threshold and shows only once the takes are pooled.
+      byNote: [
+        { pitch: 'G4', midi: 67, cents: -3, notes: 6, bars: [1, 4, 9, 12] },
+        { pitch: 'A4', midi: 69, cents: 4, notes: 5, bars: [1, 2, 5, 9] },
+        { pitch: 'Bb4', midi: 70, cents: -6, notes: 7, bars: [2, 3, 6, 10] },
+        { pitch: 'C5', midi: 72, cents: 2, notes: 5, bars: [3, 7, 11] },
+        { pitch: 'D5', midi: 74, cents: 1, notes: 9, bars: [1, 3, 5, 8, 12] },
+        { pitch: 'Eb5', midi: 75, cents: 19, notes: 6, bars: [2, 6, 10, 13] },
+        { pitch: 'F#5', midi: 78, cents: 9, notes: 4, bars: [4, 8, 12] },
+        { pitch: 'G5', midi: 79, cents: -2, notes: 3, bars: [5, 13] },
+      ],
+      byNoteShowNotes: 4,
     },
     missedNotes: 1,
     extraNotes: 0,

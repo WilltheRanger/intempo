@@ -13,7 +13,10 @@ import type { ColorToken } from '../../design';
 /** Where a bar's pitch sits against the player's tuning. */
 export type PitchBand = 'in_tune' | 'slight' | 'off';
 
-export function pitchBand(cents: number, take: TakeIntonation): PitchBand {
+export function pitchBand(
+  cents: number,
+  take: Pick<TakeIntonation, 'inTuneCents' | 'slightCents'>,
+): PitchBand {
   const distance = Math.abs(cents);
   if (distance <= take.inTuneCents) return 'in_tune';
   return distance <= take.slightCents ? 'slight' : 'off';

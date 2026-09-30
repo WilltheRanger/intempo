@@ -1,5 +1,30 @@
 # InTempo Decisions
 
+## 2026-09-30 — Pitch by written note, on the result and on Insights; note lengths as held lengths
+
+**Context:** the owner asked what other musical information the app could give, and chose "Note lengths + pitch by note" and dynamics against the page. The analysis already measured every note's pitch (`intonation.note_cents`) and threw all but each bar's median away, and it already grouped the take by written note value — as position error — for a finding no screen showed.
+
+Both were run on the owner's two real bass takes (0313, 1940) before anything was drawn. Pitch by note held up: the E-flats sat +20 and +17 cents above each take's own tuning, D and F within 2. Note values did not: the old measure said the half notes "lagged" in one take and "ran ahead" in the other.
+
+**Decision 1 — pitch by written note, grouped with its octave, counting only readings within half a semitone.** `IntonationSummary.by_note` reports every written note read at least twice (`by_note_min_notes`); a take's screen shows those read `by_note_show_notes` (4) times, a threshold that travels with the take. The result's Pitch tab draws them as a row of needles under the bar graph, names the one or two that ran the same way ("Your E♭s and Gs were sharp"), and a tapped note says itself in words and marks its bars on the rail. Insights pools them across takes, weighted by readings, and names a note only when two thirds of the takes that played it put it on the same side.
+
+**Alternatives considered:**
+- *Pitch class, octaves folded together.* Rejected: an open string and the same letter stopped an octave up are different fingers. The owner's 1940 G2 read -27 and G3 +16; folded, they cancel.
+- *The bars' filter (`not_this_note_cents`, a semitone).* Rejected for notes: a bar's median absorbs one reading that is the last note ringing; four readings of one note cannot. The 0313 E-flats read +20, +29, -20, -98 — the -98 the D before them — and kept, the median was 0.
+- *Cents on the tapped note, as the mock-up showed.* Rejected for words ("a little sharp"), the rule the bars have kept since 2026-09-29.
+
+**Decision 2 — note lengths are how long a note was held against the length-weighted pace of the music within four of its beats**, measured only where notes of other lengths fill a quarter of that window, and named only at 8% with 70% of the notes on one side. It replaces grouping each note's detrended position error.
+
+**Alternatives considered:**
+- *Keep position error.* Rejected: a position carries every note before it, and the half notes of the owner's piece all sit in the bars where it slowed — so the finding followed the tempo, with its sign changing between takes.
+- *Against the neighbours' median.* Tried first and rejected: four hurried sixteenths beside a quarter are most of its neighbours, so the quarter read "held long" by their share. Weighting by length is the pace a listener hears.
+
+**Trade-offs accepted:** a bar of one value alone is never measured — its length and its tempo cannot be told apart. On the owner's takes the new measure finds eighths 3–4% short in both and names nothing; the note-value line, which no screen shows today, is quieter than it was, which is what it was wrong about. Takes analysed before this carry no `by_note` until re-run, and the launch cache shape moved to 5.
+
+**Dynamics** are not in this change: none of the owner's 23 pieces carries a dynamic marking, because the score reader is told to skip them. Reading them is the next step, before anything can be compared.
+
+---
+
 ## 2026-09-29 — The trend line in green, amber and deep red, on colours of its own
 
 **Context.** The owner: "I feel like the line colors can be better". Measured

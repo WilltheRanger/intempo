@@ -42,8 +42,10 @@ export const CACHE_KEY = 'intempo.library-cache';
  * 3, the same day: bars gained `targetBpm`, the tempo a "meno mosso" sets.
  *
  * 4, 2026-09-26: takes gained `wrongNotes` and `restEntries`.
+ *
+ * 5, 2026-09-30: a take's pitch gained `byNote` and `byNoteShowNotes`.
  */
-export const CACHE_SHAPE = 4;
+export const CACHE_SHAPE = 5;
 
 /**
  * How long a saved library is still worth showing.

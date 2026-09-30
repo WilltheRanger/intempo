@@ -12,7 +12,9 @@ import pytest
 
 from app.services.insights import (
     MIN_NOTES_FOR_INSIGHT,
+    NOTE_LENGTH_STANDOUT_PCT,
     Insights,
+    NoteInterval,
     NoteValueTiming,
     insights_for,
     lead_finding,
@@ -205,63 +207,96 @@ class TestInsightsFor:
         }
 
 
+def _held(
+    pattern: list[tuple[float, float]], repeats: int = 1, *, pulse: int = 0, start: float = 0.0
+) -> list[NoteInterval]:
+    """Notes in page order at 100 BPM: (written beats, played length as a share of it)."""
+    out, at = [], start
+    for b, f in pattern * repeats:
+        out.append(NoteInterval(beats=b, at_ms=at, written_ms=b * 600.0, played_ms=b * 600.0 * f, pulse=pulse))
+        at += b * 600.0
+    return out
+
+
 class TestTimingByNoteValue:
     """The insight a metronome cannot give: not "you were fast" but "your
     quarters are fine and your sixteenths run away"."""
 
-    def _mixed(self, sixteenth_delta: float):
-        """A page of quarters, eighths and sixteenths, only one of which is
-        mistimed."""
-        return (
-            [(1.0, 0.5)] * 32
-            + [(0.5, -0.3)] * 36
-            + [(0.25, sixteenth_delta)] * 16
-        )
+    def _bar(self, sixteenth: float = 1.0) -> list[tuple[float, float]]:
+        """A bar of a quarter, two eighths and four sixteenths."""
+        return [(1.0, 1.0), (0.5, 1.0), (0.5, 1.0)] + [(0.25, sixteenth)] * 4
 
     def test_the_take_is_split_by_what_was_written(self):
-        values = timing_by_note_value(self._mixed(-12.0))
+        values = timing_by_note_value(_held(self._bar(0.85), repeats=8))
 
         assert [v.label for v in values] == [
             "quarter notes",
             "eighth notes",
             "sixteenth notes",
         ]
-        assert [v.note_count for v in values] == [32, 36, 16]
+        assert [v.note_count for v in values] == [8, 16, 32]
 
-    def test_longest_value_first(self):
-        """A musician reads a page from the long notes down, and a table that
-        jumps between note values is a table nobody scans."""
-        values = timing_by_note_value(self._mixed(-12.0))
+    def test_how_long_each_value_was_held_against_the_music_around_it(self):
+        """The sixteenths hurried by 15%: a bar of them goes 5% quick, and
+        against that they read about 10% short and the quarter and eighths —
+        held as written — about 6% long, under anything worth a sentence."""
+        values = {v.beats: v for v in timing_by_note_value(_held(self._bar(0.85), repeats=8))}
 
-        assert [v.beats for v in values] == sorted(
-            [v.beats for v in values], reverse=True
-        )
+        assert values[0.25].length_pct == pytest.approx(-10.5, abs=1.0)
+        assert values[0.25].same_side_share == 1.0
+        assert values[1.0].length_pct == pytest.approx(6.0, abs=1.5)
+        assert abs(values[1.0].length_pct) < NOTE_LENGTH_STANDOUT_PCT
+
+    def test_a_take_slower_throughout_holds_nothing_long(self):
+        """Every note 20% long is a tempo, which the verdict has said."""
+        pattern = [(b, 1.2) for b, _ in self._bar()]
+        values = timing_by_note_value(_held(pattern, repeats=8))
+
+        assert all(v.length_pct == pytest.approx(0.0, abs=0.5) for v in values)
+
+    def test_the_owners_half_notes_in_the_bars_where_the_piece_slowed(self):
+        """**Why this is lengths, not positions** (2026-09-30). A piece whose
+        half notes all sit in bars of nothing but half notes, played slower
+        there: how long a half note was held and how fast those bars went
+        cannot be told apart, so the half notes deep in them are not measured
+        and nothing is named — where the old measure said "lagged" in one take
+        and "ran ahead" in the next."""
+        page = [(1.0, 1.0)] * 16 + [(2.0, 1.25)] * 8
+        values = timing_by_note_value(_held(page))
+
+        halves = next((v for v in values if v.beats == 2.0), None)
+        assert halves is None or halves.note_count < 8
+        assert standout_note_value(values) is None
 
     def test_a_value_with_too_few_notes_is_not_reported(self):
         """Telling somebody they rush their sixteenths off four sixteenths is
         telling them about four notes."""
-        values = timing_by_note_value([(1.0, 0.0)] * 20 + [(0.25, -30.0)] * 4)
+        values = timing_by_note_value(_held([(1.0, 1.0)] * 6 + [(0.25, 0.7)] * 4, repeats=1))
 
-        assert [v.beats for v in values] == [1.0]
+        assert all(v.beats != 0.25 for v in values)
 
     def test_a_length_with_no_plain_name_is_reported_without_one(self):
         """Inventing a name for 1.75 beats would be worse than the number.
         The count is still true and still groupable."""
-        values = timing_by_note_value([(1.75, 2.0)] * 8 + [(1.0, 0.0)] * 8)
+        values = timing_by_note_value(_held([(1.75, 1.0), (1.0, 1.0)], repeats=8))
 
         odd = next(v for v in values if v.beats == 1.75)
         assert odd.label is None
         assert odd.note_count == 8
 
+    def test_neighbours_across_a_new_stretch_of_pulse_are_not_used(self):
+        """A re-anchor is where the reference moved; the notes the other side
+        of it were measured against a different clock."""
+        before = _held([(1.0, 1.0)] * 8)
+        after = _held([(0.5, 0.8)] * 8, pulse=1, start=8 * 600.0)
+
+        assert timing_by_note_value(before + after) == []
+
 
 class TestStandoutNoteValue:
-    def test_the_value_that_behaves_differently_is_named(self):
-        """Measured end to end on a real page: with only the sixteenths
-        pulled early, halves, quarters and eighths sit within ±1% and the
-        sixteenths read −11.9%. The verdict for that take names a single
-        measure; this names the habit."""
+    def test_the_value_held_short_throughout_is_named(self):
         values = timing_by_note_value(
-            [(1.0, 0.9)] * 32 + [(0.5, -0.3)] * 36 + [(0.25, -11.9)] * 16
+            _held([(1.0, 1.0), (0.5, 1.0), (0.5, 1.0)] + [(0.25, 0.85)] * 4, repeats=8)
         )
 
         standout = standout_note_value(values)
@@ -275,36 +310,35 @@ class TestStandoutNoteValue:
         as "your quarters rush" would be telling a musician to practise the
         thing they already know while implying the others are fine."""
         values = timing_by_note_value(
-            [(1.0, -14.0)] * 32 + [(0.5, -14.0)] * 36 + [(0.25, -14.0)] * 16
+            _held([(1.0, 0.86), (0.5, 0.86), (0.5, 0.86)] + [(0.25, 0.86)] * 4, repeats=8)
         )
 
         assert standout_note_value(values) is None
 
-    def test_an_even_take_names_nothing(self):
-        values = timing_by_note_value(
-            [(1.0, 0.2)] * 32 + [(0.5, -0.1)] * 36 + [(0.25, 1.3)] * 16
+    def test_a_long_median_carried_by_a_few_notes_is_not_a_habit(self):
+        """The owner's 0313 half notes: +9.7%, but five of nine long."""
+        long_few = NoteValueTiming(
+            beats=2.0, label="half notes", note_count=9, length_pct=9.7, same_side_share=0.56
         )
 
-        assert standout_note_value(values) is None
+        assert standout_note_value([long_few]) is None
+
+    def test_under_the_threshold_names_nothing(self):
+        """The owner's real takes: eighths 3–4% short in both, with the
+        quarters around them — consistent, and not yet worth a sentence."""
+        eighths = NoteValueTiming(
+            beats=0.5, label="eighth notes", note_count=10, length_pct=-3.2, same_side_share=0.8
+        )
+
+        assert standout_note_value([eighths]) is None
 
     def test_one_value_alone_cannot_stand_out(self):
-        """There is nothing to stand out *from*. A page of nothing but
+        """There is nothing to measure it against. A page of nothing but
         quarters that rushed is a take that rushed."""
-        values = timing_by_note_value([(1.0, -20.0)] * 32)
+        values = timing_by_note_value(_held([(1.0, 0.8)] * 32))
 
+        assert values == []
         assert standout_note_value(values) is None
-
-    def test_a_dominant_value_is_measured_against_the_others_not_itself(self):
-        """The baseline excludes the candidate. Without that, a value
-        supplying most of the page would be compared against an average it
-        mostly *is*, so it could never stand out however far it drifted —
-        which is exactly backwards, since the commonest note value is the one
-        a musician most needs told about."""
-        values = timing_by_note_value([(1.0, -12.0)] * 60 + [(0.5, 0.0)] * 10)
-
-        standout = standout_note_value(values)
-
-        assert standout is not None and standout.beats == 1.0
 
 
 class TestLeadFinding:
@@ -344,8 +378,8 @@ class TestLeadFinding:
         the bars and their tempo, then "You slowed down by 15 BPM." — the
         same thing three times. With the verdict naming a run, tempo and drift
         are left out and the line goes to what the verdict cannot say."""
-        half = NoteValueTiming(beats=2.0, label="half notes", note_count=12, mean_delta_pct=12.0)
-        quarter = NoteValueTiming(beats=1.0, label="quarter notes", note_count=40, mean_delta_pct=0.0)
+        half = NoteValueTiming(beats=2.0, label="half notes", note_count=12, length_pct=12.0, same_side_share=0.9)
+        quarter = NoteValueTiming(beats=1.0, label="quarter notes", note_count=40, length_pct=0.0, same_side_share=0.9)
         insights = self._insights(
             played_bpm=89.7,
             tempo_difference_bpm=-14.3,
@@ -356,7 +390,7 @@ class TestLeadFinding:
 
         assert lead_finding(insights, 104.0).kind == "drift"
         named = lead_finding(insights, 104.0, verdict_names_run=True)
-        assert named is not None and named.text == "Your half notes lagged."
+        assert named is not None and named.text == "You held your half notes too long."
 
     def test_under_a_named_run_with_nothing_else_there_is_no_line(self):
         insights = self._insights(
@@ -367,53 +401,34 @@ class TestLeadFinding:
 
     def test_the_note_value_beats_a_tempo_gap_nobody_would_notice(self):
         """**The reason this ranks rather than following a fixed order.** A
-        2 BPM difference at 92 and a note value 12% of a beat adrift are both
-        true; only one of them is worth the line, and a fixed priority list
-        with tempo first would show the other."""
+        2 BPM difference at 92 and sixteenths held 12% short are both true;
+        only one of them is worth the line, and a fixed priority list with
+        tempo first would show the other."""
+        sixteenths = NoteValueTiming(beats=0.25, label="sixteenth notes", note_count=16, length_pct=-12.0, same_side_share=0.9)
         out = lead_finding(
             self._insights(
                 played_bpm=94.0,
                 tempo_difference_bpm=2.0,
-                by_note_value=[
-                    NoteValueTiming(
-                        beats=1.0, label="quarter notes", note_count=30,
-                        mean_delta_pct=0.5,
-                    ),
-                    NoteValueTiming(
-                        beats=0.25, label="sixteenth notes", note_count=16,
-                        mean_delta_pct=-12.0,
-                    ),
-                ],
-                standout_value=NoteValueTiming(
-                    beats=0.25, label="sixteenth notes", note_count=16,
-                    mean_delta_pct=-12.0,
-                ),
+                by_note_value=[NoteValueTiming(beats=1.0, label="quarter notes", note_count=30, length_pct=0.5, same_side_share=0.9), sixteenths],
+                standout_value=sixteenths,
             ),
             92.0,
         )
 
         assert out is not None and out.kind == "note_value"
-        assert "sixteenth notes" in out.text
-        assert "ran ahead" in out.text
+        assert out.text == "You hurried your sixteenth notes."
 
-    def test_a_lagging_value_is_described_as_lagging(self):
+    def test_a_value_held_long_is_described_as_held_long(self):
+        half = NoteValueTiming(beats=2.0, label="half notes", note_count=10, length_pct=14.0, same_side_share=0.9)
         out = lead_finding(
             self._insights(
-                by_note_value=[
-                    NoteValueTiming(beats=1.0, label="quarter notes",
-                                    note_count=30, mean_delta_pct=0.0),
-                    NoteValueTiming(beats=2.0, label="half notes",
-                                    note_count=10, mean_delta_pct=14.0),
-                ],
-                standout_value=NoteValueTiming(
-                    beats=2.0, label="half notes", note_count=10,
-                    mean_delta_pct=14.0,
-                ),
+                by_note_value=[NoteValueTiming(beats=1.0, label="quarter notes", note_count=30, length_pct=0.0, same_side_share=0.9), half],
+                standout_value=half,
             ),
             92.0,
         )
 
-        assert out is not None and "lagged" in out.text
+        assert out is not None and out.text == "You held your half notes too long."
 
     def test_drift_is_named_in_the_direction_it_happened(self):
         speeding = lead_finding(self._insights(drift_bpm=12.0), 92.0)
@@ -504,25 +519,24 @@ class TestSteadinessPerStretch:
         assert one_line is not None and one_line > 30
 
     def test_note_values_are_read_against_the_players_own_pace(self):
-        """Steady at 90 against 104, the notes late in the page are the most
-        behind the target — so half notes placed there "lagged" by 210% of a
-        beat. Against the take's own line, nothing stands out."""
+        """Steady at 90 against 104: every note is long against the target
+        and none against the notes around it, so nothing stands out."""
         n = 24
         written = np.arange(n, dtype=float)
-        deltas = list(written * 15.0)  # a steady drift, note after note
-        beats = [1.0] * 16 + [2.0] * 8  # the long notes come last
+        beats = [1.0, 1.0, 0.5, 0.5] * 6
         out = insights_for(
             [(i, i) for i in range(n)],
             0.4 + written * 1.15,
             written,
             104.0,
-            deltas,
-            list(zip(beats, deltas, strict=True)),
+            list(written * 15.0),
+            _held([(b, 1.15) for b in beats]),
             positions=list(written * 1000),
             pulses=[0] * n,
         )
 
         assert out.standout_value is None
+        assert all(v.length_pct == pytest.approx(0.0, abs=0.5) for v in out.by_note_value)
 
 
 class TestTempoByBar:

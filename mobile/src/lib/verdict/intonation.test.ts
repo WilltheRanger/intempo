@@ -10,6 +10,8 @@ const TAKE: TakeIntonation = {
   inTuneCents: 15,
   slightCents: 30,
   tuningWorthSayingCents: 10,
+  byNote: [],
+  byNoteShowNotes: 4,
 };
 
 describe('a bar in words', () => {

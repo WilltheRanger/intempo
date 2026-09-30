@@ -892,6 +892,23 @@ console.log('\n## Telling the app it got a bar wrong');
   const said = (await leaves()).find((l) => /needs the backend|sample data/i.test(l));
   if (said) pass(`sending without a backend is refused in words: "${said.slice(0, 52)}…"`);
   else fail('a correction with no backend was neither sent nor refused in words');
+
+  // **Which notes, under the pitch graph** (2026-09-30): one line names the
+  // notes that ran off, and a tapped note says itself and marks its bars.
+  await page.getByText('Pitch', { exact: true }).first().click({ timeout: 10000 });
+  await waitForText('the note row line', (l) => /^Your .+s were (sharp|flat)$|^Every note in tune$/.test(l), 10000);
+  const noteLine = (await leaves()).find((l) => /^Your .+s were (sharp|flat)$|^Every note in tune$/.test(l));
+  if (noteLine) pass(`the pitch graph names its notes: "${noteLine}"`);
+  else fail('the pitch graph has no line about its notes');
+  const note = page.getByRole('button', { name: /^E♭ · \d+ notes?, / }).first();
+  await note.click({ timeout: 10000 });
+  await waitForText('the tapped note', (l) => /^E♭ · \d+ notes?, /.test(l), 10000);
+  if ((await note.getAttribute('aria-pressed')) === 'true') pass('a tapped note says itself and reads as pressed');
+  else fail('a tapped note does not announce that it is pressed');
+  await note.click({ timeout: 10000 });
+  await waitForText('the line back', (l) => l === noteLine, 10000);
+  pass('tapping the note again lets it go');
+  await page.getByText('Tempo', { exact: true }).first().click({ timeout: 10000 });
 }
 
 /*
