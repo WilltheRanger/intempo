@@ -35,6 +35,11 @@
 # 2026-09-25, a sixth time — after #156: every take is read for pitch (how in
 # tune each bar was, against the player's own tuning), for the verdict's and
 # Insights' "In tune" charts. Same sixteen; the other account's two stay out.
+#
+# 2026-09-30 — after #174: every take is read by written note (which notes run
+# sharp or flat, for the result's note row and Insights' "By note"), and note
+# lengths are measured as held lengths. The same sixteen and the four the
+# owner recorded after them; the other account's takes stay out.
 5d6011ba-dd06-4b81-884a-86eff4ab565d
 44975f56-1b8a-473a-8e5a-e06d1d0f7a1e
 2aac1ba8-595a-433f-bec2-a49077bbf359
@@ -51,3 +56,7 @@ ae148002-9fc3-4bd2-b5bf-59c810fe4427
 a54ccd57-638a-41cf-b241-313e608c1b3b
 99aecbad-e57a-47a9-9046-1c8d50d3c3ee
 de5493f3-5267-4046-a24b-d6a623ba116c
+ad7383d7-88d9-45e6-bd22-e60cef858de0
+a1f80cac-5270-4685-990d-bf8e3ec7b4ad
+01e1b0a6-8b28-4da1-9cb2-21c558b800cb
+dbe0a728-1ea5-44e2-a8dc-cc03dcb20746
