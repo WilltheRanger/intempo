@@ -1,0 +1,33 @@
+-- =============================================================
+-- 028 — client_write_grants_closed() callable by the service role only
+-- =============================================================
+--
+-- **What 021 meant, and what the platform did with it.** Migration 021
+-- installed `client_write_grants_closed()` as the readiness probe for its own
+-- revokes, `SECURITY DEFINER`, and said: "`EXECUTE` granted to `service_role`
+-- alone ... 'are the client write grants closed' is a question only the
+-- operator should be able to ask over the API." It wrote
+--
+--     REVOKE EXECUTE ON FUNCTION public.client_write_grants_closed() FROM PUBLIC;
+--
+-- which is not enough on Supabase. The platform's default privileges in
+-- `public` grant `EXECUTE` on every new function to `anon` and
+-- `authenticated` **by name**, and a revoke from `PUBLIC` does not touch a
+-- grant made to a named role. Measured on the live project, 2026-09-30:
+-- `has_function_privilege('anon', 'public.client_write_grants_closed()',
+-- 'EXECUTE')` is true, and Supabase's security advisor reports it (lints
+-- 0028 and 0029).
+--
+-- **What it exposed.** One boolean, to anyone holding the anon key — which
+-- ships in the web bundle — at `/rest/v1/rpc/client_write_grants_closed`:
+-- whether a client can write `users.tier`, which is where the free-tier limit
+-- is read. Small, and exactly the one thing worth knowing before trying.
+--
+-- The backend calls it with the service-role key (`services/readiness.py`),
+-- which keeps its grant, so readiness is unaffected.
+--
+-- `tools/supabase_stubs.sql` stages the same default privileges, so
+-- `checks/028_probe_for_service_role_only.sql` fails without this file and
+-- passes with it. A revoke is safe to run twice.
+
+REVOKE EXECUTE ON FUNCTION public.client_write_grants_closed() FROM anon, authenticated;
