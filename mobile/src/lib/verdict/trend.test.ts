@@ -2,13 +2,16 @@ import { describe, expect, it } from 'vitest';
 
 import type { MeasureVerdict, TakeIntonation, Tolerance } from '../../data/types';
 import {
+  bandEdgesAt,
   barAtAlong,
   centreLabelTop,
   curveSpan,
+  curveYAt,
   outsidePath,
   smoothPath,
   takePitchTrend,
   tempoTrend,
+  toneStretches,
   trendY,
 } from './trend';
 
@@ -301,5 +304,93 @@ describe('the word on the target line', () => {
   it('with no line under it, sits beside the target as before', () => {
     expect(centreLabelTop({ ...base, centreY: 50, endY: 20, line: null })).toBe(55);
     expect(centreLabelTop({ ...base, centreY: 50, endY: 80, line: null })).toBe(29);
+  });
+});
+
+describe('the curve at a point', () => {
+  const points = [
+    { x: 0, y: 10 },
+    { x: 100, y: 60 },
+    { x: 200, y: 20 },
+  ];
+
+  it('passes through every point', () => {
+    for (const p of points) expect(curveYAt(points, p.x)).toBeCloseTo(p.y, 6);
+  });
+
+  it('is nothing outside the curve', () => {
+    expect(curveYAt(points, -1)).toBeNull();
+    expect(curveYAt(points, 201)).toBeNull();
+  });
+
+  it('agrees with the curve drawn through the same points', () => {
+    // Halfway along the first piece of `smoothPath`'s cubic, by its own control
+    // points: from (0,10) toward (100,60) with the tangents it computes.
+    const mid = curveYAt(points, 50)!;
+    expect(mid).toBeGreaterThan(10);
+    expect(mid).toBeLessThan(60);
+  });
+});
+
+describe('the line in one colour along its length', () => {
+  // A flat band from y=40 to y=60 (smaller is higher), far edges at 20 and 80.
+  const edges = () => ({ high: 40, low: 60, farHigh: 20, farLow: 80 });
+
+  it('is one stretch when the line stays in the band', () => {
+    const line = [
+      { x: 0, y: 50 },
+      { x: 100, y: 45 },
+    ];
+    expect(toneStretches(line, edges)).toEqual([{ from: 0, to: 100, tone: 'on' }]);
+  });
+
+  it('changes where the line crosses each edge, going out and coming back', () => {
+    const peak = [
+      { x: 0, y: 50 },
+      { x: 100, y: 10 },
+      { x: 200, y: 50 },
+    ];
+    const stretches = toneStretches(peak, edges);
+    expect(stretches.map((s) => s.tone)).toEqual(['on', 'near', 'far', 'near', 'on']);
+    // Every change is where the curve's centre is on that edge.
+    for (const s of stretches.slice(0, -1)) {
+      const y = curveYAt(peak, s.to)!;
+      expect([40, 20].some((edge) => Math.abs(y - edge) < 0.1)).toBe(true);
+    }
+    // Contiguous, end to end.
+    expect(stretches[0].from).toBe(0);
+    expect(stretches[stretches.length - 1].to).toBe(200);
+    for (let i = 1; i < stretches.length; i += 1) {
+      expect(stretches[i].from).toBe(stretches[i - 1].to);
+    }
+  });
+
+  it('keeps a line lying along an edge one colour, not half and half', () => {
+    // The owner's in-tune graph (2026-09-30): the takes hugging the band's
+    // top edge, just outside it. By height the stroke was cut lengthwise.
+    const hugging = [
+      { x: 0, y: 39.5 },
+      { x: 100, y: 39.2 },
+      { x: 200, y: 39.8 },
+    ];
+    expect(toneStretches(hugging, edges)).toEqual([{ from: 0, to: 200, tone: 'near' }]);
+  });
+
+  it('follows a band that moves along the take', () => {
+    const band = [
+      { at: 0, centre: 100, low: 95, high: 105, farLow: 90, farHigh: 110 },
+      { at: 1, centre: 120, low: 115, high: 125, farLow: 110, farHigh: 130 },
+    ];
+    const toX = (at: number) => at * 100;
+    const toY = (value: number) => 200 - value;
+    const at = bandEdgesAt(band, toX, toY);
+    expect(at(0)).toEqual({ high: 95, low: 105, farHigh: 90, farLow: 110 });
+    expect(at(50)).toEqual({ high: 85, low: 95, farHigh: 80, farLow: 100 });
+    // A flat line at 100 is on the target at the start and slow by the end.
+    const flat = [
+      { x: 0, y: toY(100) },
+      { x: 100, y: toY(100) },
+    ];
+    expect(toneStretches(flat, at).map((s) => s.tone)).toEqual(['on', 'near', 'far']);
   });
 });

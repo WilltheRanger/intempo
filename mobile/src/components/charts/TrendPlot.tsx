@@ -1,14 +1,18 @@
 import { useId, useState } from 'react';
 import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
-import Svg, { Circle, ClipPath, Defs, G, Line, Path } from 'react-native-svg';
+import Svg, { Circle, ClipPath, Defs, G, Line, Path, Rect } from 'react-native-svg';
 
 import { BORDER_WIDTH, colors } from '../../design';
 import {
+  bandEdgesAt,
   centreLabelTop,
   curveSpan,
   outsidePath,
   smoothPath,
+  toneStretches,
   trendY,
+  type Tone,
+  type ToneStretch,
   type TrendData,
   type TrendPoint,
 } from '../../lib/verdict/trend';
@@ -50,11 +54,15 @@ export interface TrendPlotProps {
  * result, takes one after another on Insights and on a piece's takes.
  *
  * **One curve, coloured by where it is** (the owner's "C · Green when on
- * tempo", 2026-09-29): green inside the band; amber exactly where it crosses
- * the band's edge and deep red past the far edge — clipped to those edges
- * (`outsidePath`), not decided per point — with a faint tint of the same
- * colour between the line and the target. The curve is monotone
- * (`smoothPath`), so it never peaks above the value that made it.
+ * tempo", 2026-09-29): green inside the band; amber from exactly where it
+ * crosses the band's edge and deep red past the far edge — cut along the line
+ * where its centre crosses (`toneStretches`), so each stretch is one colour
+ * across its whole width — with a faint tint between the line and the band in
+ * the colour of the line above it (the owner, 2026-09-30, "A · Fill follows
+ * line", after "colored a bit off": the line had been cut by height, half
+ * green and half gold wherever it ran along an edge, and the tint lay in flat
+ * stripes). The curve is monotone (`smoothPath`), so it never peaks above the
+ * value that made it.
  *
  * **No boxes and no axis column.** The band is the only filled shape and runs
  * the full width; the words sit inside the graph at its right edge. It draws
@@ -108,7 +116,22 @@ export function TrendPlot({ data, height, ends, centreLabel, selected, rail }: T
       return `${line} L ${x(last.at)},${centreAt(last.at)} L ${x(first.at)},${centreAt(first.at)} Z`;
     });
   const near = `near${id}`;
-  const far = `far${id}`;
+  // Each run cut into stretches of one colour along its length; the first and
+  // last reach past the run's ends so the round caps are the run's own colour.
+  const edgesAt = bandEdgesAt(data.band, x, y);
+  const lineStretches = curves.flatMap(({ run }) => {
+    const stretches = toneStretches(
+      run.map((p) => ({ x: x(p.at), y: y(p.value) })),
+      edgesAt,
+    );
+    if (stretches.length) {
+      stretches[0] = { ...stretches[0], from: stretches[0].from - STROKE * 2 };
+      const lastIndex = stretches.length - 1;
+      stretches[lastIndex] = { ...stretches[lastIndex], to: stretches[lastIndex].to + STROKE * 2 };
+    }
+    return stretches;
+  });
+
   const centreY = data.band.length ? y(data.band[data.band.length - 1].centre) : height / 2;
   // The label sits at the right edge, where the line ends, beside the target
   // and clear of wherever the line runs beneath it (`centreLabelTop`).
@@ -148,9 +171,13 @@ export function TrendPlot({ data, height, ends, centreLabel, selected, rail }: T
               <ClipPath id={near}>
                 <Path d={outsidePath(data.band, 'near', x, y, height)} />
               </ClipPath>
-              <ClipPath id={far}>
-                <Path d={outsidePath(data.band, 'far', x, y, height)} />
-              </ClipPath>
+              {TONES.map((tone) => (
+                <ClipPath key={tone} id={`${tone}${id}`}>
+                  {rectsFor(lineStretches, tone).map((r) => (
+                    <Rect key={r.from} x={r.from} y={-height} width={r.to - r.from} height={height * 3} />
+                  ))}
+                </ClipPath>
+              ))}
             </Defs>
             <Path d={bandPath} fill={colors.border} opacity={0.55} />
             <Path
@@ -161,51 +188,37 @@ export function TrendPlot({ data, height, ends, centreLabel, selected, rail }: T
               fill="none"
             />
 
-            <G clipPath={`url(#${near})`}>
-              {areas.map((d) => (
-                <Path key={d} d={d} fill={colors.trendMid} opacity={0.16} />
-              ))}
-            </G>
-            <G clipPath={`url(#${far})`}>
-              {areas.map((d) => (
-                <Path key={d} d={d} fill={colors.trendBad} opacity={0.13} />
-              ))}
-            </G>
-
-            {curves.map(({ run, line }) => (
-              <Path
-                key={run[0].measure}
-                d={line}
-                stroke={colors.trendOn}
-                strokeWidth={STROKE}
-                strokeLinecap="round"
-                fill="none"
-              />
+            {/* The tint between the line and the band, the colour of the line above it. */}
+            {(['near', 'far'] as const).map((tone) => (
+              <G key={tone} clipPath={`url(#${tone}${id})`}>
+                <G clipPath={`url(#${near})`}>
+                  {areas.map((d) => (
+                    <Path
+                      key={d}
+                      d={d}
+                      fill={tone === 'far' ? colors.trendBad : colors.trendMid}
+                      opacity={tone === 'far' ? 0.13 : 0.16}
+                    />
+                  ))}
+                </G>
+              </G>
             ))}
-            <G clipPath={`url(#${near})`}>
-              {curves.map(({ run, line }) => (
-                <Path
-                  key={run[0].measure}
-                  d={line}
-                  stroke={colors.trendMid}
-                  strokeWidth={STROKE}
-                  strokeLinecap="round"
-                  fill="none"
-                />
-              ))}
-            </G>
-            <G clipPath={`url(#${far})`}>
-              {curves.map(({ run, line }) => (
-                <Path
-                  key={run[0].measure}
-                  d={line}
-                  stroke={colors.trendBad}
-                  strokeWidth={STROKE}
-                  strokeLinecap="round"
-                  fill="none"
-                />
-              ))}
-            </G>
+
+            {/* The line, one colour across its width wherever it is (`toneStretches`). */}
+            {TONES.map((tone) => (
+              <G key={tone} clipPath={`url(#${tone}${id})`}>
+                {curves.map(({ run, line }) => (
+                  <Path
+                    key={run[0].measure}
+                    d={line}
+                    stroke={toneColour(tone)}
+                    strokeWidth={STROKE}
+                    strokeLinecap="round"
+                    fill="none"
+                  />
+                ))}
+              </G>
+            ))}
             {/* Where a run ends, a dot — so a line that stops reads as ending. */}
             {data.runs.map((run) => {
               const end = run[run.length - 1];
@@ -315,6 +328,18 @@ export function TrendPlot({ data, height, ends, centreLabel, selected, rail }: T
       ) : null}
     </View>
   );
+}
+
+const TONES: readonly Tone[] = ['on', 'near', 'far'];
+
+function toneColour(tone: Tone): string {
+  if (tone === 'far') return colors.trendBad;
+  if (tone === 'near') return colors.trendMid;
+  return colors.trendOn;
+}
+
+function rectsFor(stretches: readonly ToneStretch[], tone: Tone): ToneStretch[] {
+  return stretches.filter((s) => s.tone === tone && s.to > s.from);
 }
 
 /**
