@@ -52,14 +52,11 @@ function bar(measure: number, playedBpm: number | null, over: Partial<MeasureVer
 // Against 96: steady, then bars 5–8 ahead (one of them well ahead), then steady.
 const TAKE = [96, 97, 95, 96, 103, 110, 105, 102, 96, 97].map((bpm, i) => bar(i + 1, bpm));
 
-/** The line with its no-break spaces as spaces, as it reads. */
-const plain = (line: string) => line.replace(/\u00A0/g, ' ');
-
 describe('the tempo passage around a tapped bar', () => {
   it('takes in every neighbour that also ran ahead, a little or a lot', () => {
     const passage = tempoPassageAt(TAKE, 6, 96, 'quarter', TOLERANCE)!;
     expect(passage).toMatchObject({ from: 5, to: 8, kind: 'rush' });
-    expect(plain(tempoPassageLine(passage))).toBe('Bars 5–8 were fast: 105 beats a minute, not 96');
+    expect(tempoPassageLine(passage)).toBe('Bars 5–8 were fast');
   });
 
   it('is the same passage from any of its bars', () => {
@@ -84,26 +81,9 @@ describe('the tempo passage around a tapped bar', () => {
     expect(tempoPassageAt(TAKE, 40, 96, 'quarter', TOLERANCE)).toBeNull();
   });
 
-  it('says a slow passage in a sentence, and one bar as one bar (2026-09-30)', () => {
-    expect(plain(tempoPassageLine({ from: 15, to: 24, kind: 'drag', bpm: 95, aim: 104 }))).toBe(
-      'Bars 15–24 were slow: 95 beats a minute, not 104',
-    );
-    expect(plain(tempoPassageLine({ from: 6, to: 6, kind: 'rush', bpm: 110, aim: 96 }))).toBe(
-      'Bar 6 was fast: 110 beats a minute, not 96',
-    );
-  });
-
-  it('breaks, when it must, after the colon — never before the target', () => {
-    const line = tempoPassageLine({ from: 5, to: 8, kind: 'rush', bpm: 104, aim: 96 });
-    const after = line.slice(line.indexOf(':') + 2);
-
-    expect(after).not.toContain(' ');
-  });
-
-  it('says which way without a number when the bars have no tempo', () => {
-    expect(tempoPassageLine({ from: 2, to: 3, kind: 'drag', bpm: null, aim: null })).toBe(
-      'Bars 2–3 were slow',
-    );
+  it('says which way in a few words, and one bar as one bar (2026-09-30)', () => {
+    expect(tempoPassageLine({ from: 15, to: 24, kind: 'drag' })).toBe('Bars 15–24 were slow');
+    expect(tempoPassageLine({ from: 6, to: 6, kind: 'rush' })).toBe('Bar 6 was fast');
   });
 });
 

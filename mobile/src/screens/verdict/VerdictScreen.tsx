@@ -26,7 +26,7 @@ import { pitchWord } from '../../lib/verdict/intonation';
 import { namedMarks, noteDetail, notesLine, takeNoteMarks } from '../../lib/verdict/pitchByNote';
 import { NoteRow } from '../../components/charts/NoteRow';
 import { headlinePassage, practiceLabel } from '../../lib/verdict/passage';
-import { mistakeBars, restEntriesInBar, wrongNotesInBar } from '../../lib/verdict/mistakes';
+import { mistakeBars, mistakesInPassage } from '../../lib/verdict/mistakes';
 import {
   barsLabel,
   pitchPassageAt,
@@ -328,16 +328,7 @@ export function VerdictScreen() {
       ? pitchPassageLine(pitchSpan)
       : null;
   // What else went wrong inside it, said for the bar it happened in.
-  const spanMistakes = span
-    ? take.measures
-        .filter((m) => m.measure >= span.from && m.measure <= span.to)
-        .flatMap((m) =>
-          [
-            ...wrongNotesInBar(take.wrongNotes, m.measure),
-            ...restEntriesInBar(take.restEntries, m.measure),
-          ].map((line) => (span.from === span.to ? line : `Bar ${m.measure}: ${line}`)),
-        )
-    : [];
+  const spanMistakes = span ? mistakesInPassage(take.wrongNotes, take.restEntries, span) : [];
   // The one question: about the passage the verdict found, or about the
   // whole take when it found none. Only over bars the app made a claim about.
   const askedBars = take.measures.filter(

@@ -11,10 +11,8 @@ import { readMeasure } from './measureReading';
  * bar's tempo is the shakiest number the app has — a handful of notes — so a
  * card of "Bar 7 · 105 BPM" on a scale was precision the measurement did not
  * have. A tap now selects the run of neighbouring bars that went the same way
- * and says it once: "Bars 5–8 were fast: 104 beats a minute, not 96".
+ * and says it once: "Bars 5–8 were fast".
  */
-
-const NBSP = '\u00A0';
 
 /** How a bar went, in the terms a passage is grouped by. */
 export type TempoKind = 'on' | 'rush' | 'drag' | 'untimed';
@@ -69,23 +67,12 @@ export function tempoPassageAt(
   target: number,
   unit: TempoBeatUnit | null | undefined,
   tolerance: Tolerance | null,
-): (BarPassage<TempoKind> & { bpm: number | null; aim: number | null }) | null {
+): BarPassage<TempoKind> | null {
   const index = measures.findIndex((m) => m.measure === measure);
   if (index < 0) return null;
   const kinds = measures.map((m) => tempoKind(m, target, unit, tolerance));
   const [first, last] = runAround(kinds, index);
-  const tempi = measures
-    .slice(first, last + 1)
-    .map((m) => barTempo(m, target, unit, tolerance))
-    .filter((t): t is NonNullable<typeof t> => t !== null);
-  const bpm = tempi.length ? Math.round(tempi.reduce((sum, t) => sum + t.bpm, 0) / tempi.length) : null;
-  return {
-    from: measures[first].measure,
-    to: measures[last].measure,
-    kind: kinds[index],
-    bpm,
-    aim: tempi.length ? tempi[0].target : null,
-  };
+  return { from: measures[first].measure, to: measures[last].measure, kind: kinds[index] };
 }
 
 /** The pitch passage around a bar: its neighbours also in tune, or also sharp, or also flat. */
@@ -107,29 +94,20 @@ export function barsLabel(passage: { from: number; to: number }): string {
 }
 
 /**
- * The tapped passage as a plain sentence: "Bars 15–24 were slow: 95 beats a
- * minute, not 104", "Bars 1–4 were on tempo".
+ * The tapped passage in a few words: "Bars 5–8 were fast", "Bars 1–4 were on
+ * tempo".
  *
- * **A sentence, not a readout** (the owner, 2026-09-30, of "Bars 15–24 ·
- * about 95, aiming for 104": "let's fix this jargon"). A bare 95 beside a bare
- * 104 asked the reader to know both were tempi and which was theirs; the
- * sentence says it, and says the number is beats a minute.
+ * **The finding, no number** (the owner, 2026-09-30). "Bars 15–24 · about 95,
+ * aiming for 104" was jargon, and "Bars 5–8 were fast: 104 beats a minute,
+ * not 96" was still too wordy. The graph already draws how far the line went
+ * and labels the target, so the line only has to say which way.
  */
-export function tempoPassageLine(
-  passage: BarPassage<TempoKind> & { bpm: number | null; aim: number | null },
-): string {
+export function tempoPassageLine(passage: BarPassage<TempoKind>): string {
   const where = barsLabel(passage);
   const were = passage.from === passage.to ? 'was' : 'were';
   if (passage.kind === 'untimed') return `${where} ${were}n't timed`;
   if (passage.kind === 'on') return `${where} ${were} on tempo`;
-  const way = passage.kind === 'rush' ? 'fast' : 'slow';
-  if (passage.bpm !== null && passage.aim !== null) {
-    // Held together, so a narrow screen breaks after the colon and not before
-    // the target: "…not" over a lone "96" read as a second, stray number.
-    const detail = `${passage.bpm} beats a minute, not ${passage.aim}`.replace(/ /g, NBSP);
-    return `${where} ${were} ${way}: ${detail}`;
-  }
-  return `${where} ${were} ${way}`;
+  return `${where} ${were} ${passage.kind === 'rush' ? 'fast' : 'slow'}`;
 }
 
 /** "Bars 7–8 were flat", "Bars 1–6 were in tune", "Bar 3's pitch couldn't be read". */
