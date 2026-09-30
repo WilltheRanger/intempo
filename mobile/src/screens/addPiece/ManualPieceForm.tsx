@@ -18,6 +18,7 @@ import { beatsPerMeasure } from '../../lib/notation/reading';
 import type { RootNavigation } from '../../navigation/types';
 import { ComposerField } from '../../components/pieces/ComposerField';
 import { TitleField } from '../../components/pieces/TitleField';
+import { FIELD_LIMITS } from '../../lib/fieldLimits';
 
 /** The backend's `bpm_hint` bounds. Rejecting here saves a round trip. */
 const MIN_BPM = 20;
@@ -158,6 +159,7 @@ export function ManualPieceForm() {
       <ComposerField value={composer} onChangeText={setComposer} style={styles.field} />
       <Input
         label="Movement"
+        maxLength={FIELD_LIMITS.movement}
         optional
         value={movement}
         onChangeText={setMovement}
@@ -168,6 +170,7 @@ export function ManualPieceForm() {
       />
       <Input
         label="Time signature"
+        maxLength={FIELD_LIMITS.timeSignature}
         optional
         value={timeSignature}
         onChangeText={setTimeSignature}

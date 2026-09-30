@@ -20,6 +20,7 @@ import { captureSession, useCapturedPages } from '../../data/captureSession';
 import { useAttachScorePages, useTranscribePage } from '../../data/hooks/useScan';
 import { BORDER_WIDTH, colors, radii, spacing } from '../../design';
 import type { RootNavigation } from '../../navigation/types';
+import { FIELD_LIMITS } from '../../lib/fieldLimits';
 
 /** Tall enough to read a title and a composer off the photograph. */
 const PAGE_HEIGHT = 300;
@@ -204,6 +205,7 @@ export function TranscriptionReviewScreen() {
 
           <Input
             label="Movement"
+            maxLength={FIELD_LIMITS.movement}
             optional
             value={movement}
             onChangeText={setMovement}

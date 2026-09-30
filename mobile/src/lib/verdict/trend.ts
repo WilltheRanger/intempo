@@ -245,6 +245,22 @@ export function smoothPath(points: readonly PlotPoint[]): string {
   if (points.length === 0) return '';
   const first = points[0];
   if (points.length === 1) return `M ${px(first.x)},${px(first.y)}`;
+  const tangent = monotoneTangents(points);
+  let d = `M ${px(first.x)},${px(first.y)}`;
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const from = points[i];
+    const to = points[i + 1];
+    const third = (to.x - from.x) / 3;
+    d +=
+      ` C ${px(from.x + third)},${px(from.y + tangent[i] * third)}` +
+      ` ${px(to.x - third)},${px(to.y - tangent[i + 1] * third)}` +
+      ` ${px(to.x)},${px(to.y)}`;
+  }
+  return d;
+}
+
+/** The slope `smoothPath` gives the curve at each point. */
+function monotoneTangents(points: readonly PlotPoint[]): number[] {
   const n = points.length;
   const dx: number[] = [];
   const slope: number[] = [];
@@ -274,17 +290,224 @@ export function smoothPath(points: readonly PlotPoint[]): string {
       tangent[i + 1] = k * b * slope[i];
     }
   }
-  let d = `M ${px(first.x)},${px(first.y)}`;
-  for (let i = 0; i < n - 1; i += 1) {
-    const from = points[i];
-    const to = points[i + 1];
-    const third = dx[i] / 3;
-    d +=
-      ` C ${px(from.x + third)},${px(from.y + tangent[i] * third)}` +
-      ` ${px(to.x - third)},${px(to.y - tangent[i + 1] * third)}` +
-      ` ${px(to.x)},${px(to.y)}`;
+  return tangent;
+}
+
+/**
+ * The height of the curve `smoothPath` draws at `x`, or null outside it — the
+ * same monotone cubic, evaluated rather than drawn.
+ */
+export function curveYAt(points: readonly PlotPoint[], x: number): number | null {
+  if (points.length === 0) return null;
+  const first = points[0];
+  const last = points[points.length - 1];
+  if (x < first.x || x > last.x) return null;
+  if (points.length === 1) return first.y;
+  const tangent = monotoneTangents(points);
+  let i = 0;
+  while (i < points.length - 2 && x > points[i + 1].x) i += 1;
+  const from = points[i];
+  const to = points[i + 1];
+  const h = to.x - from.x;
+  if (h === 0) return from.y;
+  const t = (x - from.x) / h;
+  const t2 = t * t;
+  const t3 = t2 * t;
+  return (
+    (2 * t3 - 3 * t2 + 1) * from.y +
+    (t3 - 2 * t2 + t) * h * tangent[i] +
+    (-2 * t3 + 3 * t2) * to.y +
+    (t3 - t2) * h * tangent[i + 1]
+  );
+}
+
+/** Where the curve sits against the band: inside it, past its edge, past the far edge. */
+export type Tone = 'on' | 'near' | 'far';
+
+/** A stretch of the curve, left to right, that is one tone all the way along. */
+export interface ToneStretch {
+  from: number;
+  to: number;
+  tone: Tone;
+}
+
+/** The band's edges at one x, in the graph's pixels (smaller is higher). */
+export interface BandEdgesAt {
+  high: number;
+  low: number;
+  farHigh: number;
+  farLow: number;
+}
+
+/**
+ * The curve cut into stretches of one tone each, by where it crosses the
+ * band's edges along its length.
+ *
+ * **Why along, not up and down.** The line was coloured by clipping it to
+ * the regions above and below the band: exact where the line crosses an edge
+ * steeply, and wrong wherever it runs along one — a stroke three pixels thick
+ * lying on the edge came out half green and half gold down its length, and the
+ * green line underneath poked out as a nub past the regions' ends (the owner,
+ * 2026-09-30: "colored a bit off"). Cut along the line instead, each stretch is
+ * one colour across its whole width, and it changes where the line's centre
+ * crosses the edge.
+ *
+ * Found a pixel at a time, then each change refined to a hundredth of one:
+ * the curve is a few hundred pixels long, and a crossing between two samples
+ * is found by halving.
+ */
+export function toneStretches(
+  points: readonly PlotPoint[],
+  edgesAt: (x: number) => BandEdgesAt,
+): ToneStretch[] {
+  if (points.length === 0) return [];
+  const start = points[0].x;
+  const end = points[points.length - 1].x;
+  const toneAt = (x: number): Tone => {
+    const y = curveYAt(points, x) ?? points[0].y;
+    const e = edgesAt(x);
+    if (y < e.farHigh || y > e.farLow) return 'far';
+    if (y < e.high || y > e.low) return 'near';
+    return 'on';
+  };
+  const stretches: ToneStretch[] = [];
+  let from = start;
+  let tone = toneAt(start);
+  let x = start;
+  while (x < end) {
+    const next = Math.min(end, x + 1);
+    const nextTone = toneAt(next);
+    if (nextTone !== tone) {
+      let lo = x;
+      let hi = next;
+      while (hi - lo > 0.01) {
+        const mid = (lo + hi) / 2;
+        if (toneAt(mid) === tone) lo = mid;
+        else hi = mid;
+      }
+      stretches.push({ from, to: hi, tone });
+      from = hi;
+      tone = nextTone;
+    }
+    x = next;
   }
-  return d;
+  stretches.push({ from, to: end, tone });
+  return stretches;
+}
+
+/**
+ * The band's edges at any x along it, in pixels: straight between the band's
+ * own points, as `outsidePath` draws them.
+ */
+export function bandEdgesAt(
+  band: readonly TrendBand[],
+  toX: (at: number) => number,
+  toY: (value: number) => number,
+): (x: number) => BandEdgesAt {
+  const rows = band.map((b) => ({
+    x: toX(b.at),
+    high: toY(b.high),
+    low: toY(b.low),
+    farHigh: toY(b.farHigh),
+    farLow: toY(b.farLow),
+  }));
+  const edges = ({ high, low, farHigh, farLow }: BandEdgesAt): BandEdgesAt => ({
+    high,
+    low,
+    farHigh,
+    farLow,
+  });
+  return (x) => {
+    if (rows.length === 0) {
+      return { high: -Infinity, low: Infinity, farHigh: -Infinity, farLow: Infinity };
+    }
+    if (x <= rows[0].x) return edges(rows[0]);
+    const last = rows[rows.length - 1];
+    if (x >= last.x) return edges(last);
+    let i = 0;
+    while (i < rows.length - 2 && x > rows[i + 1].x) i += 1;
+    const a = rows[i];
+    const b = rows[i + 1];
+    const f = b.x === a.x ? 0 : (x - a.x) / (b.x - a.x);
+    const mix = (u: number, v: number) => u + (v - u) * f;
+    return {
+      high: mix(a.high, b.high),
+      low: mix(a.low, b.low),
+      farHigh: mix(a.farHigh, b.farHigh),
+      farLow: mix(a.farLow, b.farLow),
+    };
+  };
+}
+
+/**
+ * Where the curve `smoothPath` draws runs between two xs: its highest and
+ * lowest y there, or null where it does not reach.
+ *
+ * Exact rather than sampled: each piece is a monotone cubic, so on it the
+ * curve's highest and lowest points are at its ends — the points in between
+ * and wherever the span cuts a piece.
+ */
+export function curveSpan(
+  points: readonly PlotPoint[],
+  fromX: number,
+  toX: number,
+): { top: number; bottom: number } | null {
+  if (points.length === 0) return null;
+  const lo = Math.max(fromX, points[0].x);
+  const hi = Math.min(toX, points[points.length - 1].x);
+  if (lo > hi) return null;
+  if (points.length === 1) return { top: points[0].y, bottom: points[0].y };
+  const yAt = (x: number) => curveYAt(points, x) ?? points[0].y;
+  const ys = [yAt(lo), yAt(hi), ...points.filter((p) => p.x > lo && p.x < hi).map((p) => p.y)];
+  return { top: Math.min(...ys), bottom: Math.max(...ys) };
+}
+
+/**
+ * Where the word on the target line — "in tune", "on tempo", "96" — goes,
+ * as the top of its line of text: beside the target, and never across the
+ * graph's own line.
+ *
+ * **The owner, 2026-09-30, of Insights' in-tune graph: "some overlap".**
+ * The word went under the target when the line finished above it, and over it
+ * otherwise; but in-tune is the graph's floor, so "under" had no room, the
+ * word was pushed back up onto the target — and the take that ended in tune
+ * ended in the middle of it. Now it tries each side of the target, then just
+ * above and just below where the line runs beneath it (`line`, from
+ * `curveSpan`), and takes the first that fits between `minTop` and `maxTop`
+ * without touching the line.
+ */
+export function centreLabelTop({
+  centreY,
+  endY,
+  line,
+  minTop,
+  maxTop,
+  textHeight,
+  clearance,
+}: {
+  centreY: number;
+  /** Where the line ends, which decides the side of the target to try first. */
+  endY: number;
+  /** Where the line runs under the word, top and bottom, or null if it does not. */
+  line: { top: number; bottom: number } | null;
+  minTop: number;
+  maxTop: number;
+  textHeight: number;
+  /** The gap to keep from the target and from the line (with its end dot). */
+  clearance: number;
+}): number {
+  const under = centreY + clearance;
+  const over = centreY - clearance - textHeight;
+  const sides = endY < centreY ? [under, over] : [over, under];
+  const candidates = line
+    ? [...sides, line.top - clearance - textHeight, line.bottom + clearance]
+    : sides;
+  const fits = (top: number) =>
+    top >= minTop &&
+    top <= maxTop &&
+    (!line || top + textHeight + clearance <= line.top || top >= line.bottom + clearance);
+  const chosen = candidates.find(fits);
+  return chosen ?? Math.max(minTop, Math.min(maxTop, sides[0]));
 }
 
 /**

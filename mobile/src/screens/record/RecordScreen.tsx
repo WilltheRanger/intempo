@@ -104,6 +104,7 @@ import { BeatIndicator } from './BeatIndicator';
 import { PracticeSetup } from './PracticeSetup';
 import { takeStatus } from '../../lib/record/takeStatus';
 import {
+  HEADPHONES_WARNING,
   metronomeChoices,
   metronomeValueLabel,
 } from '../../lib/record/metronomeChoice';
@@ -1439,6 +1440,15 @@ export function RecordScreen() {
                 Haptics are off in Profile, so nothing marks the beat.
               </Text>
             ) : null}
+            {/*
+              Only while Audio is chosen, now the picker no longer says it under
+              the option (`HEADPHONES_WARNING`).
+            */}
+            {metronomeMode === 'audio_with_headphones' ? (
+              <Text variant="caption" color="textTertiary" style={styles.note}>
+                {HEADPHONES_WARNING}
+              </Text>
+            ) : null}
           </>
         ) : null}
 
@@ -1699,7 +1709,7 @@ export function RecordScreen() {
             accessibilityRole="button"
             accessibilityState={{ selected: choice.mode === metronomeMode }}
             aria-pressed={choice.mode === metronomeMode}
-            accessibilityLabel={`${choice.label}. ${choice.detail}`}
+            accessibilityLabel={choice.label}
             style={({ pressed }) => [
               styles.metronomeOption,
               pressed && styles.metronomePressed,
@@ -1710,13 +1720,6 @@ export function RecordScreen() {
               color={choice.mode === metronomeMode ? 'accentText' : 'textPrimary'}
             >
               {choice.label}
-            </Text>
-            <Text
-              variant="metadataSmall"
-              color="textSecondary"
-              style={styles.metronomeOptionDetail}
-            >
-              {choice.detail}
             </Text>
           </PressableScale>
         ))}
@@ -2087,9 +2090,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     minHeight: MIN_TOUCH_TARGET,
     justifyContent: 'center',
-  },
-  metronomeOptionDetail: {
-    marginTop: 2,
   },
   metronomePressed: {
     backgroundColor: colors.surfacePressed,

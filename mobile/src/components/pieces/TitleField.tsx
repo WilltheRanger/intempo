@@ -4,6 +4,7 @@ import type { StyleProp, ViewStyle } from 'react-native';
 import { useLibrary } from '../../data/hooks/usePieces';
 import { completeTitle } from '../../lib/autofill';
 import { Input } from '../primitives/Input';
+import { FIELD_LIMITS } from '../../lib/fieldLimits';
 
 export interface TitleFieldProps {
   value: string;
@@ -53,6 +54,7 @@ export function TitleField({
   return (
     <Input
       label="Title"
+      maxLength={FIELD_LIMITS.pieceTitle}
       value={value}
       onChangeText={onChangeText}
       // "e.g.": set in the title's own serif, the bare example read as a

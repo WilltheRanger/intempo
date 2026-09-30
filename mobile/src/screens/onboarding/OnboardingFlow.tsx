@@ -25,6 +25,7 @@ import { ListeningIllustration } from './ListeningIllustration';
 import { OnboardingHowItWorks } from './OnboardingHowItWorks';
 import { OnboardingWelcome } from './OnboardingWelcome';
 import { StepFrame, type StepAction } from './StepFrame';
+import { FIELD_LIMITS } from '../../lib/fieldLimits';
 
 /** The answers that go to the account. */
 export interface OnboardingAnswers {
@@ -160,6 +161,7 @@ export function OnboardingFlow({
         >
           <Input
             label="Name"
+            maxLength={FIELD_LIMITS.displayName}
             value={name}
             onChangeText={setName}
             placeholder="First name"
@@ -212,7 +214,7 @@ export function OnboardingFlow({
                   accessibilityRole="radio"
                   aria-checked={selected}
                   accessibilityState={{ selected }}
-                  accessibilityLabel={`${choice.title}. ${choice.detail}`}
+                  accessibilityLabel={choice.title}
                   style={({ pressed }) => [
                     styles.roleChoice,
                     selected && styles.chosen,
@@ -221,12 +223,6 @@ export function OnboardingFlow({
                 >
                   <Text variant="pieceTitle" color={selected ? 'actionText' : 'textPrimary'}>
                     {choice.title}
-                  </Text>
-                  <Text
-                    variant="metadataSmall"
-                    style={[styles.roleDetail, { color: selected ? colors.onDarkMuted : colors.textTertiary }]}
-                  >
-                    {choice.detail}
                   </Text>
                 </Pressable>
               );
@@ -399,9 +395,6 @@ const styles = StyleSheet.create({
     borderWidth: BORDER_WIDTH,
     borderColor: colors.border,
     backgroundColor: colors.surface,
-  },
-  roleDetail: {
-    marginTop: spacing.xs,
   },
   chosen: {
     backgroundColor: colors.actionBg,

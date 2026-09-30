@@ -12,50 +12,44 @@ export interface AddPieceSheetProps {
 }
 
 /**
- * **Back to a line under each, but only lines that add something** (2026-09-29).
- * A first-time walk could not tell which of the four to pick, what kind of
- * file the third meant, or that the fourth gives a piece with no notes. The
- * lines below answer exactly those; the ones removed before only said each
- * label again, and that argument still holds.
+ * **Four labels, and no line under any of them** — the owner, 2026-09-30:
+ * "remove all the text underneath … Its super redundant as the user will know
+ * what that means". The labels name what you have in your hand, and that is
+ * the whole choice.
  *
- * **Four labels, and no line under any of them** — the earlier state:
+ * This is the second time the lines have gone. They were cut once for saying
+ * each label again ("Photograph sheet music / Use the camera on the pages in
+ * front of you"), which doubled the sheet's height, halved what a thumb could
+ * reach without scrolling, and taught a musician that the small grey type here
+ * is never worth reading (§3 law 10). They came back on 2026-09-29 as lines
+ * meant to add something — "Recommended", the file formats, what a hand-typed
+ * piece lacks — after a first-time walk hesitated between the four. The owner
+ * judged those redundant too. The two that carried something are said where
+ * they matter: the manual form's "Photograph the music to listen, record, and
+ * get timing", and the score-file screen's "From MuseScore, Sibelius or Finale".
  *
- * Each one carried a description and each description said the label again:
- * "Photograph sheet music / Use the camera on the pages in front of you",
- * "Choose photos / Pictures of the music already on this device", "Enter it by
- * hand / Type the details in". A second sentence that adds nothing is not
- * neutral — it doubles the height of the sheet, halves the number of choices a
- * thumb can reach without scrolling, and teaches a musician that the small
- * grey type on this screen is never worth reading, which costs the places
- * where it is (§3 law 10).
- *
- * `SheetOptionRow.description` is optional precisely so a row can decline it.
- * It was required once, which is how all four of these came to exist.
+ * `SheetOptionRow.description` stays optional, so a row can still decline it.
  */
 const OPTIONS = [
   {
     option: 'scan' as const,
     icon: Camera,
     label: 'Photograph sheet music',
-    description: 'Recommended. The app reads the notes from the page.',
   },
   {
     option: 'import' as const,
     icon: Images,
     label: 'Choose photos',
-    description: 'Pages you have already photographed.',
   },
   {
     option: 'notation' as const,
     icon: FileMusic,
     label: 'Open a score file',
-    description: 'MusicXML, from MuseScore, Sibelius or Finale.',
   },
   {
     option: 'manual' as const,
     icon: PencilLine,
     label: 'Enter it by hand',
-    description: 'A title and tempo only: nothing to listen to or be timed on.',
   },
 ];
 
@@ -84,7 +78,6 @@ export function AddPieceSheet({
           key={entry.option}
           icon={entry.icon}
           label={entry.label}
-          description={entry.description}
           divided={rowDivided(index)}
           onPress={() => onSelect(entry.option)}
         />

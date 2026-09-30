@@ -40,9 +40,14 @@ export interface StepAnswers {
   source: FoundVia | null;
 }
 
-export const ROLE_CHOICES: ReadonlyArray<{ value: PracticeRole; title: string; detail: string }> = [
-  { value: 'learning', title: 'I’m learning', detail: 'Only you see your takes' },
-  { value: 'teaching', title: 'I teach', detail: 'Follow your students’ practice' },
+/**
+ * The two answers, as titles alone — the owner, 2026-09-30, of the line that
+ * sat under each ("Only you see your takes", "Follow your students’
+ * practice"): "Its everywhere, and its over explaining".
+ */
+export const ROLE_CHOICES: ReadonlyArray<{ value: PracticeRole; title: string }> = [
+  { value: 'learning', title: 'I’m learning' },
+  { value: 'teaching', title: 'I teach' },
 ];
 
 export const FOUND_VIA_CHOICES: ReadonlyArray<{ value: FoundVia; label: string }> = [

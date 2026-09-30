@@ -141,9 +141,15 @@ export function TempoScreen() {
 
   const hasNotation = (piece.score?.measures.length ?? 0) > 0;
 
+  // **Scrolls in both modes.** This was `scrollable={setup}`, and the fixed
+  // version ends in a row of choices — half, three-quarters, marked — that on
+  // a short screen sat under Done with no way to reach them: measured at
+  // 375×553, an iPhone SE in Safari with its bars showing, 2026-09-30. The
+  // slider already lives inside a scroll view in setup and claims its own
+  // horizontal drags (`TempoSlider`), so nothing here needed the page to hold
+  // still.
   return (
     <ScreenContainer
-      scrollable={setup}
       footer={
         setup ? (
           // The score is where a new piece goes next: its reading is checked

@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import type { MetronomeMode } from '../../data/types';
 import {
+  HEADPHONES_WARNING,
   METRONOME_ORDER,
   metronomeChoices,
   metronomeValueLabel,
 } from './metronomeChoice';
+import { speakerBleed } from './preflight';
 
 /**
  * The list a musician picks from on the record screen, and the one condition
@@ -30,29 +32,30 @@ describe('metronomeChoices', () => {
 
   /**
    * The one that matters. A click through a speaker reaches the microphone
-   * and the analysis counts it as playing — the take is not merely noisy, it
-   * is judged against onsets nobody performed.
+   * and the analysis counts it as playing. The picker no longer says so under
+   * the option (the owner, 2026-09-30), so the warning that fires whenever the
+   * mode is on is what carries it — held here, beside the list it used to live
+   * in, so removing that too fails where the reason is written.
    */
-  it('names headphones in the audio option, in the label and the reason', () => {
-    const audio = metronomeChoices().find((c) => c.mode === 'audio_with_headphones');
+  it('leaves the audio risk to the pre-flight warning, which still fires', () => {
+    const check = speakerBleed('audio_with_headphones');
 
-    expect(audio?.detail).toMatch(/headphone/i);
-    expect(audio?.detail).toMatch(/microphone|reach/i);
-  });
-
-  it('says of each silent mode that it is silent', () => {
-    for (const mode of ['visual', 'haptic'] as const) {
-      const choice = metronomeChoices().find((c) => c.mode === mode);
-
-      expect(choice?.detail).toMatch(/silent/i);
+    expect(check.tone).toBe('warn');
+    expect(check.detail).toMatch(/headphone/i);
+    for (const mode of ['off', 'visual', 'haptic'] as const) {
+      expect(speakerBleed(mode).tone).toBe('ok');
     }
   });
 
-  it('gives the haptic mode the condition it actually depends on', () => {
-    // Haptics off in the profile silences it completely, and a metronome you
-    // cannot perceive is the defect this whole control replaced.
-    expect(metronomeChoices().find((c) => c.mode === 'haptic')?.detail)
-      .toMatch(/profile/i);
+  it('has one sentence for the audio risk, and it names headphones', () => {
+    expect(HEADPHONES_WARNING).toMatch(/headphone/i);
+    expect(HEADPHONES_WARNING).toMatch(/recording/i);
+  });
+
+  it('offers labels alone, with no line under any of them', () => {
+    for (const choice of metronomeChoices()) {
+      expect(Object.keys(choice).sort()).toEqual(['label', 'mode']);
+    }
   });
 
   it('labels the closed row with the value alone', () => {

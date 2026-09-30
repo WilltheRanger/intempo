@@ -2,6 +2,7 @@ import type { StyleProp, ViewStyle } from 'react-native';
 
 import { completeComposer } from '../../lib/autofill';
 import { Input } from '../primitives/Input';
+import { FIELD_LIMITS } from '../../lib/fieldLimits';
 
 export interface ComposerFieldProps {
   value: string;
@@ -48,6 +49,7 @@ export function ComposerField({
   return (
     <Input
       label="Composer"
+      maxLength={FIELD_LIMITS.composer}
       optional
       value={value}
       onChangeText={onChangeText}

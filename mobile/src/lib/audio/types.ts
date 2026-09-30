@@ -77,6 +77,26 @@ export const MAX_TAKE_SECONDS = 15 * 60;
  */
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 
+/**
+ * The longest take the analysis accepts: `[intake] max_duration_s` in
+ * `backend/config.toml`, checked on every take before it is decoded, recorded
+ * or picked alike (`workers/analysis_runner.py`).
+ *
+ * **The upload limit only hid this at the two usual sample rates.** 50 MB is
+ * 9:06 of mono at 48 kHz and 9:54 at 44.1, both inside ten minutes. Below
+ * about 43.7 kHz the same bytes hold more than ten minutes, the memory cap
+ * allows fifteen, and a take between the two was recorded, uploaded and then
+ * refused as `audio_too_long` — after the playing. A web recorder takes the
+ * sample rate of the audio output it is given, and a Bluetooth headset in its
+ * hands-free profile is commonly 16 kHz: 27 minutes of bytes, capped at
+ * fifteen, refused past ten (found 2026-09-30). Headphones are what the Audio
+ * metronome asks for.
+ *
+ * `limits.test.ts` reads the backend's number, and
+ * `test_take_length_parity.py` holds the backend to this one.
+ */
+export const MAX_ANALYSED_SECONDS = 10 * 60;
+
 /** Bytes of WAV header written ahead of the samples. */
 const WAV_HEADER_BYTES = 44;
 
@@ -86,8 +106,8 @@ const BYTES_PER_SAMPLE = 2;
 /**
  * How many samples a take may hold, at the rate the hardware actually gave us.
  *
- * The smaller of two limits that exist for different reasons: what a phone can
- * hold, and what the bucket will take. Computed rather than written down,
+ * The smallest of three limits that exist for different reasons: what a phone
+ * can hold, what the bucket will take, and what the analysis will read. Computed rather than written down,
  * because it depends on the sample rate — a device that insists on 44.1 kHz
  * gets nearly a minute more than one running at 48, and a constant in seconds
  * could only be right for one of them.
@@ -101,7 +121,8 @@ export function maxTakeSamples(sampleRate: number, channels: number): number {
   const byUpload = Math.floor(
     (MAX_UPLOAD_BYTES - WAV_HEADER_BYTES) / BYTES_PER_SAMPLE,
   );
-  return Math.max(1, Math.min(byMemory, byUpload));
+  const byAnalysis = sampleRate * channels * MAX_ANALYSED_SECONDS;
+  return Math.max(1, Math.min(byMemory, byUpload, byAnalysis));
 }
 
 /** The musician said no, or has said no before and the OS is remembering. */
