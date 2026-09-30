@@ -35,6 +35,7 @@ from app.services.analysis import (
     bar_pacing,
     nothing_played,
     prepare_for_alignment,
+    sounding_offset,
 )
 from app.services.audio_config import AudioConfig, load_audio_config
 from app.services.classification import (
@@ -238,6 +239,7 @@ def analyze_with_diagnostics(
         low_instrument=(instrument or ("double_bass" if double_bass else None))
         in cfg.pitch.low_instruments,
         page_pitches=[note.pitch for note in timeline.notes],
+        transpose=sounding_offset(instrument or ("double_bass" if double_bass else None)),
     )
     base.tonal_share = round(evidence.tonal_share, 3)
     base.page_share = round(evidence.page_share, 3)

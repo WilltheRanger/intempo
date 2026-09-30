@@ -215,7 +215,13 @@ def wrong_notes(
         found.append(
             WrongNote(
                 measure_number=note.measure_number,
-                heard=_heard_name(h.pitch_class, key_of.get(note.measure_number, score.key_signature)),
+                # Named as the player reads it: the page is written, and a
+                # saxophonist who fingered a D wants to be told D, not the F
+                # an alto sounds for it.
+                heard=_heard_name(
+                    (h.pitch_class - pitch.transpose) % 12,
+                    key_of.get(note.measure_number, score.key_signature),
+                ),
                 written=_name_without_octave(note.pitch or ""),
             )
         )

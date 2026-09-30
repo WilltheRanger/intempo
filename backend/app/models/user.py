@@ -52,13 +52,16 @@ class UsageResponse(BaseModel):
 
 
 class Instrument(str, Enum):
-    """The four the app is written for. Mirrors `Instrument` in the app's
-    `data/types.ts` and the CHECK on `users.instrument` (migration 009)."""
+    """What the app is written for: four bowed strings and two saxophones.
+    Mirrors `Instrument` in the app's `data/types.ts` and the CHECK on
+    `users.instrument` (migration 009, widened by 029)."""
 
     violin = "violin"
     viola = "viola"
     cello = "cello"
     double_bass = "double_bass"
+    alto_sax = "alto_sax"
+    tenor_sax = "tenor_sax"
 
 
 class MeResponse(BaseModel):

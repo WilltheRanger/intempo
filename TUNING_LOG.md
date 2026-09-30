@@ -6,6 +6,30 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-09-30 — Saxophone: two new rows, no existing value changed
+
+`[onset.instrument.alto_sax]` and `[onset.instrument.tenor_sax]`, both
+`delta = 0.07` and `highpass_hz = 0.0`: exactly the treble path an instrument
+without a row already took, so adding them changes no reading, a string take's
+included.
+
+**Not tuned, and it cannot be yet.** There is no saxophone recording in
+`fixtures/audio/` or anywhere in this repository. A tongued attack is a sharper
+onset than a bow change, which is the easy case for a log-flux detector; a slur
+under one breath has no onset at all, which the page's slurs already exclude.
+Whether 0.07 is right for either is an ear-and-recordings question.
+
+What did change is not a threshold: the analysis now listens for a saxophone
+where it sounds (alto −9, tenor −14 semitones from the page) rather than where
+it is written. `test_saxophone.py` holds it — with the transposition removed,
+an alto playing its page read **+300.9 cents** and a tenor **−199.4**, and a
+fingered wrong note went unnamed.
+
+### Regression across the six fixtures
+
+Unchanged by construction: the six are string takes and none of their rows
+moved. Full backend suite 2944 passed, 2 skipped, 2 xfailed.
+
 ## 2026-09-26 — Player mistakes, new: `[mistakes]`, and 0.3 → 0.2 on the first real take
 
 New thresholds, no existing one changed. `services/player_mistakes.py` names

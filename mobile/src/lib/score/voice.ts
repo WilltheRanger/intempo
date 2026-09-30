@@ -96,6 +96,11 @@ export type VoiceName = Instrument | 'reference';
  *   viola       C3 131 · G3 196 · D4 294 · A4 440
  *   cello       C2  65 · G2  98 · D3 147 · A3 220
  *   double bass E1  41 · A1  55 · D2  73 · G2  98   (written an octave higher)
+ *
+ * and where each saxophone's range starts, sounding (written B♭3 on both):
+ *
+ *   alto sax    D♭3 139   (written a major sixth higher)
+ *   tenor sax   A♭2 104   (written a major ninth higher)
  */
 export const VOICES: Record<VoiceName, Voice> = {
   /**
@@ -177,6 +182,45 @@ export const VOICES: Record<VoiceName, Voice> = {
     radiationHz: 62,
     attackS: 0.05,
     releaseS: 0.18,
+    gain: 0.2,
+  },
+
+  /**
+   * Alto saxophone. A reed on a conical bore gives every harmonic, not just
+   * the odd ones a clarinet's cylinder favours, so the slope is a string's
+   * rather than a square wave's. The bore plays the part a string instrument's
+   * body does: a formant fixed near 550 Hz whatever note is fingered, and a
+   * second, broader one where the tone-hole lattice stops passing sound, which
+   * is what makes a saxophone bright up to a point and then suddenly not.
+   */
+  alto_sax: {
+    slope: 1.05,
+    partials: 30,
+    body: [
+      { hz: 550, q: 1.6, lift: 2.6 },
+      { hz: 1500, q: 1.1, lift: 2.2 },
+    ],
+    brightnessHz: 4500,
+    radiationHz: 130,
+    // Tongued, so faster than a bow; not a hammer either.
+    attackS: 0.025,
+    releaseS: 0.08,
+    gain: 0.2,
+  },
+
+  /** Tenor: the same bore scaled up, so both formants sit about a fourth lower
+   *  and the lattice closes sooner, which is where its darker edge comes from. */
+  tenor_sax: {
+    slope: 1.1,
+    partials: 34,
+    body: [
+      { hz: 420, q: 1.6, lift: 2.8 },
+      { hz: 1150, q: 1.1, lift: 2.2 },
+    ],
+    brightnessHz: 3600,
+    radiationHz: 100,
+    attackS: 0.03,
+    releaseS: 0.09,
     gain: 0.2,
   },
 

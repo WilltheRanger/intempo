@@ -100,6 +100,20 @@ highpass_hz = 0.0
 delta = 0.05
 highpass_hz = 80.0
 
+# The saxophones start where the treble strings did, and for the same reason:
+# it is the path an unknown instrument already took, so adding them changed no
+# reading. A tongued note starts harder than a bowed one, which is the easy
+# case for this detector; a slur under one breath has no attack at all, which
+# the page's slurs already account for. Neither number has met a saxophone
+# recording yet — `TUNING_LOG.md`, 2026-09-30.
+[onset.instrument.alto_sax]
+delta = 0.07
+highpass_hz = 0.0
+
+[onset.instrument.tenor_sax]
+delta = 0.07
+highpass_hz = 0.0
+
 [onset.recovery]
 # A second look for notes the first pass was not confident enough to report,
 # run only where the score writes a note and the alignment found none. See

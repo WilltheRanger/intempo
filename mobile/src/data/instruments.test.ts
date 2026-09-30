@@ -23,6 +23,8 @@ describe('reading an instrument off storage', () => {
       viola: true,
       cello: true,
       double_bass: true,
+      alto_sax: true,
+      tenor_sax: true,
     };
     for (const name of Object.keys(every)) {
       expect(isInstrument(name)).toBe(true);

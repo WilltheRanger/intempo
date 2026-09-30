@@ -94,6 +94,12 @@ TYPES_WITHOUT_CODE: dict[str, str] = {
 #: `CHECK (column IN ('a', 'b'))`, in the form these migrations write it.
 _CHECK = re.compile(r"CHECK \((\w+) IN \(([^)]*)\)\)")
 
+#: The table a statement alters or creates, for placing a CHECK on one.
+_TABLE = re.compile(
+    r"(?:ALTER|CREATE) TABLE (?:IF NOT EXISTS )?(?:ONLY )?(?:public\.)?(\w+)",
+    re.IGNORECASE,
+)
+
 #: `CREATE TYPE name AS ENUM ('a', 'b')`.
 _CREATE_TYPE = re.compile(r"CREATE TYPE (\w+) AS ENUM \(([^)]*)\)")
 
@@ -125,21 +131,59 @@ def _values(vocabulary: object) -> set[str]:
     raise TypeError(f"not a vocabulary this can read: {vocabulary!r}")
 
 
+def _table_before(text: str, position: int) -> str:
+    """The table the statement holding `position` belongs to.
+
+    The nearest `ALTER TABLE` or `CREATE TABLE` above it: every CHECK these
+    migrations write sits inside one of the two.
+    """
+    tables = [m.group(1) for m in _TABLE.finditer(text, 0, position)]
+    assert tables, f"a CHECK at offset {position} is not inside any table statement"
+    return tables[-1]
+
+
 def _constraints() -> dict[str, list[tuple[str, tuple[str, ...]]]]:
-    """Every value-list CHECK in the migrations, by column.
+    """The value-list CHECK each table holds now, by column.
 
     Read from the files rather than from a running database: this has to fail
     in CI, where there is no database, and the files are what a deployment is
     applied from.
+
+    **The latest declaration per table wins**, because that is what a database
+    that applied them in order holds. 029 widened `instrument` by dropping and
+    re-adding each table's constraint; 008 and 009 still carry the four-string
+    list they were written with, and holding those to today's enum would fail
+    for a column that is correct. `test_a_redeclared_check_drops_the_old_one`
+    is the other half: a later declaration only supersedes an earlier one if
+    the file that makes it also drops it.
     """
-    found: dict[str, list[tuple[str, tuple[str, ...]]]] = {}
+    latest: dict[tuple[str, str], tuple[str, tuple[str, ...]]] = {}
     for path in sorted(MIGRATIONS.glob("*.sql")):
-        for match in _CHECK.finditer(path.read_text()):
+        text = path.read_text()
+        for match in _CHECK.finditer(text):
             values = tuple(
                 value.strip().strip("'") for value in match.group(2).split(",")
             )
-            found.setdefault(match.group(1), []).append((path.name, values))
+            table = _table_before(text, match.start())
+            latest[(table, match.group(1))] = (f"{path.name} ({table})", values)
+    found: dict[str, list[tuple[str, tuple[str, ...]]]] = {}
+    for (_, column), declared in sorted(latest.items()):
+        found.setdefault(column, []).append(declared)
     return found
+
+
+def _redeclarations() -> list[tuple[str, str, str]]:
+    """Every (file, table, column) that declares a CHECK an earlier file had."""
+    seen: set[tuple[str, str]] = set()
+    again: list[tuple[str, str, str]] = []
+    for path in sorted(MIGRATIONS.glob("*.sql")):
+        text = path.read_text()
+        for match in _CHECK.finditer(text):
+            key = (_table_before(text, match.start()), match.group(1))
+            if key in seen:
+                again.append((path.name, *key))
+            seen.add(key)
+    return again
 
 
 def _enum_types() -> dict[str, tuple[str, ...]]:
@@ -186,6 +230,22 @@ def test_a_column_constrained_twice_is_constrained_the_same_way() -> None:
         assert len(sets) == 1, (
             f"{column} is constrained differently in "
             f"{[migration for migration, _ in declared]}: {sorted(sets)}"
+        )
+
+
+def test_a_redeclared_check_drops_the_old_one() -> None:
+    """A second CHECK on the same column only replaces the first if dropped.
+
+    `ADD CONSTRAINT` beside an old inline CHECK leaves both in force, and the
+    narrower one keeps refusing exactly the values the migration was written
+    to allow. `_constraints` treats the later declaration as the one in force,
+    so this is what makes that true.
+    """
+    for migration, table, column in _redeclarations():
+        text = (MIGRATIONS / migration).read_text()
+        assert f"DROP CONSTRAINT IF EXISTS {table}_{column}_check" in text, (
+            f"{migration} declares a CHECK on {table}.{column} again without "
+            f"dropping {table}_{column}_check first"
         )
 
 
