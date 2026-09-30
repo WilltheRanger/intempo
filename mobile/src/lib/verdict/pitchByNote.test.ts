@@ -147,18 +147,18 @@ describe('noteDetail', () => {
   it('says a tapped note in words, not cents', () => {
     const [eb] = noteMarks([note('Eb3', 51, 16.9, 7)], BANDS);
 
-    expect(noteDetail(eb)).toBe('E♭ · 7 notes, a little sharp');
+    expect(noteDetail(eb)).toBe('Your 7 E♭s were a little sharp');
   });
 
   it('says in tune, and further off plainly', () => {
     const marks = noteMarks([note('D3', 50, 1, 10), note('Bb2', 46, 32, 4)], BANDS);
 
-    expect(marks.map(noteDetail)).toEqual(['B♭ · 4 notes, sharp', 'D · 10 notes, in tune']);
+    expect(marks.map(noteDetail)).toEqual(['Your 4 B♭s were sharp', 'Your 10 Ds were in tune']);
   });
 
-  it('capitalises a low or high note at the start', () => {
+  it('keeps low and high in the sentence', () => {
     const marks = noteMarks([note('G2', 43, -20, 3), note('G3', 55, 0)], BANDS);
 
-    expect(noteDetail(marks[0])).toBe('Low G · 3 notes, a little flat');
+    expect(noteDetail(marks[0])).toBe('Your 3 low Gs were a little flat');
   });
 });

@@ -11,8 +11,10 @@ import { readMeasure } from './measureReading';
  * bar's tempo is the shakiest number the app has — a handful of notes — so a
  * card of "Bar 7 · 105 BPM" on a scale was precision the measurement did not
  * have. A tap now selects the run of neighbouring bars that went the same way
- * and says it once: "Bars 5–8 · about 104, aiming for 96".
+ * and says it once: "Bars 5–8 were fast: 104 beats a minute, not 96".
  */
+
+const NBSP = '\u00A0';
 
 /** How a bar went, in the terms a passage is grouped by. */
 export type TempoKind = 'on' | 'rush' | 'drag' | 'untimed';
@@ -104,28 +106,44 @@ export function barsLabel(passage: { from: number; to: number }): string {
   return passage.from === passage.to ? `Bar ${passage.from}` : `Bars ${passage.from}–${passage.to}`;
 }
 
-/** "Bars 5–8 · about 104, aiming for 96", "Bars 1–4 · on tempo". */
+/**
+ * The tapped passage as a plain sentence: "Bars 15–24 were slow: 95 beats a
+ * minute, not 104", "Bars 1–4 were on tempo".
+ *
+ * **A sentence, not a readout** (the owner, 2026-09-30, of "Bars 15–24 ·
+ * about 95, aiming for 104": "let's fix this jargon"). A bare 95 beside a bare
+ * 104 asked the reader to know both were tempi and which was theirs; the
+ * sentence says it, and says the number is beats a minute.
+ */
 export function tempoPassageLine(
   passage: BarPassage<TempoKind> & { bpm: number | null; aim: number | null },
 ): string {
   const where = barsLabel(passage);
-  if (passage.kind === 'untimed') return `${where} · not timed`;
-  if (passage.kind === 'on') return `${where} · on tempo`;
+  const were = passage.from === passage.to ? 'was' : 'were';
+  if (passage.kind === 'untimed') return `${where} ${were}n't timed`;
+  if (passage.kind === 'on') return `${where} ${were} on tempo`;
+  const way = passage.kind === 'rush' ? 'fast' : 'slow';
   if (passage.bpm !== null && passage.aim !== null) {
-    return `${where} · about ${passage.bpm}, aiming for ${passage.aim}`;
+    // Held together, so a narrow screen breaks after the colon and not before
+    // the target: "…not" over a lone "96" read as a second, stray number.
+    const detail = `${passage.bpm} beats a minute, not ${passage.aim}`.replace(/ /g, NBSP);
+    return `${where} ${were} ${way}: ${detail}`;
   }
-  return `${where} · ${passage.kind === 'rush' ? 'ahead' : 'behind'}`;
+  return `${where} ${were} ${way}`;
 }
 
-/** "Bars 7–8 · played flat", "Bars 1–6 · in tune". */
+/** "Bars 7–8 were flat", "Bars 1–6 were in tune", "Bar 3's pitch couldn't be read". */
 export function pitchPassageLine(passage: BarPassage<PitchKind>): string {
   const where = barsLabel(passage);
+  const single = passage.from === passage.to;
   switch (passage.kind) {
     case 'in_tune':
-      return `${where} · in tune`;
+      return `${where} ${single ? 'was' : 'were'} in tune`;
     case 'unread':
-      return `${where} · pitch not read`;
+      return single
+        ? `${where}'s pitch couldn't be read`
+        : `The pitch of ${where.toLowerCase()} couldn't be read`;
     default:
-      return `${where} · played ${passage.kind}`;
+      return `${where} ${single ? 'was' : 'were'} ${passage.kind}`;
   }
 }

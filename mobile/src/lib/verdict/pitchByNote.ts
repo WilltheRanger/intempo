@@ -129,17 +129,19 @@ export function namedMarks(marks: readonly NoteMark[]): NoteMark[] {
 }
 
 /**
- * A tapped note in one line: "E♭ · 7 notes, a little sharp".
+ * A tapped note as a plain sentence: "Your 7 E♭s were a little sharp".
  *
- * **Words, not cents**, as the bars are (`pitchWord`, 2026-09-29): "17 cents
- * sharp" asks a student to know what a cent is, and the dot's colour and
- * height already say how far.
+ * **A sentence, like the passage line above it** (the owner, 2026-09-30, of
+ * "Bars 15–24 · about 95, aiming for 104": "let's fix this jargon"), and
+ * **words, not cents**, as the bars are (`pitchWord`, 2026-09-29): the dot's
+ * colour and height already say how far.
  */
 export function noteDetail(mark: NoteMark): string {
   const word =
     mark.band === 'in_tune'
       ? 'in tune'
       : `${mark.band === 'slight' ? 'a little ' : ''}${mark.cents > 0 ? 'sharp' : 'flat'}`;
-  const name = mark.fullName.charAt(0).toUpperCase() + mark.fullName.slice(1);
-  return `${name} · ${mark.notes} ${mark.notes === 1 ? 'note' : 'notes'}, ${word}`;
+  return mark.notes === 1
+    ? `Your one ${mark.fullName} was ${word}`
+    : `Your ${mark.notes} ${mark.fullName}s were ${word}`;
 }
