@@ -18,8 +18,11 @@
  * component is a rule nothing checks.
  */
 
-/** The phase machine `RecordScreen` runs on. */
-export type RecordPhase = 'ready' | 'counting_in' | 'recording' | 'analysing';
+/**
+ * The phase machine `RecordScreen` runs on. `review` is the take after Stop,
+ * held to be heard before it is sent (2026-09-29).
+ */
+export type RecordPhase = 'ready' | 'counting_in' | 'recording' | 'review' | 'analysing';
 
 /**
  * What the screen should do when someone asks to leave it.
@@ -52,11 +55,18 @@ export function leavingRecord({
   phase,
   unsentTake,
   pieceTitle,
+  accepted = false,
 }: {
   phase: RecordPhase;
   /** A finished take held on the screen because sending it failed. */
   unsentTake: boolean;
   pieceTitle?: string | null;
+  /**
+   * The server has the take and is analysing it. Leaving is safe from here:
+   * the analysis carries on without the screen, and Today picks it up
+   * (`data/practice/pendingAnalysis`).
+   */
+  accepted?: boolean;
 }): Leaving {
   if (phase === 'recording') {
     return {
@@ -73,6 +83,20 @@ export function leavingRecord({
       // what it keeps.
       cancelLabel: 'Keep recording',
     };
+  }
+
+  if (phase === 'review') {
+    return {
+      kind: 'confirm',
+      title: 'Discard this take?',
+      message: 'It hasn’t been analysed.',
+      confirmLabel: 'Discard',
+      cancelLabel: 'Keep it',
+    };
+  }
+
+  if (phase === 'analysing' && accepted) {
+    return { kind: 'leave' };
   }
 
   if (unsentTake) {
@@ -100,9 +124,11 @@ export function leavingRecord({
 export function shouldGuardBrowserExit({
   phase,
   unsentTake,
+  accepted = false,
 }: {
   phase: RecordPhase;
   unsentTake: boolean;
+  accepted?: boolean;
 }): boolean {
-  return leavingRecord({ phase, unsentTake }).kind === 'confirm';
+  return leavingRecord({ phase, unsentTake, accepted }).kind === 'confirm';
 }

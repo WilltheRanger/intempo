@@ -1370,6 +1370,9 @@ export const fixtureTakeSource: TakeSource = {
 
     return DRIFT.slice(0, limit).map((scale, index) => ({
       ...take,
+      // A copy scaled back inside the band is a steady take, and says so in
+      // its title as well as its sentence ("Held the tempo").
+      direction: sessionHeadline(take, scale).startsWith('Steady') ? 'on' : take.direction,
       // index 0 is the real take; the rest are older, one every three days.
       id: index === 0 ? take.id : `${take.id}-session-${index}`,
       recordedAt: new Date(recordedAt - index * 3 * DAY_MS).toISOString(),

@@ -48,7 +48,7 @@ export function verdictFor(band: Band, direction: Direction): Verdict {
  * being tuned. `backend/app/tests/test_fallback_bands.py` fires on the day
  * they diverge and states both answers.
  */
-const FALLBACK_OUTER_PCT = 20;
+export const FALLBACK_OUTER_PCT = 20;
 
 /**
  * Where a chart's full deflection sits for one signed deviation.
@@ -307,17 +307,25 @@ export function verdictColorFor(band: Band): ColorToken {
 /** Where in the take the drift sat. */
 type Span = 'start' | 'middle' | 'end' | 'throughout';
 
+/*
+ * **One line on a phone** (the owner, 2026-09-29, circling "You rushed in the
+ * / middle"). "You" stays — the owner's call, over "Rushed in the middle" —
+ * and the result screen sets these at 31pt, where the longest, "You dragged
+ * in the middle", is 332 of the 342 points a 390pt phone gives it. "At the
+ * end", not "towards the end", which fits at no size worth a title.
+ * `tempo.test.ts` holds every one to 25 characters.
+ */
 const RUSH_HEADLINES: Record<Span, string> = {
   start: 'You rushed at the start',
   middle: 'You rushed in the middle',
-  end: 'You rushed towards the end',
+  end: 'You rushed at the end',
   throughout: 'You rushed throughout',
 };
 
 const DRAG_HEADLINES: Record<Span, string> = {
   start: 'You dragged at the start',
   middle: 'You dragged in the middle',
-  end: 'You dragged towards the end',
+  end: 'You dragged at the end',
   throughout: 'You dragged throughout',
 };
 

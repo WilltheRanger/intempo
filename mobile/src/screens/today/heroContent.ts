@@ -1,4 +1,5 @@
 import type { Piece } from '../../data/types';
+import { splitTitle } from '../../lib/pieceTitle';
 import { joinMetadata } from '../../lib/format';
 import { formatWorkingTempo } from '../../lib/tempo';
 
@@ -61,9 +62,9 @@ export interface HeroInput {
  */
 const NOTHING_YET: HeroContent = {
   label: 'Start here',
-  // A question the button answers, rather than the button's own words said
-  // twice ("Add your first piece" over "Add a piece", 2026-09-29).
-  title: 'What are you working on?',
+  // The owner's pick (2026-09-29): says exactly what to do, and fits one line
+  // where "What are you / working on?" broke in two.
+  title: 'Add your first piece',
   meta: null,
   detail: 'Photograph a page of it to begin.',
   actionLabel: 'Add a piece',
@@ -88,8 +89,11 @@ export function heroContentFor({ piece, workingBpm }: HeroInput): HeroContent {
     // or what else is due. If the word is to keep earning its place, the
     // ranking is what has to change, not this string.
     label: 'Recommended',
-    title: piece.title,
+    // The name alone; its catalogue number leads the line under it
+    // (`lib/pieceTitle.ts`), where it stopped breaking the title in the key.
+    title: splitTitle(piece.title).name,
     meta: joinMetadata([
+      splitTitle(piece.title).catalogue,
       piece.composer,
       piece.movement,
       formatWorkingTempo(workingBpm, piece.markedBpm, piece.score?.tempo_beat_unit),

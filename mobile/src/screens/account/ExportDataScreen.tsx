@@ -1,9 +1,8 @@
 import { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { useGoBack } from '../../navigation/useGoBack';
 
 import {
-  Card,
   PageHeader,
   PrimaryButton,
   ScreenContainer,
@@ -51,19 +50,11 @@ export function ExportDataScreen() {
         backLabel="Back to profile"
       />
 
+      {/* Two lines where there was a line, a boxed list and a footnote (the
+          owner's sweep, 2026-09-29). */}
       <Text variant="body" color="textSecondary" style={styles.lede}>
-        A JSON copy of your account data.
+        A copy of your data.
       </Text>
-
-      <Card emphasis style={styles.card}>
-        <Text variant="button">Included</Text>
-        <View style={styles.list}>
-          <Bullet>profile and account settings</Bullet>
-          <Bullet>pieces and the score data read from them</Bullet>
-          <Bullet>practice results, timing feedback, and corrections</Bullet>
-          <Bullet>assignments, studio records, and sync history</Bullet>
-        </View>
-      </Card>
 
       <Text variant="metadataSmall" color="textTertiary" style={styles.note}>
         Photos and audio aren’t included.
@@ -91,36 +82,10 @@ export function ExportDataScreen() {
   );
 }
 
-function Bullet({ children }: { children: string }) {
-  return (
-    <View style={styles.bulletRow}>
-      <Text variant="body" color="textSecondary">
-        •
-      </Text>
-      <Text variant="body" color="textSecondary" style={styles.bulletCopy}>
-        {children}
-      </Text>
-    </View>
-  );
-}
 
 const styles = StyleSheet.create({
   lede: {
     marginTop: spacing.md,
-  },
-  card: {
-    marginTop: spacing['2xl'],
-  },
-  list: {
-    marginTop: spacing.md,
-    gap: spacing.sm,
-  },
-  bulletRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  bulletCopy: {
-    flex: 1,
   },
   note: {
     marginTop: spacing.lg,

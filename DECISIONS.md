@@ -1,5 +1,224 @@
 # InTempo Decisions
 
+## 2026-09-29 — The trend line in green, amber and deep red, on colours of its own
+
+**Context.** The owner: "I feel like the line colors can be better". Measured
+before drawing anything: the line was ink inside the band, then the verdict
+gold (`#8F681C`) and red (`#C53B3B`). Under simulated deuteranopia that gold
+and red are ΔE 2.3 apart in OKLab — one colour — and 14.3 with full colour
+vision, below the floor where neighbours are easy to tell apart; and the ink
+made the on-tempo stretch the darkest thing on the graph. The palette file's
+own comment said the verdict trio "stays separable under deuteranopia"; by this
+measure it does not.
+
+**Decision** (three validated options drawn on the result, takes and pitch
+graphs; the owner chose "C · Green when on tempo"): new tokens `trendOn`
+`#2F7A52`, `trendMid` `#BC7A10`, `trendBad` `#9E2B2B` (dark: `#4FBF7F`,
+`#E0A23A`, `#E0605A`), used by `TrendPlot` and nothing else. Neighbouring
+pairs clear ΔE 8 for colour-blind viewers and 19 with full colour vision.
+
+**Why not change the verdict tokens.** They are set as text too — field
+errors, the correction prompt, "uneven" — and held to 4.5:1. The amber that
+separates from the red is 3.2:1 on ivory: legal for a 3px line (1.4.11's 3:1,
+now in `contrast.test.ts`), not for text. So the line gets its own trio and
+the text keeps its own.
+
+**Alternatives.** A: the ink line with a clearer amber and deeper red. B: the
+on-tempo stretch in a thin soft grey so only the problem stands out (my
+recommendation).
+
+---
+
+## 2026-09-29 — Insights, Your takes and the Library in the result screen's language; the wordiness sweep
+
+**Context.** Once the result screen had a trend line and "You rushed in the
+middle", everything around it looked a generation older: Insights drew
+straight segments with a squeezed axis column ("30 / cents / off") and a
+bar-per-passage chart, the kind the owner had just called meaningless; "Your
+takes" was six rows of "Bars 5–8 at 10x, not 96 BPM" with one row missing its
+date; Library tiles said "Slight drag" over a slider bar. The owner saw
+mock-ups of each and chose: Insights and Your takes as drawn, Library tiles
+"words only", the empty Today "Add your first piece", and all sixteen items of
+the earlier sweep. A matching player for Listen and the take was drawn and
+declined ("I don't get the point").
+
+**Decision.**
+- **One drawing for every trend** (`components/charts/TrendPlot`): the result
+  screen's band, clipped gold/red and monotone curve, labels inside the graph,
+  the rail. `TrendChart` (the result) is now `TrendPlot` plus the finger and
+  the bar axis. `seriesTrend` turns takes-one-after-another into the same data.
+- **Insights:** both graphs redrawn with it (`sessionTrendData`,
+  `pitchTrendData`); "Worth a look" is the piece's last take with the passage
+  on its rail and the Practice button — its sentence only where the button
+  does not name bars. Title "Your tempo wanders"; the pitch line three words.
+- **Your takes:** the passage two or more verdicts open on, take by take
+  (`lib/insights/takesTrend.ts`), with one line saying which way it went; rows
+  are date, the take's own title, and the passage's tempo; every row dated
+  (`takeDateLabel`).
+- **Library and Insights' list:** the last take's title ("Rushed in the
+  middle", `pieceStatus`), else the aggregate in the same vocabulary
+  (`readPieceWord`: "Held the tempo", "A little fast", "Tempo wandered"), else
+  nothing — never "Not played yet", which the grouping already says and which
+  would be false of a piece played before the recent takes. No slider bar.
+- **Titles:** `lib/pieceTitle.ts` splits the catalogue number off to a small
+  line and breaks a long name before its key ("Sonata No. 1 / in G minor",
+  never "in G / minor"), via `PieceHeading` on Today, the piece, Record, the
+  score and Insights.
+- **The sweep:** empty Today "Add your first piece"; "See where you rushed";
+  failed results keep only their heading (and a refusal's own directions);
+  a silent take's line is "Is it muted?"; the score's check is one row ("8 bars
+  look off · Check"); Check the reading keeps only "2 left"; "1 free take left
+  this month"; Download and Delete account one line each; Help "Sample data";
+  Rename into the piece's ⋮ menu.
+
+**Removed.** `SessionTrendChart`, `PitchTrendChart`, `PassageChart`,
+`DeviationBar`, `plotFraction`, `pitchY`, `rowDates`, `proposalsSummary`.
+
+**Not done.** The shelf's tiles keep their full title (two narrow lines); the
+split is for headings. Library shows a last-take title only for pieces among
+the 20 most recent takes, the aggregate word otherwise.
+
+---
+
+## 2026-09-29 — A take is heard before it is sent, and its tempo is a trend line
+
+**Context.** Two complaints from the owner on the same day. The result's
+chart: "the bar by bar measurement in general doesn't make sense … like a
+graph or something … to show the trend". And the screens between Stop and
+the result: they "don't fit common UX practices". Stop sent the take at
+once — uploading it and spending one of the month's free analyses on a take
+the musician may already have known was wrong — and the wait showed a title,
+a sentence, a bar, a spinner beside a running clock and, after three
+minutes, a second sentence, with no way off it.
+
+**Decision** (both choices the owner's, from two offered each):
+- **The tempo is a line over an on-tempo band** (`lib/verdict/trend.ts`,
+  `TrendChart`). Each bar's tempo is averaged with its neighbours, because a
+  single bar is a handful of notes and its own figure is the least reliable
+  number the app shows. The band is the take's inner tolerance around the
+  target, following the target where the page changes tempo. The line is ink
+  inside the band and takes the verdict's gold or red only outside it. Pitch
+  is the same picture in cents, behind the same switch. Tapping or dragging
+  anywhere picks the bar under the finger and shades its passage, and one
+  line says it: "Bars 5–8 · about 104, aiming for 96". Nothing is picked at
+  first; the verdict's own passage is shaded.
+- **The question is about the passage, not a bar**: "How did bars 5–8
+  sound?", with the one answer sent for each judged bar in it. The per-bar
+  card, its tempo scale and "What did you hear?" are gone.
+- **Stop holds the take**, with a play button and a scrubber and two
+  choices, Analyse and Record again. Nothing is uploaded or counted until
+  Analyse. Back asks first ("Discard this take? It hasn't been analysed.").
+- **The wait is a bar and one line**: "Analysing", the bar, and the stage in
+  words. A spinner stands in only where no stage can be placed. The clock is
+  gone. Once the server has the take, "Leave while it works" goes to Today,
+  which already resumes an accepted analysis (`pendingAnalysis`). From that
+  point back and closing the tab no longer ask.
+- **One player for both** (`ScrubPlayer`), on an engine chosen per platform
+  (`useTakeAudio`). On the web it is the browser's own `<audio>`, because
+  `expo-audio` will not open the `blob:` URL of a take that has not been sent
+  (measured, `heldTake.web.ts`); on native it is `expo-audio`. The wide "Hear
+  it" button that a failed upload used to show is this player too.
+
+**Reversed on purpose.** The bars chart and its card (2026-09-25, cut down
+earlier today); the send-on-Stop that every take went through; the wait's
+running clock and live spinner (added because the bar sits still through the
+long "listening" leg). That stillness is the trade accepted: the bar still
+moves only on real stages, and the line under it names the stage.
+
+**Alternatives.** A bar per measure coloured by band (what it replaces); a
+running-average band with no target; sending on Stop and offering playback
+on the result (the owner chose to hear it first); keeping the clock on the
+wait.
+
+**Not done.** A take recorded on a native build has no URL to play from
+(`heldTake.ts`), so its review shows the length and no player. An older result
+saved without per-bar tempi has no line, and keeps the bars chart it had.
+
+**Then redrawn the same day** (the owner: "the graph could look better in some
+way"; three versions drawn on the sample take, the owner chose "A · Refined
+line" and asked for it taller). A monotone curve instead of straight segments
+(`smoothPath`, which cannot peak above the bar that made it). Gold and red are
+clipped to the band's edges (`outsidePath`) rather than decided per segment,
+so the colour changes exactly where the line leaves the band, with a faint
+tint of the same colour between the line and the target. The graph is 220pt
+tall and full width, with its labels inside it. The passage block became an
+accent on a rail under the graph, which also dots the bars that could not be
+timed. It is plotted from unrounded tempi (`displayTempoValue`), because
+whole beats stepped the line. The alternatives were the gap to the target
+filled as an area, with the band edges dotted, and green/gold/red background
+zones like heart-rate zones.
+
+---
+
+## 2026-09-29 — The result screen cut to one line, one chart and the passage as its button
+
+**Context.** The owner: the result screen "needs to be more simplified its way
+too wordy and hard to read, harshly audit it". Measured on the sample take it
+was 118 words over about one and a half screens: three charts of the same
+thirteen bars (the take as a tempo line, the bars, pitch), two colour keys of
+eight labels (four of them the same ideas renamed for pitch), nine ruled
+lines, "96" printed four times, four statements under the title before any
+picture, and a row of facts whose "Missed: 1 note" sat under "1 note wasn't
+what's written" — two different counts that read as one said twice. Its only
+button recorded the whole piece while the screen named bars 5–8.
+
+**Decision** (audit shown to the owner, plan approved; the two choices are
+theirs):
+- **One line under the title**, the take row's own words ("Bars 5–8 at 104,
+  not 96 BPM"). The lead finding ("Your sixteenth notes ran ahead.") is no
+  longer shown here.
+- **One grey line for what else went wrong**: "1 note missed · 1 wrong note,
+  bar 6 · 1 rest miscounted, bar 12" (`mistakesSummary`). A missed note and a
+  wrong note are named differently so they cannot read as one. What each was
+  is said in its bar's card, rests included (`restEntriesInBar`).
+- **The facts row is gone** (Target / Passage / Missed). The target is in
+  the line and on the card's scale; the passage is the chart's own axis.
+- **One chart, with a Tempo / Pitch switch** (the owner's choice over pitch
+  only in the card). The tempo line ("Across the take") is gone: it drew the
+  same numbers as the bars and could not be tapped. No colour keys: the
+  tapped bar's card says what its colour means. The chart names both ends in
+  either reading ("faster"/"slower", "sharp"/"flat"), so switching does not
+  move the bars.
+- **The card says each thing once**: "Bar 7 · 105 BPM" and the scale, without
+  "9 over your 96"; pitch as "Played a little flat", not "34 cents flat"; the
+  question as "What did you hear?" without "We read it as rushing", which the
+  raised answer already says.
+- **The main button practises the passage** (the owner's choice): "Practice
+  bars 5–8" opens the recorder at bar 5; "Record again" stays, quieter, under
+  it, and is the only button when the verdict names no bars. The range is read
+  from the server's sentence (`headlinePassage`), because that is the only
+  place it reaches the app, and the line above the button shows the same
+  words.
+
+**Reversed on purpose.** The take's tempo line (2026-09-25), the "In tune"
+chart as its own section with its summary and tuning caption (2026-09-25),
+the facts row (2026-09-23), the colour keys and "We read it as…" (2026-09-29,
+earlier today). The pitch data is all still drawn; the tuning offset
+("Tuned 14 cents sharp") is not said on this screen any more.
+
+**Alternatives.** Pitch only in the bar card (the owner chose the switch);
+keeping "Record again" as the main button (the owner chose the passage);
+adding the verdict's bar range to the API instead of reading the sentence —
+the better data path, not taken yet because it is a backend and schema change
+for a label the sentence already carries.
+
+**Result.** 56 words, one screen, one chart, three ruled lines. The loading
+skeleton draws the same shape. The bundle fell 3 KB.
+
+**Then cut again the same day** (the owner, on a phone, circling the two lines
+still under the title and "You rushed in the / middle" breaking with one word
+under it: "so many examples of this excessive wordiness and squishing"). The
+title keeps "You" (the owner, after a first cut dropped it) and is set at
+31pt instead of 36, with "at the end" for "towards the end", so every one
+fits a phone's line ("You dragged in the middle", the longest, is 332 of 342
+points; `tempo.test.ts` holds them to 25 characters); "Bars 5–8 at 104, not 96 BPM"
+went, because the chart shows the bars, the card their tempo and the button
+names them; and the grey mistakes line became a dot under each bar holding a
+wrong note or a miscounted rest (`mistakeBars`), whose card says what it was.
+The missed-note count is no longer on this screen. 40 words.
+
+---
+
 ## 2026-09-29 — A first-time walk's critique, fixed: ten earlier calls reversed
 
 **Context.** The owner asked for the app to be tried "as a first time user who

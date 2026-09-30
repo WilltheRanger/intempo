@@ -33,7 +33,7 @@ describe('describeLastFreeAnalysis', () => {
     // a screen a musician reads with an instrument up, so its wording is
     // expected to get shorter over time; what must not change is that the
     // last free take is the one it speaks on, and that it says so.
-    expect(describeLastFreeAnalysis(usage())).toContain('1 free analysis left this month');
+    expect(describeLastFreeAnalysis(usage())).toBe('1 free take left this month');
   });
 
   it('is silent while the count still has slack', () => {
@@ -57,17 +57,6 @@ describe('describeLastFreeAnalysis', () => {
   it('says nothing when the server reported no usage at all', () => {
     expect(describeLastFreeAnalysis(null)).toBeNull();
     expect(describeLastFreeAnalysis(undefined)).toBeNull();
-  });
-
-  it('names the date the next one arrives', () => {
-    // Rendered in the reader's own zone deliberately: `resets_at` is the first
-    // instant of next month, so the local calendar date of that instant is when
-    // the allowance actually returns for the person reading it.
-    const date = new Date('2026-10-01T00:00:00.000Z').toLocaleDateString(
-      undefined,
-      { day: 'numeric', month: 'long' },
-    );
-    expect(describeLastFreeAnalysis(usage())).toContain(date);
   });
 });
 
@@ -136,7 +125,7 @@ describe('describeAnalysisCost', () => {
   });
 
   it('names the last one as the last one', () => {
-    expect(describeAnalysisCost(usage())).toContain('1 free analysis left this month');
+    expect(describeAnalysisCost(usage())).toBe('1 free take left this month');
   });
 
   it('leaves a spent allowance to the refusal', () => {
@@ -149,8 +138,8 @@ describe('describeAnalysisCost', () => {
   });
 
   it('does not pluralise a single free analysis', () => {
-    expect(describeAnalysisCost(usage({ used: 0, limit: 1, remaining: 1 }))).toContain(
-      '1 free analysis left this month',
+    expect(describeAnalysisCost(usage({ used: 0, limit: 1, remaining: 1 }))).toBe(
+      '1 free take left this month',
     );
   });
 });

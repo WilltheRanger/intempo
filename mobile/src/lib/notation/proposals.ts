@@ -213,12 +213,13 @@ export function proposalsFor(
   );
 }
 
-/** The line under the heading: how many, and what they are. */
-export function proposalsSummary(count: number): string {
-  if (count === 0) {
-    return 'Nothing looks off.';
-  }
-  return count === 1
-    ? '1 thing looks off.'
-    : `${count} things look off.`;
+/**
+ * The score screen's one row about them: "8 bars look off", beside Check.
+ * Bars rather than things, because a bar is what a musician finds on the page;
+ * one row where there was a heading, a sentence and a link (the owner's sweep,
+ * 2026-09-29).
+ */
+export function proposalsRowLabel(proposals: readonly Pick<Proposal, 'measureNumber'>[]): string {
+  const bars = new Set(proposals.map((proposal) => proposal.measureNumber)).size;
+  return bars === 1 ? '1 bar looks off' : `${bars} bars look off`;
 }

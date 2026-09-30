@@ -444,7 +444,7 @@ await open('insights');
 const insightsText = await leaves();
 
 const HEADLINES = [
-  'Your tempo wanders within a take',
+  'Your tempo wanders',
   'You tend to rush',
   'You tend to drag',
   'You drift slightly ahead',
@@ -841,29 +841,28 @@ console.log('\n## Telling the app it got a bar wrong');
   await open('analyses/fixture-take-1');
 
   // Measure 5 is one the app called rushing. Measure 11 is "Not timed".
-  // The measures are one chart now — a slider to assistive tech, stepped by
-  // the arrow keys on the web — so a measure is selected by stepping it there
-  // rather than by clicking a row.
-  const chart = page.getByRole('slider', { name: /^Bar \d+ of/ }).first();
+  // The take is one graph — a slider to assistive tech, stepped by the arrow
+  // keys on the web — so a measure is selected by stepping it there. Its name
+  // is the bar under the cursor, or the whole take before one is picked; the
+  // player's rail above it is a slider too, and is named otherwise.
+  const chart = page.getByRole('slider', { name: /^Bar \d+ of|^Across the take/ }).first();
   const selectMeasure = async (n) => {
     await chart.focus({ timeout: 15000 });
     for (let i = 0; i < 40; i += 1) {
-      const now = Number(await chart.getAttribute('aria-valuenow'));
+      const now = Number((await chart.getAttribute('aria-valuenow')) ?? 0);
       if (now === n) return true;
       await page.keyboard.press(now < n ? 'ArrowRight' : 'ArrowLeft');
     }
     return false;
   };
-  if (await selectMeasure(5)) pass('the measure chart steps to measure 5 from the keyboard');
-  else fail('the measure chart could not be stepped to measure 5');
+  if (await selectMeasure(5)) pass('the take graph steps to measure 5 from the keyboard');
+  else fail('the take graph could not be stepped to measure 5');
 
-  const asked = await page
-    .getByText('What did you hear?')
-    .first()
-    .isVisible()
-    .catch(() => false);
-  if (asked) pass('a judged bar asks what actually happened');
-  else fail('a judged bar does not offer the question');
+  // The question is about the passage the verdict names, not the bar under
+  // the cursor (2026-09-29): one answer, sent for each judged bar in it.
+  const question = (await leaves()).find((l) => /^How did (bars? [\d–-]+|that) sound\?$/.test(l));
+  if (question) pass(`the result asks about its passage: "${question}"`);
+  else fail('the result does not ask how the passage sounded');
 
   const offered = await leaves();
   const words = ['On tempo', 'Rushing', 'Dragging', 'Not sure'].filter((w) =>
@@ -872,15 +871,12 @@ console.log('\n## Telling the app it got a bar wrong');
   if (words.length === 4) pass(`all four answers offered: ${words.join(' · ')}`);
   else fail(`only ${words.length} of four answers offered`);
 
-  // A bar under a written change was never judged, so there is nothing to
-  // agree or disagree with — asking would be asking a musician to adjudicate a
-  // measurement that was never made.
+  // A bar under a written change was never judged, so the graph must say so
+  // rather than read a tempo into it.
   await selectMeasure(11);
   const label = (await chart.getAttribute('aria-label')) ?? '';
-  const askedOfUntimed = (await leaves()).includes('What did you hear?');
   if (!/Not timed/i.test(label)) fail(`measure 11 read as "${label}", not "Not timed"`);
-  else if (askedOfUntimed) fail('an untimed bar offered the correction question');
-  else pass('an untimed bar does not ask the question');
+  else pass('an untimed bar reads as not timed');
 
   // Back to the judged one for the answer below.
   await selectMeasure(5);
@@ -896,6 +892,32 @@ console.log('\n## Telling the app it got a bar wrong');
   const said = (await leaves()).find((l) => /needs the backend|sample data/i.test(l));
   if (said) pass(`sending without a backend is refused in words: "${said.slice(0, 52)}…"`);
   else fail('a correction with no backend was neither sent nor refused in words');
+}
+
+/*
+ * **The result's main button practises the passage it found** (2026-09-29).
+ * The verdict names bars 5–8, and the button used to record the whole piece
+ * from bar 1. It has to open the recorder at the passage's first bar — a
+ * label that says "bars 5–8" over a take that starts at bar 1 is the same
+ * wrong fact the screen was rebuilt to stop saying.
+ */
+{
+  await open('analyses/fixture-take-1');
+  const practise = page.getByRole('button', { name: /^Practice bars? \d/ }).first();
+  const named = ((await practise.textContent({ timeout: 15000 }).catch(() => null)) ?? '').trim();
+  const first = /(\d+)/.exec(named)?.[1] ?? null;
+  if (!first) {
+    fail(`the result has no passage button (read "${named}")`);
+  } else {
+    await practise.click();
+    await waitFor('the passage button to open the recorder', async () =>
+      (await path()).endsWith('/record'),
+    );
+    const search = await page.evaluate(() => location.search);
+    if ((await path()).endsWith('/record') && new RegExp(`startAt=${first}\\b`).test(search))
+      pass(`"${named}" opens the recorder at bar ${first}`);
+    else fail(`"${named}" opened ${await path()}${search}, not the recorder at bar ${first}`);
+  }
 }
 
 console.log('\n## A take that did not come back with a verdict');
@@ -1363,12 +1385,35 @@ console.log('\n## A take that records');
   const refused = await awaitLine((l) => /silent|muted/i.test(l), 6000);
   if (refused) fail(`a take with a tone in it was called silent: "${refused}"`);
   else {
+    // **Heard before it is sent** (2026-09-29). Stop holds the take with a
+    // player and two choices; nothing is uploaded until Analyse. The player
+    // has to have opened the take — a length under its rail — or the review
+    // is a promise with nothing behind it.
+    const analyse = loud.getByRole('button', { name: /^Analyse$/ }).first();
+    const offered = await analyse.waitFor({ timeout: 10000 }).then(() => true, () => false);
+    const again = await loud.getByRole('button', { name: /^Record again$/ }).count();
+    if (offered && again > 0) pass('Stop holds the take: Analyse or Record again');
+    else fail(`after Stop: Analyse ${offered ? 'offered' : 'missing'}, Record again ${again ? 'offered' : 'missing'}`);
+    const length = await awaitLine((l) => /^\d+:\d\d$/.test(l) && l !== '0:00', 8000);
+    if (length) pass(`the held take plays back: ${length} long`);
+    else fail('the held take never loaded into its player');
+    await analyse.click({ timeout: 10000 }).catch(() => {});
+    const leave = await awaitLine((l) => l === 'Leave while it works', 8000);
+    if (leave) pass('the wait offers to let the musician leave');
+    else fail('the wait never offered a way out');
+
     // Matched on something **only the verdict screen says**. This was
     // `/measures|tempo|rushed|dragged/`, which the record screen satisfies on
     // its own — its Tempo row is right there above the button — so the check
     // passed without the take going anywhere, including under a mutation that
-    // stopped the worklet delivering a single sample.
-    const verdict = await awaitLine((l) => /across the take|bar by bar/i.test(l), 20000);
+    // stopped the worklet delivering a single sample. It was then the
+    // chart headings "Across the take" and "Bar by bar", which the screen
+    // stopped drawing on 2026-09-29; the bar card's question and the
+    // passage button are the verdict's alone.
+    const verdict = await awaitLine(
+      (l) => /^How did (bars? [\d–-]+|that) sound\?$|^Practice bars? \d/i.test(l),
+      20000,
+    );
     if (verdict) pass('a real take is accepted and comes back with a reading');
     else fail('a real take produced neither a complaint nor a result');
   }

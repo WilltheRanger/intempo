@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { failureTitle, nothingUsableTitle } from './failureTitle';
+import { failureTitle, nothingUsableDetail, nothingUsableTitle } from './failureTitle';
 
 /**
  * The one line a musician reads first on a take that produced no verdict.
@@ -60,5 +60,20 @@ describe('nothingUsableTitle', () => {
       nothingUsableTitle,
     );
     expect(new Set(titles).size).toBe(titles.length);
+  });
+});
+
+describe('nothingUsableDetail', () => {
+  it('drops the opening that repeats the heading', () => {
+    expect(nothingUsableDetail('no_onsets', 'No sound reached the microphone. Is it muted?')).toBe(
+      'Is it muted?',
+    );
+  });
+
+  it("keeps any other status's sentence, and says nothing when nothing is left", () => {
+    expect(nothingUsableDetail('not_played', 'Try again closer to your instrument.')).toBe(
+      'Try again closer to your instrument.',
+    );
+    expect(nothingUsableDetail('no_onsets', 'No sound reached the microphone.')).toBeNull();
   });
 });

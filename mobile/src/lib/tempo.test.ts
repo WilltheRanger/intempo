@@ -174,4 +174,23 @@ describe('the title over one take', () => {
   it('agrees with the sentence when it found nothing to name', () => {
     expect(formatTakeVerdict(settled, 'on')).toBe('You held the tempo');
   });
+
+  // The owner circled "You rushed in the / middle" on a phone (2026-09-29): a
+  // title that breaks leaves one word under it. 25 characters is what fits the
+  // 342 points of a 390pt phone at the result title's 31pt.
+  it('fits one line, wherever the take went wrong and whichever way', () => {
+    const titles = new Set<string>();
+    for (const direction of ['rush', 'drag'] as const) {
+      for (const bad of [[1], [2, 3], [5], [1, 2, 3, 4, 5]]) {
+        const measures = [1, 2, 3, 4, 5].map((n) => {
+          const m = bar(n, bad.includes(n) ? 'severe' : 'on');
+          return bad.includes(n) ? { ...m, direction } : m;
+        });
+        titles.add(formatTakeVerdict(measures, direction));
+      }
+    }
+    titles.add(formatTakeVerdict(settled, 'on'));
+    expect(titles.size).toBeGreaterThanOrEqual(8);
+    for (const title of titles) expect(title.length, title).toBeLessThanOrEqual(25);
+  });
 });

@@ -1,39 +1,43 @@
 /**
- * Which part of the page a take covered, as the verdict states it.
+ * The bars a take's verdict is about, as the passage its button practises:
+ * "Practice bars 5–8" (the owner, 2026-09-29, choosing this over "Record
+ * again" as the result screen's main action).
  *
- * **Practising a passage is the ordinary case, and the screen said a count.**
- * The pipeline has matched a take against the passage it covers since
- * `align_dtw` learned subsequence matching — a musician who records bars 9 to
- * 12 of a 24-bar part gets a measured verdict rather than "check you're on the
- * right piece", and `test_fragment_alignment.py` pins it. The screen then
- * reported "4 measures", which is true and answers a question nobody asked:
- * four measures *of what*, and why does the list below start at bar 9?
+ * **Read from the sentence the server wrote**, because that sentence is the
+ * only place the range reaches the app. `classification._run_verdict` builds
+ * it as `"Bar {n}"` or `"Bars {first}–{last}"` followed by what they did
+ * ("went at 104.", "ran ahead."), and the line under the title shows that same
+ * range — so a button reading the same words can never name different bars
+ * from the line above it. The two shapes are pinned in `passage.test.ts`; a
+ * sentence in any other shape ("Steady all the way through.") names no
+ * passage, and the screen keeps "Record again" alone.
  *
- * So a take that starts partway into the page names its bars. One that starts
- * at the beginning keeps the count, because "Bars 1 to 13" on a complete
- * performance is a range with nothing to contrast against and reads as a
- * caveat where there is none.
- *
- * **It never claims to know the page's length.** `TakeResult` carries the
- * measures that were analysed and no total, so "bars 9 to 12 of 24" is a
- * sentence this cannot write — and guessing the total from the take is how a
- * passage would come to be reported as a whole piece.
+ * The range this replaced — `passageLabel`, "13 bars" in a row of facts —
+ * went with that row: the chart under the verdict already names its first and
+ * last bar.
  */
 
-export function passageLabel(measures: { measure: number }[]): string | null {
-  if (measures.length === 0) {
+export interface Passage {
+  from: number;
+  to: number;
+}
+
+const RANGE = /^Bars? (\d+)(?:[–-](\d+))? /;
+
+/** The bars a verdict sentence opens with, or null when it names none. */
+export function headlinePassage(headline: string | null | undefined): Passage | null {
+  const match = headline ? RANGE.exec(headline) : null;
+  if (!match) {
     return null;
   }
-  const first = measures[0].measure;
-  const last = measures[measures.length - 1].measure;
+  const from = Number(match[1]);
+  const to = match[2] ? Number(match[2]) : from;
+  return to >= from ? { from, to } : null;
+}
 
-  // A take that opens the page. The count is what a musician expects there,
-  // and it is what this screen has always said.
-  if (first <= 1) {
-    return measures.length === 1 ? '1 bar' : `${measures.length} bars`;
-  }
-
-  // One bar is not a range, and "Bars 9 to 9" reads as a fault in the sentence
-  // rather than as a short take.
-  return first === last ? `Bar ${first}` : `Bars ${first} to ${last}`;
+/** "Practice bar 12", "Practice bars 5–8". */
+export function practiceLabel(passage: Passage): string {
+  return passage.from === passage.to
+    ? `Practice bar ${passage.from}`
+    : `Practice bars ${passage.from}–${passage.to}`;
 }

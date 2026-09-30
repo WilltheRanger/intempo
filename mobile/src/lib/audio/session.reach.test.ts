@@ -145,20 +145,20 @@ describe('the corpus this reads', () => {
   });
 
   it('found the sound paths there are', () => {
-    // Seven, today: the two players, the two metronomes, the take playback on
-    // the verdict screen, the held-take playback on the record screen, and the
-    // picked-file preview on the upload screen (redesign, 2026-09-23).
+    // Seven, today: the two players, the two metronomes, the two halves of
+    // the take player shared by the verdict screen and the review after Stop,
+    // and the picked-file preview on the upload screen (redesign, 2026-09-23).
     // Named rather than counted, so a path that *disappears* is as loud as one
     // that appears — a player deleted in a refactor and rebuilt somewhere else
     // is exactly how this check would come to be guarding nothing.
     //
-    // **`HeldTakePlayer` is the one that matters most here**, and this test is
-    // what caught it arriving. It is the only sound path that sits on a screen
-    // which also *captures*, so it is the only one where forgetting the
-    // session leaves the microphone refused rather than merely leaving a phone
-    // silent — the failure that cost six diagnoses. See the recording path in
-    // `docs/subsystems.md`, and `session.capture.test.ts` for the invariant
-    // that makes it safe.
+    // **`useTakeAudio.web.ts` is the one that matters most here**, and this
+    // test is what caught its predecessor (`HeldTakePlayer`) arriving. It
+    // plays on a screen which also *captures*, so it is the one where
+    // forgetting the session leaves the microphone refused rather than merely
+    // leaving a phone silent — the failure that cost six diagnoses. See the
+    // recording path in `docs/subsystems.md`, and `session.capture.test.ts`
+    // for the invariant that makes it safe.
     const playing = sources.filter(([, source]) => makesSound(source)).map(([p]) => p);
 
     expect(playing.sort()).toEqual([
@@ -166,9 +166,9 @@ describe('the corpus this reads', () => {
       'src/lib/metronome/click.web.ts',
       'src/lib/scorePlayer.ts',
       'src/lib/scorePlayer.web.ts',
-      'src/screens/record/HeldTakePlayer.web.tsx',
       'src/screens/upload/usePreviewPlayback.web.ts',
-      'src/screens/verdict/TakePlayback.tsx',
+      'src/screens/verdict/useTakeAudio.ts',
+      'src/screens/verdict/useTakeAudio.web.ts',
     ]);
   });
 });

@@ -1,4 +1,5 @@
 import { Image } from 'expo-image';
+import { PieceHeading } from '../../components/pieces/PieceHeading';
 import { useEffect, useRef, useState } from 'react';
 import {
   Animated,
@@ -257,9 +258,13 @@ export function PracticeHero({
                 to two at 390pt and three at 320, and a fourth would push the
                 button it belongs to under the tab bar.
               */}
-              <Text variant="displayTitle" numberOfLines={3} style={styles.title}>
-                {content.title}
-              </Text>
+              <PieceHeading
+                title={content.title}
+                variant="displayTitle"
+                catalogue="hidden"
+                numberOfLines={3}
+                style={styles.title}
+              />
               {content.meta ? (
                 <Text variant="metadataSmall" color="textSecondary" style={styles.meta}>
                   {content.meta}

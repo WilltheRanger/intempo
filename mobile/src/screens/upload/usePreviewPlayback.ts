@@ -1,8 +1,8 @@
 /**
  * The native half of `usePreviewPlayback.web.ts`: not available yet, the same
- * as `HeldTakePlayer`'s native half. The Upload screen draws no Play control
- * when `available` is false — a control that does nothing is the affordance
- * CLAUDE.md §3 rules out drawing at all.
+ * as a held take on the record screen (`heldTake.ts`). The Upload screen draws
+ * no Play control when `available` is false — a control that does nothing is
+ * the affordance CLAUDE.md §3 rules out drawing at all.
  */
 export function usePreviewPlayback(_audio: Blob | null) {
   return {

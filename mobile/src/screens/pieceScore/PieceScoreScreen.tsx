@@ -1,4 +1,5 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import { PieceHeading } from '../../components/pieces/PieceHeading';
 import { Camera, Images } from '../../components/icons';
 import { useGoBack } from '../../navigation/useGoBack';
 import { useMemo, useState } from 'react';
@@ -74,7 +75,7 @@ import {
 } from '../../lib/notation/keySignature';
 import { loadStateFor } from '../../lib/loadState';
 import { barCells, barGridSummary } from '../../lib/notation/barGrid';
-import { proposalsFor, proposalsSummary } from '../../lib/notation/proposals';
+import { proposalsFor, proposalsRowLabel } from '../../lib/notation/proposals';
 import { usePreferences } from '../../data/preferences';
 import { TrailingChevron } from '../../components/primitives/TrailingChevron';
 
@@ -490,9 +491,7 @@ export function PieceScoreScreen() {
       */}
       <View style={styles.head}>
         <BackLink label="Back to the piece" onPress={goBack} />
-        <Text variant="heroTitle" accessibilityRole="header" style={styles.title}>
-          {piece.title}
-        </Text>
+        <PieceHeading title={piece.title} variant="heroTitle" header containerStyle={styles.title} />
       </View>
 
       {showToggle ? (
@@ -512,9 +511,6 @@ export function PieceScoreScreen() {
       {showing === 'notation' && hasNotation &&
       (reading?.problemMeasures.length || proposals.length) ? (
         <View style={styles.reviewFirst}>
-          <Text variant="sectionLabel" color="textPrimary">
-            Before you practice
-          </Text>
           {reading && reading.problemMeasures.length > 0 ? (
             <Pressable
               onPress={() =>
@@ -546,7 +542,7 @@ export function PieceScoreScreen() {
               style={({ pressed }) => [styles.fixRow, pressed && styles.pressed]}
             >
               <Text variant="metadataSmall" color="textSecondary">
-                {proposalsSummary(proposals.length)}
+                {proposalsRowLabel(proposals)}
               </Text>
               <Text variant="metadataSmall" color="accentText" style={styles.fixCue}>
                 Check
@@ -1152,8 +1148,6 @@ const styles = StyleSheet.create({
   },
   title: {
     marginTop: spacing.xs,
-    fontSize: 26,
-    lineHeight: 31,
   },
   /*
     Every tappable thing on this screen acknowledges the touch. These were bare

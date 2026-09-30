@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ScoreJson, ScoreNote } from '../../data/types';
-import { proposalsFor, proposalsSummary } from './proposals';
+import { proposalsFor, proposalsRowLabel } from './proposals';
 
 /**
  * What the app is willing to say is wrong with a reading it produced.
@@ -209,13 +209,11 @@ describe('the list', () => {
   });
 });
 
-describe('proposalsSummary', () => {
-  it('says the reading is usable when there is nothing to say', () => {
-    expect(proposalsSummary(0)).toContain('Nothing looks off');
-  });
-
-  it('reads as English at one', () => {
-    expect(proposalsSummary(1)).toBe('1 thing looks off.');
-    expect(proposalsSummary(4)).toBe('4 things look off.');
+describe('proposalsRowLabel', () => {
+  it('counts bars, not things, once each', () => {
+    expect(proposalsRowLabel([{ measureNumber: 3 }])).toBe('1 bar looks off');
+    expect(
+      proposalsRowLabel([{ measureNumber: 3 }, { measureNumber: 3 }, { measureNumber: 7 }]),
+    ).toBe('2 bars look off');
   });
 });

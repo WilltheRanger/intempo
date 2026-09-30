@@ -16,9 +16,15 @@ import { barIndexAt, measureChartBars, type ChartBar } from '../../lib/verdict/m
 import { readMeasure } from '../../lib/verdict/measureReading';
 
 const HEIGHT = 68;
+/** The dot under a bar with a mistake in it. */
+const MARK = 5;
 const HALF = HEIGHT / 2;
-/** Room at the right for "sharp" and "flat", when a chart names its ends. */
-const DIRECTION_GUTTER = 40;
+/**
+ * Room at the right for what up and down mean — "faster" and "slower", or
+ * "sharp" and "flat" — so the tempo and pitch readings of the chart are the
+ * same width and switching between them does not move the bars.
+ */
+const DIRECTION_GUTTER = 50;
 
 /**
  * "Measure by measure" as one chart (`redesign/Verdict.dc.html`): a bar per
@@ -44,6 +50,8 @@ export function MeasureBars({
   describe,
   name = 'Bar',
   ends,
+  marked,
+  span,
 }: {
   measures: MeasureVerdict[];
   selected: number | null;
@@ -66,8 +74,19 @@ export function MeasureBars({
   describe?: (measure: MeasureVerdict) => string;
   /** How the slider names a bar to assistive tech: "Bar 3 of 12", "Pitch in bar 3 of 12". */
   name?: string;
-  /** What up and down mean, beside the chart — "sharp" and "flat". */
+  /** What up and down mean, beside the chart — "faster" and "slower", "sharp" and "flat". */
   ends?: { up: string; down: string };
+  /**
+   * Bars with something else wrong in them — a note heard as another, an
+   * entrance after a miscounted rest (`mistakeBars`): a dot under each. The
+   * bar's card says what it was.
+   */
+  marked?: ReadonlySet<number>;
+  /**
+   * The passage the selected bar belongs to (`lib/verdict/barPassage.ts`),
+   * outlined as one: a tap picks out bars 5–8, not bar 7 alone.
+   */
+  span?: { from: number; to: number } | null;
 }) {
   const bars = useMemo(
     () =>
@@ -130,6 +149,11 @@ export function MeasureBars({
   }
 
   const step = bars.length > 0 ? width / bars.length : 0;
+  // One outline: around the passage when there is one, else the bar alone.
+  const spanFrom = span ? bars.findIndex((bar) => bar.measure === span.from) : -1;
+  const spanTo = span ? bars.findIndex((bar) => bar.measure === span.to) : -1;
+  const outlineFrom = spanFrom >= 0 && spanTo >= spanFrom ? spanFrom : at;
+  const outlineTo = spanFrom >= 0 && spanTo >= spanFrom ? spanTo : at;
   const barWidth = chartBarWidth(step);
   const current = at >= 0 ? measures[at] : null;
 
@@ -147,7 +171,7 @@ export function MeasureBars({
                   ? describe(current)
                   : (barTempo(current, targetBpm, tempoBeatUnit, tolerance)?.spoken ??
                     readMeasure(current).label)
-              }`
+              }${marked?.has(current.measure) ? ', and a mistake to look at' : ''}`
             : 'Bar by bar'
         }
         aria-valuemin={1}
@@ -190,12 +214,15 @@ export function MeasureBars({
                 // against the chart, and a static wrapper is a zero-height box
                 // that `bottom: HALF` would resolve against instead.
                 <Fragment key={bar.measure}>
-                  {index === at ? (
+                  {index === outlineFrom ? (
                     <View
                       pointerEvents="none"
                       style={[
                         styles.outline,
-                        { left: left - 3, width: barWidth + 6 },
+                        {
+                          left: left - 3,
+                          width: (outlineTo - outlineFrom) * step + barWidth + 6,
+                        },
                       ]}
                     />
                   ) : null}
@@ -217,6 +244,20 @@ export function MeasureBars({
             })
           : null}
       </View>
+      {marked && marked.size > 0 && step > 0 ? (
+        // A row of its own under the chart rather than inside it, where a bar
+        // drawn down to the floor would cover it.
+        <View style={[styles.marks, ends ? styles.endsShort : null]} pointerEvents="none">
+          {bars.map((bar, index) =>
+            marked.has(bar.measure) ? (
+              <View
+                key={bar.measure}
+                style={[styles.mark, { left: index * step + step / 2 - MARK / 2 }]}
+              />
+            ) : null,
+          )}
+        </View>
+      ) : null}
       <View style={[styles.ends, ends ? styles.endsShort : null]}>
         <Text variant="caption" color="textTertiary" style={styles.number}>
           Bar {bars[0]?.measure ?? ''}
@@ -262,6 +303,18 @@ const styles = StyleSheet.create({
     borderWidth: BORDER_WIDTH,
     borderColor: colors.chartRule,
     borderRadius: 4,
+  },
+  marks: {
+    height: MARK,
+    marginTop: 6,
+  },
+  mark: {
+    position: 'absolute',
+    top: 0,
+    width: MARK,
+    height: MARK,
+    borderRadius: MARK / 2,
+    backgroundColor: colors.textSecondary,
   },
   ends: {
     flexDirection: 'row',

@@ -19,7 +19,7 @@
  * Chromium: `useAudioPlayer({ uri })` given a `blob:` URL creates no player and
  * never fetches it — nothing in `performance.getEntriesByType('resource')` — so
  * the control flipped nothing. It works for the verdict screen's take because
- * that is a signed https URL. `HeldTakePlayer.web.tsx` uses the platform's own
+ * that is a signed https URL. `useTakeAudio.web.ts` uses the platform's own
  * element instead.
  */
 

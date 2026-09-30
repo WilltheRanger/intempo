@@ -1,49 +1,31 @@
 import { describe, expect, it } from 'vitest';
 
-import { passageLabel } from './passage';
+import { headlinePassage, practiceLabel } from './passage';
 
-/**
- * What the verdict says about which part of the page was played.
- *
- * The pipeline measures a passage rather than refusing it, which makes this the
- * ordinary case rather than an edge one: a musician working on bars 9 to 12
- * records bars 9 to 12.
- */
-const bars = (...numbers: number[]) => numbers.map((measure) => ({ measure }));
-
-describe('passageLabel', () => {
-  it('names the bars when the take starts partway into the page', () => {
-    expect(passageLabel(bars(9, 10, 11, 12))).toBe('Bars 9 to 12');
+describe('headlinePassage', () => {
+  it('reads the two shapes the server writes', () => {
+    expect(headlinePassage('Bars 5–8 went at 104.')).toEqual({ from: 5, to: 8 });
+    expect(headlinePassage('Bar 12 fell behind.')).toEqual({ from: 12, to: 12 });
+    expect(headlinePassage('Bars 13–25 ran ahead. Then you rushed the end.')).toEqual({
+      from: 13,
+      to: 25,
+    });
   });
 
-  /**
-   * "Bars 1 to 13" on a complete performance is a range with nothing to
-   * contrast against, and reads as a caveat where there is none.
-   */
-  it('keeps the count for a take that opens the page', () => {
-    expect(passageLabel(bars(1, 2, 3))).toBe('3 bars');
-    expect(passageLabel(bars(1))).toBe('1 bar');
+  it('names no passage for a sentence that is not about bars', () => {
+    expect(headlinePassage('Steady all the way through.')).toBeNull();
+    expect(headlinePassage('')).toBeNull();
+    expect(headlinePassage(null)).toBeNull();
   });
 
-  it('does not write a range for one bar', () => {
-    // "Bars 9 to 9" reads as a fault in the sentence rather than a short take.
-    expect(passageLabel(bars(9))).toBe('Bar 9');
+  it('does not read a number that is not at the start', () => {
+    expect(headlinePassage('Most bars were steady; bar 4 ran ahead.')).toBeNull();
   });
+});
 
-  it('says nothing about a take with no measures', () => {
-    // Every failure state — silence, a refused alignment — arrives this way,
-    // and those screens say what happened in their own words.
-    expect(passageLabel([])).toBeNull();
-  });
-
-  /**
-   * It never claims to know the page's length. `TakeResult` carries the
-   * measures analysed and no total, so "of 24" is a sentence this cannot
-   * write — and guessing it from the take is how a passage comes to be
-   * reported as a whole piece.
-   */
-  it('never states a total it was not given', () => {
-    expect(passageLabel(bars(9, 10, 11, 12))).not.toContain(' of ');
-    expect(passageLabel(bars(1, 2, 3))).not.toContain(' of ');
+describe('practiceLabel', () => {
+  it('says one bar as a bar and a range as bars', () => {
+    expect(practiceLabel({ from: 12, to: 12 })).toBe('Practice bar 12');
+    expect(practiceLabel({ from: 5, to: 8 })).toBe('Practice bars 5–8');
   });
 });

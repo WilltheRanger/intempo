@@ -116,20 +116,6 @@ export function progressFor(stage: string | null | undefined): WaitProgress {
 }
 
 /**
- * The elapsed clock, as `m:ss`.
- *
- * Present because it is the one number that is unarguably true while a single
- * long stage runs, and because a musician who has waited three minutes should
- * be able to see that they have.
- */
-export function elapsedLabel(ms: number): string {
-  const total = Math.max(0, Math.floor(ms / 1000));
-  const minutes = Math.floor(total / 60);
-  const seconds = total % 60;
-  return `${minutes}:${String(seconds).padStart(2, '0')}`;
-}
-
-/**
  * Whether a run has gone on long enough to say so.
  *
  * **Not a failure, and it must not read as one.** The deployed instance is on
