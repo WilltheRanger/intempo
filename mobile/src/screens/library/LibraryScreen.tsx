@@ -431,6 +431,9 @@ function GroupHeading({ label, count }: { label: string; count: number }) {
   );
 }
 
+/** The space between two tiles on a shelf. */
+const SHELF_GUTTER = spacing.md;
+
 const styles = StyleSheet.create({
   heading: {
     flexDirection: 'row',
@@ -466,13 +469,19 @@ const styles = StyleSheet.create({
     // the rows above and below are different ones, so the vertical rhythm has
     // to be the louder of the two.
     rowGap: 22,
-    columnGap: spacing.md,
+    // The column gap is half on each side of every slot, with the shelf pulled
+    // out by the same half so the outer edges still sit on the page margin.
+    marginHorizontal: -SHELF_GUTTER / 2,
   },
   slot: {
-    // Two across, with the column gap taken out of the pair rather than out of
-    // each tile — `flexBasis` of exactly half would overflow by the gap.
-    flexBasis: '48%',
-    flexGrow: 0,
+    // **Exactly half, with the gap inside it**, so two always fit. This was
+    // `flexBasis: '48%'` beside a fixed 12-point `columnGap`, which fits two
+    // only while 4% of the shelf is at least 12 points — a screen 348 wide.
+    // Below that the second tile wrapped and every row was one tile and half a
+    // screen of nothing: measured at 320 (iPhone SE, first generation) and 344
+    // (Galaxy Z Fold's cover screen), 2026-09-30.
+    width: '50%',
+    paddingHorizontal: SHELF_GUTTER / 2,
     minWidth: 0,
   },
 });

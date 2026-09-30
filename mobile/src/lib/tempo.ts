@@ -233,6 +233,9 @@ export function tempoDisplayRange(
   };
 }
 
+/** A space a wrapping line may not break at. */
+const NBSP = '\u00a0';
+
 /**
  * "Working at 76  ·  marked 92".
  *
@@ -250,12 +253,17 @@ export function formatWorkingTempo(
   markedBpm: number | null,
   unit?: TempoBeatUnit | null,
 ): string {
+  // **Unbreakable spaces inside each figure.** This rides at the end of a
+  // metadata line that wraps (Today's hero), and on a narrow phone it wrapped
+  // between the number and its unit — "96" at the end of one line, "BPM"
+  // alone on the next (measured at 320 wide, 2026-09-30). The number, its unit
+  // and "marked" with its number each move as one.
   const working = displayTempoBpm(workingBpm, unit);
-  const label = tempoUnitLabel(unit);
+  const label = tempoUnitLabel(unit).replace(/ /g, NBSP);
   if (markedBpm === null || markedBpm === workingBpm) {
-    return `${working} ${label}`;
+    return `${working}${NBSP}${label}`;
   }
-  return `${working} ${label}  ·  marked ${displayTempoBpm(markedBpm, unit)}`;
+  return `${working}${NBSP}${label}  ·  marked${NBSP}${displayTempoBpm(markedBpm, unit)}`;
 }
 
 const VERDICT_LABELS: Record<Verdict, string> = {

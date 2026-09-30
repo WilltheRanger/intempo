@@ -115,7 +115,14 @@ describe('printed tempo units', () => {
 
   it('keeps old scores on the quarter-note display they already used', () => {
     expect(formatTempo(80, null)).toBe('80 BPM');
-    expect(formatWorkingTempo(76, 92)).toBe('76 BPM  ·  marked 92');
+    expect(formatWorkingTempo(76, 92)).toBe('76\u00a0BPM  ·  marked\u00a092');
+  });
+
+  it('never lets a wrapping line part a tempo from its unit', () => {
+    expect(formatWorkingTempo(96, null)).toBe('96\u00a0BPM');
+    expect(formatWorkingTempo(60, 60, 'dotted_quarter')).toBe(
+      '40\u00a0dotted-quarter-note\u00a0BPM',
+    );
   });
 
   it('derives safe displayed bounds from the quarter-BPM contract', () => {
