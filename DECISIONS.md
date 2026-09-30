@@ -1,5 +1,71 @@
 # InTempo Decisions
 
+## 2026-09-30 — A session's expiry is read in the device's time
+
+**Context:** the live auth logs showed one account's client sending 35 token refreshes in six seconds, three times in half an hour. Each burst ended in a 429 from Supabase, and each was followed by a fresh password sign-in.
+
+The auth client (`@supabase/auth-js` 2.112) behaves like this:
+- It stores the server's `expires_at`.
+- It calls a session expired when that is within 90 seconds of `Date.now()`, the device's time.
+- When a refused refresh leaves a token that looks expired, it removes the session.
+
+So on a clock an hour fast, every request refreshes until it is refused, and the musician is signed out. Reproduced against the real client: 40 requests made 31 refreshes, and the last 10 had no session. On a clock an hour slow, it fails the other way: expired tokens reach the backend, which answers 401, and `apiFetch` signs out on 401. A phone on manual time across a clock change is an hour out.
+
+**Decision:** `data/auth/clockSkew.ts` works in two places:
+- **Measuring:** `clockAwareFetch` is the Supabase client's `global.fetch`. It reads the difference between the clocks off every auth response that carries a session. The server says when it issued the token (`expires_at - expires_in`), and the device knows when the response arrived.
+- **Correcting:** `clockAwareStore` wraps `sessionStore`. It hands the client each stored session with `expires_at` moved into the device's time. The server's own value is kept alongside, so a session the client writes back is never corrected twice. What is written to disk is unchanged.
+
+**Nothing changes on a clock within a minute of the server's**, which is every clock set automatically.
+
+After a restart the difference is unknown, so the first request refreshes once, and that response teaches it again. The tests drive the real auth client on clocks an hour fast, an hour slow and three hours fast. Each keeps one session with no refreshes, and still refreshes just before the server's real expiry.
+
+**Alternatives considered:**
+- **Telling the musician their clock is wrong:** it still storms and still signs out; it only explains it.
+- **Patching the library, or wrapping `Date.now`:** that means owning a fork of an auth dependency, or changing time for the whole app.
+- **Measuring from the `Date` response header:** on the web it is not readable cross-origin unless Supabase exposes it.
+
+**Trade-offs accepted:**
+- One extra refresh per launch on a wrong clock.
+- The difference is measured to within the request's flight time, which the one-minute tolerance and the 90-second margin absorb.
+- A session that arrives in an emailed link carries no response to measure from. It refreshes once, as after a restart.
+
+---
+
+## 2026-09-30 — The note row shows as many notes as fit, keeping the ones off pitch
+
+**Context:** the pitch-by-note row gave every written note an equal column across the row's width. The owner's bass takes read six or seven notes, and the row was built against those. A violin study in G across two octaves reads about twenty-two. At 390 points that gave 13-point columns, and at 320 it gave 10-point columns. The note names ran together ("GAB♭BCC♯D…") and a finger covered three or four notes.
+
+**Decision:** the owner chose **fit to the width**. A column is never narrower than `NOTE_COLUMN_MIN` (30 points). That holds 9 notes at 390 and 7 at 320, so the bass takes are unchanged. `fitNoteMarks` fills the columns in this order:
+- the notes the line names, and a tapped note;
+- then every other note that is off pitch, by how far;
+- then the in-tune notes read most often.
+
+The row stays low to high. One line under it says what was left out: "The other 13 were in tune". On Insights that line joins the existing caption: "Flat in all 7 takes. The other 13 run in tune."
+
+**Alternatives considered:** scrolling the row sideways at a fixed column width. That keeps every note, but a red needle can sit out of view, and it puts a horizontal scroll inside a vertical one.
+
+**Trade-offs accepted:**
+- The in-tune notes read least are not drawn; the line says how many and that they were in tune.
+- If more notes are off than the row holds, the ones off least are dropped, and the line says "N more notes not shown" rather than calling them in tune.
+- Two octaves of a letter can both be shown under the same name ("E♭ … E♭"). Low to high still orders them, and the sentence above says "low" or "high".
+
+---
+
+## 2026-09-30 — The mark is "Settle", and the app opens on it
+
+**Context:** the owner, of the half note and gold barline drawn on 2026-09-06: "new less generic logo", and of the account-loading screen ("Opening your practice space", two sentences and a spinner): "a new better screen". Four marks were mocked (a settling line, a metronome, an "iT" monogram, a ball landing on the downbeat) and two opening screens (ink like the icon, or ivory with a bar); the owner chose **A · Settle** and **S1 · Ink**.
+
+**Decision:**
+- **The mark** is a line that swings — far above a band, below it, above, a little below — each swing smaller, settling on the band's centre in a gold dot: the picture the app draws of a take. Ivory line and gold dot on ink, as the icon was.
+- **One geometry, two renderers.** `mobile/src/design/brandMark.json` holds the curve, band and dot. `tools/draw-brand-assets.py` draws the six icon files from it with Pillow; `components/brand/BrandMark.tsx` draws it with SVG. The icon and the screen cannot drift.
+- **The opening screen** (`screens/account/OpeningScreen.tsx`) is the icon, opening: ink ground, the band fading up, the line drawing itself (900 ms), the dot landing, then beating in size at sixty to the minute while the account loads. The name under it; "Waking up…" only after three seconds. Reduced motion shows the mark at rest. The failure state is unchanged.
+
+**Alternatives considered:** a metronome (the fastest read, and the commonest icon of its kind); a monogram (quiet, but says nothing about what the app does); keeping the words on the opening screen (most opens are quick, and a sentence read in half a second is one nobody needed).
+
+**Trade-offs accepted:** the web page is ivory for the moment before the app's script runs, so a signed-in open goes ivory, then ink, then the app; `index.html`'s ground is pinned to the app's and guarded by `flatten-vendor-assets.mjs`, and changing it is a separate call. Native builds keep Expo's default splash until one is configured. The pulse re-renders the mark about thirty times a second while loading, which is only ever this screen.
+
+---
+
 ## 2026-09-30 — Pitch by written note, on the result and on Insights; note lengths as held lengths
 
 **Context:** the owner asked what other musical information the app could give, and chose "Note lengths + pitch by note" and dynamics against the page. The analysis already measured every note's pitch (`intonation.note_cents`) and threw all but each bar's median away, and it already grouped the take by written note value — as position error — for a finding no screen showed.

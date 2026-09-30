@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
 import type { NoteIntonation, TakeIntonation } from '../../data/types';
-import { namedMarks, noteDetail, noteMarks, notesLine, spell, takeNoteMarks } from './pitchByNote';
+import {
+  NOTE_COLUMN_MIN,
+  fitNoteMarks,
+  namedMarks,
+  noteDetail,
+  noteMarks,
+  notesLine,
+  otherNotesLine,
+  spell,
+  takeNoteMarks,
+} from './pitchByNote';
 
 const BANDS = { inTuneCents: 15, slightCents: 30 };
 
@@ -160,5 +170,101 @@ describe('noteDetail', () => {
     const marks = noteMarks([note('G2', 43, -20, 3), note('G3', 55, 0)], BANDS);
 
     expect(noteDetail(marks[0])).toBe('Your 3 low Gs were a little flat');
+  });
+});
+
+describe('fitNoteMarks', () => {
+  /**
+   * A violin study in G, two octaves and its accidentals: twenty-two notes,
+   * three of them off. At a phone's width the row held them ten points apart
+   * with their names run together (2026-09-30).
+   */
+  const STUDY = noteMarks(
+    [
+      note('G3', 55, 4, 12),
+      note('A3', 57, -3, 9),
+      note('Bb3', 58, 5, 5),
+      note('B3', 59, 3, 11),
+      note('C4', 60, 4, 12),
+      note('C#4', 61, -32, 7),
+      note('D4', 62, -3, 12),
+      note('Eb4', 63, 19, 11),
+      note('E4', 64, 3, 6),
+      note('F4', 65, 5, 6),
+      note('F#4', 66, -17, 10),
+      note('G4', 67, -2, 5),
+      note('A4', 69, -4, 4),
+      note('Bb4', 70, -2, 4),
+      note('B4', 71, -2, 11),
+      note('C5', 72, -4, 10),
+      note('D5', 74, -2, 11),
+      note('Eb5', 75, 24, 9),
+      note('E5', 76, -2, 4),
+      note('F#5', 78, -4, 11),
+      note('G5', 79, -6, 8),
+      note('A5', 81, -4, 8),
+    ],
+    BANDS,
+  );
+
+  it('leaves a row that fits alone', () => {
+    const marks = STUDY.slice(0, 6);
+    expect(fitNoteMarks(marks, 6)).toEqual({ shown: marks, hidden: 0, hiddenInTune: true });
+  });
+
+  it('keeps every note off pitch and fills the rest with the notes read most', () => {
+    // Four off; then G3, C4, D4 (twelve readings) and B3, B4 (eleven — the
+    // lower first on a tie).
+    const fitted = fitNoteMarks(STUDY, 9);
+    expect(fitted.shown.map((m) => m.midi)).toEqual([55, 59, 60, 61, 62, 63, 66, 71, 75]);
+    expect(fitted.hidden).toBe(13);
+    expect(fitted.hiddenInTune).toBe(true);
+  });
+
+  it('shows them low to high, not in the order they were chosen', () => {
+    const midis = fitNoteMarks(STUDY, 5).shown.map((m) => m.midi);
+    expect(midis).toEqual([...midis].sort((a, b) => a - b));
+  });
+
+  it('keeps the notes it is told to, before any other', () => {
+    // A tapped in-tune note stays when the window narrows.
+    const fitted = fitNoteMarks(STUDY, 4, [81]);
+    expect(fitted.shown.map((m) => m.midi)).toEqual([61, 63, 75, 81]);
+    expect(fitted.hiddenInTune).toBe(false);
+  });
+
+  it('drops the notes off least when even they do not fit, and says so', () => {
+    const fitted = fitNoteMarks(STUDY, 2);
+    expect(fitted.shown.map((m) => m.midi)).toEqual([61, 75]);
+    expect(fitted.hiddenInTune).toBe(false);
+  });
+
+  it('always shows one note, however narrow', () => {
+    expect(fitNoteMarks(STUDY, 0).shown).toHaveLength(1);
+  });
+
+  it('fits the columns a 390-point phone has', () => {
+    // The row's width there, less the words at its right edge.
+    expect(Math.floor(294 / NOTE_COLUMN_MIN)).toBe(9);
+  });
+});
+
+describe('otherNotesLine', () => {
+  it('says nothing when every note is shown', () => {
+    expect(otherNotesLine({ shown: [], hidden: 0, hiddenInTune: true }, 'take')).toBeNull();
+  });
+
+  it('says the rest were in tune, in the tense of the row', () => {
+    const fitted = { shown: [], hidden: 13, hiddenInTune: true };
+    expect(otherNotesLine(fitted, 'take')).toBe('The other 13 were in tune');
+    expect(otherNotesLine(fitted, 'habit')).toBe('The other 13 run in tune');
+    expect(otherNotesLine({ ...fitted, hidden: 1 }, 'take')).toBe('The other one was in tune');
+    expect(otherNotesLine({ ...fitted, hidden: 1 }, 'habit')).toBe('The other one runs in tune');
+  });
+
+  it('does not call a hidden note in tune when it was not', () => {
+    const fitted = { shown: [], hidden: 3, hiddenInTune: false };
+    expect(otherNotesLine(fitted, 'take')).toBe('3 more notes not shown');
+    expect(otherNotesLine({ ...fitted, hidden: 1 }, 'take')).toBe('One more note not shown');
   });
 });

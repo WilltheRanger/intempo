@@ -3,42 +3,35 @@
 
     tools/draw-brand-assets.py [--check]
 
-Every icon this project ships was the Expo starter's blue chevron until now.
-`check-brand-assets.py` is the guard that says so; this is the thing that
-answers it.
-
 **A script rather than six exported PNGs**, for the reason everything else here
 is a script: an icon that exists only as a binary cannot be adjusted without
-whatever tool drew it, and nobody can see what it is made of. Here the mark is
-~30 lines of geometry, the palette is read from the design tokens' own values,
-and re-running it reproduces the files byte-for-byte.
+whatever tool drew it, and nobody can see what it is made of. The mark's
+geometry lives in `mobile/src/design/brandMark.json`, which the app's
+`BrandMark` component draws from too, so the icon on the home screen and the
+mark on the opening screen cannot drift apart. Re-running this reproduces the
+files byte-for-byte.
 
-**The mark.** A half note, set in Bravura — the same SMuFL font the app
-engraves real scores with, so the icon is drawn from the product rather than
-about it — followed by a gold barline. The barline is not decoration: without
-it the mark is a tall shape in the left half of a square and the eye reads the
-empty right half as a mistake. It also says what the app is for, which is a
-note measured against a bar rather than a note on its own.
-
-**It was a small gold square first, and that was a bug.** A dot to the right of
-a notehead, level with it, is not a beat mark — it is an augmentation dot, and
-the icon read "dotted half note" to anyone who reads music. It also vanished at
-29 points. A barline is the same compositional job, is unambiguous, and is the
-one part of the mark that still holds together on a home screen.
+**The mark: "Settle"** (the owner, 2026-09-30, over a metronome, a monogram and
+a falling ball, after calling the half note and barline "generic"). A line
+that swings — far above the band, below it, above, a little below — each swing
+smaller than the last, and settles on the band's centre in a gold dot. It is the picture the app draws of a take: the tempo line over the
+on-tempo band. Nothing else on a home screen looks like it, and it says what
+the app is for.
 
 **Ink ground, chosen deliberately.** The app's own page is warm ivory, and an
 ivory icon disappears against a light wallpaper — the one place an icon has to
-work. So the icon inverts the app: ink ground, ivory mark. Owner's call,
-2026-09-06.
+work. So the icon inverts the app: ink ground, ivory line, gold dot. Owner's
+call, 2026-09-06, kept.
 
-**Engraving proportions are bent on purpose.** A real stem is 3.5 staff spaces
-and hair-thin; at 29 points on a home screen it vanishes. The stem here is 2.6
-spaces and about a third thicker. Everything else — the notehead's angle, its
-1.18:1 width, the way the stem meets its right edge — is what Bravura draws.
+**Weight for the home screen, not the page.** At 29 points the mark is about
+sixty pixels wide; the line is 6.5% of it so it stays a line there, and the
+band and centre line are faint enough to recede at that size and still frame
+the line at 1024.
 """
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -60,116 +53,114 @@ from backend_python import use_backend_python  # noqa: E402
 
 use_backend_python()
 
-from PIL import Image, ImageDraw, ImageFont  # noqa: E402
+from PIL import Image, ImageDraw  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 MOBILE = ROOT / "mobile"
-BRAVURA = MOBILE / "assets" / "fonts" / "Bravura.otf"
+#: The mark's geometry, shared with `mobile/src/components/brand/BrandMark.tsx`.
+GEOMETRY = MOBILE / "src" / "design" / "brandMark.json"
 
 #: From `mobile/src/design/colors.ts`. The only place these may be retyped.
 INK = (0x14, 0x11, 0x0E)
 IVORY = (0xF7, 0xF2, 0xE9)
 GOLD = (0x9A, 0x7B, 0x4F)
 
-#: U+E0A3 noteheadHalf. The hollow head, which is what an engraver draws for a
-#: note held longer than a beat — and it stays readable at 29pt because the
-#: counter is a third of its width, not a hairline.
-NOTEHEAD_HALF = ""
-
-#: Supersampling factor. Bravura is an outline font and Pillow has no vector
-#: pipeline, so everything is drawn large and reduced with Lanczos.
+#: Supersampling factor. Pillow has no vector pipeline, so everything is drawn
+#: large and reduced with Lanczos.
 SS = 4
 
-# Geometry, in staff spaces — the unit engraving is measured in.
-STEM_LENGTH = 2.6
-STEM_WIDTH = 0.19
-BARLINE_WIDTH = 0.19
-BARLINE_GAP = 1.05
+#: Points per cubic segment when the curve is flattened into a polyline.
+STEPS = 96
 
 
-def draw_mark(size: int, fill: tuple[int, int, int], rule: tuple[int, int, int] | None,
-              coverage: float) -> Image.Image:
-    """The mark alone, on transparency, optically centred in a `size` square.
+def _cubic(p0, p1, p2, p3, steps):
+    for i in range(steps + 1):
+        t = i / steps
+        u = 1 - t
+        yield (
+            u**3 * p0[0] + 3 * u * u * t * p1[0] + 3 * u * t * t * p2[0] + t**3 * p3[0],
+            u**3 * p0[1] + 3 * u * u * t * p1[1] + 3 * u * t * t * p2[1] + t**3 * p3[1],
+        )
 
-    `coverage` is the fraction of the square the mark's longer side occupies.
-    It differs per asset: a favicon needs the mark bigger because there is no
+
+def _curve_points(geometry: dict) -> list[tuple[float, float]]:
+    points: list[tuple[float, float]] = []
+    here = tuple(geometry["curve"]["start"])
+    for seg in geometry["curve"]["segments"]:
+        c1, c2, end = (seg[0], seg[1]), (seg[2], seg[3]), (seg[4], seg[5])
+        part = list(_cubic(here, c1, c2, end, STEPS))
+        points.extend(part if not points else part[1:])
+        here = end
+    return points
+
+
+def draw_mark(size: int, line: tuple[int, int, int], dot: tuple[int, int, int] | None,
+              coverage: float, frame: bool = True) -> Image.Image:
+    """The mark alone, on transparency, centred in a `size` square.
+
+    `coverage` is the fraction of the square the mark's width occupies. It
+    differs per asset: a favicon needs the mark bigger because there is no
     room for margin, an Android foreground needs it smaller because the
-    launcher crops to a circle inside the middle two thirds.
+    launcher crops to a circle inside the middle two thirds. `frame` draws the
+    band and its centre line; the themed Android icon is a single tint, where
+    a faint band would only be a smudge.
     """
+    geometry = json.loads(GEOMETRY.read_text())
+    band = geometry["band"]
     big = size * SS
+    # One design unit, from the band's width — the mark's widest part.
+    unit = big * coverage / band["width"]
+    offset = (big - geometry["viewBox"] * unit) / 2
+
+    def at(x: float, y: float) -> tuple[float, float]:
+        return (offset + x * unit, offset + y * unit)
+
     canvas = Image.new("RGBA", (big, big), (0, 0, 0, 0))
 
-    # One staff space, solved from the composition's own height so the mark
-    # fills `coverage` of the square however the geometry above is retuned.
-    mark_h = STEM_LENGTH + 0.5
-    mark_w = 1.18 + BARLINE_GAP + BARLINE_WIDTH
-    space = (big * coverage) / max(mark_h, mark_w)
-
-    # Bravura's em is four staff spaces, so a glyph asked for at `space * 4`
-    # should draw one space tall. "Should" is not a thing to build on: the head
-    # is measured at a probe size and the font resized by the ratio, so the
-    # notehead is exactly one staff space whatever the font's own metrics say.
-    probe_size = max(8, int(space * 4))
-    probe_font = ImageFont.truetype(str(BRAVURA), probe_size)
-    probe = Image.new("L", (probe_size * 3, probe_size * 3), 0)
-    ImageDraw.Draw(probe).text(
-        (probe_size * 1.5, probe_size * 1.5),
-        NOTEHEAD_HALF,
-        font=probe_font,
-        fill=255,
-        anchor="mm",
-    )
-    box = probe.getbbox()
-    font = ImageFont.truetype(str(BRAVURA), max(8, round(probe_size * space / (box[3] - box[1]))))
-
-    head = Image.new("L", (int(space * 8), int(space * 8)), 0)
-    ImageDraw.Draw(head).text(
-        (int(space * 4), int(space * 4)), NOTEHEAD_HALF, font=font, fill=255, anchor="mm"
-    )
-    box = head.getbbox()
-    head = head.crop(box)
-    head_w, head_h = head.size
-
-    stem_w = max(1, round(space * STEM_WIDTH))
-    stem_h = round(space * STEM_LENGTH)
-    rule_px = max(1, round(space * BARLINE_WIDTH))
-    gap_px = round(space * BARLINE_GAP)
-
-    total_w = head_w + gap_px + rule_px
-    total_h = stem_h + head_h // 2
-    left = (big - total_w) // 2
-    top = (big - total_h) // 2
-
-    # The head sits at the foot of the stem; the stem rises off its right edge,
-    # which is where a stem goes on a note below the middle line.
-    head_x = left
-    head_y = top + stem_h - head_h // 2
-    layer = Image.new("L", (big, big), 0)
-    layer.paste(head, (head_x, head_y), head)
-
-    pen = ImageDraw.Draw(layer)
-    stem_x = head_x + head_w - stem_w
-    pen.rectangle(
-        [stem_x, top, stem_x + stem_w - 1, head_y + head_h // 2],
-        fill=255,
-    )
-
-    coloured = Image.new("RGBA", (big, big), (*fill, 0))
-    coloured.putalpha(layer)
-    canvas.alpha_composite(coloured)
-
-    if rule is not None:
-        # Top of the stem to the foot of the notehead — the height the note
-        # itself occupies, so the two read as one measure rather than as a mark
-        # and a stripe.
-        rule_layer = Image.new("L", (big, big), 0)
-        rule_x = head_x + head_w + gap_px
-        ImageDraw.Draw(rule_layer).rectangle(
-            [rule_x, top, rule_x + rule_px - 1, head_y + head_h - 1], fill=255
-        )
-        tinted = Image.new("RGBA", (big, big), (*rule, 0))
-        tinted.putalpha(rule_layer)
+    def layer(paint, colour: tuple[int, int, int], opacity: float = 1.0) -> None:
+        mask = Image.new("L", (big, big), 0)
+        paint(ImageDraw.Draw(mask))
+        if opacity < 1.0:
+            mask = mask.point(lambda v: round(v * opacity))
+        tinted = Image.new("RGBA", (big, big), (*colour, 0))
+        tinted.putalpha(mask)
         canvas.alpha_composite(tinted)
+
+    if frame:
+        x0, y0 = at(band["x"], band["y"])
+        x1, y1 = at(band["x"] + band["width"], band["y"] + band["height"])
+        layer(lambda pen: pen.rectangle([x0, y0, x1, y1], fill=255), line, band["opacity"])
+        centre = geometry["centre"]
+        cy = at(0, centre["y"])[1]
+        half = centre["width"] * unit / 2
+        layer(lambda pen: pen.rectangle([x0, cy - half, x1, cy + half], fill=255), line,
+              centre["opacity"])
+
+    width = geometry["curve"]["width"] * unit
+    points = [at(x, y) for x, y in _curve_points(geometry)]
+
+    def stroke(pen):
+        # **A round brush stamped along the curve**, not `line(width=…)`:
+        # Pillow draws a wide polyline as a quad per segment and the joins
+        # leave hairline notches along every bend, visible on the 1024 icon.
+        # Stamps a pixel apart make a clean round stroke, caps and all.
+        r = width / 2
+        for (x0, y0), (x1, y1) in zip(points, points[1:]):
+            steps = max(1, int(((x1 - x0) ** 2 + (y1 - y0) ** 2) ** 0.5))
+            for k in range(steps):
+                x = x0 + (x1 - x0) * k / steps
+                y = y0 + (y1 - y0) * k / steps
+                pen.ellipse([x - r, y - r, x + r, y + r], fill=255)
+        x, y = points[-1]
+        pen.ellipse([x - r, y - r, x + r, y + r], fill=255)
+
+    layer(stroke, line)
+
+    if dot is not None:
+        spot = geometry["dot"]
+        cx, cy = at(spot["x"], spot["y"])
+        r = spot["r"] * unit
+        layer(lambda pen: pen.ellipse([cx - r, cy - r, cx + r, cy + r], fill=255), dot)
 
     return canvas.resize((size, size), Image.LANCZOS)
 
@@ -187,31 +178,31 @@ def build() -> dict[Path, Image.Image]:
     return {
         # The App Store icon. iOS applies its own mask, so it is drawn square
         # and full-bleed; RGB because Connect refuses alpha.
-        MOBILE / "assets" / "icon.png": on_ink(1024, 0.60, opaque=True),
+        MOBILE / "assets" / "icon.png": on_ink(1024, 0.66, opaque=True),
         # Byte-identical by construction, and a separate deliverable: this is
         # what a phone puts on the home screen when the web app is installed.
-        MOBILE / "public" / "app-icon.png": on_ink(1024, 0.60, opaque=True),
+        MOBILE / "public" / "app-icon.png": on_ink(1024, 0.66, opaque=True),
         # 48px in a browser tab. Less margin, or the mark is four grey pixels.
-        MOBILE / "assets" / "favicon.png": on_ink(48, 0.76, opaque=False),
+        MOBILE / "assets" / "favicon.png": on_ink(48, 0.8, opaque=False),
         # Android crops the foreground to shapes inside the middle two thirds,
         # so the mark has to live well inside the safe zone.
-        MOBILE / "assets" / "android-icon-foreground.png": draw_mark(512, IVORY, GOLD, 0.42),
+        MOBILE / "assets" / "android-icon-foreground.png": draw_mark(512, IVORY, GOLD, 0.5),
         MOBILE / "assets" / "android-icon-background.png": Image.new(
             "RGBA", (512, 512), (*INK, 255)
         ),
         # The themed icon: Android tints the silhouette itself, so this is one
-        # colour and the gold cannot survive. The barline stays as a shape,
-        # which is what keeps the mark recognisable when the system recolours
-        # it — dropping it here would make the themed icon a different mark.
+        # colour and the gold cannot survive. The dot stays as a shape, which
+        # is what keeps the mark recognisable when the system recolours it; the
+        # band goes, because a faint band under a tint is only a smudge.
         MOBILE / "assets" / "android-icon-monochrome.png": draw_mark(
-            432, (255, 255, 255), (255, 255, 255), 0.42
+            432, (255, 255, 255), (255, 255, 255), 0.5, frame=False
         ),
     }
 
 
 def main() -> int:
-    if not BRAVURA.exists():
-        print(f"Bravura is not at {BRAVURA}", file=sys.stderr)
+    if not GEOMETRY.exists():
+        print(f"The mark's geometry is not at {GEOMETRY}", file=sys.stderr)
         return 1
 
     check = "--check" in sys.argv
@@ -236,7 +227,7 @@ def main() -> int:
                 print(f"  {one}")
             # **Which Pillow drew it, because that is the other way this
             # fails.** The comparison is byte-for-byte and Pillow rasterises
-            # the Bravura glyph, so a different version disagrees about art
+            # the curve and its antialiasing, so a different version disagrees about art
             # nobody has touched — `ci.yml` pins 12.3.0 for exactly that
             # reason while `backend/pyproject.toml` only asks for `>=`. Named
             # here so version skew reads as version skew instead of sending

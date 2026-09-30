@@ -5,8 +5,11 @@
 
 **Every brand asset here was the Expo starter's** — a blue chevron on pale
 blue with construction guides — until 2026-09-06, when all six were drawn: a
-Bravura half note followed by a gold barline, ivory on ink. `tools/draw-brand-
-assets.py` is the thing that draws them, and this is the guard on the result.
+Bravura half note followed by a gold barline, ivory on ink. On 2026-09-30 the
+owner called that generic and chose "Settle": a line that swings less each time
+until it settles into a band, ending in a gold dot — the app's own tempo graph.
+`tools/draw-brand-assets.py` is the thing that draws them, from
+`mobile/src/design/brandMark.json`, and this is the guard on the result.
 
 Nothing said so before. `icon.png` was 1024x1024, RGB, no alpha — exactly what
 App Store Connect requires — so it would have uploaded, passed review's
