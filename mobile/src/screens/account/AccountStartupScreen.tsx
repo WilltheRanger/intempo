@@ -3,7 +3,6 @@ import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import {
-  LoadingState,
   PrimaryButton,
   ScreenContainer,
   SecondaryButton,
@@ -12,6 +11,7 @@ import {
 import { describeLoadError } from '../../data/describeLoadError';
 import { signOut } from '../../data/auth/session';
 import { spacing } from '../../design';
+import { OpeningScreen } from './OpeningScreen';
 
 interface AccountStartupScreenProps {
   error?: unknown;
@@ -51,23 +51,8 @@ export function AccountStartupScreen({
   }
 
   if (!error) {
-    return (
-      <ScreenContainer
-        scrollable={false}
-        contentStyle={[styles.screen, styles.centred]}
-      >
-        <View>
-          <Text variant="screenTitle">Opening your practice space</Text>
-          <Text variant="body" color="textSecondary" style={styles.lede}>
-            Restoring your library, profile, and practice history.
-          </Text>
-          <LoadingState
-            layout="inline"
-            label="This can take a little longer after the app has been idle."
-          />
-        </View>
-      </ScreenContainer>
-    );
+    // The icon, opening (`OpeningScreen`): the mark drawing itself on ink.
+    return <OpeningScreen />;
   }
 
   /*
@@ -117,9 +102,6 @@ export function AccountStartupScreen({
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-  },
-  centred: {
-    justifyContent: 'center',
   },
   // Takes the space above the actions and centres the message in it, so the
   // words are not glued to the status bar and the buttons stay in reach.

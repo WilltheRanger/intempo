@@ -1,5 +1,20 @@
 # InTempo Decisions
 
+## 2026-09-30 — The mark is "Settle", and the app opens on it
+
+**Context:** the owner, of the half note and gold barline drawn on 2026-09-06: "new less generic logo", and of the account-loading screen ("Opening your practice space", two sentences and a spinner): "a new better screen". Four marks were mocked (a settling line, a metronome, an "iT" monogram, a ball landing on the downbeat) and two opening screens (ink like the icon, or ivory with a bar); the owner chose **A · Settle** and **S1 · Ink**.
+
+**Decision:**
+- **The mark** is a line that swings — far above a band, below it, above, a little below — each swing smaller, settling on the band's centre in a gold dot: the picture the app draws of a take. Ivory line and gold dot on ink, as the icon was.
+- **One geometry, two renderers.** `mobile/src/design/brandMark.json` holds the curve, band and dot. `tools/draw-brand-assets.py` draws the six icon files from it with Pillow; `components/brand/BrandMark.tsx` draws it with SVG. The icon and the screen cannot drift.
+- **The opening screen** (`screens/account/OpeningScreen.tsx`) is the icon, opening: ink ground, the band fading up, the line drawing itself (900 ms), the dot landing, then beating in size at sixty to the minute while the account loads. The name under it; "Waking up…" only after three seconds. Reduced motion shows the mark at rest. The failure state is unchanged.
+
+**Alternatives considered:** a metronome (the fastest read, and the commonest icon of its kind); a monogram (quiet, but says nothing about what the app does); keeping the words on the opening screen (most opens are quick, and a sentence read in half a second is one nobody needed).
+
+**Trade-offs accepted:** the web page is ivory for the moment before the app's script runs, so a signed-in open goes ivory, then ink, then the app; `index.html`'s ground is pinned to the app's and guarded by `flatten-vendor-assets.mjs`, and changing it is a separate call. Native builds keep Expo's default splash until one is configured. The pulse re-renders the mark about thirty times a second while loading, which is only ever this screen.
+
+---
+
 ## 2026-09-30 — Pitch by written note, on the result and on Insights; note lengths as held lengths
 
 **Context:** the owner asked what other musical information the app could give, and chose "Note lengths + pitch by note" and dynamics against the page. The analysis already measured every note's pitch (`intonation.note_cents`) and threw all but each bar's median away, and it already grouped the take by written note value — as position error — for a finding no screen showed.

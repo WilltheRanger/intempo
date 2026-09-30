@@ -52,7 +52,8 @@ const styles = StyleSheet.create({
   /**
    * On the screen's own margin, beside the words it belongs to.
    *
-   * `AccountStartupScreen` is the only caller with a label, and centring put a
+   * Written for the account's old opening screen (replaced by `OpeningScreen`
+   * on 2026-09-30), where centring put a
    * lone spinner on the middle axis between two left-aligned sentences —
    * breaking the one horizontal margin the screen otherwise keeps (§3 law 5)
    * and cutting the caption off from the sentence above it.
