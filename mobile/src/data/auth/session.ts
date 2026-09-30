@@ -3,6 +3,7 @@ import 'react-native-url-polyfill/auto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
 
+import { clockAwareFetch, clockAwareStore } from './clockSkew';
 import { sessionStore, sessionStoreDegraded } from './sessionStore';
 import { SessionUnreadableError } from './sessionUnreadable';
 
@@ -38,8 +39,11 @@ export function getSupabaseClient(): SupabaseClient | null {
          * IndexedDB with no deadline on any call, and a read of it that
          * hesitated is what signed musicians out of sessions the server had
          * just granted (measured 2026-09-17).
+         *
+         * Read through `clockAwareStore`, which hands the client each session
+         * with its expiry in the device's time — see `global.fetch` below.
          */
-        storage: sessionStore,
+        storage: clockAwareStore(sessionStore),
         autoRefreshToken: true,
         persistSession: true,
         /*
@@ -58,6 +62,14 @@ export function getSupabaseClient(): SupabaseClient | null {
          * platform it was about.
          */
         detectSessionInUrl: Platform.OS === 'web',
+      },
+      global: {
+        /*
+         * Reads the server's clock off every token response, so a phone whose
+         * clock is an hour out does not refresh on every request until it is
+         * refused and signed out (`clockSkew.ts`, measured 2026-09-30).
+         */
+        fetch: clockAwareFetch,
       },
     });
   }

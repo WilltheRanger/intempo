@@ -1,5 +1,36 @@
 # InTempo Decisions
 
+## 2026-09-30 — A session's expiry is read in the device's time
+
+**Context:** the live auth logs showed one account's client sending 35 token refreshes in six seconds, three times in half an hour. Each burst ended in a 429 from Supabase, and each was followed by a fresh password sign-in.
+
+The auth client (`@supabase/auth-js` 2.112) behaves like this:
+- It stores the server's `expires_at`.
+- It calls a session expired when that is within 90 seconds of `Date.now()`, the device's time.
+- When a refused refresh leaves a token that looks expired, it removes the session.
+
+So on a clock an hour fast, every request refreshes until it is refused, and the musician is signed out. Reproduced against the real client: 40 requests made 31 refreshes, and the last 10 had no session. On a clock an hour slow, it fails the other way: expired tokens reach the backend, which answers 401, and `apiFetch` signs out on 401. A phone on manual time across a clock change is an hour out.
+
+**Decision:** `data/auth/clockSkew.ts` works in two places:
+- **Measuring:** `clockAwareFetch` is the Supabase client's `global.fetch`. It reads the difference between the clocks off every auth response that carries a session. The server says when it issued the token (`expires_at - expires_in`), and the device knows when the response arrived.
+- **Correcting:** `clockAwareStore` wraps `sessionStore`. It hands the client each stored session with `expires_at` moved into the device's time. The server's own value is kept alongside, so a session the client writes back is never corrected twice. What is written to disk is unchanged.
+
+**Nothing changes on a clock within a minute of the server's**, which is every clock set automatically.
+
+After a restart the difference is unknown, so the first request refreshes once, and that response teaches it again. The tests drive the real auth client on clocks an hour fast, an hour slow and three hours fast. Each keeps one session with no refreshes, and still refreshes just before the server's real expiry.
+
+**Alternatives considered:**
+- **Telling the musician their clock is wrong:** it still storms and still signs out; it only explains it.
+- **Patching the library, or wrapping `Date.now`:** that means owning a fork of an auth dependency, or changing time for the whole app.
+- **Measuring from the `Date` response header:** on the web it is not readable cross-origin unless Supabase exposes it.
+
+**Trade-offs accepted:**
+- One extra refresh per launch on a wrong clock.
+- The difference is measured to within the request's flight time, which the one-minute tolerance and the 90-second margin absorb.
+- A session that arrives in an emailed link carries no response to measure from. It refreshes once, as after a restart.
+
+---
+
 ## 2026-09-30 — The note row shows as many notes as fit, keeping the ones off pitch
 
 **Context:** the pitch-by-note row gave every written note an equal column across the row's width. The owner's bass takes read six or seven notes, and the row was built against those. A violin study in G across two octaves reads about twenty-two. At 390 points that gave 13-point columns, and at 320 it gave 10-point columns. The note names ran together ("GAB♭BCC♯D…") and a finger covered three or four notes.
