@@ -1,5 +1,25 @@
 # InTempo Decisions
 
+## 2026-09-30 — The note row shows as many notes as fit, keeping the ones off pitch
+
+**Context:** the pitch-by-note row gave every written note an equal column across the row's width. The owner's bass takes read six or seven notes, and the row was built against those. A violin study in G across two octaves reads about twenty-two. At 390 points that gave 13-point columns, and at 320 it gave 10-point columns. The note names ran together ("GAB♭BCC♯D…") and a finger covered three or four notes.
+
+**Decision:** the owner chose **fit to the width**. A column is never narrower than `NOTE_COLUMN_MIN` (30 points). That holds 9 notes at 390 and 7 at 320, so the bass takes are unchanged. `fitNoteMarks` fills the columns in this order:
+- the notes the line names, and a tapped note;
+- then every other note that is off pitch, by how far;
+- then the in-tune notes read most often.
+
+The row stays low to high. One line under it says what was left out: "The other 13 were in tune". On Insights that line joins the existing caption: "Flat in all 7 takes. The other 13 run in tune."
+
+**Alternatives considered:** scrolling the row sideways at a fixed column width. That keeps every note, but a red needle can sit out of view, and it puts a horizontal scroll inside a vertical one.
+
+**Trade-offs accepted:**
+- The in-tune notes read least are not drawn; the line says how many and that they were in tune.
+- If more notes are off than the row holds, the ones off least are dropped, and the line says "N more notes not shown" rather than calling them in tune.
+- Two octaves of a letter can both be shown under the same name ("E♭ … E♭"). Low to high still orders them, and the sentence above says "low" or "high".
+
+---
+
 ## 2026-09-30 — The mark is "Settle", and the app opens on it
 
 **Context:** the owner, of the half note and gold barline drawn on 2026-09-06: "new less generic logo", and of the account-loading screen ("Opening your practice space", two sentences and a spinner): "a new better screen". Four marks were mocked (a settling line, a metronome, an "iT" monogram, a ball landing on the downbeat) and two opening screens (ink like the icon, or ivory with a bar); the owner chose **A · Settle** and **S1 · Ink**.

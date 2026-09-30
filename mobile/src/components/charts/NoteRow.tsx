@@ -2,9 +2,15 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import Svg, { Circle, G, Line, Rect } from 'react-native-svg';
 
-import { BORDER_WIDTH, colors, fontFamily } from '../../design';
+import { BORDER_WIDTH, colors, fontFamily, spacing } from '../../design';
 import type { PitchBand } from '../../lib/verdict/intonation';
-import { noteDetail, type NoteMark } from '../../lib/verdict/pitchByNote';
+import {
+  NOTE_COLUMN_MIN,
+  fitNoteMarks,
+  noteDetail,
+  otherNotesLine,
+  type NoteMark,
+} from '../../lib/verdict/pitchByNote';
 import { Text } from '../primitives/Text';
 
 /** The words at the right edge: "sharp", "in tune", "flat". */
@@ -26,6 +32,14 @@ export interface NoteRowProps {
   selected?: number | null;
   /** When given, each note answers a tap: tapping it again lets it go. */
   onSelect?: (midi: number | null) => void;
+  /** How the line under a row too narrow for every note speaks: one take, or a habit. */
+  tense?: 'take' | 'habit';
+  /**
+   * A line of the caller's under the row — Insights' "Flat in all 7 takes" —
+   * set before the row's own, so the evidence for the sentence above comes
+   * first and one line holds both.
+   */
+  caption?: string | null;
 }
 
 /**
@@ -40,17 +54,34 @@ export interface NoteRowProps {
  * **On the result every note answers the finger** (`onSelect`): tapped, it
  * takes the cursor the pitch graph uses and the screen marks its bars. On
  * Insights it is a picture, and is announced as one.
+ *
+ * **As many notes as fit** (the owner, 2026-09-30, "Fit to the width"): a
+ * column is never narrower than `NOTE_COLUMN_MIN`, the notes off pitch are
+ * the ones kept, and a line under the row says what the rest were
+ * (`fitNoteMarks`).
  */
 export function NoteRow({
-  marks,
+  marks: allMarks,
   inTuneCents,
   named = [],
   height = 92,
   selected = null,
   onSelect,
+  tense = 'take',
+  caption = null,
 }: NoteRowProps) {
   const [width, setWidth] = useState(0);
   const area = Math.max(0, width - GUTTER);
+  // Until it is measured the row holds every note; after, as many as fit —
+  // keeping the tapped one, so a narrower window never hides what the line
+  // above is describing.
+  const fitted = fitNoteMarks(
+    allMarks,
+    width > 0 ? Math.floor(area / NOTE_COLUMN_MIN) : allMarks.length,
+    selected === null ? named : [selected, ...named],
+  );
+  const marks = fitted.shown;
+  const footer = [caption, otherNotesLine(fitted, tense)].filter(Boolean).join('. ');
   const column = marks.length > 0 ? area / marks.length : 0;
   const x = (index: number) => (index + 0.5) * column;
   const y = (cents: number) =>
@@ -66,7 +97,9 @@ export function NoteRow({
       onLayout={handleLayout}
       accessible={!onSelect}
       accessibilityRole={onSelect ? undefined : 'image'}
-      accessibilityLabel={onSelect ? undefined : marks.map(noteDetail).join('. ')}
+      accessibilityLabel={
+        onSelect ? undefined : [...marks.map(noteDetail), ...(footer ? [footer] : [])].join('. ')
+      }
     >
       <View style={{ height }}>
         {width > 0 ? (
@@ -157,8 +190,14 @@ export function NoteRow({
         })}
       </View>
 
+      {footer ? (
+        <Text variant="caption" color="textTertiary" style={styles.footer}>
+          {footer}
+        </Text>
+      ) : null}
+
       {onSelect && width > 0 ? (
-        <View style={[styles.targets, { width: area }]}>
+        <View style={[styles.targets, { width: area, height: height + LABELS }]}>
           {marks.map((mark) => {
             const on = mark.midi === selected;
             return (
@@ -213,11 +252,14 @@ const styles = StyleSheet.create({
   labelStrong: {
     fontFamily: fontFamily.sansMedium,
   },
-  // Each note's column, the full height of the row and its name.
+  footer: {
+    marginTop: spacing.sm,
+  },
+  // Each note's column, the full height of the row and its name — not the
+  // footer under them, which is words, not a note.
   targets: {
     position: 'absolute',
     top: 0,
-    bottom: 0,
     left: 0,
     flexDirection: 'row',
   },

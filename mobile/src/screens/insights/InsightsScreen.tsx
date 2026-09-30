@@ -295,13 +295,10 @@ export function InsightsScreen() {
               marks={notesHabit.marks}
               inTuneCents={notesHabit.inTuneCents}
               named={notesHabit.named}
+              tense="habit"
+              caption={notesHabit.caption}
             />
           </View>
-          {notesHabit.caption ? (
-            <Text variant="caption" color="textTertiary" style={styles.notesCaption}>
-              {notesHabit.caption}
-            </Text>
-          ) : null}
         </View>
       ) : null}
 
@@ -520,9 +517,6 @@ const styles = StyleSheet.create({
   },
   pitchChart: {
     marginTop: spacing.md,
-  },
-  notesCaption: {
-    marginTop: spacing.sm,
   },
   rows: {
     marginTop: 7,

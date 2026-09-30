@@ -145,3 +145,63 @@ export function noteDetail(mark: NoteMark): string {
     ? `Your one ${mark.fullName} was ${word}`
     : `Your ${mark.notes} ${mark.fullName}s were ${word}`;
 }
+
+/**
+ * The narrowest a note's column may be: room for its name ("F♯" at caption
+ * size) and a finger. A violin study can read twenty notes; at the phone's
+ * width, twenty columns ran their names together and were ten points wide.
+ */
+export const NOTE_COLUMN_MIN = 30;
+
+export interface FittedMarks {
+  /** Low to high, as many as fit. */
+  shown: NoteMark[];
+  /** How many were left out. */
+  hidden: number;
+  /** Whether every note left out was in tune. */
+  hiddenInTune: boolean;
+}
+
+/**
+ * As many notes as `room` columns hold, keeping the ones worth seeing: those
+ * in `keep` (the notes the line names, and a tapped one), then the others off
+ * by how far, then the in-tune notes read most often. **A note off pitch is
+ * never left out for one in tune** — what drops is the in-tune detail, which
+ * one sentence can say instead (`otherNotesLine`).
+ */
+export function fitNoteMarks(
+  marks: readonly NoteMark[],
+  room: number,
+  keep: readonly number[] = [],
+): FittedMarks {
+  if (marks.length <= room) return { shown: [...marks], hidden: 0, hiddenInTune: true };
+  const rank = (m: NoteMark) =>
+    keep.includes(m.midi) ? 0 : m.band !== 'in_tune' ? 1 : 2;
+  const kept = [...marks]
+    .sort(
+      (a, b) =>
+        rank(a) - rank(b) ||
+        (rank(a) === 2 ? b.notes - a.notes : Math.abs(b.cents) - Math.abs(a.cents)) ||
+        a.midi - b.midi,
+    )
+    .slice(0, Math.max(1, room));
+  const left = marks.filter((m) => !kept.includes(m));
+  return {
+    shown: kept.sort((a, b) => a.midi - b.midi),
+    hidden: left.length,
+    hiddenInTune: left.every((m) => m.band === 'in_tune'),
+  };
+}
+
+/**
+ * Under a row that could not hold every note: "The other 13 were in tune",
+ * "The other one runs in tune" — or, when notes off pitch outnumbered the
+ * room, how many are not shown.
+ */
+export function otherNotesLine(fitted: FittedMarks, tense: 'take' | 'habit'): string | null {
+  const { hidden, hiddenInTune } = fitted;
+  if (hidden === 0) return null;
+  if (!hiddenInTune) return hidden === 1 ? 'One more note not shown' : `${hidden} more notes not shown`;
+  if (hidden === 1) return tense === 'take' ? 'The other one was in tune' : 'The other one runs in tune';
+  return `The other ${hidden} ${tense === 'take' ? 'were' : 'run'} in tune`;
+}
