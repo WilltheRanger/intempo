@@ -111,6 +111,21 @@ it('plays written bass E2 at sounding E1 without changing notation or timing', (
   expect(JSON.stringify(score)).toBe(original);
 });
 
+it('plays a saxophone part a sixth or a ninth below where it is written', () => {
+  // Written C5 (72). An alto in E-flat sounds E-flat 4 (63); a tenor in
+  // B-flat sounds B-flat 3 (58). Not an octave, so no pitch class survives
+  // the mistake: a Listen that played the page as written would teach a
+  // saxophonist the wrong note, which the verdict would then mark right.
+  const score = passage(523.251131);
+  const original = JSON.stringify(score);
+  expect(soundfontEvents(score, 'alto_sax').map((event) => event.key)).toEqual([63, 63]);
+  expect(soundfontEvents(score, 'tenor_sax').map((event) => event.key)).toEqual([58, 58]);
+  expect(soundfontEvents(score, 'alto_sax').map((event) => event.frame)).toEqual(
+    soundfontEvents(score).map((event) => event.frame),
+  );
+  expect(JSON.stringify(score)).toBe(original);
+});
+
 it('retries failed loading and deduplicates successful loading', async () => {
   read.mockRejectedValueOnce(new Error('offline'));
   await expect(loadSoundfont('viola')).rejects.toThrow('offline');

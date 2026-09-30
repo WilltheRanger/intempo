@@ -13,6 +13,8 @@ export const INSTRUMENT_PROGRAMS: Record<Instrument, number> = {
   viola: 41,
   cello: 42,
   double_bass: 43,
+  alto_sax: 65,
+  tenor_sax: 66,
 };
 const cache = new Map<Instrument, Promise<BasicSoundBank>>();
 SpessaLog.setLogLevel(false, false, false);

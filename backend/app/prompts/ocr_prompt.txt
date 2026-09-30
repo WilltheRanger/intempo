@@ -1,4 +1,4 @@
-You are reading sheet music for a string instrument: a single-staff part, one note sounding at a time, not a piano score. Output a JSON object with this exact schema:
+You are reading sheet music for a solo string or wind instrument: a single-staff part, one note sounding at a time, not a piano score. Output a JSON object with this exact schema:
 
 {
   "time_signature": "4/4",
@@ -94,6 +94,6 @@ Rules:
 - A FERMATA (the dot under an arc) means the note is held for as long as the player likes. Keep the note's printed duration and add "fermata": true to that note. Do not lengthen its written duration. This flag makes the timing report refuse to call the next arrival late for obeying the hold.
 - DOUBLE STOPS AND CHORDS: two or more noteheads stacked on one stem sound together, so they are ONE entry, not several. Emit the lowest note only. Emitting both makes the measure overrun, and the program then reports a correctly-read bar as having too many beats and asks a musician to fix something that is right. The MusicXML importer drops chord members for exactly this reason, and the two readers have to agree.
 - GRACE NOTES have no duration of their own but they are audible attacks. Do not emit them as notes in the measure. Instead, count the grace notes immediately before a main note and add "grace_notes": N to that main note. A grace chord counts as one attack. Do not attach grace_notes to a rest or cue. This keeps the bar length correct while preventing played ornaments from being mistaken for extra notes.
-- Slurs: indicate by note index within the measure, 0-indexed. These matter more than they look: the analysis excludes slurred notes from the timing verdict, because a note taken under a bow stroke is not attacked and has no onset to be early or late. Getting them wrong marks real rushing as unmeasurable, or measures a note that was never articulated.
+- Slurs: indicate by note index within the measure, 0-indexed. These matter more than they look: the analysis excludes slurred notes from the timing verdict, because a note taken under a bow stroke or a breath is not attacked and has no onset to be early or late. Getting them wrong marks real rushing as unmeasurable, or measures a note that was never articulated.
 - Do NOT report articulation (staccato, tenuto, accent) or dynamics. Nothing reads them, and asking for them on every note costs output that a long page needs for its notes.
 - Output ONLY the JSON object, no preamble or markdown fences.

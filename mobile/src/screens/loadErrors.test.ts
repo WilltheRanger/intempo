@@ -56,9 +56,9 @@ const failures = Object.entries(screens)
 describe('a load failure', () => {
   it('is found on the screens it is meant to be checked on', () => {
     // A glob that matched nothing would leave `it.each` with no cases and the
-    // suite green. Four screens had this bug; the count must not fall below
-    // what is known to exist.
-    expect(failures.length).toBeGreaterThanOrEqual(4);
+    // suite green. Four screens had this bug; three remain since Today went
+    // (2026-09-30), and the count must not fall below what is known to exist.
+    expect(failures.length).toBeGreaterThanOrEqual(3);
   });
 
   it.each(failures)('%s offers a way to try again', (file, states) => {

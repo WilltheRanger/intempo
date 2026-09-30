@@ -13,11 +13,12 @@ import type { NoteValue, StaveNote } from './notation/engrave';
  * Every warmup states what it trains. An exercise without a stated purpose is
  * a warm-up ritual, and this app has no business inventing rituals.
  *
- * **Range discipline.** Everything here sits in first position on its
- * instrument. An exercise that needs a shift is not a warmup, and one printed
+ * **Range discipline.** Everything here sits in first position on a string
+ * instrument, and between the low notes and the palm keys on a saxophone. An
+ * exercise that needs a shift is not a warmup, and one printed
  * outside the range of the instrument it claims to be for is worse than none.
  * The ranges are noted per instrument below and are the reason each warmup is
- * written four times rather than transposed automatically — automatic
+ * written per instrument rather than transposed automatically — automatic
  * transposition would put a viola exercise on strings a viola does not have.
  */
 
@@ -224,11 +225,59 @@ const DOUBLE_BASS: Warmup[] = [
   },
 ];
 
+/**
+ * Saxophone — written D4 to G5, below the palm keys and above the low notes a
+ * beginner's air cannot yet hold. Both saxophones read the same written part
+ * in treble clef with the same fingerings, so the one set serves alto and
+ * tenor; what differs is how it sounds, which is the transposition's business
+ * rather than the exercise's.
+ *
+ * Nothing here crosses strings, so the exercise that plays that part is the
+ * octave key: the same fingering, an octave apart, with the throat and the lip
+ * left alone.
+ */
+function saxophone(prefix: string): Warmup[] {
+  const w = (pitch: string): StaveNote => ({ pitch, value: 'whole', barBefore: true });
+  return [
+    {
+      id: `${prefix}-long-tones`,
+      name: 'Long tones',
+      focus: 'Steady air to the end of each note.',
+      notes: [w('G4'), w('F#4'), w('E4'), w('D4')],
+      bpm: 60,
+      clef: 'treble',
+    },
+    {
+      id: `${prefix}-g-major`,
+      name: 'G major, one octave',
+      focus: 'Even fingers, one breath.',
+      notes: scale(['G4', 'A4', 'B4', 'C5', 'D5', 'E5', 'F#5', 'G5']),
+      bpm: 72,
+      clef: 'treble',
+    },
+    {
+      id: `${prefix}-octave-slurs`,
+      name: 'Octave slurs',
+      focus: 'Octave key only.',
+      notes: [
+        q('D4', true), q('D5'), q('D4'), q('D5'),
+        q('E4', true), q('E5'), q('E4'), q('E5'),
+        q('F#4', true), q('F#5'), q('F#4'), q('F#5'),
+        h('G4', true), h('G5'),
+      ],
+      bpm: 60,
+      clef: 'treble',
+    },
+  ];
+}
+
 const BY_INSTRUMENT: Record<Instrument, Warmup[]> = {
   violin: VIOLIN,
   viola: VIOLA,
   cello: CELLO,
   double_bass: DOUBLE_BASS,
+  alto_sax: saxophone('alto'),
+  tenor_sax: saxophone('tenor'),
 };
 
 export const INSTRUMENT_LABELS: Record<Instrument, string> = {
@@ -236,6 +285,8 @@ export const INSTRUMENT_LABELS: Record<Instrument, string> = {
   viola: 'Viola',
   cello: 'Cello',
   double_bass: 'Double bass',
+  alto_sax: 'Alto saxophone',
+  tenor_sax: 'Tenor saxophone',
 };
 
 /** Days since the epoch, in local time — the same number all day, everywhere. */

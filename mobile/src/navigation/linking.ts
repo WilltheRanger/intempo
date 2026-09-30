@@ -17,7 +17,7 @@ import type { RootStackParamList } from './types';
  *
  *   * Back quits instead of going back, which is the one gesture every web user
  *     has;
- *   * a refresh returns to Today, losing whatever they were reading;
+ *   * a refresh returns to the first tab, losing whatever they were reading;
  *   * nothing is linkable — a musician cannot send a piece to their teacher, or
  *     keep a tab open on the score they are working through.
  *
@@ -42,13 +42,13 @@ import type { RootStackParamList } from './types';
  */
 export const screenConfig: LinkingOptions<RootStackParamList>['config'] = {
   screens: {
-      // The tabs are the app's four destinations, so they take the short paths.
-      // Today is `/` because it is where a cold start lands and a bare domain
-      // should not redirect.
+      // The tabs are the app's three destinations, so they take the short paths.
+      // Library is `/` because it is where a cold start lands and a bare domain
+      // should not redirect. It was `/library` while Today held `/`, and that
+      // address is kept as an alias so a saved link still lands (2026-09-30).
       Tabs: {
         screens: {
-          Today: '',
-          Library: 'library',
+          Library: { path: '', alias: ['library'] },
           Insights: 'insights',
           Profile: 'profile',
         },

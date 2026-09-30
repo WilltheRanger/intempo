@@ -173,18 +173,17 @@ const waitForText = (what, matches, timeout) =>
 
 /** A pushed screen has no tab bar, which is correct rather than a fault. */
 const onTabs = async () =>
-  (await page.getByRole('tab', { name: 'Today' }).count()) > 0;
+  (await page.getByRole('tab', { name: 'Library' }).count()) > 0;
 
 /** Where each tab must land. Waiting for the destination, not for a change. */
 const TAB_ROUTES = {
-  Today: '/',
-  Library: '/library',
+  Library: '/',
   Insights: '/insights',
   Profile: '/profile',
 };
 
 const tab = async (name) => {
-  // Returning to the tab layer already lands on `/`, so a tap on **Today**
+  // Returning to the tab layer already lands on `/`, so a tap on **Library**
   // then changes nothing — waiting for the path to differ timed out on a tab
   // that had worked perfectly. Wait for where it should be instead.
   if (!(await onTabs())) await open('');
@@ -205,10 +204,9 @@ const tapTo = async (label, name, expected) => {
 console.log('\n## Destinations');
 await open('');
 for (const [name, expected] of [
-  ['Library', '/library'],
   ['Insights', '/insights'],
   ['Profile', '/profile'],
-  ['Today', '/'],
+  ['Library', '/'],
 ]) {
   await tab(name);
   const landed = await path();
@@ -221,8 +219,8 @@ await tapTo('Library row', /Sonata No\. 1/, /^\/pieces\/[^/]+$/);
 
 // The web build must survive the browser's own history controls.
 await page.goBack();
-await waitFor('browser back', async () => (await path()) === '/library');
-if ((await path()) === '/library') pass('browser back → /library');
+await waitFor('browser back', async () => (await path()) === '/');
+if ((await path()) === '/') pass('browser back → the Library');
 else fail(`browser back → ${await path()}`);
 await page.goForward();
 await waitFor('browser forward', async () => (await path()).startsWith('/pieces/'));
@@ -266,14 +264,20 @@ if ((await path()).startsWith('/analyses/')) pass(`a take on the piece → ${awa
 else fail(`a take on the piece → ${await path()}, expected an analysis`);
 
 /*
-  **Today's one action starts a take.** The screen has exactly one button
-  now — everything else that was on it either moved or was a copy of another
-  tab — so if that button does not reach the recorder, the tab does nothing at
-  all. Nothing checked it before, because there was a card doing the same job
-  further down.
+  **The Continue row's button starts a take.** It is what Today was for, and
+  since 2026-09-30 it is the one filled control on the first screen — so if it
+  does not reach the recorder, the app's front door does nothing. Its words
+  are a second target and open the piece, which the Library row check above
+  already covers.
 */
-await tab('Today');
-await tapTo('Today hero action', /^Practice$/, /\/record$/);
+await tab('Library');
+await tapTo('Library continue', /^Practice$/, /\/record$/);
+
+// The Library's old address still lands on it (`linking.ts`, `alias`).
+await open('library');
+if ((await page.getByRole('button', { name: /^Continue\./ }).count()) > 0)
+  pass('/library still opens the Library');
+else fail('/library no longer opens the Library');
 
 // A deep link has no history behind it; back must still reach the parent.
 await open('pieces/fixture-clef-change-study/bars/3');
@@ -431,8 +435,8 @@ console.log('\n## One reading of the window, and it is a habit only where it is 
  * Insights states it as its title. They were allowed to disagree once — a
  * musician read "Your tempo wanders" on one tab and "You tend to rush" on the
  * next, about the same thirty days — and this is the check that came out of
- * it. Today is one photograph with one action on it now; the snapshot was a
- * copy of the Insights tab and went with the rest of the dashboard, so
+ * it. Today is gone (2026-09-30); the snapshot was a copy of the Insights
+ * tab and went with the rest of its dashboard before that, so
  * `readTendency` has exactly one caller.
  *
  * What survives is the half that was never about two screens: the wording is a

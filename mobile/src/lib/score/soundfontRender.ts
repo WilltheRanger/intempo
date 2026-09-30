@@ -9,6 +9,7 @@ import type { Instrument } from '../../data/types';
 import type { Schedule } from './schedule';
 import { INSTRUMENT_PROGRAMS } from './soundfontBank';
 import { Limiter } from './limiter';
+import { soundingOffset } from '../instrument';
 import {
   EXPRESSION_NEUTRAL,
   SWELL_MIN_S,
@@ -104,16 +105,17 @@ const REVERB_SEND: Record<Instrument, number> = {
   viola: 40,
   cello: 40,
   double_bass: 12,
+  // GeneralUser's saxophones are dry, like its viola and cello.
+  alto_sax: 40,
+  tenor_sax: 40,
 };
 
 function keyOf(frequency: number, instrument: Instrument): number {
-  // ScoreJson stores written pitches. Double bass sounds one octave below
-  // its notation; this does not alter the score or its rhythm. The timbre
-  // still comes from the real double-bass preset, not another shifted voice.
-  return (
-    Math.round(69 + 12 * Math.log2(frequency / 440)) +
-    (instrument === 'double_bass' ? -12 : 0)
-  );
+  // ScoreJson stores written pitches. The double bass sounds an octave below
+  // its notation and the saxophones a sixth or a ninth below
+  // (`soundingOffset`); this does not alter the score or its rhythm. The
+  // timbre still comes from the instrument's own preset, not a shifted voice.
+  return Math.round(69 + 12 * Math.log2(frequency / 440)) + soundingOffset(instrument);
 }
 
 function playable(note: Schedule['notes'][number], schedule: Schedule): boolean {

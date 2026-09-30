@@ -18,6 +18,20 @@
         "name": "Cello",
         "bytes": 1008632,
         "sha256": "4bd0139827b1ace01b70b8cc458be344e37dab5de1af8fab7e8bb13eb4ffae79"
+      },
+      {
+        "instrument": "alto_sax",
+        "program": 65,
+        "name": "Alto Sax",
+        "bytes": 502806,
+        "sha256": "b5f620862b3972de15289c63882e7ffbda14cfc293887342171fd76760e3055a"
+      },
+      {
+        "instrument": "tenor_sax",
+        "program": 66,
+        "name": "Tenor Sax",
+        "bytes": 394994,
+        "sha256": "97fc89754e8ea4aa338ebc5ef63257af52bea05f11509d7f5483d0af2f00faad"
       }
     ]
   },

@@ -57,7 +57,7 @@ const shape =
     isObject(value) &&
     Object.entries(fields).every(([key, check]) => check(value[key]));
 
-const instrument = oneOf('violin', 'viola', 'cello', 'double_bass');
+const instrument = oneOf('violin', 'viola', 'cello', 'double_bass', 'alto_sax', 'tenor_sax');
 
 const analysis = shape({
   id: isUuid,

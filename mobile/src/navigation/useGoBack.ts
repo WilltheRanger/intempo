@@ -9,7 +9,7 @@ import type { RootNavigation, RootStackParamList } from './types';
  * fallback is either a tab or a pushed route with its params.
  */
 export type BackTarget =
-  | { tab: 'Today' | 'Library' | 'Insights' | 'Profile' }
+  | { tab: 'Library' | 'Insights' | 'Profile' }
   | { [K in keyof RootStackParamList]: { route: K; params: RootStackParamList[K] } }[keyof RootStackParamList];
 
 /**

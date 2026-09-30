@@ -8,19 +8,19 @@
  * 300ms from touch to Profile or Library on first open, against 150ms once
  * built. The owner's report was that Profile "still takes time to load".
  *
- * So once Today has drawn, the others are built out of sight, one at a time,
- * with room between them for a tap to land: a finger that arrives mid-build
- * waits for that one tab, not for all three. Library is last because it is the
- * heaviest — it engraves the first system of every piece on the shelf.
+ * So once the Library has drawn, the others are built out of sight, one at a
+ * time, with room between them for a tap to land: a finger that arrives
+ * mid-build waits for that one tab, not for both. The Library is never on the
+ * list — it is the first screen, so it is built before anything is warmed.
  *
  * Mounting a tab also starts its queries, so this is the data prefetch as well:
  * by the time a tab is opened its first answer is usually already in.
  */
 
-export const WARM_ORDER = ['Profile', 'Insights', 'Library'] as const;
+export const WARM_ORDER = ['Profile', 'Insights'] as const;
 export type WarmTab = (typeof WARM_ORDER)[number];
 
-/** After Today has drawn: long enough for its own entrance to finish. */
+/** After the Library has drawn: long enough for its own entrance to finish. */
 export const FIRST_WARM_DELAY_MS = 700;
 /** Between tabs, so a tap never waits behind more than one build. */
 export const BETWEEN_WARMS_MS = 350;

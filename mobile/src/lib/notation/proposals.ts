@@ -67,12 +67,18 @@ export interface Proposal {
  * Every floor is the open string with no scordatura, which is the conservative
  * direction — a tuned-down string makes a real note look impossible, and the
  * cost of that is a proposal a musician has to decline.
+ *
+ * The saxophones' floor is written low B♭, the bottom key of both the alto and
+ * the tenor. Their parts are written a sixth and a ninth above what sounds,
+ * and a floor in written pitch needs no adjusting for that.
  */
 const LOWEST_WRITTEN: Record<Instrument, string> = {
   violin: 'G3',
   viola: 'C3',
   cello: 'C2',
   double_bass: 'C2',
+  alto_sax: 'Bb3',
+  tenor_sax: 'Bb3',
 };
 
 const INSTRUMENT_NAMES: Record<Instrument, string> = {
@@ -80,6 +86,8 @@ const INSTRUMENT_NAMES: Record<Instrument, string> = {
   viola: 'viola',
   cello: 'cello',
   double_bass: 'double bass',
+  alto_sax: 'alto saxophone',
+  tenor_sax: 'tenor saxophone',
 };
 
 function withMeasure(

@@ -112,6 +112,12 @@ def pitch_class(pitch: str | None) -> int | None:
     return (_STEP[step] + _ALTER[alter]) % 12
 
 
+def _sounding_class(pitch: str | None, transpose: int) -> int | None:
+    """The class a written note sounds as, `transpose` semitones away."""
+    c = pitch_class(pitch)
+    return None if c is None else (c + transpose) % 12
+
+
 def chroma(y: np.ndarray, sr: int, *, low_register: bool = False) -> np.ndarray:
     """Pitch-class energy per frame, unnormalised: (12, frames).
 
@@ -285,7 +291,8 @@ def mismatch(
     attack the chroma says held no pitch, by pitch class: 0 where the written
     class was the strongest thing heard, rising towards 1 as it goes missing.
     0.5 wherever there is nothing to compare — a written note with no pitch, or
-    an attack with no window to listen in.
+    an attack with no window to listen in. The class is the sounding one too:
+    an octave's transposition leaves a class alone, a saxophone's does not.
 
     For the note chain (`alignment.align_chain`), which pairs attacks with
     notes by it, and for counting how many notes a pairing heard at their
@@ -294,7 +301,7 @@ def mismatch(
     attacks_s = np.asarray(attacks_s, dtype=float)
     heard = heard_after(frames, sr, attacks_s, steady=steady)
     heights = heights_at(track, sr, attacks_s) if track is not None else None
-    classes = [pitch_class(p) for p in written]
+    classes = [_sounding_class(p, transpose) for p in written]
     sounding = [None if m is None else m + transpose for m in (midi(p) for p in written)]
     out = np.full((len(heard), len(classes)), 0.5)
     for i, h in enumerate(heard):
@@ -351,6 +358,7 @@ def assess(
     low_instrument: bool = False,
     page_pitches: list[str | None] | None = None,
     frames: np.ndarray | None = None,
+    transpose: int = 0,
 ) -> Evidence:
     """Measure both shares for one take.
 
@@ -368,10 +376,13 @@ def assess(
     page says — a bass part scanned in the wrong clef reads as a treble page,
     and through the STFT a real bass take against it held a pitch after 0.00 of
     attacks and was called not played.
+    `transpose`: semitones from written to sounding. The chroma hears classes
+    as they sound, so a saxophone's page is moved to meet it; a bass's octave
+    moves no class and only decides the register.
     """
-    written_midi = [m for m in (midi(p) for _, p in matched) if m is not None]
+    sounding_midi = [m + transpose for m in (midi(p) for _, p in matched) if m is not None]
     low = low_instrument or (
-        bool(written_midi) and float(np.median(written_midi)) < low_register_midi
+        bool(sounding_midi) and float(np.median(sounding_midi)) < low_register_midi
     )
     if frames is None:
         frames = chroma(y, sr, low_register=low)
@@ -388,7 +399,7 @@ def assess(
 
     confirmed: list[bool | None] = []
     for (_, pitch), h in zip(matched, by_time, strict=True):
-        written = pitch_class(pitch)
+        written = _sounding_class(pitch, transpose)
         if written is None or h is None:
             confirmed.append(None)
             continue

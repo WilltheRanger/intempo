@@ -114,7 +114,6 @@ export type RootStackParamList = {
 };
 
 export type TabParamList = {
-  Today: undefined;
   Library: undefined;
   Insights: undefined;
   Profile: undefined;

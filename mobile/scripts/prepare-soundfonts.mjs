@@ -1,12 +1,15 @@
 /* global fetch, AbortSignal */
-// Build-time import of the four string banks the app bundles. Both sources are
-// pinned to a commit and every download is hashed into `provenance.json`.
+// Build-time import of the six banks the app bundles: four strings and two
+// saxophones. Both sources are pinned to a commit and every download is hashed
+// into `provenance.json`.
 //
 //   node scripts/prepare-soundfonts.mjs [--vsco-dir <folder of the WAVs>]
 //
-// **Viola and cello: GeneralUser GS**, imported whole. The author's sample
-// zones, loops, envelopes and modulators are retained rather than extracted
-// and reprogrammed.
+// **Viola, cello and the saxophones: GeneralUser GS**, imported whole. The
+// author's sample zones, loops, envelopes and modulators are retained rather
+// than extracted and reprogrammed. The alto and tenor saxophone are General
+// MIDI programs 65 and 66 (2026-09-30, the first winds); VSCO 2 CE has no
+// saxophone, so these come from the same bank as the viola and cello.
 //
 // **Violin and double bass: VS Chamber Orchestra 2 CE** (CC0), built into the
 // same single-preset banks by `vsco-instrument.mjs`. GeneralUser's violin and
@@ -62,13 +65,15 @@ async function save(instrument, output) {
   return { bytes: output.byteLength, sha256: sha256(output) };
 }
 
-// GeneralUser GS: viola and cello.
+// GeneralUser GS: viola, cello and the two saxophones.
 const bytes = await (await get(base + 'GeneralUser-GS.sf2')).arrayBuffer();
 const bank = SoundBankLoader.fromArrayBuffer(bytes);
 const generalUser = [];
 for (const [instrument, program] of [
   ['viola', 41],
   ['cello', 42],
+  ['alto_sax', 65],
+  ['tenor_sax', 66],
 ]) {
   const preset = bank.presets.find(
     (p) => p.program === program && p.bankMSB === 0 && p.bankLSB === 0,

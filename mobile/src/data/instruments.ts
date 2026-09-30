@@ -36,6 +36,8 @@ const ALL: Record<Instrument, true> = {
   viola: true,
   cello: true,
   double_bass: true,
+  alto_sax: true,
+  tenor_sax: true,
 };
 
 const INSTRUMENTS = Object.keys(ALL) as Instrument[];

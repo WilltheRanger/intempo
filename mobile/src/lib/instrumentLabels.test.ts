@@ -4,7 +4,7 @@ import type { Instrument } from '../data/types';
 import { INSTRUMENT_LABELS } from './warmup';
 
 /**
- * The four bowed strings, named the same way wherever they are named.
+ * The instruments, named the same way wherever they are named.
  *
  * There are **three** lists of them in this app and each was typed out by
  * hand: `INSTRUMENT_LABELS` (rendered on Today and the Warmup screen), the
@@ -41,8 +41,27 @@ const files: Record<string, string> = import.meta.glob('../**/*.tsx', {
   eager: true,
 });
 
-/** Score order, highest to lowest — not alphabetical, and not by accident. */
-const SCORE_ORDER: Instrument[] = ['violin', 'viola', 'cello', 'double_bass'];
+/**
+ * Score order — not alphabetical, and not by accident. Saxophones are
+ * woodwinds, and woodwinds sit above the strings on a full score.
+ */
+const SCORE_ORDER: Instrument[] = [
+  'alto_sax',
+  'tenor_sax',
+  'violin',
+  'viola',
+  'cello',
+  'double_bass',
+];
+
+/**
+ * What the two controls offer today: the strings. **The saxophones are named
+ * and understood everywhere else but not yet offered** — a four-across switch
+ * has no room for a fifth and sixth, and the picker that replaces it is a
+ * design change waiting on the owner. When it lands, this list becomes
+ * `SCORE_ORDER` and the line goes.
+ */
+const OFFERED: Instrument[] = ['violin', 'viola', 'cello', 'double_bass'];
 
 /**
  * Where a control deliberately says something shorter, and where only there.
@@ -77,11 +96,11 @@ describe('what the app calls each instrument', () => {
     expect(Object.keys(INSTRUMENT_LABELS).sort()).toEqual([...SCORE_ORDER].sort());
   });
 
-  it.each(CONTROLS)('offers all four in score order — %s', (path) => {
+  it.each(CONTROLS)('offers every offered instrument in score order — %s', (path) => {
     const options = optionsIn(path);
     // Vacuity: a regex that matched nothing would satisfy every rule below.
-    expect(options).toHaveLength(SCORE_ORDER.length);
-    expect(options.map(([value]) => value)).toEqual(SCORE_ORDER);
+    expect(options).toHaveLength(OFFERED.length);
+    expect(options.map(([value]) => value)).toEqual(OFFERED);
   });
 
   it.each(CONTROLS)('uses the full name except where it says otherwise — %s', (path) => {

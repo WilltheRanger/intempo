@@ -1,8 +1,8 @@
 import { useNavigation } from '@react-navigation/native';
 import { useQueryClient } from '@tanstack/react-query';
 import { Library, Plus, Search } from '../../components/icons';
-import { useMemo, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Platform, StyleSheet, View } from 'react-native';
 
 import { FadeIn } from '../../components/motion';
 import { PieceListSkeleton } from '../../components/skeletons';
@@ -17,10 +17,23 @@ import { Text } from '../../components/primitives/Text';
 import { describeLoadError } from '../../data/describeLoadError';
 import { useInsights } from '../../data/hooks/useInsights';
 import { useRecentTakes } from '../../data/hooks/useLatestTake';
-import { lastTakeByPiece } from '../../lib/library/pieceStatus';
+import { lastTakeByPiece, pieceStatus } from '../../lib/library/pieceStatus';
+import {
+  continueLineFor,
+  hasNotation,
+  pendingLineFor,
+  type PendingCheck,
+} from '../../lib/library/continueLine';
+import {
+  forgetPendingAnalysis,
+  usePendingAnalysis,
+} from '../../data/practice/pendingAnalysis';
+import { readPendingAnalysisStatus } from '../../data/practice/pendingAnalysisStatus';
+import { shouldWarmTabs, warmTabs } from '../../lib/warmTabs';
 import { prefetchPieceHistory } from '../../data/hooks/useLatestTake';
 import {
   prefetchPiece,
+  useCurrentPiece,
   useDeletePiece,
   useLibrary,
   useRetranscribe,
@@ -32,16 +45,23 @@ import type {
   TabScreenNavigation,
 } from '../../navigation/types';
 import { AddPieceSheet } from '../../components/pieces/AddPieceSheet';
+import { ContinueRow, PendingTakeLine } from './ContinueRow';
 import { PieceRow } from './PieceRow';
 import { PieceTile } from './PieceTile';
 import { useAddPieceOption } from '../../navigation/useAddPieceOption';
 import { loadStateFor, type LoadState } from '../../lib/loadState';
 import { rowDivided } from '../../components/rowMetrics';
 
+/**
+ * The Library is the first screen (the owner's pick, 2026-09-30): the piece to
+ * play next in one ruled row, then the shelf. See `lib/library/continueLine.ts`
+ * for why Today went and this is what took its place.
+ */
 export function LibraryScreen() {
   const navigation = useNavigation<TabScreenNavigation<'Library'>>();
   const queryClient = useQueryClient();
   const library = useLibrary();
+  const currentPiece = useCurrentPiece();
   // Each tile's line: how the piece last went (`pieceStatus`). The recent
   // takes and the insights window are both shared caches with Insights, so on
   // a phone that has opened it this costs nothing.
@@ -54,7 +74,7 @@ export function LibraryScreen() {
   const lastTakes = useMemo(() => lastTakeByPiece(recentTakes.data ?? []), [recentTakes.data]);
 
   async function refresh() {
-    await library.refetch();
+    await Promise.all([library.refetch(), currentPiece.refetch()]);
   }
   const [query, setQuery] = useState('');
 
@@ -65,6 +85,61 @@ export function LibraryScreen() {
   );
 
   const [addSheetVisible, setAddSheetVisible] = useState(false);
+
+  /**
+   * The take this device handed over, asked about once on arrival and again
+   * only when the musician asks. The recording screen polled while it was
+   * open; after a refresh one request says whether the result is ready, and
+   * the line makes a slow or offline answer recoverable without a hidden tab
+   * polling forever. Keyed on the id so re-reading the stored row into a new
+   * object does not ask again.
+   */
+  const pendingAnalysis = usePendingAnalysis();
+  const pendingAnalysisId = pendingAnalysis?.analysisId ?? null;
+  const [pendingCheck, setPendingCheck] = useState<PendingCheck | null>(null);
+  const checkPendingAnalysis = useCallback(async () => {
+    if (!pendingAnalysisId) {
+      setPendingCheck(null);
+      return;
+    }
+    setPendingCheck('checking');
+    try {
+      const status = await readPendingAnalysisStatus(pendingAnalysisId);
+      if (status === 'missing') {
+        // An old or deleted account's, or removed with its piece.
+        await forgetPendingAnalysis(pendingAnalysisId);
+        setPendingCheck(null);
+        return;
+      }
+      setPendingCheck(status);
+    } catch {
+      setPendingCheck('unavailable');
+    }
+  }, [pendingAnalysisId]);
+  useEffect(() => {
+    void checkPendingAnalysis();
+  }, [checkPendingAnalysis]);
+
+  function openPendingVerdict() {
+    if (!pendingAnalysis) {
+      return;
+    }
+    navigation.navigate('Verdict', { analysisId: pendingAnalysis.analysisId });
+    // Dispatch first: if the app closes on the boundary, leaving the hand-off
+    // behind is harmless and better than losing the result.
+    void forgetPendingAnalysis(pendingAnalysis.analysisId);
+  }
+
+  // Straight to a take: "continue" means recording one. A piece with no bars
+  // has nothing to record against, so it opens the piece instead — and the
+  // button says so (`continueLine.actionLabel`).
+  function openPractice(target: Piece) {
+    if (!hasNotation(target)) {
+      navigation.navigate('PieceDetail', { pieceId: target.id });
+      return;
+    }
+    navigation.navigate('Record', { pieceId: target.id });
+  }
 
   /*
     **The shelf can now act on a scan that failed**, which it could not before:
@@ -102,6 +177,60 @@ export function LibraryScreen() {
     setAddSheetVisible(false),
   );
 
+  // **The shelf waits for the Continue row's answer as well as its own**, so
+  // the row never lands on top of a shelf that has already drawn and shoves it
+  // down a hundred points. Both are asked for at once; a Continue row that
+  // could not be fetched is simply left out rather than holding the shelf.
+  const load = loadStateFor({
+    isError: library.isError,
+    hasData:
+      library.data !== undefined &&
+      (currentPiece.data !== undefined || currentPiece.isError),
+  });
+  const searching = Boolean(query.trim());
+  const current = load === 'ready' && pieces.length > 0 ? currentPiece.data ?? null : null;
+  const continueLine = continueLineFor({
+    piece: current,
+    status: current
+      ? pieceStatus({
+          lastTake: lastTakes.get(current.id) ?? null,
+          insight: insightByPiece.get(current.id) ?? null,
+        })
+      : null,
+    searching,
+  });
+  const pendingPiece = pendingAnalysis
+    ? pieces.find((item) => item.id === pendingAnalysis.scoreId) ?? null
+    : null;
+  const pendingLine =
+    pendingAnalysis && pendingCheck && !searching
+      ? pendingLineFor(pendingCheck, pendingPiece?.title ?? null)
+      : null;
+
+  // Build the other tabs, and so fetch their data, once this one has drawn —
+  // so a first visit to Profile is as quick as a second (`lib/warmTabs.ts`).
+  const drawn = load !== 'loading';
+  useEffect(() => {
+    if (!drawn) {
+      return;
+    }
+    const connection =
+      Platform.OS === 'web'
+        ? (globalThis.navigator as { connection?: { saveData?: boolean } } | undefined)
+            ?.connection
+        : undefined;
+    if (!shouldWarmTabs(connection)) {
+      return;
+    }
+    return warmTabs(
+      (tab) => navigation.preload(tab),
+      (run, ms) => {
+        const timer = setTimeout(run, ms);
+        return () => clearTimeout(timer);
+      },
+    );
+  }, [drawn, navigation]);
+
   return (
     <ScreenContainer onRefresh={refresh}>
       {/*
@@ -136,11 +265,29 @@ export function LibraryScreen() {
         </Text>
       ) : null}
 
+      {continueLine && current ? (
+        <ContinueRow
+          line={continueLine}
+          onOpen={() => navigation.navigate('PieceDetail', { pieceId: current.id })}
+          onAction={() => openPractice(current)}
+        />
+      ) : null}
+
+      {pendingLine ? (
+        <PendingTakeLine
+          line={pendingLine}
+          onPress={
+            pendingCheck === 'ready'
+              ? openPendingVerdict
+              : pendingCheck === 'checking'
+                ? undefined
+                : () => void checkPendingAnalysis()
+          }
+        />
+      ) : null}
+
       <LibraryContent
-        load={loadStateFor({
-          isError: library.isError,
-          hasData: library.data !== undefined,
-        })}
+        load={load}
         error={library.error}
         pieces={pieces}
         results={results}

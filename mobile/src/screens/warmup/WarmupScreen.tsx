@@ -38,7 +38,7 @@ import { ListenButton } from '../../components/score/ListenButton';
  * feature, not a placeholder for a Record button.
  */
 export function WarmupScreen() {
-  const goBack = useGoBack({ tab: 'Today' });
+  const goBack = useGoBack({ tab: 'Profile' });
   const { instrument } = usePreferences();
 
   // The remembered tempo is keyed by piece id everywhere else; a warmup's id

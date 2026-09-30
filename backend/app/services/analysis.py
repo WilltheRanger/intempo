@@ -493,12 +493,15 @@ def _intonation(
         for d, e in matched
         if 0 <= e < len(timeline.notes) and not timeline.notes[e].is_grace_note
     ]
-    written = np.array(
+    # Against where each note should *sound*. Octave folding hides a double
+    # bass's -12, and hid that this was ever missing; a saxophone's -9 folded
+    # is +300 cents, and every note on the page would have read a third sharp.
+    sounding = np.array(
         [pitch_evidence.midi(timeline.notes[e].pitch) or np.nan for _, e in kept],
         dtype=float,
-    )
+    ) + pitch.transpose
     cents = note_cents(
-        pitch.track, pitch.sr, np.array([attacks_s[d] for d, _ in kept]), written
+        pitch.track, pitch.sr, np.array([attacks_s[d] for d, _ in kept]), sounding
     )
     return intonation_of(
         cents,
@@ -1165,10 +1168,23 @@ _SOUNDING_RANGE_HZ: dict[str, tuple[float, float]] = {
     "cello": (60.0, 1100.0),
     "viola": (120.0, 1500.0),
     "violin": (180.0, 3600.0),
+    # The saxophones' lowest sounding notes, D-flat 3 and A-flat 2, to the top
+    # of the altissimo register a student reaches.
+    "alto_sax": (125.0, 1500.0),
+    "tenor_sax": (95.0, 1100.0),
 }
 _ANY_RANGE_HZ = (35.0, 3600.0)
-#: A double bass is written an octave above where it sounds.
-_TRANSPOSE: dict[str, int] = {"double_bass": -12}
+#: Semitones from written to sounding. A double bass is written an octave above
+#: where it sounds; an alto saxophone in E-flat a major sixth above, and a tenor
+#: in B-flat a major ninth. **Held equal to `soundingOffset` in
+#: `mobile/src/lib/instrument.ts`** by `instrument.test.ts`, which reads this
+#: line: the app plays a note where that puts it, and this listens for it here.
+_TRANSPOSE: dict[str, int] = {"double_bass": -12, "alto_sax": -9, "tenor_sax": -14}
+
+
+def sounding_offset(instrument: str | None) -> int:
+    """Semitones from written to sounding; 0 for an instrument at pitch."""
+    return _TRANSPOSE.get(instrument or "", 0)
 
 
 def _pitch_of(
@@ -1183,11 +1199,15 @@ def _pitch_of(
 
     Low register decided the way `pitch_evidence.assess` decides it, from the
     page rather than the matched notes — the match is what this feeds, so it
-    cannot wait for one.
+    cannot wait for one — and from where the page sounds, not where it is
+    printed: a tenor saxophone's page sits a ninth above its sound.
     """
-    written = [m for m in (pitch_evidence.midi(p) for p in score_pitches) if m is not None]
+    transpose = sounding_offset(instrument)
+    sounding = [
+        m + transpose for m in (pitch_evidence.midi(p) for p in score_pitches) if m is not None
+    ]
     low = low_instrument or (
-        bool(written) and float(np.median(written)) < config.pitch.low_register_midi
+        bool(sounding) and float(np.median(sounding)) < config.pitch.low_register_midi
     )
     fmin, fmax = _SOUNDING_RANGE_HZ.get(instrument or "", _ANY_RANGE_HZ)
     source = heard.unfiltered if heard.unfiltered is not None else heard.y
@@ -1196,7 +1216,7 @@ def _pitch_of(
         sr=heard.sr,
         steady=config.pitch.steady,
         track=pitch_evidence.pitch_track(source, heard.sr, fmin=fmin, fmax=fmax),
-        transpose=_TRANSPOSE.get(instrument or "", 0),
+        transpose=transpose,
     )
 
 
@@ -2267,6 +2287,7 @@ def analyze(
         low_instrument=low_instrument in cfg.pitch.low_instruments,
         page_pitches=[note.pitch for note in timeline.notes],
         frames=pitch.frames,
+        transpose=pitch.transpose,
     )
     # **The chain of notes, judged whole** — the owner's rule (2026-09-25).
     # A pairing whose pitches are the page's, note after note, is the take of

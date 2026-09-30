@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { clefFor } from './instrument';
+import { clefFor, soundingOffset } from './instrument';
 import type { Clef, Instrument } from '../data/types';
+// `?raw`: the project has no `@types/node`, so `readFileSync` does not
+// typecheck. Same pattern as `cameraResolution.test.ts`.
+import analysisSource from '../../../backend/app/services/analysis.py?raw';
 
 /**
  * Which staff a hand-entered piece is filed under.
@@ -37,6 +40,13 @@ describe('the staff each instrument reads', () => {
     expect(clefFor('double_bass')).toBe('bass');
   });
 
+  it('files both saxophone parts in treble, as written', () => {
+    // A tenor sounds a ninth below its page, down in bass-clef territory, and
+    // is still printed in treble so its fingerings match the alto's.
+    expect(clefFor('alto_sax')).toBe('treble');
+    expect(clefFor('tenor_sax')).toBe('treble');
+  });
+
   it('answers for every instrument this build offers', () => {
     // `Record<Instrument, Clef>` already makes a missing entry a `tsc` error;
     // this catches the other half — an entry present and undefined at runtime,
@@ -46,10 +56,39 @@ describe('the staff each instrument reads', () => {
       viola: true,
       cello: true,
       double_bass: true,
+      alto_sax: true,
+      tenor_sax: true,
     };
     const clefs: Clef[] = ['treble', 'alto', 'tenor', 'bass'];
     for (const instrument of Object.keys(every) as Instrument[]) {
       expect(clefs).toContain(clefFor(instrument));
+    }
+  });
+});
+
+describe('how far below the page each instrument sounds', () => {
+  it('moves a double bass an octave and each saxophone by its own interval', () => {
+    expect(soundingOffset('violin')).toBe(0);
+    expect(soundingOffset('double_bass')).toBe(-12);
+    // Alto in E-flat: written C sounds the E-flat a major sixth below.
+    expect(soundingOffset('alto_sax')).toBe(-9);
+    // Tenor in B-flat: written C sounds the B-flat a major ninth below.
+    expect(soundingOffset('tenor_sax')).toBe(-14);
+  });
+
+  it('agrees with the analysis, which listens for the same sounding pitch', () => {
+    // Playback and analysis each hold a copy: the app plays a note where
+    // `soundingOffset` puts it, and the server listens for it where
+    // `_TRANSPOSE` does. If the two disagree, Listen teaches the musician a
+    // pitch the verdict then marks wrong.
+    const table = /^_TRANSPOSE: dict\[str, int\] = \{([^}]*)\}/m.exec(analysisSource);
+    expect(table, '_TRANSPOSE not found in analysis.py').not.toBeNull();
+    const backend = Object.fromEntries(
+      [...table![1].matchAll(/"(\w+)":\s*(-?\d+)/g)].map(([, name, st]) => [name, Number(st)]),
+    );
+    const every: Instrument[] = ['violin', 'viola', 'cello', 'double_bass', 'alto_sax', 'tenor_sax'];
+    for (const instrument of every) {
+      expect(backend[instrument] ?? 0, instrument).toBe(soundingOffset(instrument));
     }
   });
 });

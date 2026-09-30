@@ -56,6 +56,8 @@ const EVERY_INSTRUMENT: Record<Instrument, true> = {
   viola: true,
   cello: true,
   double_bass: true,
+  alto_sax: true,
+  tenor_sax: true,
 };
 
 const EVERY_METRONOME_MODE: Record<MetronomeMode, true> = {

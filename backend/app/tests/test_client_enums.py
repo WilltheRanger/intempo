@@ -102,7 +102,7 @@ def test_the_reader_would_notice_a_type_that_stopped_existing() -> None:
     with pytest.raises(AssertionError, match="no longer declares"):
         _union("NoSuchTypeExists")
 
-    assert len(_union("Instrument")) == 4
+    assert len(_union("Instrument")) == 6
 
 
 def test_the_app_offers_exactly_the_verdicts_this_api_accepts() -> None:

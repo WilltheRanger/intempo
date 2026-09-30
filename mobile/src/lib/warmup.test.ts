@@ -48,6 +48,9 @@ const FIRST_POSITION: Record<Instrument, [string, string]> = {
   viola: ['C3', 'E5'],
   cello: ['C2', 'D4'],
   double_bass: ['E2', 'B3'],
+  // Not a position: between the low notes and the palm keys, as written.
+  alto_sax: ['D4', 'C6'],
+  tenor_sax: ['D4', 'C6'],
 };
 
 const SEMITONE: Record<string, number> = {

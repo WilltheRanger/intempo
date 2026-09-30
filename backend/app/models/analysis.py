@@ -23,11 +23,13 @@ class MetronomeMode(str, Enum):
 class Instrument(str, Enum):
     """What the musician plays.
 
-    The four bowed strings, matching the app's own `Instrument` type. It is
-    what the recording *is*, and the pipeline reads it to decide how to look
-    for note onsets — the low register of a double bass needs a lower detection
+    The four bowed strings and, since migration 029, the alto and tenor
+    saxophone, matching the app's own `Instrument` type. It is what the
+    recording *is*, and the pipeline reads it to decide how to look for note
+    onsets — the low register of a double bass needs a lower detection
     threshold than a violin, because the note swells in rather than snapping in
-    and most of its energy sits where the detector is weakest.
+    and most of its energy sits where the detector is weakest — and what pitch
+    a written note sounds at (`services/analysis._TRANSPOSE`).
 
     Deliberately the instrument and not a `double_bass: bool`. How each
     instrument should be treated is still being tuned against real recordings;
@@ -38,6 +40,8 @@ class Instrument(str, Enum):
     viola = "viola"
     cello = "cello"
     double_bass = "double_bass"
+    alto_sax = "alto_sax"
+    tenor_sax = "tenor_sax"
 
 
 class AnalysisStatus(str, Enum):
