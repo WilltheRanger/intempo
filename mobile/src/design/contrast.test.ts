@@ -196,6 +196,14 @@ describe('every palette clears AA on its own grounds', () => {
         expect(contrast(palette.accent, palette[ground])).toBeGreaterThanOrEqual(LARGE);
       });
 
+      // The trend line is a mark, not text: 1.4.11's 3:1, which is what lets
+      // its amber be light enough to sit apart from its red.
+      for (const token of ['trendOn', 'trendMid', 'trendBad'] as const) {
+        it(`${mode}: ${token} clears the non-text floor on ${ground}`, () => {
+          expect(contrast(palette[token], palette[ground])).toBeGreaterThanOrEqual(LARGE);
+        });
+      }
+
       it(`${mode}: a primary action's label reads on it`, () => {
         expect(contrast(palette.actionText, palette.actionBg)).toBeGreaterThanOrEqual(BODY);
       });

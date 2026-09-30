@@ -1,5 +1,34 @@
 # InTempo Decisions
 
+## 2026-09-29 — The trend line in green, amber and deep red, on colours of its own
+
+**Context.** The owner: "I feel like the line colors can be better". Measured
+before drawing anything: the line was ink inside the band, then the verdict
+gold (`#8F681C`) and red (`#C53B3B`). Under simulated deuteranopia that gold
+and red are ΔE 2.3 apart in OKLab — one colour — and 14.3 with full colour
+vision, below the floor where neighbours are easy to tell apart; and the ink
+made the on-tempo stretch the darkest thing on the graph. The palette file's
+own comment said the verdict trio "stays separable under deuteranopia"; by this
+measure it does not.
+
+**Decision** (three validated options drawn on the result, takes and pitch
+graphs; the owner chose "C · Green when on tempo"): new tokens `trendOn`
+`#2F7A52`, `trendMid` `#BC7A10`, `trendBad` `#9E2B2B` (dark: `#4FBF7F`,
+`#E0A23A`, `#E0605A`), used by `TrendPlot` and nothing else. Neighbouring
+pairs clear ΔE 8 for colour-blind viewers and 19 with full colour vision.
+
+**Why not change the verdict tokens.** They are set as text too — field
+errors, the correction prompt, "uneven" — and held to 4.5:1. The amber that
+separates from the red is 3.2:1 on ivory: legal for a 3px line (1.4.11's 3:1,
+now in `contrast.test.ts`), not for text. So the line gets its own trio and
+the text keeps its own.
+
+**Alternatives.** A: the ink line with a clearer amber and deeper red. B: the
+on-tempo stretch in a thin soft grey so only the problem stands out (my
+recommendation).
+
+---
+
 ## 2026-09-29 — Insights, Your takes and the Library in the result screen's language; the wordiness sweep
 
 **Context.** Once the result screen had a trend line and "You rushed in the

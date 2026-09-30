@@ -329,6 +329,27 @@ export const lightColors = {
   verdictOn: '#1D7F46',
   verdictMid: '#8F681C',
   verdictBad: '#C53B3B',
+
+  // -------------------------------------------------------------------------
+  // Trend colours — the line on every trend graph (`TrendPlot`), and only
+  // that: green inside the on-tempo band, amber outside it, deep red past the
+  // far edge (the owner's choice, 2026-09-29, "C · Green when on tempo").
+  //
+  // **Not the verdict trio, measured rather than assumed.** In OKLab under
+  // simulated deuteranopia the verdict amber and red sit ΔE 2.3 apart — one
+  // colour — so the line's two warnings read the same to a red-green
+  // colour-blind player, whatever the comment above says. These clear ΔE 8 on
+  // each neighbouring pair and 19 with full colour vision
+  // (`dataviz/validate_palette.js`).
+  //
+  // **A line, not text**: held to the 3:1 non-text floor (WCAG 1.4.11), which
+  // the amber clears at 3.2:1 on ivory and the verdict trio, set as text,
+  // could not be lightened to. The band behind the line is the second
+  // encoding, so no colour carries the reading alone.
+  // -------------------------------------------------------------------------
+  trendOn: '#2F7A52',
+  trendMid: '#BC7A10',
+  trendBad: '#9E2B2B',
 } as const;
 
 export type ColorToken = keyof typeof lightColors;
@@ -485,6 +506,11 @@ export const darkColors: Palette = {
   verdictOn: '#4FBF7F',
   verdictMid: '#D6A93F',
   verdictBad: '#F0736F',
+
+  /** The trend line on ink: the same three roles, lightened past 3:1. */
+  trendOn: '#4FBF7F',
+  trendMid: '#E0A23A',
+  trendBad: '#E0605A',
 } as const;
 
 export type ColorScheme = 'light' | 'dark';

@@ -44,11 +44,12 @@ export interface TrendPlotProps {
  * 2026-09-29), for every graph that shows one: a take bar by bar on the
  * result, takes one after another on Insights and on a piece's takes.
  *
- * **One curve, and colour only where it means something.** Ink inside the
- * band; gold exactly where it crosses the band's edge and red past the far
- * edge — clipped to those edges (`outsidePath`), not decided per point — with
- * a faint tint of the same colour between the line and the target. The curve
- * is monotone (`smoothPath`), so it never peaks above the value that made it.
+ * **One curve, coloured by where it is** (the owner's "C · Green when on
+ * tempo", 2026-09-29): green inside the band; amber exactly where it crosses
+ * the band's edge and deep red past the far edge — clipped to those edges
+ * (`outsidePath`), not decided per point — with a faint tint of the same
+ * colour between the line and the target. The curve is monotone
+ * (`smoothPath`), so it never peaks above the value that made it.
  *
  * **No boxes and no axis column.** The band is the only filled shape and runs
  * the full width; the words sit inside the graph at its right edge. It draws
@@ -132,12 +133,12 @@ export function TrendPlot({ data, height, ends, centreLabel, selected, rail }: T
 
             <G clipPath={`url(#${near})`}>
               {areas.map((d) => (
-                <Path key={d} d={d} fill={colors.verdictMid} opacity={0.13} />
+                <Path key={d} d={d} fill={colors.trendMid} opacity={0.16} />
               ))}
             </G>
             <G clipPath={`url(#${far})`}>
               {areas.map((d) => (
-                <Path key={d} d={d} fill={colors.verdictBad} opacity={0.1} />
+                <Path key={d} d={d} fill={colors.trendBad} opacity={0.13} />
               ))}
             </G>
 
@@ -145,7 +146,7 @@ export function TrendPlot({ data, height, ends, centreLabel, selected, rail }: T
               <Path
                 key={run[0].measure}
                 d={line}
-                stroke={colors.textSecondary}
+                stroke={colors.trendOn}
                 strokeWidth={STROKE}
                 strokeLinecap="round"
                 fill="none"
@@ -156,7 +157,7 @@ export function TrendPlot({ data, height, ends, centreLabel, selected, rail }: T
                 <Path
                   key={run[0].measure}
                   d={line}
-                  stroke={colors.verdictMid}
+                  stroke={colors.trendMid}
                   strokeWidth={STROKE}
                   strokeLinecap="round"
                   fill="none"
@@ -168,7 +169,7 @@ export function TrendPlot({ data, height, ends, centreLabel, selected, rail }: T
                 <Path
                   key={run[0].measure}
                   d={line}
-                  stroke={colors.verdictBad}
+                  stroke={colors.trendBad}
                   strokeWidth={STROKE}
                   strokeLinecap="round"
                   fill="none"
@@ -184,7 +185,7 @@ export function TrendPlot({ data, height, ends, centreLabel, selected, rail }: T
                   cx={x(end.at)}
                   cy={y(end.value)}
                   r={STROKE + 0.5}
-                  fill={end.tone ? colors[end.tone] : colors.textSecondary}
+                  fill={lineColour(end.tone)}
                 />
               );
             })}
@@ -203,7 +204,7 @@ export function TrendPlot({ data, height, ends, centreLabel, selected, rail }: T
                   cx={x(selected.at)}
                   cy={y(selected.value)}
                   r={6}
-                  fill={selected.tone ? colors[selected.tone] : colors.textPrimary}
+                  fill={lineColour(selected.tone)}
                   stroke={colors.bg}
                   strokeWidth={2}
                 />
@@ -280,6 +281,17 @@ export function TrendPlot({ data, height, ends, centreLabel, selected, rail }: T
       ) : null}
     </View>
   );
+}
+
+/**
+ * The line's colour at a point, from the verdict tone the data carries: the
+ * trend trio (`colors.trendOn/Mid/Bad`), not the verdict one, which is set for
+ * text and runs its amber and red together for a colour-blind eye.
+ */
+function lineColour(tone: TrendPoint['tone']): string {
+  if (tone === 'verdictBad') return colors.trendBad;
+  if (tone === 'verdictMid') return colors.trendMid;
+  return colors.trendOn;
 }
 
 const styles = StyleSheet.create({
