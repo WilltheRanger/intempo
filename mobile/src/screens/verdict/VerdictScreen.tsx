@@ -447,8 +447,13 @@ export function VerdictScreen() {
         />
       ) : null}
       <View style={pitchLine ? styles.chartUnderSwitch : styles.chart}>
+        {/*
+          Keyed by what it draws, so switching Tempo and Pitch mounts a fresh
+          graph and the new line draws itself in, as it did on arrival.
+        */}
         {showingPitch && pitchLine ? (
           <TrendChart
+            key="pitch"
             data={pitchLine}
             measures={take.measures}
             selected={selected}
@@ -468,6 +473,7 @@ export function VerdictScreen() {
           />
         ) : tempoLine ? (
           <TrendChart
+            key="tempo"
             data={tempoLine}
             measures={take.measures}
             selected={selected}

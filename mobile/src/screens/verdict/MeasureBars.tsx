@@ -7,6 +7,7 @@ import {
   type LayoutChangeEvent,
 } from 'react-native';
 
+import { useDrawIn } from '../../components/charts/useDrawIn';
 import { Text } from '../../components/primitives';
 import type { MeasureVerdict, TempoBeatUnit, Tolerance } from '../../data/types';
 import { BORDER_WIDTH, colors } from '../../design';
@@ -96,6 +97,8 @@ export function MeasureBars({
     [chart, measures, targetBpm, tempoBeatUnit, tolerance],
   );
   const [measured, setWidth] = useState(0);
+  // Each bar grows from the centre rule, as the trend line draws itself in.
+  const drawn = useDrawIn();
   // The bars' own width: the chart's, less the gutter its ends are named in.
   const width = Math.max(0, measured - (ends ? DIRECTION_GUTTER : 0));
 
@@ -208,7 +211,7 @@ export function MeasureBars({
         {step > 0
           ? bars.map((bar, index) => {
               const left = index * step + (step - barWidth) / 2;
-              const height = Math.max(2, bar.size * (HALF - 4));
+              const height = Math.max(2, bar.size * (HALF - 4) * drawn);
               return (
                 // A Fragment, not a wrapping View: the bars are positioned
                 // against the chart, and a static wrapper is a zero-height box
