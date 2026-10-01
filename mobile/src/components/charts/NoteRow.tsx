@@ -12,6 +12,7 @@ import {
   type NoteMark,
 } from '../../lib/verdict/pitchByNote';
 import { Text } from '../primitives/Text';
+import { useDrawIn } from './useDrawIn';
 
 /** The words at the right edge: "sharp", "in tune", "flat". */
 const GUTTER = 48;
@@ -71,6 +72,8 @@ export function NoteRow({
   caption = null,
 }: NoteRowProps) {
   const [width, setWidth] = useState(0);
+  // The dots rise from the in-tune line to where they sit, on each visit.
+  const drawn = useDrawIn();
   const area = Math.max(0, width - GUTTER);
   // Until it is measured the row holds every note; after, as many as fit —
   // keeping the tapped one, so a narrower window never hides what the line
@@ -140,14 +143,14 @@ export function NoteRow({
                     x1={x(index)}
                     x2={x(index)}
                     y1={y(0)}
-                    y2={y(mark.cents)}
+                    y2={y(mark.cents * drawn)}
                     stroke={colour}
                     strokeWidth={STEM}
                     strokeLinecap="round"
                   />
                   <Circle
                     cx={x(index)}
-                    cy={y(mark.cents)}
+                    cy={y(mark.cents * drawn)}
                     r={on ? DOT + 1.5 : DOT}
                     fill={colour}
                     stroke={on ? colors.bg : undefined}

@@ -59,7 +59,8 @@ const declared = [
  */
 const VENDORED_NAMES = [
   'Bravura (music font)',
-  'GeneralUser GS (viola and cello SoundFonts)',
+  'Noto Music (accidentals in text)',
+  'GeneralUser GS (viola, cello and saxophone SoundFonts)',
   'VS Chamber Orchestra 2 CE (violin and double bass samples)',
 ];
 
