@@ -2,21 +2,19 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { BORDER_WIDTH, colors, spacing } from '../../design';
 import type { Instrument } from '../../data/types';
+import { INSTRUMENT_GROUPS } from '../../lib/instrumentGroups';
+import { INSTRUMENT_LABELS } from '../../lib/warmup';
 import { Text } from '../primitives/Text';
 
 /**
- * Choosing one of the four instruments the app is written for.
+ * Choosing the instrument the app listens for, during onboarding.
  *
  * **Not a `SegmentedControl`,** whose own docstring reserves it for "two or
  * three mutually exclusive *views* of the same thing… where the point is
- * comparison". Four is past that, and these are not views: nothing is being
- * compared, an answer is being given. On a phone a four-way track leaves each
- * segment about eighty points wide, which is why the Profile screen's copy has
- * to say "Bass" — a name a bassist does not use for the instrument and which
- * `INSTRUMENT_OPTIONS` already apologises for in a comment.
- *
- * A two-by-two grid fixes both: the full name fits, and each target is a
- * comfortable tap rather than a quarter of a track.
+ * comparison". These are not views: nothing is being compared, an answer is
+ * being given. A grid of cells two across lets the full name fit and makes
+ * each target a comfortable tap rather than a slice of a track — which is also
+ * why Profile stopped using a switch for this (`InstrumentSheet`).
  *
  * Structure comes from hairline borders and the selected cell's ink, not from
  * elevation or fill — §3 law 6. Ochre would be the obvious choice for the
@@ -40,56 +38,68 @@ export interface InstrumentChoiceProps {
 }
 
 /**
- * The full names, in the order a string section sits.
- *
- * Highest to lowest, which is the order a musician expects to see them in and
- * is not alphabetical by accident. "Double bass" in full: a bassist does not
- * call it "Bass", and this grid has the room to say so.
- *
- * **It is not the only instrument control.** `ProfileScreen` has a second one,
- * four segments across a phone, which says "Bass" for exactly that reason —
- * one rule (full name where it fits) in two places that cannot see each other.
- * `lib/instrumentLabels.test.ts` holds them to the same four values in the
- * same order and allows that one divergence and no other.
+ * **Grouped, from the one list** (`lib/instrumentGroups.ts`): the four strings
+ * as the two-by-two grid they always were, and the saxophones (2026-10-01) as
+ * a row of their own under "Winds". Profile offers the same list in a sheet.
+ * Full names everywhere — "Double bass", "Tenor saxophone" — because a cell
+ * has the room.
  */
-const INSTRUMENTS: { value: Instrument; label: string }[] = [
-  { value: 'violin', label: 'Violin' },
-  { value: 'viola', label: 'Viola' },
-  { value: 'cello', label: 'Cello' },
-  { value: 'double_bass', label: 'Double bass' },
-];
-
 export function InstrumentChoice({ value, onChange, label }: InstrumentChoiceProps) {
   return (
-    <View style={styles.grid} accessibilityRole="radiogroup" accessibilityLabel={label}>
-      {INSTRUMENTS.map((instrument) => {
-        const selected = value === instrument.value;
-        return (
-          <Pressable
-            key={instrument.value}
-            onPress={() => onChange(instrument.value)}
-            accessibilityRole="radio"
-            // A radio announces itself with `aria-checked`; the native prop
-            // does not produce it. See `ariaState.test.ts`.
-            aria-checked={selected}
-            accessibilityState={{ selected }}
-            accessibilityLabel={instrument.label}
-            style={({ pressed }) => [
-              styles.cell,
-              selected && styles.selected,
-              pressed && !selected && styles.pressed,
-            ]}
-          >
-            <Text
-              variant="pieceTitle"
-              color={selected ? 'actionText' : 'textPrimary'}
-            >
-              {instrument.label}
-            </Text>
-          </Pressable>
-        );
-      })}
+    <View accessibilityRole="radiogroup" accessibilityLabel={label}>
+      {INSTRUMENT_GROUPS.map((group, groupIndex) => (
+        <View key={group.label} style={groupIndex > 0 && styles.laterGroup}>
+          <Text variant="sectionLabel" color="textTertiary" style={styles.heading}>
+            {group.label}
+          </Text>
+          <View style={styles.grid}>
+            {group.instruments.map((instrument) => (
+              <Cell
+                key={instrument}
+                instrument={instrument}
+                selected={value === instrument}
+                onPress={() => onChange(instrument)}
+              />
+            ))}
+          </View>
+        </View>
+      ))}
     </View>
+  );
+}
+
+function Cell({
+  instrument,
+  selected,
+  onPress,
+}: {
+  instrument: Instrument;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  const name = INSTRUMENT_LABELS[instrument];
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="radio"
+      // A radio announces itself with `aria-checked`; the native prop
+      // does not produce it. See `ariaState.test.ts`.
+      aria-checked={selected}
+      accessibilityState={{ selected }}
+      accessibilityLabel={name}
+      style={({ pressed }) => [
+        styles.cell,
+        selected && styles.selected,
+        pressed && !selected && styles.pressed,
+      ]}
+    >
+      <Text
+        variant="pieceTitle"
+        color={selected ? 'actionText' : 'textPrimary'}
+      >
+        {name}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -97,6 +107,12 @@ const CELL_HEIGHT = 80;
 const CELL_RADIUS = 14;
 
 const styles = StyleSheet.create({
+  laterGroup: {
+    marginTop: spacing.xl,
+  },
+  heading: {
+    marginBottom: spacing.sm,
+  },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',

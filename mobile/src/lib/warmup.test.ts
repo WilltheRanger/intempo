@@ -7,6 +7,7 @@ import {
   INSTRUMENT_LABELS,
   VALUE_DURATIONS,
   dayIndex,
+  rangeLabel,
   warmupFor,
   warmupScore,
 } from './warmup';
@@ -254,5 +255,15 @@ describe('the same warmup all day', () => {
     } finally {
       process.env.TZ = original;
     }
+  });
+});
+
+describe('what the plate says the range is', () => {
+  it('says first position on a string instrument and nothing on a saxophone', () => {
+    for (const instrument of ['violin', 'viola', 'cello', 'double_bass'] as Instrument[]) {
+      expect(rangeLabel(instrument)).toBe('First position');
+    }
+    expect(rangeLabel('alto_sax')).toBeNull();
+    expect(rangeLabel('tenor_sax')).toBeNull();
   });
 });

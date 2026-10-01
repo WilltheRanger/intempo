@@ -289,6 +289,17 @@ export const INSTRUMENT_LABELS: Record<Instrument, string> = {
   tenor_sax: 'Tenor saxophone',
 };
 
+/**
+ * What the plate says the exercise stays within, beside the instrument's name.
+ *
+ * "First position" is a string player's phrase and means nothing on a
+ * saxophone, where the range is the low notes to the palm keys and needs no
+ * caption to say so. Null where there is nothing worth saying.
+ */
+export function rangeLabel(instrument: Instrument): string | null {
+  return instrument === 'alto_sax' || instrument === 'tenor_sax' ? null : 'First position';
+}
+
 /** Days since the epoch, in local time — the same number all day, everywhere. */
 export function dayIndex(now: Date = new Date()): number {
   const local = new Date(now.getFullYear(), now.getMonth(), now.getDate());

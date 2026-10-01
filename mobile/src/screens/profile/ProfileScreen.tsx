@@ -41,6 +41,8 @@ import {
 import { formatTier } from '../../lib/format';
 import type { RootNavigation } from '../../navigation/types';
 import { AccountRow } from './AccountRow';
+import { InstrumentSheet } from '../../components/profile/InstrumentSheet';
+import { INSTRUMENT_LABELS } from '../../lib/warmup';
 import { loadStateFor } from '../../lib/loadState';
 
 /**
@@ -61,6 +63,7 @@ export function ProfileScreen() {
   const navigation = useNavigation<RootNavigation>();
   const queryClient = useQueryClient();
   const [confirmingSignOut, setConfirmingSignOut] = useState(false);
+  const [instrumentSheetVisible, setInstrumentSheetVisible] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
   const saveProfile = useUpdateProfile();
@@ -322,17 +325,16 @@ export function ProfileScreen() {
       </View>
 
       <RuledHeading label="Practice" rule="borderStrong" style={styles.section} />
-      <View style={[styles.setting, styles.settingFirst]}>
-        <Text variant="rowLabel" style={styles.settingTitle}>
-          Instrument
-        </Text>
-        <SegmentedControl
-          label="Instrument"
-          options={INSTRUMENT_OPTIONS}
-          value={settings.instrument}
-          onChange={(instrument: Instrument) => preferences.setInstrument(instrument)}
-        />
-      </View>
+      {/*
+        A row that opens the list, not a switch: six instruments do not fit
+        across a phone, and four already had to call a double bass "Bass".
+      */}
+      <AccountRow
+        label="Instrument"
+        value={INSTRUMENT_LABELS[settings.instrument]}
+        onPress={() => setInstrumentSheetVisible(true)}
+        ruled={false}
+      />
 
       <View style={styles.setting}>
         <Text variant="rowLabel" style={styles.settingTitle}>
@@ -435,6 +437,13 @@ export function ProfileScreen() {
         </Text>
       ) : null}
 
+      <InstrumentSheet
+        visible={instrumentSheetVisible}
+        value={settings.instrument}
+        onChange={(instrument: Instrument) => preferences.setInstrument(instrument)}
+        onClose={() => setInstrumentSheetVisible(false)}
+      />
+
       <ConfirmDialog
         visible={confirmingSignOut}
         title="Sign out?"
@@ -458,25 +467,6 @@ const BADGE_SIZE = 26;
  * headphones caveat below the control rather than in the label, where it
  * wouldn't fit and would crowd the other three.
  */
-/**
- * The four bowed strings, in score order.
- *
- * "Bass" rather than "Double bass" in the control: four segments across a
- * phone leave no room for the longer word, and no one reading a string app
- * mistakes it for a bass guitar. The full name is used everywhere it fits —
- * `INSTRUMENT_LABELS`, which Today and the Warmup screen render, and the
- * roomier grid in `components/profile/InstrumentChoice`.
- *
- * This is the only shortening in the app, and
- * `lib/instrumentLabels.test.ts` is what keeps it the only one.
- */
-const INSTRUMENT_OPTIONS = [
-  { value: 'violin' as const, label: 'Violin' },
-  { value: 'viola' as const, label: 'Viola' },
-  { value: 'cello' as const, label: 'Cello' },
-  { value: 'double_bass' as const, label: 'Bass' },
-];
-
 /**
  * The four modes, from the same list the record screen's picker offers.
  *

@@ -7,7 +7,6 @@ import {
   centreLabelTop,
   curveSpan,
   curveYAt,
-  outsidePath,
   smoothPath,
   takePitchTrend,
   tempoTrend,
@@ -179,27 +178,6 @@ describe('the smooth line', () => {
   it('is a dot for one point and nothing for none', () => {
     expect(smoothPath([{ x: 4, y: 5 }])).toBe('M 4,5');
     expect(smoothPath([])).toBe('');
-  });
-});
-
-describe('the region outside the band', () => {
-  const band = tempoTrend(TAKE, 96, 'quarter', TOLERANCE)!.band;
-  const toX = (at: number) => at * 100;
-  const toY = (value: number) => 200 - value;
-
-  it('is two closed shapes, one above the band and one below', () => {
-    const d = outsidePath(band, 'near', toX, toY, 50);
-    expect(d.match(/Z/g)).toHaveLength(2);
-    // Along the band's top edge (100.8 → y 99.2) and bottom (91.2 → y 108.8).
-    expect(d).toContain(',99.2 ');
-    expect(d).toContain(',108.8 ');
-  });
-
-  it('runs along the far edges for the red', () => {
-    const d = outsidePath(band, 'far', toX, toY, 50);
-    // 105.6 → y 94.4, and 86.4 → y 113.6.
-    expect(d).toContain(',94.4');
-    expect(d).toContain(',113.6');
   });
 });
 
