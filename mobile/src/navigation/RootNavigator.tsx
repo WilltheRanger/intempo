@@ -291,7 +291,7 @@ function SignedInApp() {
 
   // "Welcome to InTempo", once, the first time the account is through — held
   // in front of the app like the gate before it, so it is not a route anybody
-  // can come back to. "Start practicing" moves `arrival` on and Today fades in.
+  // can come back to. "Start practicing" moves `arrival` on and the Library fades in.
   if (arrived === 'welcome') {
     return <OnboardingDone />;
   }

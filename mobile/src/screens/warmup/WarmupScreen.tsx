@@ -18,7 +18,7 @@ import {
 } from '../../data/practiceTempo';
 import { usePreferences } from '../../data/preferences';
 import { BORDER_WIDTH, colors, spacing } from '../../design';
-import { INSTRUMENT_LABELS, warmupFor, warmupScore } from '../../lib/warmup';
+import { INSTRUMENT_LABELS, rangeLabel, warmupFor, warmupScore } from '../../lib/warmup';
 import { ListenButton } from '../../components/score/ListenButton';
 
 /**
@@ -109,9 +109,11 @@ export function WarmupScreen() {
           <Text variant="sectionLabel" color="textTertiary">
             {INSTRUMENT_LABELS[instrument]}
           </Text>
-          <Text variant="sectionLabel" color="textTertiary">
-            First position
-          </Text>
+          {rangeLabel(instrument) ? (
+            <Text variant="sectionLabel" color="textTertiary">
+              {rangeLabel(instrument)}
+            </Text>
+          ) : null}
         </View>
 
         {plateWidth === null ? null : (
