@@ -7,7 +7,6 @@ import {
   bandEdgesAt,
   centreLabelTop,
   curveSpan,
-  outsidePath,
   smoothPath,
   toneStretches,
   trendY,
@@ -57,12 +56,14 @@ export interface TrendPlotProps {
  * tempo", 2026-09-29): green inside the band; amber from exactly where it
  * crosses the band's edge and deep red past the far edge — cut along the line
  * where its centre crosses (`toneStretches`), so each stretch is one colour
- * across its whole width — with a faint tint between the line and the band in
- * the colour of the line above it (the owner, 2026-09-30, "A · Fill follows
- * line", after "colored a bit off": the line had been cut by height, half
- * green and half gold wherever it ran along an edge, and the tint lay in flat
- * stripes). The curve is monotone (`smoothPath`), so it never peaks above the
- * value that made it.
+ * across its whole width. The curve is monotone (`smoothPath`), so it never
+ * peaks above the value that made it.
+ *
+ * **No fill between the line and the band** (the owner, 2026-10-01: "its the
+ * colored fill in between"). It was a tint the colour of the line above it,
+ * clipped to outside the band; on a phone, over five takes, it read as loose
+ * tan blocks standing beside the line rather than as a shadow of it, and the
+ * line already says everything the tint did.
  *
  * **No boxes and no axis column.** The band is the only filled shape and runs
  * the full width; the words sit inside the graph at its right edge. It draws
@@ -95,27 +96,10 @@ export function TrendPlot({ data, height, ends, centreLabel, selected, rail }: T
   const centrePath = data.band.length
     ? `M ${data.band.map((b) => `${x(b.at)},${y(b.centre)}`).join(' L ')}`
     : '';
-  const centreAt = (along: number) => {
-    const nearest = data.band.reduce(
-      (best, b) => (Math.abs(b.at - along) < Math.abs(best.at - along) ? b : best),
-      data.band[0],
-    );
-    return y(nearest.centre);
-  };
   const curves = data.runs.map((run) => ({
     run,
     line: smoothPath(run.map((p) => ({ x: x(p.at), y: y(p.value) }))),
   }));
-  // The area between the line and the target, drawn only where it is clipped
-  // to outside the band: the tint under a rush.
-  const areas = curves
-    .filter(({ run }) => run.length > 1)
-    .map(({ run, line }) => {
-      const first = run[0];
-      const last = run[run.length - 1];
-      return `${line} L ${x(last.at)},${centreAt(last.at)} L ${x(first.at)},${centreAt(first.at)} Z`;
-    });
-  const near = `near${id}`;
   // Each run cut into stretches of one colour along its length; the first and
   // last reach past the run's ends so the round caps are the run's own colour.
   const edgesAt = bandEdgesAt(data.band, x, y);
@@ -168,9 +152,6 @@ export function TrendPlot({ data, height, ends, centreLabel, selected, rail }: T
         {width > 0 ? (
           <Svg width={width} height={height} pointerEvents="none">
             <Defs>
-              <ClipPath id={near}>
-                <Path d={outsidePath(data.band, 'near', x, y, height)} />
-              </ClipPath>
               {TONES.map((tone) => (
                 <ClipPath key={tone} id={`${tone}${id}`}>
                   {rectsFor(lineStretches, tone).map((r) => (
@@ -187,22 +168,6 @@ export function TrendPlot({ data, height, ends, centreLabel, selected, rail }: T
               opacity={0.7}
               fill="none"
             />
-
-            {/* The tint between the line and the band, the colour of the line above it. */}
-            {(['near', 'far'] as const).map((tone) => (
-              <G key={tone} clipPath={`url(#${tone}${id})`}>
-                <G clipPath={`url(#${near})`}>
-                  {areas.map((d) => (
-                    <Path
-                      key={d}
-                      d={d}
-                      fill={tone === 'far' ? colors.trendBad : colors.trendMid}
-                      opacity={tone === 'far' ? 0.13 : 0.16}
-                    />
-                  ))}
-                </G>
-              </G>
-            ))}
 
             {/* The line, one colour across its width wherever it is (`toneStretches`). */}
             {TONES.map((tone) => (

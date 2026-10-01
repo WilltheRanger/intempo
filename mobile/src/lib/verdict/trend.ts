@@ -397,7 +397,7 @@ export function toneStretches(
 
 /**
  * The band's edges at any x along it, in pixels: straight between the band's
- * own points, as `outsidePath` draws them.
+ * own points, as the band itself is drawn.
  */
 export function bandEdgesAt(
   band: readonly TrendBand[],
@@ -508,36 +508,6 @@ export function centreLabelTop({
     (!line || top + textHeight + clearance <= line.top || top >= line.bottom + clearance);
   const chosen = candidates.find(fits);
   return chosen ?? Math.max(minTop, Math.min(maxTop, sides[0]));
-}
-
-/**
- * Everything above and below the band, as one shape to clip to — so the line
- * turns gold exactly where it crosses the band's edge rather than at the next
- * bar, and red exactly where it crosses the far edge.
- *
- * Two closed regions, each running along the band's edge and out past the
- * graph's top or bottom, following the target where the page changes tempo.
- */
-export function outsidePath(
-  band: readonly TrendBand[],
-  edge: 'near' | 'far',
-  toX: (at: number) => number,
-  toY: (value: number) => number,
-  height: number,
-): string {
-  if (band.length === 0) return '';
-  const high = band.map((b) => ({ x: toX(b.at), y: toY(edge === 'near' ? b.high : b.farHigh) }));
-  const low = band.map((b) => ({ x: toX(b.at), y: toY(edge === 'near' ? b.low : b.farLow) }));
-  const left = high[0].x;
-  const right = high[high.length - 1].x;
-  const above = -height;
-  const below = height * 2;
-  const along = (points: { x: number; y: number }[]) =>
-    points.map((p) => `L ${px(p.x)},${px(p.y)}`).join(' ');
-  return (
-    `M ${px(left)},${px(above)} L ${px(right)},${px(above)} ${along([...high].reverse())} Z ` +
-    `M ${px(left)},${px(below)} L ${px(right)},${px(below)} ${along([...low].reverse())} Z`
-  );
 }
 
 /**
