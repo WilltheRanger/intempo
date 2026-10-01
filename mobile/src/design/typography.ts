@@ -41,6 +41,14 @@ export const fontFamily = {
    * rather than paths.
    */
   music: 'Bravura',
+  /**
+   * ♭ ♮ ♯ ♩ inside running text, and nothing else. Neither text face has them,
+   * so every "B♭" fell back to whatever the device had, with its own spacing
+   * ("B ♭ s", 2026-10-01). Noto Music, re-set to stand on the baseline and
+   * reach Inter's cap height (`tools/subset-accidentals.py`). `Text` draws
+   * these four characters in it; nothing names it directly.
+   */
+  accidentals: 'Accidentals',
 } as const;
 
 /** One em of a SMuFL font is four staff spaces. */
@@ -49,8 +57,9 @@ export const MUSIC_EM_IN_SPACES = 4;
 /**
  * Passed to `useFonts` at app start.
  *
- * All five are files in this repository and all five are subset — the text
- * faces by `tools/subset-text-fonts.py`, Bravura by `tools/subset-bravura.py`.
+ * All six are files in this repository and all six are subset — the text
+ * faces by `tools/subset-text-fonts.py`, Bravura by `tools/subset-bravura.py`,
+ * the accidentals by `tools/subset-accidentals.py`.
  *
  * **TTF rather than WOFF2, measured.** Subset WOFF2 is 30.1 KB against subset
  * TTF's 38.1 KB over the wire, because Cloudflare already brotli-compresses
@@ -64,6 +73,7 @@ export const fontsToLoad = {
   Inter_400Regular: require('../../assets/fonts/Inter_400Regular.ttf'),
   Inter_500Medium: require('../../assets/fonts/Inter_500Medium.ttf'),
   Bravura: require('../../assets/fonts/Bravura.otf'),
+  Accidentals: require('../../assets/fonts/Accidentals.ttf'),
 };
 
 /**

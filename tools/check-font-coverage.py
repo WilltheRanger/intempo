@@ -17,9 +17,10 @@ defect this repository keeps paying for, so it is a gate rather than a note.
 **It compares against upstream, which is the whole design.** The first version
 asked "is this character in all four subsets", and that question cannot be
 answered usefully: it failed on ♭, ♯ and ♩, which *no* text face here has ever
-contained and which have fallen back to the system font since the day they were
-typed. Those are not subsetting defects and nothing in this repository can fix
-them. The answerable question is **"did the subset drop something upstream
+contained and which fell back to the system font from the day they were typed.
+Those are not subsetting defects. They were fixed separately, on 2026-10-01,
+by a font of their own (`Accidentals.ttf`, which `Text` draws them in), and
+this check counts that face as covering them. The answerable question is **"did the subset drop something upstream
 had"** — the one risk subsetting introduces — and that needs the packages in
 `mobile/node_modules`, so this runs beside the mobile job rather than in the
 Python one.
@@ -199,9 +200,15 @@ def cmaps() -> tuple[dict[str, set[int]], dict[str, set[int]]]:
     return have, kept
 
 
+#: The accidentals face (`tools/subset-accidentals.py`). `Text` draws ♭ ♮ ♯ ♩
+#: in it, so a character it has does not fall back to anything.
+ACCIDENTALS = SUBSET / "Accidentals.ttf"
+
+
 def main() -> int:
     have, kept = cmaps()
     used = printable_strings()
+    accidentals = set(TTFont(ACCIDENTALS).getBestCmap()) if ACCIDENTALS.exists() else set()
 
     dropped: list[str] = []
     never: list[tuple[str, list[str]]] = []
@@ -221,7 +228,7 @@ def main() -> int:
                 f"  U+{point:04X} {char!r} dropped from {', '.join(sorted(gone))}\n"
                 f"      used in {where}{more}"
             )
-        elif absent:
+        elif absent and not (len(absent) == len(have) and point in accidentals):
             never.append((char, sorted(absent)))
 
     if never:

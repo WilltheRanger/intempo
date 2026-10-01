@@ -121,16 +121,27 @@ const path = () => page.evaluate(() => location.pathname);
  * top of `<body>` settles it; nothing less does.
  */
 const leaves = (where = page) =>
-  where.evaluate(() =>
-    [...document.querySelectorAll('*')]
+  where.evaluate(() => {
+    // **A line with a flat in it is still one line.** `Text` draws ♭ ♮ ♯ ♩ 𝄫 𝄪
+    // in their own font, which on the web is a span inside the line's element
+    // (2026-10-01) — so "Your E♭s were sharp" stopped being a leaf and the walk
+    // read it as "♭". An element whose only element children are accidentals
+    // is a leaf, and the accidental spans inside one are not leaves of their own.
+    const accidentalOnly = (el) =>
+      el.children.length === 0 &&
+      /^[\u2669\u266D\u266E\u266F\u{1D12A}\u{1D12B}]+$/u.test((el.textContent ?? '').trim());
+    const isLeaf = (el) => [...el.children].every(accidentalOnly);
+    return [...document.querySelectorAll('*')]
       .filter(
         (el) =>
-          el.children.length === 0 &&
+          isLeaf(el) &&
+          !(accidentalOnly(el) && el.parentElement && isLeaf(el.parentElement) &&
+            el.parentElement.textContent.trim() !== el.textContent.trim()) &&
           (el.textContent ?? '').trim() &&
           !['STYLE', 'SCRIPT', 'TITLE', 'NOSCRIPT'].includes(el.tagName),
       )
-      .map((el) => el.textContent.trim()),
-  );
+      .map((el) => el.textContent.trim());
+  });
 
 /**
  * Wait for a condition rather than for a duration.

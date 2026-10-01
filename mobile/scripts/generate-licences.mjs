@@ -29,8 +29,10 @@ const names = Object.keys({
  */
 const VENDORED = [
   { name: 'Bravura (music font)', version: 'subset', licence: 'OFL-1.1' },
+  // ♭ ♮ ♯ ♩ in running text, re-set by `tools/subset-accidentals.py`.
+  { name: 'Noto Music (accidentals in text)', version: 'subset', licence: 'OFL-1.1' },
   {
-    name: 'GeneralUser GS (viola and cello SoundFonts)',
+    name: 'GeneralUser GS (viola, cello and saxophone SoundFonts)',
     version: '2.0.3 subset',
     licence: 'GeneralUser GS License v2.0',
   },
