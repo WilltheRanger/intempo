@@ -16,6 +16,7 @@ import {
   type TrendPoint,
 } from '../../lib/verdict/trend';
 import { Text } from '../primitives/Text';
+import { useDrawIn } from './useDrawIn';
 
 /** The line: heavy enough to be the subject, not a grid line. */
 const STROKE = 3;
@@ -72,6 +73,8 @@ export interface TrendPlotProps {
  */
 export function TrendPlot({ data, height, ends, centreLabel, selected, rail }: TrendPlotProps) {
   const [width, setWidth] = useState(0);
+  // Draws itself in, left to right, each time its screen is opened.
+  const drawn = useDrawIn();
   // The centre word's width, measured once it has drawn; a guess until then.
   const [labelWidth, setLabelWidth] = useState(60);
   // Inset by the end dot, so a line that ends at the edge ends on a whole dot.
@@ -152,6 +155,9 @@ export function TrendPlot({ data, height, ends, centreLabel, selected, rail }: T
         {width > 0 ? (
           <Svg width={width} height={height} pointerEvents="none">
             <Defs>
+              <ClipPath id={`reveal${id}`}>
+                <Rect x={-STROKE * 2} y={-height} width={(width + STROKE * 4) * drawn} height={height * 3} />
+              </ClipPath>
               {TONES.map((tone) => (
                 <ClipPath key={tone} id={`${tone}${id}`}>
                   {rectsFor(lineStretches, tone).map((r) => (
@@ -169,34 +175,36 @@ export function TrendPlot({ data, height, ends, centreLabel, selected, rail }: T
               fill="none"
             />
 
-            {/* The line, one colour across its width wherever it is (`toneStretches`). */}
-            {TONES.map((tone) => (
-              <G key={tone} clipPath={`url(#${tone}${id})`}>
-                {curves.map(({ run, line }) => (
-                  <Path
-                    key={run[0].measure}
-                    d={line}
-                    stroke={toneColour(tone)}
-                    strokeWidth={STROKE}
-                    strokeLinecap="round"
-                    fill="none"
+            <G clipPath={`url(#reveal${id})`}>
+              {/* The line, one colour across its width wherever it is (`toneStretches`). */}
+              {TONES.map((tone) => (
+                <G key={tone} clipPath={`url(#${tone}${id})`}>
+                  {curves.map(({ run, line }) => (
+                    <Path
+                      key={run[0].measure}
+                      d={line}
+                      stroke={toneColour(tone)}
+                      strokeWidth={STROKE}
+                      strokeLinecap="round"
+                      fill="none"
+                    />
+                  ))}
+                </G>
+              ))}
+              {/* Where a run ends, a dot — so a line that stops reads as ending. */}
+              {data.runs.map((run) => {
+                const end = run[run.length - 1];
+                return (
+                  <Circle
+                    key={end.measure}
+                    cx={x(end.at)}
+                    cy={y(end.value)}
+                    r={STROKE + 0.5}
+                    fill={lineColour(end.tone)}
                   />
-                ))}
-              </G>
-            ))}
-            {/* Where a run ends, a dot — so a line that stops reads as ending. */}
-            {data.runs.map((run) => {
-              const end = run[run.length - 1];
-              return (
-                <Circle
-                  key={end.measure}
-                  cx={x(end.at)}
-                  cy={y(end.value)}
-                  r={STROKE + 0.5}
-                  fill={lineColour(end.tone)}
-                />
-              );
-            })}
+                );
+              })}
+            </G>
 
             {selected ? (
               <>
