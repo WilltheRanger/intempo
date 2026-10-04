@@ -554,8 +554,8 @@ function LibraryContent({
  * "This week", its count, and a hairline under both
  * (`redesign/Library.dc.html`).
  *
- * **Sentence case in ink, where the app's `SectionHeader` is an uppercase
- * eyebrow.** On a shelf the heading is the only type between rows of pages,
+ * **Sentence case in ink, with the rule under it rather than over it as
+ * `RuledHeading` has it.** On a shelf the heading is the only type between rows of pages,
  * and it is read as a date — "Earlier this month" — rather than as a category
  * label. The count is the one number a shelf cannot show at a glance once it
  * runs past the screen.

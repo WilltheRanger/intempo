@@ -428,8 +428,8 @@ const cleared = await leaves();
 // longer on screen and the browsing shelf — which only renders unsearched —
 // is back.
 const stillFiltered = cleared.some((line) => /Nothing in your library matches/.test(line));
-// The four `GROUP_LABELS` in `lib/library.ts`. Rendered upper-case by
-// `SectionHeader`, hence the flag.
+// The four `GROUP_LABELS` in `lib/library.ts`, matched without regard to
+// case so a change of heading style does not read as a filtered shelf.
 const browsing = cleared.some((line) =>
   /^(This week|Earlier this month|Longer ago|Not practiced yet)$/i.test(line),
 );

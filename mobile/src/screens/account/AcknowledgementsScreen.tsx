@@ -2,9 +2,9 @@ import { StyleSheet, View } from 'react-native';
 import { useGoBack } from '../../navigation/useGoBack';
 
 import {
-  Card,
   MetadataRow,
   PageHeader,
+  RuledHeading,
   ScreenContainer,
   Text,
 } from '../../components/primitives';
@@ -51,35 +51,27 @@ export function AcknowledgementsScreen() {
         this a choice — and a list of three hundred npm packages that omits
         the one human being is the wrong choice.
       */}
-      <Text variant="sectionLabel" color="textSecondary" style={styles.heading}>
-        Photography
-      </Text>
+      <RuledHeading label="Photography" rule="borderStrong" />
       <Text variant="body" style={styles.credit}>
         The Sign in screen&rsquo;s photograph of a turntable is by Kevin
         McCutcheon, on Unsplash, under the Unsplash Licence.
       </Text>
 
-      <Text variant="sectionLabel" color="textSecondary" style={styles.heading}>
-        Packages
-      </Text>
-
-      <Card padded={false}>
-        <View style={styles.rows}>
-          {LICENCES.map((entry, index) => (
-            <View
-              key={entry.name}
-              style={[styles.row, index > 0 && styles.divided]}
-            >
-              <Text variant="button">{entry.name}</Text>
-              <MetadataRow
-                variant="metadataSmall"
-                items={[entry.version, entry.licence]}
-                style={styles.meta}
-              />
-            </View>
-          ))}
+      {/*
+        Rows on the page under a rule, as Profile and Help set them, not a card
+        around forty of them: the heading already says they belong together.
+      */}
+      <RuledHeading label="Packages" rule="borderStrong" />
+      {LICENCES.map((entry, index) => (
+        <View key={entry.name} style={[styles.row, index > 0 && styles.divided]}>
+          <Text variant="button">{entry.name}</Text>
+          <MetadataRow
+            variant="metadataSmall"
+            items={[entry.version, entry.licence]}
+            style={styles.meta}
+          />
         </View>
-      </Card>
+      ))}
     </ScreenContainer>
   );
 }
@@ -88,14 +80,9 @@ const styles = StyleSheet.create({
   lede: {
     marginBottom: spacing.xl,
   },
-  heading: {
-    marginBottom: spacing.sm,
-  },
   credit: {
+    marginTop: spacing.sm,
     marginBottom: spacing.xl,
-  },
-  rows: {
-    paddingHorizontal: spacing.lg,
   },
   row: {
     paddingVertical: spacing.lg,

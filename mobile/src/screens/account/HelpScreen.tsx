@@ -3,11 +3,10 @@ import { StyleSheet, View } from 'react-native';
 import { useGoBack } from '../../navigation/useGoBack';
 
 import {
-  Card,
   PageHeader,
   PrimaryButton,
+  RuledHeading,
   ScreenContainer,
-  SectionHeader,
   Text,
 } from '../../components/primitives';
 import { IS_LIVE_BACKEND } from '../../data/environment';
@@ -113,55 +112,51 @@ export function HelpScreen() {
         backLabel="Back to profile"
       />
 
-      <Card>
+      {/*
+        **On the page, not in boxes** — the register Profile set for every
+        section (`RuledHeading`), which this screen never got: the status sat
+        in one card and each list in another, so a screen of plain advice read
+        as three widgets. The headings' rules do the grouping the boxes did.
+      */}
+      <View>
         <Text variant="pieceTitle">{status.title}</Text>
         {status.detail ? (
           <Text variant="body" color="textSecondary" style={styles.detail}>
             {status.detail}
           </Text>
         ) : null}
-        <PrimaryButton
-          label={checking ? 'Checking…' : 'Check again'}
-          onPress={() => void runCheck()}
-          loading={checking}
-          disabled={!IS_LIVE_BACKEND}
-          style={styles.action}
-        />
-      </Card>
+        {/*
+          Only where there is something to check. Sample data has no server, so
+          the button was a grey slab nothing could ever enable.
+        */}
+        {IS_LIVE_BACKEND ? (
+          <PrimaryButton
+            label={checking ? 'Checking…' : 'Check again'}
+            onPress={() => void runCheck()}
+            loading={checking}
+            style={styles.action}
+          />
+        ) : null}
+      </View>
 
-      <SectionHeader label="Recording setup" style={styles.section} />
-      <Card padded={false}>
-        <View style={styles.rows}>
-          <Tip
-            first
-            title="Place the phone nearby"
-            detail="Mic uncovered, away from anything that rattles."
-          />
-          <Tip
-            title="Use headphones for the click"
-            detail="A click through the speaker gets recorded. The count-in is cut before sending."
-          />
-          <Tip
-            title="Count-in and long rests"
-            detail="Every take starts with a one-bar count-in. Long rests count down to your entry."
-          />
-        </View>
-      </Card>
+      <RuledHeading label="Recording setup" rule="borderStrong" style={styles.firstSection} />
+      <Tip
+        first
+        title="Place the phone nearby"
+        detail="Mic uncovered, away from anything that rattles."
+      />
+      <Tip
+        title="Use headphones for the click"
+        detail="A click through the speaker gets recorded. The count-in is cut before sending."
+      />
+      <Tip
+        title="Count-in and long rests"
+        detail="Every take starts with a one-bar count-in. Long rests count down to your entry."
+      />
 
-      <SectionHeader label="Scanning setup" style={styles.section} />
-      <Card padded={false}>
-        <View style={styles.rows}>
-          <Tip
-            title="Fill the frame"
-            detail="Even light, page flat, every staff in view."
-            first
-          />
-          <Tip
-            title="Fix flagged bars"
-            detail="Fix them before trusting a verdict."
-          />
-        </View>
-      </Card>
+      <RuledHeading label="Scanning setup" rule="borderStrong" style={styles.section} />
+      <Tip first title="Fill the frame" detail="Even light, page flat, every staff in view." />
+      <Tip title="Fix flagged bars" detail="Fix them before trusting a verdict." />
     </ScreenContainer>
   );
 }
@@ -192,11 +187,16 @@ const styles = StyleSheet.create({
   action: {
     marginTop: spacing.xl,
   },
-  section: {
+  /** After the status, which needs room to read as its own thing. */
+  firstSection: {
     marginTop: spacing['2xl'],
   },
-  rows: {
-    paddingHorizontal: spacing.lg,
+  /**
+   * Small, as on Profile: the next heading's heavier rule closes the last tip
+   * above it, and its own padding does the separating.
+   */
+  section: {
+    marginTop: spacing.sm,
   },
   tip: {
     paddingVertical: spacing.lg,

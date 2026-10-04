@@ -1,15 +1,10 @@
 import { useGoBack } from '../../navigation/useGoBack';
-import { ChevronLeft } from '../../components/icons';
 import { useState } from 'react';
 import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 
 import { Stave } from '../../components/notation/Stave';
 import { TempoStepper } from '../../components/practice/TempoStepper';
-import {
-  IconButton,
-  ScreenContainer,
-  Text,
-} from '../../components/primitives';
+import { BackLink, ScreenContainer, Text } from '../../components/primitives';
 import { SCREEN_GUTTER } from '../../components/primitives/ScreenContainer';
 import {
   clampBpm,
@@ -79,20 +74,21 @@ export function WarmupScreen() {
       }
     >
       {/*
-        A nav row, not a page header: back and the section it belongs to, on
-        one line at the top of the screen. The exercise's own name is content
-        below it rather than the screen's title — the screen is "Warmup", and
-        which warmup it is changes daily.
+        The way back, in words, as on every other pushed screen — the warmup
+        is opened from Profile, so that is where it says it goes. It used to be
+        a chevron in a white disc, announced as "Back to today", a tab that no
+        longer exists; no other pushed screen draws its way back as a disc.
+
+        "Warmup" is the eyebrow over the exercise, as Insights' count is over
+        its finding: the screen is the warmup, and which one changes daily.
       */}
       <View style={styles.nav}>
-        {/* No negative margin on the button: `PressableScale` styles its inner
-            view, so one comes off the outer press target. The row closes the
-            gap instead — see `nav`. Measured before: 40x44. */}
-        <IconButton icon={ChevronLeft} label="Back to today" onPress={goBack} />
-        <Text variant="button">Warmup</Text>
+        <BackLink label="Back to profile" onPress={goBack} />
       </View>
-
-      <Text variant="heroTitle" style={styles.name}>
+      <Text variant="eyebrow" color="textTertiary" style={styles.eyebrow}>
+        Warmup
+      </Text>
+      <Text variant="heroTitle">
         {warmup.name}
       </Text>
       <Text variant="metadataSmall" color="textSecondary" style={styles.focus}>
@@ -164,21 +160,12 @@ const styles = StyleSheet.create({
     paddingBottom: 0,
   },
   nav: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    // **No gap, rather than a gap the button cancels with a negative margin.**
-    // The glyph's own padding is already the space between it and the word;
-    // the margin that used to close this cost the button 4 of its 44 points,
-    // because `PressableScale` puts a caller's style on its inner view and the
-    // outer press target shrinks around it.
-    gap: 0,
-    // Pulled out to the gutter so the glyph lines up with the text below it
-    // rather than sitting indented by its own padding.
-    marginLeft: -spacing.md,
-    paddingTop: spacing.sm,
+    paddingTop: spacing.md,
   },
-  name: {
+  eyebrow: {
+    textTransform: 'uppercase',
     marginTop: spacing.lg,
+    marginBottom: 6,
   },
   focus: {
     marginTop: spacing.xs,
