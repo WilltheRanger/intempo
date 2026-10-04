@@ -156,15 +156,52 @@ function normalise(value: string): string {
  * array is the common case costing nothing.
  */
 export function searchLibrary(pieces: Piece[], query: string): Piece[] {
-  const terms = normalise(query).split(/\s+/).filter(Boolean);
+  const plain = normalise(query);
+  const terms = plain.split(/\s+/).filter(Boolean);
   if (terms.length === 0) {
     return pieces;
   }
+  const spelled = spellAccidentals(plain).split(/\s+/).filter(Boolean);
   return pieces.filter((piece) => {
-    const haystack = SEARCHABLE(piece).map(normalise);
+    const fields = SEARCHABLE(piece).map(normalise);
     // Every term somewhere, not every term in the same field: a piece is named
     // by its title, its composer and its movement together, and which half of
     // the name a word comes from is not something anybody tracks while typing.
-    return terms.every((term) => haystack.some((field) => field.includes(term)));
+    return (
+      everyTermIn(terms, fields) ||
+      // A query that was only a natural sign spells to nothing, and nothing
+      // is in every title.
+      (spelled.length > 0 && everyTermIn(spelled, fields.map(spellAccidentals)))
+    );
   });
+}
+
+function everyTermIn(terms: string[], fields: string[]): boolean {
+  return terms.every((term) => fields.some((field) => field.includes(term)));
+}
+
+/**
+ * Every accidental spelled one way: "B♭", "Bb", "B flat" and "B-flat" all
+ * become "bb", and "F♯", "F#", "F sharp" and "F-sharp" all become "f#".
+ *
+ * A title is typed however its owner types — the app prints "B♭", a copied
+ * catalogue entry says "B-flat", and a phone keyboard offers "Bb" — so the one
+ * thing a musician knows for certain about the piece, its key, found it only
+ * when they happened to spell it the same way twice.
+ *
+ * **A second reading of the search, never a replacement for the first.**
+ * Rewriting the title outright would cost the word itself: "flat" would stop
+ * finding "Waltz in A flat" once that had become "ab". `searchLibrary` keeps a
+ * piece that matches either way, so nothing that matched before stops.
+ *
+ * Only a note name standing alone turns a following "flat" into a sign —
+ * `\b` before the letter — so "Club flat" keeps its word.
+ */
+function spellAccidentals(value: string): string {
+  return value
+    .replace(/♭/g, 'b')
+    .replace(/♯/g, '#')
+    .replace(/♮/g, '')
+    .replace(/\b([a-g])[\s-]+flat\b/g, '$1b')
+    .replace(/\b([a-g])[\s-]+sharp\b/g, '$1#');
 }
