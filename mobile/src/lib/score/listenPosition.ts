@@ -1,4 +1,5 @@
 import type { Schedule } from './schedule';
+import { moveIndex, type SliderMove } from '../sliderKeys';
 
 /**
  * Where the Listen player is in a piece, measured in whole bars.
@@ -50,6 +51,28 @@ export function barAt(starts: readonly BarStart[], seconds: number): BarStart | 
 /** When `measure` starts, or 0 for a bar the schedule does not sound. */
 export function startOfBar(starts: readonly BarStart[], measure: number): number {
   return starts.find((start) => start.measure === measure)?.startS ?? 0;
+}
+
+/** Bars in a big move: Page Up and Down, as on the result screen's charts. */
+export const LISTEN_PHRASE = 4;
+
+/**
+ * The bar a key or a screen-reader action moves Listen to, or null for a
+ * schedule with no bars.
+ *
+ * **Dragging was the only way to move it** (2026-10-05): the rail was
+ * adjustable with no increment or decrement action for VoiceOver to send, and
+ * on the web a slider with no tab stop and no value. A step is one bar — the
+ * engine's own grain, see above — and the keys are `lib/sliderKeys.ts`'s.
+ */
+export function barAfter(
+  starts: readonly BarStart[],
+  fromBar: number,
+  move: SliderMove,
+): number | null {
+  const at = starts.findIndex((start) => start.measure === fromBar);
+  const index = moveIndex(at, starts.length, move);
+  return index >= 0 ? starts[index].measure : null;
 }
 
 /** `0:12`, `1:48`, `12:05` — the player's clock. */

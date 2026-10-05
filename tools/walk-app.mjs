@@ -1622,6 +1622,25 @@ console.log('\n## Listen');
   await ear.close();
 }
 
+/*
+  **Record's Listen bar moves a bar at a time from the keyboard.** It was a
+  slider with no tab stop, no value and no increment action until 2026-10-05,
+  so dragging was the only way to choose where listening began
+  (`lib/score/listenPosition.ts`, `barAfter`).
+*/
+await open('pieces/fixture-bach-bwv1001/record');
+{
+  const bar = page.getByRole('slider', { name: 'Listening position' }).first();
+  await bar.focus().catch(() => {});
+  const before = await bar.getAttribute('aria-valuenow').catch(() => null);
+  await page.keyboard.press('ArrowRight');
+  await page.waitForTimeout(300);
+  const after = await bar.getAttribute('aria-valuetext').catch(() => null);
+  if (before !== null && after && !after.startsWith(`Bar ${before},`))
+    pass(`Record's Listen bar steps on an arrow key: bar ${before} → "${after}"`);
+  else fail(`Record's Listen bar did not answer the arrow key: ${before} → ${after}`);
+}
+
 console.log('\n## Page errors');
 if (errors.length === 0) pass('none across the whole walk');
 else for (const e of errors) fail(`page error: ${e.slice(0, 120)}`);
