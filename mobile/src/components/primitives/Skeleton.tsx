@@ -55,8 +55,7 @@ export function Skeleton({ width = '100%', height = 16, radius, style }: Skeleto
     <Animated.View
       // Placeholders are not content. A screen reader should skip them
       // entirely rather than announce a dozen unlabelled boxes.
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
+      aria-hidden
       style={[
         styles.block,
         { width, height, borderRadius: radius ?? radii.sm },

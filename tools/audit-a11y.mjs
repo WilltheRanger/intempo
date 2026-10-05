@@ -948,6 +948,70 @@ if (unvisited.length > 0) {
   failures += unvisited.length;
 }
 
+/**
+ * What Chrome's own accessibility tree announces that nobody can see.
+ *
+ * **The browser's tree, not the DOM's.** On 2026-10-05 the Library's closed
+ * search field and its Clear and Cancel buttons were a textbox and two
+ * buttons in the tree, each in the Tab order, while sitting invisible at zero
+ * opacity: `accessibilityElementsHidden` hides them on a phone, and
+ * react-native-web drops it. Nothing above looked: `audit` reads the DOM, and
+ * a control at opacity 0 is still a control with a name. The typed title's
+ * invisible measuring copy in `Input` was read out a second time the same way.
+ *
+ * Asked over CDP because only Chrome knows what it pruned — `inert`,
+ * `aria-hidden` and presentational children are its decision, not the
+ * markup's. Flags only what cannot be seen anywhere on the page: effectively
+ * transparent, sized to nothing, or inside an ancestor sized to nothing.
+ * Content below the fold is ordinary and not flagged.
+ */
+async function invisibleButAnnounced(page) {
+  const cdp = await page.context().newCDPSession(page);
+  const { nodes } = await cdp.send('Accessibility.getFullAXTree');
+  const ROLES = new Set(['StaticText', 'button', 'textbox', 'link', 'heading', 'radio', 'checkbox', 'switch', 'slider', 'tab']);
+  const found = [];
+  for (const node of nodes) {
+    const role = node.role?.value;
+    const label = (node.name?.value || '').trim();
+    if (node.ignored || !node.backendDOMNodeId || !ROLES.has(role)) continue;
+    if (role === 'StaticText' && !label) continue;
+    let handle;
+    try {
+      handle = await cdp.send('DOM.resolveNode', { backendNodeId: node.backendDOMNodeId });
+    } catch {
+      continue;
+    }
+    if (!handle.object?.objectId) continue;
+    const { result } = await cdp.send('Runtime.callFunctionOn', {
+      objectId: handle.object.objectId,
+      returnByValue: true,
+      functionDeclaration: `function () {
+        const el = this.nodeType === 3 ? this.parentElement : this;
+        if (!el) return null;
+        let opacity = 1;
+        for (let a = el; a && a.nodeType === 1; a = a.parentElement) {
+          const s = getComputedStyle(a);
+          if (s.display === 'none' || s.visibility === 'hidden') return 'hidden by CSS';
+          opacity *= parseFloat(s.opacity);
+        }
+        if (opacity < 0.05) return 'at opacity ' + opacity.toFixed(2);
+        const r = el.getBoundingClientRect();
+        if (r.width < 1 || r.height < 1) return 'sized to nothing';
+        for (let a = el.parentElement; a && a.nodeType === 1; a = a.parentElement) {
+          const s = getComputedStyle(a);
+          if (s.overflow === 'visible') continue;
+          const ar = a.getBoundingClientRect();
+          if (ar.width < 1 || ar.height < 1) return 'inside a box sized to nothing';
+        }
+        return null;
+      }`,
+    });
+    if (result?.value) found.push(`${role} ${JSON.stringify(label.slice(0, 50))} — ${result.value}`);
+  }
+  await cdp.detach();
+  return [...new Set(found)];
+}
+
 for (const [name, path, options = {}] of selected) {
   /*
    * **375pt, the narrowest iPhone this app can be installed on** — not the 390
@@ -991,6 +1055,7 @@ for (const [name, path, options = {}] of selected) {
   }
   await groundPhoto(page);
   const found = await page.evaluate(audit);
+  const ghosts = await invisibleButAnnounced(page);
   // Last, and on the same page: it rewrites every font size in the document,
   // so nothing measured after it would be measuring the shipped app.
   const spilled = await page.evaluate(spill, TEXT_SCALE);
@@ -1004,6 +1069,7 @@ for (const [name, path, options = {}] of selected) {
     found.lowContrast.length +
     found.overLayered.length +
     mixedVariants +
+    ghosts.length +
     spilled.length +
     errors.length;
   failures += total;
@@ -1020,6 +1086,7 @@ for (const [name, path, options = {}] of selected) {
         found.variants.map((v) => JSON.stringify(v)).join(', '),
     );
   }
+  for (const g of ghosts) console.log(`  INVISIBLE BUT ANNOUNCED: ${g}`);
   for (const o of new Set(spilled)) console.log(`  AT ${TEXT_SCALE}x TEXT: ${o}`);
   await page.close();
 }

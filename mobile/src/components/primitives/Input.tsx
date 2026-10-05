@@ -265,11 +265,14 @@ export function Input({
         />
         {offering ? (
           <View pointerEvents="box-none" style={styles.ghostLayer}>
-            {/* What is typed, invisible, to find where it ends. */}
+            {/* What is typed, invisible, to find where it ends. `aria-hidden`
+                rather than the native-only flags: on the web those are
+                dropped, and a screen reader read the title out a second
+                time after the field. */}
             <NativeText
               numberOfLines={1}
               accessible={false}
-              importantForAccessibility="no-hide-descendants"
+              aria-hidden
               onLayout={(event) => setTypedWidth(event.nativeEvent.layout.width)}
               style={[...textStyle, styles.measure, { left: insetLeft }]}
             >
