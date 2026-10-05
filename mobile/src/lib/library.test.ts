@@ -184,6 +184,42 @@ describe('searching the library', () => {
     expect(titles('   bach    suite   ')).toHaveLength(2);
   });
 
+  describe('a catalogue number or initials, however they are punctuated', () => {
+    const CATALOGUE = [
+      named('Sonata No. 1 in G minor, BWV 1001', 'J. S. Bach', null),
+      named('Concerto in A minor, Op. 3 No. 6', 'Antonio Vivaldi', null),
+      named('Violin Concerto No. 3 in G major, K. 216', 'W. A. Mozart', null),
+      named('60 Studies for the Violin, Op. 45', 'Franz Wohlfahrt', null),
+    ];
+    const found = (query: string) => searchLibrary(CATALOGUE, query).map((p) => p.composer);
+
+    it('finds a catalogue number typed without its space or with a dot', () => {
+      // Each of these found nothing (2026-10-05).
+      expect(found('bwv1001')).toEqual(['J. S. Bach']);
+      expect(found('op.3')).toEqual(['Antonio Vivaldi']);
+      expect(found('op3')).toEqual(['Antonio Vivaldi']);
+      expect(found('k216')).toEqual(['W. A. Mozart']);
+      expect(found('no.6')).toEqual(['Antonio Vivaldi']);
+    });
+
+    it('finds initials typed with or without their dots and spaces', () => {
+      expect(found('JS Bach')).toEqual(['J. S. Bach']);
+      expect(found('J.S. Bach')).toEqual(['J. S. Bach']);
+      expect(found('wa mozart')).toEqual(['W. A. Mozart']);
+    });
+
+    it('still narrows: every word has to be there', () => {
+      expect(found('op.3 mozart')).toEqual([]);
+      expect(found('op45 wohlfahrt')).toEqual(['Franz Wohlfahrt']);
+    });
+
+    it('does not let a query of only punctuation match everything', () => {
+      // It squashes to nothing, and nothing is in every title.
+      expect(found('!')).toEqual([]);
+      expect(found('- !')).toEqual([]);
+    });
+  });
+
   it('hands back the very same array for an empty search', () => {
     // **`toBe`, not `toEqual`, and the difference is the whole test.** With
     // `toEqual` this passed with the early return deleted — `[].every(...)` is

@@ -482,6 +482,10 @@ await finds('a piece by its movement', 'adagio');
 // Accents nobody types, on a field the old rule never reached.
 await finds('Études without the accent', 'etudes');
 await finds('Méditation without the accent', 'meditation');
+// A catalogue number and initials as people type them: no space, no dots.
+// Both found nothing until 2026-10-05 (`searchLibrary`, `squash`).
+await finds('BWV 1001 typed without its space', 'bwv1001');
+await finds('J. S. Bach typed without the dots', 'js bach');
 // Narrowing has to narrow: a second word that matches nothing must not bring
 // back the results of the first.
 const bach = await searchCount('bach');

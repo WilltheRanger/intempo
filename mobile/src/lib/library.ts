@@ -121,6 +121,14 @@ export function groupByRecency(pieces: Piece[], now: Date = new Date()): PieceGr
  * **3.** The accent-stripping — the one part that was carefully done — was
  * therefore not reaching the field with the most accents in it.
  *
+ * **4. A catalogue number typed as people type them found nothing.**
+ * `bwv1001`, `op.3`, `k216`, `no.6`, `JS Bach` and `J.S. Bach` all came back
+ * empty against *BWV 1001*, *Op. 3 No. 6*, *K. 216* and *J. S. Bach*, because
+ * the dots and spaces in the library and the query did not line up (measured
+ * on the sample library, 2026-10-05). A third reading compares only letters
+ * and digits (`squash`), alongside the other two, so nothing that matched
+ * before stops.
+ *
  * Terms are ANDed and fields are ORed: every word must appear somewhere, and
  * it does not matter which field each lands in. That is what makes `bach
  * suite` and `suite bach` the same search, which is what a person expects and
@@ -163,6 +171,7 @@ export function searchLibrary(pieces: Piece[], query: string): Piece[] {
     return pieces;
   }
   const spelled = spellAccidentals(plain).split(/\s+/).filter(Boolean);
+  const squashed = terms.map(squash).filter(Boolean);
   return pieces.filter((piece) => {
     const fields = SEARCHABLE(piece).map(normalise);
     // Every term somewhere, not every term in the same field: a piece is named
@@ -172,9 +181,16 @@ export function searchLibrary(pieces: Piece[], query: string): Piece[] {
       everyTermIn(terms, fields) ||
       // A query that was only a natural sign spells to nothing, and nothing
       // is in every title.
-      (spelled.length > 0 && everyTermIn(spelled, fields.map(spellAccidentals)))
+      (spelled.length > 0 && everyTermIn(spelled, fields.map(spellAccidentals))) ||
+      // Punctuation and spacing ignored, on both sides.
+      (squashed.length > 0 && everyTermIn(squashed, fields.map(squash)))
     );
   });
+}
+
+/** Only the letters and digits: "J. S." is "js", and "BWV 1001" is "bwv1001". */
+function squash(value: string): string {
+  return value.replace(/[^\p{L}\p{N}]/gu, '');
 }
 
 function everyTermIn(terms: string[], fields: string[]): boolean {
