@@ -1,4 +1,5 @@
 import type { RestEntry, WrongNote } from '../../data/types';
+import { printedPitch } from '../notation/printedPitch';
 
 /**
  * Two mistakes the timing verdict cannot see, in words (the owner,
@@ -10,11 +11,6 @@ import type { RestEntry, WrongNote } from '../../data/types';
  * wording of its own.
  */
 
-/** "F#" → "F♯", "Bb" → "B♭": the way a page prints them. */
-export function displayPitch(name: string): string {
-  return name.replace(/#/g, '♯').replace(/(?<=[A-G])b/g, '♭');
-}
-
 /**
  * Each wrong note in a bar, as briefly as it can be said: "E instead of E♭"
  * (the owner, 2026-09-30, of "We heard E where the page has E♭.": "still too
@@ -23,7 +19,7 @@ export function displayPitch(name: string): string {
 export function wrongNotesInBar(notes: readonly WrongNote[], bar: number): string[] {
   return notes
     .filter((note) => note.bar === bar)
-    .map((note) => `${displayPitch(note.heard)} instead of ${displayPitch(note.written)}`);
+    .map((note) => `${printedPitch(note.heard)} instead of ${printedPitch(note.written)}`);
 }
 
 /**

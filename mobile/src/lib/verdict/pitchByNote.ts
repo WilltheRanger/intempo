@@ -1,4 +1,5 @@
 import type { NoteIntonation, TakeIntonation } from '../../data/types';
+import { printedPitch } from '../notation/printedPitch';
 import { pitchBand, type PitchBand } from './intonation';
 
 /**
@@ -35,20 +36,10 @@ export interface NoteMark {
   band: PitchBand;
 }
 
-const ACCIDENTALS: Record<string, string> = {
-  '': '',
-  '#': '♯',
-  b: '♭',
-  '##': '𝄪',
-  x: '𝄪',
-  bb: '𝄫',
-};
-
 /** "Eb3" → "E♭", "F#4" → "F♯": the letter and its accidental, no octave. */
 export function spell(pitch: string): string {
-  const match = /^([A-G])(##|bb|#|b|x)?-?\d+$/.exec(pitch);
-  if (!match) return pitch;
-  return match[1] + (ACCIDENTALS[match[2] ?? ''] ?? '');
+  const match = /^([A-G](?:##|bb|#|b|x)?)-?\d+$/.exec(pitch);
+  return match ? printedPitch(match[1]) : pitch;
 }
 
 /**

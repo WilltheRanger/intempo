@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import type { RestEntry } from '../../data/types';
 import {
   describeOffset,
-  displayPitch,
   mistakeBars,
   mistakesInPassage,
   restEntriesInBar,
@@ -18,13 +17,6 @@ describe('naming wrong notes', () => {
     ];
     expect(wrongNotesInBar(notes, 6)).toEqual(['E instead of E♭']);
     expect(wrongNotesInBar(notes, 7)).toEqual([]);
-  });
-
-  it('prints sharps and flats as the page does, and leaves B alone', () => {
-    expect(displayPitch('F#')).toBe('F♯');
-    expect(displayPitch('Bb')).toBe('B♭');
-    expect(displayPitch('B')).toBe('B');
-    expect(displayPitch('Eb')).toBe('E♭');
   });
 });
 
