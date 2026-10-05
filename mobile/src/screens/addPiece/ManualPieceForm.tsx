@@ -14,7 +14,7 @@ import { useCreatePiece } from '../../data/hooks/usePieces';
 import { usePreferences } from '../../data/preferences';
 import { spacing } from '../../design';
 import { clefFor } from '../../lib/instrument';
-import { beatsPerMeasure } from '../../lib/notation/reading';
+import { typedTimeSignature } from '../../lib/notation/reading';
 import type { RootNavigation } from '../../navigation/types';
 import { ComposerField } from '../../components/pieces/ComposerField';
 import { TitleField } from '../../components/pieces/TitleField';
@@ -24,25 +24,6 @@ import { FIELD_LIMITS } from '../../lib/fieldLimits';
 /** The backend's `bpm_hint` bounds. Rejecting here saves a round trip. */
 const MIN_BPM = 20;
 const MAX_BPM = 300;
-
-/**
- * Accepted exactly when the app can count a bar of it.
- *
- * **This was its own regex, `/^\d{1,2}\/\d{1,2}$/`, and it was looser than
- * the counter.** It matched `0/4`, `4/0` and `0/0`, so a musician could type a
- * metre the rest of the app treats as unreadable and have the piece saved with
- * it — `beatsPerMeasure` returns null for all three, and the meter parity
- * fixture names them (`"0/4": null`, `"4/0": null`, `"0/0": null`). The
- * metronome, the bar check and the editor would then all behave as though no
- * metre had been read, while the piece screen displayed `0/4` as if it were one.
- *
- * Asking the counter instead of keeping a second rule also accepts the spaces
- * the backend tolerates (`" 4 / 4 "`), so the form now agrees with what the
- * server would have sent for the same page.
- */
-function looksLikeAMetre(value: string): boolean {
-  return beatsPerMeasure(value) !== null;
-}
 
 /**
  * A piece the musician types in rather than photographs.
@@ -102,7 +83,8 @@ export function ManualPieceForm() {
     }
 
     const trimmedSignature = timeSignature.trim();
-    if (trimmedSignature && !looksLikeAMetre(trimmedSignature)) {
+    const signature = trimmedSignature ? typedTimeSignature(trimmedSignature) : null;
+    if (trimmedSignature && signature === null) {
       setError('Use a time signature like 4/4.');
       return;
     }
@@ -126,7 +108,7 @@ export function ManualPieceForm() {
         composer: composer.trim() || null,
         movement: movement.trim() || null,
         clef: clefFor(instrument),
-        timeSignature: trimmedSignature || null,
+        timeSignature: signature,
         bpm: parsedBpm,
       });
       // Replace, not push: going "back" from the piece you just added should

@@ -57,6 +57,30 @@ export function beatsPerMeasure(timeSignature: string | null): number | null {
 }
 
 /**
+ * A time signature as a musician types it, ready to save, or null if it is not
+ * one.
+ *
+ * **"C" and "¢" are how a part prints common and cut time**, and the typed-in
+ * piece form refused both with "Use a time signature like 4/4" (2026-10-05).
+ * They are saved as 4/4 and 2/2, the only spelling this counter, the metronome
+ * and the server read.
+ *
+ * Anything else is accepted exactly when `beatsPerMeasure` can count a bar of
+ * it. The form used to keep its own regex, `/^\d{1,2}\/\d{1,2}$/`, which was
+ * looser than the counter: it took `0/4`, `4/0` and `0/0`, which the counter
+ * and the meter parity fixture read as no metre at all, so the piece screen
+ * showed `0/4` while the metronome, the bar check and the editor behaved as if
+ * nothing had been read. Asking the counter also accepts the spaces the backend
+ * tolerates (`" 4 / 4 "`).
+ */
+export function typedTimeSignature(value: string): string | null {
+  const typed = value.trim();
+  if (/^c$/i.test(typed)) return '4/4';
+  if (/^(¢|c\|)$/i.test(typed)) return '2/2';
+  return beatsPerMeasure(typed) !== null ? typed : null;
+}
+
+/**
  * Measures whose durations do not fill the bar.
  *
  * The same arithmetic the backend runs in `ocr/validate.py`, for the same
