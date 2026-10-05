@@ -696,6 +696,20 @@ synthesiser, lazy on purpose, was 78 KB gzipped of every first visit.
 weighs every script `index.html` loads and fails with this explanation when
 there is more than one.
 
+### A heading is an `<h1>` on the web unless it says otherwise (2026-10-05)
+
+react-native-web renders `accessibilityRole="header"` as an `<h1>`, and React
+Native has no prop that sets a level. Every section label was one, so Profile
+offered a screen reader five top-level headings and no outline. Meanwhile
+`PageHeader`, which draws nineteen screens' titles, never said its title was a
+heading, so 23 of 38 audited routes were wrong one way or the other.
+
+**The rule:** a screen's title is `accessibilityRole="header"` (level 1), and
+anything under it spreads `SECTION_HEADING` (level 2, through `aria-level`,
+which react-native-web reads although React Native's types do not declare it).
+`audit-a11y` fails a route with no heading or with more than one at level 1.
+The scanner is exempt with its reason written beside it.
+
 ## `npm audit fix --force` would take this app back to SDK 46 (2026-09-09)
 
 `npm audit --omit=dev` reports **24 advisories, 7 of them high**, and closes

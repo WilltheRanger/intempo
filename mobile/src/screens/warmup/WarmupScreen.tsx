@@ -88,7 +88,7 @@ export function WarmupScreen() {
       <Text variant="eyebrow" color="textTertiary" style={styles.eyebrow}>
         Warmup
       </Text>
-      <Text variant="heroTitle">
+      <Text variant="heroTitle" accessibilityRole="header">
         {warmup.name}
       </Text>
       <Text variant="metadataSmall" color="textSecondary" style={styles.focus}>

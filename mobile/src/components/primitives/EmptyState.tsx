@@ -5,6 +5,7 @@ import { StyleSheet, View } from 'react-native';
 import { colors, ICON_SIZE, ICON_STROKE_WIDTH, spacing } from '../../design';
 import { PrimaryButton } from './PrimaryButton';
 import { SecondaryButton } from './SecondaryButton';
+import { SECTION_HEADING } from './sectionHeading';
 import { Text } from './Text';
 
 export interface EmptyStateProps {
@@ -101,7 +102,11 @@ export function EmptyState({
         </View>
       ) : null}
 
-      <Text variant="pieceTitle" style={styles.title}>
+      {/*
+        A heading under the screen's title, so a screen reader can jump to
+        what the state is. Often it is the only thing on the screen.
+      */}
+      <Text variant="pieceTitle" style={styles.title} {...SECTION_HEADING}>
         {title}
       </Text>
 

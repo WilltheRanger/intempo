@@ -13,6 +13,7 @@ import {
   SearchHeader,
 } from '../../components/primitives';
 import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
+import { SECTION_HEADING } from '../../components/primitives/sectionHeading';
 import { Text } from '../../components/primitives/Text';
 import { describeLoadError } from '../../data/describeLoadError';
 import { useInsights } from '../../data/hooks/useInsights';
@@ -562,7 +563,7 @@ function LibraryContent({
  */
 function GroupHeading({ label, count }: { label: string; count: number }) {
   return (
-    <View style={styles.heading} accessibilityRole="header">
+    <View style={styles.heading} {...SECTION_HEADING}>
       <Text variant="sectionLabel" color="textPrimary" style={styles.headingLabel}>
         {label}
       </Text>

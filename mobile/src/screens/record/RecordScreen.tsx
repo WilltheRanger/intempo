@@ -1254,7 +1254,7 @@ export function RecordScreen() {
     return (
       <ScreenContainer scrollable={false} contentStyle={styles.centred}>
         <View>
-          <Text variant="heroTitle">Analysing</Text>
+          <Text variant="heroTitle" accessibilityRole="header">Analysing</Text>
           {through === null ? (
             <View style={styles.waitPending}>
               <ActivityIndicator
@@ -1329,6 +1329,7 @@ export function RecordScreen() {
             title={piece.title}
             variant="heroTitle"
             numberOfLines={2}
+            header
             containerStyle={styles.title}
           />
           {/*

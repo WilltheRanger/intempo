@@ -65,7 +65,9 @@ export function AccountStartupScreen({
   return (
     <ScreenContainer scrollable={false} contentStyle={styles.screen}>
       <View style={styles.message}>
-        <Text variant="screenTitle">Couldn&apos;t open your account</Text>
+        <Text variant="screenTitle" accessibilityRole="header">
+          Couldn&apos;t open your account
+        </Text>
         <Text variant="body" color="textSecondary" style={styles.lede}>
           {describeLoadError(error)}
         </Text>

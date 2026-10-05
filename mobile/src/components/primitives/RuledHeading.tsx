@@ -1,6 +1,7 @@
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { BORDER_WIDTH, colors } from '../../design';
+import { SECTION_HEADING } from './sectionHeading';
 import { Text } from './Text';
 
 export interface RuledHeadingProps {
@@ -28,7 +29,7 @@ export interface RuledHeadingProps {
 export function RuledHeading({ label, rule = 'border', style }: RuledHeadingProps) {
   return (
     <View style={[styles.ruled, { borderTopColor: colors[rule] }, style]}>
-      <Text variant="sectionLabel" color="textSecondary" accessibilityRole="header">
+      <Text variant="sectionLabel" color="textSecondary" {...SECTION_HEADING}>
         {label}
       </Text>
     </View>

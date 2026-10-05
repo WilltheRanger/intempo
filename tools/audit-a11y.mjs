@@ -173,7 +173,10 @@ const ROUTES = [
   // populated flow. `walk-app.mjs` covers that one, by importing two of the
   // repository's own fixture pages through the file picker.
   ['Add piece', 'add/import'],
-  ['Scanner', 'scan'],
+  // **No heading, on purpose.** A viewfinder has no title — the system camera
+  // has none either — and the line at the top is a page count that changes
+  // with every shot, which a heading would re-announce as structure.
+  ['Scanner', 'scan', { headings: false }],
   ['Captured pages', 'scan/pages'],
   ['Transcribe', 'scan/sending'],
   ['Name the piece', 'scan/name'],
@@ -1056,6 +1059,34 @@ async function unnamedImages(page) {
   return found;
 }
 
+/**
+ * A screen a screen reader cannot move through by heading.
+ *
+ * Headings are how someone who cannot see the page skims it: the rotor on
+ * iOS, H in a desktop reader. On 2026-10-05 six routes had none at all —
+ * `PageHeader` drew nineteen screens' titles without saying they were titles
+ * — and every section label was a level-1 heading, the same level as the
+ * title above it, so Profile announced five top-level headings and no
+ * structure. Each screen needs at least one heading and at most one at
+ * level 1; sections sit under it (`SECTION_HEADING`).
+ */
+async function headingOutline(page) {
+  const cdp = await page.context().newCDPSession(page);
+  const { nodes } = await cdp.send('Accessibility.getFullAXTree');
+  await cdp.detach();
+  const headings = nodes
+    .filter((node) => !node.ignored && node.role?.value === 'heading')
+    .map((node) => ({
+      level: node.properties?.find((p) => p.name === 'level')?.value?.value,
+      name: (node.name?.value || '').trim().slice(0, 40),
+    }));
+  if (headings.length === 0) return ['no heading on the screen'];
+  const top = headings.filter((h) => h.level === 1);
+  return top.length > 1
+    ? [`${top.length} level-1 headings: ${top.map((h) => JSON.stringify(h.name)).join(', ')}`]
+    : [];
+}
+
 for (const [name, path, options = {}] of selected) {
   /*
    * **375pt, the narrowest iPhone this app can be installed on** — not the 390
@@ -1101,6 +1132,7 @@ for (const [name, path, options = {}] of selected) {
   const found = await page.evaluate(audit);
   const ghosts = await invisibleButAnnounced(page);
   const nameless = await unnamedImages(page);
+  const outline = options.headings === false ? [] : await headingOutline(page);
   // Last, and on the same page: it rewrites every font size in the document,
   // so nothing measured after it would be measuring the shipped app.
   const spilled = await page.evaluate(spill, TEXT_SCALE);
@@ -1116,6 +1148,7 @@ for (const [name, path, options = {}] of selected) {
     mixedVariants +
     ghosts.length +
     nameless.length +
+    outline.length +
     spilled.length +
     errors.length;
   failures += total;
@@ -1134,6 +1167,7 @@ for (const [name, path, options = {}] of selected) {
   }
   for (const g of ghosts) console.log(`  INVISIBLE BUT ANNOUNCED: ${g}`);
   for (const n of nameless) console.log(`  UNNAMED IMAGE: ${n}`);
+  for (const h of outline) console.log(`  HEADINGS: ${h}`);
   for (const o of new Set(spilled)) console.log(`  AT ${TEXT_SCALE}x TEXT: ${o}`);
   await page.close();
 }

@@ -72,7 +72,9 @@ export function SetPasswordScreen() {
     >
       <ScreenContainer>
         <View style={styles.header}>
-          <Text variant="screenTitle">Set a new password</Text>
+          <Text variant="screenTitle" accessibilityRole="header">
+            Set a new password
+          </Text>
           <Text variant="body" color="textSecondary" style={styles.lede}>
             You followed a reset link, so this replaces the old password. You
             will stay signed in on this device.
