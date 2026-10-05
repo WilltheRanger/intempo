@@ -740,6 +740,21 @@ itself, and keep any words outside it. Pass `null` only when there is truly
 nothing to measure yet. `audit-a11y` fails a bar that has no name or that has
 text inside it.
 
+### Enter does nothing on a link that is not an `<a>` (2026-10-05)
+
+react-native-web's press responder treats anything with `role="link"` as a
+native link. It leaves Enter to the browser, which follows an `<a href>` and
+does nothing for anything else. A `Pressable` with the link role is a `<div>`,
+so `BackLink` on eleven screens, and the Terms and Privacy links under
+sign-up, ignored Enter. Clicks and taps worked. It also accepts Space only on
+buttons, so switches, radios and tabs ignored Space.
+
+**The rule:** `installKeyActivation` (in `App.tsx`) teaches the web both keys.
+The rules for which elements are in `lib/keyActivation.ts`. The Enter listener
+runs in the capture phase. The responder stops the keydown it accepts from
+bubbling, so a listener on the document in the usual phase never hears the
+key. `walk-app` presses Enter on a back link.
+
 ## `npm audit fix --force` would take this app back to SDK 46 (2026-09-09)
 
 `npm audit --omit=dev` reports **24 advisories, 7 of them high**, and closes

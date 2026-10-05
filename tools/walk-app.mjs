@@ -355,6 +355,18 @@ await waitFor('back out of the bar editor', async () => (await path()).endsWith(
 if ((await path()).endsWith('/score')) pass('deep-linked bar editor → back to the score');
 else fail(`deep-linked bar editor → back went to ${await path()}`);
 
+/*
+  **Enter follows a link.** react-native-web leaves Enter on `role="link"` to
+  the browser, which follows an <a href> and does nothing for a <div>, so every
+  back link in the app ignored the key until 2026-10-05
+  (`lib/keyActivation.ts`). By keyboard, because a click never failed.
+*/
+await open('pieces/fixture-bach-bwv1001/tempo');
+await page.getByRole('link', { name: /back/i }).first().focus();
+await page.keyboard.press('Enter');
+if (await waitFor('Enter on the back link to go back', async () => (await path()).endsWith('/record'), 8000))
+  pass('Enter on a back link goes back');
+
 console.log('\n## Finding a piece in the library');
 
 // **The one control on the Library tab, and the walk never touched it.** Its
