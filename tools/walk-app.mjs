@@ -1521,6 +1521,25 @@ console.log('\n## A take that records');
     const length = await awaitLine((l) => /^\d+:\d\d$/.test(l) && l !== '0:00', 8000);
     if (length) pass(`the held take plays back: ${length} long`);
     else fail('the held take never loaded into its player');
+    // **The scrubber answers the keyboard and says where it is.** It was a
+    // slider with no tab stop and no value on the web until 2026-10-05
+    // (`lib/verdict/scrub.ts`); a click was the only way to move it.
+    // A step is five seconds, and a take shorter than that stops at its end.
+    const scrub = loud.getByRole('slider', { name: 'Playback position' }).first();
+    await scrub.focus().catch(() => {});
+    await loud.keyboard.press('ArrowRight');
+    await loud.waitForTimeout(400);
+    const moved = await scrub
+      .evaluate((e) => ({
+        focused: document.activeElement === e,
+        now: Number(e.getAttribute('aria-valuenow')),
+        max: Number(e.getAttribute('aria-valuemax')),
+        text: e.getAttribute('aria-valuetext'),
+      }))
+      .catch(() => null);
+    if (moved?.focused && moved.now === Math.min(5, moved.max) && moved.now > 0)
+      pass(`the scrubber steps on an arrow key: "${moved.text}"`);
+    else fail(`the scrubber did not answer the arrow key: ${JSON.stringify(moved)}`);
     await analyse.click({ timeout: 10000 }).catch(() => {});
     const leave = await awaitLine((l) => l === 'Leave while it works', 8000);
     if (leave) pass('the wait offers to let the musician leave');

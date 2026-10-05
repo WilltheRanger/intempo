@@ -1,3 +1,5 @@
+import type { SliderMove } from '../sliderKeys';
+
 /**
  * Moving within a recording by touching the track it is drawn on.
  *
@@ -58,21 +60,32 @@ export function scrubSeconds(
 /** How far the keyboard and screen-reader actions move, in seconds. */
 export const SCRUB_STEP_S = 5;
 
+/** Steps in a big move: Page Up and Down, and Shift with an arrow (30 seconds). */
+export const SCRUB_BIG_STEPS = 6;
+
 /**
- * A nudge from the increment/decrement actions.
+ * Where a key or a screen-reader action moves the position to, or null when
+ * there is nothing to move within.
  *
  * The route for anyone not dragging a finger across a 6pt rail, which is the
- * reason the gesture cannot be the only way in. Clamped to the recording, so
- * holding decrement at the start does not walk the position negative.
+ * reason the gesture cannot be the only way in. A step is `SCRUB_STEP_S`;
+ * Home and End are the start and the end (`lib/sliderKeys.ts`). Clamped to the
+ * recording, so holding decrement at the start does not walk the position
+ * negative.
+ *
+ * **On the web the keys did nothing at all** (2026-10-05): the rail was a
+ * slider a keyboard could not reach, with no value a screen reader could read,
+ * because react-native-web drops `accessibilityValue`.
  */
 export function scrubStep(
   current: number,
   duration: number,
-  direction: 1 | -1,
+  move: SliderMove,
 ): number | null {
   if (!(duration > 0) || !Number.isFinite(duration)) {
     return null;
   }
-  const next = current + direction * SCRUB_STEP_S;
+  if ('to' in move) return move.to === 'first' ? 0 : duration;
+  const next = current + move.by * SCRUB_STEP_S;
   return Math.min(duration, Math.max(0, next));
 }
