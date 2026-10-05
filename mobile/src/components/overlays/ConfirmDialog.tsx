@@ -93,8 +93,15 @@ export function ConfirmDialog({
           <Pressable
             style={StyleSheet.absoluteFill}
             onPress={onCancel}
-            accessibilityRole="button"
-            accessibilityLabel="Dismiss"
+            // **Pointer dismissal only.** As a button it was an invisible
+            // full-screen "Dismiss" that took keyboard focus before the
+            // dialog's real choices and was read out as one of them
+            // (2026-10-05). Cancel and Escape are the keyboard's ways out.
+            // `tabIndex` and `aria-hidden` because the web ignores
+            // `accessible={false}`, and Pressable overrides `focusable` there
+            // with a tab index of its own.
+            tabIndex={-1}
+            aria-hidden
           />
         </Animated.View>
 
@@ -107,17 +114,20 @@ export function ConfirmDialog({
             {message}
           </Text>
 
+          {/*
+            **The share of the row is on a wrapper, not on the button.** A
+            button puts the caller's `style` on its inner view, which sits in a
+            column — so `flex: 1` there set a zero basis on the *vertical* axis,
+            and on the web a flex basis beats `height`: both buttons drew 22pt
+            tall, half the touch minimum (measured 2026-10-05).
+          */}
           <View style={styles.actions}>
-            <SecondaryButton
-              label={cancelLabel}
-              onPress={onCancel}
-              style={styles.action}
-            />
-            <PrimaryButton
-              label={confirmLabel}
-              onPress={onConfirm}
-              style={styles.action}
-            />
+            <View style={styles.action}>
+              <SecondaryButton label={cancelLabel} onPress={onCancel} />
+            </View>
+            <View style={styles.action}>
+              <PrimaryButton label={confirmLabel} onPress={onConfirm} />
+            </View>
           </View>
         </Animated.View>
       </View>

@@ -1060,6 +1060,31 @@ async function unnamedImages(page) {
 }
 
 /**
+ * Something a keyboard can reach that a screen reader is told is not there.
+ *
+ * `aria-hidden` removes an element from assistive technology but not from the
+ * Tab order, so a focusable element inside one is a stop that announces
+ * nothing. On 2026-10-05 three were: the full-screen backdrops of the bottom
+ * sheet and the confirmation dialog, and the onboarding photo circle — each
+ * written with `accessible={false}` or `focusable={false}`, neither of which
+ * reaches the web, where Pressable sets a tab index of its own. `tabIndex={-1}`
+ * is what does.
+ */
+async function hiddenButFocusable(page) {
+  return page.evaluate(() =>
+    [...document.querySelectorAll('[tabindex], button, input, select, textarea, a[href]')]
+      .filter((element) => !element.closest('[inert]'))
+      .filter((element) => element.tabIndex >= 0 && !element.disabled)
+      .filter((element) => element.closest('[aria-hidden="true"]'))
+      .map((element) => {
+        const box = element.getBoundingClientRect();
+        const name = element.getAttribute('aria-label') || (element.textContent || '').trim().slice(0, 30);
+        return `<${element.tagName.toLowerCase()}> ${JSON.stringify(name)} ${Math.round(box.width)}x${Math.round(box.height)}`;
+      }),
+  );
+}
+
+/**
  * A screen a screen reader cannot move through by heading.
  *
  * Headings are how someone who cannot see the page skims it: the rotor on
@@ -1133,6 +1158,7 @@ for (const [name, path, options = {}] of selected) {
   const ghosts = await invisibleButAnnounced(page);
   const nameless = await unnamedImages(page);
   const outline = options.headings === false ? [] : await headingOutline(page);
+  const hiddenStops = await hiddenButFocusable(page);
   // Last, and on the same page: it rewrites every font size in the document,
   // so nothing measured after it would be measuring the shipped app.
   const spilled = await page.evaluate(spill, TEXT_SCALE);
@@ -1149,6 +1175,7 @@ for (const [name, path, options = {}] of selected) {
     ghosts.length +
     nameless.length +
     outline.length +
+    hiddenStops.length +
     spilled.length +
     errors.length;
   failures += total;
@@ -1168,6 +1195,7 @@ for (const [name, path, options = {}] of selected) {
   for (const g of ghosts) console.log(`  INVISIBLE BUT ANNOUNCED: ${g}`);
   for (const n of nameless) console.log(`  UNNAMED IMAGE: ${n}`);
   for (const h of outline) console.log(`  HEADINGS: ${h}`);
+  for (const h of hiddenStops) console.log(`  HIDDEN BUT FOCUSABLE: ${h}`);
   for (const o of new Set(spilled)) console.log(`  AT ${TEXT_SCALE}x TEXT: ${o}`);
   await page.close();
 }

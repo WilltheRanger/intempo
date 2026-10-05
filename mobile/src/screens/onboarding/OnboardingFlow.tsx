@@ -347,7 +347,9 @@ export function OnboardingFlow({
             <Pressable
               onPress={() => void pickPhoto()}
               aria-hidden
-              focusable={false}
+              // Not `focusable={false}`: Pressable on the web replaces it with
+              // a tab index of its own, which left this a hidden Tab stop.
+              tabIndex={-1}
               style={({ pressed }) => [styles.photoSlot, pressed && styles.choicePressed]}
             >
               {shown ? (

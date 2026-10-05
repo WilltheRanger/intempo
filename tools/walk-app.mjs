@@ -299,6 +299,22 @@ else fail('/library no longer opens the Library');
 await page.getByRole('button', { name: 'Add piece', exact: true }).focus();
 await page.keyboard.press('Enter');
 await waitFor('the Add piece sheet', async () => (await page.locator('[role=dialog]').count()) > 0);
+// **No invisible Tab stops while it is open.** The sheet's full-screen
+// backdrop was one — `accessible={false}` does not reach the web, and
+// Pressable sets a tab index of its own (2026-10-05).
+const hiddenInSheet = await page.evaluate(() =>
+  [...document.querySelectorAll('[tabindex], button, input')]
+    .filter((e) => e.tabIndex >= 0 && !e.disabled && !e.closest('[inert]'))
+    // react-native-web's own focus-trap brackets: zero height, role presentation.
+    .filter((e) => !(e.getAttribute('role') === 'presentation' && e.getBoundingClientRect().height === 0))
+    .filter(
+      (e) =>
+        e.closest('[aria-hidden="true"]') ||
+        (!e.getAttribute('role') && !e.getAttribute('aria-label') && !(e.textContent || '').trim() && !['INPUT', 'BUTTON'].includes(e.tagName)),
+    ).length,
+);
+if (hiddenInSheet === 0) pass('the open sheet has no hidden Tab stops');
+else fail(`the open sheet has ${hiddenInSheet} hidden Tab stop(s)`);
 await page.keyboard.press('Escape');
 await waitFor('the Add piece sheet to close', async () => (await page.locator('[role=dialog]').count()) === 0);
 const focusAfterSheet = await page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.tagName);

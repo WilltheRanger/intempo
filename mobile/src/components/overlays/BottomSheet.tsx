@@ -280,7 +280,12 @@ export function BottomSheet({
             onPress={onClose}
             // Pointer dismissal only. A full-screen invisible button is a poor
             // keyboard target and was focused before the sheet's real choices.
+            // `accessible={false}` alone never reached the web, where this was
+            // still an unnamed full-screen Tab stop (2026-10-05); Pressable
+            // there sets a tab index of its own unless given one.
             accessible={false}
+            tabIndex={-1}
+            aria-hidden
           />
         </Animated.View>
 
