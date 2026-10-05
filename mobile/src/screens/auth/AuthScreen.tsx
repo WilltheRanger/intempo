@@ -256,7 +256,7 @@ export function AuthScreen() {
         </Text>
 
         {error ? (
-          <Text variant="metadataSmall" color="textSecondary" style={styles.note}>
+          <Text accessibilityRole="alert" variant="metadataSmall" color="textSecondary" style={styles.note}>
             {error}
           </Text>
         ) : null}

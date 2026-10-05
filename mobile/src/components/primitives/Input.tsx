@@ -1,4 +1,4 @@
-import { useImperativeHandle, useRef, useState, type ReactNode, type Ref } from 'react';
+import { useId, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from 'react';
 import type { FieldHandle } from '../../lib/fieldOrder';
 import {
   Platform,
@@ -167,6 +167,7 @@ export function Input({
 }: InputProps) {
   const [focused, setFocused] = useState(false);
   const input = useRef<TextInput>(null);
+  const errorId = useId();
   useImperativeHandle(ref, () => ({ focus: () => input.current?.focus() }), []);
   // Where the cursor is, so → accepts only from the end of the text.
   const [cursor, setCursor] = useState<number | null>(null);
@@ -234,7 +235,11 @@ export function Input({
           placeholderTextColor={colors.textTertiary}
           underlineColorAndroid="transparent"
           accessibilityLabel={optional ? `${label}, optional` : label}
-          accessibilityHint={offering ? `Suggests ${value}${completion}. Press return to accept.` : undefined}
+          // The error first: it is what has to change before anything else.
+          accessibilityHint={
+            error ?? (offering ? `Suggests ${value}${completion}. Press return to accept.` : undefined)
+          }
+          {...(error ? invalidBecause(errorId) : null)}
           secureTextEntry={secureTextEntry}
           keyboardType={keyboardType}
           autoCapitalize={autoCapitalize}
@@ -315,6 +320,7 @@ export function Input({
       </View>
       {error ? (
         <Text
+          nativeID={errorId}
           variant="metadataSmall"
           color="verdictBad"
           style={styles.error}
@@ -325,6 +331,21 @@ export function Input({
       ) : null}
     </View>
   );
+}
+
+/**
+ * The field is wrong, and the error under it says why.
+ *
+ * The error was announced once, from its live region, and was then just text
+ * near a field: going back to the field read "Title, edit text" with nothing
+ * about what to fix, and the browser reported it valid (measured 2026-10-05).
+ * `aria-invalid` and `aria-describedby` tie the two together for as long as
+ * the error stands. React Native's types declare neither, though
+ * react-native-web reads both — the cast is here once. On native the same
+ * words go in the hint, which VoiceOver reads after the label.
+ */
+function invalidBecause(errorId: string): object {
+  return { 'aria-invalid': true, 'aria-describedby': errorId };
 }
 
 /** The field's own horizontal padding, which the suggestion lines up with. */

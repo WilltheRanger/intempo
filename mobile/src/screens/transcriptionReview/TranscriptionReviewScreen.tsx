@@ -260,7 +260,7 @@ export function TranscriptionReviewScreen() {
       </Text>
 
       {error ? (
-        <Text variant="metadataSmall" color="textSecondary" style={styles.error}>
+        <Text accessibilityRole="alert" variant="metadataSmall" color="textSecondary" style={styles.error}>
           {error}
         </Text>
       ) : null}

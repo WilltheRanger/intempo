@@ -287,7 +287,7 @@ export function PieceDetailScreen() {
         arrives.
       */}
       {error ? (
-        <Text variant="metadataSmall" color="textSecondary" style={styles.error}>
+        <Text accessibilityRole="alert" variant="metadataSmall" color="textSecondary" style={styles.error}>
           {error}
         </Text>
       ) : null}

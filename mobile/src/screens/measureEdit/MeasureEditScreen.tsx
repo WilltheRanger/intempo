@@ -355,7 +355,7 @@ export function MeasureEditScreen() {
       footer={
         <View>
           {error ? (
-            <Text variant="metadataSmall" color="textSecondary" style={styles.footerError}>
+            <Text accessibilityRole="alert" variant="metadataSmall" color="textSecondary" style={styles.footerError}>
               {error}
             </Text>
           ) : null}

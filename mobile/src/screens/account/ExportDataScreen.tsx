@@ -74,7 +74,7 @@ export function ExportDataScreen() {
       ) : null}
 
       {error ? (
-        <Text variant="metadataSmall" color="textSecondary" style={styles.status}>
+        <Text accessibilityRole="alert" variant="metadataSmall" color="textSecondary" style={styles.status}>
           {error}
         </Text>
       ) : null}

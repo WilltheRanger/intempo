@@ -161,7 +161,7 @@ export function ChangePasswordScreen() {
           />
 
           {error ? (
-            <Text
+            <Text accessibilityRole="alert"
               variant="metadataSmall"
               color="textSecondary"
               style={styles.error}

@@ -305,6 +305,26 @@ const focusAfterSheet = await page.evaluate(() => document.activeElement?.getAtt
 if (focusAfterSheet === 'Add piece') pass('closing the Add piece sheet returns focus to Add piece');
 else fail(`closing the Add piece sheet left focus on ${focusAfterSheet}`);
 
+/*
+  **A field with an error says so, and says what.** "Add a title." was
+  announced once from its live region and then sat beside a field the browser
+  called valid, so going back to it read "Title, edit text" (2026-10-05). Read
+  from Chrome's own accessibility tree, which is what a screen reader gets.
+*/
+await open('add/manual');
+await page.getByRole('button', { name: /^Add/ }).last().click();
+await waitFor('the title error', async () => (await leaves()).some((line) => line === 'Add a title.'));
+{
+  const cdp = await page.context().newCDPSession(page);
+  const { nodes } = await cdp.send('Accessibility.getFullAXTree');
+  await cdp.detach();
+  const title = nodes.find((n) => !n.ignored && n.role?.value === 'textbox' && n.name?.value === 'Title');
+  const invalid = title?.properties?.find((p) => p.name === 'invalid')?.value?.value;
+  const said = title?.description?.value;
+  if (invalid === 'true' && said === 'Add a title.') pass('an empty title is marked invalid and described by its error');
+  else fail(`the Title field after an empty save: invalid ${invalid}, description ${JSON.stringify(said)}`);
+}
+
 // A deep link has no history behind it; back must still reach the parent.
 await open('pieces/fixture-clef-change-study/bars/3');
 // A link since the redesign (`BackLink`, "‹ Back to score"): it only goes
