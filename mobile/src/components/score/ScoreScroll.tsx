@@ -159,7 +159,7 @@ export function ScoreScroll({
       </ScrollView>
 
       {/* The music runs under the panel rather than stopping at a line. */}
-      <View style={styles.fade} pointerEvents="none">
+      <View style={styles.fade} pointerEvents="none" aria-hidden>
         <Svg width="100%" height={FADE_HEIGHT}>
           <Defs>
             <LinearGradient id="score-fade" x1="0" y1="0" x2="0" y2="1">

@@ -1012,6 +1012,50 @@ async function invisibleButAnnounced(page) {
   return [...new Set(found)];
 }
 
+/**
+ * Images Chrome announces with no name, outside anything that has one.
+ *
+ * An icon inside a named button is read as the button; an image nobody named
+ * standing on its own is read as "image", or as its file name. On 2026-10-05
+ * every score screen had one — `Stave`'s drawing, meant to be skipped, came
+ * out as an <svg role="img"> with no label because `accessible={false}` does
+ * not reach the web — and so did the record screen's fade and the page
+ * photograph on the reading screens. A decorative image says so with
+ * `aria-hidden` (or an empty alt); a meaningful one gets a label.
+ */
+async function unnamedImages(page) {
+  const cdp = await page.context().newCDPSession(page);
+  const { nodes } = await cdp.send('Accessibility.getFullAXTree');
+  const byId = new Map(nodes.map((node) => [node.nodeId, node]));
+  const found = [];
+  for (const node of nodes) {
+    if (node.ignored || node.role?.value !== 'image' || (node.name?.value || '').trim()) continue;
+    let ancestor = byId.get(node.parentId);
+    let named = false;
+    while (ancestor) {
+      if (!ancestor.ignored && ancestor.role?.value !== 'RootWebArea' && (ancestor.name?.value || '').trim()) {
+        named = true;
+        break;
+      }
+      ancestor = byId.get(ancestor.parentId);
+    }
+    if (named || !node.backendDOMNodeId) continue;
+    const { object } = await cdp.send('DOM.resolveNode', { backendNodeId: node.backendDOMNodeId });
+    const { result } = await cdp.send('Runtime.callFunctionOn', {
+      objectId: object.objectId,
+      returnByValue: true,
+      functionDeclaration: `function () {
+        const r = this.getBoundingClientRect();
+        return '<' + this.tagName.toLowerCase() + '> ' + Math.round(r.width) + 'x' + Math.round(r.height) +
+          ' at ' + Math.round(r.x) + ',' + Math.round(r.y);
+      }`,
+    });
+    found.push(result.value);
+  }
+  await cdp.detach();
+  return found;
+}
+
 for (const [name, path, options = {}] of selected) {
   /*
    * **375pt, the narrowest iPhone this app can be installed on** — not the 390
@@ -1056,6 +1100,7 @@ for (const [name, path, options = {}] of selected) {
   await groundPhoto(page);
   const found = await page.evaluate(audit);
   const ghosts = await invisibleButAnnounced(page);
+  const nameless = await unnamedImages(page);
   // Last, and on the same page: it rewrites every font size in the document,
   // so nothing measured after it would be measuring the shipped app.
   const spilled = await page.evaluate(spill, TEXT_SCALE);
@@ -1070,6 +1115,7 @@ for (const [name, path, options = {}] of selected) {
     found.overLayered.length +
     mixedVariants +
     ghosts.length +
+    nameless.length +
     spilled.length +
     errors.length;
   failures += total;
@@ -1087,6 +1133,7 @@ for (const [name, path, options = {}] of selected) {
     );
   }
   for (const g of ghosts) console.log(`  INVISIBLE BUT ANNOUNCED: ${g}`);
+  for (const n of nameless) console.log(`  UNNAMED IMAGE: ${n}`);
   for (const o of new Set(spilled)) console.log(`  AT ${TEXT_SCALE}x TEXT: ${o}`);
   await page.close();
 }

@@ -209,7 +209,7 @@ export function UploadRecordingScreen() {
       {/* The file, on a white band the width of the screen. */}
       <View style={styles.band}>
         <View style={styles.fileRow}>
-          <View style={styles.fileIcon}>
+          <View style={styles.fileIcon} aria-hidden>
             <FileMusic size={ICON_SIZE.md} strokeWidth={ICON_STROKE_WIDTH} color={colors.textSecondary} />
           </View>
           <View style={styles.fileText}>

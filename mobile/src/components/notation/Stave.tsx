@@ -492,12 +492,15 @@ export function Stave({
     <Svg
       width={engraving.width}
       height={page ? page.height : engraving.height}
-      accessibilityRole="image"
       // Not described. With names on, a screen reader spelling out fifteen note
       // letters is noise and the exercise is named above; with them off there is
       // no text here to read at all. Either way the screen carries the piece's
       // name, clef and tempo in real text, which is the useful alternative.
-      accessible={false}
+      //
+      // `aria-hidden`, not `accessible={false}` with an image role: on the web
+      // that pair rendered an <svg role="img"> with no name, which a screen
+      // reader announces as an unlabelled image on every score screen.
+      aria-hidden
     >
       {drawn.map((system, drawnIndex) => {
         const systemIndex = firstDrawn + drawnIndex;
