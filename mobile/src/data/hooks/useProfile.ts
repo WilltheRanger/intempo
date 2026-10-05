@@ -5,6 +5,7 @@ import { updateMe, type UpdateMeInput } from '../api/me';
 import { requestAvatarUpload, uploadToSignedUrl } from '../api/upload';
 import { prepareAvatar } from '../profile/avatarImage';
 import { IS_LIVE_BACKEND } from '../environment';
+import { updateFixtureMusician } from '../sources/fixtures';
 import { preferences } from '../preferences';
 
 /**
@@ -20,11 +21,16 @@ export function useUpdateProfile() {
   return useMutation<void, Error, UpdateMeInput>({
     mutationFn: async (input) => {
       if (!IS_LIVE_BACKEND) {
-        throw new Error(
-          'Saving your profile needs the backend. This build is running on sample data.',
-        );
+        // Only the new-account sample build takes the save, so its onboarding
+        // can be walked to the end; every other sample build refuses as before.
+        if (!updateFixtureMusician(input)) {
+          throw new Error(
+            'Saving your profile needs the backend. This build is running on sample data.',
+          );
+        }
+      } else {
+        await updateMe(input);
       }
-      await updateMe(input);
       if (input.instrument) {
         // The device preference follows the account, so the warmup and the
         // recorder — which read it synchronously and cannot await a query —
