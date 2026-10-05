@@ -3,10 +3,11 @@ import {
   DefaultTheme,
   NavigationContainer,
   type Theme,
+  useNavigationContainerRef,
 } from '@react-navigation/native';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { useFonts } from 'expo-font';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -28,9 +29,11 @@ import * as SystemUI from 'expo-system-ui';
 import { colors, fontsToLoad, scheme } from './design';
 import { ChromeToneProvider } from './navigation/ChromeToneContext';
 import { RootNavigator } from './navigation/RootNavigator';
+import type { RootStackParamList } from './navigation/types';
 import { startLibraryCache } from './data/cache/libraryCache';
 import { startTakeDrainer } from './lib/sync/takeDrainer';
 import { installKeyActivation } from './lib/installKeyActivation';
+import { installScreenFocus, type ScreenFocus } from './lib/installScreenFocus';
 
 const queryClient = createQueryClient();
 
@@ -166,6 +169,18 @@ export default function App() {
   // Space presses switches, radios and tabs on the web, as it does buttons,
   // and Enter follows a link.
   useEffect(() => installKeyActivation(), []);
+  // A new screen takes focus to its title, and Back returns it to where it
+  // was, on the web; until then both left it on <body> (`screenFocus.ts`).
+  const navigationRef = useNavigationContainerRef<RootStackParamList>();
+  const screenFocus = useRef<ScreenFocus | null>(null);
+  useEffect(() => {
+    const focus = installScreenFocus(() => navigationRef.getCurrentRoute()?.key);
+    screenFocus.current = focus;
+    // A child's effects run before its parent's, so the container may have
+    // been ready — and called `onReady` into nothing — before this ran.
+    if (navigationRef.isReady()) focus.ready();
+    return () => focus.dispose();
+  }, [navigationRef]);
 
   // The other half of practising without a connection.
   //
@@ -195,6 +210,9 @@ export default function App() {
         <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
         {typographyReady ? (
           <NavigationContainer
+            ref={navigationRef}
+            onReady={() => screenFocus.current?.ready()}
+            onStateChange={() => screenFocus.current?.arrived()}
             theme={navigationTheme}
             documentTitle={{ formatter: formatDocumentTitle }}
             // Without this the whole app is one URL: back leaves the site,

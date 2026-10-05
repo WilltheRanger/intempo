@@ -367,6 +367,29 @@ await page.keyboard.press('Enter');
 if (await waitFor('Enter on the back link to go back', async () => (await path()).endsWith('/record'), 8000))
   pass('Enter on a back link goes back');
 
+/*
+  **A new screen takes focus to its title, and Back gives it back.** Until
+  2026-10-05 both left focus on <body>, so a screen reader said nothing about
+  the screen that had arrived and the next Tab began at the top of the
+  document (`lib/screenFocus.ts`).
+*/
+await open('');
+{
+  const focused = () =>
+    page.evaluate(() => ({
+      tag: document.activeElement?.tagName,
+      name: (document.activeElement?.getAttribute('aria-label') || document.activeElement?.textContent || '').trim(),
+    }));
+  await page.getByRole('button', { name: /^Study in B♭/ }).first().focus();
+  await page.keyboard.press('Enter');
+  if (await waitFor('focus on the piece title', async () => (await focused()).tag === 'H1', 5000))
+    pass('opening a piece puts focus on its title');
+  await page.getByRole('link', { name: /Back to library/ }).first().focus();
+  await page.keyboard.press('Enter');
+  if (await waitFor('focus back on the row', async () => (await focused()).name.startsWith('Study in B♭'), 5000))
+    pass('Back returns focus to the row that opened the piece');
+}
+
 console.log('\n## Finding a piece in the library');
 
 // **The one control on the Library tab, and the walk never touched it.** Its

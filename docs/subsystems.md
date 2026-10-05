@@ -755,6 +755,23 @@ runs in the capture phase. The responder stops the keydown it accepts from
 bubbling, so a listener on the document in the usual phase never hears the
 key. `walk-app` presses Enter on a back link.
 
+### A screen change leaves focus on `<body>` (2026-10-05)
+
+When a screen is pushed, the stack makes the screen underneath inert. That
+blurs whatever was focused, and nothing focuses anything on the new screen.
+Back does the same in reverse. So a screen reader said nothing about the
+screen that had arrived, and the next Tab began at the top of the document.
+
+**The rule:** `installScreenFocus` (in `App.tsx`) acts when the screen showing
+changes and focus has been lost. It returns focus to what was last focused on
+the screen arrived at, if that is still there; otherwise it focuses the
+screen's one level-1 heading, with `tabindex="-1"` and no outline. It does not
+act on the screen a page loads on. It does not act on state changes that are
+not a new screen, such as tabs being built in the background (`onReady` sets
+that baseline). The rules are in `lib/screenFocus.ts`. This is why every
+screen needs its one level-1 heading (see above). `walk-app` opens a piece by
+keyboard and goes back.
+
 ## `npm audit fix --force` would take this app back to SDK 46 (2026-09-09)
 
 `npm audit --omit=dev` reports **24 advisories, 7 of them high**, and closes
