@@ -12,6 +12,7 @@ import { Text } from '../../components/primitives';
 import type { MeasureVerdict, TempoBeatUnit, Tolerance } from '../../data/types';
 import { BORDER_WIDTH, colors } from '../../design';
 import { chartBarWidth } from '../../lib/chartBars';
+import { moveIndex, sliderMove, type SliderMove } from '../../lib/sliderKeys';
 import { barTempo, tempoChartBars } from '../../lib/verdict/barTempo';
 import { barIndexAt, measureChartBars, type ChartBar } from '../../lib/verdict/measureChart';
 import { readMeasure } from '../../lib/verdict/measureReading';
@@ -134,13 +135,10 @@ export function MeasureBars({
       return;
     }
     function onKey(event: KeyboardEvent) {
-      if (event.key === 'ArrowRight' || event.key === 'ArrowUp') {
-        event.preventDefault();
-        stepFrom(live.current, 1);
-      } else if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') {
-        event.preventDefault();
-        stepFrom(live.current, -1);
-      }
+      const move = sliderMove(event.key, { big: PHRASE });
+      if (!move) return;
+      event.preventDefault();
+      goTo(live.current, move);
     }
     element.addEventListener('keydown', onKey);
     return () => element.removeEventListener('keydown', onKey);
@@ -167,23 +165,26 @@ export function MeasureBars({
         style={styles.chart}
         onLayout={handleLayout}
         role="slider"
-        aria-label={
+        // The name stays; the value says where you are — see `TrendChart`.
+        aria-label="Bar by bar"
+        aria-valuetext={
           current
-            ? `${name} ${current.measure} of ${bars.length}: ${
+            ? `${name} ${current.measure}: ${
                 describe
                   ? describe(current)
                   : (barTempo(current, targetBpm, tempoBeatUnit, tolerance)?.spoken ??
                     readMeasure(current).label)
               }${marked?.has(current.measure) ? ', and a mistake to look at' : ''}`
-            : 'Bar by bar'
+            : undefined
         }
         aria-valuemin={1}
         aria-valuemax={bars.length}
-        aria-valuenow={at + 1}
+        // Nothing picked is no value, not 0 below a minimum of 1.
+        aria-valuenow={at >= 0 ? at + 1 : undefined}
         focusable
         accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
         onAccessibilityAction={(event) =>
-          stepFrom(live.current, event.nativeEvent.actionName === 'increment' ? 1 : -1)
+          goTo(live.current, { by: event.nativeEvent.actionName === 'increment' ? 1 : -1 })
         }
         {...pan.panHandlers}
       >
@@ -274,11 +275,14 @@ export function MeasureBars({
 }
 
 /** Select the bar `delta` along from the selected one, clamped at the ends. */
-function stepFrom(
+/** Page Up and Page Down move a phrase at a time. */
+const PHRASE = 4;
+
+function goTo(
   { bars, at, onSelect }: { bars: ChartBar[]; at: number; onSelect: (measure: number) => void },
-  delta: number,
+  move: SliderMove,
 ) {
-  const next = bars[Math.max(0, Math.min(bars.length - 1, (at < 0 ? 0 : at) + delta))];
+  const next = bars[moveIndex(at, bars.length, move)];
   if (next) onSelect(next.measure);
 }
 

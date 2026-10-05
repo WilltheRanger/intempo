@@ -10,6 +10,7 @@ import {
 import { Text } from '../../components/primitives';
 import { BORDER_WIDTH, colors, radii } from '../../design';
 import { fractionOf, tempoAtFraction } from '../../lib/record/tapTempo';
+import { sliderMove } from '../../lib/sliderKeys';
 
 const THUMB = 24;
 const HEIGHT = 34;
@@ -84,14 +85,13 @@ export function TempoSlider({
     }
     function onKey(event: KeyboardEvent) {
       const { bpm: now, bounds: b, onChange: set } = live.current;
-      const step = event.shiftKey ? 5 : 1;
-      if (event.key === 'ArrowRight' || event.key === 'ArrowUp') {
-        event.preventDefault();
-        set(Math.min(b.max, now + step));
-      } else if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') {
-        event.preventDefault();
-        set(Math.max(b.min, now - step));
-      }
+      // Shift with an arrow, and Page Up and Down, move five; Home and End go
+      // to the ends of the range (`lib/sliderKeys.ts`).
+      const move = sliderMove(event.key, { big: 5, shift: event.shiftKey });
+      if (!move) return;
+      event.preventDefault();
+      if ('to' in move) set(move.to === 'first' ? b.min : b.max);
+      else set(Math.max(b.min, Math.min(b.max, now + move.by)));
     }
     element.addEventListener('keydown', onKey);
     return () => element.removeEventListener('keydown', onKey);

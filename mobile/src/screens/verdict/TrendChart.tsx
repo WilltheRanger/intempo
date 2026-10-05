@@ -4,6 +4,7 @@ import { PanResponder, Platform, StyleSheet, View, type LayoutChangeEvent } from
 import { TrendPlot } from '../../components/charts/TrendPlot';
 import { Text } from '../../components/primitives';
 import type { MeasureVerdict } from '../../data/types';
+import { moveIndex, sliderMove, type SliderMove } from '../../lib/sliderKeys';
 import { barAtAlong, type TrendData, type TrendPoint } from '../../lib/verdict/trend';
 
 /**
@@ -82,15 +83,10 @@ export function TrendChart({
     const element = node.current as unknown as HTMLElement | null;
     if (!element?.addEventListener) return;
     function onKey(event: KeyboardEvent) {
-      const delta =
-        event.key === 'ArrowRight' || event.key === 'ArrowUp'
-          ? 1
-          : event.key === 'ArrowLeft' || event.key === 'ArrowDown'
-            ? -1
-            : 0;
-      if (delta === 0) return;
+      const move = sliderMove(event.key, { big: PHRASE });
+      if (!move) return;
       event.preventDefault();
-      step(live.current, delta);
+      go(live.current, move);
     }
     element.addEventListener('keydown', onKey);
     return () => element.removeEventListener('keydown', onKey);
@@ -121,11 +117,11 @@ export function TrendChart({
         ref={node}
         onLayout={handleLayout}
         role="slider"
-        aria-label={
-          current
-            ? `${name} ${current.measure} of ${count}: ${describe(current)}`
-            : `Across the take, ${count} bars`
-        }
+        // **The name stays; the value says where you are.** A screen reader
+        // announces a slider's value as it moves and not a changed label, so
+        // the bar's description in the label went unspoken (2026-10-05).
+        aria-label={`Across the take, ${count} bars`}
+        aria-valuetext={current ? `${name} ${current.measure}: ${describe(current)}` : undefined}
         aria-valuemin={1}
         aria-valuemax={count}
         // Nothing picked is no value, not a value below the minimum.
@@ -133,7 +129,7 @@ export function TrendChart({
         focusable
         accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
         onAccessibilityAction={(event) =>
-          step(live.current, event.nativeEvent.actionName === 'increment' ? 1 : -1)
+          go(live.current, { by: event.nativeEvent.actionName === 'increment' ? 1 : -1 })
         }
         {...pan.panHandlers}
       >
@@ -170,16 +166,18 @@ export function TrendChart({
 }
 
 /** Select the bar `delta` along from the selected one, clamped at the ends. */
-function step(
+/** Page Up and Page Down move a phrase at a time. */
+const PHRASE = 4;
+
+function go(
   {
     measures,
     at,
     onSelect,
   }: { measures: readonly MeasureVerdict[]; at: number; onSelect: (measure: number) => void },
-  delta: number,
+  move: SliderMove,
 ) {
-  // The first step onto a graph with nothing picked lands on its first bar.
-  const next = measures[at < 0 ? 0 : Math.max(0, Math.min(measures.length - 1, at + delta))];
+  const next = measures[moveIndex(at, measures.length, move)];
   if (next) onSelect(next.measure);
 }
 

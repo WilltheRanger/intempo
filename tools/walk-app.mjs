@@ -939,8 +939,10 @@ console.log('\n## Telling the app it got a bar wrong');
 
   // A bar under a written change was never judged, so the graph must say so
   // rather than read a tempo into it.
+  // The bar's reading is the slider's value text; its label is the chart's
+  // name and does not change as the bar does (2026-10-05).
   await selectMeasure(11);
-  const label = (await chart.getAttribute('aria-label')) ?? '';
+  const label = (await chart.getAttribute('aria-valuetext')) ?? '';
   if (!/Not timed/i.test(label)) fail(`measure 11 read as "${label}", not "Not timed"`);
   else pass('an untimed bar reads as not timed');
 
