@@ -1,4 +1,4 @@
-import { unzipSync } from 'fflate';
+import type { unzipSync } from 'fflate';
 
 /**
  * Turning a file the musician picked into the MusicXML the backend expects.
@@ -143,8 +143,31 @@ function totalBytes(files: Record<string, Uint8Array>): number {
   return total;
 }
 
+/** fflate's `unzipSync`, handed to `readMusicXML` rather than imported by it. */
+export type Unzip = typeof unzipSync;
+
+/**
+ * The unzipper, fetched when a file is picked rather than with the app.
+ *
+ * **It was 33 KB of the bundle every musician downloads on a first visit**
+ * (measured from the web build's source map, 2026-10-05), for a step most of
+ * them never take: opening a `.mxl`. Loaded here, it arrives as its own small
+ * file the moment one is chosen, and `readMusicXML` takes it as an argument so
+ * that it stays synchronous — `hostile.test.ts` measures the memory a zip bomb
+ * costs around a synchronous call — and the tests hand it fflate directly.
+ */
+export async function loadUnzip(): Promise<Unzip> {
+  try {
+    return (await import('fflate')).unzipSync;
+  } catch {
+    // The one way this differs from a static import: on the web the chunk is
+    // fetched, and a dropped connection fails here rather than at launch.
+    throw new MusicXMLFileError("Couldn't open that file. Check your connection and try again.");
+  }
+}
+
 /** The MusicXML text inside a picked file, compressed or not. */
-export function readMusicXML(bytes: Uint8Array): string {
+export function readMusicXML(bytes: Uint8Array, unzip: Unzip): string {
   if (!looksLikeZip(bytes)) {
     // Sniffed, not taken from the extension. A file saved as `.musicxml` from a
     // program that writes `.mxl` is still a zip, and the extension is the one
@@ -176,7 +199,7 @@ export function readMusicXML(bytes: Uint8Array): string {
   let declared = 0;
   let overLimit = false;
   try {
-    files = unzipSync(bytes, {
+    files = unzip(bytes, {
       filter: (file) => {
         // A streamed entry can declare nothing at all, in which case there is
         // no claim to refuse and the check below the unzip is the only guard.

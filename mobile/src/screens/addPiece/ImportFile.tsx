@@ -21,6 +21,7 @@ import {
   composerIn,
   MusicXMLFileError,
   partsIn,
+  loadUnzip,
   readMusicXML,
   titleIn,
   type MusicXMLPart,
@@ -120,7 +121,7 @@ export function ImportFileScreen() {
         return;
       }
 
-      const xml = readMusicXML(await bytesOf(asset));
+      const xml = readMusicXML(await bytesOf(asset), await loadUnzip());
       if (!/<score-partwise|<score-timewise/i.test(xml)) {
         setError(
           `${asset.name} isn't a MusicXML file.`,
