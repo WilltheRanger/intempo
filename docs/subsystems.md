@@ -658,6 +658,44 @@ bundle addresses and no message. Two faults, each hiding the other:
 **The rule:** anything drawn above `NavigationContainer` must not call a
 navigation hook, and a field added to a saved type is a new cache shape.
 
+### The web build ignores the native ways of hiding things (2026-10-05)
+
+`accessibilityElementsHidden`, `importantForAccessibility` and
+`accessible={false}` hide content from VoiceOver and TalkBack, and
+react-native-web drops all three. Every place that hid something that way was
+hidden on a phone and announced in a browser. On the Library — the first
+screen — the closed search field and its Clear and Cancel buttons sat at
+opacity 0 as a textbox and two buttons in Chrome's tree, each in the Tab
+order. Score drawings, decorative icons and a page photograph were announced
+as unnamed images.
+
+- **Static decoration:** `aria-hidden`, which React Native maps to both native
+  flags and the web writes as the attribute. An `expo-image` gets an empty
+  `accessibilityLabel` instead — its web wrapper writes that into `alt` and
+  drops its own `alt` prop.
+- **A layer that hides and shows controls:** keep the native props and wrap the
+  children in `primitives/Inert.tsx`, an HTML `inert` element on the web only.
+  `aria-hidden` alone leaves focusable children in the Tab order.
+
+`audit-a11y.mjs` now reads Chrome's own accessibility tree over CDP and fails
+on anything announced but invisible, and on any unnamed image outside a named
+control. The DOM is not the tree: a control at opacity 0 is a named control to
+anything that reads markup.
+
+### Code shared by two lazy chunks loads with the app (2026-10-05)
+
+`warmPlayback` and `sampledPlayback` each did `import('./soundfontBank')` and
+`import('./soundfontRender')`, and both of those import `spessasynth_core`. The
+web export hoists a module shared between async chunks into `__common`, and
+`index.html` loads `__common` with a `<script>` tag at startup — so the Listen
+synthesiser, lazy on purpose, was 78 KB gzipped of every first visit.
+`check-bundle-size.mjs` weighed only `index-*.js` and never saw it.
+
+**The rule:** give a lazily-loaded dependency one entry point
+(`lib/score/soundfontEngine.ts`) and import only that. The size check now
+weighs every script `index.html` loads and fails with this explanation when
+there is more than one.
+
 ## `npm audit fix --force` would take this app back to SDK 46 (2026-09-09)
 
 `npm audit --omit=dev` reports **24 advisories, 7 of them high**, and closes
