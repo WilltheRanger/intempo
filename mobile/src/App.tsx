@@ -30,6 +30,7 @@ import { ChromeToneProvider } from './navigation/ChromeToneContext';
 import { RootNavigator } from './navigation/RootNavigator';
 import { startLibraryCache } from './data/cache/libraryCache';
 import { startTakeDrainer } from './lib/sync/takeDrainer';
+import { installSpaceActivation } from './lib/installSpaceActivation';
 
 const queryClient = createQueryClient();
 
@@ -162,6 +163,8 @@ export default function App() {
   // who walks back into coverage and opens the library should find their
   // takes going, not have to visit the room they recorded them in.
   useEffect(() => startTakeDrainer(), []);
+  // Space presses switches, radios and tabs on the web, as it does buttons.
+  useEffect(() => installSpaceActivation(), []);
 
   // The other half of practising without a connection.
   //
