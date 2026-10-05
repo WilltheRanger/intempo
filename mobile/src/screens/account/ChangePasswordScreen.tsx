@@ -21,6 +21,7 @@ import {
   signIn,
   updatePassword,
 } from '../../data/auth/session';
+import { useFieldOrder } from '../../components/primitives/useFieldOrder';
 import { MIN_TOUCH_TARGET, spacing } from '../../design';
 import {
   describeAuthError,
@@ -45,6 +46,8 @@ export function ChangePasswordScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  // Current, new, repeated; Return in the last changes it.
+  const field = useFieldOrder(3, () => void submit(), 'go');
 
   async function submit() {
     if (!currentPassword) {
@@ -114,6 +117,7 @@ export function ChangePasswordScreen() {
 
         <View>
           <Input
+            {...field(0)}
             label="Current password"
             value={currentPassword}
             onChangeText={setCurrentPassword}
@@ -125,6 +129,7 @@ export function ChangePasswordScreen() {
           />
 
           <Input
+            {...field(1)}
             label="New password"
             value={password}
             onChangeText={setPassword}
@@ -150,8 +155,7 @@ export function ChangePasswordScreen() {
             autoCapitalize="none"
             autoComplete="new-password"
             textContentType="newPassword"
-            returnKeyType="go"
-            onSubmitEditing={() => void submit()}
+            {...field(2)}
             editable={!busy}
             style={styles.field}
           />

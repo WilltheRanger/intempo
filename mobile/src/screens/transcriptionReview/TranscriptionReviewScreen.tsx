@@ -2,6 +2,7 @@ import { useNavigation } from '@react-navigation/native';
 import { ChevronLeft, ChevronRight } from '../../components/icons';
 import { useGoBack } from '../../navigation/useGoBack';
 import { ComposerField } from '../../components/pieces/ComposerField';
+import { useFieldOrder } from '../../components/primitives/useFieldOrder';
 import { TitleField } from '../../components/pieces/TitleField';
 import { useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -61,6 +62,8 @@ export function TranscriptionReviewScreen() {
   const [movement, setMovement] = useState('');
   const [pageIndex, setPageIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  // Title, composer, movement; Return in the last sends the pages.
+  const field = useFieldOrder(3, () => void save());
   const saving = useRef(false);
 
   const imageKeys = captureSession.uploadedImageKeys();
@@ -189,6 +192,7 @@ export function TranscriptionReviewScreen() {
       ) : (
         <>
           <TitleField
+            {...field(0)}
             value={title}
             onChangeText={setTitle}
             composer={composer}
@@ -198,12 +202,14 @@ export function TranscriptionReviewScreen() {
           {/* The commonest way a piece enters the library, and it had the
               plainest field of the three. */}
           <ComposerField
+            {...field(1)}
             value={composer}
             onChangeText={setComposer}
             style={styles.field}
           />
 
           <Input
+            {...field(2)}
             label="Movement"
             maxLength={FIELD_LIMITS.movement}
             optional

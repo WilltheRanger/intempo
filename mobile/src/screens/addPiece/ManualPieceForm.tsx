@@ -18,6 +18,7 @@ import { beatsPerMeasure } from '../../lib/notation/reading';
 import type { RootNavigation } from '../../navigation/types';
 import { ComposerField } from '../../components/pieces/ComposerField';
 import { TitleField } from '../../components/pieces/TitleField';
+import { useFieldOrder } from '../../components/primitives/useFieldOrder';
 import { FIELD_LIMITS } from '../../lib/fieldLimits';
 
 /** The backend's `bpm_hint` bounds. Rejecting here saves a round trip. */
@@ -89,6 +90,9 @@ export function ManualPieceForm() {
   // Said at the title field rather than by the button (2026-09-29).
   const [titleError, setTitleError] = useState<string | null>(null);
 
+  // Title, composer, movement, time signature, tempo; Return in the last adds.
+  const field = useFieldOrder(5, () => void submit());
+
   async function submit() {
     const trimmedTitle = title.trim();
     if (!trimmedTitle) {
@@ -146,6 +150,7 @@ export function ManualPieceForm() {
       />
 
       <TitleField
+        {...field(0)}
         value={title}
         onChangeText={(next) => {
           setTitle(next);
@@ -156,7 +161,7 @@ export function ManualPieceForm() {
         onComposerChange={setComposer}
         style={styles.first}
       />
-      <ComposerField value={composer} onChangeText={setComposer} style={styles.field} />
+      <ComposerField {...field(1)} value={composer} onChangeText={setComposer} style={styles.field} />
       <Input
         label="Movement"
         maxLength={FIELD_LIMITS.movement}
@@ -165,7 +170,7 @@ export function ManualPieceForm() {
         onChangeText={setMovement}
         placeholder="I. Adagio"
         autoCapitalize="words"
-        returnKeyType="next"
+        {...field(2)}
         style={styles.field}
       />
       <Input
@@ -176,7 +181,7 @@ export function ManualPieceForm() {
         onChangeText={setTimeSignature}
         placeholder="4/4"
         autoCapitalize="none"
-        returnKeyType="next"
+        {...field(3)}
         style={styles.field}
       />
       <Input
@@ -186,8 +191,7 @@ export function ManualPieceForm() {
         onChangeText={setBpm}
         placeholder="beats per minute"
         keyboardType="number-pad"
-        returnKeyType="done"
-        onSubmitEditing={() => void submit()}
+        {...field(4)}
         style={styles.field}
       />
 

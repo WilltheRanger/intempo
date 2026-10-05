@@ -1,4 +1,5 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useImperativeHandle, useRef, useState, type ReactNode, type Ref } from 'react';
+import type { FieldHandle } from '../../lib/fieldOrder';
 import {
   Platform,
   Pressable,
@@ -89,6 +90,14 @@ export interface InputProps {
   returnKeyType?: TextInputProps['returnKeyType'];
   onSubmitEditing?: TextInputProps['onSubmitEditing'];
   /**
+   * Keep focus when Return is pressed, because the caller is about to move it
+   * to the next field. Without it the keyboard drops and rises again between
+   * fields on iOS. `useFieldOrder` sets it; nothing else should need to.
+   */
+  keepFocusOnSubmit?: boolean;
+  /** Lets a form move focus here — see `useFieldOrder`. */
+  ref?: Ref<FieldHandle>;
+  /**
    * Focus and blur, passed straight through — composed with the field's own
    * focus ring and its suggestion, which is drawn only while it has focus.
    */
@@ -144,6 +153,8 @@ export function Input({
   textContentType,
   returnKeyType,
   onSubmitEditing,
+  keepFocusOnSubmit = false,
+  ref,
   onFocus,
   onBlur,
   editable = true,
@@ -156,6 +167,7 @@ export function Input({
 }: InputProps) {
   const [focused, setFocused] = useState(false);
   const input = useRef<TextInput>(null);
+  useImperativeHandle(ref, () => ({ focus: () => input.current?.focus() }), []);
   // Where the cursor is, so → accepts only from the end of the text.
   const [cursor, setCursor] = useState<number | null>(null);
   // How wide what is typed is, and how wide the box is: the suggestion starts
@@ -240,8 +252,8 @@ export function Input({
             }
             onSubmitEditing?.(event);
           }}
-          submitBehavior={offering ? 'submit' : undefined}
-          blurOnSubmit={offering ? false : undefined}
+          submitBehavior={offering || keepFocusOnSubmit ? 'submit' : undefined}
+          blurOnSubmit={offering || keepFocusOnSubmit ? false : undefined}
           onKeyPress={(event) => {
             const atEnd = cursor === null || cursor >= value.length;
             if (offering && acceptsCompletion(event.nativeEvent.key, atEnd)) {

@@ -888,6 +888,9 @@ export function MeasureEditScreen() {
                 onChangeText={setSheetPrinted}
                 placeholder={usualPrinted(sheetChoice, sheetBpm, tempoBefore) || 'meno mosso'}
                 autoCapitalize="none"
+                // The sheet's one field, above its Done: Return is Done.
+                returnKeyType="done"
+                onSubmitEditing={commitTempo}
               />
             </View>
           ) : null}

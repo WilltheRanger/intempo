@@ -1,8 +1,9 @@
-import { useMemo } from 'react';
+import { useMemo, type Ref } from 'react';
 import type { StyleProp, ViewStyle } from 'react-native';
 
 import { useLibrary } from '../../data/hooks/usePieces';
 import { completeTitle } from '../../lib/autofill';
+import type { FieldHandle } from '../../lib/fieldOrder';
 import { Input } from '../primitives/Input';
 import { FIELD_LIMITS } from '../../lib/fieldLimits';
 
@@ -14,8 +15,11 @@ export interface TitleFieldProps {
   /** Fills an empty composer field when a suggested title is accepted. */
   onComposerChange: (composer: string) => void;
   style?: StyleProp<ViewStyle>;
-  returnKeyType?: 'next' | 'done';
+  returnKeyType?: 'next' | 'done' | 'go';
   onSubmitEditing?: () => void;
+  /** From `useFieldOrder`: keep focus on Return while it moves on. */
+  keepFocusOnSubmit?: boolean;
+  ref?: Ref<FieldHandle>;
   /** Said under the field, e.g. "Add a title." */
   error?: string | null;
 }
@@ -41,6 +45,8 @@ export function TitleField({
   style,
   returnKeyType = 'next',
   onSubmitEditing,
+  keepFocusOnSubmit,
+  ref,
   error = null,
 }: TitleFieldProps) {
   // Usually already cached: the Library tab asked for it. Until it answers,
@@ -65,8 +71,10 @@ export function TitleField({
       autoCapitalize="words"
       // Off, so a browser's own list of past entries does not open over ours.
       autoComplete="off"
+      ref={ref}
       returnKeyType={returnKeyType}
       onSubmitEditing={onSubmitEditing}
+      keepFocusOnSubmit={keepFocusOnSubmit}
       completion={offer?.rest ?? null}
       onAcceptCompletion={() => {
         if (!offer) return;
