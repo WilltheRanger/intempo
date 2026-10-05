@@ -115,7 +115,7 @@ function CheckRow({
         variant="button"
         color={warn ? 'textPrimary' : 'textTertiary'}
         style={styles.mark}
-        accessibilityElementsHidden
+        aria-hidden
       >
         {warn ? '!' : '✓'}
       </Text>

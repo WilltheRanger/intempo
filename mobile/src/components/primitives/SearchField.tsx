@@ -25,6 +25,7 @@ import {
   motion,
 } from '../../design';
 import { useReducedMotion } from '../../lib/useReducedMotion';
+import { Inert } from './Inert';
 
 /**
  * react-native-web renders TextInput as a DOM input, which draws the browser's
@@ -203,18 +204,22 @@ export function SearchField({
           ],
         }}
       >
-        <Pressable
-          onPress={() => onChangeText('')}
-          accessibilityRole="button"
-          accessibilityLabel="Clear search"
-          style={({ pressed }) => [styles.target, pressed && styles.pressed]}
-        >
-          <X
-            size={ICON_SIZE.md}
-            strokeWidth={ICON_STROKE_WIDTH}
-            color={colors.textTertiary}
-          />
-        </Pressable>
+        {/* Native-only props above; `Inert` is the web's, or an empty field
+            keeps an invisible Clear in the Tab order. */}
+        <Inert inert={!hasText}>
+          <Pressable
+            onPress={() => onChangeText('')}
+            accessibilityRole="button"
+            accessibilityLabel="Clear search"
+            style={({ pressed }) => [styles.target, pressed && styles.pressed]}
+          >
+            <X
+              size={ICON_SIZE.md}
+              strokeWidth={ICON_STROKE_WIDTH}
+              color={colors.textTertiary}
+            />
+          </Pressable>
+        </Inert>
       </Animated.View>
     </Animated.View>
   );

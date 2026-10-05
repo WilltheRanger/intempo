@@ -338,10 +338,16 @@ export function OnboardingFlow({
           error={error}
         >
           <View style={styles.photo}>
+            {/*
+              A big target for a thumb, and only that: the button below says
+              the same thing — "Choose a photo" at the bottom, "Change" once
+              there is one — so to a screen reader or a keyboard this circle
+              was the same control announced twice.
+            */}
             <Pressable
               onPress={() => void pickPhoto()}
-              accessibilityRole="button"
-              accessibilityLabel={shown ? 'Change your photo' : 'Choose a photo'}
+              aria-hidden
+              focusable={false}
               style={({ pressed }) => [styles.photoSlot, pressed && styles.choicePressed]}
             >
               {shown ? (

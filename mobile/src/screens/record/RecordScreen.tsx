@@ -1191,7 +1191,7 @@ export function RecordScreen() {
             variant="sectionLabel"
             color="textTertiary"
             style={styles.countInLabel}
-            accessibilityElementsHidden
+            aria-hidden
           >
             Count-in
           </Text>
