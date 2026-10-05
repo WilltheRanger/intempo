@@ -10,7 +10,6 @@ export { BackLink } from './BackLink';
 export { RuledHeading, type RuledHeadingProps } from './RuledHeading';
 export { SECTION_HEADING } from './sectionHeading';
 export { Card, type CardProps } from './Card';
-export { DragSheet, HANDLE_HEIGHT, type DragSheetProps } from './DragSheet';
 export { Avatar, type AvatarProps } from './Avatar';
 export { PrimaryButton, type PrimaryButtonProps } from './PrimaryButton';
 export { SecondaryButton, type SecondaryButtonProps } from './SecondaryButton';

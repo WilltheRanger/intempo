@@ -110,6 +110,28 @@ _EXPORT = re.compile(
     re.M,
 )
 
+#: A barrel's re-export: `export { DragSheet, HANDLE_HEIGHT } from './DragSheet';`.
+#:
+#: **Not a use, and counting it as one hid a whole component.** `DragSheet`,
+#: the record screen's draggable sheet, stopped being rendered in the redesign
+#: (#128) and went on passing this check for weeks, because the one other
+#: place its name appeared was `components/primitives/index.ts` passing it
+#: along to nobody (2026-10-05). A barrel is a corridor, not a caller. Lines
+#: that rename (`X as Y`) are left in: the caller then uses `Y`, and dropping
+#: the line would hide the only place `X` is tied to it.
+_REEXPORT = re.compile(
+    r"^export\s+(?:type\s+)?\{(?P<names>[^}]*)\}\s*from\s*['\"][^'\"]+['\"];?[ \t]*$",
+    re.M,
+)
+
+
+def _without_reexports(body: str) -> str:
+    return _REEXPORT.sub(
+        lambda m: m.group(0) if re.search(r"\bas\b", m.group("names")) else "",
+        body,
+    )
+
+
 #: A test-only export declaring itself deliberate, and saying why.
 #:
 #: **The instruction existed before the mechanism did.** This check closed every
@@ -208,7 +230,7 @@ def main() -> int:
     # walking straight past it. Two modules and 209 lines were sitting behind
     # that hole when it was found, both of them designed screens nobody can
     # reach.
-    shipped = {p: b for p, b in text.items() if ".test." not in p.name}
+    shipped = {p: _without_reexports(b) for p, b in text.items() if ".test." not in p.name}
     tested = {p: b for p, b in text.items() if ".test." in p.name}
 
     scanned = 0

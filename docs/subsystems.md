@@ -777,8 +777,8 @@ keyboard and goes back.
 react-native-web implements `AccessibilityInfo.announceForAccessibility` as
 an empty function. Nothing warned about it. The first announcement that
 needed to work there was a page moved by key on the captured-pages list.
-`DragSheet`'s "raised" and "lowered" used the same call, but no screen renders
-`DragSheet` today.
+`DragSheet`'s "raised" and "lowered" used the same call, but no screen had
+rendered `DragSheet` since the redesign, and it was deleted the same day.
 
 **The rule:** call `announce()` from `lib/announce`. On a phone it is the
 native announcement. On the web it writes to one polite `role="status"`
