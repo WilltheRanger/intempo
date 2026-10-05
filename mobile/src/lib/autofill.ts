@@ -1,4 +1,5 @@
 import { canonical, COMPOSERS } from './composers';
+import { fold, spellKeys } from './keySpelling';
 import { REPERTOIRE, type Work } from './repertoire';
 
 /**
@@ -33,11 +34,6 @@ export interface Completion {
 export interface KnownTitle {
   title: string;
   composer: string | null;
-}
-
-/** One character, compared the way a phone keyboard types it. */
-function fold(text: string): string {
-  return text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
 }
 
 /**
@@ -77,47 +73,6 @@ function spelledPrefixEnd(candidate: string, typed: string): number {
   if (!want) return -1;
   const have = spellKeys(candidate);
   return have.text.startsWith(want) ? have.ends[want.length - 1] : -1;
-}
-
-const SIGNS: Record<string, string> = { '♭': 'b', '♯': '#', '♮': '' };
-/** "-flat" or " sharp" straight after a note name, as a whole word. */
-const SPELLED_OUT = /^[\s-]+(flat|sharp)(?![a-z])/i;
-
-/**
- * `text` folded, with every accidental written one way — "B♭", "Bb",
- * "B flat" and "B-flat" all "bb" — and, for each character of that, where it
- * ends in `text`, so a match can be measured back in the original.
- *
- * Only a note name standing alone takes a following "flat": the b of "Club"
- * is not a key.
- */
-function spellKeys(text: string): { text: string; ends: number[] } {
-  let out = '';
-  const ends: number[] = [];
-  const emit = (chars: string, end: number) => {
-    out += chars;
-    for (let k = 0; k < chars.length; k++) ends.push(end);
-  };
-  let i = 0;
-  while (i < text.length) {
-    const char = text[i];
-    if (char in SIGNS) {
-      emit(SIGNS[char], i + 1);
-      i += 1;
-      continue;
-    }
-    const alone = /[a-g]/i.test(char) && !/\p{L}/u.test(text[i - 1] ?? '');
-    const spelled = alone ? SPELLED_OUT.exec(text.slice(i + 1)) : null;
-    if (spelled) {
-      emit(fold(char), i + 1);
-      i += 1 + spelled[0].length;
-      emit(spelled[1].toLowerCase() === 'flat' ? 'b' : '#', i);
-      continue;
-    }
-    emit(fold(char), i + 1);
-    i += 1;
-  }
-  return { text: out, ends };
 }
 
 /** The rest of `candidate` after `typed`, or null when there is none to offer. */

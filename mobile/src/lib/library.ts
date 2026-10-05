@@ -1,4 +1,5 @@
 import type { Piece } from '../data/types';
+import { spellKeys } from './keySpelling';
 import { daysSincePracticed } from './format';
 
 /**
@@ -181,27 +182,14 @@ function everyTermIn(terms: string[], fields: string[]): boolean {
 }
 
 /**
- * Every accidental spelled one way: "B♭", "Bb", "B flat" and "B-flat" all
- * become "bb", and "F♯", "F#", "F sharp" and "F-sharp" all become "f#".
- *
- * A title is typed however its owner types — the app prints "B♭", a copied
- * catalogue entry says "B-flat", and a phone keyboard offers "Bb" — so the one
- * thing a musician knows for certain about the piece, its key, found it only
- * when they happened to spell it the same way twice.
+ * The text with every accidental spelled one way ("B♭", "Bb", "B flat" and
+ * "B-flat" all "bb"; `keySpelling.ts`).
  *
  * **A second reading of the search, never a replacement for the first.**
  * Rewriting the title outright would cost the word itself: "flat" would stop
  * finding "Waltz in A flat" once that had become "ab". `searchLibrary` keeps a
  * piece that matches either way, so nothing that matched before stops.
- *
- * Only a note name standing alone turns a following "flat" into a sign —
- * `\b` before the letter — so "Club flat" keeps its word.
  */
 function spellAccidentals(value: string): string {
-  return value
-    .replace(/♭/g, 'b')
-    .replace(/♯/g, '#')
-    .replace(/♮/g, '')
-    .replace(/\b([a-g])[\s-]+flat\b/g, '$1b')
-    .replace(/\b([a-g])[\s-]+sharp\b/g, '$1#');
+  return spellKeys(value).text;
 }
