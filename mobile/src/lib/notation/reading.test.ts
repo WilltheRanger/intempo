@@ -161,6 +161,13 @@ describe('describeBeats', () => {
     expect(describeBeats([{ duration: 'triplet_eighth' }], '4/4').text).toBe('0.33 of 4 beats');
   });
 
+  it('says one beat, not one beats', () => {
+    expect(describeBeats([{ duration: 'quarter' }], null).text).toBe('1 beat');
+    expect(describeBeats([{ duration: 'quarter' }], '1/4').text).toBe('1 of 1 beat');
+    expect(describeBeats([{ duration: 'eighth' }], '1/4').text).toBe('0.5 of 1 beat');
+    expect(describeBeats([{ duration: 'eighth' }], null).text).toBe('0.5 beats');
+  });
+
   it('counts without judging when no meter was read', () => {
     // "Saying '4 beats' is still useful; claiming it is right would not be."
     const described = describeBeats([{ duration: 'whole' }], null);

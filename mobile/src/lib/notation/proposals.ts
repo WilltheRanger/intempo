@@ -1,5 +1,5 @@
 import type { Instrument, ScoreJson, ScoreMeasure } from '../../data/types';
-import { beatsIn, beatsPerMeasure } from './reading';
+import { beatCount, beatsIn, beatsPerMeasure } from './reading';
 import { timeSignaturesByMeasure } from './meter';
 import { midiOf, shiftOctave } from './pitch';
 
@@ -177,8 +177,8 @@ function repeatedNote(score: ScoreJson): Proposal[] {
         id: `repeat-${measure.measure_number}-${index}`,
         measureNumber: measure.measure_number,
         where: `Bar ${measure.measure_number}`,
-        from: `${trimBeats(actual)} beats`,
-        to: `${trimBeats(expected)} beats`,
+        from: beatCount(trimBeats(actual)),
+        to: beatCount(trimBeats(expected)),
         why: `Looks like one ${what} read twice`,
         keepLabel: 'Leave it',
         fixLabel: 'Drop the repeat',

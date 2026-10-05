@@ -390,6 +390,18 @@ export function beatsIn(notes: { duration: string }[]): number | null {
 }
 
 /**
+ * A number of beats, as written: "1 beat", "4 beats", "1.5 beats".
+ *
+ * A bar of one beat — a 1/4 bar, or a single quarter in a bar with no time
+ * signature read — said "1 beats" in the bar editor and "of 1 beats" under
+ * it. Only exactly one takes the singular; a fraction of a beat reads as
+ * plural ("0.5 beats").
+ */
+export function beatCount(shown: string): string {
+  return shown === '1' ? '1 beat' : `${shown} beats`;
+}
+
+/**
  * The beat total as a sentence, and whether it balances.
  *
  * **Rounded to two places for showing, `BEAT_TOLERANCE` for deciding.** Two
@@ -437,20 +449,20 @@ export function describeBeats(
   if (expected === null) {
     // No time signature was read, so there is nothing to balance against.
     // Saying "4 beats" is still useful; claiming it is right would not be.
-    return { text: `${shown} beats`, balanced: true, expected: null, pickup: false };
+    return { text: beatCount(shown), balanced: true, expected: null, pickup: false };
   }
   if (isPickup(first ? 0 : 1, actual, expected, notes.length)) {
     // The backend's own words for this measure, so the two never disagree in
     // front of a musician: "allowed, a first measure may be a pickup".
     return {
-      text: `${shown} of ${expected} beats, a pickup`,
+      text: `${shown} of ${beatCount(String(expected))}, a pickup`,
       balanced: true,
       expected,
       pickup: true,
     };
   }
   return {
-    text: `${shown} of ${expected} beats`,
+    text: `${shown} of ${beatCount(String(expected))}`,
     balanced: Math.abs(actual - expected) < BEAT_TOLERANCE,
     expected,
     pickup: false,
