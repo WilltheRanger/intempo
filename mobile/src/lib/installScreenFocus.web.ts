@@ -43,10 +43,17 @@ export function installScreenFocus(currentRoute: () => string | undefined): Scre
   const look = (route: string | undefined) => {
     const active = document.activeElement as (Focusable & Element) | null;
     if (!focusIsLost(active, document.body)) return false;
-    const titles = [...document.querySelectorAll<HTMLElement>('h1')];
+    // Level 1 first; then level 2, for a screen whose only heading is a
+    // state's own — "Couldn't load this take" is an `EmptyState` filling the
+    // screen, a level-2 heading with no title above it, and focus landing on
+    // nothing there is the defect this file exists to fix (2026-10-05).
+    const titles = [
+      ...document.querySelectorAll<HTMLElement>('h1'),
+      ...document.querySelectorAll<HTMLElement>('h2'),
+    ];
     const target = arrivalTarget(route ? last.get(route) : null, titles);
     if (target === null) return false;
-    if (target.tagName === 'H1' && !target.hasAttribute('tabindex')) {
+    if (/^H[12]$/.test(target.tagName) && !target.hasAttribute('tabindex')) {
       target.tabIndex = -1;
       target.setAttribute(TITLE, '');
     }

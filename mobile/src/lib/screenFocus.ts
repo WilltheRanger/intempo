@@ -13,7 +13,10 @@
  *  - return to what was last focused on the screen arrived at, if it is still
  *    there to focus — which is what Back should do;
  *  - otherwise the screen's title, its one level-1 heading — which is what a
- *    newly opened screen should do, and what a screen reader then announces.
+ *    newly opened screen should do, and what a screen reader then announces;
+ *  - and on a screen with no level-1 heading, its first level-2 one: a state
+ *    such as "Couldn't load this take" fills the screen with an `EmptyState`,
+ *    whose title is level 2 because elsewhere it sits under a page title.
  *
  * **Only when focus has been lost.** A tab switch keeps focus on its tab, and
  * a screen that focuses a field of its own has already put it somewhere
