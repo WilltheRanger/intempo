@@ -11,7 +11,7 @@ import { useReducedMotion } from '../../lib/useReducedMotion';
 import { PrimaryButton } from '../primitives/PrimaryButton';
 import { SecondaryButton } from '../primitives/SecondaryButton';
 import { Text } from '../primitives/Text';
-import { useInertAppRoot } from './modalAccessibility';
+import { useInertAppRoot, useReturnFocus } from './modalAccessibility';
 import { useOverlayPresence } from './useOverlayPresence';
 
 export interface ConfirmDialogProps {
@@ -67,6 +67,7 @@ export function ConfirmDialog({
   // Held for the whole enter/exit, not just while `visible` — the web Modal is
   // a portal beside #root, and focus must not slip behind a card still leaving.
   useInertAppRoot(mounted);
+  useReturnFocus(mounted);
 
   if (!mounted) {
     return null;

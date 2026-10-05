@@ -290,6 +290,21 @@ if ((await page.getByRole('button', { name: /^Continue\./ }).count()) > 0)
   pass('/library still opens the Library');
 else fail('/library no longer opens the Library');
 
+/*
+  **Closing a sheet gives focus back to what opened it.** React Native Web's
+  Modal means to and does not (`components/overlays/returnFocus.ts`): until
+  2026-10-05, Escape on Add piece left focus on <body>, so the next Tab began
+  again at the top of the page. By keyboard, because that is who it is for.
+*/
+await page.getByRole('button', { name: 'Add piece', exact: true }).focus();
+await page.keyboard.press('Enter');
+await waitFor('the Add piece sheet', async () => (await page.locator('[role=dialog]').count()) > 0);
+await page.keyboard.press('Escape');
+await waitFor('the Add piece sheet to close', async () => (await page.locator('[role=dialog]').count()) === 0);
+const focusAfterSheet = await page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.tagName);
+if (focusAfterSheet === 'Add piece') pass('closing the Add piece sheet returns focus to Add piece');
+else fail(`closing the Add piece sheet left focus on ${focusAfterSheet}`);
+
 // A deep link has no history behind it; back must still reach the parent.
 await open('pieces/fixture-clef-change-study/bars/3');
 // A link since the redesign (`BackLink`, "‹ Back to score"): it only goes

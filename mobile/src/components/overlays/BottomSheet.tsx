@@ -25,7 +25,7 @@ import { settleVelocity } from '../../lib/motion/springHandoff';
 import { useReducedMotion } from '../../lib/useReducedMotion';
 import { IconButton } from '../primitives/IconButton';
 import { Text } from '../primitives/Text';
-import { useInertAppRoot } from './modalAccessibility';
+import { useInertAppRoot, useReturnFocus } from './modalAccessibility';
 import { useOverlayPresence } from './useOverlayPresence';
 
 export interface BottomSheetProps {
@@ -116,6 +116,7 @@ export function BottomSheet({
   // The web Modal is a portal next to #root. Keep that root inert for the
   // complete enter/exit animation so keyboard focus cannot slip behind it.
   useInertAppRoot(mounted);
+  useReturnFocus(mounted);
 
 
 
