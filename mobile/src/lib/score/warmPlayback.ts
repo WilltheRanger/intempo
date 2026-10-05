@@ -12,7 +12,7 @@ import type { Instrument } from '../../data/types';
  * What is actually on the path between the tap and the first note is the
  * network, and none of it starts until the tap:
  *
- *   - `import('./soundfontRender')` pulls `spessasynth_core` — a synthesiser,
+ *   - `import('./soundfontEngine')` pulls `spessasynth_core` — a synthesiser,
  *     620 KB of JavaScript — as its own lazily-loaded chunk.
  *   - `loadSoundfont` fetches the instrument's `.sf2`, 0.8–1.3 MB.
  *
@@ -70,8 +70,7 @@ export function warmPlayback(instrument: Instrument): void {
       // The chunk first: it is the larger download and the one the render
       // cannot start without. Awaited rather than fired in parallel so a slow
       // connection spends its bandwidth in the order the tap will need it.
-      const { loadSoundfont } = await import('./soundfontBank');
-      await import('./soundfontRender');
+      const { loadSoundfont } = await import('./soundfontEngine');
       await loadSoundfont(instrument);
     } catch {
       // A warm that failed is a warm that did not happen. Let the press try

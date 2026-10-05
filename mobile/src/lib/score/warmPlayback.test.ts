@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { resetWarmPlaybackForTests, warmPlayback } from './warmPlayback';
 
-// Two dynamic imports and a fetch stand between the call and the assertion,
+// A dynamic import and a fetch stand between the call and the assertion,
 // so one turn of the loop is not enough to see the effect.
 const flush = async () => {
   for (let i = 0; i < 8; i += 1) await new Promise((r) => setTimeout(r, 0));
@@ -16,8 +16,7 @@ afterEach(() => {
 describe('warmPlayback', () => {
   it('fetches the bank once per instrument, however often it is called', async () => {
     const loadSoundfont = vi.fn().mockResolvedValue({});
-    vi.doMock('./soundfontBank', () => ({ loadSoundfont }));
-    vi.doMock('./soundfontRender', () => ({}));
+    vi.doMock('./soundfontEngine', () => ({ loadSoundfont }));
     const { warmPlayback: warm, resetWarmPlaybackForTests: reset } =
       await import('./warmPlayback');
     reset();
@@ -33,8 +32,7 @@ describe('warmPlayback', () => {
 
   it('warms each instrument separately', async () => {
     const loadSoundfont = vi.fn().mockResolvedValue({});
-    vi.doMock('./soundfontBank', () => ({ loadSoundfont }));
-    vi.doMock('./soundfontRender', () => ({}));
+    vi.doMock('./soundfontEngine', () => ({ loadSoundfont }));
     const { warmPlayback: warm, resetWarmPlaybackForTests: reset } =
       await import('./warmPlayback');
     reset();
@@ -49,8 +47,7 @@ describe('warmPlayback', () => {
 
   it('does not spend a megabyte when Data Saver is on', async () => {
     const loadSoundfont = vi.fn().mockResolvedValue({});
-    vi.doMock('./soundfontBank', () => ({ loadSoundfont }));
-    vi.doMock('./soundfontRender', () => ({}));
+    vi.doMock('./soundfontEngine', () => ({ loadSoundfont }));
     vi.stubGlobal('navigator', { connection: { saveData: true } });
     const { warmPlayback: warm, resetWarmPlaybackForTests: reset } =
       await import('./warmPlayback');
@@ -67,8 +64,7 @@ describe('warmPlayback', () => {
       .fn()
       .mockRejectedValueOnce(new Error('offline'))
       .mockResolvedValue({});
-    vi.doMock('./soundfontBank', () => ({ loadSoundfont }));
-    vi.doMock('./soundfontRender', () => ({}));
+    vi.doMock('./soundfontEngine', () => ({ loadSoundfont }));
     const { warmPlayback: warm, resetWarmPlaybackForTests: reset } =
       await import('./warmPlayback');
     reset();

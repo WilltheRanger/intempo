@@ -6,8 +6,8 @@ import type { Schedule } from './score/schedule';
 // The instrument voices load a bank and render it before they start. Neither is
 // what these tests are about, so both hand back two seconds of silence at once:
 // what is left is the start, which is where an iPhone failed on 2026-09-26.
-vi.mock('./score/soundfontBank', () => ({ loadSoundfont: async () => ({}) }));
-vi.mock('./score/soundfontRender', () => ({
+vi.mock('./score/soundfontEngine', () => ({
+  loadSoundfont: async () => ({}),
   renderSoundfont: async () => ({
     pcm: new Int16Array(2 * 8000 * 2),
     sampleRate: 8000,

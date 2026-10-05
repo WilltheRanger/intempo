@@ -108,15 +108,49 @@ function report(bundlePath) {
   }
 }
 
+/**
+ * Every script `index.html` loads before the app can draw: what a first visit
+ * actually costs, which the main bundle alone is not.
+ *
+ * **Measured the day it was not.** On 2026-10-05 two lazily-loaded modules both
+ * imported `spessasynth_core`, the Listen synthesiser, so the web export moved
+ * it into a shared `__common` chunk — and loaded that from `index.html`. A
+ * synthesiser meant to arrive only when a Listen button was near came with the
+ * app, 78 KB gzipped on every first visit, and this check, weighing
+ * `index-*.js` alone, reported 12 KB of headroom throughout.
+ * (`lib/score/soundfontEngine.ts` is the fix.)
+ */
+function startupScripts(main) {
+  const html = join(ROOT, 'mobile', 'dist', 'index.html');
+  if (!existsSync(html)) {
+    return [main];
+  }
+  const files = [...readFileSync(html, 'utf8').matchAll(/<script[^>]*\bsrc="([^"]+\.js)"/g)]
+    .map((match) => join(ROOT, 'mobile', 'dist', match[1].replace(/^\//, '')))
+    .filter((file) => existsSync(file));
+  return files.includes(main) ? files : [main, ...files];
+}
+
 const bundle = mainBundle();
-const raw = statSync(bundle).size;
-const gz = gzipSync(readFileSync(bundle)).length;
-const gzKb = gz / 1024;
+const startup = startupScripts(bundle);
+const sizes = startup.map((file) => ({
+  name: file.split('/').pop(),
+  raw: statSync(file).size,
+  gz: gzipSync(readFileSync(file)).length,
+}));
+const raw = sizes.reduce((sum, file) => sum + file.raw, 0);
+const gzKb = sizes.reduce((sum, file) => sum + file.gz, 0) / 1024;
 
 console.log(
-  `bundle: ${(raw / 1024).toFixed(0)} KB raw, ` +
+  `first load: ${sizes.length} script${sizes.length === 1 ? '' : 's'}, ` +
+    `${(raw / 1024).toFixed(0)} KB raw, ` +
     `${gzKb.toFixed(0)} KB gzipped (budget ${BUDGET_KB} KB)`,
 );
+if (sizes.length > 1) {
+  for (const file of sizes) {
+    console.log(`    ${(file.gz / 1024).toFixed(0).padStart(5)} KB  ${file.name}`);
+  }
+}
 
 if (process.argv.includes('--report')) {
   report(bundle);
@@ -124,8 +158,11 @@ if (process.argv.includes('--report')) {
 
 if (gzKb > BUDGET_KB) {
   console.error(
-    `\nFAIL  the main bundle is ${gzKb.toFixed(0)} KB gzipped, over the ` +
+    `\nFAIL  the scripts loaded at startup are ${gzKb.toFixed(0)} KB gzipped, over the ` +
       `${BUDGET_KB} KB budget by ${(gzKb - BUDGET_KB).toFixed(0)} KB.\n\n` +
+      'If there is more than one script above, a lazily-loaded module has ' +
+      'been hoisted into a shared chunk that loads with the app — give it one ' +
+      'entry point, as `lib/score/soundfontEngine.ts` does.\n\n' +
       'Before raising the number, check for the cheap cause: a package ' +
       'imported from its barrel rather than by the path of the thing you\n' +
       'actually use. That is what put 1,743 unused icons in front of every ' +

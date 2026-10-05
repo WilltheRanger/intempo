@@ -1,7 +1,6 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({ load: vi.fn(), render: vi.fn() }));
-vi.mock('./soundfontBank', () => ({ loadSoundfont: mocks.load }));
-vi.mock('./soundfontRender', () => ({ renderSoundfont: mocks.render }));
+vi.mock('./soundfontEngine', () => ({ loadSoundfont: mocks.load, renderSoundfont: mocks.render }));
 import { beginSampledPlayback } from './sampledPlayback';
 import type { Schedule } from './schedule';
 const score = { notes: [], durationS: 1, bpm: 60 } as Schedule;

@@ -29,8 +29,7 @@ export function beginSampledPlayback(
   options.onLoading?.(true);
   void (async () => {
     try {
-      const { loadSoundfont } = await import('./soundfontBank');
-      const { renderSoundfont } = await import('./soundfontRender');
+      const { loadSoundfont, renderSoundfont } = await import('./soundfontEngine');
       if (stopped) return;
       // **Bounded, because a stalled download does not reject.** Without a
       // deadline the await below never returned and the Listen spinner spun
