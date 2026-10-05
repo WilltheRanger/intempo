@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
-  AccessibilityInfo,
   Animated,
   PanResponder,
   Pressable,
@@ -12,6 +11,7 @@ import {
 } from 'react-native';
 
 import { BORDER_WIDTH, colors, radii, spacing } from '../../design';
+import { announce } from '../../lib/announce';
 import { settleVelocity } from '../../lib/motion/springHandoff';
 import {
   anchorNearest,
@@ -196,9 +196,7 @@ export function DragSheet({
   function toggle() {
     const next = positionRef.current === 'raised' ? 'lowered' : 'raised';
     settle(next);
-    AccessibilityInfo.announceForAccessibility?.(
-      next === 'lowered' ? `${label} lowered` : `${label} raised`,
-    );
+    announce(next === 'lowered' ? `${label} lowered` : `${label} raised`);
   }
 
   const pan = useMemo(

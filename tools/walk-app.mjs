@@ -702,6 +702,26 @@ console.log('\n## Photographing a piece');
     else pass('two imported pages arrive in order, and the count agrees');
 
     /*
+      **The order can be changed by keyboard, and says so.** The grip was a
+      slider with no tab stop until 2026-10-05, and the moves its hint named
+      are native screen-reader actions the web does not have. Moved down and
+      back, so the order below is the order above.
+    */
+    const sources = () => scan.$$eval('img', (images) => images.map((image) => image.getAttribute('src')));
+    const before = await sources();
+    await scan.locator('[aria-label^="Reorder page 1 of"]').first().focus().catch(() => {});
+    await scan.keyboard.press('ArrowDown');
+    await scan.waitForTimeout(500);
+    const after = await sources();
+    const said = await scan.$$eval('[role=status][aria-live]', (regions) => regions.map((r) => r.textContent.trim()).join(' '));
+    const followed = await scan.evaluate(() => document.activeElement?.getAttribute('aria-label'));
+    if (after[0] === before[1] && after[1] === before[0] && said.includes('Page moved to 2 of 2') && /^Reorder page 2 of/.test(followed ?? ''))
+      pass('Down on a page\'s grip moves it, keeps focus on it and says where it went');
+    else fail(`keyboard reorder: order ${after[0] === before[1] ? 'moved' : 'unchanged'}, said "${said}", focus on ${followed}`);
+    await scan.keyboard.press('ArrowUp');
+    await scan.waitForTimeout(500);
+
+    /*
      * **Guarded, and that is not defensiveness for its own sake.** Proving this
      * leg catches a regression meant breaking the session on purpose, and the
      * unguarded `click` below then threw a Playwright timeout that killed the

@@ -772,6 +772,17 @@ that baseline). The rules are in `lib/screenFocus.ts`. This is why every
 screen needs its one level-1 heading (see above). `walk-app` opens a piece by
 keyboard and goes back.
 
+### `announceForAccessibility` says nothing on the web (2026-10-05)
+
+react-native-web implements `AccessibilityInfo.announceForAccessibility` as
+an empty function. So the record sheet's "raised" and "lowered" never reached
+a screen reader in a browser, and nothing warned about it.
+
+**The rule:** call `announce()` from `lib/announce`. On a phone it is the
+native announcement. On the web it writes to one polite `role="status"`
+region, appended to `<body>` outside the app root, so an open sheet's `inert`
+cannot cover it.
+
 ## `npm audit fix --force` would take this app back to SDK 46 (2026-09-09)
 
 `npm audit --omit=dev` reports **24 advisories, 7 of them high**, and closes
