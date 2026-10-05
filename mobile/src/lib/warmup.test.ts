@@ -256,6 +256,45 @@ describe('the same warmup all day', () => {
       process.env.TZ = original;
     }
   });
+
+  it('moves on by exactly one across a clock change', () => {
+    // London's midnight sits on the UTC day boundary in winter and an hour
+    // before it in summer. Local midnight divided by 24 hours gave 29 and 30
+    // March 2026 the same number — yesterday's warmup again — and jumped two
+    // from 25 to 26 October.
+    const original = process.env.TZ;
+    process.env.TZ = 'Europe/London';
+    try {
+      expect(
+        new Date(2026, 6, 1).getTimezoneOffset(),
+        'the runner ignored TZ, so this test would pass vacuously',
+      ).toBe(-60);
+
+      for (const [month, day] of [[2, 28], [2, 29], [9, 24], [9, 25]]) {
+        const today = new Date(2026, month, day, 12);
+        const tomorrow = new Date(2026, month, day + 1, 12);
+        expect(dayIndex(tomorrow) - dayIndex(today), `2026-${month + 1}-${day}`).toBe(1);
+      }
+    } finally {
+      process.env.TZ = original;
+    }
+  });
+
+  it('gives the same date the same number in every timezone', () => {
+    const original = process.env.TZ;
+    const at = (tz: string) => {
+      process.env.TZ = tz;
+      return dayIndex(new Date(2026, 4, 17, 12));
+    };
+    try {
+      const sydney = at('Australia/Sydney');
+      expect(new Date(2026, 4, 17).getTimezoneOffset()).toBe(-600);
+      expect(at('America/Los_Angeles')).toBe(sydney);
+      expect(at('Europe/London')).toBe(sydney);
+    } finally {
+      process.env.TZ = original;
+    }
+  });
 });
 
 describe('what the plate says the range is', () => {
