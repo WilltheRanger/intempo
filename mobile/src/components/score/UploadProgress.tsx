@@ -2,6 +2,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { Text } from '../primitives/Text';
 import { colors, spacing } from '../../design';
+import { progressValue } from '../../lib/progressValue';
 
 export interface UploadProgressProps {
   /** Bytes sent so far. */
@@ -33,8 +34,18 @@ export function UploadProgress({ sent, total, note }: UploadProgressProps) {
   const fraction = total > 0 ? Math.min(1, sent / total) : 0;
 
   return (
-    <View accessibilityRole="progressbar">
-      <View style={styles.track}>
+    <View>
+      {/*
+        The role is on the rail and the size line stays ordinary text: a bar
+        wrapped round the line made it the bar's content, unread in WebKit.
+        Before the first byte there is no value, so it is announced as busy.
+      */}
+      <View
+        style={styles.track}
+        accessibilityRole="progressbar"
+        accessibilityLabel="Sending"
+        {...progressValue(total > 0 ? fraction : null)}
+      >
         <View style={[styles.fill, { width: `${fraction * 100}%` }]} />
       </View>
 

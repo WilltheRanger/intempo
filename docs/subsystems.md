@@ -724,6 +724,22 @@ the root is uncovered. An opener still covered by another overlay is handed to
 whichever overlay closes next (`returnFocus.ts`). `walk-app` checks Add piece
 by keyboard.
 
+### A progress bar goes on the rail and carries its value (2026-10-05)
+
+ARIA makes everything inside a progress bar part of the bar, and WebKit
+follows that rule. So a bar wrapped round a sentence turns the sentence into
+the bar's content, and VoiceOver on an iPhone skips the words. Chromium reads
+them anyway, so no check here caught it. The analysis wait learned this on
+2026-09-20. The score's reading panel and the upload bar still wrapped their
+text. Separately, `accessibilityValue` is dropped by react-native-web, so all
+five bars reached the browser with no value. They were announced as busy, with
+no amount.
+
+**The rule:** put the role, a name and `progressValue(fraction)` on the rail
+itself, and keep any words outside it. Pass `null` only when there is truly
+nothing to measure yet. `audit-a11y` fails a bar that has no name or that has
+text inside it.
+
 ## `npm audit fix --force` would take this app back to SDK 46 (2026-09-09)
 
 `npm audit --omit=dev` reports **24 advisories, 7 of them high**, and closes

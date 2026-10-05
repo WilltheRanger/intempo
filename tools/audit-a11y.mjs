@@ -1112,6 +1112,45 @@ async function headingOutline(page) {
     : [];
 }
 
+/**
+ * A progress bar that hides what it is describing, or does not say what it is.
+ *
+ * ARIA makes a progress bar's children presentational, and WebKit honours
+ * that: a bar wrapped round a sentence makes the sentence the bar's own
+ * content, and VoiceOver on an iPhone reads the bar and skips the words. The
+ * analysis wait found that on 2026-09-20 and moved its role onto the rail;
+ * on 2026-10-05 the score's reading panel and the upload bar still wrapped
+ * theirs. Chromium exposes the text anyway, so it has to be checked here
+ * rather than heard. A bar needs a name, and no text inside it.
+ */
+async function progressBars(page) {
+  const cdp = await page.context().newCDPSession(page);
+  const { nodes } = await cdp.send('Accessibility.getFullAXTree');
+  await cdp.detach();
+  const byId = new Map(nodes.map((node) => [node.nodeId, node]));
+  const textWithin = (node) =>
+    (node.childIds ?? []).flatMap((id) => {
+      const child = byId.get(id);
+      if (!child) return [];
+      if (child.role?.value === 'StaticText' && child.name?.value?.trim()) {
+        return [child.name.value.trim()];
+      }
+      return textWithin(child);
+    });
+  return nodes
+    .filter((node) => !node.ignored && node.role?.value === 'progressbar')
+    .flatMap((node) => {
+      const name = (node.name?.value || '').trim();
+      const inside = textWithin(node);
+      return [
+        ...(name ? [] : ['a progress bar with no name']),
+        ...(inside.length
+          ? [`${JSON.stringify(name || 'unnamed')} wraps text: ${JSON.stringify(inside[0].slice(0, 40))}`]
+          : []),
+      ];
+    });
+}
+
 for (const [name, path, options = {}] of selected) {
   /*
    * **375pt, the narrowest iPhone this app can be installed on** — not the 390
@@ -1159,6 +1198,7 @@ for (const [name, path, options = {}] of selected) {
   const nameless = await unnamedImages(page);
   const outline = options.headings === false ? [] : await headingOutline(page);
   const hiddenStops = await hiddenButFocusable(page);
+  const bars = await progressBars(page);
   // Last, and on the same page: it rewrites every font size in the document,
   // so nothing measured after it would be measuring the shipped app.
   const spilled = await page.evaluate(spill, TEXT_SCALE);
@@ -1176,6 +1216,7 @@ for (const [name, path, options = {}] of selected) {
     nameless.length +
     outline.length +
     hiddenStops.length +
+    bars.length +
     spilled.length +
     errors.length;
   failures += total;
@@ -1196,6 +1237,7 @@ for (const [name, path, options = {}] of selected) {
   for (const n of nameless) console.log(`  UNNAMED IMAGE: ${n}`);
   for (const h of outline) console.log(`  HEADINGS: ${h}`);
   for (const h of hiddenStops) console.log(`  HIDDEN BUT FOCUSABLE: ${h}`);
+  for (const b of bars) console.log(`  PROGRESS BAR: ${b}`);
   for (const o of new Set(spilled)) console.log(`  AT ${TEXT_SCALE}x TEXT: ${o}`);
   await page.close();
 }
