@@ -710,6 +710,20 @@ which react-native-web reads although React Native's types do not declare it).
 `audit-a11y` fails a route with no heading or with more than one at level 1.
 The scanner is exempt with its reason written beside it.
 
+### The web `Modal` does not give focus back when it closes (2026-10-05)
+
+react-native-web's `ModalFocusTrap` tries to, but it records the element
+focused before opening in an effect that runs after its own trap has moved
+focus inside. So it remembers something in the sheet, and on close focus falls
+to `<body>`. Every sheet and dialog in the app did this.
+
+**The rule:** an overlay calls `useReturnFocus(flag)` straight after
+`useInertAppRoot(flag)`. The opener is captured in a layout effect, which runs
+before the trap's passive one. It is given back in a cleanup that runs after
+the root is uncovered. An opener still covered by another overlay is handed to
+whichever overlay closes next (`returnFocus.ts`). `walk-app` checks Add piece
+by keyboard.
+
 ## `npm audit fix --force` would take this app back to SDK 46 (2026-09-09)
 
 `npm audit --omit=dev` reports **24 advisories, 7 of them high**, and closes
