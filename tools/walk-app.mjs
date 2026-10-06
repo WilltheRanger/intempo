@@ -1675,7 +1675,7 @@ await open('pieces/fixture-bach-bwv1001/record');
   **The score on Record is one Tab stop, and the arrows move between its
   bars.** Every bar was a Tab stop of its own until 2026-10-05 — one for each
   bar of a real piece between the music and "Start recording" — and the arrows
-  did nothing (`lib/radioGroup.ts`). They move focus and do not choose: Space
+  did nothing (`lib/rovingFocus.ts`). They move focus and do not choose: Space
   does, as a tap does.
 */
 await open('pieces/fixture-bach-bwv1001/record');
@@ -1708,6 +1708,49 @@ await open('pieces/fixture-bach-bwv1001/record');
     fail(
       `Record's bars as a group: in ${JSON.stringify(entered)}, arrow ${JSON.stringify(moved)}, ` +
         `Space ${JSON.stringify(chosen)}, Tab out ${JSON.stringify(left)}`,
+    );
+}
+
+/*
+  **The tab bar is one Tab stop too, and Profile's metronome is a choice, not
+  tabs.** The bar's tabs had no tab list round them and were a stop each, and
+  the metronome's four options were announced as tabs with no panel for any of
+  them (2026-10-06). The arrows move focus; Enter or Space acts.
+*/
+await open('profile');
+{
+  const focused = () =>
+    page.evaluate(() => {
+      const a = document.activeElement;
+      return {
+        label: a?.getAttribute('aria-label') ?? '',
+        role: a?.getAttribute('role') ?? '',
+        chosen: a?.getAttribute('aria-checked') ?? a?.getAttribute('aria-selected') ?? null,
+      };
+    });
+  await page.getByRole('radio', { name: 'Off' }).first().focus().catch(() => {});
+  await page.keyboard.press('ArrowRight');
+  const metronome = await focused();
+  await page.getByRole('tab', { name: 'Profile' }).first().focus().catch(() => {});
+  await page.keyboard.press('ArrowLeft');
+  const moved = await focused();
+  const stillOnProfile = new URL(page.url()).pathname === '/profile';
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(900);
+  const arrived = new URL(page.url()).pathname;
+  if (
+    metronome.role === 'radio' &&
+    metronome.label === 'Visual' &&
+    metronome.chosen === 'false' &&
+    moved.label === 'Insights' &&
+    stillOnProfile &&
+    arrived === '/insights'
+  )
+    pass('the metronome is a radio group the arrows move in, and the tab bar moves by arrow and opens on Enter');
+  else
+    fail(
+      `metronome ${JSON.stringify(metronome)}; tab bar arrow ${JSON.stringify(moved)}, ` +
+        `stayed on Profile ${stillOnProfile}, Enter went to ${arrived}`,
     );
 }
 

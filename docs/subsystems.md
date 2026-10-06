@@ -787,7 +787,7 @@ native announcement. On the web it writes to one polite `role="status"`
 region, appended to `<body>` outside the app root, so an open sheet's `inert`
 cannot cover it.
 
-### Every radio is its own Tab stop on the web (2026-10-05)
+### Every radio and every tab is its own Tab stop on the web (2026-10-05, 2026-10-06)
 
 react-native-web gives every pressable `tabindex="0"` and has no notion of a
 group. So each bar of the score on Record was a Tab stop: on a real piece, one
@@ -802,14 +802,25 @@ choice with nothing chosen.
 `accessibilityRole="radiogroup"` and a name. Use one group per choice, not one
 per heading. For the score's bars, `Stave`
 does this itself. The bar picker passes `measurePressGroupLabel={null}` and
-groups all its pages as one choice. `installRadioGroups` (in `App.tsx`) gives
+groups all its pages as one choice. `installRovingFocus` (in `App.tsx`) gives
 each group one Tab stop, on the chosen radio or else the first, and makes the
-arrows move focus within it. **The arrows only move focus; Space or Enter
+arrows move focus within it.
+
+Tabs follow the same rule (2026-10-06). The bottom bar's tabs had no
+`tablist` round them; `GlassSurface` now passes a role and a name to its
+container, and the bar is the tab list "Sections". A tab list's stop is its
+selected tab, and only Left and Right move along it, because every tab list
+here is a row; Up and Down still scroll the page. `SegmentedControl` takes
+`kind`: `views` (the default) is tabs, for flipping between views of one
+thing, and `setting` is a radio group, for choosing a value with nothing shown
+or hidden. Profile's metronome is a setting, and as tabs it was announced as
+four tabs with no panel for any of them. **The arrows only move focus; Space or Enter
 chooses.** Choosing closes the Start from and Instrument sheets, so if the
 arrows chose too, one arrow press would close the sheet on the wrong option.
-The rules are in `lib/radioGroup.ts`. `audit-a11y` fails a radio outside a
-group, a group with no name, and a group with other than one Tab stop.
-`walk-app` moves through the bars on Record.
+The rules are in `lib/rovingFocus.ts`. `audit-a11y` fails a radio outside a
+radio group, a tab outside a tab list, a group with no name, and a group with
+other than one Tab stop. `walk-app` moves through the bars on Record, the
+metronome on Profile and the tab bar.
 
 ### A sheet opens with focus on its backdrop (2026-10-06)
 

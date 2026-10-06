@@ -164,6 +164,11 @@ export function BottomTabBar({
       tone={tone}
       // No specular catch on the furniture — see `glassMaterial`'s `specular`.
       variant="bar"
+      // A tab list, so a screen reader can say "Insights, tab, 2 of 3" — the
+      // tabs were announced with no list around them — and so, on the web,
+      // the bar is one Tab stop that the arrows move along (`rovingFocus.ts`).
+      accessibilityRole="tablist"
+      accessibilityLabel="Sections"
       style={[
         styles.bar,
         {

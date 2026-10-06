@@ -330,7 +330,7 @@ export interface StaveProps {
    * What the bars are, as one choice, when the role is `select` — "Start
    * from" on Record. The bars become a radio group under this name, so a
    * screen reader says "Start at bar 3, 3 of 13" and, on the web, the whole
-   * score is one Tab stop the arrows move within (`radioGroup.ts`).
+   * score is one Tab stop the arrows move within (`rovingFocus.ts`).
    *
    * `null` when the caller draws the group itself: the bar picker lays one
    * score out as several pages, and they are one choice, not one per page.

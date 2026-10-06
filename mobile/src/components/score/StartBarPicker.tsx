@@ -31,7 +31,7 @@ export interface StartBarPickerProps {
   /**
    * What the bars are as one choice — the sheet's own title. Every page's
    * bars are in one radio group under it, so the score is one Tab stop on
-   * the web however many pages it runs to (`radioGroup.ts`).
+   * the web however many pages it runs to (`rovingFocus.ts`).
    */
   label: string;
 }

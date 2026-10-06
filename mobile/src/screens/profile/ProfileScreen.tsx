@@ -342,6 +342,7 @@ export function ProfileScreen() {
         </Text>
         <SegmentedControl
           label="Metronome"
+          kind="setting"
           options={METRONOME_OPTIONS}
           value={settings.metronomeMode}
           onChange={(mode: MetronomeMode) => preferences.setMetronomeMode(mode)}

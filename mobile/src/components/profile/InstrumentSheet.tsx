@@ -33,7 +33,7 @@ export function InstrumentSheet({ visible, value, onChange, onClose }: Instrumen
         One choice, under two headings: you play one instrument, so Strings and
         Winds are one radio group. As two, the keyboard had two Tab stops and
         could not arrow from a string to a saxophone, and a screen reader heard
-        "Winds" as a second choice with nothing chosen (`radioGroup.ts`).
+        "Winds" as a second choice with nothing chosen (`rovingFocus.ts`).
       */}
       <View accessibilityRole="radiogroup" accessibilityLabel="Instrument">
         {INSTRUMENT_GROUPS.map((group, groupIndex) => (

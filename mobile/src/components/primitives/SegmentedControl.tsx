@@ -20,6 +20,17 @@ export interface SegmentedControlProps<T extends string> {
   onChange: (value: T) => void;
   /** Names the group for screen readers, e.g. "Score view". */
   label: string;
+  /**
+   * What choosing does, which decides how it is announced.
+   *
+   * `views` — flips between views of the same thing in place: tabs. The
+   * score's notation and original pages; the result's tempo and pitch.
+   *
+   * `setting` — sets something, with nothing shown or hidden: a radio group.
+   * Profile's metronome was tabs, so a screen reader announced four tabs and
+   * no panel for any of them (2026-10-06).
+   */
+  kind?: 'views' | 'setting';
   style?: StyleProp<ViewStyle>;
 }
 
@@ -34,12 +45,14 @@ export function SegmentedControl<T extends string>({
   value,
   onChange,
   label,
+  kind = 'views',
   style,
 }: SegmentedControlProps<T>) {
+  const setting = kind === 'setting';
   return (
     <View
       style={[styles.track, style]}
-      accessibilityRole="tablist"
+      accessibilityRole={setting ? 'radiogroup' : 'tablist'}
       accessibilityLabel={label}
     >
       {options.map((option) => {
@@ -48,14 +61,15 @@ export function SegmentedControl<T extends string>({
           <Pressable
             key={option.value}
             onPress={() => onChange(option.value)}
-            accessibilityRole="tab"
-            accessibilityState={{ selected }}
-            // **react-native-web does not derive this from
+            accessibilityRole={setting ? 'radio' : 'tab'}
+            accessibilityState={setting ? { checked: selected } : { selected }}
+            // **react-native-web does not derive these from
             // `accessibilityState`.** Without it a screen reader announces
             // "Notation, tab" and "Original, tab" and never which one is
             // showing — and selection here is carried by a fill, so that is
-            // the only signal there was.
-            aria-selected={selected}
+            // the only signal there was. A tab is selected; a radio is checked.
+            aria-selected={setting ? undefined : selected}
+            aria-checked={setting ? selected : undefined}
             accessibilityLabel={option.label}
             style={({ pressed }) => [
               styles.segment,

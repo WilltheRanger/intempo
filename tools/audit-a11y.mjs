@@ -1158,28 +1158,38 @@ async function progressBars(page) {
  * a group, so on 2026-10-05 each bar of the score on Record was a stop — one
  * for every bar of a real piece between the music and "Start recording" — and
  * four of the app's seven sets of radios were not in a group at all, so a
- * screen reader could not say how many there were. Every radio needs a named
- * group, and a group exactly one Tab stop (`radioGroup.ts`).
+ * screen reader could not say how many there were. On 2026-10-06 the bottom
+ * bar's tabs had no tab list either. Every radio needs a named radio group,
+ * every tab a named tab list, and each group exactly one Tab stop
+ * (`rovingFocus.ts`).
  */
-async function radioGroups(page) {
+async function choiceGroups(page) {
   return page.evaluate(() => {
     const found = [];
+    const KINDS = { radiogroup: 'radio', tablist: 'tab' };
+    const GROUPS = '[role="radiogroup"], [role="tablist"]';
     const named = (element) => (element.getAttribute('aria-label') || element.textContent || '').trim().slice(0, 30);
-    for (const radio of document.querySelectorAll('[role="radio"]')) {
-      if (radio.closest('[inert]') || radio.closest('[aria-hidden="true"]')) continue;
-      if (!radio.closest('[role="radiogroup"]')) found.push(`radio outside a group: ${JSON.stringify(named(radio))}`);
-    }
-    for (const group of document.querySelectorAll('[role="radiogroup"]')) {
-      if (group.closest('[inert]') || group.closest('[aria-hidden="true"]')) continue;
-      if (!group.getAttribute('aria-label') && !group.getAttribute('aria-labelledby')) {
-        found.push('a radio group with no name');
+    const hidden = (element) => element.closest('[inert]') || element.closest('[aria-hidden="true"]');
+    for (const [group, item] of Object.entries(KINDS)) {
+      for (const element of document.querySelectorAll(`[role="${item}"]`)) {
+        if (hidden(element)) continue;
+        if (element.closest(GROUPS)?.getAttribute('role') !== group) {
+          found.push(`${item} outside a ${group}: ${JSON.stringify(named(element))}`);
+        }
       }
-      const radios = [...group.querySelectorAll('[role="radio"]')].filter(
-        (radio) => radio.closest('[role="radiogroup"]') === group && radio.getAttribute('aria-disabled') !== 'true',
+    }
+    for (const group of document.querySelectorAll(GROUPS)) {
+      if (hidden(group)) continue;
+      const kind = group.getAttribute('role');
+      if (!group.getAttribute('aria-label') && !group.getAttribute('aria-labelledby')) {
+        found.push(`a ${kind} with no name`);
+      }
+      const items = [...group.querySelectorAll(`[role="${KINDS[kind]}"]`)].filter(
+        (item) => item.closest(GROUPS) === group && item.getAttribute('aria-disabled') !== 'true',
       );
-      const stops = radios.filter((radio) => radio.tabIndex >= 0).length;
-      if (radios.length > 0 && stops !== 1) {
-        found.push(`${JSON.stringify(group.getAttribute('aria-label') || 'unnamed')}: ${stops} Tab stops for ${radios.length} radios`);
+      const stops = items.filter((item) => item.tabIndex >= 0).length;
+      if (items.length > 0 && stops !== 1) {
+        found.push(`${JSON.stringify(group.getAttribute('aria-label') || 'unnamed')}: ${stops} Tab stops for ${items.length} ${KINDS[kind]}s`);
       }
     }
     return found;
@@ -1234,7 +1244,7 @@ for (const [name, path, options = {}] of selected) {
   const outline = options.headings === false ? [] : await headingOutline(page);
   const hiddenStops = await hiddenButFocusable(page);
   const bars = await progressBars(page);
-  const choices = await radioGroups(page);
+  const choices = await choiceGroups(page);
   // Last, and on the same page: it rewrites every font size in the document,
   // so nothing measured after it would be measuring the shipped app.
   const spilled = await page.evaluate(spill, TEXT_SCALE);
@@ -1275,7 +1285,7 @@ for (const [name, path, options = {}] of selected) {
   for (const h of outline) console.log(`  HEADINGS: ${h}`);
   for (const h of hiddenStops) console.log(`  HIDDEN BUT FOCUSABLE: ${h}`);
   for (const b of bars) console.log(`  PROGRESS BAR: ${b}`);
-  for (const c of choices) console.log(`  RADIOS: ${c}`);
+  for (const c of choices) console.log(`  CHOICES: ${c}`);
   for (const o of new Set(spilled)) console.log(`  AT ${TEXT_SCALE}x TEXT: ${o}`);
   await page.close();
 }

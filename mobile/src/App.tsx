@@ -33,7 +33,7 @@ import type { RootStackParamList } from './navigation/types';
 import { startLibraryCache } from './data/cache/libraryCache';
 import { startTakeDrainer } from './lib/sync/takeDrainer';
 import { installKeyActivation } from './lib/installKeyActivation';
-import { installRadioGroups } from './lib/installRadioGroups';
+import { installRovingFocus } from './lib/installRovingFocus';
 import { installScreenFocus, type ScreenFocus } from './lib/installScreenFocus';
 
 const queryClient = createQueryClient();
@@ -170,9 +170,9 @@ export default function App() {
   // Space presses switches, radios and tabs on the web, as it does buttons,
   // and Enter follows a link.
   useEffect(() => installKeyActivation(), []);
-  // A group of radios is one Tab stop and the arrows move within it, on the
-  // web; until then every bar of the score was a stop (`radioGroup.ts`).
-  useEffect(() => installRadioGroups(), []);
+  // A radio group or tab list is one Tab stop and the arrows move within it,
+  // on the web; until then every bar of the score was a stop (`rovingFocus.ts`).
+  useEffect(() => installRovingFocus(), []);
   // A new screen takes focus to its title, and Back returns it to where it
   // was, on the web; until then both left it on <body> (`screenFocus.ts`).
   const navigationRef = useNavigationContainerRef<RootStackParamList>();
