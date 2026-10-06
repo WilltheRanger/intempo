@@ -774,6 +774,26 @@ that baseline). The rules are in `lib/screenFocus.ts`. This is why every
 screen needs its one level-1 heading (see above). `walk-app` opens a piece by
 keyboard and goes back.
 
+### Every screen's browser title was "InTempo" (2026-10-06)
+
+The title was pinned to the product name because, signed out, the auth gate
+renders outside a navigator, and React Navigation's default formatter wrote
+"undefined" into the tab. So browser history, the tab strip and a screen
+reader's window list read the same on every screen.
+
+**The rule:** the tab is named from the screen's own title as drawn: its one
+level-1 heading, or the level-2 heading of a state that fills the screen,
+followed by " – InTempo". This is the same element screen focus moves to
+(`screenTitleCandidates`), and the auth gate has one too. A screen with no
+heading gets "InTempo" alone. `installDocumentTitle` (in `App.tsx`) keeps it
+current. It runs when the page's text changes, and a few times after each
+navigation, because switching to a tab that is already built changes only
+what is visible. The navigator's own `documentTitle` is off, or it would
+overwrite the title on every change. An open sheet makes the app root inert
+without changing the screen, so a heading under the root's `inert` still
+counts, and one under any other `inert` does not (`documentTitle.ts`).
+`audit-a11y` fails a route whose tab reads "InTempo" alone or "undefined".
+
 ### `announceForAccessibility` says nothing on the web (2026-10-05)
 
 react-native-web implements `AccessibilityInfo.announceForAccessibility` as

@@ -1196,6 +1196,22 @@ async function choiceGroups(page) {
   });
 }
 
+/**
+ * A screen the browser cannot tell from any other.
+ *
+ * Every screen's title was "InTempo" until 2026-10-06, so browser history,
+ * the tab strip and a screen reader's window list all read the same on every
+ * page. The tab now names the screen's own title (`documentTitle.ts`); a
+ * screen that leaves it at the product name alone, or writes "undefined" into
+ * it, is a finding.
+ */
+async function documentTitle(page) {
+  const title = await page.title();
+  if (/undefined/.test(title)) return [`the tab reads ${JSON.stringify(title)}`];
+  if (!title.endsWith(' – InTempo')) return [`the tab reads ${JSON.stringify(title)}, not the screen`];
+  return [];
+}
+
 for (const [name, path, options = {}] of selected) {
   /*
    * **375pt, the narrowest iPhone this app can be installed on** — not the 390
@@ -1245,6 +1261,9 @@ for (const [name, path, options = {}] of selected) {
   const hiddenStops = await hiddenButFocusable(page);
   const bars = await progressBars(page);
   const choices = await choiceGroups(page);
+  // A screen excused from having a heading has no title of its own to name,
+  // and the product name alone is the rule for it.
+  const tabTitle = options.headings === false ? [] : await documentTitle(page);
   // Last, and on the same page: it rewrites every font size in the document,
   // so nothing measured after it would be measuring the shipped app.
   const spilled = await page.evaluate(spill, TEXT_SCALE);
@@ -1264,6 +1283,7 @@ for (const [name, path, options = {}] of selected) {
     hiddenStops.length +
     bars.length +
     choices.length +
+    tabTitle.length +
     spilled.length +
     errors.length;
   failures += total;
@@ -1286,6 +1306,7 @@ for (const [name, path, options = {}] of selected) {
   for (const h of hiddenStops) console.log(`  HIDDEN BUT FOCUSABLE: ${h}`);
   for (const b of bars) console.log(`  PROGRESS BAR: ${b}`);
   for (const c of choices) console.log(`  CHOICES: ${c}`);
+  for (const t of tabTitle) console.log(`  TAB TITLE: ${t}`);
   for (const o of new Set(spilled)) console.log(`  AT ${TEXT_SCALE}x TEXT: ${o}`);
   await page.close();
 }

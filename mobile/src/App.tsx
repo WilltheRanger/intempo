@@ -20,7 +20,6 @@ import { warmApi } from './data/api/client';
 import { describeFixtureReason, IS_LIVE_BACKEND } from './data/environment';
 import { createQueryClient } from './data/queryClient';
 import { prepareForPlayback } from './lib/audio/session';
-import { formatDocumentTitle } from './lib/documentTitle';
 import { hydratePracticeTempos } from './data/practiceTempo';
 import { hydratePreferences } from './data/preferences';
 import { hydratePendingAnalysis } from './data/practice/pendingAnalysis';
@@ -32,6 +31,7 @@ import { RootNavigator } from './navigation/RootNavigator';
 import type { RootStackParamList } from './navigation/types';
 import { startLibraryCache } from './data/cache/libraryCache';
 import { startTakeDrainer } from './lib/sync/takeDrainer';
+import { installDocumentTitle, type DocumentTitle } from './lib/installDocumentTitle';
 import { installKeyActivation } from './lib/installKeyActivation';
 import { installRovingFocus } from './lib/installRovingFocus';
 import { installScreenFocus, type ScreenFocus } from './lib/installScreenFocus';
@@ -185,6 +185,14 @@ export default function App() {
     if (navigationRef.isReady()) focus.ready();
     return () => focus.dispose();
   }, [navigationRef]);
+  // The browser tab names the screen showing, not only the product; until
+  // then every screen was "InTempo" (`documentTitle.ts`).
+  const documentTitle = useRef<DocumentTitle | null>(null);
+  useEffect(() => {
+    const title = installDocumentTitle();
+    documentTitle.current = title;
+    return () => title.dispose();
+  }, []);
 
   // The other half of practising without a connection.
   //
@@ -215,10 +223,18 @@ export default function App() {
         {typographyReady ? (
           <NavigationContainer
             ref={navigationRef}
-            onReady={() => screenFocus.current?.ready()}
-            onStateChange={() => screenFocus.current?.arrived()}
+            onReady={() => {
+              screenFocus.current?.ready();
+              documentTitle.current?.changed();
+            }}
+            onStateChange={() => {
+              screenFocus.current?.arrived();
+              documentTitle.current?.changed();
+            }}
             theme={navigationTheme}
-            documentTitle={{ formatter: formatDocumentTitle }}
+            // Off: `installDocumentTitle` names the tab from the screen's own
+            // title, and the navigator would overwrite it on every change.
+            documentTitle={{ enabled: false }}
             // Without this the whole app is one URL: back leaves the site,
             // a refresh returns to Today, and nothing can be linked to.
             // See `navigation/linking.ts`.

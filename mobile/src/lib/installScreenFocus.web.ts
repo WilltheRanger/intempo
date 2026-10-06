@@ -1,5 +1,6 @@
 import { arrivalTarget, focusIsLost, type Focusable } from './screenFocus';
 import type { ScreenFocus } from './installScreenFocus';
+import { screenTitleCandidates } from './screenTitles.web';
 
 /**
  * Puts focus somewhere when the screen changes; the rule is `screenFocus.ts`.
@@ -43,15 +44,10 @@ export function installScreenFocus(currentRoute: () => string | undefined): Scre
   const look = (route: string | undefined) => {
     const active = document.activeElement as (Focusable & Element) | null;
     if (!focusIsLost(active, document.body)) return false;
-    // Level 1 first; then level 2, for a screen whose only heading is a
-    // state's own — "Couldn't load this take" is an `EmptyState` filling the
-    // screen, a level-2 heading with no title above it, and focus landing on
-    // nothing there is the defect this file exists to fix (2026-10-05).
-    const titles = [
-      ...document.querySelectorAll<HTMLElement>('h1'),
-      ...document.querySelectorAll<HTMLElement>('h2'),
-    ];
-    const target = arrivalTarget(route ? last.get(route) : null, titles);
+    // Level 1 first, then level 2 — see `screenTitleCandidates`. Focus
+    // landing on nothing on a screen whose only heading is a state's own was
+    // the defect this file exists to fix (2026-10-05).
+    const target = arrivalTarget(route ? last.get(route) : null, screenTitleCandidates());
     if (target === null) return false;
     if (/^H[12]$/.test(target.tagName) && !target.hasAttribute('tabindex')) {
       target.tabIndex = -1;

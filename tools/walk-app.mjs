@@ -1754,6 +1754,23 @@ await open('profile');
     );
 }
 
+/*
+  **The browser tab names the screen.** Every screen's title was "InTempo"
+  until 2026-10-06, so history and the tab strip could not tell them apart
+  (`lib/documentTitle.ts`). Opened in the app rather than loaded, because
+  following navigation is the half a single page load cannot show.
+*/
+await open('');
+{
+  const library = await page.title();
+  await page.getByRole('button', { name: /Study in B♭/ }).first().click().catch(() => {});
+  await waitFor('the piece', async () => (await page.title()) !== library, 5000);
+  const piece = await page.title();
+  if (library === 'Library – InTempo' && piece === 'Study in B♭, turning to G – InTempo')
+    pass(`the tab names the screen: "${library}", then "${piece}"`);
+  else fail(`the tab read "${library}", then "${piece}"`);
+}
+
 console.log('\n## Page errors');
 if (errors.length === 0) pass('none across the whole walk');
 else for (const e of errors) fail(`page error: ${e.slice(0, 120)}`);
