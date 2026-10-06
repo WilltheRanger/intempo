@@ -132,6 +132,50 @@ def _without_reexports(body: str) -> str:
     )
 
 
+#: **Not a use either: a comment.** `ScoreBackdrop`, the paged score that sat
+#: behind the record screen's drag sheet, stopped being rendered when
+#: `ScoreScroll` replaced it, and went on passing this check because
+#: `ScoreScroll`'s own comment said what it had replaced (2026-10-06). Prose
+#: about a name is history, not a caller. Strings are kept — a name in one
+#: may be looked up by it — and so is everything else that is not a comment.
+#: The scan is deliberately simple: it knows quotes, template strings, line
+#: and block comments, and that `\/*` in a regular expression is not a
+#: comment. What it gets wrong it gets wrong towards keeping text, which can
+#: only hide a dead export, never invent one.
+def _without_comments(body: str) -> str:
+    out: list[str] = []
+    i, n = 0, len(body)
+    while i < n:
+        c = body[i]
+        if c in "'\"`":
+            j = i + 1
+            while j < n and body[j] != c:
+                if body[j] == "\\":
+                    j += 2
+                    continue
+                # An unclosed quote ends with its line, so a stray apostrophe
+                # in JSX text cannot swallow the rest of the file.
+                if c != "`" and body[j] == "\n":
+                    break
+                j += 1
+            out.append(body[i : j + 1])
+            i = j + 1
+            continue
+        escaped = i > 0 and body[i - 1] == "\\"
+        if body.startswith("//", i) and not escaped:
+            end = body.find("\n", i)
+            i = n if end < 0 else end
+            continue
+        if body.startswith("/*", i) and not escaped:
+            end = body.find("*/", i + 2)
+            out.append(" ")
+            i = n if end < 0 else end + 2
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
 #: A test-only export declaring itself deliberate, and saying why.
 #:
 #: **The instruction existed before the mechanism did.** This check closed every
@@ -230,8 +274,10 @@ def main() -> int:
     # walking straight past it. Two modules and 209 lines were sitting behind
     # that hole when it was found, both of them designed screens nobody can
     # reach.
-    shipped = {p: _without_reexports(b) for p, b in text.items() if ".test." not in p.name}
-    tested = {p: b for p, b in text.items() if ".test." in p.name}
+    shipped = {
+        p: _without_comments(_without_reexports(b)) for p, b in text.items() if ".test." not in p.name
+    }
+    tested = {p: _without_comments(b) for p, b in text.items() if ".test." in p.name}
 
     scanned = 0
     dead: list[tuple[str, Path]] = []

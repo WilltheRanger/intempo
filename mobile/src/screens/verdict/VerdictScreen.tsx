@@ -67,7 +67,7 @@ export function VerdictScreen() {
   const navigation = useNavigation<RootNavigation>();
   const { params } = useRoute<RouteProp<RootStackParamList, 'Verdict'>>();
   const fromTakes = params.from === 'takes';
-  /** The measure the chart has open; null until chosen, meaning `openingMeasure`. */
+  /** The bar tapped on the chart; null, and no bar open, until one is. */
   const [selected, setSelected] = useState<number | null>(null);
   /** Which of the two readings the one chart draws. */
   const [view, setView] = useState<'tempo' | 'pitch'>('tempo');
@@ -348,8 +348,9 @@ export function VerdictScreen() {
     `DECISIONS.md`, 2026-09-29.
 
     It replaced a list of one row per measure, which on a real piece was
-    forty rows to scroll for the three that mattered. The chart opens on the
-    measure most worth practising (`openingMeasure`).
+    forty rows to scroll for the three that mattered. The chart opens with no
+    bar chosen, and a tap or a drag opens one (#173); it used to open on the
+    measure most worth practising, which the button below now names instead.
 
     One control at the top the prototype does not draw: "‹ Back to the piece".
     A verdict opened from a piece's history in the home-screen app has no
