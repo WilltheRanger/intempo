@@ -904,6 +904,36 @@ or under 0.016. The page template also zeroes the body's 8px margin, which the
 app's own reset removed only after its script ran, so every page load shifted
 once.
 
+### The signed-in app is tested against `mobile/scripts/stub-api.py`, and it had stopped answering (2026-10-06)
+
+Every walk and audit in `tools/` runs the fixture build, so none of them reach
+`data/sources/api.ts`, the adapters a real account uses. The stub API exists
+for that. It had drifted until it could not get past the first screen:
+- its `/v1/me` predated `training_consent`;
+- its ids were not version-4 UUIDs;
+- its takes lacked four fields;
+- it ignored `score_id`;
+- it wanted `audio_url` where the app sends `audio_key`.
+
+`data/api/responseSchemas.ts` refuses a whole response for any one of those, so
+every signed-in screen said "Couldn't open your account".
+
+**The rule:** when a response model in `backend/app` gains a field, or the app
+starts sending a new one, the stub changes with it. Build against it with the
+three `EXPO_PUBLIC_*` values in its docstring, sign in with any address, and
+use `/__fail?status=500` to see what each screen says when the server is down.
+
+Run against it, that turned up two app defects the fixtures could not:
+- **A failed history read as no takes.** `getPieceHistory` caught both of its
+  requests into empty lists, so with a server down Your takes said "No takes
+  yet". It also counted the failure as a success, so a refetch that failed
+  replaced the history already on screen. Now it throws.
+- **A placeholder claimed the piece had no music.** The library listing kept on
+  disk drops notation and photographs (`persistCache.pieceForDisk`). A piece
+  opened from it showed "Add the sheet music to record" until its own request
+  answered. `knowsItsMusic` in `data/hooks/knownPiece.ts` now treats "neither"
+  on a placeholder as unknown, and the screen shows a spinner there instead.
+
 ## `npm audit fix --force` would take this app back to SDK 46 (2026-09-09)
 
 `npm audit --omit=dev` reports **24 advisories, 7 of them high**, and closes

@@ -780,19 +780,28 @@ export const apiTakeSource: TakeSource = {
    * musician is looking at the piece they are about to play.
    */
   async getPieceHistory(pieceId, window = 12) {
+    /*
+     * **A failed request is an error, not an empty history.** Both calls used
+     * to end in `.catch(() => [])`, so a server that was down answered "No
+     * takes yet" on Your takes for a piece with takes behind it. The query
+     * also counted that as a success, so a refetch that failed replaced the
+     * history already on screen with nothing. Thrown, the query keeps what it
+     * had, and Your takes says it could not load them (measured against the
+     * stub API with a 500 injected, 2026-10-06).
+     */
     const [rows, detailed] = await Promise.all([
       listAnalyses({
         scoreId: pieceId,
         status: 'done',
         includeResult: false,
         limit: HISTORY_PAGE,
-      }).catch(() => []),
+      }),
       listAnalyses({
         scoreId: pieceId,
         status: 'done',
         includeResult: true,
         limit: Math.max(1, window),
-      }).catch(() => []),
+      }),
     ]);
 
     // Newest first is what the endpoint orders by, so the oldest in the page

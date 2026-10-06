@@ -34,6 +34,7 @@ vi.mock('../api/client', () => ({ ApiError: class ApiError extends Error {} }));
 import {
   apiInsightsSource,
   apiPieceSource,
+  apiTakeSource,
   apiTakeSubmissionSource,
   toPiece,
 } from './api';
@@ -657,5 +658,32 @@ describe('reading the whole library', () => {
     expect(listAnalyses).toHaveBeenCalledWith(
       expect.objectContaining({ includeResult: false }),
     );
+  });
+});
+
+describe("a piece's history", () => {
+  it('fails when the server does, rather than reporting no takes', async () => {
+    // Both requests used to swallow their failure into an empty list, so a
+    // server that was down said "No takes yet" about a piece with takes, and
+    // a failed refetch replaced the history on screen with nothing.
+    listAnalyses.mockRejectedValue(new Error('500'));
+
+    await expect(apiTakeSource.getPieceHistory('s1')).rejects.toThrow('500');
+  });
+
+  it('fails when either of its two requests does', async () => {
+    listAnalyses
+      .mockResolvedValueOnce([analysis()])
+      .mockRejectedValueOnce(new Error('timed out'));
+
+    await expect(apiTakeSource.getPieceHistory('s1')).rejects.toThrow('timed out');
+  });
+
+  it('is empty only when the server says there are no takes', async () => {
+    listAnalyses.mockResolvedValue([]);
+
+    const history = await apiTakeSource.getPieceHistory('s1');
+
+    expect(history.recent).toEqual([]);
   });
 });
