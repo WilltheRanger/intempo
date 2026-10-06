@@ -194,10 +194,10 @@ export default function App() {
   // then every screen was "InTempo" (`documentTitle.ts`).
   const documentTitle = useRef<DocumentTitle | null>(null);
   useEffect(() => {
-    const title = installDocumentTitle();
+    const title = installDocumentTitle(() => navigationRef.getCurrentRoute()?.name);
     documentTitle.current = title;
     return () => title.dispose();
-  }, []);
+  }, [navigationRef]);
 
   // The other half of practising without a connection.
   //

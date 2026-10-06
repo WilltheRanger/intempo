@@ -8,6 +8,6 @@ export interface DocumentTitle {
   dispose(): void;
 }
 
-export function installDocumentTitle(): DocumentTitle {
+export function installDocumentTitle(_currentRoute?: () => string | undefined): DocumentTitle {
   return { changed() {}, dispose() {} };
 }

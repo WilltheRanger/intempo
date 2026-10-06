@@ -17,6 +17,15 @@ describe('formatDocumentTitle', () => {
     expect(formatDocumentTitle('Sonata No. 1\n in G minor ')).toBe('Sonata No. 1 in G minor – InTempo');
   });
 
+  it('names the result and Insights for the screen, not the headline', () => {
+    expect(formatDocumentTitle('You rushed in the middle', 'Verdict')).toBe('Result – InTempo');
+    expect(formatDocumentTitle('Your tempo wanders', 'Insights')).toBe('Insights – InTempo');
+  });
+
+  it('keeps the heading for every other screen', () => {
+    expect(formatDocumentTitle('Sonata No. 1', 'PieceDetail')).toBe('Sonata No. 1 – InTempo');
+  });
+
   it('does not say the product twice', () => {
     expect(formatDocumentTitle('InTempo')).toBe('InTempo');
   });
