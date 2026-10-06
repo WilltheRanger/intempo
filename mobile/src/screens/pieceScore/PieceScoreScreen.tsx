@@ -75,6 +75,7 @@ import {
   timeSignatureDigits,
 } from '../../lib/notation/keySignature';
 import { loadStateFor } from '../../lib/loadState';
+import { isGone } from '../../data/describeLoadError';
 import { barCells, barGridSummary } from '../../lib/notation/barGrid';
 import { proposalsFor, proposalsRowLabel } from '../../lib/notation/proposals';
 import { usePreferences } from '../../data/preferences';
@@ -180,7 +181,7 @@ export function PieceScoreScreen() {
     route: 'PieceDetail',
     params: { pieceId: params.pieceId },
   });
-  const { data: piece, isError } = usePiece(params.pieceId);
+  const { data: piece, isError, error } = usePiece(params.pieceId);
   const { instrument } = usePreferences();
   const load = loadStateFor({ isError, hasData: piece !== undefined });
 
@@ -305,7 +306,15 @@ export function PieceScoreScreen() {
         <EmptyState
           fill
           title="Couldn't open this score"
-          description="The piece may have been removed from your library."
+          // Only when it is true. `null` is a source saying "no such piece"
+          // and a 404 is the server saying it; a 500 or a dropped connection
+          // says nothing about the piece, and the title alone is then the
+          // whole of what is known — as on the piece and take screens.
+          description={
+            piece === null || isGone(error)
+              ? 'The piece may have been removed from your library.'
+              : undefined
+          }
           actionLabel="Back"
           onActionPress={goBack}
         />

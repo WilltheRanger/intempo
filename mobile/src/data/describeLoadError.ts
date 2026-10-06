@@ -75,3 +75,17 @@ export function describeLoadError(error: unknown): string {
   }
   return 'Check your connection and try again.';
 }
+
+/**
+ * Whether a load that failed means the thing is gone, rather than unreachable.
+ *
+ * Only the server can say a piece is not there, and it says so with a 404.
+ * Everything else — a 500, a host still waking up, a dropped connection —
+ * leaves the piece exactly where it was, so a screen must not tell a musician
+ * it "may have been removed" on any of them. The score screen did: a piece
+ * imported a moment earlier, opened while the server was answering 500, said
+ * it may have been removed from your library (stub API, 2026-10-06).
+ */
+export function isGone(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 404;
+}
