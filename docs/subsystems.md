@@ -765,7 +765,9 @@ screen that had arrived, and the next Tab began at the top of the document.
 **The rule:** `installScreenFocus` (in `App.tsx`) acts when the screen showing
 changes and focus has been lost. It returns focus to what was last focused on
 the screen arrived at, if that is still there; otherwise it focuses the
-screen's one level-1 heading, with `tabindex="-1"` and no outline. It does not
+screen's one level-1 heading, with `tabindex="-1"` and no outline. On a screen
+with no level-1 heading, such as an error state that fills the screen with an
+`EmptyState`, it focuses the first level-2 heading instead. It does not
 act on the screen a page loads on. It does not act on state changes that are
 not a new screen, such as tabs being built in the background (`onReady` sets
 that baseline). The rules are in `lib/screenFocus.ts`. This is why every
@@ -784,6 +786,30 @@ rendered `DragSheet` since the redesign, and it was deleted the same day.
 native announcement. On the web it writes to one polite `role="status"`
 region, appended to `<body>` outside the app root, so an open sheet's `inert`
 cannot cover it.
+
+### Every radio is its own Tab stop on the web (2026-10-05)
+
+react-native-web gives every pressable `tabindex="0"` and has no notion of a
+group. So each bar of the score on Record was a Tab stop: on a real piece, one
+for every bar between the music and "Start recording". The arrow keys did
+nothing. Four of the app's seven sets of radios were not in a
+`radiogroup` either, so a screen reader could not say how many choices there
+were. Profile's Instrument sheet had the opposite fault: one choice drawn as
+two groups, Strings and Winds, so a screen reader heard Winds as a second
+choice with nothing chosen.
+
+**The rule:** put every set of radios in a View with
+`accessibilityRole="radiogroup"` and a name. Use one group per choice, not one
+per heading. For the score's bars, `Stave`
+does this itself. The bar picker passes `measurePressGroupLabel={null}` and
+groups all its pages as one choice. `installRadioGroups` (in `App.tsx`) gives
+each group one Tab stop, on the chosen radio or else the first, and makes the
+arrows move focus within it. **The arrows only move focus; Space or Enter
+chooses.** Choosing closes the Start from and Instrument sheets, so if the
+arrows chose too, one arrow press would close the sheet on the wrong option.
+The rules are in `lib/radioGroup.ts`. `audit-a11y` fails a radio outside a
+group, a group with no name, and a group with other than one Tab stop.
+`walk-app` moves through the bars on Record.
 
 ## `npm audit fix --force` would take this app back to SDK 46 (2026-09-09)
 

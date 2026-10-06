@@ -327,6 +327,16 @@ export interface StaveProps {
    */
   measurePressLabel?: (measureNumber: number) => string;
   /**
+   * What the bars are, as one choice, when the role is `select` — "Start
+   * from" on Record. The bars become a radio group under this name, so a
+   * screen reader says "Start at bar 3, 3 of 13" and, on the web, the whole
+   * score is one Tab stop the arrows move within (`radioGroup.ts`).
+   *
+   * `null` when the caller draws the group itself: the bar picker lays one
+   * score out as several pages, and they are one choice, not one per page.
+   */
+  measurePressGroupLabel?: string | null;
+  /**
    * Draw one page of the engraving instead of all of it.
    *
    * From `paginateSystems`: the systems it names are drawn, translated so the
@@ -416,6 +426,7 @@ export function Stave({
   pressableMeasures,
   measurePressRole = 'select',
   measurePressLabel,
+  measurePressGroupLabel = 'Bars',
   page,
   layout: precomputed,
 }: StaveProps) {
@@ -1240,9 +1251,14 @@ export function Stave({
   if (targets.length === 0) {
     return drawing;
   }
+  const grouped = measurePressRole === 'select' && measurePressGroupLabel !== null;
 
   return (
-    <View style={{ width: engraving.width, height: page ? page.height : engraving.height }}>
+    <View
+      style={{ width: engraving.width, height: page ? page.height : engraving.height }}
+      accessibilityRole={grouped ? 'radiogroup' : undefined}
+      accessibilityLabel={grouped ? measurePressGroupLabel : undefined}
+    >
       {drawing}
       {targets.map((target) => (
         <Pressable

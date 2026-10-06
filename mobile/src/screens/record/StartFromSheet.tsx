@@ -40,33 +40,35 @@ export function StartFromSheet({
 }) {
   return (
     <BottomSheet visible={visible} onClose={onClose} title="Start from" showClose={false}>
-      {options.map((option) => {
-        const on = option.bar === startFrom;
-        return (
-          <Pressable
-            key={option.key}
-            onPress={() => {
-              impact(ImpactFeedbackStyle.Light);
-              onPick(option.bar);
-            }}
-            accessibilityRole="radio"
-            accessibilityState={{ checked: on }}
-            aria-checked={on}
-            accessibilityLabel={`${option.label}, bar ${option.bar}`}
-            style={({ pressed }) => [styles.option, styles.divided, pressed && styles.pressed]}
-          >
-            <View style={styles.text}>
-              <Text variant="body" style={styles.label}>
-                {option.label}
-              </Text>
-              <Text variant="caption" color="textTertiary" style={styles.sub}>
-                Bar {option.bar}
-              </Text>
-            </View>
-            {on ? <Check size={ICON_SIZE.md} strokeWidth={2} color={colors.accent} /> : null}
-          </Pressable>
-        );
-      })}
+      <View accessibilityRole="radiogroup" accessibilityLabel="Start from">
+        {options.map((option) => {
+          const on = option.bar === startFrom;
+          return (
+            <Pressable
+              key={option.key}
+              onPress={() => {
+                impact(ImpactFeedbackStyle.Light);
+                onPick(option.bar);
+              }}
+              accessibilityRole="radio"
+              accessibilityState={{ checked: on }}
+              aria-checked={on}
+              accessibilityLabel={`${option.label}, bar ${option.bar}`}
+              style={({ pressed }) => [styles.option, styles.divided, pressed && styles.pressed]}
+            >
+              <View style={styles.text}>
+                <Text variant="body" style={styles.label}>
+                  {option.label}
+                </Text>
+                <Text variant="caption" color="textTertiary" style={styles.sub}>
+                  Bar {option.bar}
+                </Text>
+              </View>
+              {on ? <Check size={ICON_SIZE.md} strokeWidth={2} color={colors.accent} /> : null}
+            </Pressable>
+          );
+        })}
+      </View>
       <Pressable
         onPress={onChoose ?? onClose}
         accessibilityRole="button"

@@ -1151,6 +1151,41 @@ async function progressBars(page) {
     });
 }
 
+/**
+ * A choice that is not one, to a keyboard or a screen reader.
+ *
+ * react-native-web makes every pressable its own Tab stop and has no notion of
+ * a group, so on 2026-10-05 each bar of the score on Record was a stop — one
+ * for every bar of a real piece between the music and "Start recording" — and
+ * four of the app's seven sets of radios were not in a group at all, so a
+ * screen reader could not say how many there were. Every radio needs a named
+ * group, and a group exactly one Tab stop (`radioGroup.ts`).
+ */
+async function radioGroups(page) {
+  return page.evaluate(() => {
+    const found = [];
+    const named = (element) => (element.getAttribute('aria-label') || element.textContent || '').trim().slice(0, 30);
+    for (const radio of document.querySelectorAll('[role="radio"]')) {
+      if (radio.closest('[inert]') || radio.closest('[aria-hidden="true"]')) continue;
+      if (!radio.closest('[role="radiogroup"]')) found.push(`radio outside a group: ${JSON.stringify(named(radio))}`);
+    }
+    for (const group of document.querySelectorAll('[role="radiogroup"]')) {
+      if (group.closest('[inert]') || group.closest('[aria-hidden="true"]')) continue;
+      if (!group.getAttribute('aria-label') && !group.getAttribute('aria-labelledby')) {
+        found.push('a radio group with no name');
+      }
+      const radios = [...group.querySelectorAll('[role="radio"]')].filter(
+        (radio) => radio.closest('[role="radiogroup"]') === group && radio.getAttribute('aria-disabled') !== 'true',
+      );
+      const stops = radios.filter((radio) => radio.tabIndex >= 0).length;
+      if (radios.length > 0 && stops !== 1) {
+        found.push(`${JSON.stringify(group.getAttribute('aria-label') || 'unnamed')}: ${stops} Tab stops for ${radios.length} radios`);
+      }
+    }
+    return found;
+  });
+}
+
 for (const [name, path, options = {}] of selected) {
   /*
    * **375pt, the narrowest iPhone this app can be installed on** — not the 390
@@ -1199,6 +1234,7 @@ for (const [name, path, options = {}] of selected) {
   const outline = options.headings === false ? [] : await headingOutline(page);
   const hiddenStops = await hiddenButFocusable(page);
   const bars = await progressBars(page);
+  const choices = await radioGroups(page);
   // Last, and on the same page: it rewrites every font size in the document,
   // so nothing measured after it would be measuring the shipped app.
   const spilled = await page.evaluate(spill, TEXT_SCALE);
@@ -1217,6 +1253,7 @@ for (const [name, path, options = {}] of selected) {
     outline.length +
     hiddenStops.length +
     bars.length +
+    choices.length +
     spilled.length +
     errors.length;
   failures += total;
@@ -1238,6 +1275,7 @@ for (const [name, path, options = {}] of selected) {
   for (const h of outline) console.log(`  HEADINGS: ${h}`);
   for (const h of hiddenStops) console.log(`  HIDDEN BUT FOCUSABLE: ${h}`);
   for (const b of bars) console.log(`  PROGRESS BAR: ${b}`);
+  for (const c of choices) console.log(`  RADIOS: ${c}`);
   for (const o of new Set(spilled)) console.log(`  AT ${TEXT_SCALE}x TEXT: ${o}`);
   await page.close();
 }

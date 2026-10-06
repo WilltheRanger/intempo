@@ -346,6 +346,7 @@ export function UploadRecordingScreen() {
               setChosenStart(bar);
               setPickingBar(false);
             }}
+            label="Start at"
           />
         </BottomSheet>
       ) : null}

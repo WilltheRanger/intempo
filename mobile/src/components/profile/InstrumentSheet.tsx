@@ -29,47 +29,50 @@ export interface InstrumentSheetProps {
 export function InstrumentSheet({ visible, value, onChange, onClose }: InstrumentSheetProps) {
   return (
     <BottomSheet visible={visible} onClose={onClose} title="Instrument">
-      {INSTRUMENT_GROUPS.map((group, groupIndex) => (
-        <View
-          key={group.label}
-          accessibilityRole="radiogroup"
-          accessibilityLabel={group.label}
-          style={groupIndex > 0 && styles.laterGroup}
-        >
-          <Text variant="sectionLabel" color="textTertiary" style={styles.heading}>
-            {group.label}
-          </Text>
-          {group.instruments.map((instrument, index) => {
-            const on = instrument === value;
-            return (
-              <Pressable
-                key={instrument}
-                onPress={() => {
-                  impact(ImpactFeedbackStyle.Light);
-                  onChange(instrument);
-                  onClose();
-                }}
-                accessibilityRole="radio"
-                // A radio announces itself with `aria-checked`; the native
-                // prop does not produce it. See `ariaState.test.ts`.
-                aria-checked={on}
-                accessibilityState={{ checked: on }}
-                accessibilityLabel={INSTRUMENT_LABELS[instrument]}
-                style={({ pressed }) => [
-                  styles.option,
-                  index > 0 && styles.divided,
-                  pressed && styles.pressed,
-                ]}
-              >
-                <Text variant="body" style={styles.label}>
-                  {INSTRUMENT_LABELS[instrument]}
-                </Text>
-                {on ? <Check size={ICON_SIZE.md} strokeWidth={2} color={colors.accent} /> : null}
-              </Pressable>
-            );
-          })}
-        </View>
-      ))}
+      {/*
+        One choice, under two headings: you play one instrument, so Strings and
+        Winds are one radio group. As two, the keyboard had two Tab stops and
+        could not arrow from a string to a saxophone, and a screen reader heard
+        "Winds" as a second choice with nothing chosen (`radioGroup.ts`).
+      */}
+      <View accessibilityRole="radiogroup" accessibilityLabel="Instrument">
+        {INSTRUMENT_GROUPS.map((group, groupIndex) => (
+          <View key={group.label} style={groupIndex > 0 && styles.laterGroup}>
+            <Text variant="sectionLabel" color="textTertiary" style={styles.heading}>
+              {group.label}
+            </Text>
+            {group.instruments.map((instrument, index) => {
+              const on = instrument === value;
+              return (
+                <Pressable
+                  key={instrument}
+                  onPress={() => {
+                    impact(ImpactFeedbackStyle.Light);
+                    onChange(instrument);
+                    onClose();
+                  }}
+                  accessibilityRole="radio"
+                  // A radio announces itself with `aria-checked`; the native
+                  // prop does not produce it. See `ariaState.test.ts`.
+                  aria-checked={on}
+                  accessibilityState={{ checked: on }}
+                  accessibilityLabel={INSTRUMENT_LABELS[instrument]}
+                  style={({ pressed }) => [
+                    styles.option,
+                    index > 0 && styles.divided,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Text variant="body" style={styles.label}>
+                    {INSTRUMENT_LABELS[instrument]}
+                  </Text>
+                  {on ? <Check size={ICON_SIZE.md} strokeWidth={2} color={colors.accent} /> : null}
+                </Pressable>
+              );
+            })}
+          </View>
+        ))}
+      </View>
     </BottomSheet>
   );
 }

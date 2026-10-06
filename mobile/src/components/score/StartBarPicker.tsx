@@ -28,6 +28,12 @@ export interface StartBarPickerProps {
   bars: number[];
   value: number;
   onChange: (measureNumber: number) => void;
+  /**
+   * What the bars are as one choice — the sheet's own title. Every page's
+   * bars are in one radio group under it, so the score is one Tab stop on
+   * the web however many pages it runs to (`radioGroup.ts`).
+   */
+  label: string;
 }
 
 /**
@@ -73,7 +79,7 @@ const MUSIC_PAD = spacing.md;
  * that sound rather than adding one, so it can never land on a bar of rest —
  * and when it walks onto another page, the page follows it.
  */
-export function StartBarPicker({ score, bars, value, onChange }: StartBarPickerProps) {
+export function StartBarPicker({ score, bars, value, onChange, label }: StartBarPickerProps) {
   const [box, setBox] = useState<{ width: number; height: number } | null>(null);
   const [showing, setShowing] = useState(0);
   const scroll = useRef<ScrollView>(null);
@@ -198,6 +204,7 @@ export function StartBarPicker({ score, bars, value, onChange }: StartBarPickerP
                 highlightMeasure={value}
                 onMeasurePress={onChange}
                 pressableMeasures={bars}
+                measurePressGroupLabel={null}
                 layout={engraved}
                 page={page}
               />
@@ -213,7 +220,12 @@ export function StartBarPicker({ score, bars, value, onChange }: StartBarPickerP
 
   return (
     <View style={styles.root}>
-      <View style={styles.music} onLayout={handleLayout}>
+      <View
+        style={styles.music}
+        onLayout={handleLayout}
+        accessibilityRole="radiogroup"
+        accessibilityLabel={label}
+      >
         <ScrollView
           ref={scroll}
           onScroll={handleScroll}

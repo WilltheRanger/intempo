@@ -153,6 +153,7 @@ export function ScoreScroll({
             onMeasurePress={disabled ? undefined : onStartFromChange}
             pressableMeasures={disabled ? undefined : bars}
             measurePressLabel={(bar) => `Start at bar ${bar}`}
+            measurePressGroupLabel="Start at"
             layout={engraved}
           />
         ) : null}

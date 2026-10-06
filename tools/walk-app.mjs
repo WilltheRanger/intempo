@@ -1661,6 +1661,46 @@ await open('pieces/fixture-bach-bwv1001/record');
   else fail(`Record's Listen bar did not answer the arrow key: ${before} → ${after}`);
 }
 
+/*
+  **The score on Record is one Tab stop, and the arrows move between its
+  bars.** Every bar was a Tab stop of its own until 2026-10-05 — one for each
+  bar of a real piece between the music and "Start recording" — and the arrows
+  did nothing (`lib/radioGroup.ts`). They move focus and do not choose: Space
+  does, as a tap does.
+*/
+await open('pieces/fixture-bach-bwv1001/record');
+{
+  const focused = () =>
+    page.evaluate(() => ({
+      label: document.activeElement?.getAttribute('aria-label') ?? '',
+      checked: document.activeElement?.getAttribute('aria-checked') ?? null,
+    }));
+  await page.getByRole('button', { name: 'More' }).first().focus().catch(() => {});
+  await page.keyboard.press('Tab');
+  const entered = await focused();
+  await page.keyboard.press('ArrowRight');
+  const moved = await focused();
+  await page.keyboard.press('Space');
+  await page.waitForTimeout(300);
+  const chosen = await focused();
+  await page.keyboard.press('Tab');
+  const left = await focused();
+  if (
+    entered.label === 'Start at bar 1' &&
+    entered.checked === 'true' &&
+    moved.label === 'Start at bar 2' &&
+    moved.checked === 'false' &&
+    chosen.checked === 'true' &&
+    !left.label.startsWith('Start at bar ')
+  )
+    pass(`Record's bars are one Tab stop: in on bar 1, arrow to bar 2 unchosen, Space chooses, Tab out to "${left.label}"`);
+  else
+    fail(
+      `Record's bars as a group: in ${JSON.stringify(entered)}, arrow ${JSON.stringify(moved)}, ` +
+        `Space ${JSON.stringify(chosen)}, Tab out ${JSON.stringify(left)}`,
+    );
+}
+
 console.log('\n## Page errors');
 if (errors.length === 0) pass('none across the whole walk');
 else for (const e of errors) fail(`page error: ${e.slice(0, 120)}`);
