@@ -1,4 +1,5 @@
 import type { UsageResponse } from '../data/types';
+import { longDate } from './calendarDate';
 
 /** When the server says the calendar-month allowance returns. */
 export function whenAnalysisAllowanceResets(
@@ -11,10 +12,7 @@ export function whenAnalysisAllowanceResets(
   if (Number.isNaN(date.getTime())) {
     return 'next month';
   }
-  return `on ${date.toLocaleDateString(undefined, {
-    day: 'numeric',
-    month: 'long',
-  })}`;
+  return `on ${longDate(date)}`;
 }
 
 /** Whether beginning another take can only end in the server refusing it. */

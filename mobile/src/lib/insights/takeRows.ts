@@ -2,6 +2,7 @@ import type { TakeResult } from '../../data/types';
 import { asLabel } from '../library/pieceStatus';
 import { formatTakeVerdict } from '../tempo';
 import { failureTitle, intakeRefusal, nothingUsableTitle } from '../verdict/failureTitle';
+import { shortDate } from '../calendarDate';
 
 /**
  * "Your takes" on a piece as rows — the owner's choice of 2026-09-25, over a
@@ -57,8 +58,6 @@ export function takeRowTitle(take: TakeResult): string {
   return asLabel(formatTakeVerdict(take.measures, take.direction));
 }
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
 /**
  * When a take was, for its row — on every row (a row left blank because the
  * one above said the same read as a missing date, 2026-09-29): "Today",
@@ -73,7 +72,7 @@ export function takeDateLabel(iso: string, now: Date = new Date()): string {
   if (days <= 0) return 'Today';
   if (days === 1) return 'Yesterday';
   if (days < 7) return `${days} days ago`;
-  const date = `${MONTHS[when.getMonth()]} ${when.getDate()}`;
+  const date = shortDate(when);
   return when.getFullYear() === now.getFullYear() ? date : `${date}, ${when.getFullYear()}`;
 }
 

@@ -66,6 +66,11 @@ describe('whenAnalysisAllowanceResets', () => {
     expect(whenAnalysisAllowanceResets(null)).toBe('next month');
     expect(whenAnalysisAllowanceResets(undefined)).toBe('next month');
   });
+
+  it('writes the day in the app\'s English, whatever the device\'s locale', () => {
+    // Midday UTC, so the day is the 15th in any timezone a runner is in.
+    expect(whenAnalysisAllowanceResets('2026-10-15T12:00:00Z')).toBe('on October 15');
+  });
 });
 
 describe('analysisLimitReached', () => {
