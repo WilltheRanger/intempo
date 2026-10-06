@@ -4,6 +4,8 @@ import { Linking, Platform } from 'react-native';
 import { IS_LIVE_BACKEND } from '../environment';
 import { isolatedListener } from './isolatedListener';
 import { setAuthRedirectNotice } from './redirectNotice';
+import { EMAIL_CHANGE_HALFWAY, noteEmailChangeHalfway } from './emailChange';
+import { authRedirectPayload, isEmailChangeHalfway } from '../../lib/authRedirect';
 import { consumeAuthRedirect, getSupabaseClient } from './session';
 
 export type AuthStatus = 'loading' | 'signedIn' | 'signedOut' | 'recovering';
@@ -40,6 +42,19 @@ export type AuthStatus = 'loading' | 'signedIn' | 'signedOut' | 'recovering';
  * blank screen is an outage. On any working deployment this never fires.
  */
 const SESSION_TIMEOUT_MS = 8000;
+
+/**
+ * The first of two email-change links came back (`isEmailChangeHalfway`).
+ *
+ * Signed in, the app opens Change email to say so (`useEmailChangeHalfway`).
+ * Signed out — the link opened in a browser with no session — the sign-in
+ * screen says it instead, through the notice it already shows; any session
+ * clears that notice, so the signed-in path never sees it.
+ */
+function returnedHalfway(): void {
+  noteEmailChangeHalfway();
+  setAuthRedirectNotice(EMAIL_CHANGE_HALFWAY);
+}
 
 export function useAuthStatus(): AuthStatus {
   const [status, setStatus] = useState<AuthStatus>(() =>
@@ -122,6 +137,11 @@ export function useAuthStatus(): AuthStatus {
         if (!active || outcome === 'ignored') {
           return;
         }
+        if (outcome === 'emailChangeHalfway') {
+          // No session in it, so nothing about who is signed in changes.
+          returnedHalfway();
+          return;
+        }
         setAuthRedirectNotice(null);
         setStatus(outcome === 'recovery' ? 'recovering' : 'signedIn');
       } catch {
@@ -140,6 +160,20 @@ export function useAuthStatus(): AuthStatus {
     }
 
     let linkSubscription: ReturnType<typeof Linking.addEventListener> | null = null;
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      // auth-js reads the tokens from this URL itself; the halfway return of
+      // an email change carries none, so it is the one thing left to read.
+      const payload = authRedirectPayload(window.location.href);
+      if (payload?.kind === 'message' && isEmailChangeHalfway(payload.message)) {
+        returnedHalfway();
+        // Read once: a reload must not announce it again.
+        window.history.replaceState(
+          window.history.state,
+          '',
+          window.location.pathname + window.location.search,
+        );
+      }
+    }
     if (Platform.OS !== 'web') {
       void Linking.getInitialURL().then((url) => {
         if (url) {

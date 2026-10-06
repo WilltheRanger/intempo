@@ -1,12 +1,13 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { useIsFocused } from '@react-navigation/native';
+import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { Animated, Platform, StyleSheet, View, type ViewStyle } from 'react-native';
 
 import { useArrival } from '../data/arrival';
 import { useAuthStatus } from '../data/auth/useAuthStatus';
+import { takeEmailChangeHalfway, useEmailChangeHalfway } from '../data/auth/emailChange';
 import { useMe } from '../data/hooks/useMe';
 import { prefetchCurrentPiece } from '../data/hooks/usePieces';
 import { preferences } from '../data/preferences';
@@ -45,7 +46,7 @@ import { TranscriptionReviewScreen } from '../screens/transcriptionReview/Transc
 import { VerdictScreen } from '../screens/verdict/VerdictScreen';
 import { BottomTabBar } from './BottomTabBar';
 import { StackScene } from './StackScene';
-import type { RootStackParamList, TabParamList } from './types';
+import type { RootNavigation, RootStackParamList, TabParamList } from './types';
 
 const Tab = createBottomTabNavigator<TabParamList>();
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -169,6 +170,7 @@ function ProfileTab() {
 }
 
 function TabNavigator() {
+  useEmailChangeHalfwayRoute();
   return (
     <Tab.Navigator
       tabBar={(props) => <BottomTabBar {...props} />}
@@ -179,6 +181,22 @@ function TabNavigator() {
       <Tab.Screen name="Profile" component={ProfileTab} />
     </Tab.Navigator>
   );
+}
+
+/**
+ * Opens Change email when the first of its two links has just come back.
+ *
+ * In the tab navigator because it is a screen — `useNavigation` needs one —
+ * and the one that is mounted whenever somebody is signed in.
+ */
+function useEmailChangeHalfwayRoute(): void {
+  const navigation = useNavigation<RootNavigation>();
+  const halfway = useEmailChangeHalfway();
+  useEffect(() => {
+    if (halfway && takeEmailChangeHalfway()) {
+      navigation.navigate('ChangeEmail', { halfway: true });
+    }
+  }, [halfway, navigation]);
 }
 
 /**

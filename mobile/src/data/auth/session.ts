@@ -9,6 +9,7 @@ import { SessionUnreadableError } from './sessionUnreadable';
 
 import {
   authRedirectPayload,
+  isEmailChangeHalfway,
   authRedirectUrl,
 } from '../../lib/authRedirect';
 import { arrival } from '../arrival';
@@ -141,7 +142,7 @@ export interface AuthResult {
   possiblyAlreadyRegistered: boolean;
 }
 
-export type ConsumedAuthRedirect = 'ignored' | 'signedIn' | 'recovery';
+export type ConsumedAuthRedirect = 'ignored' | 'signedIn' | 'recovery' | 'emailChangeHalfway';
 
 /**
  * Establishes the session carried by an emailed link on iOS or Android.
@@ -160,6 +161,9 @@ export async function consumeAuthRedirect(
   }
   if (payload.kind === 'error') {
     throw new Error(payload.message);
+  }
+  if (payload.kind === 'message') {
+    return isEmailChangeHalfway(payload.message) ? 'emailChangeHalfway' : 'ignored';
   }
 
   const supabase = requireClient();

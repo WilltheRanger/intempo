@@ -228,6 +228,17 @@ describe('an emailed link coming back', () => {
     expect(auth.setSession).not.toHaveBeenCalled();
   });
 
+  it('reports the halfway return of an email change without touching the session', async () => {
+    const { consumeAuthRedirect } = await load();
+
+    const result = await consumeAuthRedirect(
+      link('message=Confirmation+link+accepted.+Please+proceed+to+confirm+link+sent+to+the+other+email'),
+    );
+
+    expect(result).toBe('emailChangeHalfway');
+    expect(auth.setSession).not.toHaveBeenCalled();
+  });
+
   it('establishes the session the link carries', async () => {
     const { consumeAuthRedirect } = await load();
 

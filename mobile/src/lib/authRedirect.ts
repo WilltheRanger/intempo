@@ -42,7 +42,9 @@ export type AuthRedirectPayload =
       refreshToken: string;
       recovery: boolean;
     }
-  | { kind: 'error'; message: string };
+  | { kind: 'error'; message: string }
+  /** An informational return with no session in it — see `isEmailChangeHalfway`. */
+  | { kind: 'message'; message: string };
 
 /**
  * Reads the implicit-grant callback Supabase sends to a native deep link.
@@ -76,7 +78,8 @@ export function authRedirectPayload(url: string): AuthRedirectPayload | null {
   const accessToken = params.get('access_token');
   const refreshToken = params.get('refresh_token');
   if (!accessToken || !refreshToken) {
-    return null;
+    const message = params.get('message');
+    return message ? { kind: 'message', message } : null;
   }
 
   return {
@@ -85,4 +88,18 @@ export function authRedirectPayload(url: string): AuthRedirectPayload | null {
     refreshToken,
     recovery: params.get('type') === 'recovery',
   };
+}
+
+/**
+ * Whether Supabase is saying the first of two email-change links was followed.
+ *
+ * With "Secure email change" on — Supabase's default — moving an account to a
+ * new address takes a link in **both** inboxes. Following the first comes back
+ * with `#message=Confirmation link accepted. Please proceed to confirm link
+ * sent to the other email` and no session, and the app used to ignore it: the
+ * musician landed on the Library with no word that anything had happened, or
+ * that a second link was waiting.
+ */
+export function isEmailChangeHalfway(message: string): boolean {
+  return /confirmation link accepted/i.test(message) && /other email/i.test(message);
 }

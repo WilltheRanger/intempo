@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, StyleSheet, View } from 'react-native';
+import { useRoute, type RouteProp } from '@react-navigation/native';
 import { useGoBack } from '../../navigation/useGoBack';
+import type { RootStackParamList } from '../../navigation/types';
+import { EMAIL_CHANGE_HALFWAY } from '../../data/auth/emailChange';
 
 import {
   Input,
@@ -26,6 +29,7 @@ import { describeAuthError, isEmail } from '../auth/authErrors';
 export function ChangeEmailScreen() {
   const goBack = useGoBack({ tab: 'Profile' });
   const { data: musician } = useMe();
+  const { params } = useRoute<RouteProp<RootStackParamList, 'ChangeEmail'>>();
 
   const [email, setEmail] = useState('');
   const [busy, setBusy] = useState(false);
@@ -59,7 +63,9 @@ export function ChangeEmailScreen() {
     }
   }
 
-  if (sentTo) {
+  if (params?.halfway) {
+    // The first of the two links came back (`isEmailChangeHalfway`): said
+    // here, on the screen the change began on, rather than nowhere.
     return (
       <ScreenContainer>
         <PageHeader
@@ -68,8 +74,36 @@ export function ChangeEmailScreen() {
           backLabel="Back to profile"
         />
         <Text variant="body" color="textSecondary">
-          We sent a link to {sentTo}. Your address stays as it is until you
-          follow it.
+          {EMAIL_CHANGE_HALFWAY}
+        </Text>
+        <SecondaryButton
+          label="Done"
+          onPress={goBack}
+          style={styles.done}
+        />
+      </ScreenContainer>
+    );
+  }
+
+  if (sentTo) {
+    return (
+      <ScreenContainer>
+        <PageHeader
+          title="Confirm the change"
+          onBack={goBack}
+          backLabel="Back to profile"
+        />
+        {/*
+          True with Supabase's "Secure email change" on (its default: a link
+          to each address) and off (one link, to the new one) alike — which
+          the live project has is a dashboard setting no tool here can read.
+        */}
+        <Text variant="body" color="textSecondary">
+          We sent a link to {sentTo}.
+          {musician?.email
+            ? ` If one arrives at ${musician.email} too, follow both.`
+            : ''}{' '}
+          Your address stays as it is until you do.
         </Text>
         <SecondaryButton
           label="Done"
