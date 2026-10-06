@@ -1,4 +1,5 @@
 import type { AnalysisResponse, MeResponse } from '../types';
+import { UnreadableReplyError } from './unreadableReply';
 
 /**
  * The two responses the app acts on before a musician sees anything — an
@@ -101,7 +102,7 @@ const me = shape({
 });
 
 function unexpected(name: string): Error {
-  return new Error(`The server sent an unexpected ${name} response. Try again.`);
+  return new UnreadableReplyError(`${name} response`);
 }
 
 function readAnalysis(value: unknown): AnalysisResponse {

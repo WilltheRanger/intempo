@@ -7,6 +7,7 @@ import {
   SILENT_TAKE_FAILURE,
   readTakeFailure,
 } from './takeFailure';
+import { REPLY_UNREADABLE, UnreadableReplyError } from '../../data/api/unreadableReply';
 import {
   EmptyRecordingError,
   MicrophonePermissionError,
@@ -249,6 +250,17 @@ describe('a failure as the send path actually throws it', () => {
         recovery: null,
       });
     }
+  });
+
+  it('says a reply it could not read was not the connection, and keeps the take', () => {
+    // An answer arrived — a backend deployed ahead of the app, or a proxy's
+    // HTML page with a 200. "Check your connection" sent people to the one
+    // thing that had worked.
+    const failure = readTakeFailure(wrapped(new UnreadableReplyError('/v1/analyses')), 'web');
+
+    expect(failure.message).toBe(`Your take is safe. ${REPLY_UNREADABLE}`);
+    expect(failure.message).not.toMatch(/connection/i);
+    expect(failure.retriable).toBe(true);
   });
 
   it('does not loop on an error that is its own cause', () => {

@@ -1,4 +1,5 @@
 import { getAccessToken, signOut } from '../auth/session';
+import { UnreadableReplyError } from './unreadableReply';
 import { SessionUnreadableError } from '../auth/sessionUnreadable';
 
 /**
@@ -175,13 +176,21 @@ export async function apiFetch<T>(
       return undefined as T;
     }
 
-    return (await response.json()) as T;
+    const text = await response.text();
+    try {
+      return JSON.parse(text) as T;
+    } catch (cause) {
+      // Answered, and not in a form this app reads: see `unreadableReply.ts`.
+      // A body cut off by the deadline is caught below as a stall instead,
+      // because `text()` is what the abort interrupts.
+      throw new UnreadableReplyError(path, cause);
+    }
   } catch (cause) {
     // The deadline fired while the body was still coming. Checked on the
     // signal rather than on the error's shape, because a body that is simply
     // not JSON throws here too and is a different fault with a different fix —
     // and it should keep propagating exactly as it did before.
-    if (signal.aborted && !(cause instanceof ApiError)) {
+    if (signal.aborted && !(cause instanceof ApiError) && !(cause instanceof UnreadableReplyError)) {
       throw new ApiError(0, path, RESPONSE_STALLED, cause);
     }
     throw cause;

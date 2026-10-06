@@ -6,6 +6,7 @@ import {
   MicrophoneUnavailableError,
   type MicrophoneRecovery,
 } from './types';
+import { REPLY_UNREADABLE, UnreadableReplyError } from '../../data/api/unreadableReply';
 
 /**
  * What a musician is told when a take does not go through, and whether they
@@ -194,6 +195,13 @@ export function readTakeFailure(error: unknown, os: string): TakeFailure {
   // `drainQueue` does with `resume`.
   if (chain.some((cause) => statusOf(cause) === 404)) {
     return { message: PIECE_GONE_FAILURE, retriable: false, recovery: null };
+  }
+  // An answer arrived that this build cannot read — usually a backend deployed
+  // ahead of the app. The connection worked, so the generic sentence below
+  // would send the musician to the wrong place. `unreadableReply.ts` imports
+  // nothing, so unlike `ApiError` it can be named here.
+  if (chain.some((cause) => cause instanceof UnreadableReplyError)) {
+    return { message: `Your take is safe. ${REPLY_UNREADABLE}`, retriable: true, recovery: null };
   }
   return { message: GENERIC_TAKE_FAILURE, retriable: true, recovery: null };
 }

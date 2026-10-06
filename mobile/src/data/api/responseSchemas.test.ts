@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
 import { parseAnalysis, parseMe } from './responseSchemas';
+import { REPLY_UNREADABLE, UnreadableReplyError } from './unreadableReply';
 
 const accountId = '550e8400-e29b-41d4-a716-446655440000';
 
 describe('critical API responses', () => {
   it('rejects a malformed account tier before the UI treats it as an entitlement', () => {
     expect(() => parseMe({ id: accountId, tier: 'unlimited' }))
-      .toThrow('unexpected account response');
+      .toThrow(UnreadableReplyError);
   });
 
   it('accepts a complete account response', () => {
@@ -22,6 +23,6 @@ describe('critical API responses', () => {
 
   it('rejects an unknown analysis status instead of polling forever', () => {
     expect(() => parseAnalysis({ id: accountId, status: 'mystery' }))
-      .toThrow('unexpected analysis response');
+      .toThrow(REPLY_UNREADABLE);
   });
 });

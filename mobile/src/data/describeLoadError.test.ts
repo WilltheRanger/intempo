@@ -10,6 +10,7 @@ vi.mock('./auth/session', () => ({
 import clientSource from './api/client.ts?raw';
 import { ApiError } from './api/client';
 import { describeLoadError, isGone } from './describeLoadError';
+import { REPLY_UNREADABLE, UnreadableReplyError } from './api/unreadableReply';
 
 /**
  * The sentence a musician reads when a screen will not load.
@@ -133,5 +134,16 @@ describe('isGone', () => {
     ['nothing at all', null],
   ])('is false for %s, which leaves the piece where it was', (_name, error) => {
     expect(isGone(error)).toBe(false);
+  });
+});
+
+describe('a reply the app cannot read', () => {
+  it('is not blamed on the connection, which demonstrably worked', () => {
+    // A backend deployed ahead of the app answers in a shape it refuses, or a
+    // proxy answers 200 with an HTML page. The request got there and back.
+    const message = describeLoadError(new UnreadableReplyError('account response'));
+
+    expect(message).toBe(REPLY_UNREADABLE);
+    expect(message).not.toMatch(/connection/i);
   });
 });

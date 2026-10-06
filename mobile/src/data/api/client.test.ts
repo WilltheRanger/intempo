@@ -18,6 +18,7 @@ vi.mock('../auth/session', () => ({
 
 import { ApiError, apiFetch, REQUEST_FAILED, SERVER_FAULT } from './client';
 import { SessionUnreadableError } from '../auth/sessionUnreadable';
+import { UnreadableReplyError } from './unreadableReply';
 
 /**
  * The first request after a quiet period.
@@ -289,9 +290,11 @@ describe('a request that never settles', () => {
       vi.fn(() => Promise.resolve(new Response('<html>502</html>', { status: 200 }))),
     );
 
-    await expect(
-      apiFetch('/v1/scores', { authenticated: false }),
-    ).rejects.not.toThrow(/started answering and then stopped/i);
+    const error = await apiFetch('/v1/scores', { authenticated: false }).catch((cause: unknown) => cause);
+
+    expect(error).toBeInstanceOf(UnreadableReplyError);
+    // Not a stall, and not a connection problem: an answer arrived.
+    expect((error as Error).message).not.toMatch(/started answering and then stopped|connection/i);
   });
 });
 

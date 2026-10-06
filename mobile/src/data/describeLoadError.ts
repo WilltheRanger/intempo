@@ -1,4 +1,5 @@
 import { ApiError, SERVER_FAULT } from './api/client';
+import { UnreadableReplyError } from './api/unreadableReply';
 
 /**
  * What to tell someone when a screen could not load.
@@ -72,6 +73,10 @@ export function describeLoadError(error: unknown): string {
       // copies of one sentence is how the second one drifts.
       return SERVER_FAULT;
     }
+  }
+  if (error instanceof UnreadableReplyError) {
+    // An answer arrived; the connection is the one thing known to work.
+    return error.message;
   }
   return 'Check your connection and try again.';
 }
