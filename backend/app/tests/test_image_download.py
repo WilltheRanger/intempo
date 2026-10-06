@@ -71,18 +71,24 @@ def test_downloads_an_image(serve) -> None:
     assert _download_image(f"{base}/score.jpg") == b"\xff\xd8jpeg-bytes"
 
 
-def test_non_200_is_502(serve) -> None:
-    """The caller's request is fine; the storage backend is not."""
+def test_non_200_is_502(serve, caplog: pytest.LogCaptureFixture) -> None:
+    """The caller's request is fine; the storage backend is not.
+
+    The status goes to the log, not the sentence: a person reads `detail`
+    (`app.errors.server_fault`).
+    """
 
     def respond(h: BaseHTTPRequestHandler) -> None:
         h.send_response(404)
         h.end_headers()
 
     base = serve(respond)
-    with pytest.raises(HTTPException) as excinfo:
-        _download_image(f"{base}/missing.jpg")
+    with caplog.at_level("ERROR", logger="intempo.scores"):
+        with pytest.raises(HTTPException) as excinfo:
+            _download_image(f"{base}/missing.jpg")
     assert excinfo.value.status_code == 502
-    assert "404" in excinfo.value.detail
+    assert excinfo.value.detail == "The photograph could not be fetched from storage."
+    assert "404" in caplog.text
 
 
 def test_unreachable_host_is_502() -> None:

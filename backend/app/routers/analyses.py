@@ -39,6 +39,7 @@ from app.models.analysis import (
 from app.models.assignment import AssignmentStatus
 from app.routers.upload import AUDIO_BUCKET
 from app.workers.dispatch import start_analysis
+from app.errors import server_fault
 
 router = APIRouter(prefix="/analyses", tags=["analyses"])
 
@@ -514,7 +515,11 @@ def create_analysis(
         raise
     rows = inserted.data or []
     if not rows:
-        raise HTTPException(status_code=500, detail="failed to enqueue analysis")
+        raise server_fault(
+            logger,
+            "failed to enqueue analysis",
+            "Your take couldn't be queued for analysis. Send it again.",
+        )
 
     analysis_id = rows[0]["id"]
     # A row points at the audio now. Same rule and same ordering as
@@ -685,7 +690,7 @@ def get_analysis_recording(
     except AudioStorageError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="recording is temporarily unavailable",
+            detail="The recording is temporarily unavailable. Try again in a moment.",
         ) from exc
 
     response.headers["Cache-Control"] = "private, no-store"

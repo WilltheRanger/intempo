@@ -9,10 +9,13 @@ database helper.
 
 from __future__ import annotations
 
-from fastapi import HTTPException, status
+import logging
 from supabase import Client
 
 from app import db
+from app.errors import server_fault
+
+log = logging.getLogger("intempo.api")
 
 
 def require_service_client() -> Client:
@@ -36,8 +39,9 @@ def require_service_client() -> Client:
     """
     client = db.get_service_client()
     if client is None:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Supabase service-role client is not configured",
+        raise server_fault(
+            log,
+            "Supabase service-role client is not configured",
+            "The server isn't fully set up right now. Try again later.",
         )
     return client

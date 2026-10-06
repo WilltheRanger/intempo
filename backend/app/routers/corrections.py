@@ -17,6 +17,7 @@ dataset exists to make.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
@@ -26,6 +27,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.auth import current_user_id, current_user_id_provisioned
 from app.routers.deps import require_service_client
+from app.errors import server_fault
+
+log = logging.getLogger("intempo.corrections")
 
 router = APIRouter(prefix="/analyses", tags=["corrections"])
 
@@ -126,9 +130,8 @@ def create_corrections(
     )
     written = inserted.data or []
     if not written:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="failed to persist corrections",
+        raise server_fault(
+            log, "failed to persist corrections", "Your answer couldn't be saved. Try again."
         )
     return [CorrectionResponse.model_validate(row) for row in written]
 

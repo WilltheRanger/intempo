@@ -30,17 +30,21 @@ def client() -> TestClient:
 
 def test_a_missing_service_client_is_a_500_naming_the_configuration(
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """`None` means the key is unset, which is ours to fix, not the caller's."""
     monkeypatch.setattr(db_module, "get_service_client", lambda: None)
 
-    with pytest.raises(HTTPException) as raised:
-        require_service_client()
+    with caplog.at_level("ERROR", logger="intempo.api"):
+        with pytest.raises(HTTPException) as raised:
+            require_service_client()
 
     assert raised.value.status_code == 500
-    # The detail has to name the thing to go and set, or the log says only
-    # "Internal Server Error" and the deploy that caused it is a guess.
-    assert "service-role" in raised.value.detail
+    # The *log* has to name the thing to go and set, or the deploy that caused
+    # it is a guess. The detail is read by a person (`app.errors`), so it says
+    # what happened to them and nothing about service roles.
+    assert "service-role" in caplog.text
+    assert "service-role" not in raised.value.detail
 
 
 def test_a_configured_client_is_returned_unchanged(
@@ -56,6 +60,7 @@ def test_a_route_that_needs_it_answers_500_rather_than_crashing(
     monkeypatch: pytest.MonkeyPatch,
     client: TestClient,
     make_token: Callable[..., str],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Without the check this is `AttributeError` on `None.table` — a 500 too,
     but one whose body says nothing and whose traceback names Supabase's
@@ -63,17 +68,19 @@ def test_a_route_that_needs_it_answers_500_rather_than_crashing(
     monkeypatch.setattr(db_module, "get_service_client", lambda: None)
     user_id = uuid4()
 
-    res = client.post(
-        "/v1/scores",
-        json={
-            "image_url": (
-                "https://test.supabase.invalid/storage/v1/object/sign/"
-                f"score-images/{user_id}/abc.jpg?token=x"
-            ),
-            "title": "Etude #1",
-        },
-        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
-    )
+    with caplog.at_level("ERROR"):
+        res = client.post(
+            "/v1/scores",
+            json={
+                "image_url": (
+                    "https://test.supabase.invalid/storage/v1/object/sign/"
+                    f"score-images/{user_id}/abc.jpg?token=x"
+                ),
+                "title": "Etude #1",
+            },
+            headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+        )
 
     assert res.status_code == 500
-    assert "service-role" in res.json()["detail"]
+    assert "service-role" in caplog.text
+    assert res.json()["detail"].endswith(".")

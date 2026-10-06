@@ -28,6 +28,7 @@ from jwt import PyJWKClient
 from app.config import settings
 from app.db import get_service_client
 from app.services.provisioning import ensure_user_row
+from app.errors import server_fault
 
 log = logging.getLogger("intempo")
 
@@ -68,9 +69,10 @@ _JWKS_LIFESPAN_SECONDS = 600
 def _get_jwks_client() -> PyJWKClient:
     """Module-level JWKS client. PyJWKClient caches keys internally."""
     if not settings.SUPABASE_URL:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="SUPABASE_URL is not configured",
+        raise server_fault(
+            log,
+            "SUPABASE_URL is not configured",
+            "The server can't check sign-ins right now. Try again later.",
         )
     jwks_url = f"{settings.SUPABASE_URL.rstrip('/')}/auth/v1/.well-known/jwks.json"
     return PyJWKClient(
@@ -119,7 +121,7 @@ def _decode_token(token: str) -> dict[str, Any]:
         # sign-in. See `DECISIONS.md`, 2026-09-09.
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="could not check your sign-in just now — try again in a moment",
+            detail="Couldn't check your sign-in just now. Try again in a moment.",
         ) from exc
     except jwt.PyJWTError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
@@ -131,7 +133,7 @@ def _decode_token(token: str) -> dict[str, Any]:
         log.warning("could not validate a token: %s", exc, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="could not check your sign-in just now — try again in a moment",
+            detail="Couldn't check your sign-in just now. Try again in a moment.",
         ) from exc
 
 
@@ -199,9 +201,10 @@ def current_user_id_provisioned(
 
     client = get_service_client()
     if client is None:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Supabase service-role client is not configured",
+        raise server_fault(
+            log,
+            "Supabase service-role client is not configured",
+            "The server isn't fully set up right now. Try again later.",
         )
     ensure_user_row(client, user_id, payload.get("email"))
     return user_id

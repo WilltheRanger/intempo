@@ -34,6 +34,7 @@ argument applies to walking out of one, so the same refusal is given.
 
 from __future__ import annotations
 
+import logging
 import secrets
 from typing import Any
 from uuid import UUID
@@ -44,6 +45,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.auth import current_user_id, current_user_id_provisioned
 from app.models.user import UserRole, UserTier
 from app.routers.deps import require_service_client
+from app.errors import server_fault
+
+log = logging.getLogger("intempo.studios")
 
 router = APIRouter(prefix="/studios", tags=["studios"])
 
@@ -110,7 +114,9 @@ def _user_row(client: Any, user_id: UUID) -> dict[str, Any]:
     if not rows:
         # `current_user_id_provisioned` upserts the row before any handler
         # runs, so this is a deployment fault rather than a request fault.
-        raise HTTPException(status_code=500, detail="account row is missing")
+        raise server_fault(
+            log, "account row is missing", "Your account isn't ready yet. Try again in a moment."
+        )
     return rows[0]
 
 
@@ -145,7 +151,7 @@ def _fresh_code(client: Any) -> str:
             return code
     raise HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail="could not allocate an invite code; try again",
+        detail="Couldn't create an invite code. Try again.",
     )
 
 
@@ -212,7 +218,9 @@ def create_studio(
         .execute()
     ).data or []
     if not inserted:
-        raise HTTPException(status_code=500, detail="failed to create studio")
+        raise server_fault(
+            log, "failed to create studio", "The studio couldn't be created. Try again."
+        )
     studio = inserted[0]
 
     # **All three columns in one write.** `001`'s CHECK — `role <> 'teacher' OR

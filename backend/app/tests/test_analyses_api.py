@@ -449,7 +449,7 @@ def test_recording_playback_reports_a_temporary_storage_failure(
         headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
     )
     assert response.status_code == 503
-    assert response.json()["detail"] == "recording is temporarily unavailable"
+    assert response.json()["detail"] == "The recording is temporarily unavailable. Try again in a moment."
 
 
 def test_a_reclaimed_recording_is_gone_rather_than_temporarily_unavailable(

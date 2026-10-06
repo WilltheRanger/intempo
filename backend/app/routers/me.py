@@ -33,6 +33,7 @@ from app.services.training import may_keep_corrections
 from app.routers.upload import AUDIO_BUCKET, SCORE_BUCKET
 from app.services.avatar_shrink import shrink_if_oversized
 from app.services.avatar_urls import signed_avatar_url
+from app.errors import server_fault
 
 router = APIRouter(tags=["me"])
 log = logging.getLogger("intempo.me")
@@ -80,9 +81,8 @@ def _provision_user(client: Any, user_id: UUID, email: str) -> dict[str, Any]:
     )
     rows = insert.data or []
     if not rows:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to provision user row",
+        raise server_fault(
+            log, "Failed to provision user row", "Your account couldn't be set up. Try again."
         )
     return rows[0]
 
