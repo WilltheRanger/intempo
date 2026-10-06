@@ -923,7 +923,7 @@ starts sending a new one, the stub changes with it. Build against it with the
 three `EXPO_PUBLIC_*` values in its docstring, sign in with any address, and
 use `/__fail?status=500` to see what each screen says when the server is down.
 
-Run against it, that turned up two app defects the fixtures could not:
+Run against it, that turned up three app defects the fixtures could not:
 - **A failed history read as no takes.** `getPieceHistory` caught both of its
   requests into empty lists, so with a server down Your takes said "No takes
   yet". It also counted the failure as a success, so a refetch that failed
@@ -933,6 +933,14 @@ Run against it, that turned up two app defects the fixtures could not:
   opened from it showed "Add the sheet music to record" until its own request
   answered. `knowsItsMusic` in `data/hooks/knownPiece.ts` now treats "neither"
   on a placeholder as unknown, and the screen shows a spinner there instead.
+- **A spent allowance read as a dropped connection.** Every real send wraps the
+  server's answer: `submitTake` throws `TakeSubmissionError` with the `ApiError`
+  as its `cause`. `readTakeFailure` looked only at the top error, so it never
+  saw the 403 `tier_limit` or the 404 for a deleted piece, and its tests
+  passed bare errors so they never noticed. A musician out of analyses was told
+  "Check your connection and send it again". The background queue would also
+  have kept retrying a take for a deleted piece. It now reads down the `cause`
+  chain. Use `/__fail?tier_limit=1` after signing in to see it.
 
 ## `npm audit fix --force` would take this app back to SDK 46 (2026-09-09)
 

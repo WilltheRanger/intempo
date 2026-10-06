@@ -730,6 +730,13 @@ export function RecordScreen() {
           : recording;
       unsent.current = failure.retriable ? resumable : null;
       setPendingTake(failure.retriable);
+      if (!failure.retriable) {
+        // A final refusal is the server's answer about the account, so the
+        // allowance line under the button is stale the same way it is after
+        // an accepted take. Left alone, "1 free take left this month" sat
+        // under "You've used all 3 of your free analyses" (2026-10-06).
+        void queryClient.invalidateQueries({ queryKey: meKeys.all });
+      }
       holdForListening(failure.retriable ? resumable.audio : null);
       if (failure.retriable) {
         // **The ref survives a retry and not a restart.** A musician who

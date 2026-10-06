@@ -123,6 +123,30 @@ function statusOf(error: unknown): number | null {
 }
 
 /**
+ * The error, then what it was caused by, and so on down.
+ *
+ * **Every real send wraps the server's answer.** `submitTake` throws
+ * `TakeSubmissionError(message, resume, cause)` with the `ApiError` as its
+ * `cause`, so the quota and the missing piece were never seen at the top: both
+ * were read as a dropped connection, and a musician out of analyses was told to
+ * check it and send again (measured against `stub-api.py`, 2026-10-06). Read
+ * structurally, for the reason `statusOf` is, and bounded so an error that is
+ * its own cause cannot hold the screen.
+ */
+function causeChain(error: unknown): unknown[] {
+  const chain: unknown[] = [];
+  let current: unknown = error;
+  while (current !== undefined && current !== null && chain.length < 5 && !chain.includes(current)) {
+    chain.push(current);
+    current =
+      typeof current === 'object' && 'cause' in current
+        ? (current as { cause?: unknown }).cause
+        : undefined;
+  }
+  return chain;
+}
+
+/**
  * @param os `Platform.OS`, passed in so this stays a pure function. The
  * permission recovery differs by platform — a browser has site controls, iOS
  * has Settings — and only the caller knows which it is running on.
@@ -130,7 +154,8 @@ function statusOf(error: unknown): number | null {
 export function readTakeFailure(error: unknown, os: string): TakeFailure {
   // The quota is read first and kept, because it is the one answer that
   // changes both fields. Reading it twice is how the two came to be separable.
-  const quota = describeTierLimit(error);
+  const chain = causeChain(error);
+  const quota = chain.map(describeTierLimit).find((sentence) => sentence !== null) ?? null;
 
   if (error instanceof MicrophonePermissionError) {
     return {
@@ -167,7 +192,7 @@ export function readTakeFailure(error: unknown, os: string): TakeFailure {
   // "no tests" rather than a failure. `ApiError` is the only thing in this app
   // that carries a numeric `status`, and the same structural reading is what
   // `drainQueue` does with `resume`.
-  if (statusOf(error) === 404) {
+  if (chain.some((cause) => statusOf(cause) === 404)) {
     return { message: PIECE_GONE_FAILURE, retriable: false, recovery: null };
   }
   return { message: GENERIC_TAKE_FAILURE, retriable: true, recovery: null };

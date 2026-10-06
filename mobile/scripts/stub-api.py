@@ -412,9 +412,16 @@ FRESH_PROFILE = {"instrument": None, "display_name": None, "onboarded_at": None}
 
 def _me():
     """`GET /v1/me`: the seeded account, or a fresh one in `?empty=1` mode."""
+    if FAIL["tier_limit"]:
+        # The same month the refusal describes, so the app's allowance line
+        # and its refusal can be checked against each other.
+        spent = dict(ME)
+        spent["analyses"] = {"used": 3, "limit": 3, "remaining": 0,
+                             "resets_at": iso(_next_month())}
+        return spent
     if not FAIL["empty"]:
         return ME
-    fresh = dict(ME, **FRESH_PROFILE, **PROFILE_EDITS)
+    fresh = {**ME, **FRESH_PROFILE, **PROFILE_EDITS}
     fresh["analyses"] = {"used": 0, "limit": 3, "remaining": 3,
                          "resets_at": iso(_next_month())}
     return fresh
@@ -514,6 +521,8 @@ class H(http.server.BaseHTTPRequestHandler):
             # library that was already full.
             if "empty" in q:
                 FAIL["empty"] = q["empty"][0] == "1"
+                # Each `?empty=1` is a new sign-up, so onboarding starts over.
+                PROFILE_EDITS.clear()
             return self._send(200, json.dumps(FAIL).encode())
         if FAIL["status"] and path.startswith("/v1/"):
             return self._send(FAIL["status"],

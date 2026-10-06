@@ -208,3 +208,53 @@ describe('a take whose piece is not there', () => {
     }
   });
 });
+
+/**
+ * **The wrapper every real send puts round the server's answer.**
+ *
+ * `submitTake` throws `TakeSubmissionError(message, resume, cause)` with the
+ * `ApiError` as its `cause`, and both callers — Record's Analyse and the
+ * background queue — read that, never the bare error. Every case above passed
+ * the bare error, so all of them held while the quota and the missing piece
+ * were each read as a dropped connection in the running app: a musician out of
+ * analyses was told "Check your connection and send it again" (measured
+ * against `stub-api.py` with the limit injected, 2026-10-06). These use the
+ * wrapper's shape, an error carrying the answer as its `cause`.
+ */
+describe('a failure as the send path actually throws it', () => {
+  const wrapped = (cause: unknown) =>
+    Object.assign(new Error('Request failed'), { name: 'TakeSubmissionError', cause });
+  const answered = (status: number) =>
+    Object.assign(new Error(`Request failed (${status})`), { status });
+
+  it('still reads the quota through the wrapper', () => {
+    const failure = readTakeFailure(wrapped(quotaError()), 'web');
+
+    expect(failure.message).toBe(QUOTA_SENTENCE);
+    expect(failure.retriable).toBe(false);
+  });
+
+  it('still reads a missing piece through the wrapper', () => {
+    const failure = readTakeFailure(wrapped(answered(404)), 'web');
+
+    expect(failure.message).toBe(PIECE_GONE_FAILURE);
+    expect(failure.retriable).toBe(false);
+  });
+
+  it('still keeps the take for anything else through the wrapper', () => {
+    for (const cause of [answered(500), answered(503), new TypeError('Failed to fetch')]) {
+      expect(readTakeFailure(wrapped(cause), 'web')).toEqual({
+        message: GENERIC_TAKE_FAILURE,
+        retriable: true,
+        recovery: null,
+      });
+    }
+  });
+
+  it('does not loop on an error that is its own cause', () => {
+    const loop: Error & { cause?: unknown } = new Error('loop');
+    loop.cause = loop;
+
+    expect(readTakeFailure(loop, 'web').message).toBe(GENERIC_TAKE_FAILURE);
+  });
+});
