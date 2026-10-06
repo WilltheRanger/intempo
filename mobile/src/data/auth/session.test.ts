@@ -268,23 +268,13 @@ describe('an emailed link coming back', () => {
 });
 
 describe('getting out', () => {
-  it('signs out through the auth server by default', async () => {
+  it('signs out this device only, through the auth server', async () => {
+    // Local, not auth-js's default of global: the Sign out button and a token
+    // the API refused both mean this device. Local still revokes this session
+    // server-side rather than merely forgetting it here.
     const { signOut } = await load();
 
     await signOut();
-
-    // No scope argument: a normal sign-out should revoke the session
-    // server-side, not merely forget it here.
-    expect(auth.signOut).toHaveBeenCalledWith();
-  });
-
-  it('ends only this device’s session when the API refuses its token', async () => {
-    // The default scope is global: every device the account is signed in on.
-    // A refused request says something about this session and nothing about
-    // the others.
-    const { endSessionHere } = await load();
-
-    await endSessionHere();
 
     expect(auth.signOut).toHaveBeenCalledWith({ scope: 'local' });
   });

@@ -9,10 +9,9 @@ const session = vi.hoisted(() => ({
 
 vi.mock('../auth/session', () => ({
   getAccessToken: () => session.token(),
-  // The only way this module ends a session. `signOut` is deliberately absent:
-  // a refused request must never reach the global sign-out, and a call to it
-  // here would fail as "not a function" rather than pass unnoticed.
-  endSessionHere: async () => {
+  // `signOut` is local-only (`session.ts`), so a refused request ends this
+  // device's session and no other.
+  signOut: async () => {
     session.signOuts += 1;
   },
 }));
@@ -641,10 +640,8 @@ describe('a server that says nothing a person can read', () => {
 });
 
 /**
- * A refused token ends this device's session, and only through
- * `endSessionHere` — never `signOut`, whose global scope revokes the account
- * on every device it is signed in on. The mock above has no `signOut` at all,
- * so a regression to it throws here instead of passing.
+ * A refused token ends this device's session. That `signOut` is local and not
+ * global is held by `session.test.ts`.
  */
 describe('a token the API refuses', () => {
   afterEach(() => {

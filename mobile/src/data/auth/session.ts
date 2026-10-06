@@ -361,39 +361,27 @@ export async function getAuthAvatarUrl(): Promise<string | null> {
 }
 
 /**
- * Ends the session and clears the persisted tokens.
+ * Signs this device out: the Sign out button, and the API refusing a token.
+ *
+ * **Local scope, never auth-js's default.** auth-js signs out `global` unless
+ * told otherwise, and global revokes every session the account holds — the
+ * phone, the laptop, the tablet. Neither caller means that. A refused request
+ * is evidence about *this* session only (a token expired past refresh, or one
+ * the backend could not verify): against the stub API one expired session sent
+ * four `logout?scope=global` calls, one per request in flight, and a backend
+ * that ever misjudged good tokens would have signed every musician out of every
+ * device with every request it refused (2026-10-06). And Sign out on one phone
+ * signing out the others was never a choice anyone made — the owner chose this
+ * device only the same day, matching "Other devices stay signed in" on Change
+ * password.
+ *
+ * Local still revokes this session on the auth server, so the refresh token
+ * left on this device is dead too; it just leaves the others alone.
  *
  * A no-op when Supabase isn't configured, which is the state the app boots in
  * until the env vars are set.
  */
 export async function signOut(): Promise<void> {
-  arrival.settled();
-  const supabase = getSupabaseClient();
-  if (!supabase) {
-    return;
-  }
-  const { error } = await supabase.auth.signOut();
-  if (error) {
-    throw error;
-  }
-}
-
-/**
- * Ends this device's session after the API refused its token.
- *
- * **Local scope, not `signOut`'s default.** auth-js signs out `global` unless
- * told otherwise, and global revokes every session the account holds — the
- * phone, the laptop, the tablet. A refused request is evidence about *this*
- * session only: a token that expired past refresh, or one the backend could
- * not verify. Against the stub API (2026-10-06) one expired session sent four
- * `logout?scope=global` calls, one per request in flight, and a backend that
- * ever misjudged good tokens would have signed every musician out of every
- * device with every request it refused.
- *
- * Local still revokes this session on the auth server, so the refresh token
- * left on this device is dead too; it just leaves the others alone.
- */
-export async function endSessionHere(): Promise<void> {
   arrival.settled();
   const supabase = getSupabaseClient();
   if (!supabase) {

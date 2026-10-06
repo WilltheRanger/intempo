@@ -955,9 +955,9 @@ Run against it, that turned up eight app defects the fixtures could not:
 - **A refused token signed the account out everywhere.** `apiFetch` cleared a
   refused session with `signOut()`, and auth-js signs out `global` by default,
   which revokes every device's session. `/__fail?status=401` showed one expired
-  session sending four `logout?scope=global`. The API path now calls
-  `endSessionHere()` (`scope: 'local'`). The Sign out button is still global;
-  whether it should be is the owner's call.
+  session sending four `logout?scope=global`. `signOut()` is now
+  `scope: 'local'` for every caller, the Sign out button included (the owner's
+  choice, 2026-10-06).
 - **A take sent as the session expired was lost.** The same 401 ends the
   session before the error reaches `RecordScreen`, and `keepTakeForLater` then
   asked who was signed in, found nobody, and kept nothing. The screen now reads
