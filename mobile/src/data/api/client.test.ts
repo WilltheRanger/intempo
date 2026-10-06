@@ -9,7 +9,10 @@ const session = vi.hoisted(() => ({
 
 vi.mock('../auth/session', () => ({
   getAccessToken: () => session.token(),
-  signOut: async () => {
+  // The only way this module ends a session. `signOut` is deliberately absent:
+  // a refused request must never reach the global sign-out, and a call to it
+  // here would fail as "not a function" rather than pass unnoticed.
+  endSessionHere: async () => {
     session.signOuts += 1;
   },
 }));
@@ -634,5 +637,41 @@ describe('a server that says nothing a person can read', () => {
 
     expect(error.status).toBe(502);
     expect(error.path).toBe('/v1/scores');
+  });
+});
+
+/**
+ * A refused token ends this device's session, and only through
+ * `endSessionHere` — never `signOut`, whose global scope revokes the account
+ * on every device it is signed in on. The mock above has no `signOut` at all,
+ * so a regression to it throws here instead of passing.
+ */
+describe('a token the API refuses', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    session.token = () => Promise.resolve('token');
+  });
+
+  it('ends the session here and says so', async () => {
+    session.signOuts = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response('{"detail":"invalid token"}', { status: 401 }))),
+    );
+
+    const error = await apiFetch('/v1/scores').catch((cause: unknown) => cause);
+
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).status).toBe(401);
+    expect(session.signOuts).toBe(1);
+  });
+
+  it('ends it the same way when there is no token to send', async () => {
+    session.signOuts = 0;
+    session.token = () => Promise.resolve(null);
+    vi.stubGlobal('fetch', vi.fn());
+
+    await expect(apiFetch('/v1/scores')).rejects.toBeInstanceOf(ApiError);
+    expect(session.signOuts).toBe(1);
   });
 });

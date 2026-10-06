@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 // stand-in `client.test.ts` uses, for the same reason.
 vi.mock('./auth/session', () => ({
   getAccessToken: () => Promise.resolve('token'),
-  signOut: async () => {},
+  endSessionHere: async () => {},
 }));
 
 import clientSource from './api/client.ts?raw';

@@ -1,4 +1,4 @@
-import { getAccessToken, signOut } from '../auth/session';
+import { endSessionHere, getAccessToken } from '../auth/session';
 import { SessionUnreadableError } from '../auth/sessionUnreadable';
 
 /**
@@ -136,7 +136,7 @@ export async function apiFetch<T>(
       // gate still believes in. Clearing it returns the musician to sign-in,
       // which is the only thing that actually helps, and is what "your session
       // has ended" was asking them to do by hand.
-      await signOut().catch(() => {
+      await endSessionHere().catch(() => {
         // Already gone. The throw below still stands.
       });
       throw new ApiError(401, path, SESSION_ENDED);
@@ -157,7 +157,7 @@ export async function apiFetch<T>(
       // returns the app to the sign-in screen instead of leaving every query
       // failing against a credential that will never work again.
       if (response.status === 401 && authenticated) {
-        await signOut().catch(() => {
+        await endSessionHere().catch(() => {
           // Already gone, or storage refused. The throw below still stands.
         });
         throw new ApiError(401, path, SESSION_ENDED);

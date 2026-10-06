@@ -923,7 +923,7 @@ starts sending a new one, the stub changes with it. Build against it with the
 three `EXPO_PUBLIC_*` values in its docstring, sign in with any address, and
 use `/__fail?status=500` to see what each screen says when the server is down.
 
-Run against it, that turned up five app defects the fixtures could not:
+Run against it, that turned up six app defects the fixtures could not:
 - **A failed history read as no takes.** `getPieceHistory` caught both of its
   requests into empty lists, so with a server down Your takes said "No takes
   yet". It also counted the failure as a success, so a refetch that failed
@@ -952,6 +952,12 @@ Run against it, that turned up five app defects the fixtures could not:
   reload just after setting a profile picture showed the initial for the rest
   of the session. Trimmed kinds are now written with `isInvalidated: true`.
   Anything that drops a field on the way to disk has to be restored stale.
+- **A refused token signed the account out everywhere.** `apiFetch` cleared a
+  refused session with `signOut()`, and auth-js signs out `global` by default,
+  which revokes every device's session. `/__fail?status=401` showed one expired
+  session sending four `logout?scope=global`. The API path now calls
+  `endSessionHere()` (`scope: 'local'`). The Sign out button is still global;
+  whether it should be is the owner's call.
 
 ## `npm audit fix --force` would take this app back to SDK 46 (2026-09-09)
 

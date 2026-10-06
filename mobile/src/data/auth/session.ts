@@ -379,6 +379,33 @@ export async function signOut(): Promise<void> {
 }
 
 /**
+ * Ends this device's session after the API refused its token.
+ *
+ * **Local scope, not `signOut`'s default.** auth-js signs out `global` unless
+ * told otherwise, and global revokes every session the account holds — the
+ * phone, the laptop, the tablet. A refused request is evidence about *this*
+ * session only: a token that expired past refresh, or one the backend could
+ * not verify. Against the stub API (2026-10-06) one expired session sent four
+ * `logout?scope=global` calls, one per request in flight, and a backend that
+ * ever misjudged good tokens would have signed every musician out of every
+ * device with every request it refused.
+ *
+ * Local still revokes this session on the auth server, so the refresh token
+ * left on this device is dead too; it just leaves the others alone.
+ */
+export async function endSessionHere(): Promise<void> {
+  arrival.settled();
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return;
+  }
+  const { error } = await supabase.auth.signOut({ scope: 'local' });
+  if (error) {
+    throw error;
+  }
+}
+
+/**
  * Clears only this device's session after the server has deleted the identity.
  *
  * A normal sign-out asks the auth server to revoke a session. Once the user no

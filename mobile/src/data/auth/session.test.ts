@@ -278,6 +278,17 @@ describe('getting out', () => {
     expect(auth.signOut).toHaveBeenCalledWith();
   });
 
+  it('ends only this device’s session when the API refuses its token', async () => {
+    // The default scope is global: every device the account is signed in on.
+    // A refused request says something about this session and nothing about
+    // the others.
+    const { endSessionHere } = await load();
+
+    await endSessionHere();
+
+    expect(auth.signOut).toHaveBeenCalledWith({ scope: 'local' });
+  });
+
   it('forgets a deleted account’s session locally, without asking it', async () => {
     // **A deleted identity may reject the revoke request**, and a rejected
     // sign-out leaves valid-looking tokens on the device — the app then boots
