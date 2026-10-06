@@ -2,6 +2,7 @@ import type { TakeSubmissionState } from '../../data/practice/submitTake';
 import type { MetronomeMode } from '../../data/types';
 import type { CaptureReport } from '../audio/capture';
 import { getActiveAccountId } from '../../data/auth/session';
+import { markTakeSent } from './heldTakes';
 import { deviceTakeStoreFor } from './takeQueue.store';
 import {
   enqueue,
@@ -90,6 +91,9 @@ export async function keepTakeForLater(
 
 /** The server has it. Drop the copy. */
 export async function takeWasAccepted(filename: string): Promise<void> {
+  // Before anything is awaited: the screen lets go of this take in the same
+  // tick, and the drain that wakes must already know it was sent.
+  markTakeSent(filename);
   try {
     const accountId = await getActiveAccountId();
     if (!accountId) return;

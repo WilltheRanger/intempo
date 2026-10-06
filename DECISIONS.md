@@ -1,5 +1,34 @@
 # InTempo Decisions
 
+## 2026-10-06 — On the web, a take that could not be sent goes to IndexedDB
+
+**Context:** the take queue keeps a take whose send failed and retries it later.
+Its store writes the WAV with `expo-file-system`, which cannot write in a
+browser. So on the web build, which is the one musicians use, nothing was ever
+queued, and "Your take is safe" was true only until the tab closed.
+
+**Decision:** `takeQueue.store.web.ts`. The entries stay in AsyncStorage, as on
+native. The recording goes in IndexedDB as an `ArrayBuffer`, keyed by account
+and file name.
+
+**Alternatives considered:**
+- *AsyncStorage for the audio as base64.* On the web that is `localStorage`,
+  whose few megabytes per origin also hold the session and the library cache.
+  One take is 1.4 MB before the third that base64 adds.
+- *The Cache API.* It is made for HTTP responses, not data the app keeps, and
+  is harder to delete selectively by account.
+- *Storing the `Blob` itself.* Older WebKit got this wrong. A buffer is plain
+  data everywhere.
+
+**Trade-offs accepted:**
+- Safari can clear site data after seven days without a visit. A take left
+  that long is lost, as it would be on a cleared device. `restoreQueuedTake`
+  and the drain already drop an entry whose bytes are gone.
+- Making the queue real on the web exposed a race native already had: the
+  drain could send a take while Record offered "Send it again".
+  `heldTakes.ts` closes it (`docs/subsystems.md`, recording path).
+
+
 ## 2026-10-06 — The app's Supabase client is `@supabase/auth-js`, not `@supabase/supabase-js`
 
 **Context:** every call the app makes to Supabase is `supabase.auth.*`. "The

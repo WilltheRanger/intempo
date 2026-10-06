@@ -1731,6 +1731,27 @@ nothing else covers `backend/`. Named here rather than left to be found.
   on tempo in every bar and a beat behind by the end, and the title says so.
 - TUNING_LOG.md 2026-09-25 has every number.
 
+### A take that could not be sent was kept only by the native build (2026-10-06)
+
+The take queue (`lib/sync/`) keeps a take whose send failed and retries it on
+each foreground. Its store wrote the WAV through `expo-file-system`, which has
+nothing to write to in a browser. So on the web, the build musicians actually
+use, `enqueue` failed on its first step and nothing was queued. "Your take is
+safe" then meant only "while this tab stays open". Now
+`takeQueue.store.web.ts` keeps the recording in IndexedDB, as an
+`ArrayBuffer`, under the same AsyncStorage entries. Tested against the stub
+API with the upload blocked: the take survives a reload, Record brings it back
+with Send it again, and the drain sends one left behind.
+
+The two copies, one on the screen and one in the queue, had no coordination
+on native either. A drain on returning to the app could send the take while
+Record still offered "Send it again", one tap from a second analysis.
+`heldTakes.ts` fixes that:
+- the drain skips a take the screen holds, and sets no timer for it;
+- the screen's release wakes the drain;
+- `takeWasAccepted` marks a sent take before anything is awaited, so the drain
+  that wakes cannot catch the queue copy before its removal lands.
+
 ## The capture path (2026-08-24) — what an audit of it found
 
 Nine defects between the shutter and a saved score, in a path that had **zero

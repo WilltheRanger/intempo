@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Directory, File, Paths } from 'expo-file-system';
 
 import { load, type QueuedTake, type TakeStore } from './takeQueue';
+import { checkedAudioName, takeQueueKey } from './takeQueueKeys';
 
 /**
  * Where a queued take actually lives on the device.
@@ -20,30 +21,20 @@ import { load, type QueuedTake, type TakeStore } from './takeQueue';
  * **The whole adapter is untested and says so.** Whether `expo-file-system`
  * writes where it claims needs a device, and there is none here. What that
  * costs is bounded by design rather than by hope: `enqueue` writes the bytes
- * *before* the entry, so a platform where this throws — a web build with no
- * file system among them — enqueues nothing and leaves `RecordScreen` with the
- * in-memory take it has always had. Degraded, never wrong.
+ * *before* the entry, so a platform where this throws enqueues nothing and
+ * leaves `RecordScreen` with the in-memory take it has always had. Degraded,
+ * never wrong. The web build has its own store, `takeQueue.store.web.ts`,
+ * which keeps the recording in IndexedDB.
  */
 
 /** V1 has no owner. Leave it inert rather than assigning its WAV to the next login. */
 const FOLDER = 'queued-takes';
 
-function accountKey(accountId: string): string {
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(accountId)) {
-    throw new Error('Invalid account ID');
-  }
-  return `intempo.take-queue.v2.${accountId}`;
-}
 
 export function deviceTakeStoreFor(accountId: string): TakeStore {
-  const entriesKey = accountKey(accountId);
+  const entriesKey = takeQueueKey(accountId);
   const folder = () => new Directory(Paths.document, FOLDER, accountId);
-  const fileFor = (name: string) => {
-    if (!/^[a-zA-Z0-9_.-]+\.wav$/.test(name)) {
-      throw new Error('Invalid queued audio name');
-    }
-    return new File(folder(), name);
-  };
+  const fileFor = (name: string) => new File(folder(), checkedAudioName(name));
 
   return {
     async read() {
@@ -92,7 +83,7 @@ export function deviceTakeStoreFor(accountId: string): TakeStore {
 export async function deleteAccountTakes(accountId: string): Promise<void> {
   const store = deviceTakeStoreFor(accountId);
   const { takes } = await load(store);
-  await AsyncStorage.removeItem(accountKey(accountId));
+  await AsyncStorage.removeItem(takeQueueKey(accountId));
   for (const take of takes) {
     await store.deleteAudio(take.audioName);
   }

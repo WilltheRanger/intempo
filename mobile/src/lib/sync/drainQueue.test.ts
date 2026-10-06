@@ -330,3 +330,41 @@ describe('a device that cannot write', () => {
     expect(report.stopped).toBe('drained');
   });
 });
+
+describe('a take the Record screen has in hand', () => {
+  /**
+   * The screen keeps a failed take and offers "Send it again" while the same
+   * take sits in this queue. Sending it here as well is one tap from a second
+   * upload and a second analysis of the same playing.
+   */
+  it('is not sent while the screen holds it', async () => {
+    await enqueue(store, aTake(), T0, 'local-1');
+
+    const report = await drainTakes({ ...deps(), held: () => true });
+
+    expect(sent).toEqual([]);
+    expect(report.stopped).toBe('not-due');
+    // No timer for it either: one due now would fire every second while the
+    // musician looks at the screen. The release wakes the drainer instead.
+    expect(report.nextDueAt).toBeNull();
+    expect((await load(store)).takes).toHaveLength(1);
+  });
+
+  it('still sends the takes the screen is not holding', async () => {
+    await enqueue(store, aTake({ filename: 'held.wav' }), T0, 'local-1');
+    await enqueue(store, aTake({ filename: 'free.wav' }), T0, 'local-2');
+
+    await drainTakes({ ...deps(), held: (take) => take.filename === 'held.wav' });
+
+    expect(sent).toEqual(['local-2']);
+  });
+
+  it('is sent once the screen lets go', async () => {
+    await enqueue(store, aTake(), T0, 'local-1');
+    await drainTakes({ ...deps(), held: () => true });
+
+    await drainTakes({ ...deps(), held: () => false });
+
+    expect(sent).toEqual(['local-1']);
+  });
+});

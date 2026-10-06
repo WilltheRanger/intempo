@@ -4,6 +4,7 @@ import { getAccessToken, getActiveAccountId } from '../../data/auth/session';
 import { takeSubmissionSource } from '../../data/sources';
 import { readTakeFailure } from '../audio/takeFailure';
 import { drainTakes, type DrainReport } from './drainQueue';
+import { isTakeHeld, onTakeReleased } from './heldTakes';
 import { deviceTakeStoreFor } from './takeQueue.store';
 
 /**
@@ -97,6 +98,8 @@ async function drainNow(): Promise<DrainReport | null> {
       },
       read: (error) => readTakeFailure(error, Platform.OS),
       now: () => Date.now(),
+      // The Record screen may be offering "Send it again" for this very take.
+      held: (take) => isTakeHeld(take.filename),
     });
     scheduleNext(report);
     return report;
@@ -126,8 +129,14 @@ export function startTakeDrainer(): () => void {
       void drainNow();
     }
   });
+  // A take the Record screen let go of unsent — the musician left with it —
+  // is the drain's to send now, and it set no timer while the screen held it.
+  const unsubscribe = onTakeReleased(() => {
+    void drainNow();
+  });
   return () => {
     subscription.remove();
+    unsubscribe();
     cancelTimer();
   };
 }

@@ -69,6 +69,7 @@ import {
   restoreQueuedTake,
   takeWasAccepted,
 } from '../../lib/sync/queuedTakes';
+import { holdTake } from '../../lib/sync/heldTakes';
 import { startRecording } from '../../lib/audioRecorder';
 import {
   BORDER_WIDTH,
@@ -303,6 +304,14 @@ export function RecordScreen() {
     fromMeasure?: number;
   } | null>(null);
   const [pendingTake, setPendingTake] = useState(false);
+  // While "Send it again" is offered, this screen holds the take and the
+  // background drain leaves its queued copy alone (`heldTakes.ts`): one
+  // playing, sent once. Let go when it is sent or the screen is left.
+  useEffect(() => {
+    const take = unsent.current;
+    if (!pendingTake || !take) return undefined;
+    return holdTake(take.filename);
+  }, [pendingTake]);
   /**
    * The server has the take and is analysing it — set on the first stage it
    * reports, which the real source reports only after the analysis is
