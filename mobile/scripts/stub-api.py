@@ -947,6 +947,13 @@ class H(http.server.BaseHTTPRequestHandler):
                 row["composer"] = body["composer"]
             if "movement" in body:
                 row["movement"] = body["movement"]
+            # The bar editor's save: the whole corrected reading, as
+            # `UpdateScoreRequest.score_json` takes it. Ignored here before, so
+            # an edit looked saved and was gone on the next load.
+            if body.get("score_json") is not None:
+                row["score_json"] = body["score_json"]
+            if body.get("clef") is not None and isinstance(row.get("score_json"), dict):
+                row["score_json"] = dict(row["score_json"], clef=body["clef"])
             CREATED[sid] = row
             return self._send(200, json.dumps(_score(row)).encode())
         self._send(404, b'{"detail":"not found"}')
