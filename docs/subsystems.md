@@ -798,6 +798,26 @@ without changing the screen, so a heading under the root's `inert` still
 counts, and one under any other `inert` does not (`documentTitle.ts`).
 `audit-a11y` fails a route whose tab reads "InTempo" alone or "undefined".
 
+**Two screens are named for the screen, not for their heading.** The result's
+heading is a sentence about the playing ("You rushed in the middle") and so,
+at times, is Insights'. As a tab title that reads like a notification. They
+are "Result" and "Insights" (`ROUTE_TITLES`), keyed by route name, which
+`installDocumentTitle` reads from the navigation ref.
+
+### Record turned sideways (2026-10-06)
+
+iOS ignores a web app's portrait lock, so landscape is reachable on the
+owner's phone, and a phone on a music stand is often sideways. At 844×390 the
+record button sat 34pt into view, and every check here measures portrait.
+Two fixes failed on the arithmetic before one worked. A scrolling panel
+brought the button back and squeezed the music to zero height. Giving the
+music a minimum height squeezed the settings to zero instead. The column needs about 635pt, and a
+sideways phone has 390pt. A short, wide window now puts the music and the
+panel side by side, with the record button at the foot of the panel
+(`lib/record/recordLayout.ts`). It is the same tree with different styles, so
+turning the phone mid-take remounts nothing. Upright, the screen is
+pixel-identical to before.
+
 ### A step that is not a screen leaves focus behind (2026-10-06)
 
 Onboarding's questions are one screen whose content changes, not routes. So
