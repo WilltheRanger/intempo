@@ -449,9 +449,73 @@ def _current():
     for take in takes:
         row = rows.get(take.get("score_id"))
         if row:
-            return {"score": row, "last_practiced_at": take["created_at"]}
+            return {"score": _score(row), "last_practiced_at": take["created_at"]}
     newest = sorted(rows.values(), key=lambda r: r["created_at"], reverse=True)
-    return {"score": newest[0] if newest else None, "last_practiced_at": None}
+    return {"score": _score(newest[0]) if newest else None, "last_practiced_at": None}
+
+
+def _fixed_reading():
+    """What the stub's "OCR" reads from any page: the same three bars."""
+    return {
+        "time_signature": "4/4", "key_signature": "D major", "tempo_marking": None,
+        "bpm_hint": 92, "clef": "treble",
+        "measures": [
+            {"measure_number": 1, "slurs": [], "notes": [
+                {"pitch": p, "duration": "quarter", "tied_to_next": False}
+                for p in ("D4", "E4", "F#4", "G4")]},
+            {"measure_number": 2, "slurs": [], "notes": [
+                {"pitch": p, "duration": "quarter", "tied_to_next": False}
+                for p in ("A4", "G4", "F#4", "E4")]},
+            {"measure_number": 3, "slurs": [], "notes": [
+                {"pitch": "D4", "duration": "whole", "tied_to_next": False}]},
+        ],
+        "repeats": [], "ocr_confidence": 0.91, "notes_to_human": "",
+    }
+
+
+def _queue_reading(row, pages):
+    """Pages handed to the worker: queued, empty, and read over three polls."""
+    row.update({
+        "_pages": pages, "_polls": 0,
+        "source_image_url": pages[0],
+        "image_url": f"{BASE}/img/01_simple_printed.jpg?token=signed",
+        "image_url_expires_at": iso(NOW + timedelta(hours=1)),
+        "image_urls": [f"{BASE}/img/01_simple_printed.jpg?token=signed" for _ in pages],
+        "page_count": len(pages),
+        "score_json": {"measures": [], "repeats": [], "ocr_confidence": 0.0, "notes_to_human": ""},
+        "ocr_confidence": None,
+        "transcription_status": "queued", "transcription_stage": None,
+        "transcription_error": None, "transcription_accepted_at": None,
+        "page_image_discarded_at": None,
+    })
+
+
+def _advance_reading(row):
+    """One poll of a queued reading: queued, then two stages, then done."""
+    if row.get("transcription_status") not in ("queued", "reading") or "_polls" not in row:
+        return
+    row["_polls"] += 1
+    if row["_polls"] >= 3:
+        row.update({"transcription_status": "done", "transcription_stage": None,
+                    "score_json": _fixed_reading(), "ocr_confidence": 0.91})
+    else:
+        row.update({"transcription_status": "reading",
+                    "transcription_stage": STAGES[min(row["_polls"], len(STAGES) - 1)]})
+
+
+def _score(row):
+    """A score as `ScoreResponse` sends it: every field, none of the stub's."""
+    out = {k: v for k, v in row.items() if not k.startswith("_")}
+    for key, value in (("page_count", 1 if out.get("image_url") else 0),
+                       ("image_urls", [out["image_url"]] if out.get("image_url") else []),
+                       ("concerns", []), ("transcription_status", "done"),
+                       ("transcription_stage", None), ("transcription_error", None),
+                       ("transcription_accepted_at", None), ("page_image_discarded_at", None),
+                       ("shared_with_studio", None), ("source_image_url", None),
+                       ("image_url", None), ("image_url_expires_at", None),
+                       ("ocr_confidence", None), ("movement", None), ("composer", None)):
+        out.setdefault(key, value)
+    return out
 
 
 def _b64(obj):
@@ -570,12 +634,15 @@ class H(http.server.BaseHTTPRequestHandler):
             seeded = {s[0] for s in SCORES}
             rows += [r for sid, r in CREATED.items() if sid not in seeded]
             rows.sort(key=lambda r: r["created_at"], reverse=True)
-            return self._send(200, json.dumps(rows).encode())
+            return self._send(200, json.dumps([_score(r) for r in rows]).encode())
         if path.startswith("/v1/scores/"):
             sid = path.rsplit("/", 1)[-1]
             row = CREATED.get(sid) or next(
                 (score_row(*s) for s in SCORES if s[0] == sid), None)
-            return self._send(200 if row else 404, json.dumps(row or {"detail": "not found"}).encode())
+            if row is not None:
+                _advance_reading(row)
+            return self._send(200 if row else 404,
+                              json.dumps(_score(row) if row else {"detail": "not found"}).encode())
         if path == "/v1/analyses":
             if FAIL["empty"]:
                 return self._send(200, b"[]")
@@ -748,8 +815,9 @@ class H(http.server.BaseHTTPRequestHandler):
 
         if path == "/v1/scores":
             body = json.loads(self._read_body() or b"{}")
-            image_url = body.get("image_url")
-            if image_url and image_url not in UPLOADED:
+            pages = body.get("image_urls") or ([body["image_url"]] if body.get("image_url") else [])
+            missing = [u for u in pages if u not in UPLOADED]
+            if missing:
                 # Mirrors the real failure: the backend downloads the URL it was
                 # given, and a URL nothing was PUT to cannot be read.
                 return self._send(502, json.dumps(
@@ -760,34 +828,62 @@ class H(http.server.BaseHTTPRequestHandler):
                 "title": body.get("title") or "Untitled",
                 "composer": body.get("composer"),
                 "movement": body.get("movement"),
-                "source_image_url": image_url,
-                "image_url": f"{BASE}/img/01_simple_printed.jpg?token=signed" if image_url else None,
-                "image_url_expires_at": iso(NOW + timedelta(hours=1)) if image_url else None,
-                "score_json": {
-                    "time_signature": body.get("time_signature") or "4/4",
-                    "key_signature": "D major", "tempo_marking": None,
-                    "bpm_hint": body.get("bpm_hint") or 92,
-                    "clef": body.get("clef") or "treble",
-                    "measures": [
-                        {"measure_number": 1, "slurs": [], "notes": [
-                            {"pitch": p, "duration": "quarter", "tied_to_next": False}
-                            for p in ("D4", "E4", "F#4", "G4")]},
-                        {"measure_number": 2, "slurs": [], "notes": [
-                            {"pitch": p, "duration": "quarter", "tied_to_next": False}
-                            for p in ("A4", "G4", "F#4", "E4")]},
-                        {"measure_number": 3, "slurs": [], "notes": [
-                            {"pitch": "D4", "duration": "whole", "tied_to_next": False}]},
-                    ],
-                    "repeats": [],
-                    "ocr_confidence": 0.0 if image_url is None else 0.91,
-                    "notes_to_human": "",
-                },
-                "shared_with_studio": None,
-                "ocr_confidence": None if image_url is None else 0.91,
-                "created_at": iso(NOW), "updated_at": iso(NOW),
+                "created_at": iso(datetime.now(tz=timezone.utc)),
+                "updated_at": iso(datetime.now(tz=timezone.utc)),
             }
+            if pages:
+                # `create_score` with pages: queued, read by the worker, and
+                # empty until then (`_awaiting_transcription`).
+                _queue_reading(row, pages)
+            else:
+                # A piece typed in: no notes, done at once (`_hand_entered`).
+                row.update({
+                    "score_json": {"clef": body.get("clef"),
+                                   "time_signature": body.get("time_signature"),
+                                   "bpm_hint": body.get("bpm_hint"),
+                                   "measures": [], "repeats": [], "ocr_confidence": 0.0,
+                                   "notes_to_human": ""},
+                    "ocr_confidence": 0.0, "transcription_status": "done",
+                })
             CREATED[sid] = row
-            return self._send(201, json.dumps(row).encode())
+            return self._send(201, json.dumps(_score(row)).encode())
+
+        if path == "/v1/scores/import":
+            # A notation file: read at once. The stub does not parse MusicXML,
+            # so every import is the fixed three bars.
+            body = json.loads(self._read_body() or b"{}")
+            sid = f"cccccccc-0000-4000-8000-{len(CREATED) + 1:012d}"
+            row = {"id": sid, "user_id": USER, "title": body.get("title") or "Untitled",
+                   "composer": body.get("composer"), "movement": body.get("movement"),
+                   "score_json": _fixed_reading(), "ocr_confidence": 1.0,
+                   "transcription_status": "done",
+                   "created_at": iso(datetime.now(tz=timezone.utc)),
+                   "updated_at": iso(datetime.now(tz=timezone.utc))}
+            CREATED[sid] = row
+            return self._send(201, json.dumps(_score(row)).encode())
+
+        if path.startswith("/v1/scores/") and path.rsplit("/", 1)[-1] in ("accept", "transcribe", "transcription"):
+            sid, action = path.split("/")[3], path.rsplit("/", 1)[-1]
+            row = CREATED.get(sid) or next((score_row(*s) for s in SCORES if s[0] == sid), None)
+            if row is None:
+                return self._send(404, b'{"detail":"score not found"}')
+            body = json.loads(self._read_body() or b"{}")
+            now = iso(datetime.now(tz=timezone.utc))
+            if action == "accept":
+                # "The reading is right, discard the photograph."
+                row.update({"transcription_accepted_at": now, "page_image_discarded_at": now,
+                            "image_url": None, "image_urls": []})
+            elif action == "transcribe":
+                # Read the same pages again.
+                _queue_reading(row, row.get("_pages") or [row.get("source_image_url") or "page"])
+            else:
+                pages = body.get("image_urls") or ([body["image_url"]] if body.get("image_url") else [])
+                if not pages:
+                    return self._send(422, b'{"detail":"image_url or image_urls is required"}')
+                _queue_reading(row, pages)
+            row["updated_at"] = now
+            CREATED[sid] = row
+            return self._send(200, json.dumps(_score(row)).encode())
 
         self._send(404, b'{"detail":"not found"}')
 
@@ -804,6 +900,9 @@ class H(http.server.BaseHTTPRequestHandler):
             if not body:
                 return self._send(400, b'{"detail":"empty upload"}')
             UPLOADED.add(f"{BASE}{self.path}")
+            # And the object key, which is what the app sends back now: the
+            # upload answers `object_key`, and `image_urls` carries those.
+            UPLOADED.add(path.split("/storage/v1/object/upload/sign/", 1)[1].split("/", 1)[1])
             # Byte count only, never the audio. A test asserting that a retry
             # re-sent *the same take* has to measure something, and
             # Playwright does not expose a Blob request body — so the
@@ -849,7 +948,7 @@ class H(http.server.BaseHTTPRequestHandler):
             if "movement" in body:
                 row["movement"] = body["movement"]
             CREATED[sid] = row
-            return self._send(200, json.dumps(row).encode())
+            return self._send(200, json.dumps(_score(row)).encode())
         self._send(404, b'{"detail":"not found"}')
 
     def do_DELETE(self):
