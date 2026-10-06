@@ -5849,6 +5849,8 @@ Today ran card → type → more type, with a single visual event in the whole s
 
 **Decision: `instrument` is a local preference, not account data.** It picks the clef and range of the excerpt and will pick the reference voice. None of that belongs to the backend, and it follows `metronomeMode` and `haptics` into `preferences`.
 
+*Superseded 2026-10-06 by the owner: Profile's instrument is written to the account as well as the device, sent later when offline. See `docs/subsystems.md`, under the onboarding fields.*
+
 **Decision: the excerpts are hand-authored, four sets of three, one per instrument** — not transposed from a single set.
 
 - *Automatic transposition was the obvious alternative and is wrong.* Transposing a violin exercise down for cello puts it on strings a cello does not have, and a "first position" exercise that needs a shift is not a warm-up. The corpus is checked by test against each instrument's written first-position range.

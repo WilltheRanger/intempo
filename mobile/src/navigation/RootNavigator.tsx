@@ -10,7 +10,9 @@ import { useAuthStatus } from '../data/auth/useAuthStatus';
 import { takeEmailChangeHalfway, useEmailChangeHalfway } from '../data/auth/emailChange';
 import { useMe } from '../data/hooks/useMe';
 import { prefetchCurrentPiece } from '../data/hooks/usePieces';
-import { preferences } from '../data/preferences';
+import { preferences, usePreferences } from '../data/preferences';
+import { useUpdateProfile } from '../data/hooks/useProfile';
+import { instrumentToSend } from '../data/profile/instrumentSync';
 import { EASE_OUT, colors, motion } from '../design';
 import { shouldOnboard } from '../lib/onboarding';
 import { useReducedMotion } from '../lib/useReducedMotion';
@@ -267,6 +269,37 @@ function SignedInApp() {
   useEffect(() => {
     preferences.adoptAccountInstrument(me?.instrument);
   }, [me?.instrument]);
+
+  /*
+   * The other direction: an instrument changed on this device while the
+   * account could not be told (offline, or the server down). Sent when the
+   * account next loads; cleared when the account already agrees. The rule is
+   * `instrumentToSend`, where it is tested.
+   */
+  const settings = usePreferences();
+  const { mutate: sendInstrument } = useUpdateProfile();
+  const owed = me
+    ? instrumentToSend(settings.instrument, settings.instrumentUnsent, me.instrument)
+    : null;
+  // Once per owed value per launch. A failed send (still offline) waits for
+  // the next launch or the next Profile change; retrying on every render
+  // would hammer a connection that is not there.
+  const triedToSend = useRef<string | null>(null);
+  const accountLoaded = me !== undefined;
+  const unsent = settings.instrumentUnsent;
+  useEffect(() => {
+    if (!accountLoaded || !unsent) return;
+    if (owed === null) {
+      preferences.setInstrumentUnsent(false);
+      return;
+    }
+    if (triedToSend.current === owed) return;
+    triedToSend.current = owed;
+    sendInstrument(
+      { instrument: owed },
+      { onSuccess: () => preferences.setInstrumentUnsent(false) },
+    );
+  }, [accountLoaded, unsent, owed, sendInstrument]);
 
   // Today's piece, asked for alongside the account rather than after the gate
   // below opens (`prefetchCurrentPiece`). Once per sign-in: this component

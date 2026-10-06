@@ -601,7 +601,7 @@ and the scan flow there works differently as of 2026-08-24:
   | | writes account | writes device |
   |---|---|---|
   | `OnboardingScreen` → `useUpdateProfile` | yes | yes (mirrored on success) |
-  | Profile's instrument control | **no** | yes |
+  | Profile's instrument control | yes (since 2026-10-06; owed when offline) | yes, first |
   | a fresh install | — | defaults to `violin` |
 
   **The seeding half is fixed** (2026-09-03).
@@ -618,12 +618,16 @@ and the scan flow there works differently as of 2026-08-24:
   tells them apart, and it is cleared on the fresh-install early return rather
   than relying on its initialiser.
 
-  **The other half is not fixed and is a product decision**: Profile's control
-  still writes only the device, so the account keeps the onboarding answer for
-  ever. Making it write the account means choosing what happens offline —
-  follow `changeTrainingConsent` and the control stops working without a
-  network (and in fixtures builds); write locally *and* fire the update and the
-  two can diverge silently. Not a quiet refactor; ask first.
+  **The other half is fixed too** (2026-10-06, the owner's choice of "save on
+  this device and send it later"). Profile writes the device first, so the
+  warmup and the recorder use the new instrument at once, then the account
+  through its own `useUpdateProfile` (not the photo's, whose pending state
+  says "Saving your profile picture…"). A write that fails leaves
+  `preferences.instrumentUnsent` set, which is persisted, and `SignedInApp`
+  sends what `profile/instrumentSync.instrumentToSend` says is still owed once
+  the account loads: at most once per owed value per launch, so an offline
+  device does not retry on every render. When the account already agrees,
+  the flag is cleared. Fixture builds write only the device, as before.
   Both rules the screen can get wrong live in `lib/onboarding.ts` where they are
   tested, not in the `.tsx`.
 

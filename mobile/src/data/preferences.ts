@@ -59,6 +59,16 @@ export interface Preferences {
   practiceRole: PracticeRole | null;
   /** Onboarding's "How did you find us?", kept on the device. Null when skipped. */
   foundVia: FoundVia | null;
+  /**
+   * The instrument above was changed here and the account has not heard yet.
+   *
+   * Profile writes the account too since 2026-10-06 (the owner's choice:
+   * "save on this device and send it later"), so a change made offline is
+   * kept here, used at once, and sent when the account next loads
+   * (`profile/instrumentSync.ts`). Persisted, because "later" can be after a
+   * relaunch.
+   */
+  instrumentUnsent: boolean;
 }
 
 const DEFAULTS: Preferences = {
@@ -70,6 +80,7 @@ const DEFAULTS: Preferences = {
   lastTakeHadSound: null,
   practiceRole: null,
   foundVia: null,
+  instrumentUnsent: false,
 };
 
 const STORAGE_KEY = 'intempo.preferences.v1';
@@ -91,8 +102,10 @@ let instrumentIsStored = false;
  * is consulted inside a button's press handler, where awaiting storage isn't
  * an option. Reads come from memory; writes go to memory and then to disk.
  *
- * These are genuinely local. Nothing here belongs to the account, so none of
- * it round-trips through the backend or follows a musician to another device.
+ * These are local, with one exception: the instrument, which the account also
+ * holds and which `profile/instrumentSync.ts` keeps the account told about.
+ * Nothing else here round-trips through the backend or follows a musician to
+ * another device.
  */
 let current: Preferences = DEFAULTS;
 
@@ -164,6 +177,10 @@ export async function hydratePreferences(): Promise<void> {
       foundVia: FOUND_VIA_CHOICES.some((choice) => choice.value === saved.foundVia)
         ? (saved.foundVia as FoundVia)
         : DEFAULTS.foundVia,
+      instrumentUnsent:
+        typeof saved.instrumentUnsent === 'boolean'
+          ? saved.instrumentUnsent
+          : DEFAULTS.instrumentUnsent,
     };
     listeners.forEach((listener) => listener());
   } catch {
@@ -210,9 +227,9 @@ export const preferences = {
    * given violin warmups and analysed with violin onset thresholds.
    *
    * **Only when nothing is stored, which is what makes this safe.** A device
-   * that has an instrument has one because somebody chose it here, and the
-   * Profile control does not write it back to the account — so overwriting on
-   * every load would revert their choice from a value the server was never
+   * that has an instrument has one because somebody chose it here — and when
+   * that choice has not reached the account yet (`instrumentUnsent`),
+   * overwriting it on load would revert it from a value the server was never
    * told about. Seeding an empty cache cannot conflict with anything.
    *
    * Null does nothing: an account from before the instrument was required has
@@ -227,6 +244,12 @@ export const preferences = {
     instrumentIsStored = true;
     commit({ ...current, instrument: fromAccount });
     return true;
+  },
+
+  /** See `Preferences.instrumentUnsent`. */
+  setInstrumentUnsent(instrumentUnsent: boolean): void {
+    if (current.instrumentUnsent === instrumentUnsent) return;
+    commit({ ...current, instrumentUnsent });
   },
 
   setMetronomeMode(metronomeMode: MetronomeMode): void {
