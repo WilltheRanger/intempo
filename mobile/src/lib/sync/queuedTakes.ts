@@ -2,6 +2,7 @@ import type { TakeSubmissionState } from '../../data/practice/submitTake';
 import type { MetronomeMode } from '../../data/types';
 import type { CaptureReport } from '../audio/capture';
 import { getActiveAccountId } from '../../data/auth/session';
+import { markTakeSent } from './heldTakes';
 import { deviceTakeStoreFor } from './takeQueue.store';
 import {
   enqueue,
@@ -46,7 +47,18 @@ function idFor(filename: string): string {
   return filename.replace(/\.wav$/i, '');
 }
 
-/** Hold a take that could not be sent, so an app kill does not lose it. */
+/**
+ * Hold a take that could not be sent, so an app kill does not lose it.
+ *
+ * `owner` is the account the take was sent as, read before the send began.
+ * **Asking afterwards lost the take whenever the failure was the session.** A
+ * token the API refuses makes `apiFetch` end the session before the error
+ * reaches the screen, so by the time this ran nobody was signed in, and the
+ * `!accountId` early return dropped the performance without a word (stub API,
+ * 2026-10-06). Kept under the account it was played for, it is still in that
+ * account's queue when the same musician signs back in, and invisible to
+ * anybody else — the queue is keyed by account. Null falls back to asking now.
+ */
 export async function keepTakeForLater(
   recording: {
     audio: Blob;
@@ -56,9 +68,10 @@ export async function keepTakeForLater(
   },
   context: TakeContext,
   lastError: string,
+  owner: string | null = null,
 ): Promise<void> {
   try {
-    const accountId = await getActiveAccountId();
+    const accountId = owner ?? (await getActiveAccountId());
     if (!accountId) return;
     const deviceTakeStore = deviceTakeStoreFor(accountId);
     const id = idFor(recording.filename);
@@ -90,6 +103,9 @@ export async function keepTakeForLater(
 
 /** The server has it. Drop the copy. */
 export async function takeWasAccepted(filename: string): Promise<void> {
+  // Before anything is awaited: the screen lets go of this take in the same
+  // tick, and the drain that wakes must already know it was sent.
+  markTakeSent(filename);
   try {
     const accountId = await getActiveAccountId();
     if (!accountId) return;

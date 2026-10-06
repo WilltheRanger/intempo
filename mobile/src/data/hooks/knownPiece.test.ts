@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { pieceFromCaches } from './knownPiece';
+import { knowsItsMusic, pieceFromCaches } from './knownPiece';
 import type { Piece } from '../types';
 
 const piece = (id: string, title: string): Piece =>
@@ -43,5 +43,33 @@ describe('pieceFromCaches', () => {
   /** A deep link is exactly the case with no cache to draw on. */
   it('leaves a cold open to its own request', () => {
     expect(pieceFromCaches('bwv1001', [], null)).toBeUndefined();
+  });
+});
+
+describe('knowsItsMusic', () => {
+  const withNotation = {
+    ...bach,
+    score: { measures: [{ number: 1 }] },
+  } as unknown as Piece;
+  const withPhoto = { ...bach, score: null, thumbnail: { uri: 'https://x/p.jpg' } } as unknown as Piece;
+  // What the listing kept on disk holds for every piece, whatever it has.
+  const stripped = { ...bach, score: null, thumbnail: null } as unknown as Piece;
+
+  it('trusts the piece once its own request has answered', () => {
+    expect(knowsItsMusic(stripped, false)).toBe(true);
+    expect(knowsItsMusic(withNotation, false)).toBe(true);
+  });
+
+  /**
+   * The bug: a listing restored from disk carries no notation and no photo
+   * for any piece, and the screen read that as a piece needing sheet music.
+   */
+  it('does not know, from a placeholder holding neither', () => {
+    expect(knowsItsMusic(stripped, true)).toBe(false);
+  });
+
+  it('does know, from a placeholder holding either, because those are real', () => {
+    expect(knowsItsMusic(withNotation, true)).toBe(true);
+    expect(knowsItsMusic(withPhoto, true)).toBe(true);
   });
 });

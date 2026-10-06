@@ -37,6 +37,7 @@ import { bpmForMarking } from '../../lib/tempoMarking';
 import { preferences, usePreferences } from '../../data/preferences';
 import { PressableScale } from '../../components/motion';
 import { takeSubmissionSource } from '../../data/sources';
+import { getActiveAccountId } from '../../data/auth/session';
 import {
   TakeSubmissionError,
   type TakeSubmissionState,
@@ -69,6 +70,7 @@ import {
   restoreQueuedTake,
   takeWasAccepted,
 } from '../../lib/sync/queuedTakes';
+import { holdTake } from '../../lib/sync/heldTakes';
 import { startRecording } from '../../lib/audioRecorder';
 import {
   BORDER_WIDTH,
@@ -303,6 +305,14 @@ export function RecordScreen() {
     fromMeasure?: number;
   } | null>(null);
   const [pendingTake, setPendingTake] = useState(false);
+  // While "Send it again" is offered, this screen holds the take and the
+  // background drain leaves its queued copy alone (`heldTakes.ts`): one
+  // playing, sent once. Let go when it is sent or the screen is left.
+  useEffect(() => {
+    const take = unsent.current;
+    if (!pendingTake || !take) return undefined;
+    return holdTake(take.filename);
+  }, [pendingTake]);
   /**
    * The server has the take and is analysing it — set on the first stage it
    * reports, which the real source reports only after the analysis is
@@ -675,6 +685,10 @@ export function RecordScreen() {
       }
       if (mounted.current) setAnalysisStage(stage);
     };
+    // Whose take this is, asked before anything is sent: a refused token ends
+    // the session on its way to the catch below, and the take has to be kept
+    // for the account that played it, not for whoever is signed in by then.
+    const owner = getActiveAccountId().catch(() => null);
     try {
       const analysisId = await takeSubmissionSource.submit({
         // A piece is a score; the id is the same row.
@@ -730,21 +744,31 @@ export function RecordScreen() {
           : recording;
       unsent.current = failure.retriable ? resumable : null;
       setPendingTake(failure.retriable);
+      if (!failure.retriable) {
+        // A final refusal is the server's answer about the account, so the
+        // allowance line under the button is stale the same way it is after
+        // an accepted take. Left alone, "1 free take left this month" sat
+        // under "You've used all 3 of your free analyses" (2026-10-06).
+        void queryClient.invalidateQueries({ queryKey: meKeys.all });
+      }
       holdForListening(failure.retriable ? resumable.audio : null);
       if (failure.retriable) {
         // **The ref survives a retry and not a restart.** A musician who
         // records with no signal and backgrounds the app used to lose the
         // performance, which is the one part of this that cannot be repeated.
-        void keepTakeForLater(
-          resumable,
-          {
-            scoreId: params.pieceId,
-            targetBpm,
-            metronomeMode,
-            skipLongRests: skipRests,
-            fromMeasure: entryBar,
-          },
-          failure.message,
+        void owner.then((accountId) =>
+          keepTakeForLater(
+            resumable,
+            {
+              scoreId: params.pieceId,
+              targetBpm,
+              metronomeMode,
+              skipLongRests: skipRests,
+              fromMeasure: entryBar,
+            },
+            failure.message,
+            accountId,
+          ),
         );
       }
       // Back to the top of the screen with the tempo still set, so the reply

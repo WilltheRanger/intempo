@@ -4,12 +4,12 @@ import { describe, expect, it, vi } from 'vitest';
 // stand-in `client.test.ts` uses, for the same reason.
 vi.mock('./auth/session', () => ({
   getAccessToken: () => Promise.resolve('token'),
-  signOut: async () => {},
+  endSessionHere: async () => {},
 }));
 
 import clientSource from './api/client.ts?raw';
 import { ApiError } from './api/client';
-import { describeLoadError } from './describeLoadError';
+import { describeLoadError, isGone } from './describeLoadError';
 
 /**
  * The sentence a musician reads when a screen will not load.
@@ -117,5 +117,21 @@ describe('a server that says "not yet"', () => {
     );
     expect(describeLoadError(busy)).toContain('a minute');
     expect(describeLoadError(busy)).not.toContain('connection');
+  });
+});
+
+describe('isGone', () => {
+  it('is true only when the server said the thing is not there', () => {
+    expect(isGone(new ApiError(404, '/v1/scores/x', 'Score not found'))).toBe(true);
+  });
+
+  it.each([
+    ['a server fault', new ApiError(500, '/v1/scores/x', 'Internal Server Error')],
+    ['a host waking up', new ApiError(0, '/v1/scores/x', 'It may be waking up')],
+    ['a refusal', new ApiError(403, '/v1/scores/x', 'Forbidden')],
+    ['a dropped connection', new TypeError('Failed to fetch')],
+    ['nothing at all', null],
+  ])('is false for %s, which leaves the piece where it was', (_name, error) => {
+    expect(isGone(error)).toBe(false);
   });
 });

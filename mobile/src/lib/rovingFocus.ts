@@ -25,6 +25,15 @@
  *    the tab bar it would leave the screen you were on.
  *
  * Disabled items are skipped, by the arrows and as the Tab stop.
+ *
+ * **And focus that Tab brings into a group lands on its stop.** Tab alone
+ * already does; Tab through the sheet's focus trap did not. Shift+Tab off the
+ * start of a sheet wraps to the last element that takes focus, which in the
+ * Instrument sheet was "Tenor saxophone", an unchosen radio, rather than the
+ * chosen one (2026-10-06). Only Tab: focus put on an item any other way —
+ * a tap, a screen reader's browse cursor, code returning focus to where it
+ * was — is left where it is. The first version moved all of those too, and
+ * focus on the Insights tab jumped to the selected Library tab.
  */
 
 /** The two kinds of group, by their ARIA role. */
@@ -72,4 +81,19 @@ export function rovingTabStop(items: readonly RovingItem[]): number {
   const chosen = items.findIndex((item) => item.chosen && item.enabled);
   if (chosen >= 0) return chosen;
   return items.findIndex((item) => item.enabled);
+}
+
+/**
+ * Where focus that has just landed on item `landed` should go instead: the
+ * group's stop, or `null` to leave it. Moved only when the Tab key brought it
+ * from outside the group.
+ */
+export function rovingEntry(
+  items: readonly RovingItem[],
+  landed: number,
+  { fromInside, byTab }: { fromInside: boolean; byTab: boolean },
+): number | null {
+  if (fromInside || !byTab) return null;
+  const stop = rovingTabStop(items);
+  return stop >= 0 && stop !== landed ? stop : null;
 }

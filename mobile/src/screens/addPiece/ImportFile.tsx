@@ -5,7 +5,7 @@ import { FileMusic } from '../../components/icons';
 import { useGoBack } from '../../navigation/useGoBack';
 import { ComposerField } from '../../components/pieces/ComposerField';
 import { TitleField } from '../../components/pieces/TitleField';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import {
@@ -94,6 +94,8 @@ export function ImportFileScreen() {
   const [part, setPart] = useState<string | null>(null);
   const [title, setTitle] = useState('');
   const [composer, setComposer] = useState('');
+  /** One piece per file — see the same guard in `ManualPieceForm`. */
+  const saving = useRef(false);
 
   /** Web hands back a Blob; native hands back a URI. Both read the same way. */
   async function bytesOf(asset: DocumentPicker.DocumentPickerAsset) {
@@ -154,7 +156,7 @@ export function ImportFileScreen() {
   }
 
   async function save() {
-    if (!chosen) {
+    if (!chosen || saving.current) {
       return;
     }
     const trimmed = title.trim();
@@ -164,6 +166,7 @@ export function ImportFileScreen() {
       return;
     }
 
+    saving.current = true;
     setError(null);
     try {
       const piece = await importPiece.mutateAsync({
@@ -180,6 +183,8 @@ export function ImportFileScreen() {
       setError(
         cause instanceof Error ? cause.message : "Couldn't import that file.",
       );
+    } finally {
+      saving.current = false;
     }
   }
 

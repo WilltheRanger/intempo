@@ -6,6 +6,7 @@ import {
   describeAnalysisCost,
   describeLastFreeAnalysis,
   describeReachedAnalysisLimit,
+  usedThisMonth,
   whenAnalysisAllowanceResets,
 } from './analysisAllowance';
 
@@ -65,6 +66,11 @@ describe('whenAnalysisAllowanceResets', () => {
     expect(whenAnalysisAllowanceResets('not a date')).toBe('next month');
     expect(whenAnalysisAllowanceResets(null)).toBe('next month');
     expect(whenAnalysisAllowanceResets(undefined)).toBe('next month');
+  });
+
+  it('writes the day in the app\'s English, whatever the device\'s locale', () => {
+    // Midday UTC, so the day is the 15th in any timezone a runner is in.
+    expect(whenAnalysisAllowanceResets('2026-10-15T12:00:00Z')).toBe('on October 15');
   });
 });
 
@@ -141,5 +147,16 @@ describe('describeAnalysisCost', () => {
     expect(describeAnalysisCost(usage({ used: 0, limit: 1, remaining: 1 }))).toBe(
       '1 free take left this month',
     );
+  });
+});
+
+describe('usedThisMonth', () => {
+  it('names the free limit when the server sent one', () => {
+    expect(usedThisMonth(3, 3)).toBe('all 3 of your free analyses');
+  });
+
+  it('counts what was used otherwise, one in the singular', () => {
+    expect(usedThisMonth(1, null)).toBe('1 analysis');
+    expect(usedThisMonth(4, null)).toBe('4 analyses');
   });
 });

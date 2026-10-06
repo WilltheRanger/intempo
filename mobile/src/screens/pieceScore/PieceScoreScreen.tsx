@@ -7,11 +7,13 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  useWindowDimensions,
   View,
   type LayoutChangeEvent,
 } from 'react-native';
 
 import { describePagePosition, pageAtOffset } from '../../lib/score/pageIndex';
+import { fullBleedMusicWidth } from '../../lib/score/musicWidth';
 import { Stave } from '../../components/notation/Stave';
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
 import { ListenButton } from '../../components/score/ListenButton';
@@ -44,7 +46,7 @@ import {
   radii,
   spacing,
 } from '../../design';
-import { SCREEN_GUTTER } from '../../components/primitives/ScreenContainer';
+import { CONTENT_MAX_WIDTH, SCREEN_GUTTER } from '../../components/primitives/ScreenContainer';
 import { ROW_PADDING_VERTICAL } from '../../components/rowMetrics';
 import {
   describeOmissions,
@@ -73,6 +75,7 @@ import {
   timeSignatureDigits,
 } from '../../lib/notation/keySignature';
 import { loadStateFor } from '../../lib/loadState';
+import { isGone } from '../../data/describeLoadError';
 import { barCells, barGridSummary } from '../../lib/notation/barGrid';
 import { proposalsFor, proposalsRowLabel } from '../../lib/notation/proposals';
 import { usePreferences } from '../../data/preferences';
@@ -80,6 +83,9 @@ import { TrailingChevron } from '../../components/primitives/TrailingChevron';
 
 /** Read from a stand, not glanced at — the same size the warmup page uses. */
 const STAVE_SCALE = 1.25;
+
+/** The paper's margin either side of the music; `musicWidth.ts` needs it too. */
+const PLATE_MARGIN = spacing.lg;
 
 /**
  * How a clef is named in prose.
@@ -175,7 +181,7 @@ export function PieceScoreScreen() {
     route: 'PieceDetail',
     params: { pieceId: params.pieceId },
   });
-  const { data: piece, isError } = usePiece(params.pieceId);
+  const { data: piece, isError, error } = usePiece(params.pieceId);
   const { instrument } = usePreferences();
   const load = loadStateFor({ isError, hasData: piece !== undefined });
 
@@ -188,8 +194,14 @@ export function PieceScoreScreen() {
   const [acceptError, setAcceptError] = useState<string | null>(null);
 
   const [view, setView] = useState<ScoreView>(params.view ?? 'notation');
-  // The engraver needs a pixel width to wrap against, and only layout knows it.
-  const [width, setWidth] = useState<number | null>(null);
+  // The engraver needs a pixel width to wrap against. The window gives it
+  // before the first frame, and layout corrects it if it differs
+  // (`musicWidth.ts`): waiting for layout drew the page without its music and
+  // then dropped everything under it two hundred points.
+  const { width: windowWidth } = useWindowDimensions();
+  const [width, setWidth] = useState(() =>
+    fullBleedMusicWidth(windowWidth, CONTENT_MAX_WIDTH, PLATE_MARGIN),
+  );
 
   /**
    * Whether the long rests are skipped, for listening and for the stave.
@@ -294,7 +306,15 @@ export function PieceScoreScreen() {
         <EmptyState
           fill
           title="Couldn't open this score"
-          description="The piece may have been removed from your library."
+          // Only when it is true. `null` is a source saying "no such piece"
+          // and a 404 is the server saying it; a 500 or a dropped connection
+          // says nothing about the piece, and the title alone is then the
+          // whole of what is known — as on the piece and take screens.
+          description={
+            piece === null || isGone(error)
+              ? 'The piece may have been removed from your library.'
+              : undefined
+          }
           actionLabel="Back"
           onActionPress={goBack}
         />
@@ -554,7 +574,6 @@ export function PieceScoreScreen() {
               off the right edge. This inner view has no padding of its own, so
               its width is the width the music may use. */}
           <View onLayout={measure}>
-          {width === null ? null : (
             <Stave
               notes={stave.items}
               highlightMeasure={soundingMeasure}
@@ -616,7 +635,6 @@ export function PieceScoreScreen() {
               measurePressRole="open"
               measurePressLabel={(measureNumber) => `Correct bar ${measureNumber}`}
             />
-          )}
           </View>
         </View>
       ) : null}
@@ -1183,7 +1201,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.xl,
     backgroundColor: colors.surface,
     paddingVertical: spacing.xl,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: PLATE_MARGIN,
     /*
       **It said "full-bleed to the screen edges" and was eight points short on
       each side.** `ScreenContainer`'s gutter is `SCREEN_GUTTER`, which is

@@ -1,5 +1,83 @@
 # InTempo Decisions
 
+## 2026-10-06 — On the web, a take that could not be sent goes to IndexedDB
+
+**Context:** the take queue keeps a take whose send failed and retries it later.
+Its store writes the WAV with `expo-file-system`, which cannot write in a
+browser. So on the web build, which is the one musicians use, nothing was ever
+queued, and "Your take is safe" was true only until the tab closed.
+
+**Decision:** `takeQueue.store.web.ts`. The entries stay in AsyncStorage, as on
+native. The recording goes in IndexedDB as an `ArrayBuffer`, keyed by account
+and file name.
+
+**Alternatives considered:**
+- *AsyncStorage for the audio as base64.* On the web that is `localStorage`,
+  whose few megabytes per origin also hold the session and the library cache.
+  One take is 1.4 MB before the third that base64 adds.
+- *The Cache API.* It is made for HTTP responses, not data the app keeps, and
+  is harder to delete selectively by account.
+- *Storing the `Blob` itself.* Older WebKit got this wrong. A buffer is plain
+  data everywhere.
+
+**Trade-offs accepted:**
+- Safari can clear site data after seven days without a visit. A take left
+  that long is lost, as it would be on a cleared device. `restoreQueuedTake`
+  and the drain already drop an entry whose bytes are gone.
+- Making the queue real on the web exposed a race native already had: the
+  drain could send a take while Record offered "Send it again".
+  `heldTakes.ts` closes it (`docs/subsystems.md`, recording path).
+
+
+## 2026-10-06 — The app's Supabase client is `@supabase/auth-js`, not `@supabase/supabase-js`
+
+**Context:** every call the app makes to Supabase is `supabase.auth.*`. "The
+paywall was a grant, not a policy" (2026-09-19) checked that before revoking the
+client's table writes. But `createClient` from `@supabase/supabase-js` also builds a
+database client, a storage client and a realtime socket, and the app uses none
+of them. All four were in the first download. Measured with source maps,
+postgrest-js, storage-js, realtime-js and phoenix were about 360 KB of source
+in front of the sign-in screen.
+
+**Decision:** build the auth client directly, `new AuthClient({...})` from
+`@supabase/auth-js`, in `mobile/src/data/auth/session.ts`. It is the same class:
+supabase-js's `SupabaseAuthClient` is a subclass that adds nothing. It is built
+the way `createClient` builds it:
+- the endpoint is `<project>/auth/v1`;
+- the `apikey` and `Authorization: Bearer` headers carry the anon key;
+- the flow is `implicit`;
+- the storage key is `sb-<project ref>-auth-token`.
+
+The storage key is the one that matters. auth-js on its own defaults to
+`supabase.auth.token`, and a session kept under the old key would not be
+found, so every signed-in musician would be signed out by the deploy.
+`session.test.ts` holds all four.
+
+**Alternatives considered:**
+- *Keep supabase-js.* That costs 34.5 KB gzipped on every first visit, for
+  code that is never called.
+- *Lazy-load it.* The session is read at boot, so supabase-js would load on the
+  first frame anyway.
+
+**Trade-offs accepted:**
+- Upgrades now follow auth-js's version rather than supabase-js's. In practice
+  they share one version number and release together.
+- The `X-Client-Info` header now says `gotrue-js` rather than `supabase-js`
+  (auth-js sends none when `headers` is given). It is telemetry, and nothing
+  on the server keys on it.
+- The client can no longer reach the database even by mistake, which is the
+  shape the grants decision wanted.
+
+**Verified:**
+- The first load went from 576 KB to 542 KB gzipped (2,104 KB to 1,972 KB
+  raw), and seven packages left the lockfile.
+- With a build configured against a stubbed project, I signed in on the old
+  supabase-js build and reloaded the same origin onto the new one. The session
+  was found under the same key and the app stayed signed in.
+- Sign-out, a fresh sign-in, and a recovery link in the URL fragment behaved
+  identically on both builds.
+
+
 ## 2026-09-30 — The Library is the first screen; Today is gone
 
 **Context:** the owner asked for a Today redesign, then turned down four looks for it (a full-screen cover, a next-step card, a week summary, a dark stage). Their reason: "the structure and pages make today lack purpose or anything to add." They were right about the structure. Today had become a photograph with one piece on it and a Practice button. That piece was the Library's own `getCurrentPiece`, and the photograph carried no information. Every earlier block on the screen (recent takes, a snapshot, a queue, the warmup) had already moved to the tab it duplicated.

@@ -1,4 +1,5 @@
 import type { PieceHistory } from '../../data/sources/types';
+import { shortDate } from '../calendarDate';
 
 /**
  * What a piece's own practice history says, on the screen for that piece.
@@ -31,6 +32,5 @@ export function historyCount(history: PieceHistory): string | null {
   if (!date || Number.isNaN(date.getTime())) {
     return String(history.takes);
   }
-  const short = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-  return `${history.takes} since ${short}`;
+  return `${history.takes} since ${shortDate(date)}`;
 }

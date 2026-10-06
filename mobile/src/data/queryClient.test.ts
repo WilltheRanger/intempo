@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 // stand-in `client.test.ts` and `describeError.test.ts` use.
 vi.mock('./auth/session', () => ({
   getAccessToken: () => Promise.resolve('token'),
-  signOut: async () => {},
+  endSessionHere: async () => {},
 }));
 
 import { ApiError } from './api/client';

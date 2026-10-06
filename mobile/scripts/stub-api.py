@@ -8,16 +8,21 @@ FastAPI, Supabase, and a real OCR key.
 
     python mobile/scripts/stub-api.py                     # serves on :8123
 
-    # then, in mobile/, with USE_FIXTURES flipped to false:
+    # then, in mobile/ — all three, because the app is only on live data when
+    # it has both a Supabase project and an API host (`data/environment.ts`),
+    # and `--clear` or Metro reuses a bundle with the old values inlined:
+    EXPO_PUBLIC_SUPABASE_URL=http://127.0.0.1:8123 \
+    EXPO_PUBLIC_SUPABASE_ANON_KEY=throwaway-not-a-key \
     EXPO_PUBLIC_API_BASE_URL=http://127.0.0.1:8123 \
       npx expo export --platform web --clear
 
-Serves `/v1/me`, `/v1/scores` (with signed `image_url`s pointing at the repo's
-own public-domain score images), `/v1/scores/:id`, and `/v1/analyses`
-newest-first. The dataset is deliberately uneven: one score has an analysis
-from today, one from three days ago, one from twelve, and one has none at all —
-so "practiced today", relative dates, and the missing case are all on screen at
-once.
+Serves `/v1/health`, `/v1/me`, `/v1/scores/current`, `/v1/scores` (with
+signed `image_url`s pointing at the repo's own public-domain score images),
+`/v1/scores/:id`, and `/v1/analyses` newest-first, and enough of Supabase Auth
+to sign in with any address and password. The dataset is deliberately uneven:
+one score has an analysis from today, one from three days ago, one from twelve,
+and one has none at all — so "practiced today", relative dates, and the missing
+case are all on screen at once.
 
 Not a mock of the backend's *behaviour* — it validates nothing and enforces no
 auth. It is a fixture with an HTTP interface.
@@ -27,26 +32,29 @@ from datetime import datetime, timedelta, timezone
 
 ROOT = pathlib.Path('/home/user/intempo/fixtures/scores')
 NOW = datetime.now(tz=timezone.utc)
-USER = "11111111-1111-1111-1111-111111111111"
+#: Real version-4 UUIDs, as the backend issues. The app checks the version and
+#: variant digits (`data/api/responseSchemas.ts`), and an id like
+#: `11111111-1111-1111-…` has neither, so every row carrying one was refused.
+USER = "11111111-1111-4111-8111-111111111111"
 BASE = "http://127.0.0.1:8123"
 
 def iso(d): return d.isoformat()
 
 SCORES = [
-    ("aaaaaaaa-0000-0000-0000-000000000001", "60 Studies for the Violin, Op. 45", "Franz Wohlfahrt", "01_simple_printed.jpg", 3),
-    ("aaaaaaaa-0000-0000-0000-000000000002", "Sonata No. 1 in G minor, BWV 1001", "J. S. Bach", "02_medium_printed.jpg", 0),
-    ("aaaaaaaa-0000-0000-0000-000000000003", "Suite No. 1 in G major, BWV 1007", "J. S. Bach", "03_complex_printed.jpg", None),
-    ("aaaaaaaa-0000-0000-0000-000000000004", "Caprice No. 24 in A minor", "Niccolò Paganini", "04_handwritten_clean.jpg", 12),
+    ("aaaaaaaa-0000-4000-8000-000000000001", "60 Studies for the Violin, Op. 45", "Franz Wohlfahrt", "01_simple_printed.jpg", 3),
+    ("aaaaaaaa-0000-4000-8000-000000000002", "Sonata No. 1 in G minor, BWV 1001", "J. S. Bach", "02_medium_printed.jpg", 0),
+    ("aaaaaaaa-0000-4000-8000-000000000003", "Suite No. 1 in G major, BWV 1007", "J. S. Bach", "03_complex_printed.jpg", None),
+    ("aaaaaaaa-0000-4000-8000-000000000004", "Caprice No. 24 in A minor", "Niccolò Paganini", "04_handwritten_clean.jpg", 12),
     # A scan in flight and a scan that failed. Both are states the app can only
     # reach against a real backend and both have their own screen, so without
     # them here the only way to look at either is to photograph a page and hope
     # it does the thing you wanted to see.
-    ("aaaaaaaa-0000-0000-0000-000000000005", "Six Suites for Cello, BWV 1010", "J. S. Bach", "02_medium_printed.jpg", None),
-    ("aaaaaaaa-0000-0000-0000-000000000006", "Études, Op. 20", "Jacques Féréol Mazas", "04_handwritten_clean.jpg", None),
+    ("aaaaaaaa-0000-4000-8000-000000000005", "Six Suites for Cello, BWV 1010", "J. S. Bach", "02_medium_printed.jpg", None),
+    ("aaaaaaaa-0000-4000-8000-000000000006", "Études, Op. 20", "Jacques Féréol Mazas", "04_handwritten_clean.jpg", None),
 ]
 
-READING_ID = "aaaaaaaa-0000-0000-0000-000000000005"
-FAILED_ID = "aaaaaaaa-0000-0000-0000-000000000006"
+READING_ID = "aaaaaaaa-0000-4000-8000-000000000005"
+FAILED_ID = "aaaaaaaa-0000-4000-8000-000000000006"
 
 #: The stages `transcription_runner.py` reports, in order, handed out one per
 #: request so a poll actually watches something move rather than sitting on one
@@ -92,7 +100,7 @@ DEMO_MEASURES = [
 # Keyed by score id. Only some music has movements, which is the point — the
 # column is nullable and the UI has to cope with both.
 MOVEMENTS = {
-    "aaaaaaaa-0000-0000-0000-000000000003": "I. Prélude",
+    "aaaaaaaa-0000-4000-8000-000000000003": "I. Prélude",
 }
 
 def score_row(sid, title, composer, img, _):
@@ -102,7 +110,7 @@ def score_row(sid, title, composer, img, _):
     confidence = 0.94 if sid != FAILED_ID else None
     # One score reads back as uncertain, so the "wasn't confident" line has
     # somewhere to appear. 0.62 is under the chain's own 0.7 threshold.
-    if sid == "aaaaaaaa-0000-0000-0000-000000000004":
+    if sid == "aaaaaaaa-0000-4000-8000-000000000004":
         confidence = 0.62
     return {
         "id": sid, "user_id": USER, "title": title, "composer": composer,
@@ -123,7 +131,7 @@ def score_row(sid, title, composer, img, _):
             "ocr_confidence": confidence or 0.0,
             "notes_to_human": (
                 "Bar 3 was hard to read; the beaming under the third beat is a guess."
-                if sid == "aaaaaaaa-0000-0000-0000-000000000004"
+                if sid == "aaaaaaaa-0000-4000-8000-000000000004"
                 else ""
             ),
         },
@@ -272,16 +280,16 @@ def _finish(row):
 #: at the same picture: a rushing take, a steady one, and a drifting one.
 TAKE_SHAPES = {
     # Steady, then rushing from measure 5 — which is what the verdict says.
-    "aaaaaaaa-0000-0000-0000-000000000001": (
+    "aaaaaaaa-0000-4000-8000-000000000001": (
         [-1.0, -2.0, -3.5, -4.0, -11.0, -14.0, -16.0, -12.0],
         "You rushed across measures 5 to 8.", "rush", 0.91),
     # Inside tolerance the whole way. The screens need a take with nothing
     # wrong with it, or "good" is a state nothing has ever rendered.
-    "aaaaaaaa-0000-0000-0000-000000000002": (
+    "aaaaaaaa-0000-4000-8000-000000000002": (
         [1.0, -1.5, 2.0, 0.5, -2.0, 1.5, -0.5, 2.5],
         "Steady the whole way through.", "on", 0.95),
     # Dragging, and worse as it goes — the shape a tiring player makes.
-    "aaaaaaaa-0000-0000-0000-000000000004": (
+    "aaaaaaaa-0000-4000-8000-000000000004": (
         [2.0, 4.0, 7.0, 9.0, 12.0, 15.0, 19.0, 23.0],
         "You dragged, and it grew through the take.", "drag", 0.78),
 }
@@ -295,7 +303,7 @@ for sid, _t, _c, _i, days in SCORES:
         sid, ([-1.0] * 8, "Steady the whole way through.", "on", 0.9))
     per_note, per_measure, trend = _result(shape)
     ANALYSES.append({
-        "id": f"bbbbbbbb-0000-0000-0000-{sid[-12:]}", "user_id": USER, "score_id": sid,
+        "id": f"bbbbbbbb-0000-4000-8000-{sid[-12:]}", "user_id": USER, "score_id": sid,
         "assignment_id": None, "status": "done", "target_bpm": 96, "bpm_source": "manual",
         "metronome_mode": "off", "audio_url": "x", "error_message": None,
         "created_at": iso(at), "updated_at": iso(at),
@@ -315,6 +323,9 @@ ANALYSES.sort(key=lambda a: a["created_at"], reverse=True)
 CREATED: dict = {}
 UPLOADED: set = set()
 
+#: Answers to "How did that sound?", by analysis id.
+CORRECTIONS: dict = {}
+
 #: Sizes of every audio PUT this run, in order. Read back at `/__uploads`.
 UPLOAD_SIZES: list = []
 
@@ -325,8 +336,27 @@ SUBMITTED: dict = {}
 
 
 def _public(row):
-    """A stored analysis without the stub's own bookkeeping."""
-    return {k: v for k, v in row.items() if not k.startswith("_")}
+    """A stored analysis as `routers/analyses.py`'s `AnalysisResponse` sends it.
+
+    Every field the real model declares, with its default where the stub keeps
+    nothing — the app's response check requires each of them, and a row
+    missing one is refused whole, so a take list of rows that predate a field
+    read as no takes at all. `audio_url` becomes the signed `url` the real
+    router mints; the stub's own bookkeeping (`_polls`) is dropped.
+    """
+    out = {k: v for k, v in row.items()
+           if not k.startswith("_") and k not in ("audio_url", "error_message")}
+    result = row.get("result_json") or {}
+    out.setdefault("instrument", ME["instrument"])
+    out.setdefault("skip_long_rests", None)
+    out.setdefault("from_measure", None)
+    out.setdefault("failure_reason", None)
+    out.setdefault("alignment_quality", result.get("quality"))
+    out.setdefault("stage", None)
+    out.setdefault("finished_at", row["updated_at"] if row.get("status") == "done" else None)
+    out["url"] = row.get("audio_url") or ""
+    out["expires_in"] = 3600
+    return out
 
 #: Failure injection for the error-handling paths. `GET /__fail?status=500`
 #: makes every subsequent /v1/* answer with that status; `status=0` clears it.
@@ -370,7 +400,122 @@ ME = {"id": USER, "email": "you@example.com", "tier": "free", "role": "student",
       # screen's quota row is driven by it. Omitting it made the row vanish and
       # look like an app bug, when the app was correctly declining to invent a
       # count the server never sent.
-      "analyses": {"used": 2, "limit": 3, "remaining": 1, "resets_at": iso(_next_month())}}
+      "analyses": {"used": 2, "limit": 3, "remaining": 1, "resets_at": iso(_next_month())},
+      # The profile fields `models/user.py` added for onboarding. The app's
+      # response check requires `training_consent` and refuses the whole
+      # account without it, so a stub that predates it parked every live code
+      # path behind "Couldn't open your account" (2026-10-06).
+      "instrument": "violin", "display_name": "Sam", "avatar_url": None,
+      "onboarded_at": iso(NOW - timedelta(days=60)), "training_consent": False}
+
+#: What a brand-new account's profile holds before onboarding: nothing chosen
+#: yet, so the app opens on "Let's get you set up" as a real sign-up does.
+FRESH_PROFILE = {"instrument": None, "display_name": None, "onboarded_at": None}
+
+
+def _me():
+    """`GET /v1/me`: the seeded account, or a fresh one in `?empty=1` mode."""
+    if FAIL["tier_limit"]:
+        # The same month the refusal describes, so the app's allowance line
+        # and its refusal can be checked against each other.
+        spent = dict(ME)
+        spent["analyses"] = {"used": 3, "limit": 3, "remaining": 0,
+                             "resets_at": iso(_next_month())}
+        return spent
+    if not FAIL["empty"]:
+        return ME
+    fresh = {**ME, **FRESH_PROFILE, **PROFILE_EDITS}
+    fresh["analyses"] = {"used": 0, "limit": 3, "remaining": 3,
+                         "resets_at": iso(_next_month())}
+    return fresh
+
+
+#: What `PATCH /v1/me` has saved in `?empty=1` mode, so onboarding can be walked
+#: to the end and the gate falls away the way it does against the real backend.
+PROFILE_EDITS = {}
+
+
+def _current():
+    """`GET /v1/scores/current`, by the rule `routers/scores.py` uses.
+
+    The score of the newest take; else the newest score; else nothing.
+    """
+    if FAIL["empty"] and not CREATED:
+        return {"score": None, "last_practiced_at": None}
+    takes = sorted([_public(a) for a in SUBMITTED.values()] + ANALYSES,
+                   key=lambda a: a["created_at"], reverse=True)
+    rows = {s[0]: (CREATED.get(s[0]) or score_row(*s)) for s in SCORES}
+    rows.update(CREATED)
+    for take in takes:
+        row = rows.get(take.get("score_id"))
+        if row:
+            return {"score": _score(row), "last_practiced_at": take["created_at"]}
+    newest = sorted(rows.values(), key=lambda r: r["created_at"], reverse=True)
+    return {"score": _score(newest[0]) if newest else None, "last_practiced_at": None}
+
+
+def _fixed_reading():
+    """What the stub's "OCR" reads from any page: the same three bars."""
+    return {
+        "time_signature": "4/4", "key_signature": "D major", "tempo_marking": None,
+        "bpm_hint": 92, "clef": "treble",
+        "measures": [
+            {"measure_number": 1, "slurs": [], "notes": [
+                {"pitch": p, "duration": "quarter", "tied_to_next": False}
+                for p in ("D4", "E4", "F#4", "G4")]},
+            {"measure_number": 2, "slurs": [], "notes": [
+                {"pitch": p, "duration": "quarter", "tied_to_next": False}
+                for p in ("A4", "G4", "F#4", "E4")]},
+            {"measure_number": 3, "slurs": [], "notes": [
+                {"pitch": "D4", "duration": "whole", "tied_to_next": False}]},
+        ],
+        "repeats": [], "ocr_confidence": 0.91, "notes_to_human": "",
+    }
+
+
+def _queue_reading(row, pages):
+    """Pages handed to the worker: queued, empty, and read over three polls."""
+    row.update({
+        "_pages": pages, "_polls": 0,
+        "source_image_url": pages[0],
+        "image_url": f"{BASE}/img/01_simple_printed.jpg?token=signed",
+        "image_url_expires_at": iso(NOW + timedelta(hours=1)),
+        "image_urls": [f"{BASE}/img/01_simple_printed.jpg?token=signed" for _ in pages],
+        "page_count": len(pages),
+        "score_json": {"measures": [], "repeats": [], "ocr_confidence": 0.0, "notes_to_human": ""},
+        "ocr_confidence": None,
+        "transcription_status": "queued", "transcription_stage": None,
+        "transcription_error": None, "transcription_accepted_at": None,
+        "page_image_discarded_at": None,
+    })
+
+
+def _advance_reading(row):
+    """One poll of a queued reading: queued, then two stages, then done."""
+    if row.get("transcription_status") not in ("queued", "reading") or "_polls" not in row:
+        return
+    row["_polls"] += 1
+    if row["_polls"] >= 3:
+        row.update({"transcription_status": "done", "transcription_stage": None,
+                    "score_json": _fixed_reading(), "ocr_confidence": 0.91})
+    else:
+        row.update({"transcription_status": "reading",
+                    "transcription_stage": STAGES[min(row["_polls"], len(STAGES) - 1)]})
+
+
+def _score(row):
+    """A score as `ScoreResponse` sends it: every field, none of the stub's."""
+    out = {k: v for k, v in row.items() if not k.startswith("_")}
+    for key, value in (("page_count", 1 if out.get("image_url") else 0),
+                       ("image_urls", [out["image_url"]] if out.get("image_url") else []),
+                       ("concerns", []), ("transcription_status", "done"),
+                       ("transcription_stage", None), ("transcription_error", None),
+                       ("transcription_accepted_at", None), ("page_image_discarded_at", None),
+                       ("shared_with_studio", None), ("source_image_url", None),
+                       ("image_url", None), ("image_url_expires_at", None),
+                       ("ocr_confidence", None), ("movement", None), ("composer", None)):
+        out.setdefault(key, value)
+    return out
 
 
 def _b64(obj):
@@ -443,6 +588,8 @@ class H(http.server.BaseHTTPRequestHandler):
             # library that was already full.
             if "empty" in q:
                 FAIL["empty"] = q["empty"][0] == "1"
+                # Each `?empty=1` is a new sign-up, so onboarding starts over.
+                PROFILE_EDITS.clear()
             return self._send(200, json.dumps(FAIL).encode())
         if FAIL["status"] and path.startswith("/v1/"):
             return self._send(FAIL["status"],
@@ -454,13 +601,29 @@ class H(http.server.BaseHTTPRequestHandler):
             if "reset=1" in self.path:
                 UPLOAD_SIZES.clear()
             return self._send(200, json.dumps({"sizes": UPLOAD_SIZES}).encode())
+        if path == "/v1/health":
+            return self._send(200, b'{"status":"ok"}')
+        if path == "/v1/ready":
+            # The Help screen's connection check. The real one lists what is
+            # blocking by name; a stub with nothing to configure has nothing.
+            return self._send(200, b'{"ready":true,"blocking":[]}')
         if path == "/v1/me":
-            if FAIL["empty"]:
-                fresh = dict(ME)
-                fresh["analyses"] = {"used": 0, "limit": 3, "remaining": 3,
-                                     "resets_at": iso(_next_month())}
-                return self._send(200, json.dumps(fresh).encode())
-            return self._send(200, json.dumps(ME).encode())
+            return self._send(200, json.dumps(_me()).encode())
+        if path == "/v1/me/export":
+            # `export_me`'s shape. The account, the library and the takes,
+            # with the media counted rather than included, as the real one.
+            takes = [_public(a) for a in SUBMITTED.values()] + [_public(a) for a in ANALYSES]
+            library = [CREATED.get(s[0]) or score_row(*s) for s in SCORES]
+            return self._send(200, json.dumps({
+                "export_version": 1, "generated_at": iso(datetime.now(tz=timezone.utc)),
+                "account": _me(), "library": library, "practice_analyses": takes,
+                "verdict_corrections": [c for cs in CORRECTIONS.values() for c in cs],
+                "assignments": [], "owned_studios": [], "sync_events": [],
+                "stored_media": {"profile_photo": False, "score_pages": len(library),
+                                 "practice_recordings": len(takes), "included_in_json": False},
+            }).encode())
+        if path == "/v1/scores/current":
+            return self._send(200, json.dumps(_current()).encode())
         if path == "/v1/scores":
             if FAIL["empty"]:
                 return self._send(200, b"[]")
@@ -471,24 +634,49 @@ class H(http.server.BaseHTTPRequestHandler):
             seeded = {s[0] for s in SCORES}
             rows += [r for sid, r in CREATED.items() if sid not in seeded]
             rows.sort(key=lambda r: r["created_at"], reverse=True)
-            return self._send(200, json.dumps(rows).encode())
+            return self._send(200, json.dumps([_score(r) for r in rows]).encode())
         if path.startswith("/v1/scores/"):
             sid = path.rsplit("/", 1)[-1]
             row = CREATED.get(sid) or next(
                 (score_row(*s) for s in SCORES if s[0] == sid), None)
-            return self._send(200 if row else 404, json.dumps(row or {"detail": "not found"}).encode())
+            if row is not None:
+                _advance_reading(row)
+            return self._send(200 if row else 404,
+                              json.dumps(_score(row) if row else {"detail": "not found"}).encode())
         if path == "/v1/analyses":
             if FAIL["empty"]:
                 return self._send(200, b"[]")
-            return self._send(200, json.dumps(
-                [_public(a) for a in SUBMITTED.values()] + ANALYSES).encode())
+            # The filters and paging `list_analyses` takes. Ignoring
+            # `score_id` gave every piece's "Your takes" every take.
+            from urllib.parse import parse_qs, urlparse
+            q = parse_qs(urlparse(self.path).query)
+            rows = sorted([_public(a) for a in SUBMITTED.values()]
+                          + [_public(a) for a in ANALYSES],
+                          key=lambda a: a["created_at"], reverse=True)
+            if "score_id" in q:
+                rows = [a for a in rows if a["score_id"] == q["score_id"][0]]
+            if "status" in q:
+                rows = [a for a in rows if a["status"] == q["status"][0]]
+            if (q.get("include_result") or ["true"])[0] == "false":
+                rows = [dict(a, result_json=None) for a in rows]
+            offset = int((q.get("offset") or ["0"])[0])
+            limit = int((q.get("limit") or ["50"])[0])
+            return self._send(200, json.dumps(rows[offset:offset + limit]).encode())
+        if path.startswith("/v1/analyses/") and path.endswith("/corrections"):
+            aid = path.split("/")[3]
+            return self._send(200, json.dumps(CORRECTIONS.get(aid, [])).encode())
+        if path.startswith("/v1/analyses/") and path.endswith("/recording"):
+            # A take's own recording, signed for an hour. The stub keeps no
+            # audio, so it answers 404 the way the real router does for a take
+            # whose file is gone, and the result screen says so.
+            return self._send(404, b'{"detail":"recording not found"}')
         if path.startswith("/v1/analyses/"):
             aid = path.rsplit("/", 1)[-1]
             row = SUBMITTED.get(aid)
             if row is None:
                 match = next((a for a in ANALYSES if a["id"] == aid), None)
                 return self._send(200 if match else 404,
-                                  json.dumps(match or {"detail": "not found"}).encode())
+                                  json.dumps(_public(match) if match else {"detail": "not found"}).encode())
             # The pipeline takes real seconds, and the client polls every 1.5 s
             # for up to a minute. Advancing one step per poll exercises the
             # waiting state instead of handing back a finished analysis on the
@@ -555,10 +743,26 @@ class H(http.server.BaseHTTPRequestHandler):
         if path == "/auth/v1/logout":
             return self._send(204, b"")
 
-        if path in ("/v1/upload/score-image", "/v1/upload/audio"):
+        if path.startswith("/v1/analyses/") and path.endswith("/corrections"):
+            # `POST /v1/analyses/{id}/corrections`: the musician's answer to
+            # "How did that sound?", one row per bar, 201 with the rows.
+            aid = path.split("/")[3]
+            body = json.loads(self._read_body() or b"{}")
+            rows = [{"id": f"eeeeeeee-0000-4000-8000-{len(CORRECTIONS) + i + 1:012d}",
+                     "analysis_id": aid, "user_id": USER,
+                     "measure_number": c.get("measure_number"),
+                     "app_verdict": c.get("app_verdict"), "user_verdict": c.get("user_verdict"),
+                     "comment": c.get("comment"), "created_at": iso(datetime.now(tz=timezone.utc))}
+                    for i, c in enumerate(body.get("corrections") or [])]
+            if not rows:
+                return self._send(422, b'{"detail":"corrections must not be empty"}')
+            CORRECTIONS.setdefault(aid, []).extend(rows)
+            return self._send(201, json.dumps(rows).encode())
+        if path in ("/v1/upload/score-image", "/v1/upload/audio", "/v1/upload/avatar"):
             body = json.loads(self._read_body() or b"{}")
             ext = (body.get("filename") or "page.jpg").rsplit(".", 1)[-1]
-            bucket = "score-images" if "score-image" in path else "audio-uploads"
+            bucket = ("score-images" if "score-image" in path
+                      else "avatars" if "avatar" in path else "audio-uploads")
             key = f"{USER}/{len(UPLOADED) + 1}.{ext}"
             # The same shape and the same path grammar the backend's validator
             # requires: /storage/v1/object/upload/sign/<bucket>/<user>/<file>.
@@ -581,11 +785,13 @@ class H(http.server.BaseHTTPRequestHandler):
 
         if path == "/v1/analyses":
             body = json.loads(self._read_body() or b"{}")
-            # `_assert_audio_url_owned_by` rejects a URL outside the caller's
-            # own storage prefix, and the client is meant never to send one.
-            if not body.get("audio_url"):
-                return self._send(422, b'{"detail":"audio_url is required"}')
-            aid = f"dddddddd-0000-0000-0000-{len(SUBMITTED) + 1:012d}"
+            # The app sends the durable `audio_key` the upload returned;
+            # `audio_url` is the older spelling the backend still accepts.
+            # One of the two is required, as `CreateAnalysisRequest` has it.
+            audio = body.get("audio_key") or body.get("audio_url")
+            if not audio:
+                return self._send(422, b'{"detail":"audio_key is required"}')
+            aid = f"dddddddd-0000-4000-8000-{len(SUBMITTED) + 1:012d}"
             at = NOW
             SUBMITTED[aid] = {
                 "id": aid, "user_id": USER, "score_id": body.get("score_id"),
@@ -593,7 +799,9 @@ class H(http.server.BaseHTTPRequestHandler):
                 "target_bpm": body.get("target_bpm") or 96,
                 "bpm_source": body.get("bpm_source") or "manual",
                 "metronome_mode": body.get("metronome_mode") or "off",
-                "audio_url": body["audio_url"], "error_message": None,
+                "audio_url": audio, "error_message": None,
+                "instrument": body.get("instrument"),
+                "from_measure": body.get("from_measure"),
                 "failure_reason": None, "alignment_quality": None, "finished_at": None,
                 "created_at": iso(at), "updated_at": iso(at),
                 "result_json": None,
@@ -607,46 +815,75 @@ class H(http.server.BaseHTTPRequestHandler):
 
         if path == "/v1/scores":
             body = json.loads(self._read_body() or b"{}")
-            image_url = body.get("image_url")
-            if image_url and image_url not in UPLOADED:
+            pages = body.get("image_urls") or ([body["image_url"]] if body.get("image_url") else [])
+            missing = [u for u in pages if u not in UPLOADED]
+            if missing:
                 # Mirrors the real failure: the backend downloads the URL it was
                 # given, and a URL nothing was PUT to cannot be read.
                 return self._send(502, json.dumps(
                     {"detail": "image download returned status 404"}).encode())
-            sid = f"cccccccc-0000-0000-0000-{len(CREATED) + 1:012d}"
+            sid = f"cccccccc-0000-4000-8000-{len(CREATED) + 1:012d}"
             row = {
                 "id": sid, "user_id": USER,
                 "title": body.get("title") or "Untitled",
                 "composer": body.get("composer"),
                 "movement": body.get("movement"),
-                "source_image_url": image_url,
-                "image_url": f"{BASE}/img/01_simple_printed.jpg?token=signed" if image_url else None,
-                "image_url_expires_at": iso(NOW + timedelta(hours=1)) if image_url else None,
-                "score_json": {
-                    "time_signature": body.get("time_signature") or "4/4",
-                    "key_signature": "D major", "tempo_marking": None,
-                    "bpm_hint": body.get("bpm_hint") or 92,
-                    "clef": body.get("clef") or "treble",
-                    "measures": [
-                        {"measure_number": 1, "slurs": [], "notes": [
-                            {"pitch": p, "duration": "quarter", "tied_to_next": False}
-                            for p in ("D4", "E4", "F#4", "G4")]},
-                        {"measure_number": 2, "slurs": [], "notes": [
-                            {"pitch": p, "duration": "quarter", "tied_to_next": False}
-                            for p in ("A4", "G4", "F#4", "E4")]},
-                        {"measure_number": 3, "slurs": [], "notes": [
-                            {"pitch": "D4", "duration": "whole", "tied_to_next": False}]},
-                    ],
-                    "repeats": [],
-                    "ocr_confidence": 0.0 if image_url is None else 0.91,
-                    "notes_to_human": "",
-                },
-                "shared_with_studio": None,
-                "ocr_confidence": None if image_url is None else 0.91,
-                "created_at": iso(NOW), "updated_at": iso(NOW),
+                "created_at": iso(datetime.now(tz=timezone.utc)),
+                "updated_at": iso(datetime.now(tz=timezone.utc)),
             }
+            if pages:
+                # `create_score` with pages: queued, read by the worker, and
+                # empty until then (`_awaiting_transcription`).
+                _queue_reading(row, pages)
+            else:
+                # A piece typed in: no notes, done at once (`_hand_entered`).
+                row.update({
+                    "score_json": {"clef": body.get("clef"),
+                                   "time_signature": body.get("time_signature"),
+                                   "bpm_hint": body.get("bpm_hint"),
+                                   "measures": [], "repeats": [], "ocr_confidence": 0.0,
+                                   "notes_to_human": ""},
+                    "ocr_confidence": 0.0, "transcription_status": "done",
+                })
             CREATED[sid] = row
-            return self._send(201, json.dumps(row).encode())
+            return self._send(201, json.dumps(_score(row)).encode())
+
+        if path == "/v1/scores/import":
+            # A notation file: read at once. The stub does not parse MusicXML,
+            # so every import is the fixed three bars.
+            body = json.loads(self._read_body() or b"{}")
+            sid = f"cccccccc-0000-4000-8000-{len(CREATED) + 1:012d}"
+            row = {"id": sid, "user_id": USER, "title": body.get("title") or "Untitled",
+                   "composer": body.get("composer"), "movement": body.get("movement"),
+                   "score_json": _fixed_reading(), "ocr_confidence": 1.0,
+                   "transcription_status": "done",
+                   "created_at": iso(datetime.now(tz=timezone.utc)),
+                   "updated_at": iso(datetime.now(tz=timezone.utc))}
+            CREATED[sid] = row
+            return self._send(201, json.dumps(_score(row)).encode())
+
+        if path.startswith("/v1/scores/") and path.rsplit("/", 1)[-1] in ("accept", "transcribe", "transcription"):
+            sid, action = path.split("/")[3], path.rsplit("/", 1)[-1]
+            row = CREATED.get(sid) or next((score_row(*s) for s in SCORES if s[0] == sid), None)
+            if row is None:
+                return self._send(404, b'{"detail":"score not found"}')
+            body = json.loads(self._read_body() or b"{}")
+            now = iso(datetime.now(tz=timezone.utc))
+            if action == "accept":
+                # "The reading is right, discard the photograph."
+                row.update({"transcription_accepted_at": now, "page_image_discarded_at": now,
+                            "image_url": None, "image_urls": []})
+            elif action == "transcribe":
+                # Read the same pages again.
+                _queue_reading(row, row.get("_pages") or [row.get("source_image_url") or "page"])
+            else:
+                pages = body.get("image_urls") or ([body["image_url"]] if body.get("image_url") else [])
+                if not pages:
+                    return self._send(422, b'{"detail":"image_url or image_urls is required"}')
+                _queue_reading(row, pages)
+            row["updated_at"] = now
+            CREATED[sid] = row
+            return self._send(200, json.dumps(_score(row)).encode())
 
         self._send(404, b'{"detail":"not found"}')
 
@@ -663,6 +900,9 @@ class H(http.server.BaseHTTPRequestHandler):
             if not body:
                 return self._send(400, b'{"detail":"empty upload"}')
             UPLOADED.add(f"{BASE}{self.path}")
+            # And the object key, which is what the app sends back now: the
+            # upload answers `object_key`, and `image_urls` carries those.
+            UPLOADED.add(path.split("/storage/v1/object/upload/sign/", 1)[1].split("/", 1)[1])
             # Byte count only, never the audio. A test asserting that a retry
             # re-sent *the same take* has to measure something, and
             # Playwright does not expose a Blob request body — so the
@@ -673,6 +913,22 @@ class H(http.server.BaseHTTPRequestHandler):
 
     def do_PATCH(self):
         path = self.path.split("?")[0]
+        if path == "/v1/me":
+            body = json.loads(self._read_body() or b"{}")
+            if not body:
+                return self._send(400, b'{"detail":"patch body must include at least one field"}')
+            target = PROFILE_EDITS if FAIL["empty"] else ME
+            for key in ("instrument", "display_name", "training_consent"):
+                if key in body:
+                    target[key] = body[key]
+            if body.get("onboarded"):
+                target["onboarded_at"] = iso(datetime.now(tz=timezone.utc))
+            if "avatar_key" in body:
+                # The stub keeps no bytes, so a set photo is a fixture image
+                # and a cleared one is none, which is what the app draws from.
+                target["avatar_url"] = (f"{BASE}/img/01_simple_printed.jpg"
+                                        if body["avatar_key"] else None)
+            return self._send(200, json.dumps(_me()).encode())
         if path.startswith("/v1/scores/"):
             sid = path.rsplit("/", 1)[-1]
             row = CREATED.get(sid) or next(
@@ -691,23 +947,43 @@ class H(http.server.BaseHTTPRequestHandler):
                 row["composer"] = body["composer"]
             if "movement" in body:
                 row["movement"] = body["movement"]
+            # The bar editor's save: the whole corrected reading, as
+            # `UpdateScoreRequest.score_json` takes it. Ignored here before, so
+            # an edit looked saved and was gone on the next load.
+            if body.get("score_json") is not None:
+                row["score_json"] = body["score_json"]
+            if body.get("clef") is not None and isinstance(row.get("score_json"), dict):
+                row["score_json"] = dict(row["score_json"], clef=body["clef"])
             CREATED[sid] = row
-            return self._send(200, json.dumps(row).encode())
+            return self._send(200, json.dumps(_score(row)).encode())
         self._send(404, b'{"detail":"not found"}')
 
     def do_DELETE(self):
         path = self.path.split("?")[0]
+        if path == "/v1/me":
+            # The account and everything in it. The stub cannot forget the
+            # seeded library for good, so it empties what it can and answers
+            # 204 the way `delete_me` does.
+            ANALYSES.clear(); SUBMITTED.clear(); CREATED.clear(); CORRECTIONS.clear()
+            SCORES.clear()
+            return self._send(204, b"")
         if path.startswith("/v1/scores/"):
             sid = path.rsplit("/", 1)[-1]
-            if any(a["score_id"] == sid for a in ANALYSES):
-                return self._send(409, json.dumps({"detail":
-                    "score has dependent analyses; delete those first (soft-delete is V2)"}).encode())
-            if CREATED.pop(sid, None) is not None:
-                return self._send(204, b"")
-            if any(s[0] == sid for s in SCORES):
-                SCORES[:] = [s for s in SCORES if s[0] != sid]
-                return self._send(204, b"")
-            return self._send(404, b'{"detail":"score not found"}')
+            known = sid in CREATED or any(s[0] == sid for s in SCORES)
+            if not known:
+                return self._send(404, b'{"detail":"score not found"}')
+            # The piece and its practice history together, as `delete_score`
+            # does: it used to refuse a piece with takes (409), which the
+            # backend stopped doing when "Delete piece" became "and all its
+            # takes".
+            ANALYSES[:] = [a for a in ANALYSES if a["score_id"] != sid]
+            for aid in [aid for aid, a in SUBMITTED.items() if a["score_id"] == sid]:
+                del SUBMITTED[aid]
+            # Both places a piece can be: a renamed seeded piece is in CREATED
+            # *and* SCORES, and removing only the first left it listed.
+            CREATED.pop(sid, None)
+            SCORES[:] = [s for s in SCORES if s[0] != sid]
+            return self._send(204, b"")
         self._send(404, b'{"detail":"not found"}')
 
 

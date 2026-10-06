@@ -165,12 +165,28 @@ export function TranscriptionReviewScreen() {
           creates the row and returns; reading the page happens in a worker and
           is watched on the score screen.
         */
-        <PrimaryButton
-          label={saveLabel}
-          onPress={() => void save()}
-          loading={attachmentPieceId ? attach.isPending : transcribe.isPending}
-          disabled={attachmentPieceId ? attach.isPending : transcribe.isPending}
-        />
+        <View>
+          {/*
+            **With the button it answers, not under the page.** It was the
+            last thing in the scroll, below a page photograph taller than the
+            space left on a phone, so "Add a title." and a save the server
+            refused both landed off the bottom of the screen (measured at
+            y=867 of 844, 2026-10-06): the tap looked like it had done nothing.
+            The footer is always on screen, as `MeasureEditScreen` found for
+            its own Save.
+          */}
+          {error ? (
+            <Text accessibilityRole="alert" variant="metadataSmall" color="textSecondary" style={styles.footerError}>
+              {error}
+            </Text>
+          ) : null}
+          <PrimaryButton
+            label={saveLabel}
+            onPress={() => void save()}
+            loading={attachmentPieceId ? attach.isPending : transcribe.isPending}
+            disabled={attachmentPieceId ? attach.isPending : transcribe.isPending}
+          />
+        </View>
       }
     >
       {/* The redesign's head (`redesign/NamePiece.dc.html`). */}
@@ -259,11 +275,6 @@ export function TranscriptionReviewScreen() {
         and the image isn&rsquo;t blurred or covered by shadows.
       </Text>
 
-      {error ? (
-        <Text accessibilityRole="alert" variant="metadataSmall" color="textSecondary" style={styles.error}>
-          {error}
-        </Text>
-      ) : null}
     </ScreenContainer>
   );
 }
@@ -309,7 +320,7 @@ const styles = StyleSheet.create({
   note: {
     marginTop: spacing.lg,
   },
-  error: {
-    marginTop: spacing.lg,
+  footerError: {
+    marginBottom: spacing.md,
   },
 });

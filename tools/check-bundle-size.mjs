@@ -55,8 +55,14 @@ const WEB = join(ROOT, 'mobile', 'dist', '_expo', 'static', 'js', 'web');
  * three small drawings, and a piece's own takes page. Features the owner asked
  * for, not a regression: no new dependency, no barrel import (`Mic` comes by
  * path through `components/icons`). 590 still trips on an icon barrel.
+ *
+ * **Lowered to 560 on 2026-10-06, at a measured 529.** The auth client is now
+ * `@supabase/auth-js` alone. It used to be `@supabase/supabase-js`, whose
+ * database, storage and realtime clients the app never calls, and that took
+ * 34.5 KB off the first load. A ratchet goes down too, so that putting
+ * `createClient` back (about 563) trips it rather than eating the headroom.
  */
-const BUDGET_KB = 590;
+const BUDGET_KB = 560;
 
 function mainBundle() {
   if (!existsSync(WEB)) {

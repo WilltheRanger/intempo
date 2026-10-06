@@ -1,7 +1,7 @@
-import { useNavigation } from '@react-navigation/native';
+import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { useQueryClient } from '@tanstack/react-query';
 import { Library, Plus, Search } from '../../components/icons';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 
 import { FadeIn } from '../../components/motion';
@@ -23,6 +23,7 @@ import {
   continueLineFor,
   hasNotation,
   pendingLineFor,
+  pendingRecheckIn,
   type PendingCheck,
 } from '../../lib/library/continueLine';
 import {
@@ -98,12 +99,15 @@ export function LibraryScreen() {
   const pendingAnalysis = usePendingAnalysis();
   const pendingAnalysisId = pendingAnalysis?.analysisId ?? null;
   const [pendingCheck, setPendingCheck] = useState<PendingCheck | null>(null);
-  const checkPendingAnalysis = useCallback(async () => {
+  const checkPendingAnalysis = useCallback(async ({ quiet = false } = {}) => {
     if (!pendingAnalysisId) {
       setPendingCheck(null);
       return;
     }
-    setPendingCheck('checking');
+    // A re-check the app makes on its own changes the line only when the
+    // answer does: no "Checking…" every few seconds, and no "Couldn't check"
+    // for one request that failed on the way.
+    if (!quiet) setPendingCheck('checking');
     try {
       const status = await readPendingAnalysisStatus(pendingAnalysisId);
       if (status === 'missing') {
@@ -114,12 +118,36 @@ export function LibraryScreen() {
       }
       setPendingCheck(status);
     } catch {
-      setPendingCheck('unavailable');
+      if (!quiet) setPendingCheck('unavailable');
     }
   }, [pendingAnalysisId]);
   useEffect(() => {
     void checkPendingAnalysis();
   }, [checkPendingAnalysis]);
+
+  // While the line says "Analysing", ask again on its own, and only while the
+  // Library is the screen in front (`pendingRecheckIn`).
+  const focused = useIsFocused();
+  const analysingSince = useRef<{ id: string; at: number } | null>(null);
+  useEffect(() => {
+    if (!pendingAnalysisId || pendingCheck !== 'working' || !focused) return undefined;
+    if (analysingSince.current?.id !== pendingAnalysisId) {
+      analysingSince.current = { id: pendingAnalysisId, at: Date.now() };
+    }
+    const since = analysingSince.current.at;
+    const every = pendingRecheckIn(pendingCheck, Date.now() - since);
+    if (every === null) return undefined;
+    // An interval, not a timeout: a re-check that answers "working" again sets
+    // the same state, which does not re-render, so a timeout would fire once.
+    const timer = setInterval(() => {
+      if (pendingRecheckIn('working', Date.now() - since) === null) {
+        clearInterval(timer);
+        return;
+      }
+      void checkPendingAnalysis({ quiet: true });
+    }, every);
+    return () => clearInterval(timer);
+  }, [pendingAnalysisId, pendingCheck, focused, checkPendingAnalysis]);
 
   function openPendingVerdict() {
     if (!pendingAnalysis) {

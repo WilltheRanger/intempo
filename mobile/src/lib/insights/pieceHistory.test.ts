@@ -11,8 +11,9 @@ import { historyCount } from './pieceHistory';
  */
 describe('historyCount', () => {
   it('is the count and the start, beside a heading that already says takes', () => {
-    expect(historyCount({ takes: 14, since: '2026-09-13T12:00:00Z', recent: [] })).toMatch(
-      /^14 since \S/,
+    // Midday UTC, so the day is the 13th in any timezone a runner is in.
+    expect(historyCount({ takes: 14, since: '2026-09-13T12:00:00Z', recent: [] })).toBe(
+      '14 since Sep 13',
     );
   });
 

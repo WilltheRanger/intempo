@@ -16,7 +16,7 @@ vi.mock('../preferences', () => ({ preferences: { current } }));
 // session module — the same stand-in `client.test.ts` uses.
 vi.mock('../auth/session', () => ({
   getAccessToken: () => Promise.resolve('token'),
-  signOut: async () => {},
+  endSessionHere: async () => {},
 }));
 
 import { ApiError } from '../api/client';

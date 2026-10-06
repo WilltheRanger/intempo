@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import { StyleSheet, useWindowDimensions, View, type LayoutChangeEvent } from 'react-native';
 
 import { Stave } from '../notation/Stave';
 import { BORDER_WIDTH, colors, spacing } from '../../design';
@@ -11,6 +11,8 @@ import {
   timeSignatureDigits,
 } from '../../lib/notation/keySignature';
 import { paginateSystems } from '../../lib/notation/pages';
+import { fullBleedMusicWidth } from '../../lib/score/musicWidth';
+import { CONTENT_MAX_WIDTH } from '../primitives/ScreenContainer';
 
 /**
  * Small enough that a band is a glance rather than a page, large enough that
@@ -21,6 +23,9 @@ const SCALE = 0.95;
 
 /** Where noteheads go while nothing has said which clef the part is in. */
 const UNREAD_CLEF_PLACEMENT = 'treble' as const;
+
+/** The paper's margin either side of the music. */
+const MARGIN = spacing.lg;
 
 export interface ScoreBandProps {
   score: ScoreJson;
@@ -51,6 +56,13 @@ export interface ScoreBandProps {
    * gets as many whole systems as fit in it.
    */
   viewport?: number;
+  /**
+   * The band runs edge to edge within the screen's reading measure, so its
+   * width is known from the window and the music draws on the first frame.
+   * Without it the band measures first, and what sits under it moves down
+   * when the music arrives (`musicWidth.ts`).
+   */
+  fullBleed?: boolean;
 }
 
 /**
@@ -75,16 +87,22 @@ export interface ScoreBandProps {
  * whatever fell at the boundary, which on a dense page is a row of beamed
  * sixteenths with their heads removed.
  *
- * Nothing is drawn until the width is measured. A stave engraved at zero width
- * is a stave with one bar per system.
+ * Nothing is drawn until the width is known. A stave engraved at zero width
+ * is a stave with one bar per system. On full-bleed paper it is known from the
+ * window before the first frame (`fullBleed`); anywhere else it is measured,
+ * and whatever is under the band moves down when the music arrives.
  */
 export function ScoreBand({
   score,
   scale = SCALE,
   plain = false,
   viewport = 1,
+  fullBleed = false,
 }: ScoreBandProps) {
-  const [width, setWidth] = useState(0);
+  const { width: windowWidth } = useWindowDimensions();
+  const [width, setWidth] = useState(() =>
+    fullBleed ? fullBleedMusicWidth(windowWidth, CONTENT_MAX_WIDTH, MARGIN) : 0,
+  );
 
   function measure(event: LayoutChangeEvent) {
     const measured = event.nativeEvent.layout.width;
@@ -187,6 +205,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
   },
   inner: {
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: MARGIN,
   },
 });

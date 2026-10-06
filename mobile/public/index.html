@@ -79,6 +79,13 @@
       body {
         height: 100%;
         background-color: #F7F2E9;
+        /*
+         * The browser's 8px margin, gone from the first frame. react-native-web
+         * resets it, but only once its script has run, so the launch screen
+         * was drawn 8px in and then moved out to the edges: a layout shift on
+         * every page load (2026-10-06).
+         */
+        margin: 0;
       }
 
       /*
@@ -100,10 +107,22 @@
        * Web touch should respond on the first frame. The manipulation value
        * tells the browser these controls do not need the old double-tap delay
        * or gesture arbitration, while leaving zoom and scrolling alone.
+       *
+       * Every role a control can have, not only buttons. Links and radios were
+       * missing (2026-10-06): a long press on "Back to library" or on a
+       * metronome option selected its words, and the selection ran on into
+       * the screen behind it. `audit-a11y` checks the list against the roles
+       * the app draws.
        */
       [role='button'],
+      [role='link'],
       [role='tab'],
       [role='switch'],
+      [role='radio'],
+      [role='checkbox'],
+      [role='slider'],
+      [role='menuitem'],
+      [role='option'],
       button {
         touch-action: manipulation;
         -webkit-user-select: none;
@@ -112,8 +131,13 @@
 
       @media (hover: hover) and (pointer: fine) {
         [role='button']:not([aria-disabled='true']),
+        [role='link']:not([aria-disabled='true']),
         [role='tab']:not([aria-disabled='true']),
         [role='switch']:not([aria-disabled='true']),
+        [role='radio']:not([aria-disabled='true']),
+        [role='checkbox']:not([aria-disabled='true']),
+        [role='menuitem']:not([aria-disabled='true']),
+        [role='option']:not([aria-disabled='true']),
         button:not(:disabled) {
           cursor: pointer;
         }

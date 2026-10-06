@@ -1,4 +1,5 @@
 import type { UsageResponse } from '../data/types';
+import { longDate } from './calendarDate';
 
 /** When the server says the calendar-month allowance returns. */
 export function whenAnalysisAllowanceResets(
@@ -11,10 +12,18 @@ export function whenAnalysisAllowanceResets(
   if (Number.isNaN(date.getTime())) {
     return 'next month';
   }
-  return `on ${date.toLocaleDateString(undefined, {
-    day: 'numeric',
-    month: 'long',
-  })}`;
+  return `on ${longDate(date)}`;
+}
+
+/**
+ * What "You've used … this month" says when the server refused a take.
+ *
+ * The count is the server's: its limit when it sent one, else only how many
+ * were used. That second form said "1 analyses" (2026-10-06).
+ */
+export function usedThisMonth(used: number, limit: number | null): string {
+  if (limit !== null) return `all ${limit} of your free analyses`;
+  return used === 1 ? '1 analysis' : `${used} analyses`;
 }
 
 /** Whether beginning another take can only end in the server refusing it. */

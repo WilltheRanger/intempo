@@ -114,3 +114,28 @@ export function pendingLineFor(check: PendingCheck, pieceTitle: string | null): 
       return { label: `Analysing your last take${named}`, ready: false };
   }
 }
+
+/** How often the Library asks again on its own while a take is analysing. */
+const RECHECK_EVERY_MS = 4_000;
+/** And for how long: longer than an analysis takes, then a tap asks. */
+const RECHECK_FOR_MS = 3 * 60_000;
+
+/**
+ * When to ask about the handed-over take again without being asked, or null
+ * not to.
+ *
+ * **"Analysing your last take" never changed on its own.** It was checked once
+ * as the Library opened, and a musician who chose "Leave while it works" on
+ * Record — whose whole promise is that the result turns up — landed on a line
+ * that kept saying "Analysing" until they thought to tap it (2026-10-06). So
+ * it asks again every few seconds while it says that, for as long as an
+ * analysis plausibly takes, and then goes back to waiting for a tap. Only while
+ * it says "Analysing": "ready" has its answer, and "couldn't check" is a
+ * failure the musician should see before the app retries over it.
+ */
+export function pendingRecheckIn(check: PendingCheck | null, analysingForMs: number): number | null {
+  if (check !== 'working' || analysingForMs >= RECHECK_FOR_MS) {
+    return null;
+  }
+  return RECHECK_EVERY_MS;
+}

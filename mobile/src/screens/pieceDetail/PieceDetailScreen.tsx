@@ -22,6 +22,7 @@ import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
 import { ScoreBand } from '../../components/score/ScoreBand';
 import { PieceLinkRow } from './PieceLinkRow';
 import { usePieceHistory } from '../../data/hooks/useLatestTake';
+import { knowsItsMusic } from '../../data/hooks/knownPiece';
 import {
   BackLink,
   Card,
@@ -89,7 +90,7 @@ export function PieceDetailScreen() {
    */
   const goBack = () => navigation.popTo('Tabs', { screen: 'Library' } as never);
   const { params } = useRoute<RouteProp<RootStackParamList, 'PieceDetail'>>();
-  const { data: piece, isError } = usePiece(params.pieceId);
+  const { data: piece, isError, isPlaceholderData } = usePiece(params.pieceId);
   // **Not part of `load`.** A piece whose history fails to arrive is still a
   // piece worth opening, and blocking the whole screen on it would trade a
   // card for the music.
@@ -183,7 +184,11 @@ export function PieceDetailScreen() {
     piece.transcriptionStatus === 'queued' || piece.transcriptionStatus === 'reading';
   const readingFailed = piece.transcriptionStatus === 'failed';
   const canPractice = hasNotation && !stillReading && !readingFailed;
-  const needsNotation = !hasNotation && !hasPages && !stillReading;
+  // Opened on the library's row, which may have been restored from disk with
+  // its notation and photograph dropped: until the piece's own answer lands,
+  // "neither" is not known to be true (`knowsItsMusic`).
+  const musicKnown = knowsItsMusic(piece, isPlaceholderData);
+  const needsNotation = musicKnown && !hasNotation && !hasPages && !stillReading;
   // "7 since Sep 11", or null for a piece nobody has recorded — which then has
   // no row, rather than a row that opens an empty page.
   const takesCount = history.data ? historyCount(history.data) : null;
@@ -316,7 +321,7 @@ export function PieceDetailScreen() {
       {hasNotation && piece.score ? (
         <View style={styles.engravedBand}>
           {/* The opening two systems, where the prototype draws two lines. */}
-          <ScoreBand score={piece.score} viewport={OPENING_HEIGHT} />
+          <ScoreBand score={piece.score} viewport={OPENING_HEIGHT} fullBleed />
         </View>
       ) : hasPages ? (
         // Nothing has been read yet — a scan still in the worker, or a reading
@@ -349,6 +354,8 @@ export function PieceDetailScreen() {
         panel, beside the tempo it plays at and the bar it starts from, which is
         where a musician deciding how to play the piece reaches for it.
       */}
+
+      {musicKnown ? null : <LoadingState />}
 
       {needsNotation ? (
         <Card style={styles.notationCard}>

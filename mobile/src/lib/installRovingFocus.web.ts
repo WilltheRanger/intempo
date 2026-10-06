@@ -1,4 +1,11 @@
-import { rovingAfter, rovingStep, rovingTabStop, type RovingGroup, type RovingItem } from './rovingFocus';
+import {
+  rovingAfter,
+  rovingEntry,
+  rovingStep,
+  rovingTabStop,
+  type RovingGroup,
+  type RovingItem,
+} from './rovingFocus';
 
 /**
  * Give each radio group and tab list one Tab stop and the arrow keys; the rule
@@ -60,6 +67,41 @@ export function installRovingFocus(): () => void {
     if (next >= 0 && items[next] !== target) items[next].focus();
   };
 
+  // When Tab was last pressed: focus that Tab brings into a group goes to its
+  // stop, and focus that arrives any other way stays where it was put.
+  let tabbedAt = -Infinity;
+  const tab = (event: KeyboardEvent) => {
+    if (event.key === 'Tab') tabbedAt = performance.now();
+  };
+  const enter = (event: FocusEvent) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const group = target.closest(GROUPS);
+    if (group === null) return;
+    const kind = group.getAttribute('role') as RovingGroup;
+    if (target.getAttribute('role') !== KINDS[kind].item) return;
+    const items = itemsOf(group, kind);
+    const came = event.relatedTarget;
+    const next = rovingEntry(
+      items.map((item) => stateOf(item, kind)),
+      items.indexOf(target),
+      {
+        fromInside: came instanceof Node && group.contains(came),
+        byTab: performance.now() - tabbedAt < 500,
+      },
+    );
+    // After whatever put it there has finished: the Modal's focus trap looks
+    // for the last element that takes focus by trying each in turn and
+    // checking it kept focus, and moving focus during that check sends it on
+    // to the next one up.
+    if (next !== null) {
+      const stop = items[next];
+      setTimeout(() => {
+        if (document.activeElement === target) stop.focus();
+      }, 0);
+    }
+  };
+
   const observer = new MutationObserver(settle);
   observer.observe(document.body, {
     subtree: true,
@@ -69,8 +111,12 @@ export function installRovingFocus(): () => void {
   });
   settle();
   document.addEventListener('keydown', move, true);
+  document.addEventListener('keydown', tab, true);
+  document.addEventListener('focusin', enter);
   return () => {
     observer.disconnect();
     document.removeEventListener('keydown', move, true);
+    document.removeEventListener('keydown', tab, true);
+    document.removeEventListener('focusin', enter);
   };
 }

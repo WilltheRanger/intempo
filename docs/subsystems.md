@@ -794,6 +794,22 @@ without changing the screen, so a heading under the root's `inert` still
 counts, and one under any other `inert` does not (`documentTitle.ts`).
 `audit-a11y` fails a route whose tab reads "InTempo" alone or "undefined".
 
+### A step that is not a screen leaves focus behind (2026-10-06)
+
+Onboarding's questions are one screen whose content changes, not routes. So
+the screen-focus rule above never saw them change, and "Next" left focus on
+`<body>` on the first five steps.
+
+**The rule:** a screen whose content changes in steps calls
+`announceScreenStep(id)` (`lib/screenStep.ts`) when the step changes, but not
+on the first step, which is where the page loaded. `OnboardingFlow` does this
+for every place, including the two introductions. `installScreenFocus` keys
+its arrivals and remembered focus by route and step, so a step is an arrival
+like a pushed screen. Native does nothing here, and whether VoiceOver keeps
+its place on a step change has not been checked on a device. Where the new
+step reuses the button that was pressed (the microphone, source and photo
+steps), focus is not lost and stays on that button.
+
 ### `announceForAccessibility` says nothing on the web (2026-10-05)
 
 react-native-web implements `AccessibilityInfo.announceForAccessibility` as
@@ -837,6 +853,15 @@ or hidden. Profile's metronome is a setting, and as tabs it was announced as
 four tabs with no panel for any of them. **The arrows only move focus; Space or Enter
 chooses.** Choosing closes the Start from and Instrument sheets, so if the
 arrows chose too, one arrow press would close the sheet on the wrong option.
+Focus that Tab brings into a group lands on its stop (`rovingEntry`). The
+sheet's focus trap wraps Shift+Tab to the last element that takes focus, which
+was an unchosen radio. Only Tab, because a screen reader's browse cursor moves
+focus onto whatever it reads; the first version moved any focus from outside,
+and focus on the Insights tab jumped to the selected Library tab. The move
+waits a tick, because the trap tests each candidate by checking that it kept
+focus, and moving focus during that test sends the trap on to the next
+candidate.
+
 The rules are in `lib/rovingFocus.ts`. `audit-a11y` fails a radio outside a
 radio group, a tab outside a tab list, a group with no name, and a group with
 other than one Tab stop. `walk-app` moves through the bars on Record, the
@@ -858,6 +883,94 @@ responder. It has no tab index, so the trap passes over it to the first real
 control: Close on a sheet, Cancel on a dialog. Do not put a `Pressable` or
 anything else with a tab index ahead of an overlay's controls, even one out of
 the Tab order. `walk-app` checks that Add piece opens with focus on Close.
+
+### Music that waits for `onLayout` pushes the page down when it arrives (2026-10-06)
+
+The engraver needs a width to wrap against, and the score screen, the piece
+screen's opening lines and Tempo's band all waited for `onLayout` to give it.
+So the first frame drew the page without its music, and the rows under it
+dropped by up to two hundred points when the stave arrived. The score
+screen's layout shift was 0.12 on every visit, where 0.1 is the line between
+good and not.
+
+**The rule:** music on full-bleed paper takes its width from the window before
+the first frame: the reading measure less the paper's margin each side
+(`lib/score/musicWidth.ts`). `onLayout` still corrects it, for a scrollbar or a
+sideways phone's inset. `ScoreBand` takes `fullBleed` for this. A band whose
+width the window cannot tell, such as a Library tile, still measures, so do
+not put anything that matters under one. Measured with a `layout-shift`
+`PerformanceObserver`: the score, piece, Tempo and set-tempo screens are now at
+or under 0.016. The page template also zeroes the body's 8px margin, which the
+app's own reset removed only after its script ran, so every page load shifted
+once.
+
+### The signed-in app is tested against `mobile/scripts/stub-api.py`, and it had stopped answering (2026-10-06)
+
+Every walk and audit in `tools/` runs the fixture build, so none of them reach
+`data/sources/api.ts`, the adapters a real account uses. The stub API exists
+for that. It had drifted until it could not get past the first screen:
+- its `/v1/me` predated `training_consent`;
+- its ids were not version-4 UUIDs;
+- its takes lacked four fields;
+- it ignored `score_id`;
+- it wanted `audio_url` where the app sends `audio_key`.
+
+`data/api/responseSchemas.ts` refuses a whole response for any one of those, so
+every signed-in screen said "Couldn't open your account".
+
+**The rule:** when a response model in `backend/app` gains a field, or the app
+starts sending a new one, the stub changes with it. Build against it with the
+three `EXPO_PUBLIC_*` values in its docstring, sign in with any address, and
+use `/__fail?status=500` to see what each screen says when the server is down.
+
+Run against it, that turned up eight app defects the fixtures could not:
+- **A failed history read as no takes.** `getPieceHistory` caught both of its
+  requests into empty lists, so with a server down Your takes said "No takes
+  yet". It also counted the failure as a success, so a refetch that failed
+  replaced the history already on screen. Now it throws.
+- **A placeholder claimed the piece had no music.** The library listing kept on
+  disk drops notation and photographs (`persistCache.pieceForDisk`). A piece
+  opened from it showed "Add the sheet music to record" until its own request
+  answered. `knowsItsMusic` in `data/hooks/knownPiece.ts` now treats "neither"
+  on a placeholder as unknown, and the screen shows a spinner there instead.
+- **A spent allowance read as a dropped connection.** Every real send wraps the
+  server's answer: `submitTake` throws `TakeSubmissionError` with the `ApiError`
+  as its `cause`. `readTakeFailure` looked only at the top error, so it never
+  saw the 403 `tier_limit` or the 404 for a deleted piece, and its tests
+  passed bare errors so they never noticed. A musician out of analyses was told
+  "Check your connection and send it again". The background queue would also
+  have kept retrying a take for a deleted piece. It now reads down the `cause`
+  chain. Use `/__fail?tier_limit=1` after signing in to see it.
+- **A server error read as a deleted piece.** The score screen said "The piece
+  may have been removed from your library" for any failed load, including the
+  500 that met a piece imported a second earlier. `isGone` beside
+  `describeLoadError` is the rule: only a 404 (or a source's `null`) means gone.
+- **Data trimmed for disk came back fresh.** `persistCache` drops the account's
+  photo and a piece's pages because their links expire, and relies on the next
+  fetch to restore them. A restored query keeps its real `dataUpdatedAt`, so
+  within its `staleTime` (five minutes for `useMe`) nothing refetched, and a
+  reload just after setting a profile picture showed the initial for the rest
+  of the session. Trimmed kinds are now written with `isInvalidated: true`.
+  Anything that drops a field on the way to disk has to be restored stale.
+- **A refused token signed the account out everywhere.** `apiFetch` cleared a
+  refused session with `signOut()`, and auth-js signs out `global` by default,
+  which revokes every device's session. `/__fail?status=401` showed one expired
+  session sending four `logout?scope=global`. The API path now calls
+  `endSessionHere()` (`scope: 'local'`). The Sign out button is still global;
+  whether it should be is the owner's call.
+- **A take sent as the session expired was lost.** The same 401 ends the
+  session before the error reaches `RecordScreen`, and `keepTakeForLater` then
+  asked who was signed in, found nobody, and kept nothing. The screen now reads
+  the owner before sending and passes it in, and the drainer also runs on
+  `SIGNED_IN`. Reproduce with a Playwright route answering 401 to `/v1/` during
+  the send: the stub's `/__fail` only fails reads.
+- **Two presses made two pieces.** "Add manually" and "Open a score file"
+  guarded only with `disabled={mutation.isPending}`. TanStack reports pending
+  on the next tick, so a fast second tap got through, and Return in the last
+  field never checked it. With the server slowed by a Playwright route, both
+  created duplicates. Every create path now claims a `saving` ref before its
+  first await, as the scan's "Save and read" already did, and
+  `createOnce.test.ts` holds all three to it.
 
 ## `npm audit fix --force` would take this app back to SDK 46 (2026-09-09)
 
@@ -1647,6 +1760,27 @@ nothing else covers `backend/`. Named here rather than left to be found.
   note rule is its fallback, and must stay one: a take a few percent slow is
   on tempo in every bar and a beat behind by the end, and the title says so.
 - TUNING_LOG.md 2026-09-25 has every number.
+
+### A take that could not be sent was kept only by the native build (2026-10-06)
+
+The take queue (`lib/sync/`) keeps a take whose send failed and retries it on
+each foreground. Its store wrote the WAV through `expo-file-system`, which has
+nothing to write to in a browser. So on the web, the build musicians actually
+use, `enqueue` failed on its first step and nothing was queued. "Your take is
+safe" then meant only "while this tab stays open". Now
+`takeQueue.store.web.ts` keeps the recording in IndexedDB, as an
+`ArrayBuffer`, under the same AsyncStorage entries. Tested against the stub
+API with the upload blocked: the take survives a reload, Record brings it back
+with Send it again, and the drain sends one left behind.
+
+The two copies, one on the screen and one in the queue, had no coordination
+on native either. A drain on returning to the app could send the take while
+Record still offered "Send it again", one tap from a second analysis.
+`heldTakes.ts` fixes that:
+- the drain skips a take the screen holds, and sets no timer for it;
+- the screen's release wakes the drain;
+- `takeWasAccepted` marks a sent take before anything is awaited, so the drain
+  that wakes cannot catch the queue copy before its removal lands.
 
 ## The capture path (2026-08-24) — what an audit of it found
 

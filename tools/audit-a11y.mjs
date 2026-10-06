@@ -1212,6 +1212,24 @@ async function documentTitle(page) {
   return [];
 }
 
+/**
+ * A control whose words a long press selects.
+ *
+ * The page template turns selection off for controls by role, and on
+ * 2026-10-06 its list had buttons, tabs and switches and nothing else: a long
+ * press on a back link or a metronome option selected its words, and the
+ * selection ran on into the screen behind. Every role a control is drawn
+ * with has to be on the list.
+ */
+async function selectableControls(page) {
+  return page.evaluate(() =>
+    [...document.querySelectorAll('[role=button],[role=link],[role=tab],[role=switch],[role=radio],[role=checkbox],[role=slider],[role=menuitem],[role=option],button')]
+      .filter((element) => !element.closest('[inert]') && !element.closest('[aria-hidden="true"]'))
+      .filter((element) => getComputedStyle(element).userSelect !== 'none')
+      .map((element) => `${element.getAttribute('role') ?? element.tagName.toLowerCase()} ${JSON.stringify((element.getAttribute('aria-label') || element.textContent || '').trim().slice(0, 30))}`),
+  );
+}
+
 for (const [name, path, options = {}] of selected) {
   /*
    * **375pt, the narrowest iPhone this app can be installed on** — not the 390
@@ -1264,6 +1282,7 @@ for (const [name, path, options = {}] of selected) {
   // A screen excused from having a heading has no title of its own to name,
   // and the product name alone is the rule for it.
   const tabTitle = options.headings === false ? [] : await documentTitle(page);
+  const selectable = await selectableControls(page);
   // Last, and on the same page: it rewrites every font size in the document,
   // so nothing measured after it would be measuring the shipped app.
   const spilled = await page.evaluate(spill, TEXT_SCALE);
@@ -1284,6 +1303,7 @@ for (const [name, path, options = {}] of selected) {
     bars.length +
     choices.length +
     tabTitle.length +
+    selectable.length +
     spilled.length +
     errors.length;
   failures += total;
@@ -1307,6 +1327,7 @@ for (const [name, path, options = {}] of selected) {
   for (const b of bars) console.log(`  PROGRESS BAR: ${b}`);
   for (const c of choices) console.log(`  CHOICES: ${c}`);
   for (const t of tabTitle) console.log(`  TAB TITLE: ${t}`);
+  for (const c of new Set(selectable)) console.log(`  SELECTABLE CONTROL: ${c}`);
   for (const o of new Set(spilled)) console.log(`  AT ${TEXT_SCALE}x TEXT: ${o}`);
   await page.close();
 }

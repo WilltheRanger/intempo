@@ -186,7 +186,7 @@ export function TempoScreen() {
       */}
       {setup && hasNotation && piece.score ? (
         <View style={styles.band}>
-          <ScoreBand score={piece.score} />
+          <ScoreBand score={piece.score} fullBleed />
         </View>
       ) : null}
 

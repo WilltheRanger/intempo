@@ -49,6 +49,12 @@ export interface DrainDeps {
    */
   read(error: unknown): TakeFailure;
   now(): number;
+  /**
+   * A take a screen has in hand (`heldTakes.ts`). Skipped, and no timer set
+   * for it: the screen is offering "Send it again" for that very playing, and
+   * the drainer runs again when the screen lets go.
+   */
+  held?(take: QueuedTake): boolean;
 }
 
 /** Why a pass stopped. Every one of these is a different next move. */
@@ -117,6 +123,7 @@ function resumeFrom(error: unknown): TakeSubmissionState | undefined {
  */
 export async function drainTakes(deps: DrainDeps): Promise<DrainReport> {
   const { store, accountId, submit, read, now } = deps;
+  const free = (takes: QueuedTake[]) => takes.filter((take) => !deps.held?.(take));
   let sent = 0;
   let discarded = 0;
   /**
@@ -136,13 +143,13 @@ export async function drainTakes(deps: DrainDeps): Promise<DrainReport> {
       return { sent, discarded, stopped: 'empty', nextDueAt: null };
     }
 
-    const take = nextDue(takes, now());
+    const take = nextDue(free(takes), now());
     if (!take || handled.has(take.id)) {
       return {
         sent,
         discarded,
         stopped: sent > 0 ? 'drained' : 'not-due',
-        nextDueAt: earliestDueAt(takes),
+        nextDueAt: earliestDueAt(free(takes)),
       };
     }
     handled.add(take.id);
@@ -173,7 +180,7 @@ export async function drainTakes(deps: DrainDeps): Promise<DrainReport> {
         sent,
         discarded,
         stopped: failure.retriable ? 'failed' : 'blocked',
-        nextDueAt: earliestDueAt(after),
+        nextDueAt: earliestDueAt(free(after)),
       };
     }
   }
