@@ -923,7 +923,7 @@ starts sending a new one, the stub changes with it. Build against it with the
 three `EXPO_PUBLIC_*` values in its docstring, sign in with any address, and
 use `/__fail?status=500` to see what each screen says when the server is down.
 
-Run against it, that turned up seven app defects the fixtures could not:
+Run against it, that turned up eight app defects the fixtures could not:
 - **A failed history read as no takes.** `getPieceHistory` caught both of its
   requests into empty lists, so with a server down Your takes said "No takes
   yet". It also counted the failure as a success, so a refetch that failed
@@ -964,6 +964,13 @@ Run against it, that turned up seven app defects the fixtures could not:
   the owner before sending and passes it in, and the drainer also runs on
   `SIGNED_IN`. Reproduce with a Playwright route answering 401 to `/v1/` during
   the send: the stub's `/__fail` only fails reads.
+- **Two presses made two pieces.** "Add manually" and "Open a score file"
+  guarded only with `disabled={mutation.isPending}`. TanStack reports pending
+  on the next tick, so a fast second tap got through, and Return in the last
+  field never checked it. With the server slowed by a Playwright route, both
+  created duplicates. Every create path now claims a `saving` ref before its
+  first await, as the scan's "Save and read" already did, and
+  `createOnce.test.ts` holds all three to it.
 
 ## `npm audit fix --force` would take this app back to SDK 46 (2026-09-09)
 

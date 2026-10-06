@@ -1,5 +1,5 @@
 import { useNavigation } from '@react-navigation/native';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { StyleSheet } from 'react-native';
 import { useGoBack } from '../../navigation/useGoBack';
 
@@ -73,8 +73,17 @@ export function ManualPieceForm() {
 
   // Title, composer, movement, time signature, tempo; Return in the last adds.
   const field = useFieldOrder(5, () => void submit());
+  /**
+   * One piece per tap, however many taps. `createPiece.isPending` reaches the
+   * button a render late — TanStack notifies on the next tick — and Return in
+   * the last field does not look at it at all, so two presses while a waking
+   * host took its time made two pieces (stub API, 2026-10-06). Set before the
+   * first await, as `TranscriptionReviewScreen` does for the scan.
+   */
+  const saving = useRef(false);
 
   async function submit() {
+    if (saving.current) return;
     const trimmedTitle = title.trim();
     if (!trimmedTitle) {
       setError(null);
@@ -101,6 +110,7 @@ export function ManualPieceForm() {
       return;
     }
 
+    saving.current = true;
     setError(null);
     try {
       const piece = await createPiece.mutateAsync({
@@ -120,6 +130,8 @@ export function ManualPieceForm() {
           ? cause.message
           : "Couldn't save the piece. Try again.",
       );
+    } finally {
+      saving.current = false;
     }
   }
 
