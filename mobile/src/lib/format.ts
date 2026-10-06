@@ -1,4 +1,4 @@
-import type { UserRole, UserTier } from '../data/types';
+import type { UserTier } from '../data/types';
 
 /** Whole calendar days between two dates, ignoring time of day. */
 function calendarDaysBetween(from: Date, to: Date): number {
@@ -35,48 +35,6 @@ export function daysSincePracticed(
 }
 
 /**
- * "Practiced yesterday", "Practiced 3 weeks ago".
- *
- * Returns null when there is no timestamp, so callers omit the line entirely
- * rather than rendering a placeholder.
- *
- * `now` is here so a caller that has already decided *which* piece against a
- * given instant can describe it against the same one. The caller this was
- * added for was Today's repertoire ranking, `lib/today.ts`: it took a `now`
- * and did not pass it, so with an injected clock it chose the piece against
- * that instant and then labelled it off the wall clock — a fortnight-old take
- * reading "Practiced yesterday". That module is gone with the block it fed
- * (see `TodayScreen`), and the parameter stays because the trap does: it is
- * harmless only while the two clocks are the same.
- */
-export function formatLastPracticed(
-  isoTimestamp: string | null,
-  now: Date = new Date(),
-): string | null {
-  const days = daysSincePracticed(isoTimestamp, now);
-  if (days === null) {
-    return null;
-  }
-
-  if (days <= 0) {
-    return 'Practiced today';
-  }
-  if (days === 1) {
-    return 'Practiced yesterday';
-  }
-  if (days < 7) {
-    return `Practiced ${days} days ago`;
-  }
-  if (days < 28) {
-    const weeks = Math.round(days / 7);
-    return weeks === 1 ? 'Practiced last week' : `Practiced ${weeks} weeks ago`;
-  }
-
-  const months = Math.round(days / 30);
-  return months <= 1 ? 'Practiced last month' : `Practiced ${months} months ago`;
-}
-
-/**
  * The same age, in a couple of words, for the right-hand column of a list.
  *
  * "Practiced 3 weeks ago" is a sentence, and a sentence repeated down forty
@@ -108,7 +66,6 @@ export function formatLastPracticedShort(
   return months <= 1 ? 'Last month' : `${months} months`;
 }
 
-
 const TIER_LABELS: Record<UserTier, string> = {
   free: 'Free',
   pro: 'Pro',
@@ -116,10 +73,6 @@ const TIER_LABELS: Record<UserTier, string> = {
   student_via_teacher: 'Student, via teacher',
 };
 
-const ROLE_LABELS: Record<UserRole, string> = {
-  student: 'Student',
-  teacher: 'Teacher',
-};
 
 /**
  * Account tier and role, as a person reads them.
@@ -130,10 +83,6 @@ const ROLE_LABELS: Record<UserRole, string> = {
  */
 export function formatTier(tier: UserTier): string {
   return TIER_LABELS[tier] ?? tier;
-}
-
-export function formatRole(role: UserRole): string {
-  return ROLE_LABELS[role] ?? role;
 }
 
 /** Joins metadata fragments, dropping the ones that had no value. */

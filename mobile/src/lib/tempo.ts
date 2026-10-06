@@ -51,29 +51,6 @@ export function verdictFor(band: Band, direction: Direction): Verdict {
 export const FALLBACK_OUTER_PCT = 20;
 
 /**
- * Where a chart's full deflection sits for one signed deviation.
- *
- * Full deflection means "beyond here the pipeline calls it severe", so it is
- * the outer threshold on whichever side of the beat the deviation fell. The
- * two sides are independent by design — the tuning appendix widens dragging
- * because musicians tolerate it better — and a bar drawn against a single
- * number would overstate one side and understate the other the moment they
- * diverge.
- */
-export function fullScaleFor(
-  tolerance: Tolerance | null,
-  deviationPct: number,
-): number {
-  if (tolerance === null) {
-    return FALLBACK_OUTER_PCT;
-  }
-  // Rush-positive, the convention everything downstream of `toTake` uses.
-  return deviationPct >= 0
-    ? tolerance.rushing_outer_pct
-    : tolerance.dragging_outer_pct;
-}
-
-/**
  * The default inner threshold, for takes that carry no tolerance of their own.
  *
  * The sibling of `FALLBACK_OUTER_PCT` and reachable for the same rows: takes
@@ -233,39 +210,6 @@ export function tempoDisplayRange(
   };
 }
 
-/** A space a wrapping line may not break at. */
-const NBSP = '\u00a0';
-
-/**
- * "Working at 76  ·  marked 92".
- *
- * The tempo a musician has actually settled on for a piece is the most
- * personal thing the app knows about their practice, and until now it only
- * existed on the Record screen — you had to open a take to find out where you
- * left off. Naming both numbers matters when they differ: the gap between them
- * *is* the work in progress.
- *
- * When they agree, or nothing was marked, one number is the whole truth and
- * saying it twice would invent a distinction.
- */
-export function formatWorkingTempo(
-  workingBpm: number,
-  markedBpm: number | null,
-  unit?: TempoBeatUnit | null,
-): string {
-  // **Unbreakable spaces inside each figure.** This rides at the end of a
-  // metadata line that wraps (Today's hero), and on a narrow phone it wrapped
-  // between the number and its unit — "96" at the end of one line, "BPM"
-  // alone on the next (measured at 320 wide, 2026-09-30). The number, its unit
-  // and "marked" with its number each move as one.
-  const working = displayTempoBpm(workingBpm, unit);
-  const label = tempoUnitLabel(unit).replace(/ /g, NBSP);
-  if (markedBpm === null || markedBpm === workingBpm) {
-    return `${working}${NBSP}${label}`;
-  }
-  return `${working}${NBSP}${label}  ·  marked${NBSP}${displayTempoBpm(markedBpm, unit)}`;
-}
-
 const VERDICT_LABELS: Record<Verdict, string> = {
   on_tempo: 'On tempo',
   slight_rush: 'Slight rush',
@@ -292,7 +236,6 @@ export function formatVerdict(verdict: Verdict): string {
  * for one commit a musician read "Your tempo wanders" on one tab and "You tend
  * to rush" on the next, about the same thirty days.
  */
-
 
 /**
  * The colour for a band, on the verdict screen only.

@@ -38,9 +38,9 @@ export interface LegalDocument {
  *
  * **Null, not a plausible-looking placeholder.** A policy that names
  * "InTempo Ltd" of "hello@intempo.app" in a jurisdiction nobody chose reads
- * exactly like a finished one, and would ship. Null makes the gap visible on
- * the screen and in `missingOwnerDetails`, which is the same stance the rest of
- * this codebase takes on a clef it has not read.
+ * exactly like a finished one, and would ship. Null makes the gap visible: the
+ * screen prints no line for it, which is the same stance the rest of this
+ * codebase takes on a clef it has not read.
  *
  * Filling these in is the last step before submitting to either store.
  */
@@ -59,19 +59,6 @@ export const OWNER: {
   contact: null,
   jurisdiction: 'the State of California',
 };
-
-/** Which of `OWNER`'s fields are still unset, in the order they are needed. */
-export function missingOwnerDetails(): string[] {
-  return (
-    [
-      ['entity', 'the name of the person or company publishing the app'],
-      ['contact', 'an email address for data questions'],
-      ['jurisdiction', 'the law these terms are read under'],
-    ] as const
-  )
-    .filter(([key]) => !OWNER[key])
-    .map(([, described]) => described);
-}
 
 export const PRIVACY: LegalDocument = {
   id: 'privacy',

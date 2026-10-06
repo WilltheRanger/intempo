@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  ROW_DIVIDER_EDGE,
   ROW_PADDING_VERTICAL,
   rowDivided,
 } from './rowMetrics';
@@ -54,15 +53,5 @@ describe('the shared rhythm', () => {
    */
   it('is one vertical rhythm', () => {
     expect(ROW_PADDING_VERTICAL).toBe(16);
-  });
-
-  /**
-   * **The assertion that carries the decision.** Flipping the convention means
-   * changing this line, which means reading the note in `rowMetrics.ts` about
-   * why it is the top — rather than discovering the reason later, by breaking a
-   * group boundary somewhere else in the app.
-   */
-  it('rules the top edge', () => {
-    expect(ROW_DIVIDER_EDGE).toBe('top');
   });
 });

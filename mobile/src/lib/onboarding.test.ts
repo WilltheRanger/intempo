@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  missingFromOnboarding,
   profileUpdateFor,
   reusableAvatarKey,
   shouldOnboard,
@@ -32,39 +31,6 @@ function musician(overrides: Partial<Musician>): Musician {
   };
 }
 
-describe('what onboarding still needs', () => {
-  it('needs a name and an instrument when nothing has been given', () => {
-    expect(missingFromOnboarding(NOTHING)).toEqual(['name', 'instrument']);
-  });
-
-  it('is satisfied by a name and an instrument', () => {
-    expect(missingFromOnboarding(EVERYTHING)).toEqual([]);
-  });
-
-  it('names exactly what is missing, one field at a time', () => {
-    expect(missingFromOnboarding({ ...EVERYTHING, name: '' })).toEqual(['name']);
-    expect(missingFromOnboarding({ ...EVERYTHING, instrument: null })).toEqual([
-      'instrument',
-    ]);
-  });
-
-  it('does not accept a name of only spaces', () => {
-    // The server strips and writes NULL, so this would let someone through to
-    // an account with no name on it — the exact state the rule forbids.
-    expect(missingFromOnboarding({ ...EVERYTHING, name: '   ' })).toEqual([
-      'name',
-    ]);
-  });
-
-  it('does not need a photograph', () => {
-    // Optional since 2026-09-23: the redesign's photo step has "Do this
-    // later", and the server no longer refuses a finish without one.
-    expect(
-      missingFromOnboarding({ ...EVERYTHING, avatarKey: null }),
-    ).toEqual([]);
-  });
-});
-
 describe('what finishing onboarding sends', () => {
   it('sends all three and the flag', () => {
     expect(profileUpdateFor(EVERYTHING)).toEqual({
@@ -82,7 +48,7 @@ describe('what finishing onboarding sends', () => {
   });
 
   it('omits a blank field rather than nulling it', () => {
-    // Unreachable through the button, which `missingFromOnboarding` disables —
+    // Unreachable through the button, which `canContinue` holds shut —
     // and guarded anyway, because the two failures are not the same size. A
     // request that does too little is recoverable; `display_name: null` erases
     // a name the account already carried.

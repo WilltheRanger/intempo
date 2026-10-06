@@ -5,8 +5,6 @@ import {
   displayTempoBpm,
   formatTakeVerdict,
   formatTempo,
-  formatWorkingTempo,
-  fullScaleFor,
   quarterBpmFromDisplay,
   sharedFullScaleFor,
   tempoDisplayRange,
@@ -31,35 +29,6 @@ const TUNED: Tolerance = {
   dragging_outer_pct: 18,
 };
 
-describe('fullScaleFor', () => {
-  it('takes the threshold for the side the deviation fell on', () => {
-    // Rush-positive, the convention everything downstream of `toTake` uses.
-    expect(fullScaleFor(TUNED, 5)).toBe(14);
-    expect(fullScaleFor(TUNED, -5)).toBe(18);
-  });
-
-  it('puts a note on the beat on the rushing side rather than nowhere', () => {
-    // Zero has no side. It also has no deflection, so which scale it picks
-    // cannot change a pixel — this only pins the behaviour so a later reader
-    // does not have to wonder whether the boundary was thought about.
-    expect(fullScaleFor(TUNED, 0)).toBe(14);
-  });
-
-  it('falls back to the shipped default when a take carries no thresholds', () => {
-    // Takes analysed before the pipeline recorded them. 20 is what those were
-    // actually judged by, so the fallback is right for exactly those rows.
-    expect(fullScaleFor(null, 5)).toBe(20);
-    expect(fullScaleFor(null, -5)).toBe(20);
-  });
-
-  it('pins at full deflection exactly at the outer threshold', () => {
-    // Beyond the outer threshold the pipeline calls a take severe, so a pinned
-    // bar has to mean that and nothing else.
-    expect(Math.min(1, 14 / fullScaleFor(TUNED, 14))).toBe(1);
-    expect(Math.min(1, 13 / fullScaleFor(TUNED, 13))).toBeLessThan(1);
-  });
-});
-
 describe('sharedFullScaleFor', () => {
   it('uses one scale for both sides, the wider of the two', () => {
     // A line crossing zero has to stay straight. Scaling the halves
@@ -73,19 +42,13 @@ describe('sharedFullScaleFor', () => {
     expect(sharedFullScaleFor(TUNED)).toBeGreaterThanOrEqual(worst);
   });
 
-  it('falls back to the same default as the bar', () => {
-    // The two must not disagree: the same take is drawn by both, and a trend
-    // line scaled differently from the bars beneath it would invent a
-    // discrepancy in a take the pipeline judged consistently.
-    expect(sharedFullScaleFor(null)).toBe(fullScaleFor(null, 1));
+  it('falls back to the default outer band when nothing was tuned', () => {
+    expect(sharedFullScaleFor(null)).toBe(20);
   });
-});
 
-describe('symmetric thresholds', () => {
-  it('draw exactly as the hard-coded scale did', () => {
+  it('draws the shipped, symmetric thresholds as the hard-coded scale did', () => {
     // The shipped defaults are symmetric, so nothing on screen moves today.
-    // This change is about what happens the first time they are tuned.
-    const shipped: Tolerance = {
+    const shipped = {
       rushing_inner_pct: 5,
       rushing_mid_pct: 10,
       rushing_outer_pct: 20,
@@ -93,13 +56,15 @@ describe('symmetric thresholds', () => {
       dragging_mid_pct: 10,
       dragging_outer_pct: 20,
     };
-    expect(fullScaleFor(shipped, 7)).toBe(20);
-    expect(fullScaleFor(shipped, -7)).toBe(20);
     expect(sharedFullScaleFor(shipped)).toBe(20);
   });
 });
 
 describe('printed tempo units', () => {
+  it('keeps old scores on the quarter-note display they already used', () => {
+    expect(formatTempo(80, null)).toBe('80 BPM');
+  });
+
   it('shows a dotted-quarter mark without changing the quarter-note clock', () => {
     expect(displayTempoBpm(90, 'dotted_quarter')).toBe(60);
     expect(quarterBpmFromDisplay(60, 'dotted_quarter')).toBe(90);
@@ -111,18 +76,6 @@ describe('printed tempo units', () => {
     expect(quarterBpmFromDisplay(120, 'eighth')).toBe(60);
     expect(displayTempoBpm(120, 'half')).toBe(60);
     expect(quarterBpmFromDisplay(60, 'half')).toBe(120);
-  });
-
-  it('keeps old scores on the quarter-note display they already used', () => {
-    expect(formatTempo(80, null)).toBe('80 BPM');
-    expect(formatWorkingTempo(76, 92)).toBe('76\u00a0BPM  ·  marked\u00a092');
-  });
-
-  it('never lets a wrapping line part a tempo from its unit', () => {
-    expect(formatWorkingTempo(96, null)).toBe('96\u00a0BPM');
-    expect(formatWorkingTempo(60, 60, 'dotted_quarter')).toBe(
-      '40\u00a0dotted-quarter-note\u00a0BPM',
-    );
   });
 
   it('derives safe displayed bounds from the quarter-BPM contract', () => {

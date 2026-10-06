@@ -1,6 +1,6 @@
 import type { MeasureVerdict } from '../../data/types';
 import type { ColorToken } from '../../design/colors';
-import { readMeasure, wasTimed } from './measureReading';
+import { readMeasure } from './measureReading';
 
 /**
  * The Verdict screen's "Measure by measure" chart (`redesign/Verdict.dc.html`):
@@ -52,43 +52,6 @@ export function measureChartBars(measures: readonly MeasureVerdict[]): ChartBar[
       tone: reading.tone,
     };
   });
-}
-
-/**
- * The measure most worth practising: the worst band, and within a band the
- * furthest off the beat. Null when every timed measure was on the beat.
- *
- * The rule the old "Try bar 7 again" line used (`retryFocus.ts`, in
- * `git log`), returned as the measure so the chart can open on it.
- */
-export function focusMeasure(measures: readonly MeasureVerdict[]): MeasureVerdict | null {
-  const rank = { on: 0, slight: 1, rush_drag: 2, severe: 3 } as const;
-  let focus: MeasureVerdict | null = null;
-  for (const measure of measures) {
-    if (!wasTimed(measure) || rank[measure.band] === 0) continue;
-    if (
-      focus === null ||
-      rank[measure.band] > rank[focus.band] ||
-      (rank[measure.band] === rank[focus.band] &&
-        Math.abs(measure.deviationPct) > Math.abs(focus.deviationPct))
-    ) {
-      focus = measure;
-    }
-  }
-  return focus;
-}
-
-/**
- * Which measure the chart opens on: the focus, else the first one the app
- * made a claim about, else the first. Never null for a take with measures.
- */
-export function openingMeasure(measures: readonly MeasureVerdict[]): number | null {
-  return (
-    focusMeasure(measures)?.measure ??
-    measures.find((m) => readMeasure(m).revealsFigure)?.measure ??
-    measures[0]?.measure ??
-    null
-  );
 }
 
 /** The bar under a point `x` across a chart `width` wide with `count` bars. */

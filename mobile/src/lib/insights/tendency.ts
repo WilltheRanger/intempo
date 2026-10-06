@@ -195,32 +195,6 @@ export function readPieceWord(piece: {
 }
 
 /**
- * The colour a piece's word is set in, in Insights' list of pieces
- * (`redesign/Insights.dc.html`): the on-tempo green for on the beat, the
- * mid verdict hue for rushing, dragging and uneven, and plain secondary ink for
- * the slight ones — a slight rush is worth reading, not worth flagging.
- */
-export function pieceWordTone(piece: {
-  meanDeviationPct: number;
-  spreadPct: number;
-  tolerance: Tolerance | null;
-  verdict: Verdict;
-}): 'verdictOn' | 'verdictMid' | 'textSecondary' {
-  if (tempoWanders(piece)) {
-    return 'verdictMid';
-  }
-  switch (piece.verdict) {
-    case 'on_tempo':
-      return 'verdictOn';
-    case 'slight_rush':
-    case 'slight_drag':
-      return 'textSecondary';
-    default:
-      return 'verdictMid';
-  }
-}
-
-/**
  * In the result screen's words, not a meter's (the owner, 2026-09-29: the
  * Library's "Slight drag" under a slider bar was the old vocabulary beside a
  * result that says "You rushed in the middle").
