@@ -18,7 +18,9 @@ describe('the published documents', () => {
     // here.** These four are what `backend/app/` talks to; if a fifth is ever
     // added, this fails and the policy gets updated with it.
     const text = JSON.stringify(PRIVACY).toLowerCase();
-    for (const processor of ['supabase', 'modal', 'anthropic', 'google']) {
+    // Sentry since 2026-10-06: release builds of the phone app are required to
+    // report crashes to it (`scripts/check-release-environment.mjs`).
+    for (const processor of ['supabase', 'modal', 'anthropic', 'google', 'sentry']) {
       expect(text, `${processor} is not named in the privacy policy`).toContain(
         processor,
       );
