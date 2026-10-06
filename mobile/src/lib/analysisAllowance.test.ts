@@ -6,6 +6,7 @@ import {
   describeAnalysisCost,
   describeLastFreeAnalysis,
   describeReachedAnalysisLimit,
+  usedThisMonth,
   whenAnalysisAllowanceResets,
 } from './analysisAllowance';
 
@@ -146,5 +147,16 @@ describe('describeAnalysisCost', () => {
     expect(describeAnalysisCost(usage({ used: 0, limit: 1, remaining: 1 }))).toBe(
       '1 free take left this month',
     );
+  });
+});
+
+describe('usedThisMonth', () => {
+  it('names the free limit when the server sent one', () => {
+    expect(usedThisMonth(3, 3)).toBe('all 3 of your free analyses');
+  });
+
+  it('counts what was used otherwise, one in the singular', () => {
+    expect(usedThisMonth(1, null)).toBe('1 analysis');
+    expect(usedThisMonth(4, null)).toBe('4 analyses');
   });
 });

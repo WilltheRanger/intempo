@@ -120,7 +120,7 @@ export function TrendChart({
         // **The name stays; the value says where you are.** A screen reader
         // announces a slider's value as it moves and not a changed label, so
         // the bar's description in the label went unspoken (2026-10-05).
-        aria-label={`Across the take, ${count} bars`}
+        aria-label={`Across the take, ${count === 1 ? '1 bar' : `${count} bars`}`}
         aria-valuetext={current ? `${name} ${current.measure}: ${describe(current)}` : undefined}
         aria-valuemin={1}
         aria-valuemax={count}
