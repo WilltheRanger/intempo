@@ -923,7 +923,7 @@ starts sending a new one, the stub changes with it. Build against it with the
 three `EXPO_PUBLIC_*` values in its docstring, sign in with any address, and
 use `/__fail?status=500` to see what each screen says when the server is down.
 
-Run against it, that turned up three app defects the fixtures could not:
+Run against it, that turned up five app defects the fixtures could not:
 - **A failed history read as no takes.** `getPieceHistory` caught both of its
   requests into empty lists, so with a server down Your takes said "No takes
   yet". It also counted the failure as a success, so a refetch that failed
@@ -941,6 +941,17 @@ Run against it, that turned up three app defects the fixtures could not:
   "Check your connection and send it again". The background queue would also
   have kept retrying a take for a deleted piece. It now reads down the `cause`
   chain. Use `/__fail?tier_limit=1` after signing in to see it.
+- **A server error read as a deleted piece.** The score screen said "The piece
+  may have been removed from your library" for any failed load, including the
+  500 that met a piece imported a second earlier. `isGone` beside
+  `describeLoadError` is the rule: only a 404 (or a source's `null`) means gone.
+- **Data trimmed for disk came back fresh.** `persistCache` drops the account's
+  photo and a piece's pages because their links expire, and relies on the next
+  fetch to restore them. A restored query keeps its real `dataUpdatedAt`, so
+  within its `staleTime` (five minutes for `useMe`) nothing refetched, and a
+  reload just after setting a profile picture showed the initial for the rest
+  of the session. Trimmed kinds are now written with `isInvalidated: true`.
+  Anything that drops a field on the way to disk has to be restored stale.
 
 ## `npm audit fix --force` would take this app back to SDK 46 (2026-09-09)
 

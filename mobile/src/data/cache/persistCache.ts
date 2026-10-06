@@ -188,8 +188,16 @@ export function musicianForDisk(musician: Musician): Musician {
   return { ...musician, avatarUrl: null };
 }
 
+/**
+ * Whether a kind is cut down on its way to disk — the account loses its photo,
+ * a piece its pages and its thumbnail. The readings go as they are.
+ */
+function trimmedForDisk(kind: Kind): boolean {
+  return kind !== 'insights' && kind !== 'takes';
+}
+
 function dataForDisk(kind: Kind, data: unknown): unknown {
-  if (kind === 'insights' || kind === 'takes') {
+  if (!trimmedForDisk(kind)) {
     return data;
   }
   if (kind === 'me') {
@@ -208,7 +216,7 @@ function dataForDisk(kind: Kind, data: unknown): unknown {
 /** The dehydrated query shape, structurally — see the note in `takeFailure`. */
 interface StoredQuery {
   queryKey: readonly unknown[];
-  state: { status?: string; dataUpdatedAt?: number; data?: unknown };
+  state: { status?: string; dataUpdatedAt?: number; data?: unknown; isInvalidated?: boolean };
 }
 
 interface StoredClient {
@@ -267,7 +275,24 @@ export function serializeForDisk(client: StoredClient, budget = BUDGET_CHARS): s
   for (const { kind, query } of inPriorityOrder(client.clientState.queries)) {
     const stored: StoredQuery = {
       ...query,
-      state: { ...query.state, data: dataForDisk(kind, query.state.data) },
+      state: {
+        ...query.state,
+        data: dataForDisk(kind, query.state.data),
+        /*
+         * **Trimmed means stale, whatever the clock says.** The photo and the
+         * pages are taken out above on the promise that "the refetch puts them
+         * back a moment later" — and a refetch only happens for a query that is
+         * stale. Restored with its real `dataUpdatedAt`, an account fetched
+         * under five minutes ago (`useMe`'s `staleTime`) came back fresh, so
+         * nothing asked again: reload the web app just after setting a profile
+         * picture and the initial stood in for it, on a tab that stays mounted
+         * and so never remounts to ask (stub API, 2026-10-06). Invalidated, the
+         * restored copy still draws at once and the first screen to use it
+         * fetches the whole one. `dataUpdatedAt` is left alone, because the
+         * budget's ordering and the readings' shelf life are measured by it.
+         */
+        ...(trimmedForDisk(kind) ? { isInvalidated: true } : {}),
+      },
     };
     // The comma this entry would need once it is not the first one.
     const cost = JSON.stringify(stored).length + (queries.length ? 1 : 0);

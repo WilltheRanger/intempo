@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { QueryClient, hydrate } from '@tanstack/react-query';
 
 import {
   BUDGET_CHARS,
@@ -236,8 +237,13 @@ describe('serializeForDisk', () => {
           stored(['pieces', 'detail', 'old'], piece('old', 200), 1_000),
           stored(['pieces', 'detail', 'new'], piece('new', 200), 9_000),
         ]),
-        // Room for the envelope and one of the two.
-        JSON.stringify(client([stored(['pieces', 'detail', 'new'], pieceForDisk(piece('new', 200), true), 9_000)])).length,
+        // Room for the envelope and one of the two, measured as written
+        // rather than rebuilt here, so a field added to every entry cannot
+        // quietly leave room for neither.
+        serializeForDisk(
+          client([stored(['pieces', 'detail', 'new'], piece('new', 200), 9_000)]),
+          Number.POSITIVE_INFINITY,
+        ).length,
       ),
     );
     expect(out.clientState.queries.map((q) => q.queryKey[2])).toEqual(['new']);
@@ -306,5 +312,70 @@ describe('deserializeFromDisk', () => {
 
   it('passes a client it cannot read through untouched', () => {
     expect(deserializeFromDisk('{"nope":1}', NOW)).toEqual({ nope: 1 });
+  });
+});
+
+/**
+ * What comes back has to be asked for again wherever something was taken out.
+ *
+ * The account's photo and a piece's pages are dropped on the way to disk, on
+ * the understanding that the next fetch restores them. That fetch only runs for
+ * a stale query, and a query restored with its real `dataUpdatedAt` inside its
+ * `staleTime` is fresh: reload within five minutes of the last account fetch and
+ * the profile showed the initial in place of the photograph, for good.
+ */
+describe('a restored query that was trimmed', () => {
+  function restore(json: string): QueryClient {
+    const queryClient = new QueryClient();
+    const restored = JSON.parse(json) as { clientState: Parameters<typeof hydrate>[1] };
+    hydrate(queryClient, restored.clientState);
+    return queryClient;
+  }
+
+  it('is stale however recently it was fetched, so it is fetched whole again', () => {
+    const now = Date.now();
+    const queryClient = restore(
+      serializeForDisk(
+        client([
+          stored(['me'], musician(), now),
+          stored(['pieces', 'list'], [piece('p1')], now),
+          stored(['pieces', 'current'], piece('p1'), now),
+          stored(['pieces', 'detail', 'p1'], piece('p1'), now),
+        ]),
+      ),
+    );
+    for (const key of [['me'], ['pieces', 'list'], ['pieces', 'current'], ['pieces', 'detail', 'p1']]) {
+      const query = queryClient.getQueryCache().find({ queryKey: key, exact: true });
+      // `useMe`'s own `staleTime`, the longest any of these is given.
+      expect(query?.isStaleByTime(5 * 60 * 1000), JSON.stringify(key)).toBe(true);
+    }
+  });
+
+  it('still draws at once — the copy is there while the fetch runs', () => {
+    const queryClient = restore(serializeForDisk(client([stored(['me'], musician(), Date.now())])));
+    expect(queryClient.getQueryData<Musician>(['me'])?.displayName).toBe('Alex');
+  });
+
+  it('keeps its real age, which the budget and the shelf life are measured by', () => {
+    const out = JSON.parse(serializeForDisk(client([stored(['me'], musician(), 1234)]))) as {
+      clientState: { queries: { state: { dataUpdatedAt: number } }[] };
+    };
+    expect(out.clientState.queries[0]?.state.dataUpdatedAt).toBe(1234);
+  });
+
+  it('leaves the readings alone — nothing was taken out of them', () => {
+    const now = Date.now();
+    const queryClient = restore(
+      serializeForDisk(
+        client([
+          stored(['insights'], { trend: [] }, now),
+          stored(['takes', 'latest'], null, now),
+        ]),
+      ),
+    );
+    for (const key of [['insights'], ['takes', 'latest']]) {
+      const query = queryClient.getQueryCache().find({ queryKey: key, exact: true });
+      expect(query?.isStaleByTime(60_000), JSON.stringify(key)).toBe(false);
+    }
   });
 });
