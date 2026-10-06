@@ -3,6 +3,7 @@ import { Platform, Pressable, StyleSheet, Switch, View } from 'react-native';
 import { BORDER_WIDTH, colors, disabledOpacity, spacing } from '../../design';
 import { ROW_PADDING_VERTICAL } from '../rowMetrics';
 import { Text } from './Text';
+import { Inert } from './Inert';
 
 /**
  * react-native-web reads `activeThumbColor` for the "on" thumb and leaves
@@ -110,17 +111,23 @@ export function ToggleRow({
         `input[type=checkbox][role=switch]` inside, so every setting announced
         **two** switches: the row, labelled but stateless, and the input,
         stateful but unlabelled.
+
+        **And `Inert` around it**, because `aria-hidden` does not take a
+        checkbox out of the Tab order: every setting was still two Tab stops,
+        the second one silent (found by `audit-a11y`, 2026-10-05).
       */}
       <View pointerEvents="none" aria-hidden>
-        <Switch
-          value={value}
-          disabled={disabled}
-          accessible={false}
-          trackColor={{ false: colors.borderStrong, true: colors.accent }}
-          thumbColor={colors.surface}
-          ios_backgroundColor={colors.borderStrong}
-          {...WEB_THUMB}
-        />
+        <Inert inert>
+          <Switch
+            value={value}
+            disabled={disabled}
+            accessible={false}
+            trackColor={{ false: colors.borderStrong, true: colors.accent }}
+            thumbColor={colors.surface}
+            ios_backgroundColor={colors.borderStrong}
+            {...WEB_THUMB}
+          />
+        </Inert>
       </View>
     </Pressable>
   );

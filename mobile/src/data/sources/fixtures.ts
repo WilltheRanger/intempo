@@ -14,6 +14,7 @@ import type {
   ThumbnailSource,
   UntimedReason,
 } from '../types';
+import type { UpdateMeInput } from '../api/me';
 import type {
   InsightsSource,
   MusicianSource,
@@ -918,7 +919,23 @@ const CREATED_PIECES: FixturePiece[] = [];
  * only when no backend was configured. The worst it can do is make a *sample*
  * build look empty, which is what it is for.
  */
-const EMPTY_ACCOUNT: boolean = process.env.EXPO_PUBLIC_FIXTURES === 'empty';
+const EMPTY_ACCOUNT: boolean =
+  process.env.EXPO_PUBLIC_FIXTURES === 'empty' || process.env.EXPO_PUBLIC_FIXTURES === 'new';
+
+/**
+ * Whether the sample data is an account opened a moment ago:
+ * `EXPO_PUBLIC_FIXTURES=new`. Empty, as above, and **not yet onboarded** — no
+ * name, no instrument — so the build opens on the questions every new account
+ * meets first, then the welcome, then an empty library.
+ *
+ * Every other sample build is onboarded, because almost all of the app comes
+ * after those questions (see `FIXTURE_MUSICIAN`), and saving a profile there
+ * says it needs the backend. That left onboarding the one flow no build could
+ * show end to end: it ends in a save. Here the save lands on the sample
+ * account (`updateFixtureMusician`), in memory and gone on reload like
+ * everything else these fixtures hold.
+ */
+const NEW_ACCOUNT: boolean = process.env.EXPO_PUBLIC_FIXTURES === 'new';
 
 export const fixturePieceSource: PieceSource = {
   async listPieces() {
@@ -1059,11 +1076,48 @@ function nextMonthStart(): string {
   ).toISOString();
 }
 
+/** The sample account as it stands; only a `new` build ever changes it. */
+let fixtureMusician: Musician = NEW_ACCOUNT
+  ? {
+      ...FIXTURE_MUSICIAN,
+      displayName: null,
+      instrument: null,
+      onboarded: false,
+      usage: { used: 0, limit: 3, remaining: 3, resets_at: nextMonthStart() },
+    }
+  : FIXTURE_MUSICIAN;
+
 export const fixtureMusicianSource: MusicianSource = {
   async getMusician() {
-    return FIXTURE_MUSICIAN;
+    return fixtureMusician;
   },
 };
+
+/**
+ * Save a profile edit to the sample account, the way `PATCH /v1/me` would —
+ * or return false when this build does not take one, which is every build
+ * but `new` (see `NEW_ACCOUNT`).
+ *
+ * Onboarded only once both answers are on the account, which is the server's
+ * own rule: someone whose name landed and whose instrument did not is asked
+ * again.
+ */
+export function updateFixtureMusician(input: UpdateMeInput): boolean {
+  if (!NEW_ACCOUNT) {
+    return false;
+  }
+  const next: Musician = {
+    ...fixtureMusician,
+    ...(input.display_name !== undefined ? { displayName: input.display_name } : {}),
+    ...(input.instrument !== undefined ? { instrument: input.instrument } : {}),
+    ...(input.training_consent !== undefined ? { trainingConsent: input.training_consent } : {}),
+  };
+  fixtureMusician = {
+    ...next,
+    onboarded: next.onboarded || (input.onboarded === true && !!next.displayName && !!next.instrument),
+  };
+  return true;
+}
 
 /** The window Insights reports on. */
 const INSIGHTS_WINDOW_DAYS = 30;

@@ -1,4 +1,5 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useId, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from 'react';
+import type { FieldHandle } from '../../lib/fieldOrder';
 import {
   Platform,
   Pressable,
@@ -89,6 +90,14 @@ export interface InputProps {
   returnKeyType?: TextInputProps['returnKeyType'];
   onSubmitEditing?: TextInputProps['onSubmitEditing'];
   /**
+   * Keep focus when Return is pressed, because the caller is about to move it
+   * to the next field. Without it the keyboard drops and rises again between
+   * fields on iOS. `useFieldOrder` sets it; nothing else should need to.
+   */
+  keepFocusOnSubmit?: boolean;
+  /** Lets a form move focus here — see `useFieldOrder`. */
+  ref?: Ref<FieldHandle>;
+  /**
    * Focus and blur, passed straight through — composed with the field's own
    * focus ring and its suggestion, which is drawn only while it has focus.
    */
@@ -144,6 +153,8 @@ export function Input({
   textContentType,
   returnKeyType,
   onSubmitEditing,
+  keepFocusOnSubmit = false,
+  ref,
   onFocus,
   onBlur,
   editable = true,
@@ -156,6 +167,8 @@ export function Input({
 }: InputProps) {
   const [focused, setFocused] = useState(false);
   const input = useRef<TextInput>(null);
+  const errorId = useId();
+  useImperativeHandle(ref, () => ({ focus: () => input.current?.focus() }), []);
   // Where the cursor is, so → accepts only from the end of the text.
   const [cursor, setCursor] = useState<number | null>(null);
   // How wide what is typed is, and how wide the box is: the suggestion starts
@@ -222,7 +235,11 @@ export function Input({
           placeholderTextColor={colors.textTertiary}
           underlineColorAndroid="transparent"
           accessibilityLabel={optional ? `${label}, optional` : label}
-          accessibilityHint={offering ? `Suggests ${value}${completion}. Press return to accept.` : undefined}
+          // The error first: it is what has to change before anything else.
+          accessibilityHint={
+            error ?? (offering ? `Suggests ${value}${completion}. Press return to accept.` : undefined)
+          }
+          {...(error ? invalidBecause(errorId) : null)}
           secureTextEntry={secureTextEntry}
           keyboardType={keyboardType}
           autoCapitalize={autoCapitalize}
@@ -240,8 +257,8 @@ export function Input({
             }
             onSubmitEditing?.(event);
           }}
-          submitBehavior={offering ? 'submit' : undefined}
-          blurOnSubmit={offering ? false : undefined}
+          submitBehavior={offering || keepFocusOnSubmit ? 'submit' : undefined}
+          blurOnSubmit={offering || keepFocusOnSubmit ? false : undefined}
           onKeyPress={(event) => {
             const atEnd = cursor === null || cursor >= value.length;
             if (offering && acceptsCompletion(event.nativeEvent.key, atEnd)) {
@@ -265,11 +282,14 @@ export function Input({
         />
         {offering ? (
           <View pointerEvents="box-none" style={styles.ghostLayer}>
-            {/* What is typed, invisible, to find where it ends. */}
+            {/* What is typed, invisible, to find where it ends. `aria-hidden`
+                rather than the native-only flags: on the web those are
+                dropped, and a screen reader read the title out a second
+                time after the field. */}
             <NativeText
               numberOfLines={1}
               accessible={false}
-              importantForAccessibility="no-hide-descendants"
+              aria-hidden
               onLayout={(event) => setTypedWidth(event.nativeEvent.layout.width)}
               style={[...textStyle, styles.measure, { left: insetLeft }]}
             >
@@ -300,6 +320,7 @@ export function Input({
       </View>
       {error ? (
         <Text
+          nativeID={errorId}
           variant="metadataSmall"
           color="verdictBad"
           style={styles.error}
@@ -310,6 +331,21 @@ export function Input({
       ) : null}
     </View>
   );
+}
+
+/**
+ * The field is wrong, and the error under it says why.
+ *
+ * The error was announced once, from its live region, and was then just text
+ * near a field: going back to the field read "Title, edit text" with nothing
+ * about what to fix, and the browser reported it valid (measured 2026-10-05).
+ * `aria-invalid` and `aria-describedby` tie the two together for as long as
+ * the error stands. React Native's types declare neither, though
+ * react-native-web reads both — the cast is here once. On native the same
+ * words go in the hint, which VoiceOver reads after the label.
+ */
+function invalidBecause(errorId: string): object {
+  return { 'aria-invalid': true, 'aria-describedby': errorId };
 }
 
 /** The field's own horizontal padding, which the suggestion lines up with. */

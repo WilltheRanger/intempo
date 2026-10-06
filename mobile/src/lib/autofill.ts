@@ -1,4 +1,5 @@
 import { canonical, COMPOSERS } from './composers';
+import { fold, spellKeys } from './keySpelling';
 import { REPERTOIRE, type Work } from './repertoire';
 
 /**
@@ -35,11 +36,6 @@ export interface KnownTitle {
   composer: string | null;
 }
 
-/** One character, compared the way a phone keyboard types it. */
-function fold(text: string): string {
-  return text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
-}
-
 /**
  * Where `typed` ends inside `candidate`, if the candidate starts with it —
  * ignoring case and accents, so "dvo" reaches "Dvořák" and "etudes" reaches
@@ -48,8 +44,19 @@ function fold(text: string): string {
  * Returned as a position in the **candidate**, because the grey text is the
  * candidate's own rest ("řák", not "rak"), and folding can change a string's
  * length.
+ *
+ * **Then once more with the accidentals spelled one way**, only when the
+ * letters alone do not reach: the list writes "B-flat", the app prints "B♭",
+ * and a phone keyboard types "Bb", so "Cello Concerto in Bb" offered nothing
+ * for Boccherini's concerto in B-flat major. Second, not instead, so that
+ * "in B-fl" still finishes as "at major" the way it always did.
  */
 export function prefixEnd(candidate: string, typed: string): number {
+  const exact = foldedPrefixEnd(candidate, typed);
+  return exact >= 0 ? exact : spelledPrefixEnd(candidate, typed);
+}
+
+function foldedPrefixEnd(candidate: string, typed: string): number {
   const want = fold(typed);
   if (!want) return -1;
   let have = '';
@@ -59,6 +66,13 @@ export function prefixEnd(candidate: string, typed: string): number {
     if (have.length >= want.length) return have === want ? i + 1 : -1;
   }
   return -1;
+}
+
+function spelledPrefixEnd(candidate: string, typed: string): number {
+  const want = spellKeys(typed).text;
+  if (!want) return -1;
+  const have = spellKeys(candidate);
+  return have.text.startsWith(want) ? have.ends[want.length - 1] : -1;
 }
 
 /** The rest of `candidate` after `typed`, or null when there is none to offer. */

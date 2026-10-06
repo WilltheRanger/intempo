@@ -21,7 +21,6 @@ import {
   EmptyState,
   LoadingState,
   BackLink,
-  PageHeader,
   ScreenContainer,
   SecondaryButton,
   SegmentedControl,
@@ -334,12 +333,7 @@ export function PieceScoreScreen() {
   if (stillReading) {
     return (
       <ScreenContainer>
-        <PageHeader
-          title={piece.title}
-          titleSize="hero"
-          onBack={goBack}
-          backLabel="Back to piece"
-        />
+        <ScoreHead title={piece.title} onBack={goBack} />
         <TranscribingPanel piece={piece} />
         {hasPages ? (
           <ScoreThumbnail source={piece.thumbnail} style={styles.pageWhileReading} />
@@ -351,12 +345,7 @@ export function PieceScoreScreen() {
   if (piece.transcriptionStatus === 'failed') {
     return (
       <ScreenContainer>
-        <PageHeader
-          title={piece.title}
-          titleSize="hero"
-          onBack={goBack}
-          backLabel="Back to piece"
-        />
+        <ScoreHead title={piece.title} onBack={goBack} />
         {/*
           The backend's sentence, not a generic one. It knows which half failed
           — a page that could not be fetched and a page that could not be read
@@ -489,10 +478,7 @@ export function PieceScoreScreen() {
         piece's own: a way back in words, then the title. The composer is on
         the piece, one step back.
       */}
-      <View style={styles.head}>
-        <BackLink label="Back to the piece" onPress={goBack} />
-        <PieceHeading title={piece.title} variant="heroTitle" header containerStyle={styles.title} />
-      </View>
+      <ScoreHead title={piece.title} onBack={goBack} />
 
       {showToggle ? (
         <SegmentedControl
@@ -1138,6 +1124,23 @@ function ScoreAction({
       {/* A chevron means it opens, and each of these opens something. */}
       <TrailingChevron />
     </Pressable>
+  );
+}
+
+/**
+ * The way back and the piece's name, the same in every state of this screen.
+ *
+ * The reading and failed states had their own header, which said "Back to
+ * piece" and set the whole title on one line, so "Concerto in A minor, Op. 3
+ * No. 6" broke with the "6" alone underneath. The catalogue goes on its own
+ * line here, as it does on the piece itself.
+ */
+function ScoreHead({ title, onBack }: { title: string; onBack: () => void }) {
+  return (
+    <View style={styles.head}>
+      <BackLink label="Back to the piece" onPress={onBack} />
+      <PieceHeading title={title} variant="heroTitle" header containerStyle={styles.title} />
+    </View>
   );
 }
 

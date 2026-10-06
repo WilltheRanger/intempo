@@ -184,6 +184,42 @@ describe('searching the library', () => {
     expect(titles('   bach    suite   ')).toHaveLength(2);
   });
 
+  describe('a catalogue number or initials, however they are punctuated', () => {
+    const CATALOGUE = [
+      named('Sonata No. 1 in G minor, BWV 1001', 'J. S. Bach', null),
+      named('Concerto in A minor, Op. 3 No. 6', 'Antonio Vivaldi', null),
+      named('Violin Concerto No. 3 in G major, K. 216', 'W. A. Mozart', null),
+      named('60 Studies for the Violin, Op. 45', 'Franz Wohlfahrt', null),
+    ];
+    const found = (query: string) => searchLibrary(CATALOGUE, query).map((p) => p.composer);
+
+    it('finds a catalogue number typed without its space or with a dot', () => {
+      // Each of these found nothing (2026-10-05).
+      expect(found('bwv1001')).toEqual(['J. S. Bach']);
+      expect(found('op.3')).toEqual(['Antonio Vivaldi']);
+      expect(found('op3')).toEqual(['Antonio Vivaldi']);
+      expect(found('k216')).toEqual(['W. A. Mozart']);
+      expect(found('no.6')).toEqual(['Antonio Vivaldi']);
+    });
+
+    it('finds initials typed with or without their dots and spaces', () => {
+      expect(found('JS Bach')).toEqual(['J. S. Bach']);
+      expect(found('J.S. Bach')).toEqual(['J. S. Bach']);
+      expect(found('wa mozart')).toEqual(['W. A. Mozart']);
+    });
+
+    it('still narrows: every word has to be there', () => {
+      expect(found('op.3 mozart')).toEqual([]);
+      expect(found('op45 wohlfahrt')).toEqual(['Franz Wohlfahrt']);
+    });
+
+    it('does not let a query of only punctuation match everything', () => {
+      // It squashes to nothing, and nothing is in every title.
+      expect(found('!')).toEqual([]);
+      expect(found('- !')).toEqual([]);
+    });
+  });
+
   it('hands back the very same array for an empty search', () => {
     // **`toBe`, not `toEqual`, and the difference is the whole test.** With
     // `toEqual` this passed with the early return deleted — `[].every(...)` is
@@ -201,6 +237,54 @@ describe('searching the library', () => {
     expect(searchLibrary(REPERTOIRE, 'a').map((p) => p.id)).toEqual(
       REPERTOIRE.filter((p) => searchLibrary([p], 'a').length > 0).map((p) => p.id),
     );
+  });
+
+  describe('a key, however it is spelled', () => {
+    const KEYS = [
+      named('Study in B♭, turning to G', null, null),
+      named('Sonata in E-flat major', 'Haydn', null),
+      named('Nocturne in C sharp minor', 'Chopin', null),
+      named('Waltz in A flat', 'Chopin', null),
+      named('Club Flat Blues', null, null),
+    ];
+    const found = (query: string) => searchLibrary(KEYS, query).map((p) => p.title);
+
+    it('finds a flat typed as a sign, a letter, a word or a hyphenated word', () => {
+      // The app prints "B♭", a copied catalogue entry says "B-flat", and
+      // a phone keyboard offers "Bb" -- the one thing a musician is sure of,
+      // the key, found the piece only when spelled the same way twice.
+      // \`toContain\`: two words are still two terms as well, and "b flat"
+      // finds "Club Flat Blues" by its b and its flat, as it always did.
+      for (const query of ['b♭', 'Bb', 'b flat', 'B-flat']) {
+        expect(found(query)).toContain('Study in B♭, turning to G');
+      }
+      for (const query of ['eb major', 'E♭', 'e flat major']) {
+        expect(found(query)).toContain('Sonata in E-flat major');
+      }
+    });
+
+    it('finds a sharp the same ways', () => {
+      for (const query of ['c#', 'C♯ minor', 'c-sharp', 'C sharp']) {
+        expect(found(query)).toContain('Nocturne in C sharp minor');
+      }
+    });
+
+    it('still finds the word itself', () => {
+      // A second reading, not a rewrite: turning "A flat" into "ab" outright
+      // would have cost "flat" the waltz it used to find.
+      expect(found('flat')).toEqual(['Sonata in E-flat major', 'Waltz in A flat', 'Club Flat Blues']);
+      expect(found('ab')).toEqual(['Waltz in A flat']);
+    });
+
+    it('turns "flat" into a sign only after a note name standing alone', () => {
+      // "Club" ends in a b; that is not a key.
+      expect(found('bb')).toEqual(['Study in B♭, turning to G']);
+    });
+
+    it('matches nothing for a lone natural sign, rather than everything', () => {
+      // It spells to no terms at all, and no terms is true of every title.
+      expect(found('♮')).toEqual([]);
+    });
   });
 
   it('survives a piece with no composer and no movement', () => {

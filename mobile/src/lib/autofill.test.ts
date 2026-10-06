@@ -108,6 +108,44 @@ describe('the title offered', () => {
   });
 });
 
+describe('a key typed in another spelling', () => {
+  const BOCCHERINI = 'Cello Concerto in B-flat major, G. 482';
+
+  it('reaches "B-flat" from "Bb", "B♭" and "B flat"', () => {
+    // The list writes "B-flat", the app prints "B♭", and a phone keyboard
+    // types "Bb": all three are the one key, and only one of them completed.
+    for (const typed of ['Cello Concerto in Bb', 'Cello Concerto in B♭', 'cello concerto in b flat']) {
+      const offered = completeTitle(typed, []);
+      expect(offered?.value).toBe(BOCCHERINI);
+      expect(offered?.rest).toBe(' major, G. 482');
+    }
+  });
+
+  it('measures the rest in the candidate, after the whole "-flat"', () => {
+    expect(prefixEnd(BOCCHERINI, 'cello concerto in bb')).toBe('Cello Concerto in B-flat'.length);
+  });
+
+  it('still finishes a word half typed the way it always did', () => {
+    // The spelled reading is second, not instead: "B-fl" is not yet a key,
+    // and the letters alone already reach "at major".
+    expect(completeTitle('Cello Concerto in B-fl', [])?.rest).toBe('at major, G. 482');
+  });
+
+  it('works on titles in the library, which the app prints with the sign', () => {
+    const library = [{ title: 'Study in B♭, turning to G', composer: null }];
+    expect(completeTitle('Study in Bb', library)?.rest).toBe(', turning to G');
+  });
+
+  it('does not read the end of a word as a note name', () => {
+    // "Club" ends in a b; "Clubb" is a typo, not "Club flat".
+    expect(prefixEnd('Club flat blues', 'clubb')).toBe(-1);
+  });
+
+  it('offers nothing once the key and everything after it are typed', () => {
+    expect(completeTitle('Cello Concerto in Bb major, G. 482', [])).toBeNull();
+  });
+});
+
 describe('the built-in repertoire', () => {
   it('spells every catalogued composer exactly as the catalogue does', () => {
     // Accepting a title fills the composer field, and the library groups and

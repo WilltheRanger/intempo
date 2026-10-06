@@ -1,10 +1,19 @@
 import { GripVertical, RotateCcw, Trash2, type LucideIcon } from '../../components/icons';
-import { Pressable, StyleSheet, View, type PanResponderInstance } from 'react-native';
+import { useEffect, useRef } from 'react';
+import {
+  Platform,
+  Pressable,
+  StyleSheet,
+  View,
+  type PanResponderInstance,
+} from 'react-native';
 
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
 import { Card } from '../../components/primitives/Card';
 import { Text } from '../../components/primitives/Text';
 import type { CapturedPage } from '../../data/captureSession';
+import { announce } from '../../lib/announce';
+import { movedAnnouncement, reorderStep } from '../../lib/scan/drag';
 import { pageNote } from '../../lib/scan/pageQueue';
 import {
   BORDER_WIDTH,
@@ -50,6 +59,38 @@ export function PageRow({
   onMoveDown,
 }: PageRowProps) {
   const note = pageNote(page);
+
+  // After a move asked for here — a key on the web, an action on a phone —
+  // the row lands in its new place: say where, and on the web give focus back
+  // to the grip, which the list's reordering of the DOM takes away.
+  const grip = useRef<View>(null);
+  const moved = useRef<'key' | 'action' | null>(null);
+  useEffect(() => {
+    if (moved.current === null) return;
+    const by = moved.current;
+    moved.current = null;
+    if (by === 'key') (grip.current as unknown as HTMLElement | null)?.focus?.();
+    announce(movedAnnouncement(position, total));
+  }, [position, total]);
+
+  const move = useRef({ onMoveUp, onMoveDown });
+  move.current = { onMoveUp, onMoveDown };
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const element = grip.current as unknown as HTMLElement | null;
+    if (!element?.addEventListener) return;
+    function onKey(event: KeyboardEvent) {
+      const step = reorderStep(event.key);
+      if (step === null) return;
+      event.preventDefault();
+      moved.current = 'key';
+      if (step < 0) move.current.onMoveUp();
+      else move.current.onMoveDown();
+    }
+    element.addEventListener('keydown', onKey);
+    return () => element.removeEventListener('keydown', onKey);
+  }, []);
+
   return (
     <Card style={dragging ? styles.lifted : undefined} padded={false}>
       <View
@@ -58,16 +99,35 @@ export function PageRow({
         accessibilityLabel={
           note ? `Page ${position} of ${total}. ${note}` : `Page ${position} of ${total}`
         }
+        // **The row is one element to VoiceOver**, which groups `accessible`
+        // children away, so View, Retake and Delete inside it could not be
+        // reached on a phone. They are actions here, beside the two moves.
         accessibilityActions={[
+          { name: 'activate', label: 'View full size' },
           { name: 'moveUp', label: 'Move up' },
           { name: 'moveDown', label: 'Move down' },
+          { name: 'retake', label: 'Retake' },
+          { name: 'delete', label: 'Delete' },
         ]}
         onAccessibilityAction={(event) => {
-          if (event.nativeEvent.actionName === 'moveUp') {
-            onMoveUp();
-          }
-          if (event.nativeEvent.actionName === 'moveDown') {
-            onMoveDown();
+          switch (event.nativeEvent.actionName) {
+            case 'activate':
+              onOpen();
+              break;
+            case 'moveUp':
+              moved.current = 'action';
+              onMoveUp();
+              break;
+            case 'moveDown':
+              moved.current = 'action';
+              onMoveDown();
+              break;
+            case 'retake':
+              onRetake();
+              break;
+            case 'delete':
+              onDelete();
+              break;
           }
         }}
       >
@@ -114,12 +174,20 @@ export function PageRow({
           onPress={onDelete}
         />
 
+        {/*
+          A button the arrow keys move, on the web — not a slider, whose Up
+          means "more" and would move the page the opposite way to the arrow
+          (`reorderStep`). On a phone it sits inside the row above, and the
+          row's actions are the route.
+        */}
         <View
+          ref={grip}
           {...panHandlers}
           style={styles.handle}
-          accessibilityRole="adjustable"
-          accessibilityLabel={`Reorder page ${position}`}
-          accessibilityHint="Drag to move this page. Or use the move up and move down actions."
+          accessibilityRole="button"
+          accessibilityLabel={`Reorder page ${position} of ${total}`}
+          accessibilityHint="Drag to move this page, or use the arrow keys."
+          focusable
         >
           <GripVertical
             size={ICON_SIZE.md}

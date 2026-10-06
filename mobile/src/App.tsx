@@ -3,10 +3,11 @@ import {
   DefaultTheme,
   NavigationContainer,
   type Theme,
+  useNavigationContainerRef,
 } from '@react-navigation/native';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { useFonts } from 'expo-font';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -19,7 +20,6 @@ import { warmApi } from './data/api/client';
 import { describeFixtureReason, IS_LIVE_BACKEND } from './data/environment';
 import { createQueryClient } from './data/queryClient';
 import { prepareForPlayback } from './lib/audio/session';
-import { formatDocumentTitle } from './lib/documentTitle';
 import { hydratePracticeTempos } from './data/practiceTempo';
 import { hydratePreferences } from './data/preferences';
 import { hydratePendingAnalysis } from './data/practice/pendingAnalysis';
@@ -28,8 +28,13 @@ import * as SystemUI from 'expo-system-ui';
 import { colors, fontsToLoad, scheme } from './design';
 import { ChromeToneProvider } from './navigation/ChromeToneContext';
 import { RootNavigator } from './navigation/RootNavigator';
+import type { RootStackParamList } from './navigation/types';
 import { startLibraryCache } from './data/cache/libraryCache';
 import { startTakeDrainer } from './lib/sync/takeDrainer';
+import { installDocumentTitle, type DocumentTitle } from './lib/installDocumentTitle';
+import { installKeyActivation } from './lib/installKeyActivation';
+import { installRovingFocus } from './lib/installRovingFocus';
+import { installScreenFocus, type ScreenFocus } from './lib/installScreenFocus';
 
 const queryClient = createQueryClient();
 
@@ -162,6 +167,32 @@ export default function App() {
   // who walks back into coverage and opens the library should find their
   // takes going, not have to visit the room they recorded them in.
   useEffect(() => startTakeDrainer(), []);
+  // Space presses switches, radios and tabs on the web, as it does buttons,
+  // and Enter follows a link.
+  useEffect(() => installKeyActivation(), []);
+  // A radio group or tab list is one Tab stop and the arrows move within it,
+  // on the web; until then every bar of the score was a stop (`rovingFocus.ts`).
+  useEffect(() => installRovingFocus(), []);
+  // A new screen takes focus to its title, and Back returns it to where it
+  // was, on the web; until then both left it on <body> (`screenFocus.ts`).
+  const navigationRef = useNavigationContainerRef<RootStackParamList>();
+  const screenFocus = useRef<ScreenFocus | null>(null);
+  useEffect(() => {
+    const focus = installScreenFocus(() => navigationRef.getCurrentRoute()?.key);
+    screenFocus.current = focus;
+    // A child's effects run before its parent's, so the container may have
+    // been ready — and called `onReady` into nothing — before this ran.
+    if (navigationRef.isReady()) focus.ready();
+    return () => focus.dispose();
+  }, [navigationRef]);
+  // The browser tab names the screen showing, not only the product; until
+  // then every screen was "InTempo" (`documentTitle.ts`).
+  const documentTitle = useRef<DocumentTitle | null>(null);
+  useEffect(() => {
+    const title = installDocumentTitle();
+    documentTitle.current = title;
+    return () => title.dispose();
+  }, []);
 
   // The other half of practising without a connection.
   //
@@ -191,8 +222,19 @@ export default function App() {
         <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
         {typographyReady ? (
           <NavigationContainer
+            ref={navigationRef}
+            onReady={() => {
+              screenFocus.current?.ready();
+              documentTitle.current?.changed();
+            }}
+            onStateChange={() => {
+              screenFocus.current?.arrived();
+              documentTitle.current?.changed();
+            }}
             theme={navigationTheme}
-            documentTitle={{ formatter: formatDocumentTitle }}
+            // Off: `installDocumentTitle` names the tab from the screen's own
+            // title, and the navigator would overwrite it on every change.
+            documentTitle={{ enabled: false }}
             // Without this the whole app is one URL: back leaves the site,
             // a refresh returns to Today, and nothing can be linked to.
             // See `navigation/linking.ts`.

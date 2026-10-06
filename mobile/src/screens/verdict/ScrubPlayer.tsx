@@ -1,11 +1,12 @@
 import { useFocusEffect } from '@react-navigation/native';
-import { useCallback, useMemo, useRef, useState } from 'react';
-import { PanResponder, Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { PanResponder, Platform, Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 
 import { Pause, Play } from '../../components/icons';
 import { Text } from '../../components/primitives';
 import { BORDER_WIDTH, ICON_SIZE, ICON_STROKE_WIDTH, MIN_TOUCH_TARGET, colors, radii, spacing } from '../../design';
-import { SCRUB_STEP_S, scrubFraction, scrubSeconds, scrubStep } from '../../lib/verdict/scrub';
+import { sliderMove } from '../../lib/sliderKeys';
+import { SCRUB_BIG_STEPS, SCRUB_STEP_S, scrubFraction, scrubSeconds, scrubStep } from '../../lib/verdict/scrub';
 import { formatPlaybackTime } from './playbackTime';
 import { useTakeAudio } from './useTakeAudio';
 
@@ -91,6 +92,27 @@ export function ScrubPlayer({ uri }: ScrubPlayerProps) {
     [seekFraction],
   );
 
+  // The keys on the web, where a plain view has no keyboard prop: the handler
+  // goes on the DOM node react-native-web renders, as `TempoSlider` does.
+  // Read through a ref because the listener is attached once.
+  const track = useRef<View>(null);
+  const position = useRef({ current, duration });
+  position.current = { current, duration };
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const element = track.current as unknown as HTMLElement | null;
+    if (!element?.addEventListener) return;
+    function onKey(event: KeyboardEvent) {
+      const move = sliderMove(event.key, { big: SCRUB_BIG_STEPS, shift: event.shiftKey });
+      if (!move) return;
+      event.preventDefault();
+      const next = scrubStep(position.current.current, position.current.duration, move);
+      if (next !== null) void seekTo(next);
+    }
+    element.addEventListener('keydown', onKey);
+    return () => element.removeEventListener('keydown', onKey);
+  }, [seekTo]);
+
   const disabled = failed || !audio.ready;
   const Icon = audio.playing ? Pause : Play;
 
@@ -108,23 +130,26 @@ export function ScrubPlayer({ uri }: ScrubPlayerProps) {
       </Pressable>
       <View style={styles.rail}>
         <View
+          ref={track}
           {...scrubber.panHandlers}
           onLayout={measureTrack}
           accessibilityRole="adjustable"
           accessibilityLabel="Playback position"
           accessibilityHint={`Drag to move through the recording, or step by ${SCRUB_STEP_S} seconds.`}
-          accessibilityValue={{
-            min: 0,
-            max: Math.max(1, Math.round(duration)),
-            now: Math.round(current),
-            text: `${formatPlaybackTime(current)} of ${formatPlaybackTime(duration)}`,
-          }}
+          // The `aria-value*` props, not `accessibilityValue`, which
+          // react-native-web drops: the web slider had no value at all.
+          // Native reads these as the same accessibility value.
+          aria-valuemin={0}
+          aria-valuemax={Math.max(1, Math.round(duration))}
+          aria-valuenow={Math.round(current)}
+          aria-valuetext={`${formatPlaybackTime(current)} of ${formatPlaybackTime(duration)}`}
+          focusable={!disabled}
           accessibilityActions={[
             { name: 'increment', label: 'Forward' },
             { name: 'decrement', label: 'Back' },
           ]}
           onAccessibilityAction={(event) => {
-            const next = scrubStep(current, duration, event.nativeEvent.actionName === 'increment' ? 1 : -1);
+            const next = scrubStep(current, duration, { by: event.nativeEvent.actionName === 'increment' ? 1 : -1 });
             if (next !== null) void seekTo(next);
           }}
           style={styles.trackTarget}

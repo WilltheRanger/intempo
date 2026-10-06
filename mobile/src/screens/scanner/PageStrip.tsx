@@ -94,7 +94,7 @@ export function PageStrip({ pages, onOpen }: PageStripProps) {
           */}
           {page.reading && page.reading.tone === 'doubtful' ? (
             <View style={styles.mark}>
-              <Text variant="eyebrow" color="darkBg" accessibilityElementsHidden>
+              <Text variant="eyebrow" color="darkBg" aria-hidden>
                 !
               </Text>
             </View>

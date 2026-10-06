@@ -290,6 +290,67 @@ if ((await page.getByRole('button', { name: /^Continue\./ }).count()) > 0)
   pass('/library still opens the Library');
 else fail('/library no longer opens the Library');
 
+/*
+  **Closing a sheet gives focus back to what opened it.** React Native Web's
+  Modal means to and does not (`components/overlays/returnFocus.ts`): until
+  2026-10-05, Escape on Add piece left focus on <body>, so the next Tab began
+  again at the top of the page. By keyboard, because that is who it is for.
+*/
+await page.getByRole('button', { name: 'Add piece', exact: true }).focus();
+await page.keyboard.press('Enter');
+await waitFor('the Add piece sheet', async () => (await page.locator('[role=dialog]').count()) > 0);
+// **No invisible Tab stops while it is open.** The sheet's full-screen
+// backdrop was one — `accessible={false}` does not reach the web, and
+// Pressable sets a tab index of its own (2026-10-05).
+const hiddenInSheet = await page.evaluate(() =>
+  [...document.querySelectorAll('[tabindex], button, input')]
+    .filter((e) => e.tabIndex >= 0 && !e.disabled && !e.closest('[inert]'))
+    // react-native-web's own focus-trap brackets: zero height, role presentation.
+    .filter((e) => !(e.getAttribute('role') === 'presentation' && e.getBoundingClientRect().height === 0))
+    .filter(
+      (e) =>
+        e.closest('[aria-hidden="true"]') ||
+        (!e.getAttribute('role') && !e.getAttribute('aria-label') && !(e.textContent || '').trim() && !['INPUT', 'BUTTON'].includes(e.tagName)),
+    ).length,
+);
+if (hiddenInSheet === 0) pass('the open sheet has no hidden Tab stops');
+else fail(`the open sheet has ${hiddenInSheet} hidden Tab stop(s)`);
+// **And focus opens on a control, not on the backdrop.** Out of the Tab order
+// is not enough: the Modal's focus trap focuses the first element that will
+// take focus, and until 2026-10-06 that was the `aria-hidden` backdrop, on
+// every sheet and dialog (`components/overlays/DismissArea.tsx`).
+const focusInSheet = await page.evaluate(() => {
+  const a = document.activeElement;
+  return { name: a?.getAttribute('aria-label') ?? a?.tagName, hidden: Boolean(a?.closest('[aria-hidden="true"]')) };
+});
+if (focusInSheet.name === 'Close' && !focusInSheet.hidden) pass('the Add piece sheet opens with focus on Close');
+else fail(`the Add piece sheet opened with focus on ${JSON.stringify(focusInSheet)}`);
+await page.keyboard.press('Escape');
+await waitFor('the Add piece sheet to close', async () => (await page.locator('[role=dialog]').count()) === 0);
+const focusAfterSheet = await page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.tagName);
+if (focusAfterSheet === 'Add piece') pass('closing the Add piece sheet returns focus to Add piece');
+else fail(`closing the Add piece sheet left focus on ${focusAfterSheet}`);
+
+/*
+  **A field with an error says so, and says what.** "Add a title." was
+  announced once from its live region and then sat beside a field the browser
+  called valid, so going back to it read "Title, edit text" (2026-10-05). Read
+  from Chrome's own accessibility tree, which is what a screen reader gets.
+*/
+await open('add/manual');
+await page.getByRole('button', { name: /^Add/ }).last().click();
+await waitFor('the title error', async () => (await leaves()).some((line) => line === 'Add a title.'));
+{
+  const cdp = await page.context().newCDPSession(page);
+  const { nodes } = await cdp.send('Accessibility.getFullAXTree');
+  await cdp.detach();
+  const title = nodes.find((n) => !n.ignored && n.role?.value === 'textbox' && n.name?.value === 'Title');
+  const invalid = title?.properties?.find((p) => p.name === 'invalid')?.value?.value;
+  const said = title?.description?.value;
+  if (invalid === 'true' && said === 'Add a title.') pass('an empty title is marked invalid and described by its error');
+  else fail(`the Title field after an empty save: invalid ${invalid}, description ${JSON.stringify(said)}`);
+}
+
 // A deep link has no history behind it; back must still reach the parent.
 await open('pieces/fixture-clef-change-study/bars/3');
 // A link since the redesign (`BackLink`, "‹ Back to score"): it only goes
@@ -303,6 +364,41 @@ await page
 await waitFor('back out of the bar editor', async () => (await path()).endsWith('/score'));
 if ((await path()).endsWith('/score')) pass('deep-linked bar editor → back to the score');
 else fail(`deep-linked bar editor → back went to ${await path()}`);
+
+/*
+  **Enter follows a link.** react-native-web leaves Enter on `role="link"` to
+  the browser, which follows an <a href> and does nothing for a <div>, so every
+  back link in the app ignored the key until 2026-10-05
+  (`lib/keyActivation.ts`). By keyboard, because a click never failed.
+*/
+await open('pieces/fixture-bach-bwv1001/tempo');
+await page.getByRole('link', { name: /back/i }).first().focus();
+await page.keyboard.press('Enter');
+if (await waitFor('Enter on the back link to go back', async () => (await path()).endsWith('/record'), 8000))
+  pass('Enter on a back link goes back');
+
+/*
+  **A new screen takes focus to its title, and Back gives it back.** Until
+  2026-10-05 both left focus on <body>, so a screen reader said nothing about
+  the screen that had arrived and the next Tab began at the top of the
+  document (`lib/screenFocus.ts`).
+*/
+await open('');
+{
+  const focused = () =>
+    page.evaluate(() => ({
+      tag: document.activeElement?.tagName,
+      name: (document.activeElement?.getAttribute('aria-label') || document.activeElement?.textContent || '').trim(),
+    }));
+  await page.getByRole('button', { name: /^Study in B♭/ }).first().focus();
+  await page.keyboard.press('Enter');
+  if (await waitFor('focus on the piece title', async () => (await focused()).tag === 'H1', 5000))
+    pass('opening a piece puts focus on its title');
+  await page.getByRole('link', { name: /Back to library/ }).first().focus();
+  await page.keyboard.press('Enter');
+  if (await waitFor('focus back on the row', async () => (await focused()).name.startsWith('Study in B♭'), 5000))
+    pass('Back returns focus to the row that opened the piece');
+}
 
 console.log('\n## Finding a piece in the library');
 
@@ -396,6 +492,10 @@ await finds('a piece by its movement', 'adagio');
 // Accents nobody types, on a field the old rule never reached.
 await finds('Études without the accent', 'etudes');
 await finds('Méditation without the accent', 'meditation');
+// A catalogue number and initials as people type them: no space, no dots.
+// Both found nothing until 2026-10-05 (`searchLibrary`, `squash`).
+await finds('BWV 1001 typed without its space', 'bwv1001');
+await finds('J. S. Bach typed without the dots', 'js bach');
 // Narrowing has to narrow: a second word that matches nothing must not bring
 // back the results of the first.
 const bach = await searchCount('bach');
@@ -428,8 +528,8 @@ const cleared = await leaves();
 // longer on screen and the browsing shelf — which only renders unsearched —
 // is back.
 const stillFiltered = cleared.some((line) => /Nothing in your library matches/.test(line));
-// The four `GROUP_LABELS` in `lib/library.ts`. Rendered upper-case by
-// `SectionHeader`, hence the flag.
+// The four `GROUP_LABELS` in `lib/library.ts`, matched without regard to
+// case so a change of heading style does not read as a filtered shelf.
 const browsing = cleared.some((line) =>
   /^(This week|Earlier this month|Longer ago|Not practiced yet)$/i.test(line),
 );
@@ -610,6 +710,26 @@ console.log('\n## Photographing a piece');
     else if (!onReview.some((l) => /^Continue with 2 pages$/.test(l)))
       fail('the review screen does not say how many pages it has');
     else pass('two imported pages arrive in order, and the count agrees');
+
+    /*
+      **The order can be changed by keyboard, and says so.** The grip was a
+      slider with no tab stop until 2026-10-05, and the moves its hint named
+      are native screen-reader actions the web does not have. Moved down and
+      back, so the order below is the order above.
+    */
+    const sources = () => scan.$$eval('img', (images) => images.map((image) => image.getAttribute('src')));
+    const before = await sources();
+    await scan.locator('[aria-label^="Reorder page 1 of"]').first().focus().catch(() => {});
+    await scan.keyboard.press('ArrowDown');
+    await scan.waitForTimeout(500);
+    const after = await sources();
+    const said = await scan.$$eval('[role=status][aria-live]', (regions) => regions.map((r) => r.textContent.trim()).join(' '));
+    const followed = await scan.evaluate(() => document.activeElement?.getAttribute('aria-label'));
+    if (after[0] === before[1] && after[1] === before[0] && said.includes('Page moved to 2 of 2') && /^Reorder page 2 of/.test(followed ?? ''))
+      pass('Down on a page\'s grip moves it, keeps focus on it and says where it went');
+    else fail(`keyboard reorder: order ${after[0] === before[1] ? 'moved' : 'unchanged'}, said "${said}", focus on ${followed}`);
+    await scan.keyboard.press('ArrowUp');
+    await scan.waitForTimeout(500);
 
     /*
      * **Guarded, and that is not defensiveness for its own sake.** Proving this
@@ -888,8 +1008,10 @@ console.log('\n## Telling the app it got a bar wrong');
 
   // A bar under a written change was never judged, so the graph must say so
   // rather than read a tempo into it.
+  // The bar's reading is the slider's value text; its label is the chart's
+  // name and does not change as the bar does (2026-10-05).
   await selectMeasure(11);
-  const label = (await chart.getAttribute('aria-label')) ?? '';
+  const label = (await chart.getAttribute('aria-valuetext')) ?? '';
   if (!/Not timed/i.test(label)) fail(`measure 11 read as "${label}", not "Not timed"`);
   else pass('an untimed bar reads as not timed');
 
@@ -1429,6 +1551,25 @@ console.log('\n## A take that records');
     const length = await awaitLine((l) => /^\d+:\d\d$/.test(l) && l !== '0:00', 8000);
     if (length) pass(`the held take plays back: ${length} long`);
     else fail('the held take never loaded into its player');
+    // **The scrubber answers the keyboard and says where it is.** It was a
+    // slider with no tab stop and no value on the web until 2026-10-05
+    // (`lib/verdict/scrub.ts`); a click was the only way to move it.
+    // A step is five seconds, and a take shorter than that stops at its end.
+    const scrub = loud.getByRole('slider', { name: 'Playback position' }).first();
+    await scrub.focus().catch(() => {});
+    await loud.keyboard.press('ArrowRight');
+    await loud.waitForTimeout(400);
+    const moved = await scrub
+      .evaluate((e) => ({
+        focused: document.activeElement === e,
+        now: Number(e.getAttribute('aria-valuenow')),
+        max: Number(e.getAttribute('aria-valuemax')),
+        text: e.getAttribute('aria-valuetext'),
+      }))
+      .catch(() => null);
+    if (moved?.focused && moved.now === Math.min(5, moved.max) && moved.now > 0)
+      pass(`the scrubber steps on an arrow key: "${moved.text}"`);
+    else fail(`the scrubber did not answer the arrow key: ${JSON.stringify(moved)}`);
     await analyse.click({ timeout: 10000 }).catch(() => {});
     const leave = await awaitLine((l) => l === 'Leave while it works', 8000);
     if (leave) pass('the wait offers to let the musician leave');
@@ -1509,6 +1650,125 @@ console.log('\n## Listen');
   if (await sounded(first, 40000)) pass('and again on the second press');
   else fail('the second Listen sounded nothing — "Listen only works on the first listen" is back');
   await ear.close();
+}
+
+/*
+  **Record's Listen bar moves a bar at a time from the keyboard.** It was a
+  slider with no tab stop, no value and no increment action until 2026-10-05,
+  so dragging was the only way to choose where listening began
+  (`lib/score/listenPosition.ts`, `barAfter`).
+*/
+await open('pieces/fixture-bach-bwv1001/record');
+{
+  const bar = page.getByRole('slider', { name: 'Listening position' }).first();
+  await bar.focus().catch(() => {});
+  const before = await bar.getAttribute('aria-valuenow').catch(() => null);
+  await page.keyboard.press('ArrowRight');
+  await page.waitForTimeout(300);
+  const after = await bar.getAttribute('aria-valuetext').catch(() => null);
+  if (before !== null && after && !after.startsWith(`Bar ${before},`))
+    pass(`Record's Listen bar steps on an arrow key: bar ${before} → "${after}"`);
+  else fail(`Record's Listen bar did not answer the arrow key: ${before} → ${after}`);
+}
+
+/*
+  **The score on Record is one Tab stop, and the arrows move between its
+  bars.** Every bar was a Tab stop of its own until 2026-10-05 — one for each
+  bar of a real piece between the music and "Start recording" — and the arrows
+  did nothing (`lib/rovingFocus.ts`). They move focus and do not choose: Space
+  does, as a tap does.
+*/
+await open('pieces/fixture-bach-bwv1001/record');
+{
+  const focused = () =>
+    page.evaluate(() => ({
+      label: document.activeElement?.getAttribute('aria-label') ?? '',
+      checked: document.activeElement?.getAttribute('aria-checked') ?? null,
+    }));
+  await page.getByRole('button', { name: 'More' }).first().focus().catch(() => {});
+  await page.keyboard.press('Tab');
+  const entered = await focused();
+  await page.keyboard.press('ArrowRight');
+  const moved = await focused();
+  await page.keyboard.press('Space');
+  await page.waitForTimeout(300);
+  const chosen = await focused();
+  await page.keyboard.press('Tab');
+  const left = await focused();
+  if (
+    entered.label === 'Start at bar 1' &&
+    entered.checked === 'true' &&
+    moved.label === 'Start at bar 2' &&
+    moved.checked === 'false' &&
+    chosen.checked === 'true' &&
+    !left.label.startsWith('Start at bar ')
+  )
+    pass(`Record's bars are one Tab stop: in on bar 1, arrow to bar 2 unchosen, Space chooses, Tab out to "${left.label}"`);
+  else
+    fail(
+      `Record's bars as a group: in ${JSON.stringify(entered)}, arrow ${JSON.stringify(moved)}, ` +
+        `Space ${JSON.stringify(chosen)}, Tab out ${JSON.stringify(left)}`,
+    );
+}
+
+/*
+  **The tab bar is one Tab stop too, and Profile's metronome is a choice, not
+  tabs.** The bar's tabs had no tab list round them and were a stop each, and
+  the metronome's four options were announced as tabs with no panel for any of
+  them (2026-10-06). The arrows move focus; Enter or Space acts.
+*/
+await open('profile');
+{
+  const focused = () =>
+    page.evaluate(() => {
+      const a = document.activeElement;
+      return {
+        label: a?.getAttribute('aria-label') ?? '',
+        role: a?.getAttribute('role') ?? '',
+        chosen: a?.getAttribute('aria-checked') ?? a?.getAttribute('aria-selected') ?? null,
+      };
+    });
+  await page.getByRole('radio', { name: 'Off' }).first().focus().catch(() => {});
+  await page.keyboard.press('ArrowRight');
+  const metronome = await focused();
+  await page.getByRole('tab', { name: 'Profile' }).first().focus().catch(() => {});
+  await page.keyboard.press('ArrowLeft');
+  const moved = await focused();
+  const stillOnProfile = new URL(page.url()).pathname === '/profile';
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(900);
+  const arrived = new URL(page.url()).pathname;
+  if (
+    metronome.role === 'radio' &&
+    metronome.label === 'Visual' &&
+    metronome.chosen === 'false' &&
+    moved.label === 'Insights' &&
+    stillOnProfile &&
+    arrived === '/insights'
+  )
+    pass('the metronome is a radio group the arrows move in, and the tab bar moves by arrow and opens on Enter');
+  else
+    fail(
+      `metronome ${JSON.stringify(metronome)}; tab bar arrow ${JSON.stringify(moved)}, ` +
+        `stayed on Profile ${stillOnProfile}, Enter went to ${arrived}`,
+    );
+}
+
+/*
+  **The browser tab names the screen.** Every screen's title was "InTempo"
+  until 2026-10-06, so history and the tab strip could not tell them apart
+  (`lib/documentTitle.ts`). Opened in the app rather than loaded, because
+  following navigation is the half a single page load cannot show.
+*/
+await open('');
+{
+  const library = await page.title();
+  await page.getByRole('button', { name: /Study in B♭/ }).first().click().catch(() => {});
+  await waitFor('the piece', async () => (await page.title()) !== library, 5000);
+  const piece = await page.title();
+  if (library === 'Library – InTempo' && piece === 'Study in B♭, turning to G – InTempo')
+    pass(`the tab names the screen: "${library}", then "${piece}"`);
+  else fail(`the tab read "${library}", then "${piece}"`);
 }
 
 console.log('\n## Page errors');

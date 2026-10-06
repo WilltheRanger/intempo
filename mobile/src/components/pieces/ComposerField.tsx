@@ -1,6 +1,8 @@
+import type { Ref } from 'react';
 import type { StyleProp, ViewStyle } from 'react-native';
 
 import { completeComposer } from '../../lib/autofill';
+import type { FieldHandle } from '../../lib/fieldOrder';
 import { Input } from '../primitives/Input';
 import { FIELD_LIMITS } from '../../lib/fieldLimits';
 
@@ -13,8 +15,11 @@ export interface ComposerFieldProps {
    *
    * Defaults to `next`, which is right wherever a Movement field follows.
    */
-  returnKeyType?: 'next' | 'done';
+  returnKeyType?: 'next' | 'done' | 'go';
   onSubmitEditing?: () => void;
+  /** From `useFieldOrder`: keep focus on Return while it moves on. */
+  keepFocusOnSubmit?: boolean;
+  ref?: Ref<FieldHandle>;
 }
 
 /**
@@ -44,6 +49,8 @@ export function ComposerField({
   style,
   returnKeyType = 'next',
   onSubmitEditing,
+  keepFocusOnSubmit,
+  ref,
 }: ComposerFieldProps) {
   const offer = completeComposer(value);
   return (
@@ -57,8 +64,10 @@ export function ComposerField({
       // Off: the field's own suggestion is the repertoire, and the keyboard's
       // are a person's contacts.
       autoComplete="off"
+      ref={ref}
       returnKeyType={returnKeyType}
       onSubmitEditing={onSubmitEditing}
+      keepFocusOnSubmit={keepFocusOnSubmit}
       completion={offer?.rest ?? null}
       onAcceptCompletion={() => {
         if (offer) onChangeText(offer.value);

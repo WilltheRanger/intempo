@@ -17,6 +17,7 @@ import {
 } from '../../components/primitives';
 import { colors, EASE_OUT, MIN_TOUCH_TARGET, motion, spacing } from '../../design';
 import { ONBOARDING_STEPS, stepNumber, type OnboardingStep } from '../../lib/onboardingSteps';
+import { progressValue } from '../../lib/progressValue';
 import { useReducedMotion } from '../../lib/useReducedMotion';
 import { sceneOffset, type SceneDirection } from '../../navigation/sceneMotion';
 
@@ -111,7 +112,7 @@ export function StepFrame({
           ) : null}
           <View style={styles.answer}>{children}</View>
           {error ? (
-            <Text variant="metadataSmall" color="textSecondary" style={styles.error}>
+            <Text accessibilityRole="alert" variant="metadataSmall" color="textSecondary" style={styles.error}>
               {error}
             </Text>
           ) : null}
@@ -130,7 +131,7 @@ function StepProgress({ step }: { step: OnboardingStep }) {
       accessible
       accessibilityRole="progressbar"
       accessibilityLabel={`Step ${at} of ${of}`}
-      accessibilityValue={{ min: 1, max: of, now: at }}
+      {...progressValue(at / of)}
       style={styles.progress}
     >
       {ONBOARDING_STEPS.map((each, index) => (

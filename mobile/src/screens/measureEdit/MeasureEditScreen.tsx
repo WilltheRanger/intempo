@@ -70,6 +70,7 @@ import {
   type TempoMarkChoice,
 } from './tempoMarkEdit';
 import { FIELD_LIMITS } from '../../lib/fieldLimits';
+import { printedPitch } from '../../lib/notation/printedPitch';
 
 /**
  * Fixing a measure whose durations do not add up.
@@ -355,7 +356,7 @@ export function MeasureEditScreen() {
       footer={
         <View>
           {error ? (
-            <Text variant="metadataSmall" color="textSecondary" style={styles.footerError}>
+            <Text accessibilityRole="alert" variant="metadataSmall" color="textSecondary" style={styles.footerError}>
               {error}
             </Text>
           ) : null}
@@ -509,13 +510,13 @@ export function MeasureEditScreen() {
             accessibilityState={{ selected: i === selected }}
             aria-pressed={i === selected}
             accessibilityLabel={`Note ${i + 1}, ${DURATION_LABELS[note.duration] ?? note.duration}${
-              note.pitch === 'rest' ? ', rest' : `, ${note.pitch}`
+              note.pitch === 'rest' ? ', rest' : `, ${printedPitch(note.pitch)}`
             }`}
             style={({ pressed }) => [styles.note, i === selected && styles.noteSelected, pressed && styles.pressed]}
           >
             <Text variant="metadata">{DURATION_LABELS[note.duration] ?? note.duration}</Text>
             <Text variant="metadataSmall" color="textTertiary">
-              {note.pitch === 'rest' ? 'rest' : note.pitch}
+              {note.pitch === 'rest' ? 'rest' : printedPitch(note.pitch)}
             </Text>
           </Pressable>
         ))}
@@ -661,10 +662,10 @@ export function MeasureEditScreen() {
           <Pressable
             onPress={() => change({ pitch: cycleAccidental(current.pitch) })}
             accessibilityRole="button"
-            accessibilityLabel={`${current.pitch}. Change the accidental`}
+            accessibilityLabel={`${printedPitch(current.pitch)}. Change the accidental`}
             style={({ pressed }) => [styles.pitchName, pressed && styles.pressed]}
           >
-            <Text style={styles.pitchText}>{prettyPitch(current.pitch)}</Text>
+            <Text style={styles.pitchText}>{printedPitch(current.pitch)}</Text>
           </Pressable>
           <Pressable
             onPress={() => change({ pitch: stepPitch(current.pitch, 1) })}
@@ -888,6 +889,9 @@ export function MeasureEditScreen() {
                 onChangeText={setSheetPrinted}
                 placeholder={usualPrinted(sheetChoice, sheetBpm, tempoBefore) || 'meno mosso'}
                 autoCapitalize="none"
+                // The sheet's one field, above its Done: Return is Done.
+                returnKeyType="done"
+                onSubmitEditing={commitTempo}
               />
             </View>
           ) : null}
@@ -1081,7 +1085,3 @@ const styles = StyleSheet.create({
   },
 });
 
-/** "F#3" as it is printed: the sharp and flat signs rather than "#" and "b". */
-function prettyPitch(pitch: string): string {
-  return pitch.replace('#', '\u266F').replace(/^([A-G])b/, '$1\u266D');
-}

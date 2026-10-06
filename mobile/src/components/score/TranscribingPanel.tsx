@@ -10,6 +10,7 @@ import {
   progressFor,
   type PageProgress,
 } from '../../lib/transcriptionProgress';
+import { progressValue } from '../../lib/progressValue';
 import { useReducedMotion } from '../../lib/useReducedMotion';
 
 
@@ -81,7 +82,7 @@ export function TranscribingPanel({ piece }: TranscribingPanelProps) {
   });
 
   return (
-    <View style={styles.panel} accessibilityRole="progressbar">
+    <View style={styles.panel}>
       {/*
         A page with no stage yet is *queued* — waiting for another page to
         finish, because the server reads a bounded number at once. "Getting
@@ -96,7 +97,17 @@ export function TranscribingPanel({ piece }: TranscribingPanelProps) {
             : 'Getting ready to read this page')}
       </Text>
 
-      <View style={styles.track}>
+      {/*
+        The role is on the rail, as on the analysis wait's (`RecordScreen`): a
+        progress bar wrapped round the step, the queue and the caption made
+        them its own content, which WebKit does not read out.
+      */}
+      <View
+        style={styles.track}
+        accessibilityRole="progressbar"
+        accessibilityLabel="Reading the page"
+        {...progressValue(target)}
+      >
         <Animated.View style={[styles.fill, { width }]} />
       </View>
 

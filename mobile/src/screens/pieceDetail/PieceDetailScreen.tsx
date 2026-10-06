@@ -12,6 +12,7 @@ import {
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { ComposerField } from '../../components/pieces/ComposerField';
+import { useFieldOrder } from '../../components/primitives/useFieldOrder';
 
 import { BottomSheet } from '../../components/overlays/BottomSheet';
 import { PieceHeading } from '../../components/pieces/PieceHeading';
@@ -102,6 +103,8 @@ export function PieceDetailScreen() {
   const [draftComposer, setDraftComposer] = useState('');
   const [draftMovement, setDraftMovement] = useState('');
   const [error, setError] = useState<string | null>(null);
+  // Rename: title, composer, movement; Return in the last saves.
+  const field = useFieldOrder(3, () => void saveEdit());
 
   const updatePiece = useUpdatePiece(params.pieceId);
   const deletePiece = useDeletePiece();
@@ -237,6 +240,7 @@ export function PieceDetailScreen() {
       {editing ? (
         <Card style={styles.editCard}>
           <Input
+            {...field(0)}
             label="Title"
             maxLength={FIELD_LIMITS.pieceTitle}
             value={draftTitle}
@@ -248,11 +252,13 @@ export function PieceDetailScreen() {
           {/* Correcting a name afterwards is exactly when a musician reaches
               for the spelling the rest of their library uses. */}
           <ComposerField
+            {...field(1)}
             value={draftComposer}
             onChangeText={setDraftComposer}
             style={styles.editField}
           />
           <Input
+            {...field(2)}
             label="Movement"
             maxLength={FIELD_LIMITS.movement}
             optional
@@ -281,7 +287,7 @@ export function PieceDetailScreen() {
         arrives.
       */}
       {error ? (
-        <Text variant="metadataSmall" color="textSecondary" style={styles.error}>
+        <Text accessibilityRole="alert" variant="metadataSmall" color="textSecondary" style={styles.error}>
           {error}
         </Text>
       ) : null}

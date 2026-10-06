@@ -64,7 +64,9 @@ export class ErrorBoundary extends Component<
       <View style={styles.root}>
         <ScreenContainer contentStyle={styles.centred}>
           <View>
-            <Text variant="screenTitle">Something broke</Text>
+            <Text variant="screenTitle" accessibilityRole="header">
+              Something broke
+            </Text>
             <Text variant="body" color="textSecondary" style={styles.message}>
               InTempo hit an error it couldn&apos;t recover from on its own.
               Nothing you&apos;ve saved is affected.

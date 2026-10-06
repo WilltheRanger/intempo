@@ -57,6 +57,30 @@ export function beatsPerMeasure(timeSignature: string | null): number | null {
 }
 
 /**
+ * A time signature as a musician types it, ready to save, or null if it is not
+ * one.
+ *
+ * **"C" and "¢" are how a part prints common and cut time**, and the typed-in
+ * piece form refused both with "Use a time signature like 4/4" (2026-10-05).
+ * They are saved as 4/4 and 2/2, the only spelling this counter, the metronome
+ * and the server read.
+ *
+ * Anything else is accepted exactly when `beatsPerMeasure` can count a bar of
+ * it. The form used to keep its own regex, `/^\d{1,2}\/\d{1,2}$/`, which was
+ * looser than the counter: it took `0/4`, `4/0` and `0/0`, which the counter
+ * and the meter parity fixture read as no metre at all, so the piece screen
+ * showed `0/4` while the metronome, the bar check and the editor behaved as if
+ * nothing had been read. Asking the counter also accepts the spaces the backend
+ * tolerates (`" 4 / 4 "`).
+ */
+export function typedTimeSignature(value: string): string | null {
+  const typed = value.trim();
+  if (/^c$/i.test(typed)) return '4/4';
+  if (/^(¢|c\|)$/i.test(typed)) return '2/2';
+  return beatsPerMeasure(typed) !== null ? typed : null;
+}
+
+/**
  * Measures whose durations do not fill the bar.
  *
  * The same arithmetic the backend runs in `ocr/validate.py`, for the same
@@ -390,6 +414,18 @@ export function beatsIn(notes: { duration: string }[]): number | null {
 }
 
 /**
+ * A number of beats, as written: "1 beat", "4 beats", "1.5 beats".
+ *
+ * A bar of one beat — a 1/4 bar, or a single quarter in a bar with no time
+ * signature read — said "1 beats" in the bar editor and "of 1 beats" under
+ * it. Only exactly one takes the singular; a fraction of a beat reads as
+ * plural ("0.5 beats").
+ */
+export function beatCount(shown: string): string {
+  return shown === '1' ? '1 beat' : `${shown} beats`;
+}
+
+/**
  * The beat total as a sentence, and whether it balances.
  *
  * **Rounded to two places for showing, `BEAT_TOLERANCE` for deciding.** Two
@@ -437,20 +473,20 @@ export function describeBeats(
   if (expected === null) {
     // No time signature was read, so there is nothing to balance against.
     // Saying "4 beats" is still useful; claiming it is right would not be.
-    return { text: `${shown} beats`, balanced: true, expected: null, pickup: false };
+    return { text: beatCount(shown), balanced: true, expected: null, pickup: false };
   }
   if (isPickup(first ? 0 : 1, actual, expected, notes.length)) {
     // The backend's own words for this measure, so the two never disagree in
     // front of a musician: "allowed, a first measure may be a pickup".
     return {
-      text: `${shown} of ${expected} beats, a pickup`,
+      text: `${shown} of ${beatCount(String(expected))}, a pickup`,
       balanced: true,
       expected,
       pickup: true,
     };
   }
   return {
-    text: `${shown} of ${expected} beats`,
+    text: `${shown} of ${beatCount(String(expected))}`,
     balanced: Math.abs(actual - expected) < BEAT_TOLERANCE,
     expected,
     pickup: false,

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import page from '../../public/index.html?raw';
 import manifestSource from '../../public/manifest.webmanifest?raw';
 import headers from '../../public/_headers?raw';
+import { screenConfig } from '../navigation/linking';
 
 interface WebManifest {
   name: string;
@@ -13,6 +14,7 @@ interface WebManifest {
   background_color: string;
   theme_color: string;
   icons: Array<{ src: string; sizes: string; type: string }>;
+  shortcuts: Array<{ name: string; short_name: string; url: string }>;
 }
 
 const manifest = JSON.parse(manifestSource) as WebManifest;
@@ -36,6 +38,22 @@ describe('installable web app packaging', () => {
     const htmlTheme = /name="theme-color" content="([^"]+)"/.exec(page)?.[1];
     expect(manifest.theme_color).toBe(htmlTheme);
     expect(manifest.background_color).toBe(htmlTheme);
+  });
+
+  it('offers shortcuts only to screens the app still has, by their own names', () => {
+    // A long-press on the installed icon still listed "Today" after the Today
+    // tab went (2026-09-30): it opened the Library, under a name the app no
+    // longer uses anywhere, beside a "Library" shortcut that did the same.
+    const tabs = (screenConfig?.screens.Tabs as { screens: Record<string, string | { path: string }> })
+      .screens;
+    expect(manifest.shortcuts.length).toBeGreaterThan(0);
+    for (const shortcut of manifest.shortcuts) {
+      const route = tabs[shortcut.name];
+      expect(route, shortcut.name).toBeDefined();
+      const path = typeof route === 'string' ? route : route.path;
+      expect(shortcut.url, shortcut.name).toBe(`/${path}`);
+      expect(shortcut.short_name).toBe(shortcut.name);
+    }
   });
 
   it('provides a real PNG home-screen icon', () => {

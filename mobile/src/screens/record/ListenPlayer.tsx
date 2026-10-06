@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   PanResponder,
+  Platform,
   Pressable,
   StyleSheet,
   View,
@@ -21,11 +22,14 @@ import {
   voiceForInstrument,
 } from '../../lib/score';
 import {
+  LISTEN_PHRASE,
+  barAfter,
   barAt,
   barStarts,
   clockLabel,
   startOfBar,
 } from '../../lib/score/listenPosition';
+import { sliderMove, type SliderMove } from '../../lib/sliderKeys';
 import { warmPlayback } from '../../lib/score/warmPlayback';
 import { playSchedule } from '../../lib/scorePlayer';
 import type { PlaybackHandle } from '../../lib/score/player.types';
@@ -176,6 +180,37 @@ export function ListenPlayer({
     }
   }
 
+  /** A step by key or screen-reader action: the same landing as a drag. */
+  function moveBy(move: SliderMove) {
+    const bar = barAfter(starts, fromBar, move);
+    if (bar === null || bar === fromBar) return;
+    setFromBar(bar);
+    if (playing) play(bar);
+  }
+  const keys = useRef(moveBy);
+  keys.current = moveBy;
+
+  // The keys on the web, where a plain view has no keyboard prop: on the DOM
+  // node react-native-web renders, as `TempoSlider` does.
+  const rail = useRef<View>(null);
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const element = rail.current as unknown as HTMLElement | null;
+    if (!element?.addEventListener) return;
+    function onKey(event: KeyboardEvent) {
+      const move = sliderMove(event.key, { big: LISTEN_PHRASE });
+      if (!move || live.current.disabled) return;
+      event.preventDefault();
+      keys.current(move);
+    }
+    element.addEventListener('keydown', onKey);
+    return () => element.removeEventListener('keydown', onKey);
+  }, []);
+
+  const firstBar = starts[0]?.measure ?? 1;
+  const lastBar = starts[starts.length - 1]?.measure ?? firstBar;
+  const barNow = barAt(starts, position)?.measure ?? fromBar;
+
   function handleRailLayout(event: LayoutChangeEvent) {
     const measured = event.nativeEvent.layout.width;
     setRailWidth((current) => (current === measured ? current : measured));
@@ -223,10 +258,25 @@ export function ListenPlayer({
 
         <View style={styles.scrubber}>
           <View
+            ref={rail}
             style={styles.hit}
             onLayout={handleRailLayout}
             accessibilityRole="adjustable"
-            accessibilityLabel={`Listening position, ${clockLabel(position)} of ${clockLabel(total)}`}
+            // The position is the value, not the name: a name is not
+            // re-announced as it changes, and this one changed every tick.
+            accessibilityLabel="Listening position"
+            aria-valuemin={firstBar}
+            aria-valuemax={lastBar}
+            aria-valuenow={barNow}
+            aria-valuetext={`Bar ${barNow}, ${clockLabel(startOfBar(starts, barNow))} of ${clockLabel(total)}`}
+            focusable={!disabled}
+            accessibilityActions={[
+              { name: 'increment', label: 'Next bar' },
+              { name: 'decrement', label: 'Previous bar' },
+            ]}
+            onAccessibilityAction={(event) =>
+              moveBy({ by: event.nativeEvent.actionName === 'increment' ? 1 : -1 })
+            }
             {...scrub.panHandlers}
           >
             <View style={styles.rail} pointerEvents="none">

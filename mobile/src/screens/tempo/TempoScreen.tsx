@@ -231,7 +231,11 @@ export function TempoScreen() {
       </View>
 
       {picks.length > 0 ? (
-        <View style={styles.picks}>
+        <View
+          style={styles.picks}
+          accessibilityRole="radiogroup"
+          accessibilityLabel="Suggested tempos"
+        >
           {picks.map((pick) => {
             const on = pick.bpm === bpm;
             return (

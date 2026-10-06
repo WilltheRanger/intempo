@@ -1,4 +1,4 @@
-import { Animated, Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Animated, Modal, Platform, StyleSheet, View } from 'react-native';
 
 import {
   colors,
@@ -11,7 +11,8 @@ import { useReducedMotion } from '../../lib/useReducedMotion';
 import { PrimaryButton } from '../primitives/PrimaryButton';
 import { SecondaryButton } from '../primitives/SecondaryButton';
 import { Text } from '../primitives/Text';
-import { useInertAppRoot } from './modalAccessibility';
+import { DismissArea } from './DismissArea';
+import { useInertAppRoot, useReturnFocus } from './modalAccessibility';
 import { useOverlayPresence } from './useOverlayPresence';
 
 export interface ConfirmDialogProps {
@@ -67,6 +68,7 @@ export function ConfirmDialog({
   // Held for the whole enter/exit, not just while `visible` — the web Modal is
   // a portal beside #root, and focus must not slip behind a card still leaving.
   useInertAppRoot(mounted);
+  useReturnFocus(mounted);
 
   if (!mounted) {
     return null;
@@ -89,12 +91,14 @@ export function ConfirmDialog({
       <View style={styles.container}>
         {/* Tapping the scrim dismisses, the way a sheet does. */}
         <Animated.View style={[StyleSheet.absoluteFill, styles.scrim, { opacity }]}>
-          <Pressable
-            style={StyleSheet.absoluteFill}
-            onPress={onCancel}
-            accessibilityRole="button"
-            accessibilityLabel="Dismiss"
-          />
+          {/*
+            **Pointer dismissal only.** As a button it was an invisible
+            full-screen "Dismiss" that took keyboard focus before the dialog's
+            real choices and was read out as one of them (2026-10-05); then,
+            as a Pressable out of the Tab order, it was still where the focus
+            trap put focus on opening (2026-10-06). See `DismissArea`.
+          */}
+          <DismissArea onDismiss={onCancel} />
         </Animated.View>
 
         <Animated.View
@@ -106,17 +110,20 @@ export function ConfirmDialog({
             {message}
           </Text>
 
+          {/*
+            **The share of the row is on a wrapper, not on the button.** A
+            button puts the caller's `style` on its inner view, which sits in a
+            column — so `flex: 1` there set a zero basis on the *vertical* axis,
+            and on the web a flex basis beats `height`: both buttons drew 22pt
+            tall, half the touch minimum (measured 2026-10-05).
+          */}
           <View style={styles.actions}>
-            <SecondaryButton
-              label={cancelLabel}
-              onPress={onCancel}
-              style={styles.action}
-            />
-            <PrimaryButton
-              label={confirmLabel}
-              onPress={onConfirm}
-              style={styles.action}
-            />
+            <View style={styles.action}>
+              <SecondaryButton label={cancelLabel} onPress={onCancel} />
+            </View>
+            <View style={styles.action}>
+              <PrimaryButton label={confirmLabel} onPress={onConfirm} />
+            </View>
           </View>
         </Animated.View>
       </View>

@@ -7,10 +7,9 @@ export {
 } from './ScreenContainer';
 export { PageHeader, type PageHeaderProps } from './PageHeader';
 export { BackLink } from './BackLink';
-export { SectionHeader, type SectionHeaderProps } from './SectionHeader';
 export { RuledHeading, type RuledHeadingProps } from './RuledHeading';
+export { SECTION_HEADING } from './sectionHeading';
 export { Card, type CardProps } from './Card';
-export { DragSheet, HANDLE_HEIGHT, type DragSheetProps } from './DragSheet';
 export { Avatar, type AvatarProps } from './Avatar';
 export { PrimaryButton, type PrimaryButtonProps } from './PrimaryButton';
 export { SecondaryButton, type SecondaryButtonProps } from './SecondaryButton';

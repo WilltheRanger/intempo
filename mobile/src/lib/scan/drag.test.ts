@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { reorderTarget, slotOffsetFor } from './drag';
+import { movedAnnouncement, reorderStep, reorderTarget, slotOffsetFor } from './drag';
 
 /**
  * Reordering the captured pages.
@@ -76,5 +76,27 @@ describe('slotOffsetFor', () => {
       slotOffsetFor(-slot * PITCH, PITCH, total - 1, total),
     );
     expect(fromBottom).toEqual([0, -1, -2, -3, -4, -5]);
+  });
+});
+
+describe('reorderStep', () => {
+  it('moves a page earlier on Up and Left, the way the list runs', () => {
+    expect(reorderStep('ArrowUp')).toBe(-1);
+    expect(reorderStep('ArrowLeft')).toBe(-1);
+  });
+
+  it('moves it later on Down and Right', () => {
+    expect(reorderStep('ArrowDown')).toBe(1);
+    expect(reorderStep('ArrowRight')).toBe(1);
+  });
+
+  it('leaves every other key alone', () => {
+    for (const key of ['Enter', ' ', 'Tab', 'Home']) expect(reorderStep(key), key).toBeNull();
+  });
+});
+
+describe('movedAnnouncement', () => {
+  it('says where the page is now', () => {
+    expect(movedAnnouncement(2, 3)).toBe('Page moved to 2 of 3');
   });
 });

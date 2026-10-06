@@ -182,14 +182,20 @@ export function ScanIllustration() {
       accessibilityLabel="A photographed page of music being straightened and read, its tempo marking picked out in gold"
       style={styles.stage}
     >
-      <Animated.View style={[styles.frame, frame]}>
+      {/*
+        Every layer below is \`aria-hidden\`: the label above is the whole of
+        what this says to a screen reader. On the web the drawn title, composer,
+        metre and "= 76" were read out after it as loose words — twice, since
+        the page is drawn twice for the reveal.
+      */}
+      <Animated.View style={[styles.frame, frame]} aria-hidden>
         <View style={[styles.corner, styles.topLeft]} />
         <View style={[styles.corner, styles.topRight]} />
         <View style={[styles.corner, styles.bottomLeft]} />
         <View style={[styles.corner, styles.bottomRight]} />
       </Animated.View>
 
-      <Animated.View style={[styles.page, page]}>
+      <Animated.View style={[styles.page, page]} aria-hidden>
         <Page ink={PHOTO_INK} />
         <Animated.View style={[styles.reveal, read]}>
           <Animated.View style={readInner}>
@@ -211,7 +217,7 @@ export function ScanIllustration() {
         </Animated.View>
       </Animated.View>
 
-      <Animated.View style={[styles.found, found]}>
+      <Animated.View style={[styles.found, found]} aria-hidden>
         <QuarterNote height={15} color={colors.accentOnDark} />
         <Text style={styles.foundTempo}>= 76</Text>
       </Animated.View>

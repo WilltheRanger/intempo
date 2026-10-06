@@ -118,6 +118,12 @@ export function ScoreThumbnail({
       }
       transition={motion.fast}
       accessible={false}
+      // An empty alt, the web's word for the same thing: \`accessible\` does
+      // not reach the <img>, which a screen reader then announced as an
+      // unnamed image on the reading and failed screens, where it stands
+      // alone. Through \`accessibilityLabel\`, because expo-image's web wrapper
+      // writes that into \`alt\` and drops its own \`alt\` prop on this path.
+      accessibilityLabel=""
     />
   );
 }

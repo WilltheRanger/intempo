@@ -13,6 +13,7 @@ import {
   SearchHeader,
 } from '../../components/primitives';
 import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
+import { SECTION_HEADING } from '../../components/primitives/sectionHeading';
 import { Text } from '../../components/primitives/Text';
 import { describeLoadError } from '../../data/describeLoadError';
 import { useInsights } from '../../data/hooks/useInsights';
@@ -554,15 +555,15 @@ function LibraryContent({
  * "This week", its count, and a hairline under both
  * (`redesign/Library.dc.html`).
  *
- * **Sentence case in ink, where the app's `SectionHeader` is an uppercase
- * eyebrow.** On a shelf the heading is the only type between rows of pages,
+ * **Sentence case in ink, with the rule under it rather than over it as
+ * `RuledHeading` has it.** On a shelf the heading is the only type between rows of pages,
  * and it is read as a date — "Earlier this month" — rather than as a category
  * label. The count is the one number a shelf cannot show at a glance once it
  * runs past the screen.
  */
 function GroupHeading({ label, count }: { label: string; count: number }) {
   return (
-    <View style={styles.heading} accessibilityRole="header">
+    <View style={styles.heading} {...SECTION_HEADING}>
       <Text variant="sectionLabel" color="textPrimary" style={styles.headingLabel}>
         {label}
       </Text>

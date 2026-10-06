@@ -238,7 +238,11 @@ function ProposalRow({
         {proposal.why}.
       </Text>
 
-      <View style={styles.answers}>
+      <View
+        style={styles.answers}
+        accessibilityRole="radiogroup"
+        accessibilityLabel={`${proposal.where}: ${proposal.from} or ${proposal.to}`}
+      >
         <Answer
           label={proposal.keepLabel}
           on={choice === 'keep'}

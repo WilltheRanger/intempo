@@ -658,6 +658,207 @@ bundle addresses and no message. Two faults, each hiding the other:
 **The rule:** anything drawn above `NavigationContainer` must not call a
 navigation hook, and a field added to a saved type is a new cache shape.
 
+### The web build ignores the native ways of hiding things (2026-10-05)
+
+`accessibilityElementsHidden`, `importantForAccessibility` and
+`accessible={false}` hide content from VoiceOver and TalkBack, and
+react-native-web drops all three. Every place that hid something that way was
+hidden on a phone and announced in a browser. On the Library — the first
+screen — the closed search field and its Clear and Cancel buttons sat at
+opacity 0 as a textbox and two buttons in Chrome's tree, each in the Tab
+order. Score drawings, decorative icons and a page photograph were announced
+as unnamed images.
+
+- **Static decoration:** `aria-hidden`, which React Native maps to both native
+  flags and the web writes as the attribute. An `expo-image` gets an empty
+  `accessibilityLabel` instead — its web wrapper writes that into `alt` and
+  drops its own `alt` prop.
+- **A layer that hides and shows controls:** keep the native props and wrap the
+  children in `primitives/Inert.tsx`, an HTML `inert` element on the web only.
+  `aria-hidden` alone leaves focusable children in the Tab order.
+
+`audit-a11y.mjs` now reads Chrome's own accessibility tree over CDP and fails
+on anything announced but invisible, and on any unnamed image outside a named
+control. The DOM is not the tree: a control at opacity 0 is a named control to
+anything that reads markup.
+
+### Code shared by two lazy chunks loads with the app (2026-10-05)
+
+`warmPlayback` and `sampledPlayback` each did `import('./soundfontBank')` and
+`import('./soundfontRender')`, and both of those import `spessasynth_core`. The
+web export hoists a module shared between async chunks into `__common`, and
+`index.html` loads `__common` with a `<script>` tag at startup — so the Listen
+synthesiser, lazy on purpose, was 78 KB gzipped of every first visit.
+`check-bundle-size.mjs` weighed only `index-*.js` and never saw it.
+
+**The rule:** give a lazily-loaded dependency one entry point
+(`lib/score/soundfontEngine.ts`) and import only that. The size check now
+weighs every script `index.html` loads and fails with this explanation when
+there is more than one.
+
+### A heading is an `<h1>` on the web unless it says otherwise (2026-10-05)
+
+react-native-web renders `accessibilityRole="header"` as an `<h1>`, and React
+Native has no prop that sets a level. Every section label was one, so Profile
+offered a screen reader five top-level headings and no outline. Meanwhile
+`PageHeader`, which draws nineteen screens' titles, never said its title was a
+heading, so 23 of 38 audited routes were wrong one way or the other.
+
+**The rule:** a screen's title is `accessibilityRole="header"` (level 1), and
+anything under it spreads `SECTION_HEADING` (level 2, through `aria-level`,
+which react-native-web reads although React Native's types do not declare it).
+`audit-a11y` fails a route with no heading or with more than one at level 1.
+The scanner is exempt with its reason written beside it.
+
+### The web `Modal` does not give focus back when it closes (2026-10-05)
+
+react-native-web's `ModalFocusTrap` tries to, but it records the element
+focused before opening in an effect that runs after its own trap has moved
+focus inside. So it remembers something in the sheet, and on close focus falls
+to `<body>`. Every sheet and dialog in the app did this.
+
+**The rule:** an overlay calls `useReturnFocus(flag)` straight after
+`useInertAppRoot(flag)`. The opener is captured in a layout effect, which runs
+before the trap's passive one. It is given back in a cleanup that runs after
+the root is uncovered. An opener still covered by another overlay is handed to
+whichever overlay closes next (`returnFocus.ts`). `walk-app` checks Add piece
+by keyboard.
+
+### A progress bar goes on the rail and carries its value (2026-10-05)
+
+ARIA makes everything inside a progress bar part of the bar, and WebKit
+follows that rule. So a bar wrapped round a sentence turns the sentence into
+the bar's content, and VoiceOver on an iPhone skips the words. Chromium reads
+them anyway, so no check here caught it. The analysis wait learned this on
+2026-09-20. The score's reading panel and the upload bar still wrapped their
+text. Separately, `accessibilityValue` is dropped by react-native-web, so all
+five bars reached the browser with no value. They were announced as busy, with
+no amount.
+
+**The rule:** put the role, a name and `progressValue(fraction)` on the rail
+itself, and keep any words outside it. Pass `null` only when there is truly
+nothing to measure yet. `audit-a11y` fails a bar that has no name or that has
+text inside it.
+
+### Enter does nothing on a link that is not an `<a>` (2026-10-05)
+
+react-native-web's press responder treats anything with `role="link"` as a
+native link. It leaves Enter to the browser, which follows an `<a href>` and
+does nothing for anything else. A `Pressable` with the link role is a `<div>`,
+so `BackLink` on eleven screens, and the Terms and Privacy links under
+sign-up, ignored Enter. Clicks and taps worked. It also accepts Space only on
+buttons, so switches, radios and tabs ignored Space.
+
+**The rule:** `installKeyActivation` (in `App.tsx`) teaches the web both keys.
+The rules for which elements are in `lib/keyActivation.ts`. The Enter listener
+runs in the capture phase. The responder stops the keydown it accepts from
+bubbling, so a listener on the document in the usual phase never hears the
+key. `walk-app` presses Enter on a back link.
+
+### A screen change leaves focus on `<body>` (2026-10-05)
+
+When a screen is pushed, the stack makes the screen underneath inert. That
+blurs whatever was focused, and nothing focuses anything on the new screen.
+Back does the same in reverse. So a screen reader said nothing about the
+screen that had arrived, and the next Tab began at the top of the document.
+
+**The rule:** `installScreenFocus` (in `App.tsx`) acts when the screen showing
+changes and focus has been lost. It returns focus to what was last focused on
+the screen arrived at, if that is still there; otherwise it focuses the
+screen's one level-1 heading, with `tabindex="-1"` and no outline. On a screen
+with no level-1 heading, such as an error state that fills the screen with an
+`EmptyState`, it focuses the first level-2 heading instead. It does not
+act on the screen a page loads on. It does not act on state changes that are
+not a new screen, such as tabs being built in the background (`onReady` sets
+that baseline). The rules are in `lib/screenFocus.ts`. This is why every
+screen needs its one level-1 heading (see above). `walk-app` opens a piece by
+keyboard and goes back.
+
+### Every screen's browser title was "InTempo" (2026-10-06)
+
+The title was pinned to the product name because, signed out, the auth gate
+renders outside a navigator, and React Navigation's default formatter wrote
+"undefined" into the tab. So browser history, the tab strip and a screen
+reader's window list read the same on every screen.
+
+**The rule:** the tab is named from the screen's own title as drawn: its one
+level-1 heading, or the level-2 heading of a state that fills the screen,
+followed by " – InTempo". This is the same element screen focus moves to
+(`screenTitleCandidates`), and the auth gate has one too. A screen with no
+heading gets "InTempo" alone. `installDocumentTitle` (in `App.tsx`) keeps it
+current. It runs when the page's text changes, and a few times after each
+navigation, because switching to a tab that is already built changes only
+what is visible. The navigator's own `documentTitle` is off, or it would
+overwrite the title on every change. An open sheet makes the app root inert
+without changing the screen, so a heading under the root's `inert` still
+counts, and one under any other `inert` does not (`documentTitle.ts`).
+`audit-a11y` fails a route whose tab reads "InTempo" alone or "undefined".
+
+### `announceForAccessibility` says nothing on the web (2026-10-05)
+
+react-native-web implements `AccessibilityInfo.announceForAccessibility` as
+an empty function. Nothing warned about it. The first announcement that
+needed to work there was a page moved by key on the captured-pages list.
+`DragSheet`'s "raised" and "lowered" used the same call, but no screen had
+rendered `DragSheet` since the redesign, and it was deleted the same day.
+
+**The rule:** call `announce()` from `lib/announce`. On a phone it is the
+native announcement. On the web it writes to one polite `role="status"`
+region, appended to `<body>` outside the app root, so an open sheet's `inert`
+cannot cover it.
+
+### Every radio and every tab is its own Tab stop on the web (2026-10-05, 2026-10-06)
+
+react-native-web gives every pressable `tabindex="0"` and has no notion of a
+group. So each bar of the score on Record was a Tab stop: on a real piece, one
+for every bar between the music and "Start recording". The arrow keys did
+nothing. Four of the app's seven sets of radios were not in a
+`radiogroup` either, so a screen reader could not say how many choices there
+were. Profile's Instrument sheet had the opposite fault: one choice drawn as
+two groups, Strings and Winds, so a screen reader heard Winds as a second
+choice with nothing chosen.
+
+**The rule:** put every set of radios in a View with
+`accessibilityRole="radiogroup"` and a name. Use one group per choice, not one
+per heading. For the score's bars, `Stave`
+does this itself. The bar picker passes `measurePressGroupLabel={null}` and
+groups all its pages as one choice. `installRovingFocus` (in `App.tsx`) gives
+each group one Tab stop, on the chosen radio or else the first, and makes the
+arrows move focus within it.
+
+Tabs follow the same rule (2026-10-06). The bottom bar's tabs had no
+`tablist` round them; `GlassSurface` now passes a role and a name to its
+container, and the bar is the tab list "Sections". A tab list's stop is its
+selected tab, and only Left and Right move along it, because every tab list
+here is a row; Up and Down still scroll the page. `SegmentedControl` takes
+`kind`: `views` (the default) is tabs, for flipping between views of one
+thing, and `setting` is a radio group, for choosing a value with nothing shown
+or hidden. Profile's metronome is a setting, and as tabs it was announced as
+four tabs with no panel for any of them. **The arrows only move focus; Space or Enter
+chooses.** Choosing closes the Start from and Instrument sheets, so if the
+arrows chose too, one arrow press would close the sheet on the wrong option.
+The rules are in `lib/rovingFocus.ts`. `audit-a11y` fails a radio outside a
+radio group, a tab outside a tab list, a group with no name, and a group with
+other than one Tab stop. `walk-app` moves through the bars on Record, the
+metronome on Profile and the tab bar.
+
+### A sheet opens with focus on its backdrop (2026-10-06)
+
+react-native-web's `Modal` traps focus by focusing the first element inside it
+that will take focus. It does this when the overlay opens, and each time Tab or
+Shift+Tab runs off an end. The full-screen backdrop that dismisses a sheet or
+dialog came first, and it was a `Pressable`. On the web a Pressable always has
+a tab index, so `tabIndex={-1}` took it out of the Tab order but left it
+focusable from code. Every sheet and dialog opened with focus on an
+`aria-hidden` layer, which a screen reader reads as nothing, and the cycle
+through it had one silent stop more than it showed.
+
+**The rule:** the dismiss area is `DismissArea`, a plain view with the touch
+responder. It has no tab index, so the trap passes over it to the first real
+control: Close on a sheet, Cancel on a dialog. Do not put a `Pressable` or
+anything else with a tab index ahead of an overlay's controls, even one out of
+the Tab order. `walk-app` checks that Add piece opens with focus on Close.
+
 ## `npm audit fix --force` would take this app back to SDK 46 (2026-09-09)
 
 `npm audit --omit=dev` reports **24 advisories, 7 of them high**, and closes

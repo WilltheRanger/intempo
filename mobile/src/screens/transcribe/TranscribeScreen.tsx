@@ -163,7 +163,7 @@ export function TranscribeScreen() {
   return (
     <ScreenContainer scrollable={false} contentStyle={styles.centered}>
       <View>
-        <Text variant="heroTitle">
+        <Text variant="heroTitle" accessibilityRole="header">
           {total === 1 ? 'Sending your page' : `Sending ${total} pages`}
         </Text>
 

@@ -1,4 +1,5 @@
 import type { Piece } from '../data/types';
+import { spellKeys } from './keySpelling';
 import { daysSincePracticed } from './format';
 
 /**
@@ -120,6 +121,14 @@ export function groupByRecency(pieces: Piece[], now: Date = new Date()): PieceGr
  * **3.** The accent-stripping — the one part that was carefully done — was
  * therefore not reaching the field with the most accents in it.
  *
+ * **4. A catalogue number typed as people type them found nothing.**
+ * `bwv1001`, `op.3`, `k216`, `no.6`, `JS Bach` and `J.S. Bach` all came back
+ * empty against *BWV 1001*, *Op. 3 No. 6*, *K. 216* and *J. S. Bach*, because
+ * the dots and spaces in the library and the query did not line up (measured
+ * on the sample library, 2026-10-05). A third reading compares only letters
+ * and digits (`squash`), alongside the other two, so nothing that matched
+ * before stops.
+ *
  * Terms are ANDed and fields are ORed: every word must appear somewhere, and
  * it does not matter which field each lands in. That is what makes `bach
  * suite` and `suite bach` the same search, which is what a person expects and
@@ -156,15 +165,47 @@ function normalise(value: string): string {
  * array is the common case costing nothing.
  */
 export function searchLibrary(pieces: Piece[], query: string): Piece[] {
-  const terms = normalise(query).split(/\s+/).filter(Boolean);
+  const plain = normalise(query);
+  const terms = plain.split(/\s+/).filter(Boolean);
   if (terms.length === 0) {
     return pieces;
   }
+  const spelled = spellAccidentals(plain).split(/\s+/).filter(Boolean);
+  const squashed = terms.map(squash).filter(Boolean);
   return pieces.filter((piece) => {
-    const haystack = SEARCHABLE(piece).map(normalise);
+    const fields = SEARCHABLE(piece).map(normalise);
     // Every term somewhere, not every term in the same field: a piece is named
     // by its title, its composer and its movement together, and which half of
     // the name a word comes from is not something anybody tracks while typing.
-    return terms.every((term) => haystack.some((field) => field.includes(term)));
+    return (
+      everyTermIn(terms, fields) ||
+      // A query that was only a natural sign spells to nothing, and nothing
+      // is in every title.
+      (spelled.length > 0 && everyTermIn(spelled, fields.map(spellAccidentals))) ||
+      // Punctuation and spacing ignored, on both sides.
+      (squashed.length > 0 && everyTermIn(squashed, fields.map(squash)))
+    );
   });
+}
+
+/** Only the letters and digits: "J. S." is "js", and "BWV 1001" is "bwv1001". */
+function squash(value: string): string {
+  return value.replace(/[^\p{L}\p{N}]/gu, '');
+}
+
+function everyTermIn(terms: string[], fields: string[]): boolean {
+  return terms.every((term) => fields.some((field) => field.includes(term)));
+}
+
+/**
+ * The text with every accidental spelled one way ("B♭", "Bb", "B flat" and
+ * "B-flat" all "bb"; `keySpelling.ts`).
+ *
+ * **A second reading of the search, never a replacement for the first.**
+ * Rewriting the title outright would cost the word itself: "flat" would stop
+ * finding "Waltz in A flat" once that had become "ab". `searchLibrary` keeps a
+ * piece that matches either way, so nothing that matched before stops.
+ */
+function spellAccidentals(value: string): string {
+  return spellKeys(value).text;
 }

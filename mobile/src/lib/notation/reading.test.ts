@@ -9,6 +9,7 @@ import {
   describeConfidence,
   problemMeasures,
   stepPitch,
+  typedTimeSignature,
 } from './reading';
 
 /**
@@ -159,6 +160,29 @@ describe('describeBeats', () => {
   it('shows a fraction when there is one', () => {
     expect(describeBeats([{ duration: 'dotted_quarter' }], '4/4').text).toBe('1.5 of 4 beats');
     expect(describeBeats([{ duration: 'triplet_eighth' }], '4/4').text).toBe('0.33 of 4 beats');
+  });
+
+  it('takes a time signature as a musician types it', () => {
+    // "C" and "¢" are how a part prints common and cut time.
+    expect(typedTimeSignature('C')).toBe('4/4');
+    expect(typedTimeSignature(' c ')).toBe('4/4');
+    expect(typedTimeSignature('¢')).toBe('2/2');
+    expect(typedTimeSignature('C|')).toBe('2/2');
+    expect(typedTimeSignature('6/8')).toBe('6/8');
+    expect(typedTimeSignature(' 3 / 4 ')).toBe('3 / 4');
+  });
+
+  it('refuses what the counter cannot count', () => {
+    for (const value of ['0/4', '4/0', 'x', '4 4', 'CC', '']) {
+      expect(typedTimeSignature(value), value).toBeNull();
+    }
+  });
+
+  it('says one beat, not one beats', () => {
+    expect(describeBeats([{ duration: 'quarter' }], null).text).toBe('1 beat');
+    expect(describeBeats([{ duration: 'quarter' }], '1/4').text).toBe('1 of 1 beat');
+    expect(describeBeats([{ duration: 'eighth' }], '1/4').text).toBe('0.5 of 1 beat');
+    expect(describeBeats([{ duration: 'eighth' }], null).text).toBe('0.5 beats');
   });
 
   it('counts without judging when no meter was read', () => {

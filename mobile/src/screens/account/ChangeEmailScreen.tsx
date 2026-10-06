@@ -110,7 +110,7 @@ export function ChangeEmailScreen() {
           />
 
           {error ? (
-            <Text
+            <Text accessibilityRole="alert"
               variant="metadataSmall"
               color="textSecondary"
               style={styles.error}

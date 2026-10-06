@@ -61,6 +61,13 @@ export interface GlassSurfaceProps {
    */
   variant?: 'control' | 'bar';
   style?: StyleProp<ViewStyle>;
+  /**
+   * What the surface is to a screen reader, when its children are one thing:
+   * the bottom bar's tabs are a tab list. The material's own layers are
+   * decoration and carry no role.
+   */
+  accessibilityRole?: 'tablist';
+  accessibilityLabel?: string;
 }
 
 /**
@@ -118,6 +125,8 @@ export function GlassSurface({
   tone = 'auto',
   variant = 'control',
   style,
+  accessibilityRole,
+  accessibilityLabel,
 }: GlassSurfaceProps) {
   // Gradient ids are document-global, so two surfaces on one screen would
   // otherwise share — and fight over — the same definition.
@@ -132,7 +141,11 @@ export function GlassSurface({
   });
 
   return (
-    <View style={[styles.container, { borderRadius: radius }, style]}>
+    <View
+      style={[styles.container, { borderRadius: radius }, style]}
+      accessibilityRole={accessibilityRole}
+      accessibilityLabel={accessibilityLabel}
+    >
       {material.diffusion &&
         (Platform.OS === 'web' ? (
           <View

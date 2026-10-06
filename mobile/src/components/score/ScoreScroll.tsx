@@ -12,6 +12,7 @@ import { BORDER_WIDTH, colors, spacing } from '../../design';
 import { staveScoreFor } from '../../lib/notation/fromScore';
 import { keySignatureFor, timeSignatureDigits } from '../../lib/notation/keySignature';
 import { layOutStave } from '../../lib/notation/staveLayout';
+import { entryLabel, entryRowLabel } from '../../lib/score/entryCopy';
 import { Stave } from '../notation/Stave';
 
 /**
@@ -23,10 +24,11 @@ import { Stave } from '../notation/Stave';
  * **Scroll, not pages.** `ScoreBackdrop` paged the music behind a drag sheet
  * and needed a readout to say which bars were showing. With the setup in a
  * fixed panel below, nothing covers the music any more, so the band just
- * scrolls and the bars say who they are.
+ * scrolls and the bars say who they are. Nothing rendered `ScoreBackdrop`
+ * after that, and it was deleted on 2026-10-06; it is in git history.
  */
 
-/** Smaller than the backdrop's 1.25: the band is a third shorter. */
+/** Smaller than the old backdrop's 1.25: the band is a third shorter. */
 const STAVE_SCALE = 1;
 const PAD_X = spacing['2xl'];
 const PAD_TOP = 18;
@@ -152,14 +154,15 @@ export function ScoreScroll({
             playhead={playhead}
             onMeasurePress={disabled ? undefined : onStartFromChange}
             pressableMeasures={disabled ? undefined : bars}
-            measurePressLabel={(bar) => `Start at bar ${bar}`}
+            measurePressLabel={(bar) => entryLabel('take', bar)}
+            measurePressGroupLabel={entryRowLabel('take')}
             layout={engraved}
           />
         ) : null}
       </ScrollView>
 
       {/* The music runs under the panel rather than stopping at a line. */}
-      <View style={styles.fade} pointerEvents="none">
+      <View style={styles.fade} pointerEvents="none" aria-hidden>
         <Svg width="100%" height={FADE_HEIGHT}>
           <Defs>
             <LinearGradient id="score-fade" x1="0" y1="0" x2="0" y2="1">

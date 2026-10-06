@@ -300,10 +300,18 @@ export function rangeLabel(instrument: Instrument): string | null {
   return instrument === 'alto_sax' || instrument === 'tenor_sax' ? null : 'First position';
 }
 
-/** Days since the epoch, in local time — the same number all day, everywhere. */
+/**
+ * Days since the epoch, counted by the local calendar date — the same number
+ * all day, and the same number for the same date in every timezone.
+ *
+ * **The date's own components, read as UTC**, not local midnight's timestamp
+ * divided by a day. That version gave London's 29 and 30 March 2026 the same
+ * number and skipped 25 October's successor, because a day with a clock
+ * change in it is not 24 hours long and London's midnight sits on the UTC
+ * boundary; and it numbered Sydney's dates one lower than New York's.
+ */
 export function dayIndex(now: Date = new Date()): number {
-  const local = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  return Math.floor(local.getTime() / 86_400_000);
+  return Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) / 86_400_000;
 }
 
 /**

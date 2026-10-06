@@ -4,7 +4,6 @@ import {
   Modal,
   PanResponder,
   Platform,
-  Pressable,
   StyleSheet,
   View,
   type LayoutChangeEvent,
@@ -25,7 +24,8 @@ import { settleVelocity } from '../../lib/motion/springHandoff';
 import { useReducedMotion } from '../../lib/useReducedMotion';
 import { IconButton } from '../primitives/IconButton';
 import { Text } from '../primitives/Text';
-import { useInertAppRoot } from './modalAccessibility';
+import { DismissArea } from './DismissArea';
+import { useInertAppRoot, useReturnFocus } from './modalAccessibility';
 import { useOverlayPresence } from './useOverlayPresence';
 
 export interface BottomSheetProps {
@@ -116,6 +116,7 @@ export function BottomSheet({
   // The web Modal is a portal next to #root. Keep that root inert for the
   // complete enter/exit animation so keyboard focus cannot slip behind it.
   useInertAppRoot(mounted);
+  useReturnFocus(mounted);
 
 
 
@@ -274,13 +275,8 @@ export function BottomSheet({
     >
       <View style={styles.container}>
         <Animated.View style={[styles.backdrop, { opacity: backdropOpacity }]}>
-          <Pressable
-            style={StyleSheet.absoluteFill}
-            onPress={onClose}
-            // Pointer dismissal only. A full-screen invisible button is a poor
-            // keyboard target and was focused before the sheet's real choices.
-            accessible={false}
-          />
+          {/* Pointer dismissal only, and unfocusable: see `DismissArea`. */}
+          <DismissArea onDismiss={onClose} />
         </Animated.View>
 
         <Animated.View

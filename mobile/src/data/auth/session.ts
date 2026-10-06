@@ -1,4 +1,4 @@
-import 'react-native-url-polyfill/auto';
+import './urlPolyfill';
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { Platform } from 'react-native';

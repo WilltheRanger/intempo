@@ -22,6 +22,7 @@ import {
   Text,
 } from '../../components/primitives';
 import { SCREEN_GUTTER } from '../../components/primitives/ScreenContainer';
+import { useFieldOrder } from '../../components/primitives/useFieldOrder';
 import {
   type AuthResult,
   hasSession,
@@ -113,6 +114,8 @@ export function AuthScreen() {
 
   const showPassword = needsPassword(mode);
   const copy = COPY[mode];
+  // Email, then the password when this form has one; Return in the last sends.
+  const field = useFieldOrder(showPassword ? 2 : 1, () => void submit(), 'go');
 
   function go(next: AuthMode) {
     clearAuthRedirectNotice();
@@ -253,7 +256,7 @@ export function AuthScreen() {
         </Text>
 
         {error ? (
-          <Text variant="metadataSmall" color="textSecondary" style={styles.note}>
+          <Text accessibilityRole="alert" variant="metadataSmall" color="textSecondary" style={styles.note}>
             {error}
           </Text>
         ) : null}
@@ -308,8 +311,7 @@ export function AuthScreen() {
         autoCapitalize="none"
         autoComplete="email"
         textContentType="emailAddress"
-        returnKeyType={showPassword ? 'next' : 'go'}
-        onSubmitEditing={showPassword ? undefined : () => void submit()}
+        {...field(0)}
         editable={!busy}
         style={copy.lede ? styles.firstField : styles.firstFieldNoLede}
       />
@@ -325,8 +327,7 @@ export function AuthScreen() {
           // suggest a strong one on sign-up.
           autoComplete={mode === 'signIn' ? 'current-password' : 'new-password'}
           textContentType={mode === 'signIn' ? 'password' : 'newPassword'}
-          returnKeyType="go"
-          onSubmitEditing={() => void submit()}
+          {...field(1)}
           editable={!busy}
           actionInside
           action={

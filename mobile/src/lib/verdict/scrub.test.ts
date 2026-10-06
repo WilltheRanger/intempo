@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { SCRUB_STEP_S, scrubFraction, scrubSeconds, scrubStep } from './scrub';
+import { SCRUB_BIG_STEPS, SCRUB_STEP_S, scrubFraction, scrubSeconds, scrubStep } from './scrub';
 
 /**
  * The arithmetic behind a finger on the playback track.
@@ -64,16 +64,27 @@ describe('scrubSeconds', () => {
 
 describe('scrubStep', () => {
   it('moves by a step in either direction', () => {
-    expect(scrubStep(20, 60, 1)).toBe(20 + SCRUB_STEP_S);
-    expect(scrubStep(20, 60, -1)).toBe(20 - SCRUB_STEP_S);
+    expect(scrubStep(20, 60, { by: 1 })).toBe(20 + SCRUB_STEP_S);
+    expect(scrubStep(20, 60, { by: -1 })).toBe(20 - SCRUB_STEP_S);
+  });
+
+  it('takes the big step for Page Up and Down', () => {
+    expect(scrubStep(20, 120, { by: SCRUB_BIG_STEPS })).toBe(20 + SCRUB_BIG_STEPS * SCRUB_STEP_S);
+    expect(scrubStep(20, 120, { by: -SCRUB_BIG_STEPS })).toBe(0);
+  });
+
+  it('goes to the start and the end on Home and End', () => {
+    expect(scrubStep(20, 75.5, { to: 'first' })).toBe(0);
+    expect(scrubStep(20, 75.5, { to: 'last' })).toBe(75.5);
+    expect(scrubStep(20, 0, { to: 'last' })).toBeNull();
   });
 
   it('stops at both ends rather than walking past them', () => {
-    expect(scrubStep(1, 60, -1)).toBe(0);
-    expect(scrubStep(59, 60, 1)).toBe(60);
+    expect(scrubStep(1, 60, { by: -1 })).toBe(0);
+    expect(scrubStep(59, 60, { by: 1 })).toBe(60);
   });
 
   it('refuses a recording it does not know the length of', () => {
-    expect(scrubStep(10, 0, 1)).toBeNull();
+    expect(scrubStep(10, 0, { by: 1 })).toBeNull();
   });
 });

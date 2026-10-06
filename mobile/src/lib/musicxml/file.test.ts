@@ -1,4 +1,4 @@
-import { strToU8, zipSync } from 'fflate';
+import { strToU8, unzipSync, zipSync } from 'fflate';
 import { describe, expect, it } from 'vitest';
 
 import { MusicXMLFileError, composerIn, partsIn, readMusicXML, titleIn } from './file';
@@ -37,13 +37,13 @@ const CONTAINER = (path: string) =>
 
 describe('readMusicXML', () => {
   it('passes plain XML straight through', () => {
-    expect(readMusicXML(strToU8(SCORE))).toBe(SCORE);
+    expect(readMusicXML(strToU8(SCORE), unzipSync)).toBe(SCORE);
   });
 
   it('drops a byte-order mark, which Finale on Windows writes', () => {
     // A BOM ahead of `<?xml` makes the declaration unparseable to a strict
     // reader, and the backend is a strict reader.
-    const withBom = readMusicXML(strToU8('﻿' + SCORE));
+    const withBom = readMusicXML(strToU8('﻿' + SCORE), unzipSync);
 
     expect(withBom.startsWith('<?xml')).toBe(true);
   });
@@ -60,7 +60,7 @@ describe('readMusicXML', () => {
       'Suite.musicxml': SCORE,
     });
 
-    expect(readMusicXML(bytes)).toBe(SCORE);
+    expect(readMusicXML(bytes, unzipSync)).toBe(SCORE);
   });
 
   it('falls back when the container names something the zip does not hold', () => {
@@ -69,7 +69,7 @@ describe('readMusicXML', () => {
       'score.xml': SCORE,
     });
 
-    expect(readMusicXML(bytes)).toBe(SCORE);
+    expect(readMusicXML(bytes, unzipSync)).toBe(SCORE);
   });
 
   it('ignores the junk a Mac adds to a zip', () => {
@@ -78,7 +78,7 @@ describe('readMusicXML', () => {
       'score.xml': SCORE,
     });
 
-    expect(readMusicXML(bytes)).toBe(SCORE);
+    expect(readMusicXML(bytes, unzipSync)).toBe(SCORE);
   });
 
   it('sniffs the bytes rather than trusting the extension', () => {
@@ -86,14 +86,14 @@ describe('readMusicXML', () => {
     // zip, and the extension is the one part of a file anybody can rename.
     const bytes = mxl({ 'score.xml': SCORE });
 
-    expect(readMusicXML(bytes)).toBe(SCORE);
+    expect(readMusicXML(bytes, unzipSync)).toBe(SCORE);
   });
 
   it('says something a musician can act on when the zip holds no score', () => {
     const bytes = mxl({ 'readme.txt': 'not a score' });
 
-    expect(() => readMusicXML(bytes)).toThrow(MusicXMLFileError);
-    expect(() => readMusicXML(bytes)).toThrow(/score/i);
+    expect(() => readMusicXML(bytes, unzipSync)).toThrow(MusicXMLFileError);
+    expect(() => readMusicXML(bytes, unzipSync)).toThrow(/score/i);
   });
 });
 

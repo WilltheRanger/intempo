@@ -19,7 +19,11 @@
  */
 export type EntryScope = 'listen' | 'take';
 
-/** The quiet line under the button. */
+/**
+ * The whole sentence, "Start at bar 3": what each bar of the score on Record
+ * is called to a screen reader. It was once also the quiet line under the
+ * button, which the settings row replaced.
+ */
 export function entryLabel(scope: EntryScope, bar: number): string {
   return scope === 'take' ? `Start at bar ${bar}` : `Listen from bar ${bar}`;
 }

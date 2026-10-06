@@ -81,6 +81,7 @@ import {
   spacing,
 } from '../../design';
 import { isTakingLong, progressFor } from '../../lib/analysis/waitProgress';
+import { progressValue } from '../../lib/progressValue';
 import { BottomSheet } from '../../components/overlays/BottomSheet';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import { displayTempoBpm, tempoUnitLabel } from '../../lib/tempo';
@@ -1191,7 +1192,7 @@ export function RecordScreen() {
             variant="sectionLabel"
             color="textTertiary"
             style={styles.countInLabel}
-            accessibilityElementsHidden
+            aria-hidden
           >
             Count-in
           </Text>
@@ -1254,7 +1255,7 @@ export function RecordScreen() {
     return (
       <ScreenContainer scrollable={false} contentStyle={styles.centred}>
         <View>
-          <Text variant="heroTitle">Analysing</Text>
+          <Text variant="heroTitle" accessibilityRole="header">Analysing</Text>
           {through === null ? (
             <View style={styles.waitPending}>
               <ActivityIndicator
@@ -1269,11 +1270,13 @@ export function RecordScreen() {
               `role="progressbar"` with a label overrides its own content for a
               screen reader, so wrapping the title and the line in one hid both
               and announced a name instead. `accessibilityValue` is dropped by
-              react-native-web, so the leg is in the name.
+              react-native-web, so the leg is in the name and the fraction in
+              `progressValue`.
             */
             <View
               accessibilityRole="progressbar"
               accessibilityLabel={`Analysing your take: ${label}`}
+              {...progressValue(through)}
               style={styles.waitTrack}
             >
               <View style={[styles.waitFill, { width: `${through * 100}%` }]} />
@@ -1329,6 +1332,7 @@ export function RecordScreen() {
             title={piece.title}
             variant="heroTitle"
             numberOfLines={2}
+            header
             containerStyle={styles.title}
           />
           {/*

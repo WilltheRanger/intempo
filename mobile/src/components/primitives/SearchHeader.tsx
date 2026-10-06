@@ -12,6 +12,7 @@ import {
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import { useReducedMotion } from '../../lib/useReducedMotion';
 import { IconButton } from './IconButton';
+import { Inert } from './Inert';
 import { PageHeader } from './PageHeader';
 import { SearchField } from './SearchField';
 import { Text } from './Text';
@@ -138,36 +139,39 @@ export function SearchHeader({
         accessibilityElementsHidden={open}
         importantForAccessibility={open ? 'no-hide-descendants' : 'auto'}
       >
-        <PageHeader
-          // **No count.** A number the content already shows is furniture
-          // (§3 law 10), and the one case where it said something — how many a
-          // search matched — is answered by the results themselves.
-          title={title}
-          action={
-            <View style={styles.actions}>
-              {searchable ? (
-                /*
-                  **"Search", not the placeholder.** The magnifier used to
-                  carry the field's own name and swap to "Close search" when
-                  open, which made two different controls answer to one name
-                  for half the time they were both on screen — a screen reader
-                  landing on either heard the same words, and so did anything
-                  else looking a control up by name.
-                */
-                <IconButton
-                  icon={Search}
-                  variant="bare"
-                  label="Search"
-                  onPress={() => {
-                    impact(ImpactFeedbackStyle.Light);
-                    setOpen(true);
-                  }}
-                />
-              ) : null}
-              {action}
-            </View>
-          }
-        />
+        {/* The two props above are native-only; this is the web's (`Inert`). */}
+        <Inert inert={open}>
+          <PageHeader
+            // **No count.** A number the content already shows is furniture
+            // (§3 law 10), and the one case where it said something — how many a
+            // search matched — is answered by the results themselves.
+            title={title}
+            action={
+              <View style={styles.actions}>
+                {searchable ? (
+                  /*
+                    **"Search", not the placeholder.** The magnifier used to
+                    carry the field's own name and swap to "Close search" when
+                    open, which made two different controls answer to one name
+                    for half the time they were both on screen — a screen reader
+                    landing on either heard the same words, and so did anything
+                    else looking a control up by name.
+                  */
+                  <IconButton
+                    icon={Search}
+                    variant="bare"
+                    label="Search"
+                    onPress={() => {
+                      impact(ImpactFeedbackStyle.Light);
+                      setOpen(true);
+                    }}
+                  />
+                ) : null}
+                {action}
+              </View>
+            }
+          />
+        </Inert>
       </Animated.View>
 
       {/*
@@ -181,32 +185,34 @@ export function SearchHeader({
         accessibilityElementsHidden={!open}
         importantForAccessibility={open ? 'auto' : 'no-hide-descendants'}
       >
-        <SearchField
-          value={query}
-          onChangeText={onQueryChange}
-          placeholder={placeholder}
-          style={styles.field}
-          // Only once it is actually open: `autoFocus` on a mounted-but-hidden
-          // field takes the keyboard on arrival at the screen.
-          autoFocus={open}
-        />
-        {/*
-          **A word, not a second glyph.** The magnifier turned into an X, which
-          is the same control saying two different things from the same place;
-          once the field has replaced the title there is room for the word that
-          every platform uses here, and a word cannot be misread as "clear what
-          I have typed" — which is what the X inside the field already means.
-        */}
-        <Pressable
-          onPress={close}
-          accessibilityRole="button"
-          accessibilityLabel="Cancel search"
-          style={({ pressed }) => [styles.cancel, pressed && styles.cancelPressed]}
-        >
-          <Text variant="button" color="textSecondary">
-            Cancel
-          </Text>
-        </Pressable>
+        <Inert inert={!open}>
+          <SearchField
+            value={query}
+            onChangeText={onQueryChange}
+            placeholder={placeholder}
+            style={styles.field}
+            // Only once it is actually open: `autoFocus` on a mounted-but-hidden
+            // field takes the keyboard on arrival at the screen.
+            autoFocus={open}
+          />
+          {/*
+            **A word, not a second glyph.** The magnifier turned into an X, which
+            is the same control saying two different things from the same place;
+            once the field has replaced the title there is room for the word that
+            every platform uses here, and a word cannot be misread as "clear what
+            I have typed" — which is what the X inside the field already means.
+          */}
+          <Pressable
+            onPress={close}
+            accessibilityRole="button"
+            accessibilityLabel="Cancel search"
+            style={({ pressed }) => [styles.cancel, pressed && styles.cancelPressed]}
+          >
+            <Text variant="button" color="textSecondary">
+              Cancel
+            </Text>
+          </Pressable>
+        </Inert>
       </Animated.View>
     </View>
   );

@@ -3,6 +3,7 @@ import { Modal, Platform, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { X } from '../../components/icons';
+import { useReturnFocus } from '../../components/overlays/modalAccessibility';
 import { IconButton } from '../../components/primitives/IconButton';
 import { Text } from '../../components/primitives/Text';
 import { colors, spacing } from '../../design';
@@ -43,6 +44,9 @@ export interface PagePreviewProps {
 
 export function PagePreview({ page, position, total, onClose }: PagePreviewProps) {
   const uri = page ? uriFor(page) : null;
+  // Back to the thumbnail that opened it. Full-screen and opaque, so there is
+  // no root to make inert — only focus to return.
+  useReturnFocus(page !== null);
 
   return (
     <Modal

@@ -66,3 +66,24 @@ export function reorderTarget(
   }
   return index + slotOffset;
 }
+
+/**
+ * Which way a key moves a page in the list: -1 earlier, 1 later, or null.
+ *
+ * **On the web the order could only be changed by dragging** (2026-10-05).
+ * The grip was a slider with no tab stop, and the "Move up" and "Move down"
+ * actions its hint names are a native screen reader's — react-native-web has
+ * no accessibility actions. Up and Left are earlier because the list runs
+ * down the screen; a slider's convention, where Up is "more", would move the
+ * page the opposite way to the arrow.
+ */
+export function reorderStep(key: string): -1 | 1 | null {
+  if (key === 'ArrowUp' || key === 'ArrowLeft') return -1;
+  if (key === 'ArrowDown' || key === 'ArrowRight') return 1;
+  return null;
+}
+
+/** What a screen reader hears after a page moves, keyboard or action. */
+export function movedAnnouncement(position: number, total: number): string {
+  return `Page moved to ${position} of ${total}`;
+}

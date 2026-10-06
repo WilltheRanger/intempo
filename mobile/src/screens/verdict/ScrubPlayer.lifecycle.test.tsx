@@ -13,6 +13,9 @@ vi.mock('react', () => ({
   // through here, like `useCallback` above: this file calls the component as a
   // plain function, so a hook that memoises has nothing to memoise across.
   useMemo: (fn: () => unknown) => fn(),
+  // The web key handler is attached in an effect, which a component called
+  // as a plain function never runs; the keys are `scrub.test.ts`'s.
+  useEffect: () => {},
 }));
 vi.mock('@react-navigation/native', () => ({ useFocusEffect: mock.focus }));
 vi.mock('expo-audio', () => ({
@@ -22,6 +25,7 @@ vi.mock('expo-audio', () => ({
 vi.mock('react-native', () => ({
   View: 'view',
   Pressable: 'pressable',
+  Platform: { OS: 'ios' },
   StyleSheet: { create: (x: unknown) => x },
   // The track takes a finger. `create` is called at render, so it has to
   // return something with `panHandlers` to spread.

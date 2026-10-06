@@ -127,6 +127,7 @@ export function PlaybackSettings({
           bars={bars}
           value={fromMeasure}
           onChange={onFromMeasureChange}
+          label={entrySheetTitle(entry)}
         />
       ) : null}
     </BottomSheet>

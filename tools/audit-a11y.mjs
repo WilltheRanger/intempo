@@ -173,7 +173,10 @@ const ROUTES = [
   // populated flow. `walk-app.mjs` covers that one, by importing two of the
   // repository's own fixture pages through the file picker.
   ['Add piece', 'add/import'],
-  ['Scanner', 'scan'],
+  // **No heading, on purpose.** A viewfinder has no title — the system camera
+  // has none either — and the line at the top is a page count that changes
+  // with every shot, which a heading would re-announce as structure.
+  ['Scanner', 'scan', { headings: false }],
   ['Captured pages', 'scan/pages'],
   ['Transcribe', 'scan/sending'],
   ['Name the piece', 'scan/name'],
@@ -948,6 +951,267 @@ if (unvisited.length > 0) {
   failures += unvisited.length;
 }
 
+/**
+ * What Chrome's own accessibility tree announces that nobody can see.
+ *
+ * **The browser's tree, not the DOM's.** On 2026-10-05 the Library's closed
+ * search field and its Clear and Cancel buttons were a textbox and two
+ * buttons in the tree, each in the Tab order, while sitting invisible at zero
+ * opacity: `accessibilityElementsHidden` hides them on a phone, and
+ * react-native-web drops it. Nothing above looked: `audit` reads the DOM, and
+ * a control at opacity 0 is still a control with a name. The typed title's
+ * invisible measuring copy in `Input` was read out a second time the same way.
+ *
+ * Asked over CDP because only Chrome knows what it pruned — `inert`,
+ * `aria-hidden` and presentational children are its decision, not the
+ * markup's. Flags only what cannot be seen anywhere on the page: effectively
+ * transparent, sized to nothing, or inside an ancestor sized to nothing.
+ * Content below the fold is ordinary and not flagged.
+ */
+async function invisibleButAnnounced(page) {
+  const cdp = await page.context().newCDPSession(page);
+  const { nodes } = await cdp.send('Accessibility.getFullAXTree');
+  const ROLES = new Set(['StaticText', 'button', 'textbox', 'link', 'heading', 'radio', 'checkbox', 'switch', 'slider', 'tab']);
+  const found = [];
+  for (const node of nodes) {
+    const role = node.role?.value;
+    const label = (node.name?.value || '').trim();
+    if (node.ignored || !node.backendDOMNodeId || !ROLES.has(role)) continue;
+    if (role === 'StaticText' && !label) continue;
+    let handle;
+    try {
+      handle = await cdp.send('DOM.resolveNode', { backendNodeId: node.backendDOMNodeId });
+    } catch {
+      continue;
+    }
+    if (!handle.object?.objectId) continue;
+    const { result } = await cdp.send('Runtime.callFunctionOn', {
+      objectId: handle.object.objectId,
+      returnByValue: true,
+      functionDeclaration: `function () {
+        const el = this.nodeType === 3 ? this.parentElement : this;
+        if (!el) return null;
+        let opacity = 1;
+        for (let a = el; a && a.nodeType === 1; a = a.parentElement) {
+          const s = getComputedStyle(a);
+          if (s.display === 'none' || s.visibility === 'hidden') return 'hidden by CSS';
+          opacity *= parseFloat(s.opacity);
+        }
+        if (opacity < 0.05) return 'at opacity ' + opacity.toFixed(2);
+        const r = el.getBoundingClientRect();
+        if (r.width < 1 || r.height < 1) return 'sized to nothing';
+        for (let a = el.parentElement; a && a.nodeType === 1; a = a.parentElement) {
+          const s = getComputedStyle(a);
+          if (s.overflow === 'visible') continue;
+          const ar = a.getBoundingClientRect();
+          if (ar.width < 1 || ar.height < 1) return 'inside a box sized to nothing';
+        }
+        return null;
+      }`,
+    });
+    if (result?.value) found.push(`${role} ${JSON.stringify(label.slice(0, 50))} — ${result.value}`);
+  }
+  await cdp.detach();
+  return [...new Set(found)];
+}
+
+/**
+ * Images Chrome announces with no name, outside anything that has one.
+ *
+ * An icon inside a named button is read as the button; an image nobody named
+ * standing on its own is read as "image", or as its file name. On 2026-10-05
+ * every score screen had one — `Stave`'s drawing, meant to be skipped, came
+ * out as an <svg role="img"> with no label because `accessible={false}` does
+ * not reach the web — and so did the record screen's fade and the page
+ * photograph on the reading screens. A decorative image says so with
+ * `aria-hidden` (or an empty alt); a meaningful one gets a label.
+ */
+async function unnamedImages(page) {
+  const cdp = await page.context().newCDPSession(page);
+  const { nodes } = await cdp.send('Accessibility.getFullAXTree');
+  const byId = new Map(nodes.map((node) => [node.nodeId, node]));
+  const found = [];
+  for (const node of nodes) {
+    if (node.ignored || node.role?.value !== 'image' || (node.name?.value || '').trim()) continue;
+    let ancestor = byId.get(node.parentId);
+    let named = false;
+    while (ancestor) {
+      if (!ancestor.ignored && ancestor.role?.value !== 'RootWebArea' && (ancestor.name?.value || '').trim()) {
+        named = true;
+        break;
+      }
+      ancestor = byId.get(ancestor.parentId);
+    }
+    if (named || !node.backendDOMNodeId) continue;
+    const { object } = await cdp.send('DOM.resolveNode', { backendNodeId: node.backendDOMNodeId });
+    const { result } = await cdp.send('Runtime.callFunctionOn', {
+      objectId: object.objectId,
+      returnByValue: true,
+      functionDeclaration: `function () {
+        const r = this.getBoundingClientRect();
+        return '<' + this.tagName.toLowerCase() + '> ' + Math.round(r.width) + 'x' + Math.round(r.height) +
+          ' at ' + Math.round(r.x) + ',' + Math.round(r.y);
+      }`,
+    });
+    found.push(result.value);
+  }
+  await cdp.detach();
+  return found;
+}
+
+/**
+ * Something a keyboard can reach that a screen reader is told is not there.
+ *
+ * `aria-hidden` removes an element from assistive technology but not from the
+ * Tab order, so a focusable element inside one is a stop that announces
+ * nothing. On 2026-10-05 three were: the full-screen backdrops of the bottom
+ * sheet and the confirmation dialog, and the onboarding photo circle — each
+ * written with `accessible={false}` or `focusable={false}`, neither of which
+ * reaches the web, where Pressable sets a tab index of its own. `tabIndex={-1}`
+ * is what does.
+ */
+async function hiddenButFocusable(page) {
+  return page.evaluate(() =>
+    [...document.querySelectorAll('[tabindex], button, input, select, textarea, a[href]')]
+      .filter((element) => !element.closest('[inert]'))
+      .filter((element) => element.tabIndex >= 0 && !element.disabled)
+      .filter((element) => element.closest('[aria-hidden="true"]'))
+      .map((element) => {
+        const box = element.getBoundingClientRect();
+        const name = element.getAttribute('aria-label') || (element.textContent || '').trim().slice(0, 30);
+        return `<${element.tagName.toLowerCase()}> ${JSON.stringify(name)} ${Math.round(box.width)}x${Math.round(box.height)}`;
+      }),
+  );
+}
+
+/**
+ * A screen a screen reader cannot move through by heading.
+ *
+ * Headings are how someone who cannot see the page skims it: the rotor on
+ * iOS, H in a desktop reader. On 2026-10-05 six routes had none at all —
+ * `PageHeader` drew nineteen screens' titles without saying they were titles
+ * — and every section label was a level-1 heading, the same level as the
+ * title above it, so Profile announced five top-level headings and no
+ * structure. Each screen needs at least one heading and at most one at
+ * level 1; sections sit under it (`SECTION_HEADING`).
+ */
+async function headingOutline(page) {
+  const cdp = await page.context().newCDPSession(page);
+  const { nodes } = await cdp.send('Accessibility.getFullAXTree');
+  await cdp.detach();
+  const headings = nodes
+    .filter((node) => !node.ignored && node.role?.value === 'heading')
+    .map((node) => ({
+      level: node.properties?.find((p) => p.name === 'level')?.value?.value,
+      name: (node.name?.value || '').trim().slice(0, 40),
+    }));
+  if (headings.length === 0) return ['no heading on the screen'];
+  const top = headings.filter((h) => h.level === 1);
+  return top.length > 1
+    ? [`${top.length} level-1 headings: ${top.map((h) => JSON.stringify(h.name)).join(', ')}`]
+    : [];
+}
+
+/**
+ * A progress bar that hides what it is describing, or does not say what it is.
+ *
+ * ARIA makes a progress bar's children presentational, and WebKit honours
+ * that: a bar wrapped round a sentence makes the sentence the bar's own
+ * content, and VoiceOver on an iPhone reads the bar and skips the words. The
+ * analysis wait found that on 2026-09-20 and moved its role onto the rail;
+ * on 2026-10-05 the score's reading panel and the upload bar still wrapped
+ * theirs. Chromium exposes the text anyway, so it has to be checked here
+ * rather than heard. A bar needs a name, and no text inside it.
+ */
+async function progressBars(page) {
+  const cdp = await page.context().newCDPSession(page);
+  const { nodes } = await cdp.send('Accessibility.getFullAXTree');
+  await cdp.detach();
+  const byId = new Map(nodes.map((node) => [node.nodeId, node]));
+  const textWithin = (node) =>
+    (node.childIds ?? []).flatMap((id) => {
+      const child = byId.get(id);
+      if (!child) return [];
+      if (child.role?.value === 'StaticText' && child.name?.value?.trim()) {
+        return [child.name.value.trim()];
+      }
+      return textWithin(child);
+    });
+  return nodes
+    .filter((node) => !node.ignored && node.role?.value === 'progressbar')
+    .flatMap((node) => {
+      const name = (node.name?.value || '').trim();
+      const inside = textWithin(node);
+      return [
+        ...(name ? [] : ['a progress bar with no name']),
+        ...(inside.length
+          ? [`${JSON.stringify(name || 'unnamed')} wraps text: ${JSON.stringify(inside[0].slice(0, 40))}`]
+          : []),
+      ];
+    });
+}
+
+/**
+ * A choice that is not one, to a keyboard or a screen reader.
+ *
+ * react-native-web makes every pressable its own Tab stop and has no notion of
+ * a group, so on 2026-10-05 each bar of the score on Record was a stop — one
+ * for every bar of a real piece between the music and "Start recording" — and
+ * four of the app's seven sets of radios were not in a group at all, so a
+ * screen reader could not say how many there were. On 2026-10-06 the bottom
+ * bar's tabs had no tab list either. Every radio needs a named radio group,
+ * every tab a named tab list, and each group exactly one Tab stop
+ * (`rovingFocus.ts`).
+ */
+async function choiceGroups(page) {
+  return page.evaluate(() => {
+    const found = [];
+    const KINDS = { radiogroup: 'radio', tablist: 'tab' };
+    const GROUPS = '[role="radiogroup"], [role="tablist"]';
+    const named = (element) => (element.getAttribute('aria-label') || element.textContent || '').trim().slice(0, 30);
+    const hidden = (element) => element.closest('[inert]') || element.closest('[aria-hidden="true"]');
+    for (const [group, item] of Object.entries(KINDS)) {
+      for (const element of document.querySelectorAll(`[role="${item}"]`)) {
+        if (hidden(element)) continue;
+        if (element.closest(GROUPS)?.getAttribute('role') !== group) {
+          found.push(`${item} outside a ${group}: ${JSON.stringify(named(element))}`);
+        }
+      }
+    }
+    for (const group of document.querySelectorAll(GROUPS)) {
+      if (hidden(group)) continue;
+      const kind = group.getAttribute('role');
+      if (!group.getAttribute('aria-label') && !group.getAttribute('aria-labelledby')) {
+        found.push(`a ${kind} with no name`);
+      }
+      const items = [...group.querySelectorAll(`[role="${KINDS[kind]}"]`)].filter(
+        (item) => item.closest(GROUPS) === group && item.getAttribute('aria-disabled') !== 'true',
+      );
+      const stops = items.filter((item) => item.tabIndex >= 0).length;
+      if (items.length > 0 && stops !== 1) {
+        found.push(`${JSON.stringify(group.getAttribute('aria-label') || 'unnamed')}: ${stops} Tab stops for ${items.length} ${KINDS[kind]}s`);
+      }
+    }
+    return found;
+  });
+}
+
+/**
+ * A screen the browser cannot tell from any other.
+ *
+ * Every screen's title was "InTempo" until 2026-10-06, so browser history,
+ * the tab strip and a screen reader's window list all read the same on every
+ * page. The tab now names the screen's own title (`documentTitle.ts`); a
+ * screen that leaves it at the product name alone, or writes "undefined" into
+ * it, is a finding.
+ */
+async function documentTitle(page) {
+  const title = await page.title();
+  if (/undefined/.test(title)) return [`the tab reads ${JSON.stringify(title)}`];
+  if (!title.endsWith(' – InTempo')) return [`the tab reads ${JSON.stringify(title)}, not the screen`];
+  return [];
+}
+
 for (const [name, path, options = {}] of selected) {
   /*
    * **375pt, the narrowest iPhone this app can be installed on** — not the 390
@@ -991,6 +1255,15 @@ for (const [name, path, options = {}] of selected) {
   }
   await groundPhoto(page);
   const found = await page.evaluate(audit);
+  const ghosts = await invisibleButAnnounced(page);
+  const nameless = await unnamedImages(page);
+  const outline = options.headings === false ? [] : await headingOutline(page);
+  const hiddenStops = await hiddenButFocusable(page);
+  const bars = await progressBars(page);
+  const choices = await choiceGroups(page);
+  // A screen excused from having a heading has no title of its own to name,
+  // and the product name alone is the rule for it.
+  const tabTitle = options.headings === false ? [] : await documentTitle(page);
   // Last, and on the same page: it rewrites every font size in the document,
   // so nothing measured after it would be measuring the shipped app.
   const spilled = await page.evaluate(spill, TEXT_SCALE);
@@ -1004,6 +1277,13 @@ for (const [name, path, options = {}] of selected) {
     found.lowContrast.length +
     found.overLayered.length +
     mixedVariants +
+    ghosts.length +
+    nameless.length +
+    outline.length +
+    hiddenStops.length +
+    bars.length +
+    choices.length +
+    tabTitle.length +
     spilled.length +
     errors.length;
   failures += total;
@@ -1020,6 +1300,13 @@ for (const [name, path, options = {}] of selected) {
         found.variants.map((v) => JSON.stringify(v)).join(', '),
     );
   }
+  for (const g of ghosts) console.log(`  INVISIBLE BUT ANNOUNCED: ${g}`);
+  for (const n of nameless) console.log(`  UNNAMED IMAGE: ${n}`);
+  for (const h of outline) console.log(`  HEADINGS: ${h}`);
+  for (const h of hiddenStops) console.log(`  HIDDEN BUT FOCUSABLE: ${h}`);
+  for (const b of bars) console.log(`  PROGRESS BAR: ${b}`);
+  for (const c of choices) console.log(`  CHOICES: ${c}`);
+  for (const t of tabTitle) console.log(`  TAB TITLE: ${t}`);
   for (const o of new Set(spilled)) console.log(`  AT ${TEXT_SCALE}x TEXT: ${o}`);
   await page.close();
 }

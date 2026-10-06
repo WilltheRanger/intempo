@@ -13,9 +13,9 @@ import { spacing } from '../design/spacing';
  *
  * The convention is **top-ruled**, for three reasons:
  *
- *  - A `SectionHeader` sits directly above the first row almost everywhere in
- *    this app, and a rule between a heading and the thing it heads separates a
- *    label from its own content.
+ *  - A section heading (`RuledHeading`) sits directly above the first row
+ *    almost everywhere in this app, and a rule between a heading and the
+ *    thing it heads separates a label from its own content.
  *  - `AccountRow` already documents converging on this grammar (2026-09-14),
  *    and Profile was rebuilt around it the same week.
  *  - It is the majority: 8 implementations against 7, 13 call sites against 6.

@@ -101,6 +101,7 @@ export function PageHeader({
           {title ? (
             <Text
               variant={titleSize === 'hero' ? 'heroTitle' : 'screenTitle'}
+              accessibilityRole="header"
               style={styles.title}
             >
               {title}

@@ -5,6 +5,7 @@ import { StyleSheet, View } from 'react-native';
 import { colors, ICON_SIZE, ICON_STROKE_WIDTH, spacing } from '../../design';
 import { PrimaryButton } from './PrimaryButton';
 import { SecondaryButton } from './SecondaryButton';
+import { SECTION_HEADING } from './sectionHeading';
 import { Text } from './Text';
 
 export interface EmptyStateProps {
@@ -94,15 +95,18 @@ export function EmptyState({
   return (
     <View style={[styles.container, fill && styles.filled]}>
       {Icon ? (
-        <Icon
-          size={ICON_SIZE.xl}
-          strokeWidth={ICON_STROKE_WIDTH}
-          color={colors.textTertiary}
-          style={styles.icon}
-        />
+        // Decoration: the title says what the state is. Hidden, or the web
+        // announces an unnamed image above every empty state.
+        <View style={styles.icon} aria-hidden>
+          <Icon size={ICON_SIZE.xl} strokeWidth={ICON_STROKE_WIDTH} color={colors.textTertiary} />
+        </View>
       ) : null}
 
-      <Text variant="pieceTitle" style={styles.title}>
+      {/*
+        A heading under the screen's title, so a screen reader can jump to
+        what the state is. Often it is the only thing on the screen.
+      */}
+      <Text variant="pieceTitle" style={styles.title} {...SECTION_HEADING}>
         {title}
       </Text>
 

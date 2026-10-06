@@ -12,7 +12,7 @@
  * written to break it. None of them did, which is the result worth recording —
  * the table is kept so that stays true rather than being assumed again.
  */
-import { zipSync } from 'fflate';
+import { unzipSync, zipSync } from 'fflate';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -61,7 +61,7 @@ const HOSTILE: Record<string, Uint8Array> = {
 describe('readMusicXML on a file nobody here wrote', () => {
   it.each(Object.keys(HOSTILE))('yields text or refuses: %s', (label) => {
     try {
-      const out = readMusicXML(HOSTILE[label]);
+      const out = readMusicXML(HOSTILE[label], unzipSync);
       expect(typeof out).toBe('string');
     } catch (error) {
       expect(error).toBeInstanceOf(MusicXMLFileError);
@@ -147,7 +147,7 @@ describe('a file that unpacks to far more than a score', () => {
     expect(bomb.length).toBeLessThan(1_000_000);
 
     const started = Date.now();
-    const grew = grownBy(() => expect(() => readMusicXML(bomb)).toThrow(MusicXMLFileError));
+    const grew = grownBy(() => expect(() => readMusicXML(bomb, unzipSync)).toThrow(MusicXMLFileError));
     expect(Date.now() - started).toBeLessThan(BUDGET_MS);
     // **The refusal is not the point; not allocating is.** Both guards reach
     // the same verdict, so asserting only that it throws cannot tell "refused
@@ -170,14 +170,14 @@ describe('a file that unpacks to far more than a score', () => {
     }
     const zipped = zipSync(files, { level: 9 });
     const grew = grownBy(() =>
-      expect(() => readMusicXML(zipped)).toThrow(MusicXMLFileError),
+      expect(() => readMusicXML(zipped, unzipSync)).toThrow(MusicXMLFileError),
     );
     expect(grew).toBeLessThan(64 * 1024 * 1024);
   });
 
   it('still reads a score that is merely large', () => {
     const big = '<score-partwise>' + '<!--' + 'x'.repeat(4_000_000) + '-->' + '</score-partwise>';
-    const out = readMusicXML(zipSync({ 'score.xml': new TextEncoder().encode(big) }, { level: 9 }));
+    const out = readMusicXML(zipSync({ 'score.xml': new TextEncoder().encode(big) }, { level: 9 }), unzipSync);
     expect(out).toHaveLength(big.length);
   });
 
@@ -193,7 +193,7 @@ describe('a file that unpacks to far more than a score', () => {
     const at = indexOfSignature(zipped, [0x50, 0x4b, 0x01, 0x02]);
     expect(at).toBeGreaterThan(0);
     new DataView(zipped.buffer, zipped.byteOffset).setUint32(at + 24, 0, true);
-    expect(readMusicXML(zipped)).toBe('');
+    expect(readMusicXML(zipped, unzipSync)).toBe('');
   });
 });
 
