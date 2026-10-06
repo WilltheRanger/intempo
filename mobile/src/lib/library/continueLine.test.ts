@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Piece, ScoreJson } from '../../data/types';
-import { continueLineFor, pendingLineFor, type PendingCheck } from './continueLine';
+import { continueLineFor, pendingLineFor, pendingRecheckIn, type PendingCheck } from './continueLine';
 
 /**
  * The Continue row at the top of the Library, and the hand-off line under it.
@@ -127,6 +127,23 @@ describe('the pending take line', () => {
     // title is what the one-line clamp is for.
     for (const check of ALL) {
       expect(pendingLineFor(check, null).label.length).toBeLessThanOrEqual(48);
+    }
+  });
+});
+
+describe('asking about a handed-over take again', () => {
+  it('asks again every few seconds while the line says it is analysing', () => {
+    expect(pendingRecheckIn('working', 0)).toBe(4_000);
+    expect(pendingRecheckIn('working', 60_000)).toBe(4_000);
+  });
+
+  it('stops after longer than an analysis takes, and leaves it to a tap', () => {
+    expect(pendingRecheckIn('working', 3 * 60_000)).toBeNull();
+  });
+
+  it('does not ask again once there is an answer, or while one is being asked', () => {
+    for (const check of ['ready', 'checking', 'unavailable', null] as const) {
+      expect(pendingRecheckIn(check, 0)).toBeNull();
     }
   });
 });
