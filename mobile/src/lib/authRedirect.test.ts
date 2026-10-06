@@ -8,7 +8,13 @@ const { platform, createURL } = vi.hoisted(() => ({
 vi.mock('react-native', () => ({ Platform: platform }));
 vi.mock('expo-linking', () => ({ createURL }));
 
-import { authRedirectPayload, authRedirectUrl, isEmailChangeHalfway } from './authRedirect';
+import {
+  EMAIL_CHANGE_HALFWAY_PATH,
+  authRedirectPayload,
+  authRedirectUrl,
+  halfwayStartPath,
+  isEmailChangeHalfway,
+} from './authRedirect';
 import authStatusSource from '../data/auth/useAuthStatus?raw';
 import sessionSource from '../data/auth/session?raw';
 import authScreenSource from '../screens/auth/AuthScreen?raw';
@@ -145,6 +151,16 @@ describe('a native emailed link', () => {
       message: 'Confirmation link accepted. Please proceed to confirm link sent to the other email',
     });
     expect(payload?.kind === 'message' && isEmailChangeHalfway(payload.message)).toBe(true);
+  });
+
+  it('starts the web app on the screen that says what is left', () => {
+    expect(
+      halfwayStartPath(
+        'https://intempo.app/#message=Confirmation+link+accepted.+Please+proceed+to+confirm+link+sent+to+the+other+email',
+      ),
+    ).toBe(EMAIL_CHANGE_HALFWAY_PATH);
+    expect(halfwayStartPath('https://intempo.app/pieces/1')).toBeNull();
+    expect(halfwayStartPath('https://intempo.app/#access_token=a&refresh_token=b')).toBeNull();
   });
 
   it('does not take any other message for the halfway return', () => {

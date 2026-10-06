@@ -1,8 +1,8 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { useIsFocused, useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused, useNavigation } from '@react-navigation/native';
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, type ReactNode } from 'react';
 import { Animated, Platform, StyleSheet, View, type ViewStyle } from 'react-native';
 
 import { useArrival } from '../data/arrival';
@@ -194,11 +194,17 @@ function TabNavigator() {
 function useEmailChangeHalfwayRoute(): void {
   const navigation = useNavigation<RootNavigation>();
   const halfway = useEmailChangeHalfway();
-  useEffect(() => {
-    if (halfway && takeEmailChangeHalfway()) {
-      navigation.navigate('ChangeEmail', { halfway: true });
-    }
-  }, [halfway, navigation]);
+  // A focus effect, not a mount effect: on the first mount the navigator has
+  // not finished settling its initial state from the URL, and a navigate sent
+  // then was dropped — the stub showed the Library with the notice taken and
+  // nothing opened. Focus is the navigator saying it is ready to move.
+  useFocusEffect(
+    useCallback(() => {
+      if (halfway && takeEmailChangeHalfway()) {
+        navigation.navigate('ChangeEmail', { halfway: true });
+      }
+    }, [halfway, navigation]),
+  );
 }
 
 /**

@@ -35,8 +35,13 @@ import { installDocumentTitle, type DocumentTitle } from './lib/installDocumentT
 import { installKeyActivation } from './lib/installKeyActivation';
 import { installRovingFocus } from './lib/installRovingFocus';
 import { installScreenFocus, type ScreenFocus } from './lib/installScreenFocus';
+import { takeEmailChangeHalfwayFromAddress } from './data/auth/emailChange';
 
 const queryClient = createQueryClient();
+
+// Before anything renders, because the navigator reads the address as it
+// mounts: see `takeEmailChangeHalfwayFromAddress`.
+takeEmailChangeHalfwayFromAddress();
 
 /**
  * React Navigation paints its own background between screens; without this it

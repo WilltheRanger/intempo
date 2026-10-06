@@ -103,3 +103,22 @@ export function authRedirectPayload(url: string): AuthRedirectPayload | null {
 export function isEmailChangeHalfway(message: string): boolean {
   return /confirmation link accepted/i.test(message) && /other email/i.test(message);
 }
+
+/**
+ * Where the web app should start when an address is the halfway return.
+ *
+ * **Rewritten before the navigator reads the address, not navigated to after.**
+ * On the web the navigator takes its first screen from the address while it
+ * mounts; a `navigate` sent from an effect a moment later was undone by that
+ * (measured on the stub API: the call was made and the Library stayed). So the
+ * address is changed first, to the screen that says what is left, and the app
+ * simply starts there.
+ */
+export const EMAIL_CHANGE_HALFWAY_PATH = '/account/email?halfway=1';
+
+export function halfwayStartPath(href: string): string | null {
+  const payload = authRedirectPayload(href);
+  return payload?.kind === 'message' && isEmailChangeHalfway(payload.message)
+    ? EMAIL_CHANGE_HALFWAY_PATH
+    : null;
+}
