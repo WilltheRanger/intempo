@@ -323,6 +323,9 @@ ANALYSES.sort(key=lambda a: a["created_at"], reverse=True)
 CREATED: dict = {}
 UPLOADED: set = set()
 
+#: Answers to "How did that sound?", by analysis id.
+CORRECTIONS: dict = {}
+
 #: Sizes of every audio PUT this run, in order. Read back at `/__uploads`.
 UPLOAD_SIZES: list = []
 
@@ -542,6 +545,19 @@ class H(http.server.BaseHTTPRequestHandler):
             return self._send(200, b'{"ready":true,"blocking":[]}')
         if path == "/v1/me":
             return self._send(200, json.dumps(_me()).encode())
+        if path == "/v1/me/export":
+            # `export_me`'s shape. The account, the library and the takes,
+            # with the media counted rather than included, as the real one.
+            takes = [_public(a) for a in SUBMITTED.values()] + [_public(a) for a in ANALYSES]
+            library = [CREATED.get(s[0]) or score_row(*s) for s in SCORES]
+            return self._send(200, json.dumps({
+                "export_version": 1, "generated_at": iso(datetime.now(tz=timezone.utc)),
+                "account": _me(), "library": library, "practice_analyses": takes,
+                "verdict_corrections": [c for cs in CORRECTIONS.values() for c in cs],
+                "assignments": [], "owned_studios": [], "sync_events": [],
+                "stored_media": {"profile_photo": False, "score_pages": len(library),
+                                 "practice_recordings": len(takes), "included_in_json": False},
+            }).encode())
         if path == "/v1/scores/current":
             return self._send(200, json.dumps(_current()).encode())
         if path == "/v1/scores":
@@ -579,6 +595,9 @@ class H(http.server.BaseHTTPRequestHandler):
             offset = int((q.get("offset") or ["0"])[0])
             limit = int((q.get("limit") or ["50"])[0])
             return self._send(200, json.dumps(rows[offset:offset + limit]).encode())
+        if path.startswith("/v1/analyses/") and path.endswith("/corrections"):
+            aid = path.split("/")[3]
+            return self._send(200, json.dumps(CORRECTIONS.get(aid, [])).encode())
         if path.startswith("/v1/analyses/") and path.endswith("/recording"):
             # A take's own recording, signed for an hour. The stub keeps no
             # audio, so it answers 404 the way the real router does for a take
@@ -657,10 +676,26 @@ class H(http.server.BaseHTTPRequestHandler):
         if path == "/auth/v1/logout":
             return self._send(204, b"")
 
-        if path in ("/v1/upload/score-image", "/v1/upload/audio"):
+        if path.startswith("/v1/analyses/") and path.endswith("/corrections"):
+            # `POST /v1/analyses/{id}/corrections`: the musician's answer to
+            # "How did that sound?", one row per bar, 201 with the rows.
+            aid = path.split("/")[3]
+            body = json.loads(self._read_body() or b"{}")
+            rows = [{"id": f"eeeeeeee-0000-4000-8000-{len(CORRECTIONS) + i + 1:012d}",
+                     "analysis_id": aid, "user_id": USER,
+                     "measure_number": c.get("measure_number"),
+                     "app_verdict": c.get("app_verdict"), "user_verdict": c.get("user_verdict"),
+                     "comment": c.get("comment"), "created_at": iso(datetime.now(tz=timezone.utc))}
+                    for i, c in enumerate(body.get("corrections") or [])]
+            if not rows:
+                return self._send(422, b'{"detail":"corrections must not be empty"}')
+            CORRECTIONS.setdefault(aid, []).extend(rows)
+            return self._send(201, json.dumps(rows).encode())
+        if path in ("/v1/upload/score-image", "/v1/upload/audio", "/v1/upload/avatar"):
             body = json.loads(self._read_body() or b"{}")
             ext = (body.get("filename") or "page.jpg").rsplit(".", 1)[-1]
-            bucket = "score-images" if "score-image" in path else "audio-uploads"
+            bucket = ("score-images" if "score-image" in path
+                      else "avatars" if "avatar" in path else "audio-uploads")
             key = f"{USER}/{len(UPLOADED) + 1}.{ext}"
             # The same shape and the same path grammar the backend's validator
             # requires: /storage/v1/object/upload/sign/<bucket>/<user>/<file>.
@@ -789,6 +824,11 @@ class H(http.server.BaseHTTPRequestHandler):
                     target[key] = body[key]
             if body.get("onboarded"):
                 target["onboarded_at"] = iso(datetime.now(tz=timezone.utc))
+            if "avatar_key" in body:
+                # The stub keeps no bytes, so a set photo is a fixture image
+                # and a cleared one is none, which is what the app draws from.
+                target["avatar_url"] = (f"{BASE}/img/01_simple_printed.jpg"
+                                        if body["avatar_key"] else None)
             return self._send(200, json.dumps(_me()).encode())
         if path.startswith("/v1/scores/"):
             sid = path.rsplit("/", 1)[-1]
@@ -814,17 +854,30 @@ class H(http.server.BaseHTTPRequestHandler):
 
     def do_DELETE(self):
         path = self.path.split("?")[0]
+        if path == "/v1/me":
+            # The account and everything in it. The stub cannot forget the
+            # seeded library for good, so it empties what it can and answers
+            # 204 the way `delete_me` does.
+            ANALYSES.clear(); SUBMITTED.clear(); CREATED.clear(); CORRECTIONS.clear()
+            SCORES.clear()
+            return self._send(204, b"")
         if path.startswith("/v1/scores/"):
             sid = path.rsplit("/", 1)[-1]
-            if any(a["score_id"] == sid for a in ANALYSES):
-                return self._send(409, json.dumps({"detail":
-                    "score has dependent analyses; delete those first (soft-delete is V2)"}).encode())
-            if CREATED.pop(sid, None) is not None:
-                return self._send(204, b"")
-            if any(s[0] == sid for s in SCORES):
-                SCORES[:] = [s for s in SCORES if s[0] != sid]
-                return self._send(204, b"")
-            return self._send(404, b'{"detail":"score not found"}')
+            known = sid in CREATED or any(s[0] == sid for s in SCORES)
+            if not known:
+                return self._send(404, b'{"detail":"score not found"}')
+            # The piece and its practice history together, as `delete_score`
+            # does: it used to refuse a piece with takes (409), which the
+            # backend stopped doing when "Delete piece" became "and all its
+            # takes".
+            ANALYSES[:] = [a for a in ANALYSES if a["score_id"] != sid]
+            for aid in [aid for aid, a in SUBMITTED.items() if a["score_id"] == sid]:
+                del SUBMITTED[aid]
+            # Both places a piece can be: a renamed seeded piece is in CREATED
+            # *and* SCORES, and removing only the first left it listed.
+            CREATED.pop(sid, None)
+            SCORES[:] = [s for s in SCORES if s[0] != sid]
+            return self._send(204, b"")
         self._send(404, b'{"detail":"not found"}')
 
 
