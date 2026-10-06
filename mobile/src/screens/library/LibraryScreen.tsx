@@ -47,7 +47,7 @@ import type {
   TabScreenNavigation,
 } from '../../navigation/types';
 import { AddPieceSheet } from '../../components/pieces/AddPieceSheet';
-import { ContinueRow, PendingTakeLine } from './ContinueRow';
+import { ContinueRow, ContinueRowSkeleton, PendingTakeLine } from './ContinueRow';
 import { PieceRow } from './PieceRow';
 import { PieceTile } from './PieceTile';
 import { useAddPieceOption } from '../../navigation/useAddPieceOption';
@@ -294,6 +294,7 @@ export function LibraryScreen() {
         </Text>
       ) : null}
 
+      {load === 'loading' && !searching ? <ContinueRowSkeleton /> : null}
       {continueLine && current ? (
         <ContinueRow
           line={continueLine}

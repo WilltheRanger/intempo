@@ -2,9 +2,10 @@ import { StyleSheet, View } from 'react-native';
 
 import { PressableScale } from '../../components/motion';
 import { PrimaryButton } from '../../components/primitives/PrimaryButton';
+import { Skeleton } from '../../components/primitives/Skeleton';
 import { Text } from '../../components/primitives/Text';
 import { TrailingChevron } from '../../components/primitives/TrailingChevron';
-import { BORDER_WIDTH, colors, spacing } from '../../design';
+import { BORDER_WIDTH, MIN_TOUCH_TARGET, colors, spacing } from '../../design';
 import type { ContinueLine, PendingLine } from '../../lib/library/continueLine';
 
 export interface ContinueRowProps {
@@ -71,6 +72,43 @@ export function ContinueRow({ line, onOpen, onAction }: ContinueRowProps) {
 }
 
 /**
+ * The Continue row's place, held while the Library loads.
+ *
+ * **The shelf's placeholder started where the shelf does, and the shelf does
+ * not start there.** Every library with a piece has a Continue row — the API
+ * falls back to the newest piece — so when the answer came, a 168pt row landed
+ * above the list and pushed the whole of it down (measured layout shift 0.155
+ * on the stub API). Held here, the list arrives where its placeholder already
+ * stood. An empty library is the one case with no row, and it gets a
+ * different screen rather than a list that moves.
+ *
+ * Built from the row's own measures: the same rules, padding and margins,
+ * and each line at its type's line height (18 label, 31 hero, 20 metadata).
+ * Two title lines, because classical titles are long — the reasoning
+ * `PieceSkeletons` gives — and a one-line title then moves the list up by one
+ * line, which is the smaller miss.
+ */
+export function ContinueRowSkeleton() {
+  return (
+    <View style={styles.row} accessible={false}>
+      <View style={styles.words}>
+        <View style={[styles.skeletonLine, { height: 18 }]}>
+          <Skeleton height={11} width={68} />
+        </View>
+        <View style={[styles.skeletonLine, styles.title, { height: 62 }]}>
+          <Skeleton height={22} width="88%" />
+          <Skeleton height={22} width="56%" style={styles.skeletonGap} />
+        </View>
+        <View style={[styles.skeletonLine, styles.detail, { height: 20 }]}>
+          <Skeleton height={12} width="44%" />
+        </View>
+      </View>
+      <Skeleton height={MIN_TOUCH_TARGET} width={104} radius={MIN_TOUCH_TARGET / 2} style={styles.action} />
+    </View>
+  );
+}
+
+/**
  * The take this device handed over, under the Continue row: one line, and a
  * control in every state — it opens the result when there is one and asks
  * again when there is not (`continueLine.pendingLineFor`).
@@ -128,6 +166,12 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.55,
+  },
+  skeletonLine: {
+    justifyContent: 'center',
+  },
+  skeletonGap: {
+    marginTop: 9,
   },
   // A row, not a caption: the whole 44pt strip is the target.
   pending: {
