@@ -811,6 +811,23 @@ The rules are in `lib/radioGroup.ts`. `audit-a11y` fails a radio outside a
 group, a group with no name, and a group with other than one Tab stop.
 `walk-app` moves through the bars on Record.
 
+### A sheet opens with focus on its backdrop (2026-10-06)
+
+react-native-web's `Modal` traps focus by focusing the first element inside it
+that will take focus. It does this when the overlay opens, and each time Tab or
+Shift+Tab runs off an end. The full-screen backdrop that dismisses a sheet or
+dialog came first, and it was a `Pressable`. On the web a Pressable always has
+a tab index, so `tabIndex={-1}` took it out of the Tab order but left it
+focusable from code. Every sheet and dialog opened with focus on an
+`aria-hidden` layer, which a screen reader reads as nothing, and the cycle
+through it had one silent stop more than it showed.
+
+**The rule:** the dismiss area is `DismissArea`, a plain view with the touch
+responder. It has no tab index, so the trap passes over it to the first real
+control: Close on a sheet, Cancel on a dialog. Do not put a `Pressable` or
+anything else with a tab index ahead of an overlay's controls, even one out of
+the Tab order. `walk-app` checks that Add piece opens with focus on Close.
+
 ## `npm audit fix --force` would take this app back to SDK 46 (2026-09-09)
 
 `npm audit --omit=dev` reports **24 advisories, 7 of them high**, and closes

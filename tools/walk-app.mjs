@@ -315,6 +315,16 @@ const hiddenInSheet = await page.evaluate(() =>
 );
 if (hiddenInSheet === 0) pass('the open sheet has no hidden Tab stops');
 else fail(`the open sheet has ${hiddenInSheet} hidden Tab stop(s)`);
+// **And focus opens on a control, not on the backdrop.** Out of the Tab order
+// is not enough: the Modal's focus trap focuses the first element that will
+// take focus, and until 2026-10-06 that was the `aria-hidden` backdrop, on
+// every sheet and dialog (`components/overlays/DismissArea.tsx`).
+const focusInSheet = await page.evaluate(() => {
+  const a = document.activeElement;
+  return { name: a?.getAttribute('aria-label') ?? a?.tagName, hidden: Boolean(a?.closest('[aria-hidden="true"]')) };
+});
+if (focusInSheet.name === 'Close' && !focusInSheet.hidden) pass('the Add piece sheet opens with focus on Close');
+else fail(`the Add piece sheet opened with focus on ${JSON.stringify(focusInSheet)}`);
 await page.keyboard.press('Escape');
 await waitFor('the Add piece sheet to close', async () => (await page.locator('[role=dialog]').count()) === 0);
 const focusAfterSheet = await page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.tagName);

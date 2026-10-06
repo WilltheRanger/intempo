@@ -4,7 +4,6 @@ import {
   Modal,
   PanResponder,
   Platform,
-  Pressable,
   StyleSheet,
   View,
   type LayoutChangeEvent,
@@ -25,6 +24,7 @@ import { settleVelocity } from '../../lib/motion/springHandoff';
 import { useReducedMotion } from '../../lib/useReducedMotion';
 import { IconButton } from '../primitives/IconButton';
 import { Text } from '../primitives/Text';
+import { DismissArea } from './DismissArea';
 import { useInertAppRoot, useReturnFocus } from './modalAccessibility';
 import { useOverlayPresence } from './useOverlayPresence';
 
@@ -275,18 +275,8 @@ export function BottomSheet({
     >
       <View style={styles.container}>
         <Animated.View style={[styles.backdrop, { opacity: backdropOpacity }]}>
-          <Pressable
-            style={StyleSheet.absoluteFill}
-            onPress={onClose}
-            // Pointer dismissal only. A full-screen invisible button is a poor
-            // keyboard target and was focused before the sheet's real choices.
-            // `accessible={false}` alone never reached the web, where this was
-            // still an unnamed full-screen Tab stop (2026-10-05); Pressable
-            // there sets a tab index of its own unless given one.
-            accessible={false}
-            tabIndex={-1}
-            aria-hidden
-          />
+          {/* Pointer dismissal only, and unfocusable: see `DismissArea`. */}
+          <DismissArea onDismiss={onClose} />
         </Animated.View>
 
         <Animated.View

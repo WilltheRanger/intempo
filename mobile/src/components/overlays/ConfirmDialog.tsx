@@ -1,4 +1,4 @@
-import { Animated, Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Animated, Modal, Platform, StyleSheet, View } from 'react-native';
 
 import {
   colors,
@@ -11,6 +11,7 @@ import { useReducedMotion } from '../../lib/useReducedMotion';
 import { PrimaryButton } from '../primitives/PrimaryButton';
 import { SecondaryButton } from '../primitives/SecondaryButton';
 import { Text } from '../primitives/Text';
+import { DismissArea } from './DismissArea';
 import { useInertAppRoot, useReturnFocus } from './modalAccessibility';
 import { useOverlayPresence } from './useOverlayPresence';
 
@@ -90,19 +91,14 @@ export function ConfirmDialog({
       <View style={styles.container}>
         {/* Tapping the scrim dismisses, the way a sheet does. */}
         <Animated.View style={[StyleSheet.absoluteFill, styles.scrim, { opacity }]}>
-          <Pressable
-            style={StyleSheet.absoluteFill}
-            onPress={onCancel}
-            // **Pointer dismissal only.** As a button it was an invisible
-            // full-screen "Dismiss" that took keyboard focus before the
-            // dialog's real choices and was read out as one of them
-            // (2026-10-05). Cancel and Escape are the keyboard's ways out.
-            // `tabIndex` and `aria-hidden` because the web ignores
-            // `accessible={false}`, and Pressable overrides `focusable` there
-            // with a tab index of its own.
-            tabIndex={-1}
-            aria-hidden
-          />
+          {/*
+            **Pointer dismissal only.** As a button it was an invisible
+            full-screen "Dismiss" that took keyboard focus before the dialog's
+            real choices and was read out as one of them (2026-10-05); then,
+            as a Pressable out of the Tab order, it was still where the focus
+            trap put focus on opening (2026-10-06). See `DismissArea`.
+          */}
+          <DismissArea onDismiss={onCancel} />
         </Animated.View>
 
         <Animated.View
