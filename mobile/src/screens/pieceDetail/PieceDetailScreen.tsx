@@ -316,7 +316,7 @@ export function PieceDetailScreen() {
       {hasNotation && piece.score ? (
         <View style={styles.engravedBand}>
           {/* The opening two systems, where the prototype draws two lines. */}
-          <ScoreBand score={piece.score} viewport={OPENING_HEIGHT} />
+          <ScoreBand score={piece.score} viewport={OPENING_HEIGHT} fullBleed />
         </View>
       ) : hasPages ? (
         // Nothing has been read yet — a scan still in the worker, or a reading

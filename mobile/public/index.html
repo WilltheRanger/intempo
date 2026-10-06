@@ -79,6 +79,13 @@
       body {
         height: 100%;
         background-color: #F7F2E9;
+        /*
+         * The browser's 8px margin, gone from the first frame. react-native-web
+         * resets it, but only once its script has run, so the launch screen
+         * was drawn 8px in and then moved out to the edges: a layout shift on
+         * every page load (2026-10-06).
+         */
+        margin: 0;
       }
 
       /*

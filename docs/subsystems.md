@@ -859,6 +859,26 @@ control: Close on a sheet, Cancel on a dialog. Do not put a `Pressable` or
 anything else with a tab index ahead of an overlay's controls, even one out of
 the Tab order. `walk-app` checks that Add piece opens with focus on Close.
 
+### Music that waits for `onLayout` pushes the page down when it arrives (2026-10-06)
+
+The engraver needs a width to wrap against, and the score screen, the piece
+screen's opening lines and Tempo's band all waited for `onLayout` to give it.
+So the first frame drew the page without its music, and the rows under it
+dropped by up to two hundred points when the stave arrived. The score
+screen's layout shift was 0.12 on every visit, where 0.1 is the line between
+good and not.
+
+**The rule:** music on full-bleed paper takes its width from the window before
+the first frame: the reading measure less the paper's margin each side
+(`lib/score/musicWidth.ts`). `onLayout` still corrects it, for a scrollbar or a
+sideways phone's inset. `ScoreBand` takes `fullBleed` for this. A band whose
+width the window cannot tell, such as a Library tile, still measures, so do
+not put anything that matters under one. Measured with a `layout-shift`
+`PerformanceObserver`: the score, piece, Tempo and set-tempo screens are now at
+or under 0.016. The page template also zeroes the body's 8px margin, which the
+app's own reset removed only after its script ran, so every page load shifted
+once.
+
 ## `npm audit fix --force` would take this app back to SDK 46 (2026-09-09)
 
 `npm audit --omit=dev` reports **24 advisories, 7 of them high**, and closes
