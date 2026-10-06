@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../auth/session', () => ({
   getAccessToken: () => Promise.resolve('token'),
-  endSessionHere: async () => {},
+  signOut: async () => {},
 }));
 
 import { postCorrections } from './corrections';

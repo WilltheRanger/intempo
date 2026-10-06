@@ -68,6 +68,7 @@ from app.services.training import (
 # do it rather than one per importer.
 from app.services import display_urls
 from app.services.page_image import object_key_from as _object_key_from
+from app.errors import server_fault
 
 router = APIRouter(prefix="/scores", tags=["scores"])
 
@@ -950,9 +951,8 @@ def create_score(
     }
     rows = _insert_score(insert_payload)
     if not rows:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="failed to persist score",
+        raise server_fault(
+            log, "failed to persist score", "The piece couldn't be saved. Try again."
         )
 
     # **Claimed only after the row exists.** A row now points at these objects,
@@ -1173,9 +1173,8 @@ def import_score(
         .execute()
     ).data or []
     if not inserted:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="failed to persist score",
+        raise server_fault(
+            log, "failed to persist score", "The piece couldn't be saved. Try again."
         )
     return _with_image_urls(inserted)[0]
 
@@ -1568,14 +1567,13 @@ def _accepted(
             )
             continue
         if not updated:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="failed to record the acceptance",
+            raise server_fault(
+                log, "failed to record the acceptance", "That couldn't be saved. Try again."
             )
         return _with_image_urls(updated)[0]
     raise HTTPException(  # pragma: no cover — the loop returns or raises
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        detail="failed to record the acceptance",
+        detail="That couldn't be saved. Try again.",
     )
 
 

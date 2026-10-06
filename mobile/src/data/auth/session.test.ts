@@ -228,6 +228,17 @@ describe('an emailed link coming back', () => {
     expect(auth.setSession).not.toHaveBeenCalled();
   });
 
+  it('reports the halfway return of an email change without touching the session', async () => {
+    const { consumeAuthRedirect } = await load();
+
+    const result = await consumeAuthRedirect(
+      link('message=Confirmation+link+accepted.+Please+proceed+to+confirm+link+sent+to+the+other+email'),
+    );
+
+    expect(result).toBe('emailChangeHalfway');
+    expect(auth.setSession).not.toHaveBeenCalled();
+  });
+
   it('establishes the session the link carries', async () => {
     const { consumeAuthRedirect } = await load();
 
@@ -268,23 +279,13 @@ describe('an emailed link coming back', () => {
 });
 
 describe('getting out', () => {
-  it('signs out through the auth server by default', async () => {
+  it('signs out this device only, through the auth server', async () => {
+    // Local, not auth-js's default of global: the Sign out button and a token
+    // the API refused both mean this device. Local still revokes this session
+    // server-side rather than merely forgetting it here.
     const { signOut } = await load();
 
     await signOut();
-
-    // No scope argument: a normal sign-out should revoke the session
-    // server-side, not merely forget it here.
-    expect(auth.signOut).toHaveBeenCalledWith();
-  });
-
-  it('ends only this device’s session when the API refuses its token', async () => {
-    // The default scope is global: every device the account is signed in on.
-    // A refused request says something about this session and nothing about
-    // the others.
-    const { endSessionHere } = await load();
-
-    await endSessionHere();
 
     expect(auth.signOut).toHaveBeenCalledWith({ scope: 'local' });
   });

@@ -2,9 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   daysSincePracticed,
-  formatLastPracticed,
   formatLastPracticedShort,
-  formatRole,
   formatTier,
   joinMetadata,
   pageCountLabel,
@@ -88,7 +86,7 @@ describe('daysSincePracticed', () => {
     // Clock skew on a phone is common enough, and "Practiced -2 days ago" is
     // worse than being slightly generous.
     //
-    // The clock has to be pinned for this: `formatLastPracticed` takes no
+    // The clock has to be pinned for this: `formatLastPracticedShort` takes no
     // `now`, so without a fake timer "later" was compared against the real
     // date and was in the *past*. The test passed and proved nothing — a
     // mutation narrowing `days <= 0` to `days === 0` survived it.
@@ -97,31 +95,31 @@ describe('daysSincePracticed', () => {
     const later = new Date(2026, 4, 19, 12);
 
     expect(daysSincePracticed(later.toISOString(), new Date(2026, 4, 17, 12))).toBeLessThan(0);
-    expect(formatLastPracticed(later.toISOString())).toBe('Practiced today');
     expect(formatLastPracticedShort(later.toISOString())).toBe('Today');
   });
 });
 
-describe('the two labels agree', () => {
-  const cases: [number, string, string][] = [
-    [0, 'Practiced today', 'Today'],
-    [1, 'Practiced yesterday', 'Yesterday'],
-    [3, 'Practiced 3 days ago', '3 days'],
-    [6, 'Practiced 6 days ago', '6 days'],
-    [7, 'Practiced last week', 'Last week'],
-    [14, 'Practiced 2 weeks ago', '2 weeks'],
-    [27, 'Practiced 4 weeks ago', '4 weeks'],
-    [30, 'Practiced last month', 'Last month'],
-    [90, 'Practiced 3 months ago', '3 months'],
+describe('the short label', () => {
+  // The long form, "Practiced 3 days ago", went with the screen that used it
+  // (2026-10-06); these are the short form's own cases.
+  const cases: [number, string][] = [
+    [0, 'Today'],
+    [1, 'Yesterday'],
+    [3, '3 days'],
+    [6, '6 days'],
+    [7, 'Last week'],
+    [14, '2 weeks'],
+    [27, '4 weeks'],
+    [30, 'Last month'],
+    [90, '3 months'],
   ];
 
-  it.each(cases)('at %i days: %s / %s', (days, long, short) => {
+  it.each(cases)('at %i days: %s', (days, short) => {
     const now = new Date(2026, 4, 17, 12);
     vi.useFakeTimers();
     vi.setSystemTime(now);
     const then = new Date(2026, 4, 17 - days, 12);
 
-    expect(formatLastPracticed(then.toISOString())).toBe(long);
     expect(formatLastPracticedShort(then.toISOString())).toBe(short);
   });
 
@@ -131,10 +129,8 @@ describe('the two labels agree', () => {
 
     for (let days = 0; days <= 400; days += 1) {
       const then = new Date(2026, 4, 17 - days, 12);
-      const long = formatLastPracticed(then.toISOString());
       const short = formatLastPracticedShort(then.toISOString());
 
-      expect(long, `${days} days`).not.toMatch(/\b1 (days|weeks|months)\b/);
       expect(short, `${days} days`).not.toMatch(/\b1 (days|weeks|months)\b/);
     }
   });
@@ -142,15 +138,13 @@ describe('the two labels agree', () => {
   it('omits the line entirely when nothing is known', () => {
     // Null rather than a placeholder, so the caller drops the row instead of
     // rendering "Never practiced" next to a piece added five minutes ago.
-    expect(formatLastPracticed(null)).toBeNull();
     expect(formatLastPracticedShort(null)).toBeNull();
   });
 });
 
 describe('labels', () => {
-  it('names the tiers and roles a person recognises', () => {
+  it('names the tiers a person recognises', () => {
     expect(formatTier('student_via_teacher')).toBe('Student, via teacher');
-    expect(formatRole('teacher')).toBe('Teacher');
   });
 
   it('shows an unknown value rather than guessing at one', () => {
@@ -158,7 +152,6 @@ describe('labels', () => {
     // given a label here, which is visible, where silently printing 'Free'
     // would not be."
     expect(formatTier('enterprise' as never)).toBe('enterprise');
-    expect(formatRole('administrator' as never)).toBe('administrator');
   });
 });
 

@@ -86,6 +86,7 @@ describe('defaults', () => {
       lastTakeHadSound: null,
       practiceRole: null,
       foundVia: null,
+      instrumentUnsent: false,
     });
   });
 });
@@ -132,6 +133,7 @@ describe('reading storage it does not trust', () => {
       lastTakeHadSound: null,
       practiceRole: null,
       foundVia: null,
+      instrumentUnsent: false,
     });
   });
 
@@ -199,6 +201,7 @@ describe('setting one preference', () => {
       lastTakeHadSound: null,
       practiceRole: null,
       foundVia: null,
+      instrumentUnsent: false,
     });
   });
 });

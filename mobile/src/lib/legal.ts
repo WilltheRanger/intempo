@@ -38,9 +38,9 @@ export interface LegalDocument {
  *
  * **Null, not a plausible-looking placeholder.** A policy that names
  * "InTempo Ltd" of "hello@intempo.app" in a jurisdiction nobody chose reads
- * exactly like a finished one, and would ship. Null makes the gap visible on
- * the screen and in `missingOwnerDetails`, which is the same stance the rest of
- * this codebase takes on a clef it has not read.
+ * exactly like a finished one, and would ship. Null makes the gap visible: the
+ * screen prints no line for it, which is the same stance the rest of this
+ * codebase takes on a clef it has not read.
  *
  * Filling these in is the last step before submitting to either store.
  */
@@ -60,23 +60,10 @@ export const OWNER: {
   jurisdiction: 'the State of California',
 };
 
-/** Which of `OWNER`'s fields are still unset, in the order they are needed. */
-export function missingOwnerDetails(): string[] {
-  return (
-    [
-      ['entity', 'the name of the person or company publishing the app'],
-      ['contact', 'an email address for data questions'],
-      ['jurisdiction', 'the law these terms are read under'],
-    ] as const
-  )
-    .filter(([key]) => !OWNER[key])
-    .map(([, described]) => described);
-}
-
 export const PRIVACY: LegalDocument = {
   id: 'privacy',
   title: 'Privacy',
-  updated: '2026-08-31',
+  updated: '2026-10-06',
   sections: [
     {
       heading: 'What this app keeps',
@@ -113,6 +100,7 @@ export const PRIVACY: LegalDocument = {
         'Modal runs the reading of a page and the timing analysis. A page and a recording are sent there to be worked on and are not kept afterwards.',
         'Anthropic is sent a crop of a single line of music when a bar does not add up, so it can be read again. It is sent the picture and nothing about you.',
         'Google is available as an alternative reader and is switched off. If that ever changes, this page changes with it.',
+        'Sentry receives a report when the iPhone or Android app crashes: what failed in the code and the kind of device. It is not sent your name, your email, your music or your recordings. The web app sends nothing.',
       ],
     },
     {
@@ -126,7 +114,7 @@ export const PRIVACY: LegalDocument = {
     {
       heading: 'What you can do',
       body: [
-        'Download my data, in Profile, gives you a portable JSON copy of everything the app holds about your account.',
+        'Download my data, in Profile, gives you a portable JSON copy of your account, your library, your results and your corrections. Photographs and recordings are counted in it, not included.',
         'Delete account, in Profile, removes it permanently.',
         'You do not have to ask us to do either, and you do not have to explain why.',
       ],

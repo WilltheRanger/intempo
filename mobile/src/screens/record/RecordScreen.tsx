@@ -12,7 +12,9 @@ import {
   Linking,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
+  useWindowDimensions,
   View,
 } from 'react-native';
 
@@ -56,6 +58,11 @@ import {
 } from '../../data/practice/pickedTake';
 import { chooseAudioFile } from './chooseAudioFile';
 import { playheadAt } from '../../lib/record/playhead';
+import {
+  recordLayout,
+  SIDE_BY_SIDE_MAX_WIDTH,
+  SIDE_PANEL_WIDTH,
+} from '../../lib/record/recordLayout';
 import type { CaptureReport } from '../../lib/audio/capture';
 import { readTakeFailure } from '../../lib/audio/takeFailure';
 import { heldTakeUrl, releaseHeldTake } from '../../lib/audio/heldTake';
@@ -860,6 +867,8 @@ export function RecordScreen() {
     }
   }, [params.startAt]);
   const insets = useSafeAreaInsets();
+  const screen = useWindowDimensions();
+  const beside = recordLayout(screen.width, screen.height) === 'sideBySide';
   const listenSchedule = useMemo(
     () => (heard ? scheduleScore(heard, targetBpm) : null),
     [heard, targetBpm],
@@ -1348,277 +1357,310 @@ export function RecordScreen() {
    * where it was, because it is reached for without looking (§3 law 7).
    */
   return (
-    <ScreenContainer scrollable={false} bleed contentStyle={styles.stage}>
-      <View style={styles.header}>
-        <BackLink label="Back to the piece" onPress={goBack} />
-        <View style={styles.titleRow}>
-          <PieceHeading
-            title={piece.title}
-            variant="heroTitle"
-            numberOfLines={2}
-            header
-            containerStyle={styles.title}
-          />
-          {/*
-            The two doors that are not settings — upload a take you already
-            have, and the pre-flight checks. Gone during a take, like every
-            other control that cannot change it.
-          */}
-          {!capturing && !reviewing ? (
-            <Pressable
-              onPress={() => setShowMore(true)}
-              accessibilityRole="button"
-              accessibilityLabel="More"
-              style={({ pressed }) => [styles.more, pressed && styles.morePressed]}
-            >
-              <MoreVertical size={ICON_SIZE.lg} strokeWidth={ICON_STROKE_WIDTH} color={colors.textSecondary} />
-            </Pressable>
-          ) : (
-            // The slot stays, empty, so the title does not re-wrap — and move
-            // the music under it — the moment a take begins.
-            <View style={styles.more} />
-          )}
+    <ScreenContainer
+      scrollable={false}
+      bleed
+      contentStyle={[styles.stage, beside && styles.stageBeside]}
+    >
+      {/*
+        The same tree upright and sideways — only the styles change — so
+        turning the phone mid-take moves the parts without remounting them:
+        the music keeps its place and the player keeps playing.
+        `lib/record/recordLayout.ts` says when, and why.
+      */}
+      <View style={[styles.music, beside && { paddingLeft: insets.left }]}>
+        <View style={styles.header}>
+          <BackLink label="Back to the piece" onPress={goBack} />
+          <View style={styles.titleRow}>
+            <PieceHeading
+              title={piece.title}
+              variant="heroTitle"
+              numberOfLines={2}
+              header
+              containerStyle={styles.title}
+            />
+            {/*
+              The two doors that are not settings — upload a take you already
+              have, and the pre-flight checks. Gone during a take, like every
+              other control that cannot change it.
+            */}
+            {!capturing && !reviewing ? (
+              <Pressable
+                onPress={() => setShowMore(true)}
+                accessibilityRole="button"
+                accessibilityLabel="More"
+                style={({ pressed }) => [styles.more, pressed && styles.morePressed]}
+              >
+                <MoreVertical size={ICON_SIZE.lg} strokeWidth={ICON_STROKE_WIDTH} color={colors.textSecondary} />
+              </Pressable>
+            ) : (
+              // The slot stays, empty, so the title does not re-wrap — and move
+              // the music under it — the moment a take begins.
+              <View style={styles.more} />
+            )}
+          </View>
         </View>
+
+        {heard ? (
+          <ScoreScroll
+            score={heard}
+            bars={startable}
+            startFrom={startFrom}
+            onStartFromChange={setStartFrom}
+            playhead={playhead}
+            revealSignal={revealStart}
+            // The entry bar is written onto the take, so it locks with the
+            // tempo and the mode the moment recording starts.
+            disabled={recording || isStarting || reviewing}
+          />
+        ) : null}
       </View>
 
-      {heard ? (
-        <ScoreScroll
-          score={heard}
-          bars={startable}
-          startFrom={startFrom}
-          onStartFromChange={setStartFrom}
-          playhead={playhead}
-          revealSignal={revealStart}
-          // The entry bar is written onto the take, so it locks with the
-          // tempo and the mode the moment recording starts.
-          disabled={recording || isStarting || reviewing}
-        />
-      ) : null}
-
-      <View style={[styles.panel, { paddingBottom: spacing['2xl'] + insets.bottom }]}>
-        {!capturing && !reviewing && heard ? (
-          <>
-            <ListenPlayer
-              score={heard}
-              bpm={targetBpm}
-              startFrom={startFrom}
-              disabled={isStarting}
-            />
-            <View style={styles.playerGap} />
-
-            {/*
-              **The tempo is chosen on its own screen**, and this only shows
-              what was chosen — the redesign's split. `practiceTempo` is the
-              shared state both read, so coming back shows the new number with
-              no hand-off.
-            */}
-            <PillRow
-              label="Tempo"
-              value={`${displayedBpm} ${tempoUnitLabel(tempoBeatUnit)}`}
-              chevron="right"
-              onPress={() => navigation.navigate('Tempo', { pieceId: params.pieceId })}
-              accessibilityLabel={`Tempo ${displayedBpm} ${tempoUnitLabel(tempoBeatUnit)}. Change it`}
-            />
-            {/*
-              **One bar for both**, which is what makes it safe to say so. The
-              take carries this bar to the server, which trims the score before
-              building its timeline — so hearing the passage and recording it
-              start in the same place, and the analysis is told which.
-            */}
-            <PillRow
-              // The words say the bar governs the take — `entryCopy`.
-              label={entryRowLabel('take')}
-              value={`Bar ${startFrom}`}
-              chevron="down"
-              onPress={() => setPickingStart(true)}
-              accessibilityLabel={entryAccessibilityLabel('take', startFrom)}
-            />
-            <PillRow
-              label="Metronome"
-              value={metronomeValueLabel(metronomeMode)}
-              chevron="down"
-              onPress={() => setPickingMetronome(true)}
-              accessibilityLabel={`Metronome ${metronomeValueLabel(metronomeMode)}. Choose how the beat is marked`}
-              last={skippable === 0}
-            />
-            {/*
-              Only where there is something to skip — a control that is always
-              there and does nothing on most pieces teaches a musician to stop
-              reading the controls. The redesign does not draw it because its
-              sample piece has no long rests; a piece that does needs it, or the
-              take is judged against rests it skipped.
-            */}
-            {skippable > 0 ? (
-              <View style={styles.lastRow}>
-                <ToggleRow
-                  label={`Skip ${skippable} ${skippable === 1 ? 'bar' : 'bars'} of rest`}
-                  value={skipRests}
-                  onChange={setSkipRests}
-                />
-              </View>
-            ) : null}
-
-            {/*
-              **A feature named in the settings and connected to nothing was
-              worse than a missing feature**: haptics off in Profile with the
-              mode set to haptic marks no beat at all.
-            */}
-            {metronome.silent ? (
-              <Text variant="caption" color="textTertiary" style={styles.note}>
-                Haptics are off in Profile, so nothing marks the beat.
-              </Text>
-            ) : null}
-            {/*
-              Only while Audio is chosen, now the picker no longer says it under
-              the option (`HEADPHONES_WARNING`).
-            */}
-            {metronomeMode === 'audio_with_headphones' ? (
-              <Text variant="caption" color="textTertiary" style={styles.note}>
-                {HEADPHONES_WARNING}
-              </Text>
-            ) : null}
-          </>
-        ) : null}
-
-        {capturing ? (
-          <View style={styles.takeStatus}>
-            {activeRest ? (
-              <RestCue state={activeRest} />
-            ) : (
-              <Text
-                variant="screenTitle"
-                color={elapsedMs > 0 || recording || countingIn ? 'textPrimary' : 'textTertiary'}
-                style={styles.timer}
-              >
-                {formatElapsed(elapsedMs)}
-              </Text>
-            )}
-            {recording && metronomeMode === 'visual' ? (
-              <BeatIndicator beat={metronome.beat} perBar={perBar} />
-            ) : null}
-            {/*
-              What the panel says while the microphone is open —
-              `lib/record/takeStatus.ts`, where it is tested, including the
-              thing it must never say. The detector is amplitude-invariant
-              (`TUNING_LOG.md`, 2026-09-02), so a screen that comments on level
-              is asking for something that changes nothing.
-            */}
-            {micLine.line ? (
-              <Text
-                variant="metadataSmall"
-                color={micLine.wrong ? 'textPrimary' : 'textSecondary'}
-              >
-                {micLine.line}
-              </Text>
-            ) : null}
-          </View>
-        ) : null}
-
-        {reviewing ? (
-          <View style={styles.review}>
-            {/*
-              A take from a native build has no URL to play from
-              (`heldTake.ts`), so it is shown by its length alone rather than
-              with a player that would do nothing.
-            */}
-            {heldUrl ? (
-              <ScrubPlayer uri={heldUrl} />
-            ) : (
-              <Text variant="metadata" color="textSecondary" style={styles.reviewLength}>
-                {takeReady ? `${formatElapsed(keptSeconds * 1000)} recorded` : '…'}
-              </Text>
-            )}
-            {truncated ? (
-              <Text variant="caption" color="textTertiary" style={styles.reviewNote}>
-                Only the first {Math.floor(keptSeconds / 60)} minutes were kept.
-              </Text>
-            ) : null}
-          </View>
-        ) : null}
-
+      <View
+        style={[
+          styles.panel,
+          beside && [styles.panelBeside, { paddingRight: spacing['2xl'] + insets.right }],
+          { paddingBottom: spacing['2xl'] + insets.bottom },
+        ]}
+      >
         {/*
-          **The one failure the app cannot fix gets directions, not a
-          sentence.** A refused microphone is followed with a permissions
-          panel open on top of the app, a line at a time — so it is the one
-          place a numbered list earns its keep. The spoken line is the same
-          words, from `microphonePermissionRecovery`.
+          **Only the settings scroll, and only when they cannot fit.** On a
+          phone held upright the panel has room to spare and nothing moves.
+          Turned sideways the screen is 390pt tall, and the record button —
+          the last thing in the panel — sat 34pt into view. The button stays
+          outside the scroll so it is always where the thumb is, and the
+          settings above it give way instead.
         */}
-        {microphoneBlocked && visibleProblem ? (
-          <View
-            accessible
-            accessibilityLabel={microphoneRecovery.message}
-            style={styles.problem}
-          >
-            <Text variant="metadataSmall" color="textSecondary">
-              {microphoneRecovery.headline}
+        <ScrollView
+          style={[styles.settings, beside && styles.settingsBeside]}
+          bounces={false}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {!capturing && !reviewing && heard ? (
+            <>
+              <ListenPlayer
+                score={heard}
+                bpm={targetBpm}
+                startFrom={startFrom}
+                disabled={isStarting}
+              />
+              <View style={styles.playerGap} />
+
+              {/*
+                **The tempo is chosen on its own screen**, and this only shows
+                what was chosen — the redesign's split. `practiceTempo` is the
+                shared state both read, so coming back shows the new number with
+                no hand-off.
+              */}
+              <PillRow
+                label="Tempo"
+                value={`${displayedBpm} ${tempoUnitLabel(tempoBeatUnit)}`}
+                chevron="right"
+                onPress={() => navigation.navigate('Tempo', { pieceId: params.pieceId })}
+                accessibilityLabel={`Tempo ${displayedBpm} ${tempoUnitLabel(tempoBeatUnit)}. Change it`}
+              />
+              {/*
+                **One bar for both**, which is what makes it safe to say so. The
+                take carries this bar to the server, which trims the score before
+                building its timeline — so hearing the passage and recording it
+                start in the same place, and the analysis is told which.
+              */}
+              <PillRow
+                // The words say the bar governs the take — `entryCopy`.
+                label={entryRowLabel('take')}
+                value={`Bar ${startFrom}`}
+                chevron="down"
+                onPress={() => setPickingStart(true)}
+                accessibilityLabel={entryAccessibilityLabel('take', startFrom)}
+              />
+              <PillRow
+                label="Metronome"
+                value={metronomeValueLabel(metronomeMode)}
+                chevron="down"
+                onPress={() => setPickingMetronome(true)}
+                accessibilityLabel={`Metronome ${metronomeValueLabel(metronomeMode)}. Choose how the beat is marked`}
+                last={skippable === 0}
+              />
+              {/*
+                Only where there is something to skip — a control that is always
+                there and does nothing on most pieces teaches a musician to stop
+                reading the controls. The redesign does not draw it because its
+                sample piece has no long rests; a piece that does needs it, or the
+                take is judged against rests it skipped.
+              */}
+              {skippable > 0 ? (
+                <View style={styles.lastRow}>
+                  <ToggleRow
+                    label={`Skip ${skippable} ${skippable === 1 ? 'bar' : 'bars'} of rest`}
+                    value={skipRests}
+                    onChange={setSkipRests}
+                  />
+                </View>
+              ) : null}
+
+              {/*
+                **A feature named in the settings and connected to nothing was
+                worse than a missing feature**: haptics off in Profile with the
+                mode set to haptic marks no beat at all.
+              */}
+              {metronome.silent ? (
+                <Text variant="caption" color="textTertiary" style={styles.note}>
+                  Haptics are off in Profile, so nothing marks the beat.
+                </Text>
+              ) : null}
+              {/*
+                Only while Audio is chosen, now the picker no longer says it under
+                the option (`HEADPHONES_WARNING`).
+              */}
+              {metronomeMode === 'audio_with_headphones' ? (
+                <Text variant="caption" color="textTertiary" style={styles.note}>
+                  {HEADPHONES_WARNING}
+                </Text>
+              ) : null}
+            </>
+          ) : null}
+
+          {capturing ? (
+            <View style={styles.takeStatus}>
+              {activeRest ? (
+                <RestCue state={activeRest} />
+              ) : (
+                <Text
+                  variant="screenTitle"
+                  color={elapsedMs > 0 || recording || countingIn ? 'textPrimary' : 'textTertiary'}
+                  style={styles.timer}
+                >
+                  {formatElapsed(elapsedMs)}
+                </Text>
+              )}
+              {recording && metronomeMode === 'visual' ? (
+                <BeatIndicator beat={metronome.beat} perBar={perBar} />
+              ) : null}
+              {/*
+                What the panel says while the microphone is open —
+                `lib/record/takeStatus.ts`, where it is tested, including the
+                thing it must never say. The detector is amplitude-invariant
+                (`TUNING_LOG.md`, 2026-09-02), so a screen that comments on level
+                is asking for something that changes nothing.
+              */}
+              {micLine.line ? (
+                <Text
+                  variant="metadataSmall"
+                  color={micLine.wrong ? 'textPrimary' : 'textSecondary'}
+                >
+                  {micLine.line}
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
+
+          {reviewing ? (
+            <View style={styles.review}>
+              {/*
+                A take from a native build has no URL to play from
+                (`heldTake.ts`), so it is shown by its length alone rather than
+                with a player that would do nothing.
+              */}
+              {heldUrl ? (
+                <ScrubPlayer uri={heldUrl} />
+              ) : (
+                <Text variant="metadata" color="textSecondary" style={styles.reviewLength}>
+                  {takeReady ? `${formatElapsed(keptSeconds * 1000)} recorded` : '…'}
+                </Text>
+              )}
+              {truncated ? (
+                <Text variant="caption" color="textTertiary" style={styles.reviewNote}>
+                  Only the first {Math.floor(keptSeconds / 60)} minutes were kept.
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
+
+          {/*
+            **The one failure the app cannot fix gets directions, not a
+            sentence.** A refused microphone is followed with a permissions
+            panel open on top of the app, a line at a time — so it is the one
+            place a numbered list earns its keep. The spoken line is the same
+            words, from `microphonePermissionRecovery`.
+          */}
+          {microphoneBlocked && visibleProblem ? (
+            <View
+              accessible
+              accessibilityLabel={microphoneRecovery.message}
+              style={styles.problem}
+            >
+              <Text variant="metadataSmall" color="textSecondary">
+                {microphoneRecovery.headline}
+              </Text>
+              {microphoneRecovery.steps.map((step, index) => (
+                <View key={step} style={styles.step}>
+                  <Text variant="metadataSmall" color="textTertiary" style={styles.stepNumber}>
+                    {index + 1}
+                  </Text>
+                  <Text variant="metadataSmall" color="textSecondary" style={styles.stepText}>
+                    {step}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : visibleProblem ? (
+            <Text variant="metadataSmall" color="textSecondary" style={styles.problem}>
+              {visibleProblem}
             </Text>
-            {microphoneRecovery.steps.map((step, index) => (
-              <View key={step} style={styles.step}>
-                <Text variant="metadataSmall" color="textTertiary" style={styles.stepNumber}>
-                  {index + 1}
-                </Text>
-                <Text variant="metadataSmall" color="textSecondary" style={styles.stepText}>
-                  {step}
-                </Text>
-              </View>
-            ))}
-          </View>
-        ) : visibleProblem ? (
-          <Text variant="metadataSmall" color="textSecondary" style={styles.problem}>
-            {visibleProblem}
-          </Text>
-        ) : null}
+          ) : null}
 
-        {/*
-          Which build is saying this, shown only beside a failure — on a
-          working screen it is noise, on a failing one it is the difference
-          between a report worth acting on and another round of guessing.
-        */}
-        {visibleProblem && marker ? (
-          <Text variant="caption" color="textTertiary" style={styles.marker}>
-            {marker}
-          </Text>
-        ) : null}
+          {/*
+            Which build is saying this, shown only beside a failure — on a
+            working screen it is noise, on a failing one it is the difference
+            between a report worth acting on and another round of guessing.
+          */}
+          {visibleProblem && marker ? (
+            <Text variant="caption" color="textTertiary" style={styles.marker}>
+              {marker}
+            </Text>
+          ) : null}
 
-        {canReload ? (
-          <SecondaryButton
-            label="Reload and try again"
-            onPress={() => {
-              reloadPage();
-            }}
-            style={styles.action}
-          />
-        ) : null}
-        {microphoneBlocked && Platform.OS !== 'web' ? (
-          <SecondaryButton
-            label="Open microphone settings"
-            onPress={() => void openMicrophoneSettings()}
-            style={styles.action}
-          />
-        ) : null}
+          {canReload ? (
+            <SecondaryButton
+              label="Reload and try again"
+              onPress={() => {
+                reloadPage();
+              }}
+              style={styles.action}
+            />
+          ) : null}
+          {microphoneBlocked && Platform.OS !== 'web' ? (
+            <SecondaryButton
+              label="Open microphone settings"
+              onPress={() => void openMicrophoneSettings()}
+              style={styles.action}
+            />
+          ) : null}
 
-        {/*
-          **Proof, not a claim.** "Your take is safe on this device" is the
-          sentence a musician most needs to believe after a failed upload; a
-          take they can play is the same thing demonstrated.
-        */}
-        {pendingTake && heldUrl ? (
-          <View style={styles.action}>
-            <ScrubPlayer uri={heldUrl} />
-          </View>
-        ) : null}
-        {pendingTake ? (
-          <SecondaryButton
-            label="Send it again"
-            onPress={() => {
-              const take = unsent.current;
-              if (take) {
-                void send(take);
-              }
-            }}
-            style={styles.action}
-          />
-        ) : null}
+          {/*
+            **Proof, not a claim.** "Your take is safe on this device" is the
+            sentence a musician most needs to believe after a failed upload; a
+            take they can play is the same thing demonstrated.
+          */}
+          {pendingTake && heldUrl ? (
+            <View style={styles.action}>
+              <ScrubPlayer uri={heldUrl} />
+            </View>
+          ) : null}
+          {pendingTake ? (
+            <SecondaryButton
+              label="Send it again"
+              onPress={() => {
+                const take = unsent.current;
+                if (take) {
+                  void send(take);
+                }
+              }}
+              style={styles.action}
+            />
+          ) : null}
+        </ScrollView>
 
         <View style={styles.recordGap} />
         {reviewing ? (
@@ -1910,6 +1952,16 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingBottom: 0,
   },
+  /** Sideways: the music and the panel as two columns, a row. */
+  stageBeside: {
+    flexDirection: 'row',
+    maxWidth: SIDE_BY_SIDE_MAX_WIDTH,
+  },
+  /** The header over the music's band; the band takes what is left. */
+  music: {
+    flex: 1,
+    minWidth: 0,
+  },
   header: {
     paddingTop: 14,
     paddingHorizontal: spacing['2xl'],
@@ -1943,11 +1995,32 @@ const styles = StyleSheet.create({
    * record button lives here and nothing ever moves it.
    */
   panel: {
+    flexShrink: 1,
+    minHeight: 0,
     backgroundColor: colors.panel,
     borderTopWidth: BORDER_WIDTH,
     borderTopColor: colors.border,
     paddingTop: spacing.lg,
     paddingHorizontal: spacing['2xl'],
+  },
+  /**
+   * Beside the music the panel runs the full height, with a hairline on the
+   * side it shares with the score instead of the top.
+   */
+  panelBeside: {
+    width: SIDE_PANEL_WIDTH,
+    borderTopWidth: 0,
+    borderLeftWidth: BORDER_WIDTH,
+    borderLeftColor: colors.border,
+  },
+  /** Its own height when there is room; shorter, and scrolling, when not. */
+  settings: {
+    flexGrow: 0,
+    flexShrink: 1,
+  },
+  /** Beside the music it fills the column, so the button sits at the foot. */
+  settingsBeside: {
+    flexGrow: 1,
   },
   playerGap: {
     height: 14,

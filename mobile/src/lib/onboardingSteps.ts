@@ -62,8 +62,8 @@ export const FOUND_VIA_CHOICES: ReadonlyArray<{ value: FoundVia; label: string }
 /**
  * Whether Next is open on a step.
  *
- * The name and the instrument are the two answers onboarding requires
- * (`missingFromOnboarding`), so their steps wait for them. The role is a choice
+ * The name and the instrument are the two answers onboarding requires, so
+ * their steps wait for them — this is that rule, and the only copy of it. The role is a choice
  * between two, and one is always made. The microphone has its own two buttons,
  * "how did you find us" can be skipped, and the photo is optional — so those
  * never hold Next shut.

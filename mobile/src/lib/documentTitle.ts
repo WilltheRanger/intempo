@@ -16,8 +16,22 @@
  */
 const PRODUCT = 'InTempo';
 
-export function formatDocumentTitle(screenTitle?: string | null): string {
-  const title = (screenTitle ?? '').replace(/\s+/g, ' ').trim();
+/**
+ * Screens whose tab is named for the screen rather than for its headline.
+ *
+ * The title is otherwise the heading on screen, which suits a piece ("Sonata
+ * No. 1 – InTempo"). On these two the heading is a sentence about the playing
+ * — "You rushed in the middle", "Your tempo wanders" — which made a tab that
+ * read like a notification. The owner chose the screen's name (2026-10-06).
+ */
+export const ROUTE_TITLES: Readonly<Record<string, string>> = {
+  Verdict: 'Result',
+  Insights: 'Insights',
+};
+
+export function formatDocumentTitle(screenTitle?: string | null, routeName?: string | null): string {
+  const named = routeName ? ROUTE_TITLES[routeName] : undefined;
+  const title = (named ?? screenTitle ?? '').replace(/\s+/g, ' ').trim();
   if (title === '' || title === PRODUCT) return PRODUCT;
   return `${title} – ${PRODUCT}`;
 }

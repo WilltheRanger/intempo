@@ -1,4 +1,4 @@
-import type { CorrectionInput } from '../types';
+import type { CorrectionInput, UserVerdict } from '../types';
 import { apiFetch } from './client';
 
 /**
@@ -28,4 +28,21 @@ export function postCorrections(
     // tap since the prompt shipped said "Something went wrong at our end".
     body: { corrections },
   });
+}
+
+/** One answer as the server keeps it. */
+export interface SavedCorrection {
+  measure_number: number;
+  user_verdict: UserVerdict;
+  created_at: string;
+}
+
+/**
+ * GET /v1/analyses/:id/corrections — what this musician already said, newest
+ * first. It existed for exactly this ("so a client can show a measure as
+ * already corrected rather than inviting the same correction twice") and
+ * nothing called it, so a result opened again asked its question again.
+ */
+export function listCorrections(analysisId: string): Promise<SavedCorrection[]> {
+  return apiFetch<SavedCorrection[]>(`/v1/analyses/${analysisId}/corrections`);
 }

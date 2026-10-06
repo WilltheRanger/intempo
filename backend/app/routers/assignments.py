@@ -38,6 +38,7 @@ take submission. Called out rather than worked around — see `create_assignment
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
@@ -50,6 +51,9 @@ from app.models.analysis import MAX_TARGET_BPM, MIN_TARGET_BPM
 from app.models.assignment import AssignmentStatus
 from app.models.user import UserRole
 from app.routers.deps import require_service_client
+from app.errors import server_fault
+
+log = logging.getLogger("intempo.assignments")
 
 router = APIRouter(prefix="/assignments", tags=["assignments"])
 
@@ -284,7 +288,9 @@ def create_assignment(
 
     inserted = (client.table("assignments").insert(payload).execute()).data or []
     if not inserted:
-        raise HTTPException(status_code=500, detail="failed to create assignment")
+        raise server_fault(
+            log, "failed to create assignment", "The assignment couldn't be created. Try again."
+        )
     return _row_to_response(inserted[0])
 
 
@@ -381,7 +387,9 @@ def submit_assignment(
         .execute()
     ).data or []
     if not updated:
-        raise HTTPException(status_code=500, detail="failed to submit")
+        raise server_fault(
+            log, "failed to submit", "The assignment couldn't be submitted. Try again."
+        )
     return _row_to_response(updated[0])
 
 
@@ -422,7 +430,7 @@ def review_assignment(
         .execute()
     ).data or []
     if not updated:
-        raise HTTPException(status_code=500, detail="failed to review")
+        raise server_fault(log, "failed to review", "The review couldn't be saved. Try again.")
     return _row_to_response(updated[0])
 
 

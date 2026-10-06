@@ -4,6 +4,7 @@ import { Linking, Platform } from 'react-native';
 import { IS_LIVE_BACKEND } from '../environment';
 import { isolatedListener } from './isolatedListener';
 import { setAuthRedirectNotice } from './redirectNotice';
+import { EMAIL_CHANGE_HALFWAY, noteEmailChangeHalfway } from './emailChange';
 import { consumeAuthRedirect, getSupabaseClient } from './session';
 
 export type AuthStatus = 'loading' | 'signedIn' | 'signedOut' | 'recovering';
@@ -40,6 +41,21 @@ export type AuthStatus = 'loading' | 'signedIn' | 'signedOut' | 'recovering';
  * blank screen is an outage. On any working deployment this never fires.
  */
 const SESSION_TIMEOUT_MS = 8000;
+
+/**
+ * The first of two email-change links came back (`isEmailChangeHalfway`).
+ *
+ * Native only — a phone receives it as a deep link, after the navigator has
+ * started. Signed in, the app opens Change email to say so
+ * (`useEmailChangeHalfway`). Signed out, the sign-in screen says it, through
+ * the notice it already shows; any session clears that notice. The web reads
+ * the same return from the address before anything renders
+ * (`takeEmailChangeHalfwayFromAddress`).
+ */
+function returnedHalfway(): void {
+  noteEmailChangeHalfway();
+  setAuthRedirectNotice(EMAIL_CHANGE_HALFWAY);
+}
 
 export function useAuthStatus(): AuthStatus {
   const [status, setStatus] = useState<AuthStatus>(() =>
@@ -120,6 +136,11 @@ export function useAuthStatus(): AuthStatus {
       try {
         const outcome = await consumeAuthRedirect(url);
         if (!active || outcome === 'ignored') {
+          return;
+        }
+        if (outcome === 'emailChangeHalfway') {
+          // No session in it, so nothing about who is signed in changes.
+          returnedHalfway();
           return;
         }
         setAuthRedirectNotice(null);

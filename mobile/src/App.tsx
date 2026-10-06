@@ -35,8 +35,13 @@ import { installDocumentTitle, type DocumentTitle } from './lib/installDocumentT
 import { installKeyActivation } from './lib/installKeyActivation';
 import { installRovingFocus } from './lib/installRovingFocus';
 import { installScreenFocus, type ScreenFocus } from './lib/installScreenFocus';
+import { takeEmailChangeHalfwayFromAddress } from './data/auth/emailChange';
 
 const queryClient = createQueryClient();
+
+// Before anything renders, because the navigator reads the address as it
+// mounts: see `takeEmailChangeHalfwayFromAddress`.
+takeEmailChangeHalfwayFromAddress();
 
 /**
  * React Navigation paints its own background between screens; without this it
@@ -189,10 +194,10 @@ export default function App() {
   // then every screen was "InTempo" (`documentTitle.ts`).
   const documentTitle = useRef<DocumentTitle | null>(null);
   useEffect(() => {
-    const title = installDocumentTitle();
+    const title = installDocumentTitle(() => navigationRef.getCurrentRoute()?.name);
     documentTitle.current = title;
     return () => title.dispose();
-  }, []);
+  }, [navigationRef]);
 
   // The other half of practising without a connection.
   //

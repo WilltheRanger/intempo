@@ -10,6 +10,7 @@ turns into a toast, not a failure the client has to special-case.
 
 from __future__ import annotations
 
+import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -22,6 +23,9 @@ from app.services import audio as audio_svc
 from app.services.calibration import calibrate
 from app.services.storage_origin import is_owned_storage_url, storage_origin
 from app.workers.analysis_runner import AudioFetchError, download_audio
+from app.errors import server_fault
+
+log = logging.getLogger("intempo.calibration")
 
 router = APIRouter(prefix="/calibration", tags=["calibration"])
 
@@ -79,7 +83,12 @@ def calibrate_tempo(
             body.audio_url, expected_origin=storage_origin(settings.SUPABASE_URL)
         )
     except AudioFetchError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+        raise server_fault(
+            log,
+            f"calibration audio fetch failed: {exc}",
+            "The recording couldn't be fetched for calibration. Try again.",
+            status_code=status.HTTP_502_BAD_GATEWAY,
+        ) from exc
 
     y, sr = audio_svc.load_audio_bytes(audio_bytes)
     result = calibrate(y, sr)

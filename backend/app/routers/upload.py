@@ -19,6 +19,7 @@ transformations). Buckets are private; reads happen later through
 
 from __future__ import annotations
 
+import logging
 import re
 import uuid as _uuid
 from datetime import datetime, timedelta, timezone
@@ -31,6 +32,9 @@ from pydantic import BaseModel, Field
 from app.auth import current_user_id
 from app.routers.deps import require_service_client
 from app.services import pending_uploads
+from app.errors import server_fault
+
+log = logging.getLogger("intempo.upload")
 
 router = APIRouter(prefix="/upload", tags=["upload"])
 
@@ -105,9 +109,10 @@ def _sign_upload(bucket: str, object_key: str) -> dict[str, Any]:
     elif hasattr(storage, "create_signed_url"):  # pragma: no cover - older SDK
         signed = storage.create_signed_url(object_key, SIGNED_URL_TTL_SECONDS)
     else:  # pragma: no cover - unsupported SDK
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Supabase storage client does not support signed uploads",
+        raise server_fault(
+            log,
+            "Supabase storage client does not support signed uploads",
+            "The upload couldn't be prepared. Try again.",
         )
     if isinstance(signed, dict):
         return signed
@@ -122,9 +127,10 @@ def _make_response(bucket: str, object_key: str, signed: dict[str, Any]) -> Uplo
         or signed.get("url")
     )
     if not upload_url:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Supabase did not return a signed URL",
+        raise server_fault(
+            log,
+            "Supabase did not return a signed URL",
+            "The upload couldn't be prepared. Try again.",
         )
     public_url = signed.get("publicUrl") or f"{bucket}/{object_key}"
     return UploadResponse(

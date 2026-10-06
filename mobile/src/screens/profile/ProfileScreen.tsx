@@ -22,6 +22,7 @@ import { signOut } from '../../data/auth/session';
 import { useMe } from '../../data/hooks/useMe';
 import { useUpdateProfile, useUploadAvatar } from '../../data/hooks/useProfile';
 import type { Musician } from '../../data/types';
+import { IS_LIVE_BACKEND } from '../../data/environment';
 import { preferences, usePreferences } from '../../data/preferences';
 import type { Instrument, MetronomeMode } from '../../data/types';
 import { describeLoadError } from '../../data/describeLoadError';
@@ -68,6 +69,8 @@ export function ProfileScreen() {
   const [signOutError, setSignOutError] = useState<string | null>(null);
   const saveProfile = useUpdateProfile();
   const saveConsent = useUpdateProfile();
+  // Its own, so an instrument save never reads as "Saving your profile picture…".
+  const saveInstrument = useUpdateProfile();
   const uploadAvatar = useUploadAvatar();
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [pendingPhoto, setPendingPhoto] = useState<ProfilePhotoSelection | null>(null);
@@ -134,6 +137,23 @@ export function ProfileScreen() {
     };
     setPendingPhoto(selection);
     await persistPhoto(selection);
+  }
+
+  /**
+   * The device first, so the warmup and the recorder use it at once; then the
+   * account, so a reinstall or another phone does too. Offline, the account
+   * write fails quietly and `instrumentUnsent` keeps it owed until the account
+   * next loads (`RootNavigator`, `profile/instrumentSync.ts`) — there is
+   * nothing for the musician to do about it, and the change has already taken.
+   */
+  function changeInstrument(instrument: Instrument) {
+    preferences.setInstrument(instrument);
+    if (!IS_LIVE_BACKEND) return;
+    preferences.setInstrumentUnsent(true);
+    saveInstrument.mutate(
+      { instrument },
+      { onSuccess: () => preferences.setInstrumentUnsent(false) },
+    );
   }
 
   async function changeTrainingConsent(trainingConsent: boolean) {
@@ -441,7 +461,7 @@ export function ProfileScreen() {
       <InstrumentSheet
         visible={instrumentSheetVisible}
         value={settings.instrument}
-        onChange={(instrument: Instrument) => preferences.setInstrument(instrument)}
+        onChange={(instrument: Instrument) => changeInstrument(instrument)}
         onClose={() => setInstrumentSheetVisible(false)}
       />
 

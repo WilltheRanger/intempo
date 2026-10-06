@@ -45,29 +45,9 @@ export interface OnboardingAnswers {
 export type OnboardingRequirement = 'name' | 'instrument';
 
 /**
- * What is still unanswered, in asking order — empty when onboarding can finish.
- *
- * A name of only spaces is not a name, matching what the server stores: it
- * strips and writes NULL, so accepting one here would let someone through to
- * an account with no name on it.
- */
-export function missingFromOnboarding(
-  answers: OnboardingAnswers,
-): OnboardingRequirement[] {
-  const missing: OnboardingRequirement[] = [];
-  if (!answers.name.trim()) {
-    missing.push('name');
-  }
-  if (!answers.instrument) {
-    missing.push('instrument');
-  }
-  return missing;
-}
-
-/**
  * The PATCH body for finishing onboarding.
  *
- * **Only fields that were actually given**, even though two are required. The guards are not redundant with `missingFromOnboarding`: they
+ * **Only fields that were actually given**, even though two are required. The guards are not redundant with `canContinue` (`onboardingSteps.ts`), which holds Next shut on those two steps: they
  * guard a different failure. `UpdateMeInput` reads an omitted field as "leave
  * it" and an explicit `null` as "clear it", so a screen bug that called this
  * with a blank name would not merely fail to set one — it would send

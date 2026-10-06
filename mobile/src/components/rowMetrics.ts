@@ -30,11 +30,14 @@ import { spacing } from '../design/spacing';
  * It would have to come from `design/resolved.ts`, which reads
  * `Appearance.getColorScheme()` at import — and importing `react-native` into a
  * test pulls its Flow source, which the test runner cannot parse. So this module
- * imports `design/spacing` and nothing else, and owns the *decision*
- * (`ROW_DIVIDER_EDGE`) while each row binds it to `colors.border` itself. The
- * split is the price of the rule being checkable at all, and checkable is the
- * point: `CLAUDE.md` §3 — there is no React Native testing library here, so a
- * rule written inside a `.tsx` is a rule nothing checks.
+ * imports `design/spacing` and nothing else, and owns the *decision* —
+ * `rowDivided`, below — while each row binds it to `colors.border` itself,
+ * always on the **top** edge (`borderTopWidth` / `borderTopColor`). That edge
+ * used to be a constant, `ROW_DIVIDER_EDGE`, that no row read and only its own
+ * test checked; it was removed on 2026-10-06 rather than kept as a comment
+ * dressed as code. The split is the price of the rule being checkable at all:
+ * `CLAUDE.md` §3 — there is no React Native testing library here, so a rule
+ * written inside a `.tsx` is a rule nothing checks.
  *
  * A row that deviates from any of this is free to — it just has to say why, the
  * way `MeasureRow` and `PageRow` do.
@@ -42,16 +45,6 @@ import { spacing } from '../design/spacing';
 
 /** Space above and below a row's content. */
 export const ROW_PADDING_VERTICAL = spacing.lg;
-
-/**
- * Which edge carries the hairline.
- *
- * A string rather than a style object so this file needs no colour token, and
- * so the decision has one name to grep for. Rows spell it out as
- * `borderTopWidth` / `borderTopColor`; changing the convention means changing
- * this constant, its test, and then every row the test failure points at.
- */
-export const ROW_DIVIDER_EDGE = 'top' as const;
 
 /**
  * Whether the row at `index` draws its rule.

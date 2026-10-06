@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { DOCUMENTS, OWNER, PRIVACY, TERMS, missingOwnerDetails } from './legal';
+import { DOCUMENTS, OWNER, PRIVACY, TERMS } from './legal';
 
 describe('the published documents', () => {
   it('says what is kept, what is not, for how long, and who else sees it', () => {
@@ -18,7 +18,9 @@ describe('the published documents', () => {
     // here.** These four are what `backend/app/` talks to; if a fifth is ever
     // added, this fails and the policy gets updated with it.
     const text = JSON.stringify(PRIVACY).toLowerCase();
-    for (const processor of ['supabase', 'modal', 'anthropic', 'google']) {
+    // Sentry since 2026-10-06: release builds of the phone app are required to
+    // report crashes to it (`scripts/check-release-environment.mjs`).
+    for (const processor of ['supabase', 'modal', 'anthropic', 'google', 'sentry']) {
       expect(text, `${processor} is not named in the privacy policy`).toContain(
         processor,
       );
@@ -59,15 +61,6 @@ describe('the published documents', () => {
     }
   });
 
-  it('lists what the publisher still has to supply', () => {
-    const missing = missingOwnerDetails();
-    // Not an assertion that it is empty — it is not, and it should not fail CI
-    // for that. This pins the *shape* so the list stays usable as a checklist.
-    expect(Array.isArray(missing)).toBe(true);
-    for (const item of missing) {
-      expect(item.length).toBeGreaterThan(10);
-    }
-  });
 
   it('carries a date on every document', () => {
     for (const doc of Object.values(DOCUMENTS)) {

@@ -76,7 +76,8 @@ export type RootStackParamList = {
    * they came to stop re-reading.
    */
   ProofRead: { pieceId: string };
-  ChangeEmail: undefined;
+  /** `halfway`: the first of two confirmation links has just been followed. */
+  ChangeEmail: { halfway?: boolean } | undefined;
   ChangePassword: undefined;
   DeleteAccount: undefined;
   ExportData: undefined;

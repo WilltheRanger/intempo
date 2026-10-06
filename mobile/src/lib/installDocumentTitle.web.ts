@@ -14,7 +14,7 @@ import { screenTitleCandidates } from './screenTitles.web';
  */
 const LOOKS_MS = [0, 120, 450];
 
-export function installDocumentTitle(): DocumentTitle {
+export function installDocumentTitle(currentRoute?: () => string | undefined): DocumentTitle {
   let frame = 0;
   let timers: ReturnType<typeof setTimeout>[] = [];
 
@@ -22,7 +22,7 @@ export function installDocumentTitle(): DocumentTitle {
     frame = 0;
     const root = document.getElementById('root');
     const heading = screenTitleCandidates().find((candidate) => titlesTheScreen(candidate, root));
-    const next = formatDocumentTitle(heading?.innerText);
+    const next = formatDocumentTitle(heading?.innerText, currentRoute?.());
     if (document.title !== next) document.title = next;
   };
   const soon = () => {

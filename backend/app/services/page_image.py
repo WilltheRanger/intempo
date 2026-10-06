@@ -32,8 +32,14 @@ from app.services.buckets import SCORE_BUCKET
 from app.services.cache_headers import CACHE_FOREVER
 from app.services.signed_urls import absolute, signed_url_in
 from app.services.storage_origin import origin_of
+from app.errors import server_fault
 
 log = logging.getLogger("intempo.scores")
+
+#: What a person reads when the stored photograph cannot be fetched back. The
+#: same sentence the transcription runner writes on the score row; the status
+#: and the network error go to the log through `server_fault`.
+PHOTO_UNREACHABLE = "The photograph could not be fetched from storage."
 
 #: Cap on what we will pull from a signed URL before bailing. Matches the
 #: score-images bucket's 10 MB limit, with headroom.
@@ -183,9 +189,11 @@ def download_image(image_url: str, *, expected_origin: str | None = None) -> byt
         ) as client:
             with client.stream("GET", image_url) as response:
                 if response.status_code != 200:
-                    raise HTTPException(
+                    raise server_fault(
+                        log,
+                        f"image download returned status {response.status_code}",
+                        PHOTO_UNREACHABLE,
                         status_code=status.HTTP_502_BAD_GATEWAY,
-                        detail=f"image download returned status {response.status_code}",
                     )
                 final = response.url
                 # **`origin_of`, not an f-string.** `httpx.URL.port` is `None`
@@ -244,9 +252,11 @@ def download_image(image_url: str, *, expected_origin: str | None = None) -> byt
                         )
                     chunks.append(chunk)
     except httpx.RequestError as exc:
-        raise HTTPException(
+        raise server_fault(
+            log,
+            f"failed to download image: {exc}",
+            PHOTO_UNREACHABLE,
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"failed to download image: {exc}",
         ) from exc
     return b"".join(chunks)
 

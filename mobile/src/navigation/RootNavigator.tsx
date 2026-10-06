@@ -1,15 +1,18 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { useIsFocused } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused, useNavigation } from '@react-navigation/native';
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, type ReactNode } from 'react';
 import { Animated, Platform, StyleSheet, View, type ViewStyle } from 'react-native';
 
 import { useArrival } from '../data/arrival';
 import { useAuthStatus } from '../data/auth/useAuthStatus';
+import { takeEmailChangeHalfway, useEmailChangeHalfway } from '../data/auth/emailChange';
 import { useMe } from '../data/hooks/useMe';
 import { prefetchCurrentPiece } from '../data/hooks/usePieces';
-import { preferences } from '../data/preferences';
+import { preferences, usePreferences } from '../data/preferences';
+import { useUpdateProfile } from '../data/hooks/useProfile';
+import { instrumentToSend } from '../data/profile/instrumentSync';
 import { EASE_OUT, colors, motion } from '../design';
 import { shouldOnboard } from '../lib/onboarding';
 import { useReducedMotion } from '../lib/useReducedMotion';
@@ -45,7 +48,7 @@ import { TranscriptionReviewScreen } from '../screens/transcriptionReview/Transc
 import { VerdictScreen } from '../screens/verdict/VerdictScreen';
 import { BottomTabBar } from './BottomTabBar';
 import { StackScene } from './StackScene';
-import type { RootStackParamList, TabParamList } from './types';
+import type { RootNavigation, RootStackParamList, TabParamList } from './types';
 
 const Tab = createBottomTabNavigator<TabParamList>();
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -169,6 +172,7 @@ function ProfileTab() {
 }
 
 function TabNavigator() {
+  useEmailChangeHalfwayRoute();
   return (
     <Tab.Navigator
       tabBar={(props) => <BottomTabBar {...props} />}
@@ -178,6 +182,28 @@ function TabNavigator() {
       <Tab.Screen name="Insights" component={InsightsTab} />
       <Tab.Screen name="Profile" component={ProfileTab} />
     </Tab.Navigator>
+  );
+}
+
+/**
+ * Opens Change email when the first of its two links has just come back.
+ *
+ * In the tab navigator because it is a screen — `useNavigation` needs one —
+ * and the one that is mounted whenever somebody is signed in.
+ */
+function useEmailChangeHalfwayRoute(): void {
+  const navigation = useNavigation<RootNavigation>();
+  const halfway = useEmailChangeHalfway();
+  // A focus effect, not a mount effect: on the first mount the navigator has
+  // not finished settling its initial state from the URL, and a navigate sent
+  // then was dropped — the stub showed the Library with the notice taken and
+  // nothing opened. Focus is the navigator saying it is ready to move.
+  useFocusEffect(
+    useCallback(() => {
+      if (halfway && takeEmailChangeHalfway()) {
+        navigation.navigate('ChangeEmail', { halfway: true });
+      }
+    }, [halfway, navigation]),
   );
 }
 
@@ -249,6 +275,37 @@ function SignedInApp() {
   useEffect(() => {
     preferences.adoptAccountInstrument(me?.instrument);
   }, [me?.instrument]);
+
+  /*
+   * The other direction: an instrument changed on this device while the
+   * account could not be told (offline, or the server down). Sent when the
+   * account next loads; cleared when the account already agrees. The rule is
+   * `instrumentToSend`, where it is tested.
+   */
+  const settings = usePreferences();
+  const { mutate: sendInstrument } = useUpdateProfile();
+  const owed = me
+    ? instrumentToSend(settings.instrument, settings.instrumentUnsent, me.instrument)
+    : null;
+  // Once per owed value per launch. A failed send (still offline) waits for
+  // the next launch or the next Profile change; retrying on every render
+  // would hammer a connection that is not there.
+  const triedToSend = useRef<string | null>(null);
+  const accountLoaded = me !== undefined;
+  const unsent = settings.instrumentUnsent;
+  useEffect(() => {
+    if (!accountLoaded || !unsent) return;
+    if (owed === null) {
+      preferences.setInstrumentUnsent(false);
+      return;
+    }
+    if (triedToSend.current === owed) return;
+    triedToSend.current = owed;
+    sendInstrument(
+      { instrument: owed },
+      { onSuccess: () => preferences.setInstrumentUnsent(false) },
+    );
+  }, [accountLoaded, unsent, owed, sendInstrument]);
 
   // Today's piece, asked for alongside the account rather than after the gate
   // below opens (`prefetchCurrentPiece`). Once per sign-in: this component

@@ -96,7 +96,12 @@ export const screenConfig: LinkingOptions<RootStackParamList>['config'] = {
       TranscriptionReview: 'scan/name',
 
       // Account and support.
-      ChangeEmail: 'account/email',
+      ChangeEmail: {
+        path: 'account/email',
+        // `?halfway=1` is the address the first of two confirmation links is
+        // rewritten to (`takeEmailChangeHalfwayFromAddress`).
+        parse: { halfway: (value: string) => value === '1' },
+      },
       ChangePassword: 'account/password',
       DeleteAccount: 'account/delete',
       ExportData: 'account/export',
