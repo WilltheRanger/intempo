@@ -1755,6 +1755,28 @@ await open('profile');
 }
 
 /*
+  **Focus that enters a group lands on the chosen item.** The sheet's focus
+  trap wraps Shift+Tab to the last element that takes focus, which in the
+  Instrument sheet was "Tenor saxophone", not the instrument chosen
+  (2026-10-06, `rovingEntry` in `lib/rovingFocus.ts`).
+*/
+await open('profile');
+{
+  await page.getByRole('button', { name: /^Instrument/ }).first().focus().catch(() => {});
+  await page.keyboard.press('Enter');
+  await waitFor('the Instrument sheet', async () => (await page.locator('[role=dialog]').count()) > 0);
+  await page.keyboard.press('Shift+Tab');
+  await page.waitForTimeout(150);
+  const landed = await page.evaluate(() => ({
+    label: document.activeElement?.getAttribute('aria-label') ?? '',
+    checked: document.activeElement?.getAttribute('aria-checked') ?? null,
+  }));
+  if (landed.checked === 'true') pass(`Shift+Tab into the Instrument sheet's choices lands on the chosen one, "${landed.label}"`);
+  else fail(`Shift+Tab into the Instrument sheet's choices landed on ${JSON.stringify(landed)}`);
+  await page.keyboard.press('Escape');
+}
+
+/*
   **The browser tab names the screen.** Every screen's title was "InTempo"
   until 2026-10-06, so history and the tab strip could not tell them apart
   (`lib/documentTitle.ts`). Opened in the app rather than loaded, because

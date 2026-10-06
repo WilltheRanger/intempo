@@ -837,6 +837,12 @@ or hidden. Profile's metronome is a setting, and as tabs it was announced as
 four tabs with no panel for any of them. **The arrows only move focus; Space or Enter
 chooses.** Choosing closes the Start from and Instrument sheets, so if the
 arrows chose too, one arrow press would close the sheet on the wrong option.
+Focus that enters a group by any route other than a tap lands on its stop
+(`rovingEntry`). The sheet's focus trap wraps Shift+Tab to the last element
+that takes focus, which was an unchosen radio. The move waits a tick, because
+the trap tests each candidate by checking that it kept focus, and moving focus
+during that test sends the trap on to the next candidate.
+
 The rules are in `lib/rovingFocus.ts`. `audit-a11y` fails a radio outside a
 radio group, a tab outside a tab list, a group with no name, and a group with
 other than one Tab stop. `walk-app` moves through the bars on Record, the

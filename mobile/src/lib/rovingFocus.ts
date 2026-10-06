@@ -25,6 +25,12 @@
  *    the tab bar it would leave the screen you were on.
  *
  * Disabled items are skipped, by the arrows and as the Tab stop.
+ *
+ * **And focus that enters a group lands on its stop**, however it got there,
+ * unless a finger or a pointer put it on that item. Tab already does; code
+ * did not. The sheet's focus trap wraps Shift+Tab to the last element that
+ * will take focus, which in the Instrument sheet was "Tenor saxophone", an
+ * unchosen radio, rather than the chosen one (2026-10-06).
  */
 
 /** The two kinds of group, by their ARIA role. */
@@ -72,4 +78,20 @@ export function rovingTabStop(items: readonly RovingItem[]): number {
   const chosen = items.findIndex((item) => item.chosen && item.enabled);
   if (chosen >= 0) return chosen;
   return items.findIndex((item) => item.enabled);
+}
+
+/**
+ * Where focus that has just landed on item `landed` should go instead: the
+ * group's stop, or `null` to leave it. Left alone when it came from inside
+ * the group (the arrows) or when a pointer put it there (a tap chooses that
+ * item, and the stop follows the choice).
+ */
+export function rovingEntry(
+  items: readonly RovingItem[],
+  landed: number,
+  { fromInside, byPointer }: { fromInside: boolean; byPointer: boolean },
+): number | null {
+  if (fromInside || byPointer) return null;
+  const stop = rovingTabStop(items);
+  return stop >= 0 && stop !== landed ? stop : null;
 }

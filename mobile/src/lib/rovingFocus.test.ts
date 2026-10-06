@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { rovingAfter, rovingStep, rovingTabStop, type RovingItem } from './rovingFocus';
+import { rovingAfter, rovingEntry, rovingStep, rovingTabStop, type RovingItem } from './rovingFocus';
 
 const items = (spec: string): RovingItem[] =>
   // "x" chosen, "o" not chosen, "-" disabled, "X" disabled and chosen.
@@ -72,5 +72,30 @@ describe('rovingTabStop', () => {
   it('is nowhere when nothing can take focus', () => {
     expect(rovingTabStop(items('--'))).toBe(-1);
     expect(rovingTabStop([])).toBe(-1);
+  });
+});
+
+describe('rovingEntry', () => {
+  const from = { fromInside: false, byPointer: false };
+
+  it('moves focus that arrived from outside onto the chosen item', () => {
+    // The focus trap's Shift+Tab, landing on the last radio.
+    expect(rovingEntry(items('xooo'), 3, from)).toBe(0);
+  });
+
+  it('leaves focus that arrived on the stop', () => {
+    expect(rovingEntry(items('xooo'), 0, from)).toBeNull();
+  });
+
+  it('leaves the arrows alone', () => {
+    expect(rovingEntry(items('xooo'), 2, { fromInside: true, byPointer: false })).toBeNull();
+  });
+
+  it('leaves a tap alone', () => {
+    expect(rovingEntry(items('xooo'), 2, { fromInside: false, byPointer: true })).toBeNull();
+  });
+
+  it('uses the first enabled item when nothing is chosen', () => {
+    expect(rovingEntry(items('-oo'), 2, from)).toBe(1);
   });
 });

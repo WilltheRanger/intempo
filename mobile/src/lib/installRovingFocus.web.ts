@@ -1,4 +1,11 @@
-import { rovingAfter, rovingStep, rovingTabStop, type RovingGroup, type RovingItem } from './rovingFocus';
+import {
+  rovingAfter,
+  rovingEntry,
+  rovingStep,
+  rovingTabStop,
+  type RovingGroup,
+  type RovingItem,
+} from './rovingFocus';
 
 /**
  * Give each radio group and tab list one Tab stop and the arrow keys; the rule
@@ -60,6 +67,42 @@ export function installRovingFocus(): () => void {
     if (next >= 0 && items[next] !== target) items[next].focus();
   };
 
+  // What a pointer last pressed, and when: focus a pointer put on an item is
+  // the item being chosen, and is left where it is.
+  let pressed: { target: EventTarget | null; at: number } = { target: null, at: 0 };
+  const press = (event: PointerEvent) => {
+    pressed = { target: event.target, at: performance.now() };
+  };
+  const enter = (event: FocusEvent) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const group = target.closest(GROUPS);
+    if (group === null) return;
+    const kind = group.getAttribute('role') as RovingGroup;
+    if (target.getAttribute('role') !== KINDS[kind].item) return;
+    const items = itemsOf(group, kind);
+    const came = event.relatedTarget;
+    const byPointer =
+      pressed.target instanceof Node &&
+      target.contains(pressed.target) &&
+      performance.now() - pressed.at < 1000;
+    const next = rovingEntry(
+      items.map((item) => stateOf(item, kind)),
+      items.indexOf(target),
+      { fromInside: came instanceof Node && group.contains(came), byPointer },
+    );
+    // After whatever put it there has finished: the Modal's focus trap looks
+    // for the last element that takes focus by trying each in turn and
+    // checking it kept focus, and moving focus during that check sends it on
+    // to the next one up.
+    if (next !== null) {
+      const stop = items[next];
+      setTimeout(() => {
+        if (document.activeElement === target) stop.focus();
+      }, 0);
+    }
+  };
+
   const observer = new MutationObserver(settle);
   observer.observe(document.body, {
     subtree: true,
@@ -69,8 +112,12 @@ export function installRovingFocus(): () => void {
   });
   settle();
   document.addEventListener('keydown', move, true);
+  document.addEventListener('pointerdown', press, true);
+  document.addEventListener('focusin', enter);
   return () => {
     observer.disconnect();
     document.removeEventListener('keydown', move, true);
+    document.removeEventListener('pointerdown', press, true);
+    document.removeEventListener('focusin', enter);
   };
 }
