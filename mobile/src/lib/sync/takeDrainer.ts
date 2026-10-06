@@ -1,6 +1,7 @@
 import { AppState, Platform } from 'react-native';
 
-import { getAccessToken, getActiveAccountId } from '../../data/auth/session';
+import { getAccessToken, getActiveAccountId, getSupabaseClient } from '../../data/auth/session';
+import { isolatedListener } from '../../data/auth/isolatedListener';
 import { takeSubmissionSource } from '../../data/sources';
 import { readTakeFailure } from '../audio/takeFailure';
 import { drainTakes, type DrainReport } from './drainQueue';
@@ -134,9 +135,22 @@ export function startTakeDrainer(): () => void {
   const unsubscribe = onTakeReleased(() => {
     void drainNow();
   });
+  // Signing back in is the other moment a queue becomes sendable. A take whose
+  // session ended mid-send is kept for its account and waits for exactly this;
+  // without it, it sat until the app next came to the foreground. Dispatched
+  // outside the callback, because auth-js runs its listeners inside its own
+  // lock and `drainNow` starts by reading the session.
+  const auth = getSupabaseClient()?.auth.onAuthStateChange(
+    isolatedListener((event) => {
+      if (event === 'SIGNED_IN') {
+        setTimeout(() => void drainNow(), 0);
+      }
+    }),
+  );
   return () => {
     subscription.remove();
     unsubscribe();
+    auth?.data.subscription.unsubscribe();
     cancelTimer();
   };
 }

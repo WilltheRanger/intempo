@@ -37,6 +37,7 @@ import { bpmForMarking } from '../../lib/tempoMarking';
 import { preferences, usePreferences } from '../../data/preferences';
 import { PressableScale } from '../../components/motion';
 import { takeSubmissionSource } from '../../data/sources';
+import { getActiveAccountId } from '../../data/auth/session';
 import {
   TakeSubmissionError,
   type TakeSubmissionState,
@@ -684,6 +685,10 @@ export function RecordScreen() {
       }
       if (mounted.current) setAnalysisStage(stage);
     };
+    // Whose take this is, asked before anything is sent: a refused token ends
+    // the session on its way to the catch below, and the take has to be kept
+    // for the account that played it, not for whoever is signed in by then.
+    const owner = getActiveAccountId().catch(() => null);
     try {
       const analysisId = await takeSubmissionSource.submit({
         // A piece is a score; the id is the same row.
@@ -751,16 +756,19 @@ export function RecordScreen() {
         // **The ref survives a retry and not a restart.** A musician who
         // records with no signal and backgrounds the app used to lose the
         // performance, which is the one part of this that cannot be repeated.
-        void keepTakeForLater(
-          resumable,
-          {
-            scoreId: params.pieceId,
-            targetBpm,
-            metronomeMode,
-            skipLongRests: skipRests,
-            fromMeasure: entryBar,
-          },
-          failure.message,
+        void owner.then((accountId) =>
+          keepTakeForLater(
+            resumable,
+            {
+              scoreId: params.pieceId,
+              targetBpm,
+              metronomeMode,
+              skipLongRests: skipRests,
+              fromMeasure: entryBar,
+            },
+            failure.message,
+            accountId,
+          ),
         );
       }
       // Back to the top of the screen with the tempo still set, so the reply

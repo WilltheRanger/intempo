@@ -923,7 +923,7 @@ starts sending a new one, the stub changes with it. Build against it with the
 three `EXPO_PUBLIC_*` values in its docstring, sign in with any address, and
 use `/__fail?status=500` to see what each screen says when the server is down.
 
-Run against it, that turned up six app defects the fixtures could not:
+Run against it, that turned up seven app defects the fixtures could not:
 - **A failed history read as no takes.** `getPieceHistory` caught both of its
   requests into empty lists, so with a server down Your takes said "No takes
   yet". It also counted the failure as a success, so a refetch that failed
@@ -958,6 +958,12 @@ Run against it, that turned up six app defects the fixtures could not:
   session sending four `logout?scope=global`. The API path now calls
   `endSessionHere()` (`scope: 'local'`). The Sign out button is still global;
   whether it should be is the owner's call.
+- **A take sent as the session expired was lost.** The same 401 ends the
+  session before the error reaches `RecordScreen`, and `keepTakeForLater` then
+  asked who was signed in, found nobody, and kept nothing. The screen now reads
+  the owner before sending and passes it in, and the drainer also runs on
+  `SIGNED_IN`. Reproduce with a Playwright route answering 401 to `/v1/` during
+  the send: the stub's `/__fail` only fails reads.
 
 ## `npm audit fix --force` would take this app back to SDK 46 (2026-09-09)
 
