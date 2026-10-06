@@ -76,26 +76,26 @@ describe('rovingTabStop', () => {
 });
 
 describe('rovingEntry', () => {
-  const from = { fromInside: false, byPointer: false };
+  const tabbed = { fromInside: false, byTab: true };
 
-  it('moves focus that arrived from outside onto the chosen item', () => {
+  it('moves focus that Tab brought from outside onto the chosen item', () => {
     // The focus trap's Shift+Tab, landing on the last radio.
-    expect(rovingEntry(items('xooo'), 3, from)).toBe(0);
+    expect(rovingEntry(items('xooo'), 3, tabbed)).toBe(0);
   });
 
   it('leaves focus that arrived on the stop', () => {
-    expect(rovingEntry(items('xooo'), 0, from)).toBeNull();
+    expect(rovingEntry(items('xooo'), 0, tabbed)).toBeNull();
   });
 
   it('leaves the arrows alone', () => {
-    expect(rovingEntry(items('xooo'), 2, { fromInside: true, byPointer: false })).toBeNull();
+    expect(rovingEntry(items('xooo'), 2, { fromInside: true, byTab: false })).toBeNull();
   });
 
-  it('leaves a tap alone', () => {
-    expect(rovingEntry(items('xooo'), 2, { fromInside: false, byPointer: true })).toBeNull();
+  it('leaves focus put there any other way: a tap, a screen reader, code', () => {
+    expect(rovingEntry(items('xooo'), 2, { fromInside: false, byTab: false })).toBeNull();
   });
 
   it('uses the first enabled item when nothing is chosen', () => {
-    expect(rovingEntry(items('-oo'), 2, from)).toBe(1);
+    expect(rovingEntry(items('-oo'), 2, tabbed)).toBe(1);
   });
 });

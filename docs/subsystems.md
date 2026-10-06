@@ -794,6 +794,22 @@ without changing the screen, so a heading under the root's `inert` still
 counts, and one under any other `inert` does not (`documentTitle.ts`).
 `audit-a11y` fails a route whose tab reads "InTempo" alone or "undefined".
 
+### A step that is not a screen leaves focus behind (2026-10-06)
+
+Onboarding's questions are one screen whose content changes, not routes. So
+the screen-focus rule above never saw them change, and "Next" left focus on
+`<body>` on the first five steps.
+
+**The rule:** a screen whose content changes in steps calls
+`announceScreenStep(id)` (`lib/screenStep.ts`) when the step changes, but not
+on the first step, which is where the page loaded. `OnboardingFlow` does this
+for every place, including the two introductions. `installScreenFocus` keys
+its arrivals and remembered focus by route and step, so a step is an arrival
+like a pushed screen. Native does nothing here, and whether VoiceOver keeps
+its place on a step change has not been checked on a device. Where the new
+step reuses the button that was pressed (the microphone, source and photo
+steps), focus is not lost and stays on that button.
+
 ### `announceForAccessibility` says nothing on the web (2026-10-05)
 
 react-native-web implements `AccessibilityInfo.announceForAccessibility` as
@@ -837,11 +853,14 @@ or hidden. Profile's metronome is a setting, and as tabs it was announced as
 four tabs with no panel for any of them. **The arrows only move focus; Space or Enter
 chooses.** Choosing closes the Start from and Instrument sheets, so if the
 arrows chose too, one arrow press would close the sheet on the wrong option.
-Focus that enters a group by any route other than a tap lands on its stop
-(`rovingEntry`). The sheet's focus trap wraps Shift+Tab to the last element
-that takes focus, which was an unchosen radio. The move waits a tick, because
-the trap tests each candidate by checking that it kept focus, and moving focus
-during that test sends the trap on to the next candidate.
+Focus that Tab brings into a group lands on its stop (`rovingEntry`). The
+sheet's focus trap wraps Shift+Tab to the last element that takes focus, which
+was an unchosen radio. Only Tab, because a screen reader's browse cursor moves
+focus onto whatever it reads; the first version moved any focus from outside,
+and focus on the Insights tab jumped to the selected Library tab. The move
+waits a tick, because the trap tests each candidate by checking that it kept
+focus, and moving focus during that test sends the trap on to the next
+candidate.
 
 The rules are in `lib/rovingFocus.ts`. `audit-a11y` fails a radio outside a
 radio group, a tab outside a tab list, a group with no name, and a group with

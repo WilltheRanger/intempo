@@ -67,11 +67,11 @@ export function installRovingFocus(): () => void {
     if (next >= 0 && items[next] !== target) items[next].focus();
   };
 
-  // What a pointer last pressed, and when: focus a pointer put on an item is
-  // the item being chosen, and is left where it is.
-  let pressed: { target: EventTarget | null; at: number } = { target: null, at: 0 };
-  const press = (event: PointerEvent) => {
-    pressed = { target: event.target, at: performance.now() };
+  // When Tab was last pressed: focus that Tab brings into a group goes to its
+  // stop, and focus that arrives any other way stays where it was put.
+  let tabbedAt = -Infinity;
+  const tab = (event: KeyboardEvent) => {
+    if (event.key === 'Tab') tabbedAt = performance.now();
   };
   const enter = (event: FocusEvent) => {
     const target = event.target;
@@ -82,14 +82,13 @@ export function installRovingFocus(): () => void {
     if (target.getAttribute('role') !== KINDS[kind].item) return;
     const items = itemsOf(group, kind);
     const came = event.relatedTarget;
-    const byPointer =
-      pressed.target instanceof Node &&
-      target.contains(pressed.target) &&
-      performance.now() - pressed.at < 1000;
     const next = rovingEntry(
       items.map((item) => stateOf(item, kind)),
       items.indexOf(target),
-      { fromInside: came instanceof Node && group.contains(came), byPointer },
+      {
+        fromInside: came instanceof Node && group.contains(came),
+        byTab: performance.now() - tabbedAt < 500,
+      },
     );
     // After whatever put it there has finished: the Modal's focus trap looks
     // for the last element that takes focus by trying each in turn and
@@ -112,12 +111,12 @@ export function installRovingFocus(): () => void {
   });
   settle();
   document.addEventListener('keydown', move, true);
-  document.addEventListener('pointerdown', press, true);
+  document.addEventListener('keydown', tab, true);
   document.addEventListener('focusin', enter);
   return () => {
     observer.disconnect();
     document.removeEventListener('keydown', move, true);
-    document.removeEventListener('pointerdown', press, true);
+    document.removeEventListener('keydown', tab, true);
     document.removeEventListener('focusin', enter);
   };
 }

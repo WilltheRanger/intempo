@@ -1,5 +1,5 @@
 import * as ImagePicker from 'expo-image-picker';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 
 import { Camera, FileMusic, Images, Mic, Settings } from '../../components/icons';
@@ -26,6 +26,7 @@ import { OnboardingHowItWorks } from './OnboardingHowItWorks';
 import { OnboardingWelcome } from './OnboardingWelcome';
 import { StepFrame, type StepAction } from './StepFrame';
 import { FIELD_LIMITS } from '../../lib/fieldLimits';
+import { announceScreenStep } from '../../lib/screenStep';
 
 /** The answers that go to the account. */
 export interface OnboardingAnswers {
@@ -93,6 +94,14 @@ export function OnboardingFlow({
   const [source, setSource] = useState<FoundVia | null>(saved.foundVia);
   const [photo, setPhoto] = useState(initial.photo);
   const [asking, setAsking] = useState(false);
+
+  // A new step is a new screen to someone who cannot see it slide in: focus
+  // goes to its title, as it does when a screen is pushed (`screenStep.ts`).
+  // Every place, the two introductions included, and not the first, which is
+  // where the page loaded.
+  useEffect(() => {
+    if (direction !== 'none') announceScreenStep(place);
+  }, [place, direction]);
 
   const answers = { name, instrument, role, source };
   const current = (): OnboardingAnswers => ({ name, instrument, photo });
