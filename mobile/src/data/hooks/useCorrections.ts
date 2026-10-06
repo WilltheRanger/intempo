@@ -1,6 +1,6 @@
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { postCorrections } from '../api/corrections';
+import { listCorrections, postCorrections, type SavedCorrection } from '../api/corrections';
 import { IS_LIVE_BACKEND } from '../environment';
 import type { CorrectionInput } from '../types';
 
@@ -23,6 +23,7 @@ export interface SubmitCorrectionInput {
  * imply the reading had been revised.
  */
 export function useSubmitCorrection() {
+  const queryClient = useQueryClient();
   return useMutation<void, Error, SubmitCorrectionInput>({
     mutationFn: async ({ analysisId, corrections }) => {
       if (!IS_LIVE_BACKEND) {
@@ -32,5 +33,26 @@ export function useSubmitCorrection() {
       }
       await postCorrections(analysisId, corrections);
     },
+    // The answers already given, not the take: coming back to this result
+    // should find the one just sent (`useSavedCorrections`).
+    onSuccess: (_data, { analysisId }) =>
+      queryClient.invalidateQueries({ queryKey: correctionKeys.forTake(analysisId) }),
+  });
+}
+
+export const correctionKeys = {
+  forTake: (analysisId: string) => ['corrections', analysisId] as const,
+};
+
+/**
+ * What the musician already said about this take, so the question is not
+ * asked again as if it had never been answered. Off on sample data, which has
+ * no answers to hold; the screen then asks, as before.
+ */
+export function useSavedCorrections(analysisId: string) {
+  return useQuery<SavedCorrection[]>({
+    queryKey: correctionKeys.forTake(analysisId),
+    queryFn: () => listCorrections(analysisId),
+    enabled: IS_LIVE_BACKEND && Boolean(analysisId),
   });
 }

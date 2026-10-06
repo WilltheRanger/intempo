@@ -42,7 +42,8 @@ import {
 } from '../../lib/verdict/failureTitle';
 import { canCorrect } from '../../lib/verdict/correction';
 import { success } from '../../lib/haptics';
-import { useSubmitCorrection } from '../../data/hooks/useCorrections';
+import { useSavedCorrections, useSubmitCorrection } from '../../data/hooks/useCorrections';
+import { latestAnswerFor } from '../../lib/analysis/savedAnswer';
 import { CorrectionPrompt, type CorrectionState } from './CorrectionPrompt';
 import { MeasureBars } from './MeasureBars';
 import { TrendChart } from './TrendChart';
@@ -81,6 +82,11 @@ export function VerdictScreen() {
   */
   const [answer, setAnswer] = useState<CorrectionState>({ kind: 'idle' });
   const submitCorrection = useSubmitCorrection();
+  // The answers already given, so coming back to a result shows "You heard:
+  // … · Change" instead of asking again. `askingAgain` is the musician's
+  // Change: once pressed, the saved answer stops standing in for idle.
+  const savedCorrections = useSavedCorrections(params.analysisId);
+  const [askingAgain, setAskingAgain] = useState(false);
 
   /**
    * The musician's answer about a passage, sent as one correction per bar in
@@ -336,6 +342,11 @@ export function VerdictScreen() {
   );
   const askedReading: UserVerdict =
     take.direction === 'rush' ? 'rushing' : take.direction === 'drag' ? 'dragging' : 'on_tempo';
+  const savedAnswer = askingAgain
+    ? null
+    : latestAnswerFor(savedCorrections.data, askedBars.map((m) => m.measure));
+  const shownAnswer: CorrectionState =
+    answer.kind === 'idle' && savedAnswer ? { kind: 'sent', choice: savedAnswer } : answer;
 
   /*
     **The redesign's verdict, cut down** (the owner, 2026-09-29: "way too
@@ -550,9 +561,12 @@ export function VerdictScreen() {
           <CorrectionPrompt
             question={passage ? `How did ${barsLabel(passage).toLowerCase()} sound?` : 'How did that sound?'}
             appVerdict={askedReading}
-            state={answer}
+            state={shownAnswer}
             onChoose={(choice) => answerFor(askedBars, choice, reading)}
-            onChange={() => setAnswer({ kind: 'idle' })}
+            onChange={() => {
+              setAskingAgain(true);
+              setAnswer({ kind: 'idle' });
+            }}
           />
         </View>
       ) : null}
