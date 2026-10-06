@@ -1,6 +1,6 @@
 import './urlPolyfill';
 
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { AuthClient } from '@supabase/auth-js';
 import { Platform } from 'react-native';
 
 import { clockAwareFetch, clockAwareStore } from './clockSkew';
@@ -20,58 +20,92 @@ import { arrival } from '../arrival';
  *
  * All application data goes through the FastAPI backend, never through
  * Supabase directly.
+ *
+ * **So this is the auth client alone, not `@supabase/supabase-js`.** That
+ * package's `createClient` builds a database client, a storage client and a
+ * realtime socket beside the auth one, and this app calls none of them — but
+ * all four were in the first download, before the sign-in screen could draw
+ * (measured 2026-10-06). The auth client is the same class `createClient`
+ * makes, and it is built here the way `createClient` builds it: the same
+ * endpoint, the same two key headers, the same flow, and above all the same
+ * storage key. auth-js's own default key is a different one, and a session
+ * kept under the old key would not be found — everyone signed in would be
+ * signed out by the deploy.
  */
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
 const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
 
-let client: SupabaseClient | null = null;
+/** What callers reach: the auth client, under the name supabase-js gave it. */
+interface SupabaseAuthOnly {
+  readonly auth: InstanceType<typeof AuthClient>;
+}
+
+let client: SupabaseAuthOnly | null = null;
+
+/**
+ * Where supabase-js would point its auth client, and the key it would keep the
+ * session under — `sb-<project ref>-auth-token`.
+ */
+function supabaseAuthAddress(projectUrl: string): { url: string; storageKey: string } {
+  const trimmed = projectUrl.trim();
+  const base = new URL(trimmed.endsWith('/') ? trimmed : `${trimmed}/`);
+  return {
+    url: new URL('auth/v1', base).href,
+    storageKey: `sb-${base.hostname.split('.')[0]}-auth-token`,
+  };
+}
 
 /** Returns null when Supabase env vars are absent, so the app still boots. */
-export function getSupabaseClient(): SupabaseClient | null {
+export function getSupabaseClient(): SupabaseAuthOnly | null {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
     return null;
   }
   if (!client) {
-    client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      auth: {
-        /*
-         * Not `AsyncStorage` directly — see `sessionStore`. On web that is
-         * IndexedDB with no deadline on any call, and a read of it that
-         * hesitated is what signed musicians out of sessions the server had
-         * just granted (measured 2026-09-17).
-         *
-         * Read through `clockAwareStore`, which hands the client each session
-         * with its expiry in the device's time — see `global.fetch` below.
-         */
-        storage: clockAwareStore(sessionStore),
-        autoRefreshToken: true,
-        persistSession: true,
-        /*
-         * On the web this is how an emailed link finishes its job.
-         *
-         * It was hardcoded `false` with the note "no URL to parse from in a
-         * native app" — true of native, and wrong about the platform this build
-         * is actually served on. Supabase returns from a reset or a
-         * confirmation with the tokens in the URL fragment, and with detection
-         * off they sat there unread: the session was never established and the
-         * `PASSWORD_RECOVERY` event never fired, so every emailed link in the
-         * app was a dead end no matter what the mail said.
-         *
-         * Native genuinely has no URL to parse — a deep link arrives through
-         * `Linking` instead — so the original reasoning survives, scoped to the
-         * platform it was about.
-         */
-        detectSessionInUrl: Platform.OS === 'web',
+    const { url, storageKey } = supabaseAuthAddress(SUPABASE_URL);
+    const auth = new AuthClient({
+      url,
+      headers: {
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        apikey: SUPABASE_ANON_KEY,
       },
-      global: {
-        /*
-         * Reads the server's clock off every token response, so a phone whose
-         * clock is an hour out does not refresh on every request until it is
-         * refused and signed out (`clockSkew.ts`, measured 2026-09-30).
-         */
-        fetch: clockAwareFetch,
-      },
+      storageKey,
+      flowType: 'implicit',
+      /*
+       * Not `AsyncStorage` directly — see `sessionStore`. On web that is
+       * IndexedDB with no deadline on any call, and a read of it that
+       * hesitated is what signed musicians out of sessions the server had
+       * just granted (measured 2026-09-17).
+       *
+       * Read through `clockAwareStore`, which hands the client each session
+       * with its expiry in the device's time — see `fetch` below.
+       */
+      storage: clockAwareStore(sessionStore),
+      autoRefreshToken: true,
+      persistSession: true,
+      /*
+       * On the web this is how an emailed link finishes its job.
+       *
+       * It was hardcoded `false` with the note "no URL to parse from in a
+       * native app" — true of native, and wrong about the platform this build
+       * is actually served on. Supabase returns from a reset or a
+       * confirmation with the tokens in the URL fragment, and with detection
+       * off they sat there unread: the session was never established and the
+       * `PASSWORD_RECOVERY` event never fired, so every emailed link in the
+       * app was a dead end no matter what the mail said.
+       *
+       * Native genuinely has no URL to parse — a deep link arrives through
+       * `Linking` instead — so the original reasoning survives, scoped to the
+       * platform it was about.
+       */
+      detectSessionInUrl: Platform.OS === 'web',
+      /*
+       * Reads the server's clock off every token response, so a phone whose
+       * clock is an hour out does not refresh on every request until it is
+       * refused and signed out (`clockSkew.ts`, measured 2026-09-30).
+       */
+      fetch: clockAwareFetch,
     });
+    client = { auth };
   }
   return client;
 }
@@ -299,7 +333,7 @@ export async function updateEmail(email: string): Promise<void> {
   }
 }
 
-function requireClient(): SupabaseClient {
+function requireClient(): SupabaseAuthOnly {
   const supabase = getSupabaseClient();
   if (!supabase) {
     throw new Error('Sign-in is unavailable: Supabase is not configured.');

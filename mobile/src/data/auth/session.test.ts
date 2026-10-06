@@ -41,10 +41,12 @@ vi.mock('./sessionStore', () => ({
   sessionStore: {},
   sessionStoreDegraded: () => storeDegraded,
 }));
-vi.mock('@supabase/supabase-js', () => ({
-  createClient: (...args: unknown[]) => {
-    createdWith.push(args);
-    return { auth };
+vi.mock('@supabase/auth-js', () => ({
+  AuthClient: class {
+    constructor(options: unknown) {
+      createdWith.push(options);
+      return auth;
+    }
   },
 }));
 
@@ -63,14 +65,13 @@ async function load({
 
 const ok = { data: {}, error: null };
 
-/** The auth options the nth `createClient` call was made with. */
+/** The options the nth auth client was made with. */
+function optionsOf(index: number): Record<string, unknown> {
+  return createdWith[index] as Record<string, unknown>;
+}
+
 function detectSessionInUrlOf(index: number): boolean {
-  const args = createdWith[index] as [
-    string,
-    string,
-    { auth: { detectSessionInUrl: boolean } },
-  ];
-  return args[2].auth.detectSessionInUrl;
+  return optionsOf(index).detectSessionInUrl as boolean;
 }
 
 beforeEach(() => {
@@ -429,6 +430,27 @@ describe('the client itself', () => {
 
     expect(getSupabaseClient()).toBe(first);
     expect(createdWith).toHaveLength(1);
+  });
+
+  it('finds the session supabase-js kept, so nobody is signed out by the change', async () => {
+    // The app used to build this client through `@supabase/supabase-js`'s
+    // `createClient`, which keeps the session under `sb-<project ref>-auth-token`.
+    // auth-js on its own defaults to `supabase.auth.token`: left to that, every
+    // musician signed in before the deploy would open the app signed out.
+    const { getSupabaseClient } = await load();
+
+    getSupabaseClient();
+
+    expect(optionsOf(0)).toMatchObject({
+      url: 'https://stub.supabase.co/auth/v1',
+      storageKey: 'sb-stub-auth-token',
+      headers: { Authorization: 'Bearer anon-key', apikey: 'anon-key' },
+      // supabase-js's flow; PKCE would leave an emailed link sent before the
+      // change unreadable.
+      flowType: 'implicit',
+      autoRefreshToken: true,
+      persistSession: true,
+    });
   });
 
   it('parses the URL on web and not on native', async () => {
