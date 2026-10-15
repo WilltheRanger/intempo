@@ -161,7 +161,6 @@ export function LibraryHero({
   const photoHeight = variant === 'glow' ? 420 : 520;
   const dark = variant !== 'glow';
   const ink = dark ? 'onDark' : 'textPrimary';
-  const quiet = dark ? 'onDarkSecondary' : 'textSecondary';
 
   return (
     <View
@@ -286,11 +285,6 @@ export function LibraryHero({
           <Text variant="displayTitle" color={ink} numberOfLines={3} style={styles.title}>
             {line.title}
           </Text>
-          {line.detail ? (
-            <Text variant="metadata" color={quiet} numberOfLines={1} style={styles.detail}>
-              {line.detail}
-            </Text>
-          ) : null}
         </PressableScale>
         <PrimaryButton
           label={line.actionLabel}
@@ -335,9 +329,6 @@ const styles = StyleSheet.create({
   },
   title: {
     marginTop: spacing.xs,
-  },
-  detail: {
-    marginTop: spacing.sm,
   },
   button: {
     marginTop: spacing.xl,
