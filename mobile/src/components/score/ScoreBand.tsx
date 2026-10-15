@@ -63,6 +63,8 @@ export interface ScoreBandProps {
    * when the music arrives (`musicWidth.ts`).
    */
   fullBleed?: boolean;
+  /** PROTOTYPE: one colour for every mark. */
+  tint?: string;
 }
 
 /**
@@ -98,6 +100,7 @@ export function ScoreBand({
   plain = false,
   viewport = 1,
   fullBleed = false,
+  tint,
 }: ScoreBandProps) {
   const { width: windowWidth } = useWindowDimensions();
   const [width, setWidth] = useState(() =>
@@ -184,6 +187,7 @@ export function ScoreBand({
               // Engraved once above and handed straight in, rather than
               // engraved a second time inside the component.
               layout={engraved}
+              tint={tint}
             />
           </View>
         ) : null}

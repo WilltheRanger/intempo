@@ -72,7 +72,8 @@ function readPalette(): keyof typeof PALETTES {
   return 'brass';
 }
 
-const P = PALETTES[readPalette()];
+export const PALETTE = PALETTES[readPalette()];
+const P = PALETTE;
 const { GOLD, HONEY, AMBER, ROSE, SAGE, DUSK, CREAM, SAND } = P;
 const PAGE = '#F7F2E9';
 

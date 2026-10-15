@@ -180,6 +180,8 @@ const CLEF_GLYPH: Record<Clef, string> = {
 };
 
 export interface StaveProps {
+  /** PROTOTYPE: draw every mark in this one colour. */
+  tint?: string;
   /** Notes, rests and multi-bar rests, in reading order. */
   notes: StaveItem[];
   clef: Clef;
@@ -429,10 +431,11 @@ export function Stave({
   measurePressGroupLabel = 'Bars',
   page,
   layout: precomputed,
+  tint,
 }: StaveProps) {
-  const ink = colors.textPrimary;
-  const rule = colors.textSecondary;
-  const label = colors.textTertiary;
+  const ink = tint ?? colors.textPrimary;
+  const rule = tint ?? colors.textSecondary;
+  const label = tint ?? colors.textTertiary;
 
   // The fitting lives in `staveLayout` so that a caller who needs to know
   // where the systems land — the bar picker, breaking the drawing into pages —

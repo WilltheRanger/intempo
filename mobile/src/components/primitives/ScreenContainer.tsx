@@ -4,7 +4,7 @@ import {
   NavigationContext,
   useFocusEffect,
 } from '@react-navigation/native';
-import { useCallback, useContext, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from 'react';
 import {
   Animated,
   Platform,
@@ -121,7 +121,14 @@ export interface ScreenContainerProps {
   darkGround?: number;
   /** PROTOTYPE: a layer drawn behind the content, given the scroll offset. */
   backdrop?: (scrollY: Animated.Value) => ReactNode;
+  /** PROTOTYPE: the page's own colour. */
+  ground?: string;
+  /** PROTOTYPE: publish the scroll offset to `ScreenScrollContext`. */
+  exposeScroll?: boolean;
 }
+
+/** PROTOTYPE: the scroll offset, for content that moves against it. */
+export const ScreenScrollContext = createContext<Animated.Value | null>(null);
 
 /**
  * The shared screen shell: warm page background, top safe-area inset, and the
@@ -140,6 +147,8 @@ export function ScreenContainer({
   footerTone = 'page',
   darkGround,
   backdrop,
+  ground,
+  exposeScroll = false,
 }: ScreenContainerProps) {
   const backdropScroll = useRef(new Animated.Value(0)).current;
   const [refreshing, setRefreshing] = useState(false);
@@ -204,7 +213,7 @@ export function ScreenContainer({
 
   function handleScroll(event: NativeSyntheticEvent<NativeScrollEvent>) {
     scrollY.current = event.nativeEvent.contentOffset.y;
-    if (backdrop) backdropScroll.setValue(scrollY.current);
+    if (backdrop || exposeScroll) backdropScroll.setValue(scrollY.current);
     if (darkGround !== undefined) {
       reportTone(toneFor(scrollY.current));
     }
@@ -275,7 +284,11 @@ export function ScreenContainer({
         measureOverflow();
       }}
     >
-      {children}
+      {exposeScroll ? (
+        <ScreenScrollContext.Provider value={backdropScroll}>{children}</ScreenScrollContext.Provider>
+      ) : (
+        children
+      )}
     </ScrollView>
   ) : (
     // **`bleed` counts here too.** It was only read on the scrolling branch,
@@ -301,7 +314,7 @@ export function ScreenContainer({
     // Dynamic Island (59pt), an older notch (47pt), and a flat-top phone
     // (20pt) each get the right gap with no per-device branching. The bar
     // below owns the bottom inset; claiming it here too would double it.
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <SafeAreaView style={[styles.safeArea, ground ? { backgroundColor: ground } : null]} edges={['top']}>
       {navigated ? <OnFocus effect={onFocus} /> : null}
       {backdrop ? (
         <View style={StyleSheet.absoluteFill} pointerEvents="none">

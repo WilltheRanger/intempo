@@ -51,6 +51,8 @@ import { ContinueRow, PendingTakeLine } from './ContinueRow';
 import { PieceRow } from './PieceRow';
 import { PieceTile } from './PieceTile';
 import { BACKDROP_VARIANT, LibraryBackdrop } from './LibraryBackdropPrototype';
+import { LAYOUT_VARIANT, LINED, LINING_GROUND, LibraryHero } from './LibraryLayoutPrototype';
+import { SCREEN_GUTTER } from '../../components/primitives/ScreenContainer';
 import { useAddPieceOption } from '../../navigation/useAddPieceOption';
 import { loadStateFor, type LoadState } from '../../lib/loadState';
 import { rowDivided } from '../../components/rowMetrics';
@@ -261,9 +263,14 @@ export function LibraryScreen() {
     );
   }, [drawn, navigation]);
 
+  const hero = LAYOUT_VARIANT && continueLine && current ? LAYOUT_VARIANT : null;
   return (
     <ScreenContainer
       onRefresh={refresh}
+      bleed={hero !== null}
+      exposeScroll={hero !== null}
+      ground={LINED ? LINING_GROUND : undefined}
+      darkGround={LINED ? 100000 : undefined}
       backdrop={
         BACKDROP_VARIANT
           ? (scrollY) => (
@@ -276,6 +283,19 @@ export function LibraryScreen() {
           : undefined
       }
     >
+      {hero && continueLine && current ? (
+        <LibraryHero
+          variant={hero}
+          piece={current}
+          line={continueLine}
+          onAdd={() => setAddSheetVisible(true)}
+          onOpen={() => navigation.navigate('PieceDetail', { pieceId: current.id })}
+          onAction={() => openPractice(current)}
+        />
+      ) : null}
+      <View style={hero ? { paddingHorizontal: SCREEN_GUTTER } : undefined}>
+      {hero ? null : (
+      <>
       {/*
         **The title becomes the field; it does not grow one underneath.** See
         `SearchHeader`, which holds both the crossfade and the reason: the
@@ -308,7 +328,9 @@ export function LibraryScreen() {
         </Text>
       ) : null}
 
-      {continueLine && current ? (
+      </>
+      )}
+      {!hero && continueLine && current ? (
         <ContinueRow
           line={continueLine}
           onOpen={() => navigation.navigate('PieceDetail', { pieceId: current.id })}
@@ -398,6 +420,7 @@ export function LibraryScreen() {
         }}
         onCancel={() => setDiscarding(null)}
       />
+      </View>
     </ScreenContainer>
   );
 }
@@ -605,13 +628,13 @@ function LibraryContent({
  */
 function GroupHeading({ label, count }: { label: string; count: number }) {
   return (
-    <View style={styles.heading} {...SECTION_HEADING}>
-      <Text variant="sectionLabel" color="textPrimary" style={styles.headingLabel}>
+    <View style={[styles.heading, LINED ? { borderBottomColor: colors.onDarkFill } : null]} {...SECTION_HEADING}>
+      <Text variant="sectionLabel" color={LINED ? 'onDark' : 'textPrimary'} style={styles.headingLabel}>
         {label}
       </Text>
       <Text
         variant="caption"
-        color="textTertiary"
+        color={LINED ? 'onDarkMuted' : 'textTertiary'}
         style={styles.headingCount}
         accessibilityLabel={`${count} ${count === 1 ? 'piece' : 'pieces'}`}
       >
