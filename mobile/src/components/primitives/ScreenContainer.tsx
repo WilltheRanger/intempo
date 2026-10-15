@@ -6,6 +6,7 @@ import {
 } from '@react-navigation/native';
 import { useCallback, useContext, useRef, useState, type ReactNode } from 'react';
 import {
+  Animated,
   Platform,
   RefreshControl,
   ScrollView,
@@ -118,6 +119,8 @@ export interface ScreenContainerProps {
    * for every screen whose ground is the app's page.
    */
   darkGround?: number;
+  /** PROTOTYPE: a layer drawn behind the content, given the scroll offset. */
+  backdrop?: (scrollY: Animated.Value) => ReactNode;
 }
 
 /**
@@ -136,7 +139,9 @@ export function ScreenContainer({
   bleed = false,
   footerTone = 'page',
   darkGround,
+  backdrop,
 }: ScreenContainerProps) {
+  const backdropScroll = useRef(new Animated.Value(0)).current;
   const [refreshing, setRefreshing] = useState(false);
 
   async function handleRefresh() {
@@ -199,6 +204,7 @@ export function ScreenContainer({
 
   function handleScroll(event: NativeSyntheticEvent<NativeScrollEvent>) {
     scrollY.current = event.nativeEvent.contentOffset.y;
+    if (backdrop) backdropScroll.setValue(scrollY.current);
     if (darkGround !== undefined) {
       reportTone(toneFor(scrollY.current));
     }
@@ -297,6 +303,11 @@ export function ScreenContainer({
     // below owns the bottom inset; claiming it here too would double it.
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       {navigated ? <OnFocus effect={onFocus} /> : null}
+      {backdrop ? (
+        <View style={StyleSheet.absoluteFill} pointerEvents="none">
+          {backdrop(backdropScroll)}
+        </View>
+      ) : null}
       {scrollArea}
 
       {footer ? (

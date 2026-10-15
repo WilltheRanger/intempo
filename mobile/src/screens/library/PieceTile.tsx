@@ -14,6 +14,7 @@ import {
   tileMessage,
   tileState,
 } from '../../lib/library/tileState';
+import { LIFTED_PAGE_SHADOW } from './LibraryBackdropPrototype';
 
 /** Small enough that a tile is a spine, large enough that the notes are notes. */
 const TILE_SCALE = 0.62;
@@ -136,7 +137,7 @@ export function PieceTile({
         as fit and stops, so what is left at the bottom is margin rather than a
         row of beamed notes with their heads cut off.
       */}
-      <View style={styles.page} onLayout={measurePage}>
+      <View style={[styles.page, LIFTED_PAGE_SHADOW]} onLayout={measurePage}>
         {state.kind === 'engraved' && pageHeight > 0 && piece.score ? (
           <View style={styles.music}>
             <ScoreBand

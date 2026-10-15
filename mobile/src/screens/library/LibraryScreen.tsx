@@ -50,6 +50,7 @@ import { AddPieceSheet } from '../../components/pieces/AddPieceSheet';
 import { ContinueRow, PendingTakeLine } from './ContinueRow';
 import { PieceRow } from './PieceRow';
 import { PieceTile } from './PieceTile';
+import { BACKDROP_VARIANT, LibraryBackdrop } from './LibraryBackdropPrototype';
 import { useAddPieceOption } from '../../navigation/useAddPieceOption';
 import { loadStateFor, type LoadState } from '../../lib/loadState';
 import { rowDivided } from '../../components/rowMetrics';
@@ -261,7 +262,20 @@ export function LibraryScreen() {
   }, [drawn, navigation]);
 
   return (
-    <ScreenContainer onRefresh={refresh}>
+    <ScreenContainer
+      onRefresh={refresh}
+      backdrop={
+        BACKDROP_VARIANT
+          ? (scrollY) => (
+              <LibraryBackdrop
+                variant={BACKDROP_VARIANT as NonNullable<typeof BACKDROP_VARIANT>}
+                scrollY={scrollY}
+                bpm={currentPiece.data?.markedBpm ?? null}
+              />
+            )
+          : undefined
+      }
+    >
       {/*
         **The title becomes the field; it does not grow one underneath.** See
         `SearchHeader`, which holds both the crossfade and the reason: the
