@@ -40,14 +40,40 @@ function readVariant(): BackdropVariant | null {
 export const BACKDROP_VARIANT = readVariant();
 
 // Prototype colours. A real version would put these in `design/colors.ts`.
-const GOLD = '#9A7B4F';
-const HONEY = '#E3B877';
-const AMBER = '#D99A4E';
-const ROSE = '#D9A48A';
-const SAGE = '#B7BC98';
-const DUSK = '#9FB2CC';
-const CREAM = '#FFF9EE';
-const SAND = '#EADCC4';
+//
+// Three palettes, chosen with `?palette=`. `vivid` was the first pass: its
+// glows ran at nearly twice the chroma of the app's own gold, so the ivory
+// went peach and the white pages sat on a tint they do not belong to.
+// `brass` keeps every hue within reach of `accent` and parchment; `slate`
+// sets cool tones behind the warm pages instead.
+const PALETTES = {
+  vivid: {
+    GOLD: '#9A7B4F', HONEY: '#E3B877', AMBER: '#D99A4E', ROSE: '#D9A48A', SAGE: '#B7BC98',
+    DUSK: '#9FB2CC', CREAM: '#FFF9EE', SAND: '#EADCC4', WAVE2: '#E7CDA5', WAVE3: '#E0BC8C',
+    LIFT_TOP: '#E6D6BA', LIFT_MID: '#EFE5D4',
+  },
+  brass: {
+    GOLD: '#9A7B4F', HONEY: '#DCC6A0', AMBER: '#CDB087', ROSE: '#D9C2B4', SAGE: '#CBC9B4',
+    DUSK: '#C9C6BC', CREAM: '#FFFCF6', SAND: '#ECE3D3', WAVE2: '#E5D8C1', WAVE3: '#DBCBAF',
+    LIFT_TOP: '#E8DECC', LIFT_MID: '#F0E9DD',
+  },
+  slate: {
+    GOLD: '#6E7C8A', HONEY: '#C3CFDA', AMBER: '#AFC0CE', ROSE: '#CCD6C8', SAGE: '#D5D9CB',
+    DUSK: '#B2C1D2', CREAM: '#FBFCFC', SAND: '#E2E6E4', WAVE2: '#D3DCE2', WAVE3: '#C5D1DA',
+    LIFT_TOP: '#DDE2E3', LIFT_MID: '#EBECE8',
+  },
+} as const;
+
+function readPalette(): keyof typeof PALETTES {
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    const name = new URLSearchParams(window.location.search).get('palette');
+    if (name && name in PALETTES) return name as keyof typeof PALETTES;
+  }
+  return 'brass';
+}
+
+const P = PALETTES[readPalette()];
+const { GOLD, HONEY, AMBER, ROSE, SAGE, DUSK, CREAM, SAND } = P;
 const PAGE = '#F7F2E9';
 
 /** 0 → 1 → 0 forever (or 0 → 1 and restart), standing still under reduced motion. */
@@ -554,8 +580,8 @@ function WaveLayers({ scrollY }: { scrollY: Animated.Value }) {
   const W = width * 1.4;
   const layers = [
     { depth: 400, color: SAND, opacity: 0.85, factor: 0.15, drift: useLoop(16000) },
-    { depth: 300, color: '#E7CDA5', opacity: 0.6, factor: 0.35, drift: useLoop(12000, { delay: 900 }) },
-    { depth: 200, color: '#E0BC8C', opacity: 0.45, factor: 0.6, drift: useLoop(9000, { delay: 1800 }) },
+    { depth: 300, color: P.WAVE2, opacity: 0.6, factor: 0.35, drift: useLoop(12000, { delay: 900 }) },
+    { depth: 200, color: P.WAVE3, opacity: 0.45, factor: 0.6, drift: useLoop(9000, { delay: 1800 }) },
   ];
   const paths = useMemo(() => layers.map((layer, i) => wavePath(W, layer.depth, i + 1)), [W]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
@@ -659,8 +685,8 @@ function LiftedGround() {
     <Svg style={StyleSheet.absoluteFill} width="100%" height="100%">
       <Defs>
         <LinearGradient id="liftWash" x1="0" y1="0" x2="0" y2="1">
-          <Stop offset="0" stopColor="#E6D6BA" stopOpacity={1} />
-          <Stop offset="0.55" stopColor="#EFE5D4" stopOpacity={1} />
+          <Stop offset="0" stopColor={P.LIFT_TOP} stopOpacity={1} />
+          <Stop offset="0.55" stopColor={P.LIFT_MID} stopOpacity={1} />
           <Stop offset="1" stopColor={PAGE} stopOpacity={1} />
         </LinearGradient>
         <RadialGradient id="liftLight" cx="30%" cy="0%" r="80%">
