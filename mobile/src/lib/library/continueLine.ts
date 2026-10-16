@@ -90,7 +90,7 @@ export interface PendingLine {
 }
 
 /**
- * The last recording's hand-off, as one line under the Continue row.
+ * The last recording's hand-off, as one line under the Continue band.
  *
  * It lived under Today's button, and one line is still what it gets: four
  * states, each legible without a second line to explain it. The piece's title

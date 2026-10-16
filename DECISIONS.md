@@ -1,5 +1,106 @@
 # InTempo Decisions
 
+## 2026-10-16 — The piece screen's head goes on the same key band
+
+**Context:** after B2 the owner asked for "something to add depth behind" the
+piece screen, "like the patterns" made for the Library. Four were built in the
+piece's key colour and recorded: clouds, sound rings from the Practice button,
+stage lights, and the Library's band carried onto the piece (P4). Floating
+notation and moving staves were left out: beside the real engraving on this
+screen they read as a second, fake score. The owner picked **P4, with the
+open-score photograph** instead of the strings.
+
+**Decision:** the head of `PieceDetailScreen` (back link, title, ⋮) sits on
+`KeyBand`, the band component now shared with the Library's `ContinueBand`:
+key colour, a photograph multiplied in at 62%, a scrim of the same colour,
+under the status bar, half-speed parallax and a slow drift. The piece screen's
+photograph is `piece-score.jpg`; its scrim covers the whole band, deepest under
+the title, because the title is the only words on it. The engraving sits
+directly under the band, with no gap and no rule.
+
+`KeyBand` gives each band its own gradient id. On the web the Library stays
+mounted under the piece screen, and SVG finds a gradient by id across the whole
+document, so a shared name drew one piece's key colour on another's band.
+
+**Alternatives considered:**
+- *A pattern behind the whole screen* (clouds, rings, lights). The owner chose
+  the band, which ties the piece screen to the band that opened it.
+- *The strings photograph on both screens.* The owner wanted the score here,
+  which also tells the two screens apart.
+
+**Trade-offs accepted:**
+- **A second photograph**, 105 KB, loaded when a piece first opens.
+- **§3 law 6's exception now covers two screens**, the Library band and this
+  head, and says so.
+- The two prototype-only slots, a backdrop layer and a clear footer on
+  `ScreenContainer`, were removed with the prototypes rather than kept unused.
+
+**Three-foot test:** first the title on its colour; second the engraving,
+white under the band; third the Practice button at the bottom.
+
+## 2026-10-16 — The Library's Continue row becomes a band in the piece's key colour
+
+**Context:** the owner asked for "something nice behind and something to add
+depth" on the Library. Ten backdrops behind the unchanged layout, three layouts
+with the Continue piece as a headline, and six photograph versions of two of
+them were built in the app and recorded for comparison (the prototypes are in
+the history of PR #184). The first backdrops' colours measured at nearly twice
+the chroma of `accent`, which is what made them look "off"; the brass and slate
+palettes fixed that. The owner then took the status line ("Rushed in the
+middle") out of the headline, and picked **B2**: the key colour band, with a
+photograph of a grand piano's strings.
+
+**Decision:** `screens/library/ContinueBand.tsx`.
+- The band is the colour of the Continue piece's key (`keyBands` in
+  `colors.ts`, chosen by `lib/library/keyBand.ts`). Relative keys share a
+  colour because they share a signature; an unread key takes C major's.
+- The photograph is multiplied into the colour at 62%, so it can only darken
+  the band. A scrim of the same colour closes over it before the headline.
+- The headline is `displayTitle` in ivory, then the Practice button. The status
+  line is gone from the band, and kept in what a screen reader hears.
+- It runs under the status bar (`ScreenContainer.underStatusBar`) and pays the
+  inset back inside, with the status bar light while the Library is in front.
+- The photograph moves at half the page's speed (`scrollOffset`, on the native
+  driver) and drifts slowly up and down. The drift stops when the tab is left
+  and does not run under Reduce Motion.
+- While searching, the band stays as the header's ground and the headline steps
+  out. With no piece to continue, the screen is the plain header it was.
+
+**Alternatives considered:**
+- *A backdrop behind the unchanged layout* (colour clouds, window light, sound
+  rings, a tempo glow, floating notation, moving staves, stage lights, waveform
+  layers, maple grain, lifted pages). Shown first, in three palettes. The owner
+  chose a layout change instead.
+- *The warm light hero* (A): ivory, the piece's opening engraved large behind
+  the title, or a photograph fading into the page. Calmer, and the band did
+  more with the key.
+- *The case lining* (C): the whole page deep green. Every ivory element on the
+  shelf would have needed an ivory-on-dark version.
+- *The open-score photograph or the piece's own page in the band* (B1, B3).
+  The owner picked the strings.
+- *A slow zoom for the photograph's movement.* A photograph scaled past its
+  frame is wider than the screen: `audit-a11y` measured it 5pt off the right
+  edge. It drifts vertically inside extra height instead.
+
+**Trade-offs accepted:**
+- **§3 law 6 has a second exception**: one band on one screen, with a
+  photograph and a gradient. CLAUDE.md says so beside the bottom bar's.
+- **The first screen now carries a 173 KB photograph** (`assets/hero/`). Its
+  photographer is not yet recorded; `SOURCES.md` says so.
+- **Blend modes on native are untested on a device.** `mixBlendMode` and
+  `isolation` are React Native styles since 0.77 and work on the web build;
+  if a phone draws the photograph unblended, the fallback is to drop it to a
+  plain low opacity.
+- **A first, uncached load moves.** The plain header draws while the library
+  loads and becomes the band when it arrives. The query cache makes this the
+  first visit only.
+- **The band ignores the appearance**, like `darkBg`. The app is pinned to
+  light, so this costs nothing today.
+
+**Three-foot test:** first the headline on its colour; second the band itself,
+the strings in it; third the first two pages on the shelf. The Practice button
+reads as part of the headline, which is where the eye already is.
+
 ## 2026-10-06 — On the web, a take that could not be sent goes to IndexedDB
 
 **Context:** the take queue keeps a take whose send failed and retries it later.

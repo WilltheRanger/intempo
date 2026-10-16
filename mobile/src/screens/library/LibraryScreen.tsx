@@ -2,7 +2,7 @@ import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { useQueryClient } from '@tanstack/react-query';
 import { Library, Plus, Search } from '../../components/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { Animated, Platform, StyleSheet, View } from 'react-native';
 
 import { FadeIn } from '../../components/motion';
 import { PieceListSkeleton } from '../../components/skeletons';
@@ -47,17 +47,25 @@ import type {
   TabScreenNavigation,
 } from '../../navigation/types';
 import { AddPieceSheet } from '../../components/pieces/AddPieceSheet';
-import { ContinueRow, PendingTakeLine } from './ContinueRow';
+import { ContinueBand } from './ContinueBand';
+import { PendingTakeLine } from './PendingTakeLine';
 import { PieceRow } from './PieceRow';
 import { PieceTile } from './PieceTile';
 import { useAddPieceOption } from '../../navigation/useAddPieceOption';
 import { loadStateFor, type LoadState } from '../../lib/loadState';
 import { rowDivided } from '../../components/rowMetrics';
+import { SCREEN_GUTTER } from '../../components/primitives/ScreenContainer';
 
 /**
  * The Library is the first screen (the owner's pick, 2026-09-30): the piece to
- * play next in one ruled row, then the shelf. See `lib/library/continueLine.ts`
- * for why Today went and this is what took its place.
+ * play next, then the shelf. See `lib/library/continueLine.ts` for why Today
+ * went and this is what took its place.
+ *
+ * **The piece to play next is a band, not a ruled row** (the owner's pick, B2,
+ * 2026-10-16): the headline set large on its key's colour with a photograph
+ * printed into it, running under the status bar. See `ContinueBand`. With no
+ * piece to continue — an empty library, or one that could not say which — the
+ * screen is the plain ivory header and shelf it always was.
  */
 export function LibraryScreen() {
   const navigation = useNavigation<TabScreenNavigation<'Library'>>();
@@ -79,6 +87,8 @@ export function LibraryScreen() {
     await Promise.all([library.refetch(), currentPiece.refetch()]);
   }
   const [query, setQuery] = useState('');
+  // The page's scroll offset, for the band's photograph (`ContinueBand`).
+  const scrollY = useRef(new Animated.Value(0)).current;
 
   const pieces = useMemo(() => library.data ?? [], [library.data]);
   const results = useMemo(
@@ -206,9 +216,9 @@ export function LibraryScreen() {
     setAddSheetVisible(false),
   );
 
-  // **The shelf waits for the Continue row's answer as well as its own**, so
+  // **The shelf waits for the Continue band's answer as well as its own**, so
   // the row never lands on top of a shelf that has already drawn and shoves it
-  // down a hundred points. Both are asked for at once; a Continue row that
+  // down a hundred points. Both are asked for at once; a Continue band that
   // could not be fetched is simply left out rather than holding the shelf.
   const load = loadStateFor({
     isError: library.isError,
@@ -260,130 +270,153 @@ export function LibraryScreen() {
     );
   }, [drawn, navigation]);
 
+  // Whether the top of the screen is the Continue band. Decided by the piece,
+  // not by the search: the band stays while searching, as the header's ground.
+  const banded = current !== null;
+  const tone = banded ? 'onDark' : 'auto';
+
+  /*
+    **The title becomes the field; it does not grow one underneath.** See
+    `SearchHeader`, which holds both the crossfade and the reason: the field
+    used to mount into the flow on a boolean, so it appeared between two frames
+    and pushed the whole shelf down 60 points as it did.
+  */
+  const header = (
+    <SearchHeader
+      title="Library"
+      query={query}
+      onQueryChange={setQuery}
+      placeholder="Search your library"
+      searchable={pieces.length > 0}
+      tone={tone}
+      action={
+        <IconButton
+          icon={Plus}
+          label="Add piece"
+          variant="bare"
+          tone={tone}
+          onPress={() => setAddSheetVisible(true)}
+        />
+      }
+    />
+  );
+
   return (
-    <ScreenContainer onRefresh={refresh}>
-      {/*
-        **The title becomes the field; it does not grow one underneath.** See
-        `SearchHeader`, which holds both the crossfade and the reason: the
-        field used to mount into the flow on a boolean, so it appeared between
-        two frames and pushed the whole shelf down 60 points as it did.
-      */}
-      <SearchHeader
-        title="Library"
-        query={query}
-        onQueryChange={setQuery}
-        placeholder="Search your library"
-        searchable={pieces.length > 0}
-        action={
-          <IconButton
-            icon={Plus}
-            label="Add piece"
-            variant="bare"
-            onPress={() => setAddSheetVisible(true)}
-          />
-        }
-      />
-
-      {/*
-        The only thing on this screen that can fail without a screen of its
-        own. A tile's action is two words and has nowhere to put a sentence.
-      */}
-      {actionError ? (
-        <Text variant="metadataSmall" color="textSecondary" style={styles.actionError}>
-          {actionError}
-        </Text>
-      ) : null}
-
-      {continueLine && current ? (
-        <ContinueRow
+    <ScreenContainer
+      onRefresh={refresh}
+      bleed={banded}
+      underStatusBar={banded}
+      scrollOffset={scrollY}
+    >
+      {banded ? (
+        <ContinueBand
+          keySignature={current.score?.key_signature}
+          header={header}
           line={continueLine}
           onOpen={() => navigation.navigate('PieceDetail', { pieceId: current.id })}
           onAction={() => openPractice(current)}
+          scrollY={scrollY}
         />
-      ) : null}
+      ) : (
+        header
+      )}
 
-      {pendingLine ? (
-        <PendingTakeLine
-          line={pendingLine}
-          onPress={
-            pendingCheck === 'ready'
-              ? openPendingVerdict
-              : pendingCheck === 'checking'
-                ? undefined
-                : () => void checkPendingAnalysis()
-          }
-        />
-      ) : null}
+      {/* The band runs edge to edge; everything under it keeps the gutter. */}
+      <View style={banded ? styles.gutter : undefined}>
 
-      <LibraryContent
-        load={load}
-        error={library.error}
-        pieces={pieces}
-        results={results}
-        query={query}
-        onAddPiece={() => setAddSheetVisible(true)}
-        onRetry={() => void refresh()}
-        retrying={library.isFetching}
-        onTouchPiece={(piece) => {
-          // From the moment the finger lands, not when it lifts: the piece
-          // and its history are usually in before the screen that needs them
-          // has drawn. See `prefetchPiece`.
-          prefetchPiece(queryClient, piece.id);
-          prefetchPieceHistory(queryClient, piece.id);
-        }}
-        onOpenPiece={(piece) => {
-          // Again on the tap itself, for a keyboard, which presses without a
-          // finger landing first. Both are no-ops once the data is in.
-          prefetchPieceHistory(queryClient, piece.id);
-          navigation.navigate('PieceDetail', { pieceId: piece.id });
-        }}
-        busyPieceId={busyPieceId}
-        insightByPiece={insightByPiece}
-        lastTakes={lastTakes}
-        onReadAgain={(piece) => {
-          setActionError(null);
-          readAgain.mutate(piece.id, {
-            onError: (cause) => setActionError(describe(cause)),
-          });
-        }}
-        onDiscard={(piece) => {
-          setActionError(null);
-          setDiscarding(piece);
-        }}
-      />
+        {/*
+          The only thing on this screen that can fail without a screen of its
+          own. A tile's action is two words and has nowhere to put a sentence.
+        */}
+        {actionError ? (
+          <Text variant="metadataSmall" color="textSecondary" style={styles.actionError}>
+            {actionError}
+          </Text>
+        ) : null}
 
-      <AddPieceSheet
-        visible={addSheetVisible}
-        onClose={() => setAddSheetVisible(false)}
-        onSelect={handleSelectOption}
-      />
+        {pendingLine ? (
+          <PendingTakeLine
+            line={pendingLine}
+            onPress={
+              pendingCheck === 'ready'
+                ? openPendingVerdict
+                : pendingCheck === 'checking'
+                  ? undefined
+                  : () => void checkPendingAnalysis()
+            }
+          />
+        ) : null}
 
-      {/*
-        Asked, even though nothing was read from the page: the photograph is
-        the musician's and this throws it away. `PieceDetailScreen` asks before
-        the same deletion, and a shelf that did it on one tap would be the one
-        destructive action in the app that does not.
-      */}
-      <ConfirmDialog
-        visible={discarding !== null}
-        title="Discard this scan?"
-        message={
-          discarding
-            ? `${discarding.title} and its photo will be deleted.`
-            : ''
-        }
-        confirmLabel="Discard"
-        onConfirm={() => {
-          const piece = discarding;
-          setDiscarding(null);
-          if (piece) {
-            discard.mutate(piece.id, {
+        <LibraryContent
+          load={load}
+          error={library.error}
+          pieces={pieces}
+          results={results}
+          query={query}
+          onAddPiece={() => setAddSheetVisible(true)}
+          onRetry={() => void refresh()}
+          retrying={library.isFetching}
+          onTouchPiece={(piece) => {
+            // From the moment the finger lands, not when it lifts: the piece
+            // and its history are usually in before the screen that needs them
+            // has drawn. See `prefetchPiece`.
+            prefetchPiece(queryClient, piece.id);
+            prefetchPieceHistory(queryClient, piece.id);
+          }}
+          onOpenPiece={(piece) => {
+            // Again on the tap itself, for a keyboard, which presses without a
+            // finger landing first. Both are no-ops once the data is in.
+            prefetchPieceHistory(queryClient, piece.id);
+            navigation.navigate('PieceDetail', { pieceId: piece.id });
+          }}
+          busyPieceId={busyPieceId}
+          insightByPiece={insightByPiece}
+          lastTakes={lastTakes}
+          onReadAgain={(piece) => {
+            setActionError(null);
+            readAgain.mutate(piece.id, {
               onError: (cause) => setActionError(describe(cause)),
             });
+          }}
+          onDiscard={(piece) => {
+            setActionError(null);
+            setDiscarding(piece);
+          }}
+        />
+
+        <AddPieceSheet
+          visible={addSheetVisible}
+          onClose={() => setAddSheetVisible(false)}
+          onSelect={handleSelectOption}
+        />
+
+        {/*
+          Asked, even though nothing was read from the page: the photograph is
+          the musician's and this throws it away. `PieceDetailScreen` asks before
+          the same deletion, and a shelf that did it on one tap would be the one
+          destructive action in the app that does not.
+        */}
+        <ConfirmDialog
+          visible={discarding !== null}
+          title="Discard this scan?"
+          message={
+            discarding
+              ? `${discarding.title} and its photo will be deleted.`
+              : ''
           }
-        }}
-        onCancel={() => setDiscarding(null)}
-      />
+          confirmLabel="Discard"
+          onConfirm={() => {
+            const piece = discarding;
+            setDiscarding(null);
+            if (piece) {
+              discard.mutate(piece.id, {
+                onError: (cause) => setActionError(describe(cause)),
+              });
+            }
+          }}
+          onCancel={() => setDiscarding(null)}
+        />
+      </View>
     </ScreenContainer>
   );
 }
@@ -611,6 +644,9 @@ function GroupHeading({ label, count }: { label: string; count: number }) {
 const SHELF_GUTTER = spacing.md;
 
 const styles = StyleSheet.create({
+  gutter: {
+    paddingHorizontal: SCREEN_GUTTER,
+  },
   heading: {
     flexDirection: 'row',
     alignItems: 'baseline',

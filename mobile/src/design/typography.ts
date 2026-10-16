@@ -87,8 +87,8 @@ export const typography = {
   /**
    * The one line on a screen that is the screen.
    *
-   * **Only for type over a full-bleed image**, which today is the Today hero
-   * and nothing else. It is nearly a third larger than `screenTitle`, and that
+   * **Only for type over a full-bleed image**, which is the Library's
+   * Continue band (`ContinueBand`) and nothing else. It is nearly a third larger than `screenTitle`, and that
    * is deliberate: a photograph is a busy ground, and the size is what makes a
    * title read across it rather than sit on it. On the ivory page the same
    * size would simply shout.
