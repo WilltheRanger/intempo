@@ -10,10 +10,10 @@ import { spacing } from '../../design';
 import type { ContinueLine } from '../../lib/library/continueLine';
 
 /**
- * Inside a grand piano: the strings, and a brace crossing them
- * (`assets/hero/SOURCES.md`).
+ * Inside a grand piano: the strings, and a brace crossing them, as a shade map
+ * (`KeyBand`, `assets/hero/SOURCES.md`).
  */
-const PHOTO = require('../../../assets/hero/library-strings.jpg');
+const SHADE = require('../../../assets/hero/library-strings-shade.webp');
 
 /**
  * The band deepening behind the words: clear behind the header, then closing
@@ -77,7 +77,7 @@ export function ContinueBand({
   scrollY,
 }: ContinueBandProps) {
   return (
-    <KeyBand keySignature={keySignature} photo={PHOTO} scrim={SCRIM} scrollY={scrollY}>
+    <KeyBand keySignature={keySignature} shade={SHADE} scrim={SCRIM} scrollY={scrollY}>
       <View style={[styles.content, line ? styles.withLine : null]}>
         {header}
         {line ? (

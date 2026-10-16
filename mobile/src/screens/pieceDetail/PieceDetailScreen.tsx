@@ -62,10 +62,11 @@ const BANNER_HEIGHT = 116;
 const OPENING_HEIGHT = 150;
 
 /**
- * An open score, close up: a page of printed piano music with pencil markings
- * (`assets/hero/SOURCES.md`). Printed into the key band behind the title.
+ * An open score, close up: a page of printed piano music with pencil markings,
+ * as a shade map (`KeyBand`, `assets/hero/SOURCES.md`). Printed into the key
+ * band behind the title.
  */
-const PHOTO = require('../../../assets/hero/piece-score.jpg');
+const SHADE = require('../../../assets/hero/piece-score-shade.webp');
 
 /**
  * The band's colour over the photograph: a little at the top behind the back
@@ -250,7 +251,7 @@ export function PieceDetailScreen() {
       <View style={styles.bandBleed}>
         <KeyBand
           keySignature={piece.score?.key_signature}
-          photo={PHOTO}
+          shade={SHADE}
           scrim={SCRIM}
           scrollY={scrollY}
         >

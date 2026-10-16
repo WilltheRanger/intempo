@@ -2,7 +2,7 @@ import { useIsFocused } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import { Image, type ImageSource } from 'expo-image';
 import { useEffect, useId, useRef, type ReactNode } from 'react';
-import { Animated, Easing, Platform, StyleSheet, View, type ViewStyle } from 'react-native';
+import { Animated, Easing, Platform, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
@@ -10,10 +10,24 @@ import { keyBandFor } from '../../lib/library/keyBand';
 import { useReducedMotion } from '../../lib/useReducedMotion';
 
 /**
- * How strongly the photograph prints into the key's colour. Multiplied, so the
- * photograph can only darken the band: its highlights become the band's own
- * colour and its shadows go deeper, which is what keeps ivory type legible over
- * every part of it.
+ * How strongly the photograph prints into the key's colour.
+ *
+ * **The photograph is a shade map, not a picture.** Each one is shipped as
+ * black with its alpha set to the photograph's darkness (`assets/hero/
+ * SOURCES.md`), and drawn over the band with ordinary blending. That is the
+ * arithmetic of multiplying a grey photograph into the colour: highlights leave
+ * the band's own colour, shadows deepen it, and nothing is ever lighter than the
+ * band, which is what keeps ivory type legible over every part of it.
+ *
+ * **It used to be a CSS blend mode** (`mixBlendMode: 'multiply'`) over the
+ * colour photograph, **and it never blended, in any browser.** The computed
+ * style said `multiply`, which is what was checked; but the photograph's own
+ * frame was the backdrop it blended with, and that frame is transparent, so the
+ * photograph was simply drawn at 62% on top. It showed on the owner's G major
+ * piece (2026-10-16): an orange piano over a green band, the green only where
+ * the scrim covered it. With G minor's oxblood the warm photograph had passed
+ * for printed-in. A shade map needs no blending support anywhere, on the web
+ * or native, and is smaller than the photograph it replaces.
  */
 const PHOTO_STRENGTH = 0.62;
 
@@ -34,21 +48,14 @@ const SLACK = 24;
 /** The web has no native driver, and asking for one there only warns. */
 const NATIVE_DRIVER = Platform.OS !== 'web';
 
-/**
- * Blend modes and isolation are styles React Native has had since 0.77 and the
- * web build passes straight to CSS; typed here once rather than at each use.
- */
-const MULTIPLY = { mixBlendMode: 'multiply' } as ViewStyle;
-const ISOLATE = { isolation: 'isolate' } as ViewStyle;
-
 /** `[offset, opacity]` pairs down the band: how much of its own colour covers the photograph. */
 export type KeyBandScrim = readonly (readonly [number, number])[];
 
 export interface KeyBandProps {
   /** The key the band takes its colour from (`keyBandFor`). */
   keySignature: string | null | undefined;
-  /** The photograph printed into the colour. */
-  photo: ImageSource | number;
+  /** The photograph's shade map: black, as opaque as the photograph is dark (see `PHOTO_STRENGTH`). */
+  shade: ImageSource | number;
   /** Where the band's colour closes back over the photograph, so words sit on colour. */
   scrim: KeyBandScrim;
   /** The page's scroll offset, which the photograph moves at half of. */
@@ -58,7 +65,7 @@ export interface KeyBandProps {
 }
 
 /**
- * A full-bleed band in a piece's key colour, with a photograph multiplied into
+ * A full-bleed band in a piece's key colour, with a photograph printed into
  * it: the Library's Continue band and the head of the piece screen
  * (`DECISIONS.md`, 2026-10-16). §3 law 6 names it as an exception, on those two
  * screens.
@@ -68,7 +75,7 @@ export interface KeyBandProps {
  * so the colour reaches the top edge and the words still clear the island. The
  * status bar is light while the band's screen is in front.
  */
-export function KeyBand({ keySignature, photo, scrim, scrollY, children }: KeyBandProps) {
+export function KeyBand({ keySignature, shade, scrim, scrollY, children }: KeyBandProps) {
   const insets = useSafeAreaInsets();
   const band = keyBandFor(keySignature);
   const photoMotion = usePhotoMotion(scrollY);
@@ -79,7 +86,7 @@ export function KeyBand({ keySignature, photo, scrim, scrollY, children }: KeyBa
   const scrimId = `keyBandScrim${useId().replace(/[^A-Za-z0-9_-]/g, '')}`;
 
   return (
-    <View style={[styles.band, ISOLATE, { backgroundColor: band, paddingTop: insets.top }]}>
+    <View style={[styles.band, { backgroundColor: band, paddingTop: insets.top }]}>
       {/*
         The colour carried up past the top edge, so pulling the page down on
         iOS shows more band rather than a stripe of ivory above it.
@@ -92,8 +99,8 @@ export function KeyBand({ keySignature, photo, scrim, scrollY, children }: KeyBa
         image role, which the web announces as an image with no name.
       */}
       <View pointerEvents="none" style={styles.photoFrame} aria-hidden>
-        <Animated.View style={[styles.photo, MULTIPLY, { transform: photoMotion }]}>
-          <Image source={photo} style={StyleSheet.absoluteFill} contentFit="cover" />
+        <Animated.View style={[styles.photo, { transform: photoMotion }]}>
+          <Image source={shade} style={StyleSheet.absoluteFill} contentFit="cover" />
         </Animated.View>
         <Svg style={StyleSheet.absoluteFill} width="100%" height="100%">
           <Defs>
