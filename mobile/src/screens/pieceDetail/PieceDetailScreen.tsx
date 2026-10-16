@@ -9,8 +9,8 @@ import {
   PencilLine,
   Trash2,
 } from '../../components/icons';
-import { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { useRef, useState } from 'react';
+import { Animated, StyleSheet, View } from 'react-native';
 import { ComposerField } from '../../components/pieces/ComposerField';
 import { useFieldOrder } from '../../components/primitives/useFieldOrder';
 
@@ -21,7 +21,7 @@ import { SheetOptionRow } from '../../components/overlays/SheetOptionRow';
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
 import { ScoreBand } from '../../components/score/ScoreBand';
 import { PieceLinkRow } from './PieceLinkRow';
-import { PIECE_BACKDROP, PieceBackdrop, PieceBandHead } from './PieceBackdropPrototype';
+import { KeyBand, type KeyBandScrim } from '../../components/pieces/KeyBand';
 import { usePieceHistory } from '../../data/hooks/useLatestTake';
 import { knowsItsMusic } from '../../data/hooks/knownPiece';
 import {
@@ -62,6 +62,24 @@ const BANNER_HEIGHT = 116;
 const OPENING_HEIGHT = 150;
 
 /**
+ * An open score, close up: a page of printed piano music with pencil markings
+ * (`assets/hero/SOURCES.md`). Printed into the key band behind the title.
+ */
+const PHOTO = require('../../../assets/hero/piece-score.jpg');
+
+/**
+ * The band's colour over the photograph: a little at the top behind the back
+ * link, most of all at the bottom where the title sits. The title is the
+ * words on this band, so the scrim runs under all of it rather than opening a
+ * window of photograph above.
+ */
+const SCRIM: KeyBandScrim = [
+  [0, 0.3],
+  [0.45, 0.45],
+  [1, 0.85],
+];
+
+/**
  * A saved piece.
  *
  * **Playback is real.** It used to be a `setTimeout` that advanced a number
@@ -99,6 +117,8 @@ export function PieceDetailScreen() {
   const load = loadStateFor({ isError, hasData: piece !== undefined });
 
   const [menuVisible, setMenuVisible] = useState(false);
+  // The page's scroll offset, for the key band's photograph.
+  const scrollY = useRef(new Animated.Value(0)).current;
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draftTitle, setDraftTitle] = useState('');
@@ -203,13 +223,8 @@ export function PieceDetailScreen() {
       opened with two things competing to be looked at first.
     */
     <ScreenContainer
-      backdrop={
-        PIECE_BACKDROP && PIECE_BACKDROP !== 'band' ? (
-          <PieceBackdrop keySignature={piece.score?.key_signature} />
-        ) : undefined
-      }
-      footerTone={PIECE_BACKDROP && PIECE_BACKDROP !== 'band' ? 'clear' : 'page'}
-      underStatusBar={PIECE_BACKDROP === 'band'}
+      underStatusBar
+      scrollOffset={scrollY}
       footer={
         canPractice ? (
           <PrimaryButton
@@ -226,52 +241,42 @@ export function PieceDetailScreen() {
         its title and by the music under it, and the composer is under Rename
         in the ⋮ menu.
       */}
-      {PIECE_BACKDROP === 'band' ? (
-        <View style={styles.bandBleed}>
-          <PieceBandHead keySignature={piece.score?.key_signature}>
-            <View style={[styles.head, styles.bandGutter]}>
-              <BackLink label="Back to library" onPress={goBack} tone="onDark" />
-              <View style={styles.titleRow}>
-                <PieceHeading
-                  title={piece.title}
-                  variant="heroTitle"
-                  color="onDark"
-                  catalogueColor="onDarkSecondary"
-                  header
-                  containerStyle={styles.title}
-                />
-                <IconButton
-                  icon={MoreVertical}
-                  label="Piece options"
-                  variant="bare"
-                  tone="onDark"
-                  onPress={() => setMenuVisible(true)}
-                  style={styles.options}
-                />
-              </View>
+      {/*
+        **On the piece's key colour** (the owner's pick, P4, 2026-10-16): the
+        Library's band carried onto the piece it opened, with a photograph of an
+        open score printed into it. Opening the Continue piece keeps its colour
+        from one screen to the next. `KeyBand` holds the band's own rules.
+      */}
+      <View style={styles.bandBleed}>
+        <KeyBand
+          keySignature={piece.score?.key_signature}
+          photo={PHOTO}
+          scrim={SCRIM}
+          scrollY={scrollY}
+        >
+          <View style={[styles.head, styles.bandGutter]}>
+            <BackLink label="Back to library" onPress={goBack} tone="onDark" />
+            <View style={styles.titleRow}>
+              <PieceHeading
+                title={piece.title}
+                variant="heroTitle"
+                color="onDark"
+                catalogueColor="onDarkSecondary"
+                header
+                containerStyle={styles.title}
+              />
+              <IconButton
+                icon={MoreVertical}
+                label="Piece options"
+                variant="bare"
+                tone="onDark"
+                onPress={() => setMenuVisible(true)}
+                style={styles.options}
+              />
             </View>
-          </PieceBandHead>
-        </View>
-      ) : (
-      <View style={styles.head}>
-        <BackLink label="Back to library" onPress={goBack} />
-        <View style={styles.titleRow}>
-          <PieceHeading
-            title={piece.title}
-            variant="heroTitle"
-            header
-            containerStyle={styles.title}
-          />
-          <IconButton
-            icon={MoreVertical}
-            label="Piece options"
-            variant="bare"
-            onPress={() => setMenuVisible(true)}
-            style={styles.options}
-          />
-        </View>
+          </View>
+        </KeyBand>
       </View>
-      )}
 
       {/*
         Correcting the name in place, the same shape `TranscriptionReviewScreen`
@@ -355,7 +360,7 @@ export function PieceDetailScreen() {
         question is "did it read this right".
       */}
       {hasNotation && piece.score ? (
-        <View style={[styles.engravedBand, PIECE_BACKDROP === 'band' ? styles.engravedUnderBand : null]}>
+        <View style={styles.engravedBand}>
           {/* The opening two systems, where the prototype draws two lines. */}
           <ScoreBand score={piece.score} viewport={OPENING_HEIGHT} fullBleed />
         </View>
@@ -561,7 +566,6 @@ const styles = StyleSheet.create({
    * it is a picture, and everything else is set in a column.
    */
   band: {
-    marginTop: spacing.xl,
     marginHorizontal: -SCREEN_GUTTER,
     width: undefined,
     alignSelf: 'stretch',
@@ -582,23 +586,20 @@ const styles = StyleSheet.create({
    * either clip a ledger line or leave a strip of empty paper under a sparse
    * one. The top rule is here because `ScoreBand` draws the paper and the
    * bottom rule and cannot know it is against a gutter.
+   *
+   * **Directly under the key band**, with no gap and no top rule: the band's
+   * colour is the edge, and a strip of ivory between the two read as a seam.
    */
+  engravedBand: {
+    marginHorizontal: -SCREEN_GUTTER,
+    alignSelf: 'stretch',
+  },
+  /** The key band, out to both edges; its words put the gutter back. */
   bandBleed: {
     marginHorizontal: -SCREEN_GUTTER,
   },
   bandGutter: {
     paddingHorizontal: SCREEN_GUTTER,
-  },
-  engravedUnderBand: {
-    marginTop: 0,
-    borderTopWidth: 0,
-  },
-  engravedBand: {
-    marginTop: spacing.xl,
-    marginHorizontal: -SCREEN_GUTTER,
-    alignSelf: 'stretch',
-    borderTopWidth: BORDER_WIDTH,
-    borderTopColor: colors.border,
   },
 
   listen: {
@@ -619,6 +620,8 @@ const styles = StyleSheet.create({
   },
   head: {
     paddingTop: spacing.md,
+    // The band's own breathing room under the title, before the music.
+    paddingBottom: 18,
   },
   titleRow: {
     flexDirection: 'row',

@@ -105,7 +105,7 @@ export interface ScreenContainerProps {
    * onto the card colour, for a screen whose footer is a control area you work
    * in rather than a single action you finish with.
    */
-  footerTone?: 'page' | 'surface' | 'clear';
+  footerTone?: 'page' | 'surface';
   /**
    * How much of the top of this screen's content is a dark ground, in points.
    *
@@ -138,13 +138,6 @@ export interface ScreenContainerProps {
    * life of the screen: it decides which scroll view is mounted.
    */
   scrollOffset?: Animated.Value;
-  /**
-   * A layer drawn behind everything on the screen, scroll area and footer
-   * alike: a pattern or a wash that gives the page depth. It takes no touches
-   * and nothing in it is read aloud. Pair it with `footerTone="clear"` when it
-   * should show around the footer's action too.
-   */
-  backdrop?: ReactNode;
 }
 
 /** The web has no native driver, and asking for one there only warns. */
@@ -168,7 +161,6 @@ export function ScreenContainer({
   darkGround,
   underStatusBar = false,
   scrollOffset,
-  backdrop,
 }: ScreenContainerProps) {
   const [refreshing, setRefreshing] = useState(false);
 
@@ -347,11 +339,6 @@ export function ScreenContainer({
     // below owns the bottom inset; claiming it here too would double it.
     <SafeAreaView style={styles.safeArea} edges={underStatusBar ? [] : ['top']}>
       {navigated ? <OnFocus effect={onFocus} /> : null}
-      {backdrop ? (
-        <View style={StyleSheet.absoluteFill} pointerEvents="none" aria-hidden>
-          {backdrop}
-        </View>
-      ) : null}
       {scrollArea}
 
       {footer ? (
@@ -361,7 +348,6 @@ export function ScreenContainer({
           style={[
             styles.footer,
             footerTone === 'surface' ? styles.footerSurface : null,
-            footerTone === 'clear' ? styles.footerClear : null,
             overflows ? styles.footerDivided : null,
             footerInset,
           ]}
@@ -459,10 +445,6 @@ const styles = StyleSheet.create({
     borderTopColor: 'transparent',
     paddingHorizontal: SCREEN_GUTTER,
     paddingTop: spacing.lg,
-  },
-  /** No ground of its own, for a footer over a `backdrop`. The rule still marks content passing under it. */
-  footerClear: {
-    backgroundColor: 'transparent',
   },
   footerSurface: {
     backgroundColor: colors.surface,

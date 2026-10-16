@@ -1,5 +1,43 @@
 # InTempo Decisions
 
+## 2026-10-16 — The piece screen's head goes on the same key band
+
+**Context:** after B2 the owner asked for "something to add depth behind" the
+piece screen, "like the patterns" made for the Library. Four were built in the
+piece's key colour and recorded: clouds, sound rings from the Practice button,
+stage lights, and the Library's band carried onto the piece (P4). Floating
+notation and moving staves were left out: beside the real engraving on this
+screen they read as a second, fake score. The owner picked **P4, with the
+open-score photograph** instead of the strings.
+
+**Decision:** the head of `PieceDetailScreen` (back link, title, ⋮) sits on
+`KeyBand`, the band component now shared with the Library's `ContinueBand`:
+key colour, a photograph multiplied in at 62%, a scrim of the same colour,
+under the status bar, half-speed parallax and a slow drift. The piece screen's
+photograph is `piece-score.jpg`; its scrim covers the whole band, deepest under
+the title, because the title is the only words on it. The engraving sits
+directly under the band, with no gap and no rule.
+
+`KeyBand` gives each band its own gradient id. On the web the Library stays
+mounted under the piece screen, and SVG finds a gradient by id across the whole
+document, so a shared name drew one piece's key colour on another's band.
+
+**Alternatives considered:**
+- *A pattern behind the whole screen* (clouds, rings, lights). The owner chose
+  the band, which ties the piece screen to the band that opened it.
+- *The strings photograph on both screens.* The owner wanted the score here,
+  which also tells the two screens apart.
+
+**Trade-offs accepted:**
+- **A second photograph**, 105 KB, loaded when a piece first opens.
+- **§3 law 6's exception now covers two screens**, the Library band and this
+  head, and says so.
+- The two prototype-only slots, a backdrop layer and a clear footer on
+  `ScreenContainer`, were removed with the prototypes rather than kept unused.
+
+**Three-foot test:** first the title on its colour; second the engraving,
+white under the band; third the Practice button at the bottom.
+
 ## 2026-10-16 — The Library's Continue row becomes a band in the piece's key colour
 
 **Context:** the owner asked for "something nice behind and something to add

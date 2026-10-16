@@ -280,11 +280,12 @@ the user's rules, not suggestions to weigh against convenience.
    over content, then the Today photograph — and both times it stayed on three
    of the four tabs. It is a property of the surface: `glassMaterial`'s `bar`
    context, held by `material.test.ts` in both palettes.
-   **The Library's Continue band is the second exception** (2026-10-16, the
-   owner's pick, B2): a full-bleed band in the Continue piece's key colour, a
-   photograph multiplied into it, and a scrim of the same colour behind the
-   headline. One band on one screen; `DECISIONS.md` has the reasons and
-   `ContinueBand.tsx` the rules.
+   **The key band is the second exception** (2026-10-16, the owner's picks,
+   B2 and P4): a full-bleed band in a piece's key colour, a photograph
+   multiplied into it, and a scrim of the same colour behind the words. It is
+   the Library's Continue band and the head of the piece screen, and nothing
+   else; `DECISIONS.md` has the reasons and `components/pieces/KeyBand.tsx` the
+   rules.
 7. **Design around the thumb zone.** Primary actions sit comfortably reachable
    near the bottom; secondary actions can sit higher.
 8. **Use typography to create hierarchy instead of relying on containers.**
