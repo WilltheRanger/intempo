@@ -1,7 +1,6 @@
 export {
   lightColors,
   darkColors,
-  keyBands,
   paletteFor,
   type ColorToken,
   type ColorScheme,

@@ -121,6 +121,17 @@ export const lightColors = {
    * ivory-on-ivory. Two jobs, two names.
    */
   darkBg: '#1A1714',
+  /**
+   * The warm band behind the Library's Continue headline and the piece
+   * screen's title (`PhotoBand`): a deep oxblood a music publisher could have
+   * bound a score in. Dark in both appearances, like `darkBg`, with `onDark`
+   * type on it: ivory measures 11.7:1, `onDarkSecondary` 7.7:1
+   * (`contrast.test.ts`).
+   *
+   * It was one colour per key for an afternoon (2026-10-16); the owner asked
+   * for it warm, always.
+   */
+  band: '#5B2427',
   onDark: '#FBFAF7',
   /** Secondary text and inactive chrome on that surface. */
   onDarkMuted: 'rgba(251, 250, 247, 0.55)',
@@ -438,6 +449,8 @@ export const darkColors: Palette = {
    * existing: the scanner is dark in both appearances because a viewfinder is.
    */
   darkBg: '#1A1714',
+  /** The same oxblood: the band is dark in both appearances. */
+  band: '#5B2427',
   onDark: '#FBFAF7',
   onDarkMuted: 'rgba(251, 250, 247, 0.55)',
   onDarkFill: 'rgba(251, 250, 247, 0.16)',
@@ -513,41 +526,6 @@ export const darkColors: Palette = {
   trendBad: '#E0605A',
 } as const;
 
-/**
- * The Library's Continue band: one deep colour for each key, by its number of
- * sharps (positive) or flats (negative), round the circle of fifths.
- *
- * **Relative keys share a colour**, because they share a signature: G minor and
- * B♭ major are both two flats, and a band that told them apart would need the
- * mode, which the reading does not always find.
- *
- * **Dark in both appearances**, like `darkBg`: the band is a printed cover with
- * a photograph in it, not a surface that inverts, and its type is `onDark`.
- * Curated rather than spun round a hue wheel, which gave fairground colours:
- * every one is a muted ink a music publisher could have bound a score in.
- * Ivory measures 10:1 or better on each, and `onDarkSecondary` 6.8:1 or better
- * (`contrast.test.ts`).
- *
- * Five or more accidentals share the outermost colour on each side. Nobody
- * should have to tell D♭ major from G♭ major by the shade of a header.
- */
-export const keyBands = {
-  [-7]: '#3A2440',
-  [-6]: '#3A2440',
-  [-5]: '#3A2440',
-  [-4]: '#3F4220',
-  [-3]: '#5A3418',
-  [-2]: '#5B2427',
-  [-1]: '#4A2639',
-  0: '#22324A',
-  1: '#1F3A2E',
-  2: '#1C3D40',
-  3: '#1D3550',
-  4: '#2A2D52',
-  5: '#3B2A55',
-  6: '#3B2A55',
-  7: '#3B2A55',
-} as const satisfies Record<number, string>;
 
 export type ColorScheme = 'light' | 'dark';
 

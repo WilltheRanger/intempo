@@ -696,6 +696,29 @@ synthesiser, lazy on purpose, was 78 KB gzipped of every first visit.
 weighs every script `index.html` loads and fails with this explanation when
 there is more than one.
 
+### A blend mode on the web blends with nothing (2026-10-16)
+
+`mixBlendMode: 'multiply'` on a view printed the Library band's photograph
+into its key colour in no browser at all, Chromium included, while the
+computed style read `multiply` the whole time. **Every react-native-web `View`
+is `position: relative; z-index: 0`** (its base style), so every view is its
+own stacking context, and a blended child can only blend with what is inside
+its parent: here the photograph's own transparent frame. The photograph was
+drawn flat at 62% over the band. Over G minor's oxblood a warm photograph
+passed for printed-in; the owner's G major piece showed an orange piano over a
+green band.
+
+Checking the computed style is not checking the blend. If a result depends on
+blending, look at the pixels. And do not leave a blend mode in place because it
+"does nothing on the web": **the same style does blend on native**, so the
+phone app would draw something the web never showed. The band now has no blend
+mode at all; the photograph is drawn over one warm colour with ordinary
+blending, which is what the owner picked from the web recordings
+(`components/pieces/PhotoBand.tsx`). If a photograph ever has to be printed
+*into* a colour, ship it as a shade map: black, with alpha set to its darkness,
+which is the arithmetic of multiplying a grey photograph and needs no blend
+support anywhere.
+
 ### A heading is an `<h1>` on the web unless it says otherwise (2026-10-05)
 
 react-native-web renders `accessibilityRole="header"` as an `<h1>`, and React

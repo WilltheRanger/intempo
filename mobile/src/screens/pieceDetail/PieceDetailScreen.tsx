@@ -21,7 +21,7 @@ import { SheetOptionRow } from '../../components/overlays/SheetOptionRow';
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
 import { ScoreBand } from '../../components/score/ScoreBand';
 import { PieceLinkRow } from './PieceLinkRow';
-import { KeyBand, type KeyBandScrim } from '../../components/pieces/KeyBand';
+import { PhotoBand, type PhotoBandScrim } from '../../components/pieces/PhotoBand';
 import { usePieceHistory } from '../../data/hooks/useLatestTake';
 import { knowsItsMusic } from '../../data/hooks/knownPiece';
 import {
@@ -63,7 +63,7 @@ const OPENING_HEIGHT = 150;
 
 /**
  * An open score, close up: a page of printed piano music with pencil markings
- * (`assets/hero/SOURCES.md`). Printed into the key band behind the title.
+ * (`assets/hero/SOURCES.md`). In the warm band behind the title.
  */
 const PHOTO = require('../../../assets/hero/piece-score.jpg');
 
@@ -73,7 +73,7 @@ const PHOTO = require('../../../assets/hero/piece-score.jpg');
  * words on this band, so the scrim runs under all of it rather than opening a
  * window of photograph above.
  */
-const SCRIM: KeyBandScrim = [
+const SCRIM: PhotoBandScrim = [
   [0, 0.3],
   [0.45, 0.45],
   [1, 0.85],
@@ -242,14 +242,12 @@ export function PieceDetailScreen() {
         in the ⋮ menu.
       */}
       {/*
-        **On the piece's key colour** (the owner's pick, P4, 2026-10-16): the
-        Library's band carried onto the piece it opened, with a photograph of an
-        open score printed into it. Opening the Continue piece keeps its colour
-        from one screen to the next. `KeyBand` holds the band's own rules.
+        **On the warm band** (the owner's pick, P4, 2026-10-16): the Library's
+        band carried onto the piece it opened, with a photograph of an open
+        score in it. `PhotoBand` holds the band's own rules.
       */}
       <View style={styles.bandBleed}>
-        <KeyBand
-          keySignature={piece.score?.key_signature}
+        <PhotoBand
           photo={PHOTO}
           scrim={SCRIM}
           scrollY={scrollY}
@@ -275,7 +273,7 @@ export function PieceDetailScreen() {
               />
             </View>
           </View>
-        </KeyBand>
+        </PhotoBand>
       </View>
 
       {/*

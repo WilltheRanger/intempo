@@ -1,5 +1,43 @@
 # InTempo Decisions
 
+## 2026-10-16 — The band is one warm colour, not the piece's key
+
+**Context:** the key colour band shipped in #184. On the owner's iPhone the
+Continue piece was in G major, so the band was forest green, and the warm
+photograph of the strings sat over it with the green showing only near the
+headline: "Wait why is it green". Looking into it found that the band's
+`mixBlendMode: 'multiply'` had never blended in any browser (every
+react-native-web view is its own stacking context; `docs/subsystems.md`), so
+what the owner had picked from the recordings was the photograph drawn flat
+over the colour. Over G minor's oxblood that read as one warm band; over the
+cool keys it read as two colours.
+
+Four ways on were rendered side by side: a colour per key as shipped, a colour
+per key with the photograph truly printed in (a shade map, PR #185's first
+commit), and one fixed oxblood either way. The owner: "Can you just make the
+color warm for all time not based off key".
+
+**Decision:** one colour, `colors.band` (`#5B2427`, the oxblood of the mock-ups),
+for every piece, on both screens. The photograph is drawn over it at 62% with
+ordinary blending, the look of B2 and P4 as recorded. `KeyBand` is renamed
+`PhotoBand`; `keyBands`, `keyBandFor` and their tests are deleted; the
+photographs return as JPEGs.
+
+**Alternatives considered:**
+- *A colour per key, printed in.* Every key one even colour, the photograph as
+  texture. Darker, and the owner preferred warm.
+- *One oxblood, printed in.* The same colour, but a deep, even red rather than
+  the warm photograph showing through.
+- *Keeping the blend mode for native.* It would blend on a phone and not on the
+  web, so the two builds would draw different bands. Removed instead.
+
+**Trade-offs accepted:**
+- **The band no longer says anything about the piece.** It is decoration, and
+  §3 law 6's exception now covers a decorative band on two screens.
+- **The headline's contrast depends on the scrim over a photograph.** The test
+  holds ivory against the band colour (11.7:1), not against the brightest
+  strings under the scrim; the scrim is what keeps the headline on colour.
+
 ## 2026-10-16 — The piece screen's head goes on the same key band
 
 **Context:** after B2 the owner asked for "something to add depth behind" the
@@ -87,10 +125,13 @@ photograph of a grand piano's strings.
   photograph and a gradient. CLAUDE.md says so beside the bottom bar's.
 - **The first screen now carries a 173 KB photograph** (`assets/hero/`). Its
   photographer is not yet recorded; `SOURCES.md` says so.
-- **Blend modes on native are untested on a device.** `mixBlendMode` and
-  `isolation` are React Native styles since 0.77 and work on the web build;
-  if a phone draws the photograph unblended, the fallback is to drop it to a
-  plain low opacity.
+- ~~**Blend modes on native are untested on a device.**~~ **Corrected the
+  same day:** the blend never worked on the web either. The computed style
+  said `multiply`, but every react-native-web view is its own stacking context
+  (`position: relative; z-index: 0`), so the photograph blended with its own
+  transparent frame and was drawn flat at 62%. The owner's G major piece showed
+  it: an orange piano over a green band. The blend mode is gone, and the band
+  is one warm colour (see the entry above).
 - **A first, uncached load moves.** The plain header draws while the library
   loads and becomes the band when it arrives. The query cache makes this the
   first visit only.
