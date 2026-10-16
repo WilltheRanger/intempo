@@ -82,7 +82,11 @@ describe('the wiring', () => {
   it('runs the rule in the container and reports the answer', () => {
     expect(container).toMatch(/chromeToneFor\(/);
     expect(container).toMatch(/reportTone\(/);
-    expect(container).toMatch(/onScroll=\{handleScroll\}/);
+    // Every scroll reaches `handleScroll`: directly, or as the listener on the
+    // native scroll event when the screen also drives a `scrollOffset`.
+    expect(container).toMatch(/onScroll=\{onScroll\}/);
+    expect(container).toMatch(/listener: handleScroll/);
+    expect(container).toMatch(/: handleScroll,/);
   });
 
   it('clears the tone when the screen loses focus', () => {

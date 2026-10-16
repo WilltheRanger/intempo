@@ -14,8 +14,6 @@ import {
   tileMessage,
   tileState,
 } from '../../lib/library/tileState';
-import { LIFTED_PAGE_SHADOW } from './LibraryBackdropPrototype';
-import { LINED } from './LibraryLayoutPrototype';
 
 /** Small enough that a tile is a spine, large enough that the notes are notes. */
 const TILE_SCALE = 0.62;
@@ -138,7 +136,7 @@ export function PieceTile({
         as fit and stops, so what is left at the bottom is margin rather than a
         row of beamed notes with their heads cut off.
       */}
-      <View style={[styles.page, LIFTED_PAGE_SHADOW]} onLayout={measurePage}>
+      <View style={styles.page} onLayout={measurePage}>
         {state.kind === 'engraved' && pageHeight > 0 && piece.score ? (
           <View style={styles.music}>
             <ScoreBand
@@ -183,7 +181,7 @@ export function PieceTile({
         tile is narrow — which is the shelf's own finding: a long repertoire
         title gets two narrow lines here rather than one wide one.
       */}
-      <Text variant="pieceTitle" color={LINED ? 'onDark' : 'textPrimary'} numberOfLines={2} style={styles.title}>
+      <Text variant="pieceTitle" numberOfLines={2} style={styles.title}>
         {piece.title}
       </Text>
       {/*
@@ -194,7 +192,7 @@ export function PieceTile({
         shelf is already grouped by when.
       */}
       {status ? (
-        <Text variant="metadataSmall" color={LINED ? 'onDarkSecondary' : 'textSecondary'} numberOfLines={1} style={styles.status} accessible={false}>
+        <Text variant="metadataSmall" color="textSecondary" numberOfLines={1} style={styles.status} accessible={false}>
           {status}
         </Text>
       ) : null}

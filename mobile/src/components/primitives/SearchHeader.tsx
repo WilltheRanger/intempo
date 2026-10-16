@@ -35,6 +35,13 @@ export interface SearchHeaderProps {
   searchable?: boolean;
   /** The screen's other action, beside the magnifier. Hidden while searching. */
   action?: ReactNode;
+  /**
+   * `onDark` when the header sits on a dark band, as the Library's does over
+   * its Continue band: the title, the magnifier and "Cancel" in ivory. The
+   * field itself is unchanged — a solid card-white field is the control §3
+   * law 6 allows over colour or a photograph, and it keeps its ink.
+   */
+  tone?: 'auto' | 'onDark';
 }
 
 /**
@@ -65,6 +72,7 @@ export function SearchHeader({
   placeholder,
   searchable = true,
   action,
+  tone = 'auto',
 }: SearchHeaderProps) {
   const [open, setOpen] = useState(false);
   const reduceMotion = useReducedMotion();
@@ -142,6 +150,7 @@ export function SearchHeader({
         {/* The two props above are native-only; this is the web's (`Inert`). */}
         <Inert inert={open}>
           <PageHeader
+            tone={tone}
             // **No count.** A number the content already shows is furniture
             // (§3 law 10), and the one case where it said something — how many a
             // search matched — is answered by the results themselves.
@@ -160,6 +169,7 @@ export function SearchHeader({
                   <IconButton
                     icon={Search}
                     variant="bare"
+                    tone={tone}
                     label="Search"
                     onPress={() => {
                       impact(ImpactFeedbackStyle.Light);
@@ -208,7 +218,7 @@ export function SearchHeader({
             accessibilityLabel="Cancel search"
             style={({ pressed }) => [styles.cancel, pressed && styles.cancelPressed]}
           >
-            <Text variant="button" color="textSecondary">
+            <Text variant="button" color={tone === 'onDark' ? 'onDarkSecondary' : 'textSecondary'}>
               Cancel
             </Text>
           </Pressable>

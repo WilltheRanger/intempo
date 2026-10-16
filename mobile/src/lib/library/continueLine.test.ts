@@ -4,9 +4,9 @@ import type { Piece, ScoreJson } from '../../data/types';
 import { continueLineFor, pendingLineFor, pendingRecheckIn, type PendingCheck } from './continueLine';
 
 /**
- * The Continue row at the top of the Library, and the hand-off line under it.
+ * The Continue band at the top of the Library, and the hand-off line under it.
  *
- * `ContinueRow.tsx` decides where these go; this decides what they are. There
+ * `ContinueBand.tsx` decides where these go; this decides what they are. There
  * is no React Native testing library here (`DECISIONS.md`, 2026-08-24).
  */
 

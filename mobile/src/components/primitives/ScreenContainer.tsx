@@ -4,7 +4,7 @@ import {
   NavigationContext,
   useFocusEffect,
 } from '@react-navigation/native';
-import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Animated,
   Platform,
@@ -119,16 +119,29 @@ export interface ScreenContainerProps {
    * for every screen whose ground is the app's page.
    */
   darkGround?: number;
-  /** PROTOTYPE: a layer drawn behind the content, given the scroll offset. */
-  backdrop?: (scrollY: Animated.Value) => ReactNode;
-  /** PROTOTYPE: the page's own colour. */
-  ground?: string;
-  /** PROTOTYPE: publish the scroll offset to `ScreenScrollContext`. */
-  exposeScroll?: boolean;
+  /**
+   * Start the content at the very top of the screen, under the status bar,
+   * instead of below it.
+   *
+   * For a screen whose first band is a colour or a photograph that should
+   * reach the top edge. That band then owns the inset: it pads its own content
+   * by `useSafeAreaInsets().top`, so the words still clear the clock and the
+   * island while the colour runs behind them.
+   */
+  underStatusBar?: boolean;
+  /**
+   * Driven with the scroll offset, for something on the screen that moves
+   * against it — a photograph that scrolls at half the page's speed.
+   *
+   * Driven from the native scroll event, so the movement it feeds runs on the
+   * UI thread rather than waiting on JavaScript. Pass the same value for the
+   * life of the screen: it decides which scroll view is mounted.
+   */
+  scrollOffset?: Animated.Value;
 }
 
-/** PROTOTYPE: the scroll offset, for content that moves against it. */
-export const ScreenScrollContext = createContext<Animated.Value | null>(null);
+/** The web has no native driver, and asking for one there only warns. */
+const NATIVE_DRIVER = Platform.OS !== 'web';
 
 /**
  * The shared screen shell: warm page background, top safe-area inset, and the
@@ -146,11 +159,9 @@ export function ScreenContainer({
   bleed = false,
   footerTone = 'page',
   darkGround,
-  backdrop,
-  ground,
-  exposeScroll = false,
+  underStatusBar = false,
+  scrollOffset,
 }: ScreenContainerProps) {
-  const backdropScroll = useRef(new Animated.Value(0)).current;
   const [refreshing, setRefreshing] = useState(false);
 
   async function handleRefresh() {
@@ -211,13 +222,15 @@ export function ScreenContainer({
   const containerNavigation = useContext(NavigationContainerRefContext);
   const navigated = screenNavigation !== undefined || containerNavigation !== undefined;
 
-  function handleScroll(event: NativeSyntheticEvent<NativeScrollEvent>) {
-    scrollY.current = event.nativeEvent.contentOffset.y;
-    if (backdrop || exposeScroll) backdropScroll.setValue(scrollY.current);
-    if (darkGround !== undefined) {
-      reportTone(toneFor(scrollY.current));
-    }
-  }
+  const handleScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      scrollY.current = event.nativeEvent.contentOffset.y;
+      if (darkGround !== undefined) {
+        reportTone(toneFor(scrollY.current));
+      }
+    },
+    [darkGround, reportTone, toneFor],
+  );
 
   function measureOverflow() {
     if (!footer) {
@@ -243,8 +256,22 @@ export function ScreenContainer({
       : Math.max(insets.bottom, spacing.lg),
   };
 
+  // The native scroll event writes the offset straight into `scrollOffset`;
+  // the JavaScript handler still runs for the chrome tone.
+  const onScroll = useMemo(
+    () =>
+      scrollOffset
+        ? Animated.event([{ nativeEvent: { contentOffset: { y: scrollOffset } } }], {
+            useNativeDriver: NATIVE_DRIVER,
+            listener: handleScroll,
+          })
+        : handleScroll,
+    [scrollOffset, handleScroll],
+  );
+  const Scroll = scrollOffset ? Animated.ScrollView : ScrollView;
+
   const scrollArea = scrollable ? (
-    <ScrollView
+    <Scroll
       style={[styles.flex, WEB_SCROLL_STYLE, bleed ? WEB_NO_GUTTER : null]}
       directionalLockEnabled
       decelerationRate="normal"
@@ -274,7 +301,7 @@ export function ScreenContainer({
         viewportHeight.current = event.nativeEvent.layout.height;
         measureOverflow();
       }}
-      onScroll={handleScroll}
+      onScroll={onScroll}
       // 16ms so the flip lands within a frame of the capsule crossing the
       // ground's edge. It sets state only when the tone actually changes, so
       // the cost of a tighter interval is the handler, not a re-render.
@@ -284,12 +311,8 @@ export function ScreenContainer({
         measureOverflow();
       }}
     >
-      {exposeScroll ? (
-        <ScreenScrollContext.Provider value={backdropScroll}>{children}</ScreenScrollContext.Provider>
-      ) : (
-        children
-      )}
-    </ScrollView>
+      {children}
+    </Scroll>
   ) : (
     // **`bleed` counts here too.** It was only read on the scrolling branch,
     // so a full-bleed screen that does not scroll — Today — kept the 20pt
@@ -314,13 +337,8 @@ export function ScreenContainer({
     // Dynamic Island (59pt), an older notch (47pt), and a flat-top phone
     // (20pt) each get the right gap with no per-device branching. The bar
     // below owns the bottom inset; claiming it here too would double it.
-    <SafeAreaView style={[styles.safeArea, ground ? { backgroundColor: ground } : null]} edges={['top']}>
+    <SafeAreaView style={styles.safeArea} edges={underStatusBar ? [] : ['top']}>
       {navigated ? <OnFocus effect={onFocus} /> : null}
-      {backdrop ? (
-        <View style={StyleSheet.absoluteFill} pointerEvents="none">
-          {backdrop(backdropScroll)}
-        </View>
-      ) : null}
       {scrollArea}
 
       {footer ? (

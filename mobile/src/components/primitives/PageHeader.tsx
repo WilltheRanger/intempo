@@ -47,6 +47,13 @@ export interface PageHeaderProps {
    * name", not an invitation to size a header per screen (§3 law 5).
    */
   titleSize?: 'screen' | 'hero';
+  /**
+   * `onDark` for a header set on a band of colour or a photograph that is dark
+   * in both appearances: the title in ivory. The back link is not toned — no
+   * screen with a back link sits on a dark band — so a header that needs both
+   * should add it there rather than inherit ink on ink.
+   */
+  tone?: 'auto' | 'onDark';
 }
 
 /**
@@ -66,6 +73,7 @@ export function PageHeader({
   onBack,
   backLabel = 'Back',
   titleSize = 'screen',
+  tone = 'auto',
 }: PageHeaderProps) {
   return (
     <View style={styles.container}>
@@ -101,6 +109,7 @@ export function PageHeader({
           {title ? (
             <Text
               variant={titleSize === 'hero' ? 'heroTitle' : 'screenTitle'}
+              color={tone === 'onDark' ? 'onDark' : 'textPrimary'}
               accessibilityRole="header"
               style={styles.title}
             >

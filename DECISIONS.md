@@ -1,5 +1,68 @@
 # InTempo Decisions
 
+## 2026-10-16 — The Library's Continue row becomes a band in the piece's key colour
+
+**Context:** the owner asked for "something nice behind and something to add
+depth" on the Library. Ten backdrops behind the unchanged layout, three layouts
+with the Continue piece as a headline, and six photograph versions of two of
+them were built in the app and recorded for comparison (the prototypes are in
+the history of PR #184). The first backdrops' colours measured at nearly twice
+the chroma of `accent`, which is what made them look "off"; the brass and slate
+palettes fixed that. The owner then took the status line ("Rushed in the
+middle") out of the headline, and picked **B2**: the key colour band, with a
+photograph of a grand piano's strings.
+
+**Decision:** `screens/library/ContinueBand.tsx`.
+- The band is the colour of the Continue piece's key (`keyBands` in
+  `colors.ts`, chosen by `lib/library/keyBand.ts`). Relative keys share a
+  colour because they share a signature; an unread key takes C major's.
+- The photograph is multiplied into the colour at 62%, so it can only darken
+  the band. A scrim of the same colour closes over it before the headline.
+- The headline is `displayTitle` in ivory, then the Practice button. The status
+  line is gone from the band, and kept in what a screen reader hears.
+- It runs under the status bar (`ScreenContainer.underStatusBar`) and pays the
+  inset back inside, with the status bar light while the Library is in front.
+- The photograph moves at half the page's speed (`scrollOffset`, on the native
+  driver) and drifts slowly up and down. The drift stops when the tab is left
+  and does not run under Reduce Motion.
+- While searching, the band stays as the header's ground and the headline steps
+  out. With no piece to continue, the screen is the plain header it was.
+
+**Alternatives considered:**
+- *A backdrop behind the unchanged layout* (colour clouds, window light, sound
+  rings, a tempo glow, floating notation, moving staves, stage lights, waveform
+  layers, maple grain, lifted pages). Shown first, in three palettes. The owner
+  chose a layout change instead.
+- *The warm light hero* (A): ivory, the piece's opening engraved large behind
+  the title, or a photograph fading into the page. Calmer, and the band did
+  more with the key.
+- *The case lining* (C): the whole page deep green. Every ivory element on the
+  shelf would have needed an ivory-on-dark version.
+- *The open-score photograph or the piece's own page in the band* (B1, B3).
+  The owner picked the strings.
+- *A slow zoom for the photograph's movement.* A photograph scaled past its
+  frame is wider than the screen: `audit-a11y` measured it 5pt off the right
+  edge. It drifts vertically inside extra height instead.
+
+**Trade-offs accepted:**
+- **§3 law 6 has a second exception**: one band on one screen, with a
+  photograph and a gradient. CLAUDE.md says so beside the bottom bar's.
+- **The first screen now carries a 173 KB photograph** (`assets/hero/`). Its
+  photographer is not yet recorded; `SOURCES.md` says so.
+- **Blend modes on native are untested on a device.** `mixBlendMode` and
+  `isolation` are React Native styles since 0.77 and work on the web build;
+  if a phone draws the photograph unblended, the fallback is to drop it to a
+  plain low opacity.
+- **A first, uncached load moves.** The plain header draws while the library
+  loads and becomes the band when it arrives. The query cache makes this the
+  first visit only.
+- **The band ignores the appearance**, like `darkBg`. The app is pinned to
+  light, so this costs nothing today.
+
+**Three-foot test:** first the headline on its colour; second the band itself,
+the strings in it; third the first two pages on the shelf. The Practice button
+reads as part of the headline, which is where the eye already is.
+
 ## 2026-10-06 — On the web, a take that could not be sent goes to IndexedDB
 
 **Context:** the take queue keeps a take whose send failed and retries it later.
