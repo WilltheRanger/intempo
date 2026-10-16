@@ -35,12 +35,6 @@ export interface NoteRowProps {
   onSelect?: (midi: number | null) => void;
   /** How the line under a row too narrow for every note speaks: one take, or a habit. */
   tense?: 'take' | 'habit';
-  /**
-   * A line of the caller's under the row — Insights' "Flat in all 7 takes" —
-   * set before the row's own, so the evidence for the sentence above comes
-   * first and one line holds both.
-   */
-  caption?: string | null;
 }
 
 /**
@@ -69,7 +63,6 @@ export function NoteRow({
   selected = null,
   onSelect,
   tense = 'take',
-  caption = null,
 }: NoteRowProps) {
   const [width, setWidth] = useState(0);
   // The dots rise from the in-tune line to where they sit, on each visit.
@@ -84,7 +77,7 @@ export function NoteRow({
     selected === null ? named : [selected, ...named],
   );
   const marks = fitted.shown;
-  const footer = [caption, otherNotesLine(fitted, tense)].filter(Boolean).join('. ');
+  const footer = otherNotesLine(fitted, tense);
   const column = marks.length > 0 ? area / marks.length : 0;
   const x = (index: number) => (index + 0.5) * column;
   const y = (cents: number) =>

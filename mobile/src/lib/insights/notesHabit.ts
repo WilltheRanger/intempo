@@ -18,8 +18,6 @@ export interface NotesHabit {
   marks: NoteMark[];
   /** "Your E♭s run sharp", "Every note in tune". */
   line: string;
-  /** "Sharp in both takes", "Sharp in 5 of 7 takes"; null when nothing is named. */
-  caption: string | null;
   /** The notes the line names, by MIDI number. */
   named: number[];
   /** The newest take's in-tune width, drawn behind the row. */
@@ -83,20 +81,11 @@ export function notesHabitFrom(takes: readonly TakeResult[]): NotesHabit | null 
   return {
     marks,
     line,
-    caption: named[0] ? captionFor(named[0], sides.get(named[0].midi)!) : null,
     named: named.map((m) => m.midi),
     inTuneCents: newest.inTuneCents,
   };
 }
 
-/** "Sharp in both takes", "Sharp in all 4 takes", "Flat in 5 of 7 takes". */
-function captionFor(mark: NoteMark, side: { same: number; of: number }): string {
-  const way = mark.cents > 0 ? 'Sharp' : 'Flat';
-  if (side.same === side.of) {
-    return side.of === 2 ? `${way} in both takes` : `${way} in all ${side.of} takes`;
-  }
-  return `${way} in ${side.same} of ${side.of} takes`;
-}
 
 /** The spelling the page used most, so an E♭ written once as D♯ stays E♭. */
 function mostWritten(readings: readonly NoteIntonation[]): string {

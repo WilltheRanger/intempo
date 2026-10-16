@@ -56,7 +56,6 @@ describe('notesHabitFrom', () => {
     const habit = notesHabitFrom(takes(TAKE_1940, TAKE_0313))!;
 
     expect(habit.line).toBe('Your B♭s and E♭s run sharp');
-    expect(habit.caption).toBe('Sharp in both takes');
     expect(habit.named).toEqual([46, 51]);
   });
 
@@ -91,22 +90,14 @@ describe('notesHabitFrom', () => {
 
     expect(habit.marks[0].band).not.toBe('in_tune');
     expect(habit.line).toBe('Every note in tune');
-    expect(habit.caption).toBeNull();
   });
 
-  it('counts the takes that agreed', () => {
+  it('names a note most takes agreed on, without all of them agreeing', () => {
     const habit = notesHabitFrom(
       takes([note('C3', 48, -25, 5)], [note('C3', 48, -30, 5)], [note('C3', 48, 5, 5)]),
     )!;
 
     expect(habit.line).toBe('Your Cs run flat');
-    expect(habit.caption).toBe('Flat in 2 of 3 takes');
-  });
-
-  it('says all of them when every take agreed', () => {
-    const three = [note('D3', 50, 20, 4)];
-
-    expect(notesHabitFrom(takes(three, three, three))!.caption).toBe('Sharp in all 3 takes');
   });
 
   it('needs two takes read by note', () => {

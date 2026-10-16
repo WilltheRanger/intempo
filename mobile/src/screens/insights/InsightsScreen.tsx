@@ -240,7 +240,6 @@ export function InsightsScreen() {
             }}
             centreLabel="on tempo"
           />
-          <TakeAxis count={sessionTrend.points.length} />
         </View>
       ) : (
         <Text variant="body" color="textSecondary" style={styles.detail}>
@@ -270,7 +269,6 @@ export function InsightsScreen() {
               accessibilityLabel={`In tune, take by take. ${pitchLine}`}
             >
               <TrendPlot data={pitchData} height={110} ends={{ up: 'further off' }} centreLabel="in tune" />
-              <TakeAxis count={pitchTrend.points.length} />
             </View>
           ) : null}
         </View>
@@ -296,7 +294,6 @@ export function InsightsScreen() {
               inTuneCents={notesHabit.inTuneCents}
               named={notesHabit.named}
               tense="habit"
-              caption={notesHabit.caption}
             />
           </View>
         </View>
@@ -437,20 +434,6 @@ export function InsightsScreen() {
   );
 }
 
-/** "Take 1" at the left of a graph of takes, "Take N" at the right. */
-function TakeAxis({ count }: { count: number }) {
-  return (
-    <View style={styles.axis}>
-      <Text variant="caption" color="textTertiary">
-        Take 1
-      </Text>
-      <Text variant="caption" color="textTertiary">
-        Take {count}
-      </Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   eyebrow: {
     textTransform: 'uppercase',
@@ -477,11 +460,6 @@ const styles = StyleSheet.create({
   },
   lastTake: {
     marginTop: 2,
-  },
-  axis: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 6,
   },
   sentence: {
     marginTop: spacing.md,
