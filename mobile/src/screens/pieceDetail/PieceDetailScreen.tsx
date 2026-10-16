@@ -21,6 +21,7 @@ import { SheetOptionRow } from '../../components/overlays/SheetOptionRow';
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
 import { ScoreBand } from '../../components/score/ScoreBand';
 import { PieceLinkRow } from './PieceLinkRow';
+import { PIECE_BACKDROP, PieceBackdrop, PieceBandHead } from './PieceBackdropPrototype';
 import { usePieceHistory } from '../../data/hooks/useLatestTake';
 import { knowsItsMusic } from '../../data/hooks/knownPiece';
 import {
@@ -202,6 +203,13 @@ export function PieceDetailScreen() {
       opened with two things competing to be looked at first.
     */
     <ScreenContainer
+      backdrop={
+        PIECE_BACKDROP && PIECE_BACKDROP !== 'band' ? (
+          <PieceBackdrop keySignature={piece.score?.key_signature} />
+        ) : undefined
+      }
+      footerTone={PIECE_BACKDROP && PIECE_BACKDROP !== 'band' ? 'clear' : 'page'}
+      underStatusBar={PIECE_BACKDROP === 'band'}
       footer={
         canPractice ? (
           <PrimaryButton
@@ -218,6 +226,33 @@ export function PieceDetailScreen() {
         its title and by the music under it, and the composer is under Rename
         in the ⋮ menu.
       */}
+      {PIECE_BACKDROP === 'band' ? (
+        <View style={styles.bandBleed}>
+          <PieceBandHead keySignature={piece.score?.key_signature}>
+            <View style={[styles.head, styles.bandGutter]}>
+              <BackLink label="Back to library" onPress={goBack} tone="onDark" />
+              <View style={styles.titleRow}>
+                <PieceHeading
+                  title={piece.title}
+                  variant="heroTitle"
+                  color="onDark"
+                  catalogueColor="onDarkSecondary"
+                  header
+                  containerStyle={styles.title}
+                />
+                <IconButton
+                  icon={MoreVertical}
+                  label="Piece options"
+                  variant="bare"
+                  tone="onDark"
+                  onPress={() => setMenuVisible(true)}
+                  style={styles.options}
+                />
+              </View>
+            </View>
+          </PieceBandHead>
+        </View>
+      ) : (
       <View style={styles.head}>
         <BackLink label="Back to library" onPress={goBack} />
         <View style={styles.titleRow}>
@@ -236,6 +271,7 @@ export function PieceDetailScreen() {
           />
         </View>
       </View>
+      )}
 
       {/*
         Correcting the name in place, the same shape `TranscriptionReviewScreen`
@@ -319,7 +355,7 @@ export function PieceDetailScreen() {
         question is "did it read this right".
       */}
       {hasNotation && piece.score ? (
-        <View style={styles.engravedBand}>
+        <View style={[styles.engravedBand, PIECE_BACKDROP === 'band' ? styles.engravedUnderBand : null]}>
           {/* The opening two systems, where the prototype draws two lines. */}
           <ScoreBand score={piece.score} viewport={OPENING_HEIGHT} fullBleed />
         </View>
@@ -547,6 +583,16 @@ const styles = StyleSheet.create({
    * one. The top rule is here because `ScoreBand` draws the paper and the
    * bottom rule and cannot know it is against a gutter.
    */
+  bandBleed: {
+    marginHorizontal: -SCREEN_GUTTER,
+  },
+  bandGutter: {
+    paddingHorizontal: SCREEN_GUTTER,
+  },
+  engravedUnderBand: {
+    marginTop: 0,
+    borderTopWidth: 0,
+  },
   engravedBand: {
     marginTop: spacing.xl,
     marginHorizontal: -SCREEN_GUTTER,

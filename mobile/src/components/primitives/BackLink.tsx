@@ -18,9 +18,12 @@ import { Text } from './Text';
 export function BackLink({
   label,
   onPress,
+  tone = 'auto',
 }: {
   label: string;
   onPress: () => void;
+  /** `onDark` on a band of colour or a photograph: the same link in ivory. */
+  tone?: 'auto' | 'onDark';
 }) {
   return (
     <Pressable
@@ -32,9 +35,9 @@ export function BackLink({
       <ChevronLeft
         size={ICON_SIZE.md}
         strokeWidth={ICON_STROKE_WIDTH}
-        color={colors.textSecondary}
+        color={tone === 'onDark' ? colors.onDarkSecondary : colors.textSecondary}
       />
-      <Text variant="metadata" color="textSecondary">
+      <Text variant="metadata" color={tone === 'onDark' ? 'onDarkSecondary' : 'textSecondary'}>
         {label}
       </Text>
     </Pressable>
