@@ -87,10 +87,14 @@ photograph of a grand piano's strings.
   photograph and a gradient. CLAUDE.md says so beside the bottom bar's.
 - **The first screen now carries a 173 KB photograph** (`assets/hero/`). Its
   photographer is not yet recorded; `SOURCES.md` says so.
-- **Blend modes on native are untested on a device.** `mixBlendMode` and
-  `isolation` are React Native styles since 0.77 and work on the web build;
-  if a phone draws the photograph unblended, the fallback is to drop it to a
-  plain low opacity.
+- ~~**Blend modes on native are untested on a device.**~~ **Corrected the
+  same day:** the blend never worked on the web either. The computed style
+  said `multiply`, but every react-native-web view is its own stacking context
+  (`position: relative; z-index: 0`), so the photograph blended with its own
+  transparent frame and was drawn flat at 62%. The owner's G major piece showed
+  it: an orange piano over a green band. The photograph is now a shade map,
+  black with alpha set to its darkness, drawn with ordinary blending, which
+  needs no blend support anywhere (`KeyBand`, `assets/hero/SOURCES.md`).
 - **A first, uncached load moves.** The plain header draws while the library
   loads and becomes the band when it arrives. The query cache makes this the
   first visit only.
