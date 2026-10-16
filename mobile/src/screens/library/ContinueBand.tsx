@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { Animated, StyleSheet, View } from 'react-native';
 
 import { PressableScale } from '../../components/motion';
-import { KeyBand, type KeyBandScrim } from '../../components/pieces/KeyBand';
+import { PhotoBand, type PhotoBandScrim } from '../../components/pieces/PhotoBand';
 import { PrimaryButton } from '../../components/primitives/PrimaryButton';
 import { SCREEN_GUTTER } from '../../components/primitives/ScreenContainer';
 import { Text } from '../../components/primitives/Text';
@@ -10,17 +10,17 @@ import { spacing } from '../../design';
 import type { ContinueLine } from '../../lib/library/continueLine';
 
 /**
- * Inside a grand piano: the strings, and a brace crossing them, as a shade map
- * (`KeyBand`, `assets/hero/SOURCES.md`).
+ * Inside a grand piano: the strings, and a brace crossing them
+ * (`assets/hero/SOURCES.md`).
  */
-const SHADE = require('../../../assets/hero/library-strings-shade.webp');
+const PHOTO = require('../../../assets/hero/library-strings.jpg');
 
 /**
  * The band deepening behind the words: clear behind the header, then closing
  * over the photograph by the headline, so the headline and its small label sit
  * on colour rather than on strings.
  */
-const SCRIM: KeyBandScrim = [
+const SCRIM: PhotoBandScrim = [
   [0, 0.15],
   [0.28, 0],
   [0.45, 0.45],
@@ -36,8 +36,6 @@ const SCRIM: KeyBandScrim = [
 const PHOTO_WINDOW = 112;
 
 export interface ContinueBandProps {
-  /** The key the band takes its colour from. */
-  keySignature: string | null | undefined;
   /** The screen's header — title, search and add — set in ivory on the band. */
   header: ReactNode;
   /**
@@ -54,22 +52,21 @@ export interface ContinueBandProps {
 }
 
 /**
- * The top of the Library: the piece to play next, set large on a band whose
- * colour is that piece's key, with a photograph printed into it (the owner's
- * pick, B2, 2026-10-16). The band itself is `KeyBand`, shared with the head of
- * the piece screen, so opening a piece carries its colour onto the next screen.
+ * The top of the Library: the piece to play next, set large on a warm band
+ * with a photograph of a piano's strings in it (the owner's pick, B2,
+ * 2026-10-16). The band itself is `PhotoBand`, shared with the head of the
+ * piece screen, so opening the piece keeps the same ground.
  *
  * **One dominant focal point** (§3 law 4): the headline. The band is the
  * loudest thing on the screen and everything in it serves the headline — the
- * photograph is darkened into the colour, and the scrim closes over it before
- * the words begin. The shelf below stays ivory and quiet.
+ * scrim closes the band's colour over the photograph before the words begin.
+ * The shelf below stays ivory and quiet.
  *
  * **The status line is not here.** "Rushed in the middle" sat under the title
  * in the ruled row this replaced; the owner took it out of the headline. It is
  * still in the label a screen reader hears, and still under each tile.
  */
 export function ContinueBand({
-  keySignature,
   header,
   line,
   onOpen,
@@ -77,7 +74,7 @@ export function ContinueBand({
   scrollY,
 }: ContinueBandProps) {
   return (
-    <KeyBand keySignature={keySignature} shade={SHADE} scrim={SCRIM} scrollY={scrollY}>
+    <PhotoBand photo={PHOTO} scrim={SCRIM} scrollY={scrollY}>
       <View style={[styles.content, line ? styles.withLine : null]}>
         {header}
         {line ? (
@@ -106,7 +103,7 @@ export function ContinueBand({
           </View>
         ) : null}
       </View>
-    </KeyBand>
+    </PhotoBand>
   );
 }
 

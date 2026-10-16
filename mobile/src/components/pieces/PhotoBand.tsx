@@ -6,28 +6,25 @@ import { Animated, Easing, Platform, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
-import { keyBandFor } from '../../lib/library/keyBand';
+import { colors } from '../../design';
 import { useReducedMotion } from '../../lib/useReducedMotion';
 
 /**
- * How strongly the photograph prints into the key's colour.
+ * How strongly the photograph shows over the band's colour.
  *
- * **The photograph is a shade map, not a picture.** Each one is shipped as
- * black with its alpha set to the photograph's darkness (`assets/hero/
- * SOURCES.md`), and drawn over the band with ordinary blending. That is the
- * arithmetic of multiplying a grey photograph into the colour: highlights leave
- * the band's own colour, shadows deepen it, and nothing is ever lighter than the
- * band, which is what keeps ivory type legible over every part of it.
+ * **Drawn over the colour, not blended into it.** The photograph sits on the
+ * band at this opacity with ordinary blending, and the scrim closes the band's
+ * colour back over it before the words. That is the look the owner picked from
+ * the recorded prototypes (B2 and P4, 2026-10-16): the warm photograph showing
+ * through the band at the top, the band's own colour under the headline.
  *
- * **It used to be a CSS blend mode** (`mixBlendMode: 'multiply'`) over the
- * colour photograph, **and it never blended, in any browser.** The computed
- * style said `multiply`, which is what was checked; but the photograph's own
- * frame was the backdrop it blended with, and that frame is transparent, so the
- * photograph was simply drawn at 62% on top. It showed on the owner's G major
- * piece (2026-10-16): an orange piano over a green band, the green only where
- * the scrim covered it. With G minor's oxblood the warm photograph had passed
- * for printed-in. A shade map needs no blending support anywhere, on the web
- * or native, and is smaller than the photograph it replaces.
+ * **There is no blend mode here, and there must not be one.** This was
+ * `mixBlendMode: 'multiply'`, which never blended in any browser: every
+ * react-native-web view is its own stacking context, so the photograph blended
+ * with its own transparent frame and was drawn flat anyway, which is what the
+ * owner chose. On native the same style *would* blend, and the phone app would
+ * draw a darker band than the web. Without it, both draw what was chosen
+ * (`docs/subsystems.md`, "A blend mode on the web blends with nothing").
  */
 const PHOTO_STRENGTH = 0.62;
 
@@ -49,15 +46,13 @@ const SLACK = 24;
 const NATIVE_DRIVER = Platform.OS !== 'web';
 
 /** `[offset, opacity]` pairs down the band: how much of its own colour covers the photograph. */
-export type KeyBandScrim = readonly (readonly [number, number])[];
+export type PhotoBandScrim = readonly (readonly [number, number])[];
 
-export interface KeyBandProps {
-  /** The key the band takes its colour from (`keyBandFor`). */
-  keySignature: string | null | undefined;
-  /** The photograph's shade map: black, as opaque as the photograph is dark (see `PHOTO_STRENGTH`). */
-  shade: ImageSource | number;
+export interface PhotoBandProps {
+  /** The photograph shown through the band's colour. */
+  photo: ImageSource | number;
   /** Where the band's colour closes back over the photograph, so words sit on colour. */
-  scrim: KeyBandScrim;
+  scrim: PhotoBandScrim;
   /** The page's scroll offset, which the photograph moves at half of. */
   scrollY?: Animated.Value;
   /** What sits on the band, in ivory. The band pays the top inset; the caller sets the gutter. */
@@ -65,25 +60,29 @@ export interface KeyBandProps {
 }
 
 /**
- * A full-bleed band in a piece's key colour, with a photograph printed into
+ * A full-bleed band in one warm colour (`colors.band`), with a photograph in
  * it: the Library's Continue band and the head of the piece screen
  * (`DECISIONS.md`, 2026-10-16). §3 law 6 names it as an exception, on those two
  * screens.
+ *
+ * **One colour for every piece.** It took each piece's key colour for an
+ * afternoon; on a G major piece that put a green band under a warm photograph,
+ * and the owner asked for it warm, always.
  *
  * **It runs under the status bar.** The screen opts out of the top inset
  * (`ScreenContainer.underStatusBar`) and the band pays it back from the inside,
  * so the colour reaches the top edge and the words still clear the island. The
  * status bar is light while the band's screen is in front.
  */
-export function KeyBand({ keySignature, shade, scrim, scrollY, children }: KeyBandProps) {
+export function PhotoBand({ photo, scrim, scrollY, children }: PhotoBandProps) {
   const insets = useSafeAreaInsets();
-  const band = keyBandFor(keySignature);
+  const band = colors.band;
   const photoMotion = usePhotoMotion(scrollY);
   // **One id per band, not one name for all of them.** On the web an SVG
   // gradient is found by id across the whole document, and the Library stays
-  // mounted under the piece screen: two bands sharing a name drew the first
-  // one's colour on both, which is one piece's key on another piece's band.
-  const scrimId = `keyBandScrim${useId().replace(/[^A-Za-z0-9_-]/g, '')}`;
+  // mounted under the piece screen: two bands sharing a name would both draw
+  // the first one's scrim, and the Library's and the piece screen's differ.
+  const scrimId = `photoBandScrim${useId().replace(/[^A-Za-z0-9_-]/g, '')}`;
 
   return (
     <View style={[styles.band, { backgroundColor: band, paddingTop: insets.top }]}>
@@ -100,7 +99,7 @@ export function KeyBand({ keySignature, shade, scrim, scrollY, children }: KeyBa
       */}
       <View pointerEvents="none" style={styles.photoFrame} aria-hidden>
         <Animated.View style={[styles.photo, { transform: photoMotion }]}>
-          <Image source={shade} style={StyleSheet.absoluteFill} contentFit="cover" />
+          <Image source={photo} style={StyleSheet.absoluteFill} contentFit="cover" />
         </Animated.View>
         <Svg style={StyleSheet.absoluteFill} width="100%" height="100%">
           <Defs>

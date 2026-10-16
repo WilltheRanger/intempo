@@ -62,8 +62,8 @@ import { SCREEN_GUTTER } from '../../components/primitives/ScreenContainer';
  * went and this is what took its place.
  *
  * **The piece to play next is a band, not a ruled row** (the owner's pick, B2,
- * 2026-10-16): the headline set large on its key's colour with a photograph
- * printed into it, running under the status bar. See `ContinueBand`. With no
+ * 2026-10-16): the headline set large on a warm band with a photograph in it,
+ * running under the status bar. See `ContinueBand`. With no
  * piece to continue — an empty library, or one that could not say which — the
  * screen is the plain ivory header and shelf it always was.
  */
@@ -310,7 +310,6 @@ export function LibraryScreen() {
     >
       {banded ? (
         <ContinueBand
-          keySignature={current.score?.key_signature}
           header={header}
           line={continueLine}
           onOpen={() => navigation.navigate('PieceDetail', { pieceId: current.id })}

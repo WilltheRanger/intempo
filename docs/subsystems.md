@@ -709,11 +709,15 @@ passed for printed-in; the owner's G major piece showed an orange piano over a
 green band.
 
 Checking the computed style is not checking the blend. If a result depends on
-blending, look at the pixels. And prefer not to depend on it: the band now
-ships each photograph as a shade map, black with alpha set to its darkness,
-drawn with ordinary blending. That is the same arithmetic as multiplying a grey
-photograph into the colour, and it needs no blend support on the web or native
-(`components/pieces/KeyBand.tsx`).
+blending, look at the pixels. And do not leave a blend mode in place because it
+"does nothing on the web": **the same style does blend on native**, so the
+phone app would draw something the web never showed. The band now has no blend
+mode at all; the photograph is drawn over one warm colour with ordinary
+blending, which is what the owner picked from the web recordings
+(`components/pieces/PhotoBand.tsx`). If a photograph ever has to be printed
+*into* a colour, ship it as a shade map: black, with alpha set to its darkness,
+which is the arithmetic of multiplying a grey photograph and needs no blend
+support anywhere.
 
 ### A heading is an `<h1>` on the web unless it says otherwise (2026-10-05)
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { lightColors as colors, darkColors, keyBands } from './colors';
+import { lightColors as colors, darkColors } from './colors';
 
 /**
  * Contrast, as arithmetic rather than as a claim in a comment.
@@ -227,20 +227,21 @@ describe('every palette clears AA on its own grounds', () => {
 });
 
 /**
- * The Library's Continue band, one colour per key (`keyBands`).
+ * The warm band (`colors.band`) behind the Library's Continue headline and the
+ * piece screen's title.
  *
  * The headline is ivory and the "Continue" over it is `onDarkSecondary`, so
- * both are held here, on every band, at the floors the band was chosen to:
- * AAA for the headline, AA with room to spare for the label. A colour picked
- * for being prettier and two shades lighter fails here first.
+ * both are held here, in both palettes, at the floors the band was chosen to:
+ * AAA for the headline, AA with room to spare for the label. A warmer, lighter
+ * colour picked for looks fails here first.
  */
-describe('the Continue band, in every key', () => {
-  for (const [count, band] of Object.entries(keyBands)) {
-    it(`carries the headline on ${count} accidentals (${band})`, () => {
-      expect(contrast(colors.onDark, band)).toBeGreaterThanOrEqual(7);
+describe('the warm band', () => {
+  for (const [name, palette] of [['light', colors], ['dark', darkColors]] as const) {
+    it(`carries the headline (${name})`, () => {
+      expect(contrast(palette.onDark, palette.band)).toBeGreaterThanOrEqual(7);
     });
-    it(`carries the label on ${count} accidentals (${band})`, () => {
-      expect(contrast(over(colors.onDarkSecondary, band), band)).toBeGreaterThanOrEqual(6);
+    it(`carries the label (${name})`, () => {
+      expect(contrast(over(palette.onDarkSecondary, palette.band), palette.band)).toBeGreaterThanOrEqual(6);
     });
   }
 });
