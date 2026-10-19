@@ -1279,13 +1279,13 @@ export function RecordScreen() {
     return (
       <ScreenContainer scrollable={false} contentStyle={styles.centred}>
         <View>
-          <Text variant="heroTitle" accessibilityRole="header">Analysing</Text>
+          <Text variant="heroTitle" accessibilityRole="header">Analyzing</Text>
           {through === null ? (
             <View style={styles.waitPending}>
               <ActivityIndicator
                 size="small"
                 color={colors.textTertiary}
-                accessibilityLabel="Analysing your take"
+                accessibilityLabel="Analyzing your take"
               />
             </View>
           ) : (
@@ -1299,7 +1299,7 @@ export function RecordScreen() {
             */
             <View
               accessibilityRole="progressbar"
-              accessibilityLabel={`Analysing your take: ${label}`}
+              accessibilityLabel={`Analyzing your take: ${label}`}
               {...progressValue(through)}
               style={styles.waitTrack}
             >
@@ -1629,7 +1629,7 @@ export function RecordScreen() {
               this tap and not from Stop.
             */}
             <PrimaryButton
-              label="Analyse"
+              label="Analyze"
               onPress={() => {
                 const take = unsent.current;
                 if (take) void send(take);

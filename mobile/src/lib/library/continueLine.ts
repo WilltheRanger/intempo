@@ -111,7 +111,7 @@ export function pendingLineFor(check: PendingCheck, pieceTitle: string | null): 
       // musician re-record something that is safe.
       return { label: 'Couldn’t check your last take. Retry', ready: false };
     case 'working':
-      return { label: `Analysing your last take${named}`, ready: false };
+      return { label: `Analyzing your last take${named}`, ready: false };
   }
 }
 
