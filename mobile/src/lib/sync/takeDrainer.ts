@@ -21,6 +21,8 @@ import { deviceTakeStoreFor } from './takeQueue.store';
 
 let running = false;
 let timer: ReturnType<typeof setTimeout> | null = null;
+/** Told when a pass sent anything, so the screens showing takes refetch. */
+let onSent: (() => void) | null = null;
 
 function cancelTimer(): void {
   if (timer !== null) {
@@ -103,6 +105,9 @@ async function drainNow(): Promise<DrainReport | null> {
       held: (take) => isTakeHeld(take.filename),
     });
     scheduleNext(report);
+    // A take sent from the queue is as finished as one sent from the Record
+    // screen, and nothing else would tell Insights or the library it exists.
+    if (report.sent > 0) onSent?.();
     return report;
   } catch {
     // The drain is a background courtesy; it must never be the reason the app
@@ -123,7 +128,8 @@ async function drainNow(): Promise<DrainReport | null> {
  * walking back into coverage and opening something — and `active` is the
  * closest this app gets to knowing that happened.
  */
-export function startTakeDrainer(): () => void {
+export function startTakeDrainer(sent?: () => void): () => void {
+  onSent = sent ?? null;
   void drainNow();
   const subscription = AppState.addEventListener('change', (state) => {
     if (state === 'active') {
@@ -152,5 +158,6 @@ export function startTakeDrainer(): () => void {
     unsubscribe();
     auth?.data.subscription.unsubscribe();
     cancelTimer();
+    onSent = null;
   };
 }

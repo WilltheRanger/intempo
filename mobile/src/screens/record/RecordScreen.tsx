@@ -32,6 +32,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePiece } from '../../data/hooks/usePieces';
 import { usePieceHistory } from '../../data/hooks/useLatestTake';
 import { meKeys, useMe } from '../../data/hooks/useMe';
+import { takeLanded } from '../../data/hooks/takeLanded';
 import { practiceTempo, usePracticeTempos } from '../../data/practiceTempo';
 import { bpmForMarking } from '../../lib/tempoMarking';
 import { preferences, usePreferences } from '../../data/preferences';
@@ -715,11 +716,12 @@ export function RecordScreen() {
       // The server has it; the device copy is now the only one that could go
       // stale. Not awaited — the verdict is what the musician is waiting for.
       void takeWasAccepted(recording.filename);
-      // `/v1/me` carries the remaining monthly allowance. Mark it stale as
-      // soon as this analysis finishes so Record again cannot reuse the count
-      // from before the take and invite a fourth performance the server will
-      // refuse.
-      void queryClient.invalidateQueries({ queryKey: meKeys.all });
+      // Everything that shows a take, and `/v1/me`'s allowance, marked stale
+      // the moment the analysis finishes — see `takeLanded`. Without it,
+      // Insights still said "1 more take to go" for about a minute, and Record
+      // again could reuse the count from before the take and invite a fourth
+      // performance the server will refuse.
+      void takeLanded(queryClient);
       // **Left while it worked.** The screen is gone, so there is nothing to
       // replace, and the remembered analysis is how Today finds the result —
       // forgetting it here would lose the only pointer to it.
