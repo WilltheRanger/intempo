@@ -19,6 +19,7 @@ import { screenConfig } from './navigation/linking';
 import { warmApi } from './data/api/client';
 import { describeFixtureReason, IS_LIVE_BACKEND } from './data/environment';
 import { createQueryClient } from './data/queryClient';
+import { takeLanded } from './data/hooks/takeLanded';
 import { prepareForPlayback } from './lib/audio/session';
 import { hydratePracticeTempos } from './data/practiceTempo';
 import { hydratePreferences } from './data/preferences';
@@ -166,7 +167,7 @@ export default function App() {
   // Started here because the queue is the app's, not a screen's: a musician
   // who walks back into coverage and opens the library should find their
   // takes going, not have to visit the room they recorded them in.
-  useEffect(() => startTakeDrainer(), []);
+  useEffect(() => startTakeDrainer(() => void takeLanded(queryClient)), []);
   // Space presses switches, radios and tabs on the web, as it does buttons,
   // and Enter follows a link.
   useEffect(() => installKeyActivation(), []);

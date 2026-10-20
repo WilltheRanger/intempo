@@ -31,6 +31,7 @@ import {
   usePendingAnalysis,
 } from '../../data/practice/pendingAnalysis';
 import { readPendingAnalysisStatus } from '../../data/practice/pendingAnalysisStatus';
+import { takeLanded } from '../../data/hooks/takeLanded';
 import { shouldWarmTabs, warmTabs } from '../../lib/warmTabs';
 import { prefetchPieceHistory } from '../../data/hooks/useLatestTake';
 import {
@@ -126,11 +127,15 @@ export function LibraryScreen() {
         setPendingCheck(null);
         return;
       }
+      // Finished while nobody was waiting on it — the app was closed, or the
+      // Record screen left — so nothing else has told the take lists, Insights
+      // or this library that it exists (`takeLanded`).
+      if (status === 'ready') void takeLanded(queryClient);
       setPendingCheck(status);
     } catch {
       if (!quiet) setPendingCheck('unavailable');
     }
-  }, [pendingAnalysisId]);
+  }, [pendingAnalysisId, queryClient]);
   useEffect(() => {
     void checkPendingAnalysis();
   }, [checkPendingAnalysis]);
