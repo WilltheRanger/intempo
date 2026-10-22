@@ -27,6 +27,7 @@ from app.models.user import (
 )
 from app.services.audio_storage import object_key_from
 from app.services.page_image import display_key_for
+from app.services.provisioning import ensure_user_row
 from app.services.score_pages import page_keys, pages_of
 from app.services.tier_limits import usage_for
 from app.services.training import may_keep_corrections
@@ -65,20 +66,20 @@ def _user_id_from(payload: dict[str, Any]) -> UUID:
 
 
 def _provision_user(client: Any, user_id: UUID, email: str) -> dict[str, Any]:
-    """Create the users row on first /v1/me. Uses service role to bypass RLS."""
-    insert = (
-        client.table("users")
-        .insert(
-            {
-                "id": str(user_id),
-                "email": email,
-                "tier": UserTier.free.value,
-                "role": UserRole.student.value,
-            }
-        )
-        .execute()
-    )
-    rows = insert.data or []
+    """Create the users row on first /v1/me, and return it. Service role, so RLS
+    does not apply.
+
+    **Through `ensure_user_row`'s upsert, then a read.** This was a plain insert
+    after a select that found nothing, which is the race that helper documents:
+    two first requests together (a client retrying through a cold start, two
+    tabs) both found no row, both inserted, and the second failed on the
+    primary key — a 500 on the first request an account ever makes. The upsert
+    ignores the duplicate, and the read returns whichever insert won.
+    """
+    ensure_user_row(client, user_id, email)
+    rows = (
+        client.table("users").select("*").eq("id", str(user_id)).limit(1).execute()
+    ).data or []
     if not rows:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

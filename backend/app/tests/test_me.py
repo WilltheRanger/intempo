@@ -106,8 +106,11 @@ def test_first_touch_provisioning(
     }
     mock_client = MagicMock()
     table = mock_client.table.return_value
-    table.select.return_value.eq.return_value.limit.return_value.execute.return_value = MagicMock(data=[])
-    table.insert.return_value.execute.return_value = MagicMock(data=[new_row])
+    # No row, then the row the upsert wrote.
+    table.select.return_value.eq.return_value.limit.return_value.execute.side_effect = [
+        MagicMock(data=[]),
+        MagicMock(data=[new_row]),
+    ]
     monkeypatch.setattr(db_module, "get_service_client", lambda: mock_client)
 
     res = client.get(
@@ -128,12 +131,55 @@ def test_first_touch_provisioning(
     # A brand-new free account has used none of its three.
     assert body["analyses"]["limit"] == 3
     assert body["analyses"]["used"] == 0
-    table.insert.assert_called_once()
-    inserted = table.insert.call_args.args[0]
+    table.insert.assert_not_called()
+    table.upsert.assert_called_once()
+    inserted = table.upsert.call_args.args[0]
     assert inserted["id"] == str(user_id)
     assert inserted["email"] == new_row["email"]
     assert inserted["tier"] == "free"
     assert inserted["role"] == "student"
+    assert table.upsert.call_args.kwargs == {"on_conflict": "id", "ignore_duplicates": True}
+
+
+def test_two_first_requests_at_once_both_get_the_account(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    """The other request inserted between this one's read and its write.
+
+    A plain insert failed on the primary key there, and the account's very
+    first `/v1/me` was a 500. The upsert ignores the duplicate (returning no
+    row, as PostgREST does for an ignored conflict) and the read that follows
+    finds the row the other request wrote.
+    """
+    user_id = uuid4()
+    winner = {
+        "id": str(user_id),
+        "email": "fresh@example.com",
+        "tier": "free",
+        "role": "student",
+        "studio_id": None,
+    }
+    mock_client = MagicMock()
+    table = mock_client.table.return_value
+    table.select.return_value.eq.return_value.limit.return_value.execute.side_effect = [
+        MagicMock(data=[]),
+        MagicMock(data=[winner]),
+    ]
+    table.upsert.return_value.execute.return_value = MagicMock(data=[])
+    table.insert.return_value.execute.side_effect = RuntimeError(
+        'duplicate key value violates unique constraint "users_pkey"'
+    )
+    monkeypatch.setattr(db_module, "get_service_client", lambda: mock_client)
+
+    res = client.get(
+        "/v1/me",
+        headers={"Authorization": f"Bearer {make_token(sub=user_id, email=winner['email'])}"},
+    )
+
+    assert res.status_code == 200, res.text
+    assert res.json()["id"] == str(user_id)
 
 
 def test_invalid_jwt_returns_401(client: TestClient) -> None:
