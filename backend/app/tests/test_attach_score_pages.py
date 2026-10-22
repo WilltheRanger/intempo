@@ -254,9 +254,11 @@ def test_new_photographs_replace_a_failed_first_read_without_a_duplicate(
     assert written["transcription_status"] == "queued"
     assert written["transcription_error"] is None
     assert claimed == [("score-images", [f"{user_id}/new.jpg"])]
-    client.storage.from_.return_value.remove.assert_called_once_with(
-        [f"{user_id}/old.jpg"]
-    )
+    # The replaced photograph and its display copy, which is written before
+    # the reading and so exists for a page that failed to read.
+    assert [
+        call.args[0] for call in client.storage.from_.return_value.remove.call_args_list
+    ] == [[f"{user_id}/old.jpg"], [f"{user_id}/old.display.jpg"]]
     assert enqueued == [str(score_id)]
     client.table.return_value.insert.assert_not_called()
 

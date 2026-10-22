@@ -907,7 +907,12 @@ def test_delete_with_history_removes_dependents_then_owned_media(
         "user_id", str(user_id)
     )
     audio_bucket.remove.assert_called_once_with([audio_key])
-    page_bucket.remove.assert_called_once_with([page_key])
+    # The photograph and its display copy: a page that has been read is two
+    # objects, and deleting the piece must not leave the smaller one behind.
+    assert [call.args[0] for call in page_bucket.remove.call_args_list] == [
+        [page_key],
+        [f"{user_id}/page.display.jpg"],
+    ]
 
 
 def test_delete_never_uses_a_foreign_audio_reference_as_storage_authority(
