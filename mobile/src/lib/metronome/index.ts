@@ -2,6 +2,7 @@ export {
   beatsPerBar,
   beatAt,
   metronomePulse,
+  quarterBeatsPerBar,
   secondsPerBeat,
   type Beat,
   type MetronomePulse,

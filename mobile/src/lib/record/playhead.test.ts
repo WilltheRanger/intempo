@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
+import { quarterBeatsPerBar } from '../metronome/beats';
 import { playheadAt } from './playhead';
 
 /** 120 bpm in 4/4: one beat is 500ms, one bar is 2000ms. */
-const base = { bpm: 120, beatsPerBar: 4, startFrom: 1, lastBar: 32 };
+const base = { bpm: 120, quarterBeatsPerBar: 4, startFrom: 1, lastBar: 32 };
 
 describe('playheadAt', () => {
   it('sits at the top of the first bar the instant a take starts', () => {
@@ -46,9 +47,28 @@ describe('playheadAt', () => {
     });
   });
 
+  /**
+   * **A metre whose beat is not a quarter note.** The tempo is quarter notes
+   * per minute, so the bar has to be measured in them too. Passing the felt
+   * pulses (two in 6/8, two in 2/2) moved the mark half a bar ahead per bar of
+   * 6/8 and a whole bar ahead per bar of 2/2.
+   */
+  it.each([
+    ['6/8', 1500],
+    ['2/2', 2000],
+    ['3/8', 750],
+  ])('crosses into bar two after exactly one bar of %s', (signature, barMs) => {
+    const quarters = quarterBeatsPerBar(signature);
+    expect(quarters).not.toBeNull();
+    const at = (elapsedMs: number) =>
+      playheadAt({ ...base, quarterBeatsPerBar: quarters as number, elapsedMs });
+    expect(at(barMs - 1)?.measureNumber).toBe(1);
+    expect(at(barMs)).toEqual({ measureNumber: 2, through: 0 });
+  });
+
   it('follows the metre', () => {
     // 3/4 at 120: a bar is three beats, 1500ms.
-    expect(playheadAt({ ...base, beatsPerBar: 3, elapsedMs: 1500 })).toEqual({
+    expect(playheadAt({ ...base, quarterBeatsPerBar: 3, elapsedMs: 1500 })).toEqual({
       measureNumber: 2,
       through: 0,
     });
@@ -69,7 +89,7 @@ describe('playheadAt', () => {
   it('draws nothing when the tempo or metre cannot be believed', () => {
     expect(playheadAt({ ...base, bpm: 0, elapsedMs: 1000 })).toBeNull();
     expect(playheadAt({ ...base, bpm: -60, elapsedMs: 1000 })).toBeNull();
-    expect(playheadAt({ ...base, beatsPerBar: 0, elapsedMs: 1000 })).toBeNull();
+    expect(playheadAt({ ...base, quarterBeatsPerBar: 0, elapsedMs: 1000 })).toBeNull();
   });
 
   it('draws nothing for a negative or unusable elapsed time', () => {

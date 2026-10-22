@@ -87,7 +87,12 @@ import { progressValue } from '../../lib/progressValue';
 import { BottomSheet } from '../../components/overlays/BottomSheet';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import { displayTempoBpm, tempoUnitLabel } from '../../lib/tempo';
-import { metronomePulse, monotonicNow, useMetronome } from '../../lib/metronome';
+import {
+  metronomePulse,
+  monotonicNow,
+  quarterBeatsPerBar,
+  useMetronome,
+} from '../../lib/metronome';
 import { countInIsOver } from '../../lib/metronome/countIn';
 import { buildMetronomePlan } from '../../lib/metronome/plan';
 import {
@@ -978,6 +983,9 @@ export function RecordScreen() {
   const entryTimeSignature = openingTimeSignature(takeScore);
   const pulse = metronomePulse(entryTimeSignature);
   const perBar = pulse?.pulsesPerBar ?? null;
+  // The playhead counts in quarter notes, like `targetBpm`; `perBar` counts
+  // felt pulses, which is right for the beat dots and wrong for distance.
+  const barQuarters = quarterBeatsPerBar(entryTimeSignature);
 
   /**
    * Where the beat says the musician is, for the mark on the page.
@@ -1005,11 +1013,11 @@ export function RecordScreen() {
   const takeClock = useMemo(() => tempoClock(takeScore, targetBpm), [takeScore, targetBpm]);
   const onPageMs = steadyElapsedMs(takeClock, elapsedMs, targetBpm);
   const playhead =
-    recording && perBar && targetBpm
+    recording && barQuarters && targetBpm
       ? playheadAt({
           elapsedMs: onPageMs,
           bpm: targetBpm,
-          beatsPerBar: perBar,
+          quarterBeatsPerBar: barQuarters,
           startFrom,
           lastBar: startable[startable.length - 1] ?? startFrom,
         })
