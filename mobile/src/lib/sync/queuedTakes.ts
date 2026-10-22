@@ -2,7 +2,7 @@ import type { TakeSubmissionState } from '../../data/practice/submitTake';
 import type { MetronomeMode } from '../../data/types';
 import type { CaptureReport } from '../audio/capture';
 import { getActiveAccountId } from '../../data/auth/session';
-import { markTakeSent } from './heldTakes';
+import { isTakeSending, markTakeSent } from './heldTakes';
 import { deviceTakeStoreFor } from './takeQueue.store';
 import {
   enqueue,
@@ -157,6 +157,8 @@ export async function restoreQueuedTake(
       .filter((take: QueuedTake) => take.scoreId === scoreId)
       .sort((a, b) => a.createdAt - b.createdAt);
     for (const take of mine) {
+      // The drain is sending it; offering it here would send it twice.
+      if (isTakeSending(take.filename)) continue;
       const audio = await deviceTakeStore.getAudio(take.audioName);
       if (audio) {
         return {

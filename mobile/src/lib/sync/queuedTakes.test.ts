@@ -39,6 +39,7 @@ vi.mock('./takeQueue.store', () => ({
   },
 }));
 
+import { markTakeSending } from './heldTakes';
 import { keepTakeForLater, restoreQueuedTake } from './queuedTakes';
 
 const take = { audio: new Blob(['wav']), filename: 'take-1.wav' };
@@ -128,5 +129,18 @@ describe('restoreQueuedTake', () => {
 
     expect(restored).not.toBeNull();
     expect(restored).not.toHaveProperty('contentType');
+  });
+
+  it('does not offer a take the background drain is sending', async () => {
+    // Offering it would send it twice: two uploads and two analyses when the
+    // first failure came before the upload finished.
+    signedIn.accountId = 'musician-1';
+    await keepTakeForLater(take, context, 'Check your connection.', 'musician-1');
+
+    const release = markTakeSending('take-1.wav');
+    expect(await restoreQueuedTake('piece-1')).toBeNull();
+
+    release();
+    expect((await restoreQueuedTake('piece-1'))?.filename).toBe('take-1.wav');
   });
 });

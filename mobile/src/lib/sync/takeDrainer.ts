@@ -5,7 +5,7 @@ import { isolatedListener } from '../../data/auth/isolatedListener';
 import { takeSubmissionSource } from '../../data/sources';
 import { readTakeFailure } from '../audio/takeFailure';
 import { drainTakes, type DrainReport } from './drainQueue';
-import { isTakeHeld, onTakeReleased } from './heldTakes';
+import { isTakeHeld, markTakeSending, onTakeReleased } from './heldTakes';
 import { deviceTakeStoreFor } from './takeQueue.store';
 
 /**
@@ -86,20 +86,26 @@ async function drainNow(): Promise<DrainReport | null> {
           }
         };
         await assertOwner();
-        await takeSubmissionSource.submit({
-          scoreId: take.scoreId,
-          targetBpm: take.targetBpm,
-          metronomeMode: take.metronomeMode,
-          audio,
-          filename: take.filename,
-          // A picked MP3 or M4A goes up as what it is, not as a WAV.
-          ...(typeof take.contentType === 'string' ? { contentType: take.contentType } : {}),
-          resume: take.resume,
-          skipLongRests: take.skipLongRests,
-          fromMeasure: take.fromMeasure,
-          capture: take.capture,
-          assertOwner,
-        });
+        // So the Record screen does not offer this take again while it goes.
+        const release = markTakeSending(take.filename);
+        try {
+          await takeSubmissionSource.submit({
+            scoreId: take.scoreId,
+            targetBpm: take.targetBpm,
+            metronomeMode: take.metronomeMode,
+            audio,
+            filename: take.filename,
+            // A picked MP3 or M4A goes up as what it is, not as a WAV.
+            ...(typeof take.contentType === 'string' ? { contentType: take.contentType } : {}),
+            resume: take.resume,
+            skipLongRests: take.skipLongRests,
+            fromMeasure: take.fromMeasure,
+            capture: take.capture,
+            assertOwner,
+          });
+        } finally {
+          release();
+        }
       },
       read: (error) => readTakeFailure(error, Platform.OS),
       now: () => Date.now(),
