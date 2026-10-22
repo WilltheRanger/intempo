@@ -309,6 +309,8 @@ export function RecordScreen() {
     resume?: TakeSubmissionState;
     capture?: CaptureReport;
     fromMeasure?: number;
+    // Carried so "Send it again" keeps a picked file's `false` (see `send`).
+    skipLongRests?: boolean;
   } | null>(null);
   const [pendingTake, setPendingTake] = useState(false);
   // While "Send it again" is offered, this screen holds the take and the
@@ -672,8 +674,17 @@ export function RecordScreen() {
      * starts where this screen says.
      */
     fromMeasure?: number;
+    /**
+     * Whether the analysis should shorten long rests. A recorded take follows
+     * this screen's toggle, because the metronome counted the shortened score.
+     * A picked file says `false`: it was played elsewhere, against the whole
+     * page, and the Upload screen has no such toggle — so a toggle left on here
+     * used to have the file judged against a page with its rests taken out.
+     */
+    skipLongRests?: boolean;
   }) {
     const entryBar = recording.fromMeasure ?? startFrom;
+    const skipLongRests = recording.skipLongRests ?? skipRests;
     // Hold the bytes before the first awaited upload step. This is not yet a
     // visible retry state, but it makes both navigation and browser-exit guards
     // truthful during the vulnerable gap before the server accepts the take.
@@ -708,7 +719,7 @@ export function RecordScreen() {
         // **Sent, not just applied on the phone.** The metronome counted a
         // shortened piece, so the analysis has to judge a shortened one — see
         // `SubmitTakeInput.skipLongRests` for what happens when it does not.
-        skipLongRests: skipRests,
+        skipLongRests,
         // Sent, not just applied on the phone: the analysis happens after the
         // response, so the row is the only thing that survives to say which
         // bar was played first.
@@ -770,7 +781,7 @@ export function RecordScreen() {
               scoreId: params.pieceId,
               targetBpm,
               metronomeMode,
-              skipLongRests: skipRests,
+              skipLongRests,
               fromMeasure: entryBar,
             },
             failure.message,
@@ -915,6 +926,7 @@ export function RecordScreen() {
         filename: queued.file.filename,
         contentType: queued.file.contentType,
         fromMeasure: queued.fromMeasure,
+        skipLongRests: false,
       });
     }, [params.pieceId]),
   );
