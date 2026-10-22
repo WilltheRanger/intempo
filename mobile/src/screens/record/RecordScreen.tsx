@@ -31,6 +31,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePiece } from '../../data/hooks/usePieces';
 import { usePieceHistory } from '../../data/hooks/useLatestTake';
+import { refreshAfterTake } from '../../data/hooks/afterTake';
 import { meKeys, useMe } from '../../data/hooks/useMe';
 import { practiceTempo, usePracticeTempos } from '../../data/practiceTempo';
 import { bpmForMarking } from '../../lib/tempoMarking';
@@ -723,8 +724,9 @@ export function RecordScreen() {
       // `/v1/me` carries the remaining monthly allowance. Mark it stale as
       // soon as this analysis finishes so Record again cannot reuse the count
       // from before the take and invite a fourth performance the server will
-      // refuse.
-      void queryClient.invalidateQueries({ queryKey: meKeys.all });
+      // refuse — and with it the takes, insights and pieces the tabs show,
+      // which this take has just changed (`data/hooks/afterTake.ts`).
+      void refreshAfterTake(queryClient);
       // **Left while it worked.** The screen is gone, so there is nothing to
       // replace, and the remembered analysis is how Today finds the result —
       // forgetting it here would lose the only pointer to it.
