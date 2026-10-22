@@ -1,4 +1,5 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import { howToReach } from '../../navigation/returnTo';
 import { useGoBack } from '../../navigation/useGoBack';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { StatusBar } from 'expo-status-bar';
@@ -244,7 +245,7 @@ export function ScannerScreen() {
       const startedHere = retakingHere.current;
       retakingHere.current = false;
       if (outcome === 'replaced' && !startedHere) {
-        navigation.navigate('CapturedPages');
+        openReview();
         return;
       }
 
@@ -356,8 +357,21 @@ export function ScannerScreen() {
     }
   }
 
+  /**
+   * The review list, gone back to when it is below (a retake, or a page added
+   * from it) and opened when it is not (the first "Done"). `navigate` alone
+   * stacked a second review screen on every retake (`navigation/returnTo.ts`).
+   */
+  function openReview() {
+    if (howToReach(navigation.getState()?.routes, 'CapturedPages') === 'pop') {
+      navigation.popTo('CapturedPages', undefined, { merge: true });
+    } else {
+      navigation.navigate('CapturedPages');
+    }
+  }
+
   function handleDone() {
-    navigation.navigate('CapturedPages');
+    openReview();
   }
 
   /**
@@ -399,7 +413,7 @@ export function ScannerScreen() {
       }
       captureSession.capture(uri);
       impact(ImpactFeedbackStyle.Medium);
-      navigation.navigate('CapturedPages');
+      openReview();
     } catch (cause) {
       setError(
         cause instanceof Error ? cause.message : 'That photo could not be taken.',
@@ -416,7 +430,7 @@ export function ScannerScreen() {
     // page with nothing able to reach them again.
     if (captureSession.retaking()) {
       captureSession.cancelRetake();
-      navigation.navigate('CapturedPages');
+      openReview();
       return;
     }
     goBack();

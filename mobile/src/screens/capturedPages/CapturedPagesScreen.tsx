@@ -124,13 +124,17 @@ export function CapturedPagesScreen() {
     // sends `pages[0]`, the app then transcribed page 2 while the page just
     // re-shot was never sent at all.
     //
-    // `navigate` rather than `goBack`: on the scanner route the viewfinder is
-    // below this screen and navigating pops back to it, unmounted-effect and
-    // all. Pages that arrived through Import have no scanner below them, and
-    // `goBack` there dropped the musician onto the Today tab with the scan
-    // unreachable.
+    // Back to the viewfinder when it is below this screen, and a fresh one
+    // when it is not. Pages that arrived through Import have no scanner below
+    // them, and `goBack` there dropped the musician onto the first tab with
+    // the scan unreachable. `navigate` alone pushed a second scanner on top of
+    // the first in React Navigation 7 (`navigation/returnTo.ts`).
     captureSession.beginRetake(id);
-    navigation.navigate('Scanner');
+    if (scannerBelow) {
+      navigation.popTo('Scanner', undefined, { merge: true });
+    } else {
+      navigation.navigate('Scanner');
+    }
   }
 
   if (pages.length === 0) {
