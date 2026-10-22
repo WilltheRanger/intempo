@@ -1,17 +1,18 @@
-# InTempo string instruments — sources and terms
+# InTempo instrument sounds — sources and terms
 
-Four single-preset SoundFont banks, one per instrument, from two sources.
+Six single-preset SoundFont banks, one per instrument, from two sources.
 `provenance.json` records the pinned source revisions and the SHA-256 of every
 source file and bank. Regenerate with `node scripts/prepare-soundfonts.mjs`,
 which needs network access at build time and writes the same bytes on every
 run. Normal playback uses only the bundled banks.
 
-## Viola and cello — GeneralUser GS 2.0.3
+## Viola, cello, alto and tenor saxophone — GeneralUser GS 2.0.3
 
 By S. Christian Collins. Original: https://schristiancollins.com/generaluser.php
 
-Two complete bank-0 presets (41 and 42, zero-based MIDI) are bundled. Their
-sample zones, tuning, filters, modulators and release envelopes are retained.
+Four complete bank-0 presets (41, 42, 65 and 66, zero-based MIDI) are
+bundled. Their sample zones, tuning, filters, modulators and release envelopes
+are retained.
 No proprietary Muse Sounds or MS Basic assets are included.
 
 See LICENSE.txt for the author's full terms. These permit software use and

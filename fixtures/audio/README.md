@@ -54,7 +54,7 @@ the room rather than the playing.
 ## Checking a take, before anything else is running
 
     cd backend
-    python -m tuning_dashboard.cli ../fixtures/audio/01_detache_clean.wav
+    uv run python -m tuning_dashboard.cli ../fixtures/audio/01_detache_clean.synthetic.wav
 
 The score and the tempo come from `manifest.json`, matched on the filename, so
 a clip recorded under its manifest name needs no arguments. It prints the
