@@ -205,7 +205,11 @@ export function useDeletePiece() {
       return undo;
     },
     onError: (_error, _id, undo) => undo?.(),
-    onSettled: async (_data, _error, id) => {
+    // **Only once the server has agreed.** `onSettled` runs after a failure
+    // too, and clearing these there threw away a musician's tempo and their
+    // unsent takes for a delete that was then put back — the one outcome the
+    // comment above rules out, and takes cannot be recorded again.
+    onSuccess: (_data, id) => {
       practiceTempo.clear(id);
       // **And its unsent takes**, which nothing removed. The WAV is up to 50 MB
       // and the only thing that ever dropped an entry unasked was noticing its
@@ -213,10 +217,9 @@ export function useDeletePiece() {
       // retries it for ever against a score the server answers 404 for, and a
       // pass stops at the first failure, so one orphan blocks every real take
       // behind it.
-      //
-      // In `onSettled` rather than `onMutate`: a delete that fails is undone
-      // above, and a take thrown away optimistically could not be.
       void forgetTakesFor(id);
+    },
+    onSettled: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: pieceKeys.all }),
         queryClient.invalidateQueries({ queryKey: takeKeys.all }),
