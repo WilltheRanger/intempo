@@ -346,11 +346,11 @@ def _configuration_checks() -> list[Check]:
             ok=bool(settings.SUPABASE_URL),
             detail="SUPABASE_URL is not set — there is no project to talk to.",
         ),
-        Check(
-            name="supabase_anon_key",
-            ok=bool(settings.SUPABASE_KEY),
-            detail="SUPABASE_KEY is not set — tokens cannot be verified, so every request is unauthenticated.",
-        ),
+        # No check for SUPABASE_KEY, the anon key. There was one, blocking, and
+        # its detail said tokens could not be verified without it — but tokens
+        # are verified against the signing keys published at SUPABASE_URL
+        # (`auth.py`), and no request path builds an anon client. It reported a
+        # 503, with a false reason, for a deployment that worked.
         Check(
             name="supabase_service_role_key",
             ok=bool(settings.SUPABASE_SERVICE_ROLE_KEY),
