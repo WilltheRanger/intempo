@@ -463,6 +463,28 @@ def _runtime_data_files() -> dict[str, str]:
     return found
 
 
+def test_both_images_can_decode_every_container_intake_admits() -> None:
+    """Intake admits MP4 (an iPhone's Voice Memos), and only ffmpeg decodes it.
+
+    `soundfile` reads WAV, FLAC, OGG and MP3 itself; AAC falls through to
+    `audioread`, which shells out to ffmpeg. Neither image installed it, so a
+    picked M4A passed intake and then failed with `internal_error` — while
+    every test here passed, because a developer's machine has ffmpeg.
+    """
+    from app.services.audio_intake import _SIGNATURES
+
+    if "mp4" not in {name for name, _offset, _magic in _SIGNATURES}:
+        return
+    dockerfile = (BACKEND / "Dockerfile").read_text()
+    assert "apt-get install" in dockerfile and "ffmpeg" in dockerfile, (
+        "intake admits MP4 and the API image cannot decode it"
+    )
+    analysis_image = (BACKEND / "modal_app.py").read_text().split("image = (", 1)[1]
+    assert '"ffmpeg"' in analysis_image.split(".pip_install(", 1)[0], (
+        "intake admits MP4 and the Modal analysis image cannot decode it"
+    )
+
+
 def test_no_runtime_file_lives_outside_the_build_context() -> None:
     """Both images are built from `backend/` alone, so nothing outside it can
     be copied into either, whatever a Dockerfile line says.

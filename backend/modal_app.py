@@ -56,7 +56,9 @@ APP_NAME = "intempo"
 #: not a reproducible build.
 image = (
     modal.Image.debian_slim(python_version="3.12")
-    .apt_install("libsndfile1")  # soundfile's C library; not in slim
+    # soundfile's C library, not in slim; and ffmpeg, which `audioread` hands
+    # an M4A to because soundfile cannot read AAC (see the API's Dockerfile).
+    .apt_install("libsndfile1", "ffmpeg")
     .pip_install(
         "httpx==0.28.1",
         "librosa==0.11.0",
