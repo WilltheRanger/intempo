@@ -840,6 +840,7 @@ def _row_to_response(
         transcription_error=row.get("transcription_error"),
         transcription_accepted_at=row.get("transcription_accepted_at"),
         page_image_discarded_at=row.get("page_image_discarded_at"),
+        page_image_retained_at=row.get("page_image_retained_at"),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )

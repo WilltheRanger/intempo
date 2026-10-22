@@ -2779,3 +2779,15 @@ def test_one_test_s_readings_do_not_reach_the_next_b(
         monkeypatch, client, make_token(sub=_SHARED_ACCOUNT)
     )
     assert codes == [201] * _burst_limit(), codes
+
+
+def test_a_response_says_when_its_photographs_were_kept() -> None:
+    """`ScoreResponse.page_image_retained_at` is documented and was always
+    null: `_row_to_response` copied the discard timestamp and not this one."""
+    user_id, score_id = uuid4(), uuid4()
+    kept = "2026-10-01T12:00:00+00:00"
+    response = scores_module._row_to_response(
+        _row_for(score_id, user_id, page_image_retained_at=kept)
+    )
+    assert response.page_image_retained_at is not None
+    assert response.page_image_retained_at.isoformat() == kept
