@@ -456,6 +456,32 @@ def test_a_numbering_gap_is_reported_before_it_is_normalised() -> None:
     assert "2→409" in fixed.notes_to_human
 
 
+def test_renumbering_carries_repeats_and_tempo_changes_to_the_new_numbers() -> None:
+    """An inner page read as bars 41-44 becomes bars 1-4, and the repeat at
+    42-43 and the rit. at 44 have to become 2-3 and 4 with it. Renumbering only
+    the bars left them pointing at numbers no bar carried, which
+    `expand_repeats` and the tempo map cannot place."""
+    from app.services.ocr.pipeline import renumber
+    from app.services.score_schema import Measure, Note, Repeat, ScoreJson, TempoChange
+
+    score = ScoreJson(
+        clef="bass", time_signature="4/4", ocr_confidence=0.9,
+        measures=[
+            Measure(measure_number=n, notes=[Note(pitch="C3", duration="whole")])
+            for n in (41, 42, 43, 44)
+        ],
+        repeats=[Repeat(start_measure=42, end_measure=43, type="repeat")],
+        unclosed_repeat_starts=[43],
+        tempo_changes=[TempoChange(measure_number=44, kind="ritardando", text="rit.")],
+    )
+    fixed = renumber(score)
+
+    assert [m.measure_number for m in fixed.measures] == [1, 2, 3, 4]
+    assert [(r.start_measure, r.end_measure) for r in fixed.repeats] == [(2, 3)]
+    assert fixed.unclosed_repeat_starts == [3]
+    assert [c.measure_number for c in fixed.tempo_changes] == [4]
+
+
 def test_renumbering_a_clean_reading_says_nothing() -> None:
     """It runs on every reading, so it must be silent when there is nothing to
     say — otherwise every score carries a warning about itself."""

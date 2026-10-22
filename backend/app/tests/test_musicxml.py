@@ -1833,6 +1833,41 @@ def test_a_repeat_is_read_and_the_section_is_played_twice() -> None:
     assert len(alignment.build_timeline(score, 60.0).onsets) == 24
 
 
+def test_a_repeat_names_the_bars_it_covers_after_the_file_is_renumbered() -> None:
+    """**A bar the file numbers out of order moves the repeat with it.**
+
+    A file numbered 1, 2, X1, 3, 4, 5 (an uncounted bar, common in real
+    exports) is renumbered 1-6 because a number that repeats identifies no bar.
+    The repeat around its last two bars was built from the file's numbers
+    *before* that, so it was stored as bars 3-4 and `expand_repeats` replayed
+    the wrong two bars: every expected onset after the sign was wrong.
+    """
+    from app.services import alignment
+
+    def bar(number: str, pitch: str, extra: str = "", attributes: str = "") -> str:
+        note = (
+            f"<note><pitch><step>{pitch}</step><octave>4</octave></pitch>"
+            "<duration>4</duration><type>whole</type></note>"
+        )
+        return f'<measure number="{number}">{attributes}{extra}{note}</measure>'
+
+    score = score_json_from_musicxml(
+        _part(
+            bar("1", "C", attributes=_FOUR_FOUR)
+            + bar("2", "D")
+            + bar("X1", "E")
+            + bar("3", "F")
+            + bar("4", "G", _FORWARD)
+            + bar("5", "A", _BACKWARD)
+        )
+    )
+
+    assert [m.measure_number for m in score.measures] == [1, 2, 3, 4, 5, 6]
+    assert [(r.start_measure, r.end_measure) for r in score.repeats] == [(5, 6)]
+    played = [m.notes[0].pitch[0] for m in alignment.expand_repeats(score)]
+    assert played == list("CDEFGAGA")
+
+
 def test_a_repeat_with_no_forward_sign_goes_back_to_the_beginning() -> None:
     """A convention rather than markup, and the commonest case on the page.
 
