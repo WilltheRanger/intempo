@@ -205,7 +205,7 @@ transcription_image = (
         "google-genai==1.73.1",
         "httpx==0.28.1",
         "numpy==2.4.6",
-        "pillow==12.3.0",
+        "pillow==13.0.0",
         # The MusicXML parser refuses entity definitions, and it is
         # `score_json_from_musicxml` that homr's output goes through in
         # this container. Without it the import fails at module load.
