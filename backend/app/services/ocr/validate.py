@@ -1,6 +1,13 @@
-"""Checking a transcription against arithmetic rather than against a model.
+"""Catch misread sheet music by checking that every bar adds up.
 
-The durations in a measure must add up to what the time signature says a
+After a photo of the page is turned into notes, this module asks a simple
+question of each bar: do the note lengths add up to what the time signature
+allows? A 4/4 bar holding four and a half beats was misread somewhere. Bars
+that fail are the only ones sent back for a second reading, so the expensive
+fix is spent where the cheap check found a problem.
+
+Checking a transcription against arithmetic rather than against a model:
+the durations in a measure must add up to what the time signature says a
 measure holds. That is not an opinion, it needs no ground truth and no second
 model, and it catches the error class this app cares about most: `alignment.py`
 builds its entire expected timeline from `_beats(note.duration)`, so a measure
@@ -591,7 +598,21 @@ def clefs_in_force(score: ScoreJson) -> list[str | None]:
 
 
 def validate_measures(score: ScoreJson) -> list[MeasureFinding]:
-    """One finding per measure, in order."""
+    """Check every bar of a transcription and report what is wrong with each.
+
+    Each bar's note lengths are summed and compared with the beats its time
+    signature holds, inferred from the music itself when the header could not
+    be read (`infer_beats_per_measure`). Ties that cannot be honoured, tuplets
+    that contradict their bracket, and bars crowded with implausibly many
+    notes are reported alongside, because a bar can add up and still be wrong.
+
+    Args:
+        score: The transcribed piece.
+
+    Returns:
+        One `MeasureFinding` per bar, in score order, including the bars that
+        are fine. `problems()` keeps only the ones that are not.
+    """
     sums = [
         sum(DURATION_BEATS[note.duration] for note in measure.notes)
         for measure in score.measures

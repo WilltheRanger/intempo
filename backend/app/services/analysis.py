@@ -1,13 +1,25 @@
-"""Orchestrator: ties audio → alignment → classification into `analyze()`.
+"""The analysis engine: compares a musician's recording with the written
+score and reports where they rushed, dragged or played out of tune.
 
-Public entry point for Batch 3. Synchronous by design — Batch 4 wraps
-this in FastAPI `BackgroundTasks` (and later Celery). The return value is
-a Pydantic model so it serializes to the `analyses.result_json` column
-cleanly and deterministically.
+Why it exists: a metronome tells a student where the beat is, but not how
+their own playing drifted from it. This module measures that drift note by
+note, so the app can say "you rushed bars 5-8" instead of "you were off".
 
-Flow (spec §4 pseudocode):
-    load → pre-emphasis → onset detect → expected onsets → DTW →
-    (bail if broken) → fuzzy match → deltas → bands → trend → verdict
+How it works, in order:
+    1. Detect every note attack in the audio             (audio.py)
+    2. Build the timeline the score says to expect       (alignment.py)
+    3. Line the two up with dynamic time warping, which
+       tolerates a missed or extra note                  (alignment.py)
+    4. Measure each note's timing error and summarise it
+       into per-bar results and one verdict              (classification.py)
+
+If the recording can't be matched to the score with confidence, the engine
+says so instead of producing confident numbers about the wrong music.
+
+`analyze()` is synchronous and depends only on its inputs, so it can be
+tested on synthetic recordings; the background worker calls it after an
+upload. The result is a Pydantic model, so it is stored in the database
+exactly as computed.
 """
 
 from __future__ import annotations
@@ -2111,25 +2123,35 @@ def analyze(
     config: AudioConfig | None = None,
     trace: dict[str, Any] | None = None,
 ) -> AnalysisResult:
-    """Analyze a recording against a score at a target tempo.
+    """Compare one recording with its score at the tempo the musician chose.
 
-    `audio` is either a path to load, or an already-decoded `(waveform,
-    sample_rate)` tuple — the Batch 4 worker decodes storage bytes once
-    and passes the waveform straight through, avoiding a second decode.
+    Args:
+        audio: A file path, or an already-decoded `(waveform, sample_rate)`
+            pair. The worker passes the pair so a recording is decoded once.
+        score: The piece as structured notation (notes, bars, repeats).
+        target_bpm: The tempo the musician practised at, in quarter notes
+            per minute.
+        instrument: Used to listen for notes where that instrument actually
+            sounds (a double bass sounds an octave below its written part;
+            a saxophone transposes).
+        double_bass: Older form of `instrument="double_bass"`, kept so
+            existing callers keep working.
+        config: Tuning thresholds; defaults to `backend/config.toml`.
+        trace: If given, filled with the evidence behind the decision: every
+            detected attack, the chosen reading, the alignment and any rule
+            that refused the take. Each value is the one the decision used,
+            not a recomputation. The worker stores it with the result
+            (`analyses.diagnostics`), so a refused take can be explained
+            later without re-downloading its audio. See `_traced`.
 
-    `trace`, when given, is filled with the working on the way to the answer:
-    every attack the detector reported, the reading chosen, the alignment's two
-    halves, the pitch evidence and the rule that refused the take, if one did.
-    Nothing is recomputed for it — each value is the one the decision used —
-    and nothing reads it back; the worker stores it on the row
-    (`analyses.diagnostics`) so a real take can say why it was refused without
-    anyone fetching its audio. See `_traced`.
-
-    Returns a graceful `alignment_failed` / `no_onsets` / `not_played` result
-    rather than raising when the input can't be trusted — the caller turns status into
-    the right user-facing state.
+    Returns:
+        An `AnalysisResult`. It never raises on untrustworthy input: it
+        returns a status of `no_onsets`, `alignment_failed` or `not_played`,
+        which the app turns into a clear message for the musician.
     """
     cfg = config or load_audio_config()
+
+    # Step 1: decode the audio and find every note attack.
     heard = prepare_for_alignment(
         audio,
         score,
@@ -2146,6 +2168,8 @@ def analyze(
         n_expected_as_written=int(heard.expected.size),
     )
 
+    # Nothing to compare: silence, or a score with no notes. Say so plainly
+    # rather than inventing a verdict.
     if onsets.size == 0 or heard.expected.size == 0:
         _traced(trace, outcome="no_onsets")
         return AnalysisResult(
@@ -2157,29 +2181,31 @@ def analyze(
             n_expected_onsets=int(heard.expected.size),
         )
 
-    # Both sequences on the same clock before anything is compared, and the
-    # origin chosen by evidence rather than by position — `align_take`. Without
-    # the first, a perfect take with a five-second lead-in aligns at 0.053 and
-    # the musician is told to check they are on the right piece. Without the
-    # second, a bow settling on the string before the first note becomes the
-    # downbeat, and the same perfect take is told it dragged; without it at the
-    # other end, a bow going down afterwards costs enough confidence to trigger
-    # a caveat.
-    #
-    # Against every way this page may have been played, not only the one it
-    # prints — see `Reading`. As written comes first and is kept unless another
-    # reading fits clearly better, and a take the chosen reading still cannot
-    # explain is read once more for stops and restarts.
-    # The take's pitch, once: the restarts, the note chain and the pitch
-    # evidence below all read it.
-    low_instrument = instrument or ("double_bass" if double_bass else None)
+    # The pitch track, computed once and shared by the three checks below that
+    # use it: restart detection, note-by-note matching, and the check that the
+    # recording is this piece at all.
+    resolved_instrument = instrument or ("double_bass" if double_bass else None)
     pitch = _pitch_of(
         heard,
         [note.pitch for note in heard.timeline.notes],
-        low_instrument=low_instrument in cfg.pitch.low_instruments,
+        low_instrument=resolved_instrument in cfg.pitch.low_instruments,
         config=cfg,
-        instrument=low_instrument,
+        instrument=resolved_instrument,
     )
+
+    # Steps 2-3: choose how the page was played, then align.
+    #
+    # A score can legitimately be played more than one way, for example with
+    # or without its repeats (see `Reading`). The written version is tried
+    # first and kept unless another fits clearly better; a take the chosen
+    # reading still cannot explain is read once more for stops and restarts.
+    #
+    # Both sequences are put on the same clock, and the starting point is
+    # chosen from the evidence rather than by position (`align_take`). Without
+    # that, a perfect take with a five-second lead-in aligned at quality 0.053
+    # and was told to check it was the right piece, and a bow settling on the
+    # string before the first note became the downbeat, so the same perfect
+    # take was told it dragged.
     reading, anchored = _with_restarts(
         onsets,
         _best_reading(onsets, readings_of(score, target_bpm), target_bpm, cfg),
@@ -2187,11 +2213,12 @@ def analyze(
         cfg,
         pitch,
     )
-    # **The chain of notes, where it hears the page better than timing does.**
-    # See `alignment.align_chain` for the real take this is for, and
-    # `CHAIN_GAIN_NOTES` for the takes timing reads well and wrongly.
-    # Whether timing alone would give the take a verdict. A pairing the chain
-    # then corrects stays a take with a verdict: see `_audited_by_chain`.
+    # Timing alone can pair notes wrongly, for example across evenly spaced
+    # notes. Matching the *sequence of pitches* corrects those pairings; see
+    # `alignment.align_chain` for the real recording that needed it, and
+    # `CHAIN_GAIN_NOTES` for the takes timing reads well. A take that timing
+    # alone would have accepted keeps its verdict when the chain corrects a
+    # pairing (`_audited_by_chain`).
     accepted_by_timing = not is_alignment_broken(anchored.alignment.quality, config=cfg)
     chained = _audited_by_chain(
         onsets, reading, anchored, score, target_bpm, cfg, pitch
@@ -2284,7 +2311,7 @@ def analyze(
         top=cfg.pitch.top,
         min_relative=cfg.pitch.min_relative,
         low_register_midi=cfg.pitch.low_register_midi,
-        low_instrument=low_instrument in cfg.pitch.low_instruments,
+        low_instrument=resolved_instrument in cfg.pitch.low_instruments,
         page_pitches=[note.pitch for note in timeline.notes],
         frames=pitch.frames,
         transpose=pitch.transpose,
