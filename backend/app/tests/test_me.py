@@ -877,6 +877,50 @@ def test_account_deletion_removes_identity_then_owned_storage(
     assert [f"{user_id}/take.wav", f"{user_id}/unsent.wav"] in removed
 
 
+def test_deleting_an_account_removes_every_reference_shape_it_stores(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    """The Opus copy and the legacy page URL, which the old parser could not read.
+
+    `playback_key` is a bare key (`<uid>/<uuid>.opus`), not a URL, and the
+    deletion path parsed only URLs — so the Opus, the one copy of a judged take
+    left once its WAV is reclaimed, outlived every deleted account. Page URLs
+    signed for *upload* (`/object/upload/sign/`) were missed the same way.
+    """
+    user_id = uuid4()
+    uid = str(user_id)
+    sb = _delete_account_mock(user_id)
+    rows = {
+        "analyses": [
+            {"audio_url": None, "playback_key": f"{uid}/judged.opus"},
+            {"audio_url": f"audio-uploads/{uid}/fresh.wav", "playback_key": None},
+        ],
+        "scores": [
+            {
+                "source_image_url": (
+                    "https://project.supabase.co/storage/v1/object/upload/sign/"
+                    f"score-images/{uid}/legacy.jpg?token=upload"
+                ),
+                "source_image_urls": [],
+            }
+        ],
+    }
+    for name, data in rows.items():
+        table = sb.table.side_effect(name)
+        table.select.return_value.execute.return_value = MagicMock(data=data)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
+
+    assert _delete_me(client, make_token(sub=user_id)).status_code == 204
+
+    removed = [call.args[0] for call in sb.storage.from_.return_value.remove.call_args_list]
+    audio = next(keys for keys in removed if f"{uid}/judged.opus" in keys)
+    assert f"{uid}/fresh.wav" in audio
+    pages = next(keys for keys in removed if f"{uid}/legacy.jpg" in keys)
+    assert f"{uid}/legacy.display.jpg" in pages
+
+
 def test_deleting_an_account_takes_its_abandoned_uploads_with_it(
     monkeypatch: pytest.MonkeyPatch,
     client: TestClient,
