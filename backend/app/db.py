@@ -66,7 +66,3 @@ def get_service_client() -> Client | None:
         settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY, _options()
     )
 
-
-# Back-compat alias used by earlier scaffold code.
-def get_client() -> Client | None:
-    return get_anon_client()

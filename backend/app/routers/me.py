@@ -42,10 +42,6 @@ log = logging.getLogger("intempo.me")
 #: photograph is transient and deleted on acceptance, an avatar lives as
 #: long as the account.
 AVATAR_BUCKET = "avatars"
-#: How long a signed avatar URL lasts. An hour, not the five minutes an
-#: upload URL gets — this one is read by an <img> that may be rendered
-#: long after the response was built.
-AVATAR_URL_TTL_SECONDS = 3600
 
 
 def _user_id_from(payload: dict[str, Any]) -> UUID:

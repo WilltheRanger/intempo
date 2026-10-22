@@ -944,11 +944,6 @@ def _metronome_tempo(direction: ET.Element) -> tuple[int, str] | None:
     return None
 
 
-def _metronome_bpm(direction: ET.Element) -> int | None:
-    """Compatibility helper returning the internal quarter-note rate only."""
-    tempo = _metronome_tempo(direction)
-    return tempo[0] if tempo is not None else None
-
 def _staff_carrying_the_music(part_el: ET.Element) -> str | None:
     """Which staff of a multi-staff part is the line to read, or None.
 
