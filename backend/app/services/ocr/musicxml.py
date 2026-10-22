@@ -422,6 +422,21 @@ _BAR_REST_FOR: Final[dict[float, str]] = {
 }
 
 
+#: The longest single multi-bar rest that is expanded. A longer one is left as
+#: the one empty measure it is written as — the same visible hole as a rest in a
+#: metre with no single bar rest — because no part rests that long in one place,
+#: and the count is the one number in this file that turns a few bytes into an
+#: arbitrary amount of memory: `<multiple-rest>400000</multiple-rest>` in a
+#: 488-byte file took 828 MB and 7 s inside the import request, on an API host
+#: with 512 MB for everything.
+MAX_MULTIPLE_REST_BARS: Final = 1_000
+
+#: The most measures a part may expand to. Far past any real part — a whole
+#: symphony's bass part is a few thousand bars — and small enough that the
+#: largest score this admits stays tens of megabytes.
+MAX_MEASURES: Final = 10_000
+
+
 def _multiple_rest_count(measure_el: ET.Element) -> int | None:
     """How many bars this measure stands for, if it is a multi-bar rest.
 
@@ -1211,7 +1226,7 @@ def _expand_multiple_rests(
         count, metre = entry
         beats = quarter_beats(metre) or lengths[index]
         rest = _BAR_REST_FOR.get(beats) if beats is not None else None
-        if rest is None:
+        if rest is None or count > MAX_MULTIPLE_REST_BARS:
             out.append(
                 measure.model_copy(
                     update={"measure_number": measure.measure_number + shift}
@@ -1221,6 +1236,13 @@ def _expand_multiple_rests(
             )
             continue
         expanded = True
+        # Everything still to come is at least one bar each, so this is the
+        # least the part can expand to; refuse before building any of it.
+        if len(out) + count + (len(measures) - index - 1) > MAX_MEASURES:
+            raise MusicXMLError(
+                f"this part expands to more than {MAX_MEASURES:,} bars, which is "
+                "more than InTempo can practise — import one movement at a time"
+            )
         for step in range(count):
             out.append(
                 measure.model_copy(
