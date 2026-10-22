@@ -309,8 +309,11 @@ export function RecordScreen() {
     resume?: TakeSubmissionState;
     capture?: CaptureReport;
     fromMeasure?: number;
-    // Carried so "Send it again" keeps a picked file's `false` (see `send`).
+    // Carried so "Send it again" keeps what the take was first sent with: a
+    // picked file's `false`, or a restored take's own settings (see `send`).
     skipLongRests?: boolean;
+    targetBpm?: number;
+    metronomeMode?: MetronomeMode;
   } | null>(null);
   const [pendingTake, setPendingTake] = useState(false);
   // While "Send it again" is offered, this screen holds the take and the
@@ -682,9 +685,17 @@ export function RecordScreen() {
      * used to have the file judged against a page with its rests taken out.
      */
     skipLongRests?: boolean;
+    /**
+     * The tempo and metronome a take restored from the device queue was
+     * played with. A take recorded on this screen uses the screen's own.
+     */
+    targetBpm?: number;
+    metronomeMode?: MetronomeMode;
   }) {
     const entryBar = recording.fromMeasure ?? startFrom;
     const skipLongRests = recording.skipLongRests ?? skipRests;
+    const takeBpm = recording.targetBpm ?? targetBpm;
+    const takeMetronome = recording.metronomeMode ?? metronomeMode;
     // Hold the bytes before the first awaited upload step. This is not yet a
     // visible retry state, but it makes both navigation and browser-exit guards
     // truthful during the vulnerable gap before the server accepts the take.
@@ -710,8 +721,8 @@ export function RecordScreen() {
       const analysisId = await takeSubmissionSource.submit({
         // A piece is a score; the id is the same row.
         scoreId: params.pieceId,
-        targetBpm,
-        metronomeMode,
+        targetBpm: takeBpm,
+        metronomeMode: takeMetronome,
         audio: recording.audio,
         filename: recording.filename,
         contentType: recording.contentType,
@@ -779,8 +790,8 @@ export function RecordScreen() {
             resumable,
             {
               scoreId: params.pieceId,
-              targetBpm,
-              metronomeMode,
+              targetBpm: takeBpm,
+              metronomeMode: takeMetronome,
               skipLongRests,
               fromMeasure: entryBar,
             },
@@ -1095,11 +1106,17 @@ export function RecordScreen() {
       if (cancelled || !restored || unsent.current !== null) {
         return;
       }
+      // With what it was played against, not what this screen is set to now.
       unsent.current = {
         audio: restored.audio,
         filename: restored.filename,
+        contentType: restored.contentType,
         resume: restored.resume,
         capture: restored.capture,
+        fromMeasure: restored.fromMeasure ?? undefined,
+        skipLongRests: restored.skipLongRests,
+        targetBpm: restored.targetBpm,
+        metronomeMode: restored.metronomeMode,
       };
       setPendingTake(true);
       holdForListening(restored.audio);

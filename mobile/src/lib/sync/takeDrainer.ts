@@ -92,6 +92,8 @@ async function drainNow(): Promise<DrainReport | null> {
           metronomeMode: take.metronomeMode,
           audio,
           filename: take.filename,
+          // A picked MP3 or M4A goes up as what it is, not as a WAV.
+          ...(typeof take.contentType === 'string' ? { contentType: take.contentType } : {}),
           resume: take.resume,
           skipLongRests: take.skipLongRests,
           fromMeasure: take.fromMeasure,

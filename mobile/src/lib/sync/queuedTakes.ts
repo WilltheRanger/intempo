@@ -63,6 +63,7 @@ export async function keepTakeForLater(
   recording: {
     audio: Blob;
     filename: string;
+    contentType?: string;
     resume?: TakeSubmissionState;
     capture?: CaptureReport;
   },
@@ -85,6 +86,7 @@ export async function keepTakeForLater(
         resume: recording.resume ?? {},
         audio: recording.audio,
         ...(recording.capture ? { capture: recording.capture } : {}),
+        ...(recording.contentType ? { contentType: recording.contentType } : {}),
       },
       Date.now(),
       id,
@@ -118,9 +120,17 @@ export async function takeWasAccepted(filename: string): Promise<void> {
 }
 
 /** A take for this piece that an earlier session could not send, with its bytes. */
-export interface RestoredTake {
+/**
+ * A kept take as the Record screen offers it again, **with what it was played
+ * against.** The tempo, metronome mode, start bar and rest-skipping are the
+ * take's, not the screen's: restored after a restart, a passage take opened
+ * from "Practice bars 21-24" used to be sent with the screen's current start
+ * bar and analysed from bar 1, against a timeline it never played.
+ */
+export interface RestoredTake extends Omit<TakeContext, 'scoreId'> {
   audio: Blob;
   filename: string;
+  contentType?: string;
   resume: TakeSubmissionState;
   lastError: string | null;
   capture?: CaptureReport;
@@ -152,9 +162,14 @@ export async function restoreQueuedTake(
         return {
           audio,
           filename: take.filename,
+          ...(typeof take.contentType === 'string' ? { contentType: take.contentType } : {}),
           resume: take.resume,
           lastError: take.lastError,
           capture: take.capture,
+          targetBpm: take.targetBpm,
+          metronomeMode: take.metronomeMode,
+          skipLongRests: take.skipLongRests,
+          fromMeasure: take.fromMeasure,
         };
       }
       await remove(deviceTakeStore, take.id);
