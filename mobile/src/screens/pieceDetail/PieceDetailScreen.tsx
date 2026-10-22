@@ -174,7 +174,12 @@ export function PieceDetailScreen() {
     }
   }
 
-  if (load === 'loading') {
+  // **While a delete is in flight, too.** The delete removes the piece from
+  // every cache before the server answers (`useDeletePiece`), so `piece` is
+  // null for the whole round trip, and this screen said "Couldn't open this
+  // piece" until the success sent it back to the Library. A failure puts the
+  // piece back and the screen with it.
+  if (load === 'loading' || (deletePiece.isPending && !piece)) {
     return (
       <ScreenContainer>
         <LoadingState />
