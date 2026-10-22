@@ -463,6 +463,32 @@ def _runtime_data_files() -> dict[str, str]:
     return found
 
 
+def test_no_runtime_file_lives_outside_the_build_context() -> None:
+    """Both images are built from `backend/` alone, so nothing outside it can
+    be copied into either, whatever a Dockerfile line says.
+
+    `_runtime_data_files` skips such a file as "not shipped from here", which
+    is true and was the gap: `long_rests.py` read
+    `fixtures/practice/long_rests.json` from the repository root, the checkout
+    had it, the images did not, and every take sent with "skip long rests" on
+    failed in production while this file stayed green.
+    """
+    import importlib
+
+    outside = []
+    for name in _modules_that_resolve_paths():
+        module = importlib.import_module(name)
+        for attribute, value in vars(module).items():
+            if not isinstance(value, Path) or not value.is_file():
+                continue
+            if not value.resolve().is_relative_to(BACKEND):
+                outside.append(f"{name}.{attribute} -> {value}")
+    assert not outside, (
+        "these are opened at runtime and live outside backend/, so neither "
+        "image can carry them: " + ", ".join(outside)
+    )
+
+
 def test_the_api_image_carries_every_file_the_app_opens() -> None:
     """`COPY app ./app` covers anything under `app/`. Anything outside it needs
     a line of its own, and `config.toml` did not have one — which is how the
