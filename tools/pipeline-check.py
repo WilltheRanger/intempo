@@ -14,7 +14,8 @@ It prints the stage sequence as well as the reading, because the sequence is a
 contract with the app (`fixtures/stages/parity.json`) and running a real page
 is the only way to see the order the pipeline actually produces.
 
-Needs a virtualenv with homr in it — see EDIT_LOG 2026-08-26.
+Needs a virtualenv with homr in it: the pinned versions are the ones
+`transcription_image` installs in `backend/modal_app.py`.
 """
 import contextlib
 import io

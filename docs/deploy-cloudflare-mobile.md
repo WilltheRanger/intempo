@@ -35,7 +35,7 @@ Then **Environment variables → Production**, before the first build:
 Save and deploy. First build takes 3–5 minutes, mostly `npm ci`.
 
 `npm run build` is the root `package.json`'s only script — it runs
-`cd mobile && npm ci && npx expo export --platform web`. Keeping the path in
+`cd mobile && npm ci && npm run build:web`. Keeping the path in
 the repo rather than in a dashboard field means the two can't drift apart, and
 it's the configuration verified from a clean tree on `main`.
 
@@ -56,12 +56,18 @@ directory*, so `mobile/dist` there sends Cloudflare looking for
 
 ### Nothing else needs configuring
 
-- **The SPA fallback ships in the repo** — `mobile/public/_redirects` is copied
-  into the export, so a refresh on `/scores` doesn't 404.
+- **Deep links need no fallback rule.** Every screen has a URL
+  (`mobile/src/navigation/linking.ts`), and a refresh on `/pieces/:id` still
+  loads the app because the export has no top-level `404.html`, which is what
+  makes Pages serve `index.html` for any unmatched path. Do not add the
+  `/* /index.html 200` rule from Cloudflare's SPA guide: Pages rejects it as an
+  infinite loop, prints a warning on every build, and applies nothing. If a
+  `404.html` ever appears in `dist/`, this default stops and refreshes on deep
+  links will 404.
 - **So do the cache headers** — `mobile/public/_headers` marks the hashed
   bundle and assets immutable and the entry point no-cache.
 - **No secrets are required.** With no Supabase variables the app runs on
-  fixtures and opens straight onto Today; the sign-in gate passes through by
+  fixtures and opens straight onto the Library; the sign-in gate passes through by
   design. Adding them (below) turns the gate on.
 
 ### The production branch
@@ -136,7 +142,7 @@ in a dashboard field:
 | Build command | `npm run build` |
 | Build output directory | `mobile/dist` |
 
-It runs `cd mobile && npm ci && npx expo export --platform web`. The `npm ci`
+It runs `cd mobile && npm ci && npm run build:web`. The `npm ci`
 is the part that matters: with no dependencies declared at the repo root,
 Cloudflare's automatic install step installs nothing, and without it `npx`
 goes and fetches its own copy of Expo — which is what the failing log shows.
@@ -174,11 +180,11 @@ Supabase variables alone were enough to turn the gate on.)
 
 ## What already ships in the repo
 
-- **`mobile/public/_redirects`** — the SPA fallback (`/* /index.html 200`).
-  Expo copies `public/` into the export, so it lands in `dist/` automatically.
-  Without it, a refresh or a shared deep link 404s. It cannot be tested against
-  a plain local static server — `python -m http.server` knows nothing about it,
-  so `/scores` 404s locally and works on Pages. Don't chase that one.
+- **No `_redirects`, on purpose.** Deep links work through Pages' own SPA
+  fallback (see "Nothing else needs configuring" above). Locally, use
+  `node tools/serve-with-headers.mjs mobile/dist 4320`, which serves
+  `index.html` for unknown paths and applies `_headers`, rather than
+  `python -m http.server`, which 404s on `/pieces/…`.
 - **`mobile/public/_headers`** — immutable caching for `_expo/static/*` and
   `assets/*`, both of which carry content hashes in their filenames, and
   no-cache for `index.html`, which doesn't. Without it the 3.3 MB bundle is
@@ -199,7 +205,7 @@ Supabase variables alone were enough to turn the gate on.)
 Verified from a clean tree with Node 22: `rm -rf mobile/node_modules
 mobile/dist && npm run build` at the repo root — the exact command Cloudflare
 runs — exits 0, applies the patch, and writes `mobile/dist`: `index.html`, a
-3.3 MB JS bundle, four bundled fonts, the fixture images, and `_redirects`.
+JS bundle, the bundled fonts, the fixture images, and `_headers`.
 
 ## What this preview is, and what it isn't
 
@@ -208,23 +214,26 @@ geometry is genuine. It is **not** the native app.
 
 | Works | Doesn't |
 |---|---|
-| Every screen and the whole capture-to-practice flow | The camera — the scanner viewfinder is a mock on every platform |
-| Navigation, tabs, sheets, reordering, search | Haptics (silently no-ops in a browser) |
-| Safe-area layout, driven by real insets on a phone | Native text rendering — this is the browser's, not CoreText's |
-| Fixture data throughout | Anything needing the backend; no Supabase keys are set |
+| Every screen and the whole capture-to-practice flow | Haptics (silently no-op in a browser) |
+| The camera, through the browser's `getUserMedia` (`expo-camera` on the web) | Native text rendering — this is the browser's, not CoreText's |
+| Navigation, tabs, sheets, reordering, search, deep links | The native audio paths (`expo-audio`); the web records through Web Audio instead |
+| Safe-area layout, driven by real insets on a phone | |
+| Fixture data without the three variables; live accounts with them | |
 
 Nothing on screen marks this as a preview rather than a working build, so say
 what it is when you share the link.
 
 ## Caveats worth knowing
 
-- **Bundle size.** The web export is a ~3 MB JS bundle plus four bundled font
-  files. Fine over a CDN, slow on a cold 3G load.
+- **Bundle size.** The web export is a multi-megabyte JS bundle plus the
+  bundled fonts; `tools/check-bundle-size.mjs` holds the budget in CI. Fine
+  over a CDN, slow on a cold 3G load.
 - **Not a substitute for a device pass.** Font rasterisation, gesture feel, and
   haptics all differ. The visual system still needs one run on real hardware
   before it can be called finished.
-- **Fonts are bundled, not fetched.** Newsreader and Inter ship as four TTFs in
-  the export; there is no font CDN to fail.
+- **Fonts are bundled, not fetched.** Newsreader and Inter (four subset TTFs),
+  plus Bravura and a Noto Music subset for the notation, ship in the export;
+  there is no font CDN to fail.
 - **`EXPO_PUBLIC_*` values are baked in, and cached.** They're inlined at
   transform time, and Metro's cache key doesn't include them — so adding,
   changing, or removing `EXPO_PUBLIC_SUPABASE_URL` and

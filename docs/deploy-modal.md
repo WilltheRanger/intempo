@@ -127,7 +127,7 @@ The same three steps, faster:
 pip install modal && modal setup
 modal secret create intempo-backend SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=...
 cd backend && modal deploy modal_app.py
-modal run modal_app.py --analysis-id <uuid>   # one real row, no phone needed
+modal run modal_app.py::main --analysis-id <uuid>   # one real row, no phone needed
 ```
 
 Anything else, including unset, keeps the work in-process. The comparison is
@@ -224,16 +224,16 @@ The build fetches homr's weights, so the first deploy is slower than the
 analysis one. Then, on the API host:
 
     TRANSCRIPTION_RUNTIME=modal
-    OCR_PROVIDER_CHAIN=homr,gemini-2.5-flash,claude-sonnet-5,claude-opus-5
 
 `TRANSCRIPTION_RUNTIME` is separate from `ANALYSIS_RUNTIME` on purpose. An
 analysis peaks near 460 MB and merely wants headroom; a page does not fit on the
 API host at all. A deployment can sensibly put one here and one there.
 
-`homr` first in the chain and the models behind it: a page it cannot read — too
-dark, or not music — still reaches them, and a reading it is not confident in is
-kept while they try. Leaving `homr` out of the chain turns it off without
-touching anything else.
+`OCR_PROVIDER_CHAIN` needs no setting: it defaults to `homr` alone, by the
+owner's decision of 2026-08-24 ("run homr only, no backup AI"), because the
+vision models that used to sit behind it were inventing notes on pages they
+could not read. A page homr cannot read fails and can be retaken; the
+photograph is kept. `backend/app/config.py` has the measurements.
 
 Check it landed:
 

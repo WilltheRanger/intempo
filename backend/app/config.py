@@ -163,10 +163,6 @@ class Settings:
     #: does not start analysing a synthetic take behind them.
     ANALYSIS_WARMUP: bool = os.getenv("ANALYSIS_WARMUP", "1").strip() != "0"
 
-
-    STRIPE_SECRET_KEY: str = os.getenv("STRIPE_SECRET_KEY", "")
-    STRIPE_WEBHOOK_SECRET: str = os.getenv("STRIPE_WEBHOOK_SECRET", "")
-
     #: Origins allowed to call this API from a browser, comma-separated.
     #:
     #: Needed because the app and the API are never same-origin: 8081 against

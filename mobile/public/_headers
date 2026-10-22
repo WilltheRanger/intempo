@@ -29,7 +29,7 @@
   X-Frame-Options: DENY
   X-XSS-Protection: 0
 
-# Cloudflare Pages headers. Copied into the export by Expo, same as _redirects.
+# Cloudflare Pages headers. Expo copies everything in public/ into the export.
 #
 # Everything Expo emits under these two paths carries a content hash in its
 # filename — `index-161a7c95….js`, `Inter_400Regular.6d0f00….ttf` — so the URL

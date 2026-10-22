@@ -115,8 +115,10 @@ MODAL_TRANSCRIBE_FUNCTION_NAME = "transcribe_score"
 #: sensibly run analyses in-process and pages on Modal, and saying so with one
 #: switch would force a choice nobody needs to make.
 #:
-#: `inprocess` still works and still reads pages — with the vision chain, since
-#: homr is not installed on the API host. That is the fallback, not a failure.
+#: `inprocess` is the default, and on an API host it reads nothing: homr is
+#: installed only in the Modal container and is the whole chain, so
+#: `run_transcription` refuses up front with a message that blames the server
+#: rather than the photograph. A scanner that works needs this set to `modal`.
 TRANSCRIPTION_RUNTIME: Runtime = (
     "modal"
     if os.getenv("TRANSCRIPTION_RUNTIME", "").strip().lower() == "modal"

@@ -66,7 +66,8 @@ This deliberately needs no Supabase keys, no deployed API and no phone. Those
 are separate problems, and none of them should have to work before you can find
 out whether the pipeline does.
 
-The dashboard (`python -m tuning_dashboard.app`) is the other half: it draws the
+The dashboard (`uv run uvicorn tuning_dashboard.app:app --port 8100`, from
+`backend/`; see below) is the other half: it draws the
 waveform with the detected onsets marked, which is what you want when a number
 above looks wrong and you need to see why.
 

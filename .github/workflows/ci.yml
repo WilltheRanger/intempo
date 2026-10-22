@@ -498,7 +498,7 @@ jobs:
       # an empty account does not have — sweeping them would measure a page of
       # not-found states. `unvisitedRoutes` still runs against the whole list.
       - name: Accessibility audit, empty account
-        run: node ../tools/audit-a11y.mjs 4323 Today Library Insights Profile
+        run: node ../tools/audit-a11y.mjs 4323 Library Insights Profile
 
   # **Nothing had ever checked that the migrations run.** They are applied by
   # hand to a Supabase project, one at a time, and the only evidence any of

@@ -77,47 +77,26 @@ of them shipped an SSRF). `.github/workflows/ci.yml` is the list that cannot go
 stale.
 
 **Run `tools/preflight.py` before you commit** — faster than a push, and it
-catches most of what CI would. It is no longer the only gate: **CI runs again
-as of 2026-09-12**, after six days refusing every job.
+catches most of what CI would. Preflight first; push when you believe it is
+green.
 
-**The refusal signature, worth recognising if it returns:** jobs *created* and
-then refused before a runner picks one up — **0 billable milliseconds** on all
-five, a run about five seconds long, log downloads 404ing because no log
-exists, and an empty check-run output. That is an account being refused
-compute, not broken YAML, which fails differently and produces both logs and
-billable time. The cause both times was **exhausted Actions minutes**: this is
-a private repo on a personal account, so minutes are billed, where a public
-repo's are free and unlimited. The plan, the allowance and the run numbers are
-in `LOCAL_NOTES.md` — gitignored, so a session container does not have it; what
-a session needs is the signature above and the conclusion, which is that **no
-commit can repair this** and it is the owner's billing page.
+**If every job is refused again, it is billing, not YAML.** From 2026-09-06 to
+2026-09-12, while the repository was private, every run was refused for
+exhausted Actions minutes. The signature: jobs created and refused before a
+runner picks one up, a run about **5 seconds** long (`run_duration_ms`, against
+about 347,000 for a real one), logs that 404 because none was written, and an
+empty check-run output. Do not use the billable-milliseconds figure to tell the
+two apart; it reads 0 on green runs here too. No commit can repair a refusal; it
+is the owner's billing page. The repository has been public since 2026-09-18,
+where minutes are free, so the remaining gate is a fork's first workflow
+stopping at `action_required` until a maintainer approves it.
 
-**The discriminator is the duration, not the billable figure — and a previous
-version of this paragraph got that wrong.** It said "0 billable ms is the
-tell", which is false: `get_workflow_run_usage` on run 889, which *succeeded*
-and took 347 seconds, also reports 0 billable milliseconds on all five jobs.
-This repository's minutes do not appear through that field at all, so it cannot
-separate a refused run from a green one and the older text above lists it only
-as one marker among four. What separates them is `run_duration_ms` — about
-**5,000 for a refusal against about 347,000 for a real run** — and logs that
-404 because no log was ever written. Per-job minutes have to be *computed* from
-`list_workflow_jobs` timings, rounded up per job, rather than read off a
-billing number.
-
-**The repository is public as of 2026-09-18**, so the private-repository minute
-allowance described above is historical rather than the current gate. Actions
-is running again. A first workflow from a fork can still stop at
-`action_required` until a maintainer approves it; that is an approval gate, not
-the five-second billing refusal above. `app-walk` remains the longest job.
-Preflight first; push when you believe it is green.
-
-**Its first working run failed two jobs, and both were defects in checks rather
-than in the app**: `check-brand-assets.py` could not tell "the art is wrong"
-from "I could not look at the art", because the job had no Pillow and the check
-read only stdout; and `device-check.mjs` demanded a permission error from a
-headless runner with no audio hardware to refuse. Neither is reachable on a
-machine that has Pillow installed and a sound card. **A check that has never
-run in CI is not a check yet** — if you add one, watch it run there.
+**A check that has never run in CI is not a check yet.** CI's first working run
+failed two jobs, and both were defects in the checks: `check-brand-assets.py`
+could not tell "the art is wrong" from "I could not look at the art" (no Pillow
+on the runner), and `device-check.mjs` demanded a permission error from a
+headless runner with no audio hardware to refuse. If you add a check, watch it
+run there.
 
     tools/preflight.py            # the gates that need no build
     tools/preflight.py --full     # and the builds, the walk and the audits
@@ -175,7 +154,7 @@ with `migrations/`. Neither the name nor the ref is written down here.
    version you would defend in review. The shape of the data, the correctness
    of a rule and the composition of a screen are all far cheaper to get right
    now than after something is built on top of them, and a large part of
-   `EDIT_LOG.md` is the cost of the other choice. This is **not** licence to
+   `git log` is the cost of the other choice. This is **not** licence to
    gold-plate: "best" means the best version *of what was asked for*, not more
    than was asked for. Speed is the one thing still worth leaving alone until
    something is measurably slow — measure, then optimise.
@@ -214,10 +193,10 @@ with `migrations/`. Neither the name nor the ref is written down here.
 5. **Smoke-test the happy path manually** after each batch, not just automated tests.
 6. **Tag the end of every batch**: when the DoD is met, `git tag batch-N-done` and push the tag. These are the known-good rollback anchors — so check `git ls-remote --tags origin` before writing one, because a shallow session clone shows none of them and re-tagging moves an anchor (see §4).
 7. **Externalize magic numbers to config** (see `backend/config.toml`) so tuning never requires a code edit.
-8. **Be honest about DoD status.** If part of a Definition of Done can't be met in-session (e.g. it needs a human ear or real recordings), say so plainly in `EDIT_LOG.md` and the PR — never claim it's done.
+8. **Be honest about DoD status.** If part of a Definition of Done can't be met in-session (e.g. it needs a human ear or real recordings), say so plainly in the commit message and the PR — never claim it's done.
 
 **Definition of Done for a batch** = the batch's own DoD checklist in
-the spec + all four logs updated + tests green + tag pushed.
+the spec + the logs in §1 updated + tests green + tag pushed.
 
 ## 2. STOP and ask before any UI/UX work
 
@@ -325,7 +304,7 @@ that is where it was learned, but it applies to every screen.
 screenshot afterwards.** Look at the screen from across the room and name what
 you notice first, second and third. If everything competes, the hierarchy is
 wrong and the fix is composition, not more styling. Record the answer in
-`EDIT_LOG.md` for any screen you build or change.
+the commit message for any screen you build or change.
 
 ## 4. Batch status (keep this current)
 
@@ -342,8 +321,8 @@ open. `git log -- frontend/` is where the old tree went.
 - Batch 2 — Sheet music OCR pipeline ✅
 - Batch 3 — Audio analysis core ✅ (pipeline done; threshold tuning against real recordings still pending — see `TUNING_LOG.md`)
 - Batch 4 — Async analysis API + calibration ✅ (BackgroundTasks; Celery migration deferred to spec §11 triggers)
-- Batch 5 — Frontend foundation ⏳ (shell done in `mobile/`: design tokens locked, primitives, routing, auth/data plumbing; build + lint green. Live magic-link auth + E2E test pending Supabase keys — see `EDIT_LOG.md`. Not tagged `batch-5-done` yet.)
-- Batch 6 — Score capture flow ⏳ (capture + OCR-review editor + save built in `mobile/`, **rebuilt to the locked design system** 2026-07-28; build + lint green. Live upload→OCR→save + iPhone camera pending Supabase keys/device — see `EDIT_LOG.md`. Not tagged `batch-6-done`.)
+- Batch 5 — Frontend foundation ⏳ (shell done in `mobile/`: design tokens locked, primitives, routing, auth/data plumbing; build + lint green. Live magic-link auth + E2E test pending — see §4 below. Not tagged `batch-5-done` yet.)
+- Batch 6 — Score capture flow ⏳ (capture + OCR-review editor + save built in `mobile/`, **rebuilt to the locked design system** 2026-07-28; build + lint green. Live upload→OCR→save + iPhone camera pending a device — see §4 below. Not tagged `batch-6-done`.)
 - Batch 7 — Recording + analysis/verdict flow ⏳ (tempo/calibration/metronome, MediaRecorder panel, polling result screen with verdict/annotated-score/trend/per-note built, **rebuilt to the locked design system** 2026-07-28; build + lint green. Live mic→analysis loop pending backend — **the microphone itself now records on a real iPhone**, confirmed 2026-09-13; see §4 and the recording path in `docs/subsystems.md`. Not tagged `batch-7-done`.)
 - Batch 8+ — mostly UI/UX → see the §2 gate and the §3 design laws. **Build to
   the tokens and never re-type hexes** — `mobile/src/design/`, which is now the

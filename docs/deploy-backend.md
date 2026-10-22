@@ -12,10 +12,11 @@ Use the plain Pages domain, not the per-deployment ones like
 `https://a16c6845.YOUR-PROJECT.pages.dev`. Those are different origins and CORS
 rejects them — which presents as a network error, not a permissions one.
 
-The app already calls this API. `POST /v1/scores` runs the whole OCR pipeline —
-OMR second opinion, vision model, beat-sum check — and the app's
-`useTranscribePage` hook already calls it. **Nothing in the app needs changing.**
-It is on sample data only because `EXPO_PUBLIC_API_BASE_URL` is empty.
+The app already calls this API: `POST /v1/scores` starts a page reading (homr
+on Modal, then the beat-sum check and Claude's re-read of bars that do not add
+up — see §4 below), and the app's scan flow polls it. **Nothing in the app needs
+changing.** A build runs on sample data only when one of its three
+`EXPO_PUBLIC_*` values is missing (`mobile/src/data/environment.ts`).
 
 Two steps.
 
