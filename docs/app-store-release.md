@@ -40,8 +40,7 @@ Populate it with music the publisher is authorized to use.
 3. Choose an instrument in Profile; use Listen on the piece.
 4. Start practice, allow the microphone, and record a short passage.
 5. Stop and wait for analysis. Inspect the result and replay the recording.
-6. Open Insights for history. Comparable takes appear only when the score,
-   settings and usable timing data match; old takes lack this metadata.
+6. Open Insights for the history of recent takes and the trend across them.
 7. Account deletion is under Profile → Delete account. Test only with the
    disposable account. Do not supply the owner's personal account for review.
 
