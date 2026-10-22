@@ -6,10 +6,11 @@
 # git. Fly and Railway both read the same Dockerfile if you prefer those — this
 # file is a convenience, not a dependency.
 #
-# The OMR second opinion is OFF here. Turning it on means building Audiveris
-# into the image (`WITH_AUDIVERIS=1`), which adds a JDK, a Gradle build and a
-# few hundred megabytes, and the free plan will not finish it. Get the API up
-# first; see docs/deploy-omr.md to add it afterwards.
+# This deploys the API alone, and the API alone cannot read a score: the
+# reader (homr) runs only in the Modal container. Get the API up first, then
+# see docs/deploy-modal.md. (This comment used to offer an Audiveris build
+# flag and a docs/deploy-omr.md; the flag was removed with the engine and the
+# document never existed — see docs/deploy-backend.md.)
 services:
   - type: web
     name: intempo-api
