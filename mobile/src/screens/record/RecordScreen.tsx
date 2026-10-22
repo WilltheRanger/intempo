@@ -1103,7 +1103,17 @@ export function RecordScreen() {
   useEffect(() => {
     let cancelled = false;
     void restoreQueuedTake(params.pieceId).then((restored) => {
-      if (cancelled || !restored || unsent.current !== null) {
+      // **Nor a take being recorded.** Starting one clears `unsent`, so a slow
+      // read (a 50 MB blob, or a permission prompt in between) that resolved
+      // mid-take passed the check above and offered "Send it again" for the
+      // old take while the new one was being captured.
+      if (
+        cancelled ||
+        !restored ||
+        unsent.current !== null ||
+        starting.current ||
+        recorder.current !== null
+      ) {
         return;
       }
       // With what it was played against, not what this screen is set to now.
