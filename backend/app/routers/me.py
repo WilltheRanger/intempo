@@ -10,7 +10,6 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 from typing import Any
-from urllib.parse import unquote, urlparse
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, status
@@ -26,8 +25,10 @@ from app.models.user import (
     UserRole,
     UserTier,
 )
+from app.services.audio_storage import object_key_from
 from app.services.page_image import display_key_for
-from app.services.score_pages import pages_of
+from app.services.provisioning import ensure_user_row
+from app.services.score_pages import page_keys, pages_of
 from app.services.tier_limits import usage_for
 from app.services.training import may_keep_corrections
 from app.routers.upload import AUDIO_BUCKET, SCORE_BUCKET
@@ -41,10 +42,6 @@ log = logging.getLogger("intempo.me")
 #: photograph is transient and deleted on acceptance, an avatar lives as
 #: long as the account.
 AVATAR_BUCKET = "avatars"
-#: How long a signed avatar URL lasts. An hour, not the five minutes an
-#: upload URL gets — this one is read by an <img> that may be rendered
-#: long after the response was built.
-AVATAR_URL_TTL_SECONDS = 3600
 
 
 def _user_id_from(payload: dict[str, Any]) -> UUID:
@@ -65,20 +62,20 @@ def _user_id_from(payload: dict[str, Any]) -> UUID:
 
 
 def _provision_user(client: Any, user_id: UUID, email: str) -> dict[str, Any]:
-    """Create the users row on first /v1/me. Uses service role to bypass RLS."""
-    insert = (
-        client.table("users")
-        .insert(
-            {
-                "id": str(user_id),
-                "email": email,
-                "tier": UserTier.free.value,
-                "role": UserRole.student.value,
-            }
-        )
-        .execute()
-    )
-    rows = insert.data or []
+    """Create the users row on first /v1/me, and return it. Service role, so RLS
+    does not apply.
+
+    **Through `ensure_user_row`'s upsert, then a read.** This was a plain insert
+    after a select that found nothing, which is the race that helper documents:
+    two first requests together (a client retrying through a cold start, two
+    tabs) both found no row, both inserted, and the second failed on the
+    primary key — a 500 on the first request an account ever makes. The upsert
+    ignores the duplicate, and the read returns whichever insert won.
+    """
+    ensure_user_row(client, user_id, email)
+    rows = (
+        client.table("users").select("*").eq("id", str(user_id)).limit(1).execute()
+    ).data or []
     if not rows:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -476,23 +473,6 @@ def _forget_training_data(client: Any, user_id: UUID) -> None:
 
     for score in rows:
         discard_pages_of(client, score)
-def _storage_key(url: str | None, bucket: str) -> str | None:
-    """Recover an object key from any Supabase storage URL shape we issue."""
-    if not url:
-        return None
-    path = unquote(urlparse(url).path)
-    prefixes = (
-        f"/storage/v1/object/sign/{bucket}/",
-        f"/storage/v1/object/authenticated/{bucket}/",
-        f"/storage/v1/object/public/{bucket}/",
-    )
-    for prefix in prefixes:
-        if path.startswith(prefix):
-            key = path[len(prefix):]
-            return key or None
-    return None
-
-
 def _account_storage(client: Any, user_id: UUID) -> dict[str, list[str]]:
     """Snapshot every object key before auth deletion cascades its rows.
 
@@ -548,30 +528,37 @@ def _account_storage(client: Any, user_id: UUID) -> dict[str, list[str]]:
     # account left it in the bucket. `scores._page_keys` is the same two lines
     # over the same function, with a comment saying one place — this was the
     # third copy, and the only one that disagreed.
+    #
+    # **Through `page_keys`, the parser every other deletion uses.** This had
+    # its own, which knew three URL shapes and not the legacy
+    # `/object/upload/sign/` one, so those photographs outlived the account.
     pages: list[str] = []
     for row in score_rows:
-        for url in pages_of(row):
-            key = _storage_key(url, SCORE_BUCKET)
-            if key:
-                pages.append(key)
-                # **And its display copy**, for the same reason the take above
-                # collects both of its references: a page has two objects once
-                # it has been read, and collecting one of them would delete the
-                # account and leave the other in the bucket. Most pages have no
-                # display copy — every one scanned before `store_display_copy`
-                # existed — and by the note below, removing a key that is
-                # already gone is not an error.
-                pages.append(display_key_for(key))
+        # **And each page's display copy**, for the same reason the take below
+        # collects both of its references: a page has two objects once it has
+        # been read, and collecting one of them would delete the account and
+        # leave the other in the bucket. Most pages have no display copy —
+        # every one scanned before `store_display_copy` existed — and by the
+        # note below, removing a key that is already gone is not an error.
+        for key in page_keys(row):
+            pages.append(key)
+            pages.append(display_key_for(key))
 
     # **Both references, because a judged take has two.** The WAV is replaced
     # by an Opus once the analysis finishes and `playback_key` names it; only
     # one of the two normally still exists, and asking storage to remove a key
     # that is already gone is not an error. Collecting one of them would delete
     # the account and leave its recordings behind.
+    #
+    # **`playback_key` is a bare key, not a URL** (`<uid>/<uuid>.opus`). The
+    # URL-only parser this used returned None for it, so the Opus — the only
+    # copy left once the WAV is reclaimed an hour after the verdict — survived
+    # every account deletion. `audio_storage.object_key_from` reads both.
     audio = []
     for row in analysis_rows:
         for field in ("audio_url", "playback_key"):
-            key = _storage_key(row.get(field), AUDIO_BUCKET)
+            reference = row.get(field)
+            key = object_key_from(reference) if isinstance(reference, str) else None
             if key:
                 audio.append(key)
 

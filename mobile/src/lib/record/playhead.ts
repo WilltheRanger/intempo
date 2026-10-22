@@ -20,10 +20,13 @@
 export interface PlayheadInput {
   /** Milliseconds since the take started. Count-in has already been excluded. */
   elapsedMs: number;
-  /** The tempo the take is set to. */
+  /** The tempo the take is set to, in quarter notes per minute. */
   bpm: number;
-  /** Beats in a bar, from the metronome's own pulse plan. */
-  beatsPerBar: number;
+  /**
+   * Quarter notes in a bar (`quarterBeatsPerBar`), the unit `bpm` counts in.
+   * Not the felt pulses: 6/8 is three here, not two.
+   */
+  quarterBeatsPerBar: number;
   /** The bar the take began on, 1-based, as `measureNumber` counts. */
   startFrom: number;
   /** The last bar on the piece, so the mark stops rather than running off. */
@@ -57,23 +60,23 @@ const MS_PER_MINUTE = 60_000;
 export function playheadAt({
   elapsedMs,
   bpm,
-  beatsPerBar,
+  quarterBeatsPerBar,
   startFrom,
   lastBar,
 }: PlayheadInput): Playhead | null {
   if (
     !Number.isFinite(elapsedMs) ||
     !Number.isFinite(bpm) ||
-    !Number.isFinite(beatsPerBar) ||
+    !Number.isFinite(quarterBeatsPerBar) ||
     elapsedMs < 0 ||
     bpm <= 0 ||
-    beatsPerBar <= 0
+    quarterBeatsPerBar <= 0
   ) {
     return null;
   }
 
   const beats = elapsedMs / (MS_PER_MINUTE / bpm);
-  const barsIn = beats / beatsPerBar;
+  const barsIn = beats / quarterBeatsPerBar;
   const measureNumber = startFrom + Math.floor(barsIn);
 
   if (measureNumber > lastBar) {

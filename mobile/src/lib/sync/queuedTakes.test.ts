@@ -39,7 +39,8 @@ vi.mock('./takeQueue.store', () => ({
   },
 }));
 
-import { keepTakeForLater } from './queuedTakes';
+import { markTakeSending } from './heldTakes';
+import { keepTakeForLater, restoreQueuedTake } from './queuedTakes';
 
 const take = { audio: new Blob(['wav']), filename: 'take-1.wav' };
 const context = {
@@ -88,5 +89,58 @@ describe('keepTakeForLater', () => {
     await keepTakeForLater(take, context, 'Check your connection.', null);
 
     expect(stores.size).toBe(0);
+  });
+});
+
+describe('restoreQueuedTake', () => {
+  /**
+   * A take comes back with what it was played against. Restored after a
+   * restart, a passage take from "Practice bars 21-24" was sent with the
+   * Record screen's current start bar and analysed from bar 1, and a picked
+   * M4A went up as `audio/wav`.
+   */
+  it('returns the take with its own tempo, start bar, settings and file type', async () => {
+    signedIn.accountId = 'musician-1';
+    await keepTakeForLater(
+      { ...take, filename: 'take-2.m4a', contentType: 'audio/mp4' },
+      { ...context, targetBpm: 88, metronomeMode: 'haptic', skipLongRests: true, fromMeasure: 21 },
+      'Check your connection.',
+      'musician-1',
+    );
+
+    const restored = await restoreQueuedTake('piece-1');
+
+    expect(restored).toMatchObject({
+      filename: 'take-2.m4a',
+      contentType: 'audio/mp4',
+      targetBpm: 88,
+      metronomeMode: 'haptic',
+      skipLongRests: true,
+      fromMeasure: 21,
+      lastError: 'Check your connection.',
+    });
+  });
+
+  it('says nothing about a file type for a recorded take', async () => {
+    signedIn.accountId = 'musician-1';
+    await keepTakeForLater(take, context, 'Check your connection.', 'musician-1');
+
+    const restored = await restoreQueuedTake('piece-1');
+
+    expect(restored).not.toBeNull();
+    expect(restored).not.toHaveProperty('contentType');
+  });
+
+  it('does not offer a take the background drain is sending', async () => {
+    // Offering it would send it twice: two uploads and two analyses when the
+    // first failure came before the upload finished.
+    signedIn.accountId = 'musician-1';
+    await keepTakeForLater(take, context, 'Check your connection.', 'musician-1');
+
+    const release = markTakeSending('take-1.wav');
+    expect(await restoreQueuedTake('piece-1')).toBeNull();
+
+    release();
+    expect((await restoreQueuedTake('piece-1'))?.filename).toBe('take-1.wav');
   });
 });

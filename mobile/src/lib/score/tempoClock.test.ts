@@ -131,7 +131,7 @@ describe('the mark on the page follows the same clock', () => {
       playheadAt({
         elapsedMs: steadyElapsedMs(clock, seconds * 1000, 120),
         bpm: 120,
-        beatsPerBar: 4,
+        quarterBeatsPerBar: 4,
         startFrom: 1,
         lastBar: 6,
       });

@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { beatAt, beatsPerBar, metronomePulse, secondsPerBeat } from './beats';
+import {
+  beatAt,
+  beatsPerBar,
+  metronomePulse,
+  quarterBeatsPerBar,
+  secondsPerBeat,
+} from './beats';
 
 /**
  * Where the bar lines fall, which had no test either.
@@ -42,6 +48,28 @@ describe('beatsPerBar', () => {
 
   it('tolerates the spacing a header might be read with', () => {
     expect(beatsPerBar(' 3 / 4 ')).toBe(3);
+  });
+});
+
+describe('quarterBeatsPerBar', () => {
+  // The length of a bar in the unit every tempo here is kept in. The felt
+  // pulses above are a different number in every compound and cut-time metre.
+  it.each([
+    ['4/4', 4],
+    ['3/4', 3],
+    ['2/2', 4],
+    ['6/8', 3],
+    ['9/8', 4.5],
+    ['12/8', 6],
+    ['3/8', 1.5],
+    ['7/8', 3.5],
+  ])('reads a bar of %s as %s quarter notes', (signature, expected) => {
+    expect(quarterBeatsPerBar(signature)).toBe(expected);
+  });
+
+  it('has no length for a metre it cannot read', () => {
+    expect(quarterBeatsPerBar('unknown')).toBeNull();
+    expect(quarterBeatsPerBar(null)).toBeNull();
   });
 });
 

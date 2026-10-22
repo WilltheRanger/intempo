@@ -325,13 +325,19 @@ export function scheduleScore(
     clock += Math.max(0, opening.length * GRACE_S - room);
   }
   let barStart = clock;
+  // Where a barline falls inside a note held across it, by the index of the
+  // tied-into note that opens the bar. The loop has moved past the whole held
+  // value by the time it reaches that note, so `clock` there is the end of the
+  // tie, not the barline: measured from it, the next note took the downbeat's
+  // accent and the bar's pattern shifted by the tied value.
+  const barlineAt = new Map<number, number>();
   // Where the last sounded note started: an ornament takes its time from it.
   // Null before the first, whose ornament may have all the silence before it.
   let previousOnset: number | null = null;
 
   for (let i = 0; i < flat.length; i += 1) {
     if (opensBar[i]) {
-      barStart = clock;
+      barStart = barlineAt.get(i) ?? clock;
     }
     const note = flat[i];
     if (ties.absorbed[i]) {
@@ -340,6 +346,9 @@ export function scheduleScore(
     let beats = BEATS[note.duration] ?? UNKNOWN_DURATION_BEATS;
     let last = i;
     for (let held = i + 1; held < flat.length && ties.absorbed[held]; held += 1) {
+      if (opensBar[held]) {
+        barlineAt.set(held, clock + beats * secondsPerBeatIn(measureOf[i]));
+      }
       beats += BEATS[flat[held].duration] ?? UNKNOWN_DURATION_BEATS;
       last = held;
     }

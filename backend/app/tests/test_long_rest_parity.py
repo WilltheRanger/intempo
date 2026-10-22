@@ -56,9 +56,11 @@ def test_the_backend_shortens_what_the_contract_says(case) -> None:
     assert result.skipped_bars == case["skipped_bars"], case["name"]
 
 
-def test_the_numbers_come_from_the_contract_not_from_here() -> None:
-    """Written down once. Two copies of a threshold is two chances to disagree
-    about how long a rest has to be before it is skipped."""
+def test_the_numbers_are_the_contracts() -> None:
+    """Two copies of a threshold is two chances to disagree about how long a
+    rest has to be before it is skipped, so this holds the backend's copy to
+    the contract. It is a copy rather than a read because the images ship
+    `backend/` only, and the contract lives outside it."""
     assert rule().min_bars == FIXTURE["min_bars"]
     assert rule().kept_bars == FIXTURE["kept_bars"]
 

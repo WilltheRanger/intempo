@@ -127,6 +127,48 @@ describe('how the notes are played', () => {
     expect(third.velocity!).toBeGreaterThanOrEqual(fourth.velocity! - 2);
   });
 
+  it('keeps the accents of a bar that opens on a note tied over its barline', () => {
+    // The barline falls inside the held D. Measured from the end of the tie
+    // instead, E took the downbeat's accent and the bar's pattern shifted by a
+    // beat (77/72/74 where the bar's own pattern is 72/74/73).
+    //
+    // The control opens bar two on a quarter rest rather than the tied D, so
+    // every later note sits on the same beat *and* has the same index among
+    // sounded notes, which `variation` keys on — any difference left is the
+    // metric accent alone.
+    const note = (pitch: string, duration: 'half' | 'quarter', tied = false) => ({
+      pitch,
+      duration,
+      tied_to_next: tied,
+    });
+    const twoBars = (opening: 'tie' | 'rest'): ScoreJson => ({
+      ...bar([]),
+      measures: [
+        {
+          measure_number: 1,
+          notes: [note('C4', 'half'), note('D4', 'half', opening === 'tie')],
+          slurs: [],
+        },
+        {
+          measure_number: 2,
+          notes: [
+            note(opening === 'tie' ? 'D4' : 'rest', 'quarter'),
+            note('E4', 'quarter'),
+            note('F4', 'quarter'),
+            note('G4', 'quarter'),
+          ],
+          slurs: [],
+        },
+      ],
+    });
+    const afterTheBarline = (opening: 'tie' | 'rest') =>
+      scheduleScore(twoBars(opening), 60)
+        .notes.filter((n) => n.startS >= 5)
+        .map((n) => [n.startS, n.velocity]);
+
+    expect(afterTheBarline('tie')).toEqual(afterTheBarline('rest'));
+  });
+
   it('holds slurred notes their whole value into the next, and separates the last', () => {
     const notes = scheduleScore(
       bar(SCALE, [{ start_note_index: 0, end_note_index: 2 }]),

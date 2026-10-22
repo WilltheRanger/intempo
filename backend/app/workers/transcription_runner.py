@@ -243,6 +243,19 @@ _FAILURE_REASONS: tuple[tuple[str, str], ...] = (
         "fault on our side, not with your photograph — try reading it again.",
     ),
     (
+        # `musicxml.MAX_MEASURES`: the reading's multi-bar rests add up to more
+        # bars than any part has. On a scan that is a rest count the reader
+        # misread, not a photograph that came out badly, and re-photographing
+        # reads the same digits the same way. An imported file raises the same
+        # words through the import route's 422 instead, which never reaches
+        # this table.
+        "expands to more than",
+        "This page came back with more bars of rest than any part has — a "
+        "misread multi-bar rest, most likely. That is the reading, not your "
+        "photograph. Importing a MusicXML file, or entering the piece by "
+        "hand, both work.",
+    ),
+    (
         # `join_pages` with nothing to join. An internal invariant, and a
         # musician cannot photograph their way out of one.
         "nothing to join",

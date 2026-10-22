@@ -56,7 +56,9 @@ APP_NAME = "intempo"
 #: not a reproducible build.
 image = (
     modal.Image.debian_slim(python_version="3.12")
-    .apt_install("libsndfile1")  # soundfile's C library; not in slim
+    # soundfile's C library, not in slim; and ffmpeg, which `audioread` hands
+    # an M4A to because soundfile cannot read AAC (see the API's Dockerfile).
+    .apt_install("libsndfile1", "ffmpeg")
     .pip_install(
         "httpx==0.28.1",
         "librosa==0.11.0",
@@ -111,11 +113,13 @@ app = modal.App(APP_NAME, image=image)
 #:     modal secret create intempo-backend \
 #:         SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=...
 #:
-#: Model keys are **optional** and only buy the fallback: this container reads
-#: pages with homr, which needs none. Adding `ANTHROPIC_API_KEY` here is what
-#: lets `parse_sheet_music` fall through to the vision models on a page homr
-#: cannot read. Without it, such a page fails — with the reason said plainly,
-#: which is the point of `_why_it_failed`.
+#: Model keys are **optional**: this container reads pages with homr, which
+#: needs none, and the chain is homr alone (`OCR_PROVIDER_CHAIN`). Adding
+#: `ANTHROPIC_API_KEY` here turns on the two Claude jobs that run after homr:
+#: re-reading the bars that do not add up (`OCR_CORRECTOR`) and reading tempo
+#: words and dynamics off the photograph (`OCR_TEMPO_READER`). Without it both
+#: are skipped and the reading is homr's alone. A page homr cannot read fails
+#: with the reason said plainly, which is the point of `_why_it_failed`.
 #:
 #: This is the second place that key lives, and it is the reason to keep the
 #: image narrow: a container that cannot make an outbound call to anything but
@@ -205,7 +209,7 @@ transcription_image = (
         "google-genai==1.73.1",
         "httpx==0.28.1",
         "numpy==2.4.6",
-        "pillow==12.3.0",
+        "pillow==13.0.0",
         # The MusicXML parser refuses entity definitions, and it is
         # `score_json_from_musicxml` that homr's output goes through in
         # this container. Without it the import fails at module load.
@@ -317,9 +321,11 @@ def read_page(score_id: str) -> None:
 def main(analysis_id: str) -> None:
     """Run one analysis by id, from a terminal.
 
-        modal run modal_app.py --analysis-id <uuid>
+        modal run modal_app.py::main --analysis-id <uuid>
 
     For checking the deployment works against a real row, without a phone.
+    The `::main` is required: this file has two local entrypoints, and the
+    Modal CLI refuses to guess between them.
     """
     run_analysis.remote(analysis_id)
     print(f"analysis {analysis_id}: dispatched")

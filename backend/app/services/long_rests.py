@@ -11,20 +11,26 @@ So the same transformation is applied to the score before the timeline is
 built, and the rule lives in `fixtures/practice/long_rests.json` because the
 app has to shorten the score identically to play it and to count it. Two walks,
 two languages, one contract — the same arrangement as `fixtures/timeline`.
+
+**The numbers are written here, and the contract checks them; it is not read at
+runtime.** It used to be, from `parents[3]` of this file — the repository root
+in a checkout, and `/` in both images, whose build context is `backend/`. So
+every take sent with "skip long rests" on failed with `internal_error` in
+production while every test, run from a checkout, passed.
+`test_long_rest_parity.py` holds these two numbers to the contract, the way
+`lib/notation/longRests.parity.test.ts` holds the app's.
 """
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
-from functools import lru_cache
-from pathlib import Path
 
 from app.services.score_schema import Measure, ScoreJson
 
-_CONTRACT = (
-    Path(__file__).resolve().parents[3] / "fixtures" / "practice" / "long_rests.json"
-)
+#: A run of rest bars at least this long is shortened...
+MIN_BARS = 4
+#: ...to this many of its own first bars.
+KEPT_BARS = 1
 
 
 @dataclass(frozen=True)
@@ -35,11 +41,9 @@ class LongRestRule:
     kept_bars: int
 
 
-@lru_cache(maxsize=1)
 def rule() -> LongRestRule:
-    """The numbers, read from the contract rather than written down twice."""
-    raw = json.loads(_CONTRACT.read_text(encoding="utf-8"))
-    return LongRestRule(min_bars=int(raw["min_bars"]), kept_bars=int(raw["kept_bars"]))
+    """The numbers, which `test_long_rest_parity.py` holds to the contract."""
+    return LongRestRule(min_bars=MIN_BARS, kept_bars=KEPT_BARS)
 
 
 def _is_silent(measure: Measure) -> bool:

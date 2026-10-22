@@ -106,8 +106,11 @@ def test_first_touch_provisioning(
     }
     mock_client = MagicMock()
     table = mock_client.table.return_value
-    table.select.return_value.eq.return_value.limit.return_value.execute.return_value = MagicMock(data=[])
-    table.insert.return_value.execute.return_value = MagicMock(data=[new_row])
+    # No row, then the row the upsert wrote.
+    table.select.return_value.eq.return_value.limit.return_value.execute.side_effect = [
+        MagicMock(data=[]),
+        MagicMock(data=[new_row]),
+    ]
     monkeypatch.setattr(db_module, "get_service_client", lambda: mock_client)
 
     res = client.get(
@@ -128,12 +131,55 @@ def test_first_touch_provisioning(
     # A brand-new free account has used none of its three.
     assert body["analyses"]["limit"] == 3
     assert body["analyses"]["used"] == 0
-    table.insert.assert_called_once()
-    inserted = table.insert.call_args.args[0]
+    table.insert.assert_not_called()
+    table.upsert.assert_called_once()
+    inserted = table.upsert.call_args.args[0]
     assert inserted["id"] == str(user_id)
     assert inserted["email"] == new_row["email"]
     assert inserted["tier"] == "free"
     assert inserted["role"] == "student"
+    assert table.upsert.call_args.kwargs == {"on_conflict": "id", "ignore_duplicates": True}
+
+
+def test_two_first_requests_at_once_both_get_the_account(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    """The other request inserted between this one's read and its write.
+
+    A plain insert failed on the primary key there, and the account's very
+    first `/v1/me` was a 500. The upsert ignores the duplicate (returning no
+    row, as PostgREST does for an ignored conflict) and the read that follows
+    finds the row the other request wrote.
+    """
+    user_id = uuid4()
+    winner = {
+        "id": str(user_id),
+        "email": "fresh@example.com",
+        "tier": "free",
+        "role": "student",
+        "studio_id": None,
+    }
+    mock_client = MagicMock()
+    table = mock_client.table.return_value
+    table.select.return_value.eq.return_value.limit.return_value.execute.side_effect = [
+        MagicMock(data=[]),
+        MagicMock(data=[winner]),
+    ]
+    table.upsert.return_value.execute.return_value = MagicMock(data=[])
+    table.insert.return_value.execute.side_effect = RuntimeError(
+        'duplicate key value violates unique constraint "users_pkey"'
+    )
+    monkeypatch.setattr(db_module, "get_service_client", lambda: mock_client)
+
+    res = client.get(
+        "/v1/me",
+        headers={"Authorization": f"Bearer {make_token(sub=user_id, email=winner['email'])}"},
+    )
+
+    assert res.status_code == 200, res.text
+    assert res.json()["id"] == str(user_id)
 
 
 def test_invalid_jwt_returns_401(client: TestClient) -> None:
@@ -875,6 +921,50 @@ def test_account_deletion_removes_identity_then_owned_storage(
         f"{user_id}/abandoned.jpg",
     ] in removed
     assert [f"{user_id}/take.wav", f"{user_id}/unsent.wav"] in removed
+
+
+def test_deleting_an_account_removes_every_reference_shape_it_stores(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    """The Opus copy and the legacy page URL, which the old parser could not read.
+
+    `playback_key` is a bare key (`<uid>/<uuid>.opus`), not a URL, and the
+    deletion path parsed only URLs — so the Opus, the one copy of a judged take
+    left once its WAV is reclaimed, outlived every deleted account. Page URLs
+    signed for *upload* (`/object/upload/sign/`) were missed the same way.
+    """
+    user_id = uuid4()
+    uid = str(user_id)
+    sb = _delete_account_mock(user_id)
+    rows = {
+        "analyses": [
+            {"audio_url": None, "playback_key": f"{uid}/judged.opus"},
+            {"audio_url": f"audio-uploads/{uid}/fresh.wav", "playback_key": None},
+        ],
+        "scores": [
+            {
+                "source_image_url": (
+                    "https://project.supabase.co/storage/v1/object/upload/sign/"
+                    f"score-images/{uid}/legacy.jpg?token=upload"
+                ),
+                "source_image_urls": [],
+            }
+        ],
+    }
+    for name, data in rows.items():
+        table = sb.table.side_effect(name)
+        table.select.return_value.execute.return_value = MagicMock(data=data)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: sb)
+
+    assert _delete_me(client, make_token(sub=user_id)).status_code == 204
+
+    removed = [call.args[0] for call in sb.storage.from_.return_value.remove.call_args_list]
+    audio = next(keys for keys in removed if f"{uid}/judged.opus" in keys)
+    assert f"{uid}/fresh.wav" in audio
+    pages = next(keys for keys in removed if f"{uid}/legacy.jpg" in keys)
+    assert f"{uid}/legacy.display.jpg" in pages
 
 
 def test_deleting_an_account_takes_its_abandoned_uploads_with_it(

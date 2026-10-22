@@ -3,10 +3,8 @@ import { describe, expect, it } from 'vitest';
 import type { MeasureVerdict } from '../../data/types';
 import {
   barIndexAt,
-  focusMeasure,
   measureChartBars,
   MIN_BAR,
-  openingMeasure,
 } from './measureChart';
 
 function measure(over: Partial<MeasureVerdict> = {}): MeasureVerdict {
@@ -74,23 +72,6 @@ describe('measureChartBars', () => {
       measure({ measure: 2, underTempoChange: true, deviationPct: 80 }),
     ]);
     expect(bars[0].size).toBe(1);
-  });
-});
-
-describe('the measure the chart opens on', () => {
-  it('is the worst band, and the furthest off within it', () => {
-    expect(focusMeasure(TAKE)?.measure).toBe(4);
-    expect(openingMeasure(TAKE)).toBe(4);
-  });
-
-  it('falls back to the first measure with a claim when every one was on the beat', () => {
-    const steady = [measure({ measure: 3, underTempoChange: true }), measure({ measure: 4 })];
-    expect(focusMeasure(steady)).toBeNull();
-    expect(openingMeasure(steady)).toBe(4);
-  });
-
-  it('answers null for a take with no measures', () => {
-    expect(openingMeasure([])).toBeNull();
   });
 });
 

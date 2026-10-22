@@ -1,16 +1,18 @@
-# InTempo — mobile
+# InTempo — the app
 
-React Native (Expo SDK 57) app for iOS. Phases 2 and 3 of the frontend
-rebuild: the design system, the shared primitives, the data seam, and the
-Today screen.
+React Native (Expo SDK 57) for iOS, also built to the web for Cloudflare Pages.
+This is the only application in the repository; the backend it talks to is in
+`../backend`.
 
 ## Running it
 
 ```bash
 cd mobile
 npm install
-npm start          # then press i for the iOS simulator
+npm start          # then press i for the iOS simulator, w for the browser
+npm test           # vitest
 npm run typecheck  # tsc --noEmit
+npm run lint       # eslint
 ```
 
 Before committing, run the checks from the repository root. GitHub Actions is
@@ -21,36 +23,44 @@ python3 tools/preflight.py          # the gates that need no build
 python3 tools/preflight.py --full   # and the builds, the walk and the audits
 ```
 
-Optional environment variables (all have working defaults):
+Environment variables (all optional):
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `EXPO_PUBLIC_API_BASE_URL` | `http://127.0.0.1:8000` | FastAPI backend |
-| `EXPO_PUBLIC_SUPABASE_URL` | — | Supabase project, for auth |
-| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | — | Supabase anon key |
+| `EXPO_PUBLIC_API_BASE_URL` | unset | FastAPI backend |
+| `EXPO_PUBLIC_SUPABASE_URL` | unset | Supabase project, for auth |
+| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | unset | Supabase anon key |
+| `EXPO_PUBLIC_FIXTURES` | unset | `empty` or `new` for a fixture account with no pieces (`new`: not yet onboarded) |
+| `EXPO_PUBLIC_SENTRY_DSN` | unset | Native release builds only: where unhandled crashes are sent |
 
-The app boots without the Supabase variables in deterministic fixture mode.
-With all three public runtime values configured, `data/sources/index.ts`
-selects the authenticated API source instead. Backend secrets belong to the
-deployed API host and are never placed in this app.
+With any of the first three missing, the app boots in deterministic fixture
+mode and says so at boot (`data/environment.ts`). With all three configured,
+`data/sources/index.ts` selects the authenticated API source instead. Backend
+secrets belong to the deployed API host and are never placed in this app.
 
 ## Layout
 
 ```
 src/
-├── design/       tokens — the only place a hex, size, or spacing value lives
-├── components/
-│   ├── primitives/   Text ScreenContainer PageHeader SectionHeader Card
-│   │                 PrimaryButton SecondaryButton ProgressBar MetadataRow
-│   │                 EmptyState LoadingState
-│   └── pieces/       ScoreThumbnail FeaturedPieceCard PieceCard
-├── navigation/   RootNavigator · BottomTabBar
-├── screens/      today/ library/ insights/ profile/ practice/
-├── data/         wire types, API calls, auth, sources, hooks
-└── lib/          formatting, greeting, reduced-motion
+├── App.tsx          boot, providers, error boundary
+├── design/          tokens: the only place a colour, size, radius or spacing value lives
+├── components/      primitives/ (Text, buttons, inputs, headers), overlays/ (sheets,
+│                    dialogs), notation/ and score/ (engraved music, playback),
+│                    charts/, pieces/, practice/, profile/, brand/, motion/, skeletons/
+├── navigation/      RootNavigator, the floating BottomTabBar, deep links
+├── screens/         one folder per screen: library/, pieceDetail/, scanner/,
+│                    transcriptionReview/, record/, tempo/, verdict/, insights/,
+│                    profile/, onboarding/, auth/, account/ …
+├── data/            wire types, the API client, auth, the fixture/API source seam,
+│                    React Query hooks and the persisted cache
+└── lib/             platform and domain logic: audio recording, the metronome,
+                     the offline take queue (sync/), score playback, verdict
+                     presentation, formatting, accessibility
 ```
 
-## Two rules that keep this maintainable
+Tests sit beside the module they test (`foo.ts` + `foo.test.ts`).
+
+## Three rules that keep this maintainable
 
 **Values come from `design/`.** No component declares a colour, font size,
 radius, or spacing of its own. Adding a screen should never add a token; if a
@@ -58,36 +68,13 @@ layout seems to need a value that isn't in the scale, that's a design question,
 not an implementation one.
 
 **Screens never touch the API.** They call hooks in `data/hooks`, which call a
-`PieceSource`. `data/sources/index.ts` picks the implementation — fixtures
-today, the live backend later. Swapping it changes one line and no component.
+source. `data/sources/index.ts` picks the implementation (fixtures or the live
+backend) from the environment, so swapping it changes no component.
 
-## Today is the canonical reference
-
-The Today screen is approved and frozen. Library, Piece Detail, Practice,
-Insights, and Profile derive from it — they do not get their own visual
-decisions. Nothing about Today changes without the owner asking for it.
-
-What that means in practice when building a new screen:
-
-- **Compose, don't invent.** Everything on Today is built from
-  `components/primitives` and `components/pieces`. If a new screen seems to
-  need a new card, button, or heading style, it almost certainly needs an
-  existing one with different content.
-- **Values come from `design/`.** No new colours, sizes, radii, or spacing
-  steps. The accent appears sparingly — on Today it is used three times
-  (progress fill, "See all", active tab) and nowhere else.
-- **Serif is for titles only.** Screen titles, the featured composition
-  title, and library composition titles. Everything functional — composers,
-  metadata, labels, controls — is Inter.
-- **Borders, never shadows.** One hairline `BORDER_WIDTH` in `colors.border`.
-- **Score imagery earns its place.** A piece is shown with its score, not an
-  icon or a coloured tile.
-- **Titles clamp.** Composition titles cap at two lines; composers and
-  metadata at one. Long real repertoire names — "Sonata for Violin and Piano
-  No. 9 in A major, Op. 47 'Kreutzer'" — must not break a row's layout.
-- **Safe areas, never device constants.** Top spacing is `ScreenContainer`'s
-  `SafeAreaView`; bottom spacing is the measured tab-bar height from
-  `navigation/tabBarMetrics`. No status-bar or notch numbers anywhere.
+**Screen rules live in modules, not components.** There is no React Native
+testing library here, so a rule inside a `.tsx` is a rule nothing checks. Put
+it in a `.ts` module with tests and let the component call it. The design laws
+every screen follows are in the repository's `CLAUDE.md` §3.
 
 ## Why fixtures remain
 
@@ -103,17 +90,17 @@ thumbnail is genuinely the piece it claims to be. See
 
     npm run build:web:empty        # builds into dist-empty/
     npx serve dist-empty -l 4323 -s
-    node ../tools/audit-a11y.mjs 4323 Today Library Insights Profile
+    node ../tools/audit-a11y.mjs 4323 Library Insights Profile
 
 `EXPO_PUBLIC_FIXTURES=empty` makes `data/sources/fixtures.ts` describe an
 account with no pieces, no takes and no insights. It is the state **every
-musician meets first** and the one every other build lacks: Today, Library and
+musician meets first** and the one every other build lacks: the Library and
 Insights are otherwise only ever seen with a library, a take and thirty days of
 trend behind them.
 
-That gap has cost a real bug. On 2026-09-02 Today was found telling a new
-musician *"Nothing to practice yet"* directly above a fully built daily warmup
-it was hiding from them, and it was found by hand-editing five functions and
+That gap has cost a real bug. On 2026-09-02 the home screen of the time was
+found telling a new musician *"Nothing to practice yet"* directly above a fully
+built daily warmup it was hiding from them, and it was found by hand-editing five functions and
 remembering to revert them. The flag is those five edits with the remembering
 taken out.
 
@@ -181,12 +168,3 @@ description, privacy answers, age rating.
 There is no `development` profile, deliberately: one requires the
 `expo-dev-client` package, which is not a dependency, so the profile would be
 config that fails on first use. Add both together or neither.
-
-## Not built yet
-
-`Modal` is specified in the brief and not built. `Input` and `SearchField`
-were on this list until they had callers — `Input` across the auth and
-transcription screens, `SearchField` in the library — and `BottomSheet` is
-used by the add-piece sheet. Library, Insights and Profile were on it too, and
-are built. This section had said otherwise for long enough that it was
-describing a different app.

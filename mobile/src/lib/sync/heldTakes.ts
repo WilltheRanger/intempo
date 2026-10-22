@@ -56,6 +56,29 @@ export function markTakeSent(filename: string): void {
   sent.add(filename);
 }
 
+const sending = new Set<string>();
+
+/**
+ * The background drain is sending this take now. Returns the release.
+ *
+ * **The other direction of `holdTake`.** The drain skips a take the Record
+ * screen holds; nothing told the screen about a take the drain had picked. A
+ * send can take minutes (upload, then waiting for the verdict), and opening
+ * Record for that piece meanwhile restored the same entry and offered "Send it
+ * again" — two submissions, and when the first failure came before the upload
+ * finished, two uploads and two analyses out of a musician's three a month.
+ */
+export function markTakeSending(filename: string): () => void {
+  sending.add(filename);
+  return () => {
+    sending.delete(filename);
+  };
+}
+
+export function isTakeSending(filename: string): boolean {
+  return sending.has(filename);
+}
+
 /** Called whenever a take stops being held. Returns the unsubscribe. */
 export function onTakeReleased(listener: () => void): () => void {
   listeners.add(listener);

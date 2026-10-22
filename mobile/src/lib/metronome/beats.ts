@@ -77,6 +77,22 @@ export function metronomePulse(
 export function beatsPerBar(timeSignature: string | null | undefined): number | null {
   return metronomePulse(timeSignature)?.pulsesPerBar ?? null;
 }
+
+/**
+ * How long one bar is in quarter notes, the unit every tempo in this app is
+ * kept in (`practiceTempo`, `displayTempoBpm`). Null when the meter is unusable.
+ *
+ * **Not `beatsPerBar`, which counts felt pulses.** 6/8 is two pulses and three
+ * quarter notes; 2/2 is two pulses and four. The Record screen's playhead
+ * divided quarter-note beats by pulses, so in 6/8 it ran half a bar ahead after
+ * one bar and in 2/2 a whole bar ahead.
+ */
+export function quarterBeatsPerBar(
+  timeSignature: string | null | undefined,
+): number | null {
+  const pulse = metronomePulse(timeSignature);
+  return pulse ? pulse.pulsesPerBar * pulse.quarterBeats : null;
+}
 /**
  * Seconds between beats. Guarded so a nonsense tempo cannot break the clock.
  *

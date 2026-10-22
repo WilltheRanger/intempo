@@ -11,6 +11,7 @@ import { useMe } from '../data/hooks/useMe';
 import { prefetchCurrentPiece } from '../data/hooks/usePieces';
 import { preferences } from '../data/preferences';
 import { EASE_OUT, colors, motion } from '../design';
+import { loadStateFor } from '../lib/loadState';
 import { shouldOnboard } from '../lib/onboarding';
 import { useReducedMotion } from '../lib/useReducedMotion';
 import { AcknowledgementsScreen } from '../screens/account/AcknowledgementsScreen';
@@ -225,14 +226,7 @@ export function RootNavigator() {
  * one would put this screen's concern into every other caller.
  */
 function SignedInApp() {
-  const {
-    data: me,
-    isPending,
-    isError,
-    error,
-    isFetching,
-    refetch,
-  } = useMe();
+  const { data: me, isError, error, isFetching, refetch } = useMe();
 
   /*
    * Fill the device's instrument from the account, on a device that has none.
@@ -264,11 +258,18 @@ function SignedInApp() {
   // the app anyway, so Today, Library, Insights and Profile each rendered a
   // different error for the same unavailable account. It also bypassed
   // onboarding because "unknown" was treated as "already done".
-  if (isPending) {
+  //
+  // **A failed refetch is not a missing account** (`lib/loadState`). `isError`
+  // is also true when the profile is held and only the *next* fetch failed —
+  // the restored profile's first refetch with no signal, or the refetch after
+  // a take is accepted. Gating on it replaced the whole navigator with this
+  // screen, unmounting a Record screen mid-take along with it.
+  const load = loadStateFor({ isError, hasData: me !== undefined });
+  if (load === 'loading') {
     return <AccountStartupScreen />;
   }
 
-  if (isError || !me) {
+  if (load === 'unavailable' || !me) {
     return (
       <AccountStartupScreen
         error={error ?? new Error('The server returned no account profile.')}

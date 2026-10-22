@@ -1,8 +1,9 @@
 # Capture fixtures
 
-Four page-shaped images standing in for camera output in the scanner and the
-captured-pages review. Development fixtures only — nothing here ships as
-product content.
+One page-shaped image, `page-01.jpg`, used as a sample by the legibility
+contract (`tools/legibility_fixture.py`, `fixtures/legibility/parity.json`).
+Nothing in the app loads it and nothing here ships as product content. There
+were four; the three nothing used were removed on 2026-10-22.
 
 ## What these are
 
@@ -30,11 +31,11 @@ The score strips are roughly 8:1 — single staff lines, not pages. Cropped into
 a portrait viewfinder or a page thumbnail they read as an extreme macro shot of
 two or three noteheads rather than a sheet of music. These composites give the
 scanner and review screens something page-shaped to show, so the framing guide
-and the page thumbnails can be judged honestly.
+and the page thumbnails could be judged honestly.
 
 ## Regenerating
 
 Composed with Pillow: printed strips resized to the content width and centred
 in evenly divided slots, 7–8 staves per page, with the strip rotation and
-stave count varied per page so the four read as different pages. Margins are
+stave count varied per page so the original four read as different pages. Margins are
 10% horizontal, 9% top, 8% bottom. JPEG quality 80.

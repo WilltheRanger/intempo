@@ -343,6 +343,38 @@ def renumber(score: ScoreJson) -> ScoreJson:
         measure.model_copy(update={"measure_number": position})
         for position, measure in enumerate(score.measures, start=1)
     ]
+
+    # **The fields that name a bar move with it.** Repeats, unclosed repeat
+    # starts and tempo changes are all addressed by measure number, and
+    # renumbering the bars alone left them on the old numbers: an inner page
+    # read as bars 41-56 with a repeat at 45-48 became bars 1-16 with a repeat
+    # at 45-48, which `expand_repeats` cannot place. A span opens on the first
+    # bar that carried its number and closes on the last, so a reading that
+    # numbered two bars alike still covers both. A reference to a number no
+    # bar carries is dropped rather than guessed.
+    first: dict[int, int] = {}
+    last: dict[int, int] = {}
+    for position, measure in enumerate(score.measures, start=1):
+        first.setdefault(measure.measure_number, position)
+        last[measure.measure_number] = position
+    repeats = [
+        repeat.model_copy(
+            update={
+                "start_measure": first[repeat.start_measure],
+                "end_measure": last[repeat.end_measure],
+            }
+        )
+        for repeat in score.repeats
+        if repeat.start_measure in first
+        and repeat.end_measure in last
+        and first[repeat.start_measure] <= last[repeat.end_measure]
+    ]
+    unclosed = [first[bar] for bar in score.unclosed_repeat_starts if bar in first]
+    tempo_changes = [
+        change.model_copy(update={"measure_number": first[change.measure_number]})
+        for change in score.tempo_changes
+        if change.measure_number in first
+    ]
     note = score.notes_to_human
     if gaps:
         gap_note = (
@@ -351,7 +383,15 @@ def renumber(score: ScoreJson) -> ScoreJson:
             "renumbered from 1 — check the bar count against your copy."
         )
         note = f"{note}\n{gap_note}".strip() if note else gap_note
-    return score.model_copy(update={"measures": renumbered, "notes_to_human": note})
+    return score.model_copy(
+        update={
+            "measures": renumbered,
+            "repeats": repeats,
+            "unclosed_repeat_starts": unclosed,
+            "tempo_changes": tempo_changes,
+            "notes_to_human": note,
+        }
+    )
 
 
 def _read_any_music(score: ScoreJson) -> bool:

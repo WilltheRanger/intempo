@@ -1,6 +1,6 @@
 """Analyse one recording against one score, and print what the app would say.
 
-    python -m tuning_dashboard.cli fixtures/audio/01_detache_clean.wav
+    python -m tuning_dashboard.cli ../fixtures/audio/01_detache_clean.synthetic.wav
 
 The point is the first five minutes after a recording exists. Everything else
 that stands between a musician and a verdict — Supabase keys, a deployed API,

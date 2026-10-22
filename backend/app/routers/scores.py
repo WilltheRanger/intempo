@@ -840,6 +840,7 @@ def _row_to_response(
         transcription_error=row.get("transcription_error"),
         transcription_accepted_at=row.get("transcription_accepted_at"),
         page_image_discarded_at=row.get("page_image_discarded_at"),
+        page_image_retained_at=row.get("page_image_retained_at"),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
@@ -1037,6 +1038,9 @@ def attach_score_pages(
     # the original photographs remain available for the winning retry and the
     # newly uploaded pages remain pending for the ordinary sweeper.
     replaced_keys = _page_keys(row) if replacing_failed_pages else []
+    # Their display copies go with them: `store_display_copy` writes one before
+    # the reading, so a page that failed to read can still have one.
+    replaced_display_keys = _display_keys(row) if replacing_failed_pages else []
 
     pending_score = _awaiting_transcription().model_dump(mode="json")
     previous_score = row.get("score_json") or {}
@@ -1111,6 +1115,9 @@ def attach_score_pages(
     for key in sorted(set(replaced_keys) - set(new_keys)):
         if not _remove_object(client, key):
             pending_uploads.record(user_id, SCORE_BUCKET, key)
+    for key in replaced_display_keys:
+        if key not in new_keys:
+            _remove_object(client, key)
 
     start_transcription(str(score_id))
     return _with_image_urls(updated)[0]
@@ -1811,6 +1818,7 @@ def delete_score(
         )
 
     page_keys = _page_keys(existing[0])
+    display_keys = _display_keys(existing[0])
     try:
         analysis_rows = (
             client.table("analyses")
@@ -1911,5 +1919,12 @@ def delete_score(
                 score_id,
                 key,
             )
+    # **And each page's display copy**, which every other path that discards a
+    # page already removes (accept, `discard_pages_of`, the unreadable-scan
+    # sweep, account deletion). Without it a deleted piece left one derivative
+    # per page in the bucket with no row naming it. Most pages have none, and
+    # removing a key that is already gone is not an error.
+    for key in display_keys:
+        _remove_object(client, key)
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)

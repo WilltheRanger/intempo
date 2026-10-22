@@ -6,10 +6,11 @@
 # git. Fly and Railway both read the same Dockerfile if you prefer those — this
 # file is a convenience, not a dependency.
 #
-# The OMR second opinion is OFF here. Turning it on means building Audiveris
-# into the image (`WITH_AUDIVERIS=1`), which adds a JDK, a Gradle build and a
-# few hundred megabytes, and the free plan will not finish it. Get the API up
-# first; see docs/deploy-omr.md to add it afterwards.
+# This service has no sheet-music reader in it. The reader (homr) is installed
+# only in the Modal container, so an API deployed from this blueprint alone
+# signs people in, holds a library and analyses recordings, and refuses every
+# scan with a message that blames the server rather than the photograph. Get
+# the API up first, then see docs/deploy-modal.md to add the reader.
 services:
   - type: web
     name: intempo-api
@@ -46,6 +47,12 @@ services:
       # token halves below with it: without them this service cannot hand a
       # take over and silently analyses every one here instead.
       - key: ANALYSIS_RUNTIME
+        sync: false
+      # Where a photographed page is read. Set it to `modal` once the Modal app
+      # is deployed: the reader (homr) is installed only there, so unset means
+      # every scan is refused. Separate from ANALYSIS_RUNTIME on purpose; see
+      # docs/deploy-modal.md.
+      - key: TRANSCRIPTION_RUNTIME
         sync: false
       - key: MODAL_TOKEN_ID
         sync: false

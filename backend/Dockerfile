@@ -13,6 +13,17 @@ ENV PYTHONUNBUFFERED=1 \
 
 COPY --from=ghcr.io/astral-sh/uv:0.11.7 /uv /uvx /usr/local/bin/
 
+# **ffmpeg, which decodes an M4A.** `audio_intake` admits the MP4 container
+# because that is what an iPhone's Voice Memos saves and the app's file picker
+# offers it, but `soundfile` cannot read AAC, so `librosa.load` falls through
+# to `audioread`, which shells out to ffmpeg. Without it every picked M4A
+# passed intake and then failed with `internal_error` (NoBackendError). WAV,
+# FLAC, OGG and MP3 decode through soundfile and never reach it.
+# `test_worker_image.py` holds this and the Modal image to the intake list.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 COPY pyproject.toml uv.lock* ./

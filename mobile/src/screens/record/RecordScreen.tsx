@@ -31,6 +31,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePiece } from '../../data/hooks/usePieces';
 import { usePieceHistory } from '../../data/hooks/useLatestTake';
+import { refreshAfterTake } from '../../data/hooks/afterTake';
 import { meKeys, useMe } from '../../data/hooks/useMe';
 import { practiceTempo, usePracticeTempos } from '../../data/practiceTempo';
 import { bpmForMarking } from '../../lib/tempoMarking';
@@ -87,7 +88,12 @@ import { progressValue } from '../../lib/progressValue';
 import { BottomSheet } from '../../components/overlays/BottomSheet';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import { displayTempoBpm, tempoUnitLabel } from '../../lib/tempo';
-import { metronomePulse, monotonicNow, useMetronome } from '../../lib/metronome';
+import {
+  metronomePulse,
+  monotonicNow,
+  quarterBeatsPerBar,
+  useMetronome,
+} from '../../lib/metronome';
 import { countInIsOver } from '../../lib/metronome/countIn';
 import { buildMetronomePlan } from '../../lib/metronome/plan';
 import {
@@ -303,6 +309,11 @@ export function RecordScreen() {
     resume?: TakeSubmissionState;
     capture?: CaptureReport;
     fromMeasure?: number;
+    // Carried so "Send it again" keeps what the take was first sent with: a
+    // picked file's `false`, or a restored take's own settings (see `send`).
+    skipLongRests?: boolean;
+    targetBpm?: number;
+    metronomeMode?: MetronomeMode;
   } | null>(null);
   const [pendingTake, setPendingTake] = useState(false);
   // While "Send it again" is offered, this screen holds the take and the
@@ -666,8 +677,25 @@ export function RecordScreen() {
      * starts where this screen says.
      */
     fromMeasure?: number;
+    /**
+     * Whether the analysis should shorten long rests. A recorded take follows
+     * this screen's toggle, because the metronome counted the shortened score.
+     * A picked file says `false`: it was played elsewhere, against the whole
+     * page, and the Upload screen has no such toggle — so a toggle left on here
+     * used to have the file judged against a page with its rests taken out.
+     */
+    skipLongRests?: boolean;
+    /**
+     * The tempo and metronome a take restored from the device queue was
+     * played with. A take recorded on this screen uses the screen's own.
+     */
+    targetBpm?: number;
+    metronomeMode?: MetronomeMode;
   }) {
     const entryBar = recording.fromMeasure ?? startFrom;
+    const skipLongRests = recording.skipLongRests ?? skipRests;
+    const takeBpm = recording.targetBpm ?? targetBpm;
+    const takeMetronome = recording.metronomeMode ?? metronomeMode;
     // Hold the bytes before the first awaited upload step. This is not yet a
     // visible retry state, but it makes both navigation and browser-exit guards
     // truthful during the vulnerable gap before the server accepts the take.
@@ -693,8 +721,8 @@ export function RecordScreen() {
       const analysisId = await takeSubmissionSource.submit({
         // A piece is a score; the id is the same row.
         scoreId: params.pieceId,
-        targetBpm,
-        metronomeMode,
+        targetBpm: takeBpm,
+        metronomeMode: takeMetronome,
         audio: recording.audio,
         filename: recording.filename,
         contentType: recording.contentType,
@@ -702,7 +730,7 @@ export function RecordScreen() {
         // **Sent, not just applied on the phone.** The metronome counted a
         // shortened piece, so the analysis has to judge a shortened one — see
         // `SubmitTakeInput.skipLongRests` for what happens when it does not.
-        skipLongRests: skipRests,
+        skipLongRests,
         // Sent, not just applied on the phone: the analysis happens after the
         // response, so the row is the only thing that survives to say which
         // bar was played first.
@@ -718,8 +746,9 @@ export function RecordScreen() {
       // `/v1/me` carries the remaining monthly allowance. Mark it stale as
       // soon as this analysis finishes so Record again cannot reuse the count
       // from before the take and invite a fourth performance the server will
-      // refuse.
-      void queryClient.invalidateQueries({ queryKey: meKeys.all });
+      // refuse — and with it the takes, insights and pieces the tabs show,
+      // which this take has just changed (`data/hooks/afterTake.ts`).
+      void refreshAfterTake(queryClient);
       // **Left while it worked.** The screen is gone, so there is nothing to
       // replace, and the remembered analysis is how Today finds the result —
       // forgetting it here would lose the only pointer to it.
@@ -761,9 +790,9 @@ export function RecordScreen() {
             resumable,
             {
               scoreId: params.pieceId,
-              targetBpm,
-              metronomeMode,
-              skipLongRests: skipRests,
+              targetBpm: takeBpm,
+              metronomeMode: takeMetronome,
+              skipLongRests,
               fromMeasure: entryBar,
             },
             failure.message,
@@ -908,6 +937,7 @@ export function RecordScreen() {
         filename: queued.file.filename,
         contentType: queued.file.contentType,
         fromMeasure: queued.fromMeasure,
+        skipLongRests: false,
       });
     }, [params.pieceId]),
   );
@@ -978,6 +1008,9 @@ export function RecordScreen() {
   const entryTimeSignature = openingTimeSignature(takeScore);
   const pulse = metronomePulse(entryTimeSignature);
   const perBar = pulse?.pulsesPerBar ?? null;
+  // The playhead counts in quarter notes, like `targetBpm`; `perBar` counts
+  // felt pulses, which is right for the beat dots and wrong for distance.
+  const barQuarters = quarterBeatsPerBar(entryTimeSignature);
 
   /**
    * Where the beat says the musician is, for the mark on the page.
@@ -1005,11 +1038,11 @@ export function RecordScreen() {
   const takeClock = useMemo(() => tempoClock(takeScore, targetBpm), [takeScore, targetBpm]);
   const onPageMs = steadyElapsedMs(takeClock, elapsedMs, targetBpm);
   const playhead =
-    recording && perBar && targetBpm
+    recording && barQuarters && targetBpm
       ? playheadAt({
           elapsedMs: onPageMs,
           bpm: targetBpm,
-          beatsPerBar: perBar,
+          quarterBeatsPerBar: barQuarters,
           startFrom,
           lastBar: startable[startable.length - 1] ?? startFrom,
         })
@@ -1070,14 +1103,30 @@ export function RecordScreen() {
   useEffect(() => {
     let cancelled = false;
     void restoreQueuedTake(params.pieceId).then((restored) => {
-      if (cancelled || !restored || unsent.current !== null) {
+      // **Nor a take being recorded.** Starting one clears `unsent`, so a slow
+      // read (a 50 MB blob, or a permission prompt in between) that resolved
+      // mid-take passed the check above and offered "Send it again" for the
+      // old take while the new one was being captured.
+      if (
+        cancelled ||
+        !restored ||
+        unsent.current !== null ||
+        starting.current ||
+        recorder.current !== null
+      ) {
         return;
       }
+      // With what it was played against, not what this screen is set to now.
       unsent.current = {
         audio: restored.audio,
         filename: restored.filename,
+        contentType: restored.contentType,
         resume: restored.resume,
         capture: restored.capture,
+        fromMeasure: restored.fromMeasure ?? undefined,
+        skipLongRests: restored.skipLongRests,
+        targetBpm: restored.targetBpm,
+        metronomeMode: restored.metronomeMode,
       };
       setPendingTake(true);
       holdForListening(restored.audio);

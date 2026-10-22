@@ -223,6 +223,7 @@ describe('saving the export on Android', () => {
 describe('saving the export in a browser', () => {
   it('downloads a named JSON file and shares nothing', async () => {
     platformOS = 'web';
+    vi.useFakeTimers();
 
     const link: Record<string, unknown> = { style: {}, click: vi.fn(), remove: vi.fn() };
     const revoked: string[] = [];
@@ -244,15 +245,24 @@ describe('saving the export in a browser', () => {
     }
     vi.stubGlobal('URL', StubURL);
 
-    const { saveAccountExport } = await load();
-    await expect(saveAccountExport(EXPORT)).resolves.toBe(true);
+    try {
+      const { saveAccountExport, DOWNLOAD_URL_LIFETIME_MS } = await load();
+      await expect(saveAccountExport(EXPORT)).resolves.toBe(true);
 
-    expect(link.download).toBe('intempo-data-2026-09-03.json');
-    expect(link.href).toBe('blob:export');
-    expect(link.click).toHaveBeenCalled();
-    // Held for the life of the tab otherwise, and it holds the whole export.
-    expect(revoked).toEqual(['blob:export']);
-    expect(shared).toEqual([]);
-    expect(written).toEqual([]);
+      expect(link.download).toBe('intempo-data-2026-09-03.json');
+      expect(link.href).toBe('blob:export');
+      expect(link.click).toHaveBeenCalled();
+      // **Not on the next line.** `click()` only begins the download and
+      // Safari reads the blob afterwards; revoking at once can cancel it.
+      expect(revoked).toEqual([]);
+      vi.advanceTimersByTime(DOWNLOAD_URL_LIFETIME_MS);
+      // But released: held for the life of the tab otherwise, and it holds
+      // the whole export.
+      expect(revoked).toEqual(['blob:export']);
+      expect(shared).toEqual([]);
+      expect(written).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

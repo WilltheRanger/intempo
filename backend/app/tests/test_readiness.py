@@ -55,6 +55,16 @@ def test_a_bare_deployment_is_not_ready_and_says_why(unconfigured) -> None:
     assert "sheet-music reader" in joined
 
 
+def test_the_anon_key_is_not_reported_as_blocking(unconfigured) -> None:
+    """Tokens are verified against the signing keys published at
+    SUPABASE_URL, and no request path uses the anon key, so its absence is not
+    a reason this API cannot serve. It used to be reported as one — a 503 whose
+    stated reason, "tokens cannot be verified", was false."""
+    result = readiness.check()
+    assert not any("SUPABASE_KEY " in reason for reason in result.blocking)
+    assert "supabase_anon_key" not in {c["name"] for c in result.as_dict()["checks"]}
+
+
 def test_it_never_reports_a_value(monkeypatch: pytest.MonkeyPatch) -> None:
     """The whole point is that this can be opened on a phone and pasted into a
     chat. A check that leaks the key it is checking for would be worse than no

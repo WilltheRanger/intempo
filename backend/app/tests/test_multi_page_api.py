@@ -292,7 +292,10 @@ def test_deleting_a_three_page_scan_removes_all_three(
     response = api.delete(f"/v1/scores/{score_id}", headers=_auth(make_token, user_id))
 
     assert response.status_code == 204, response.text
-    assert len(removed) == 3, f"only {len(removed)} of 3 pages were removed"
+    photographs = [key for key in removed if not key.endswith(".display.jpg")]
+    assert len(photographs) == 3, f"only {len(photographs)} of 3 pages were removed"
+    # And one display copy per page, so deleting the piece leaves nothing.
+    assert len(removed) == 6, removed
 
 
 # ---------------------------------------------------------------------------

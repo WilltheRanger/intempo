@@ -463,6 +463,54 @@ def _runtime_data_files() -> dict[str, str]:
     return found
 
 
+def test_both_images_can_decode_every_container_intake_admits() -> None:
+    """Intake admits MP4 (an iPhone's Voice Memos), and only ffmpeg decodes it.
+
+    `soundfile` reads WAV, FLAC, OGG and MP3 itself; AAC falls through to
+    `audioread`, which shells out to ffmpeg. Neither image installed it, so a
+    picked M4A passed intake and then failed with `internal_error` — while
+    every test here passed, because a developer's machine has ffmpeg.
+    """
+    from app.services.audio_intake import _SIGNATURES
+
+    if "mp4" not in {name for name, _offset, _magic in _SIGNATURES}:
+        return
+    dockerfile = (BACKEND / "Dockerfile").read_text()
+    assert "apt-get install" in dockerfile and "ffmpeg" in dockerfile, (
+        "intake admits MP4 and the API image cannot decode it"
+    )
+    analysis_image = (BACKEND / "modal_app.py").read_text().split("image = (", 1)[1]
+    assert '"ffmpeg"' in analysis_image.split(".pip_install(", 1)[0], (
+        "intake admits MP4 and the Modal analysis image cannot decode it"
+    )
+
+
+def test_no_runtime_file_lives_outside_the_build_context() -> None:
+    """Both images are built from `backend/` alone, so nothing outside it can
+    be copied into either, whatever a Dockerfile line says.
+
+    `_runtime_data_files` skips such a file as "not shipped from here", which
+    is true and was the gap: `long_rests.py` read
+    `fixtures/practice/long_rests.json` from the repository root, the checkout
+    had it, the images did not, and every take sent with "skip long rests" on
+    failed in production while this file stayed green.
+    """
+    import importlib
+
+    outside = []
+    for name in _modules_that_resolve_paths():
+        module = importlib.import_module(name)
+        for attribute, value in vars(module).items():
+            if not isinstance(value, Path) or not value.is_file():
+                continue
+            if not value.resolve().is_relative_to(BACKEND):
+                outside.append(f"{name}.{attribute} -> {value}")
+    assert not outside, (
+        "these are opened at runtime and live outside backend/, so neither "
+        "image can carry them: " + ", ".join(outside)
+    )
+
+
 def test_the_api_image_carries_every_file_the_app_opens() -> None:
     """`COPY app ./app` covers anything under `app/`. Anything outside it needs
     a line of its own, and `config.toml` did not have one — which is how the

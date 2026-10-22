@@ -92,6 +92,17 @@ let previousExport: File | null = null;
  * so there it is `true` optimistically — the one platform where the old bug
  * survives, narrowed from every platform to that one.
  */
+/**
+ * How long a web download's object URL outlives the click that started it.
+ *
+ * **Not zero.** `link.click()` only *begins* the download, and Safari (iOS
+ * above all) reads the blob afterwards; revoking the URL on the next line can
+ * cancel it, while the screen still says the export is ready. FileSaver.js
+ * waits 40 seconds for the same reason. A minute keeps one export's JSON in
+ * memory that long, which is the whole cost.
+ */
+export const DOWNLOAD_URL_LIFETIME_MS = 60_000;
+
 export async function saveAccountExport(data: AccountExport): Promise<boolean> {
   const json = JSON.stringify(data, null, 2);
   const filename = exportFilename(data.generated_at);
@@ -107,7 +118,7 @@ export async function saveAccountExport(data: AccountExport): Promise<boolean> {
     document.body.appendChild(link);
     link.click();
     link.remove();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), DOWNLOAD_URL_LIFETIME_MS);
     return true;
   }
 

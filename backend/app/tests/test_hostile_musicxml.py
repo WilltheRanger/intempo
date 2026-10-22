@@ -24,7 +24,11 @@ import pytest
 
 from app.routers.scores import _concerns_for
 from app.services.alignment import build_timeline, expand_repeats
-from app.services.ocr.musicxml import MusicXMLError, score_json_from_musicxml
+from app.services.ocr.musicxml import (
+    MAX_MULTIPLE_REST_BARS,
+    MusicXMLError,
+    score_json_from_musicxml,
+)
 from app.services.ocr.validate import describe_for_retry, validate_measures
 
 _HEAD = (
@@ -123,6 +127,23 @@ HOSTILE: dict[str, str] = {
         "<multiple-rest>100000</multiple-rest></measure-style></attributes>"
         "<note><rest/><duration>16</duration><type>whole</type></note>"
     ),
+    # The two above never reached the expansion: the first is under two bars
+    # and the second has no metre to size a bar of rest with. These do.
+    "multi-bar rest of four hundred thousand, with a metre": _bar(
+        "<attributes><divisions>4</divisions>"
+        "<time><beats>4</beats><beat-type>4</beat-type></time><measure-style>"
+        "<multiple-rest>400000</multiple-rest></measure-style></attributes>"
+        "<note><rest/><duration>16</duration><type>whole</type></note>"
+    ),
+    "thirty multi-bar rests of six hundred": _HEAD.format(
+        f"<measure number='0'>{_A4}{_N * 4}</measure>"
+        + "".join(
+            f"<measure number='{bar}'><attributes><measure-style>"
+            "<multiple-rest>600</multiple-rest></measure-style></attributes>"
+            "<note><rest/><duration>16</duration><type>whole</type></note></measure>"
+            for bar in range(1, 31)
+        )
+    ),
     "repeat-bar sign over 99999 bars": _bar(
         "<attributes><measure-style><measure-repeat type='start'>99999"
         "</measure-repeat></measure-style></attributes>" + _N
@@ -220,6 +241,17 @@ HOSTILE: dict[str, str] = {
         _A4,
     ),
 }
+
+
+def test_a_multi_bar_rest_cannot_turn_a_few_bytes_into_any_number_of_bars() -> None:
+    """The count is the one number here that multiplies memory. Measured before
+    the bound: `<multiple-rest>400000</multiple-rest>` in a 488-byte file took
+    828 MB and 7 s inside the import request, on a 512 MB API host."""
+    one_rest = HOSTILE["multi-bar rest of four hundred thousand, with a metre"]
+    assert len(score_json_from_musicxml(one_rest).measures) <= MAX_MULTIPLE_REST_BARS
+
+    with pytest.raises(MusicXMLError, match="more than"):
+        score_json_from_musicxml(HOSTILE["thirty multi-bar rests of six hundred"])
 
 
 def test_an_entity_bomb_is_refused_rather_than_expanded() -> None:

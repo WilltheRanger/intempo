@@ -5,7 +5,7 @@ and plenty of exporters write only the mark the engraver drew — so a piece
 whose page says **♩ = 132** opened at the app's 80 BPM fallback with the number
 sitting unread in the file it came from.
 
-The conversion is the whole risk. See `_metronome_bpm`.
+The conversion is the whole risk. See `_metronome_tempo`.
 """
 
 from __future__ import annotations

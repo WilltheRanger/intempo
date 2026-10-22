@@ -52,11 +52,12 @@ def _client_factories() -> dict[str, Any]:
 def _clear_all_caches() -> None:
     """Every factory's cache, not just the one under test.
 
-    `get_client` delegates to `get_anon_client`, so clearing only the callable
-    named in the parameter leaves a cached client behind and the factory never
-    reaches `create_client` at all — which reads as "no options" or as "built
-    nothing", depending on the test, and in both cases for the wrong reason.
-    Clearing all of them makes each case independent of the order they run in.
+    A factory that delegated to another (there was one, `get_client`) left a
+    cached client behind when only the callable named in the parameter was
+    cleared, and never reached `create_client` at all — which read as "no
+    options" or as "built nothing", depending on the test, and in both cases
+    for the wrong reason. Clearing all of them keeps each case independent of
+    the order they run in.
     """
     for factory in _client_factories().values():
         clear = getattr(factory, "cache_clear", None)

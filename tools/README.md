@@ -1,6 +1,51 @@
 # tools
 
-Things you run by hand, not part of the app or the API.
+The checks CI runs, the generators behind a few shipped files, and benches you
+run by hand. Nothing here is part of the app or the API. Tools that import the
+backend re-execute themselves under `backend/.venv` (`backend_python.py`), so
+they start from any directory once `cd backend && uv sync` has run.
+
+## Gates (run by `.github/workflows/ci.yml` and `preflight.py`)
+
+| Tool | What it refuses |
+|---|---|
+| `preflight.py` | Runs the gates below locally, in one command (`--full` adds the builds, the app walk and the audits) |
+| `check-brand-assets.py` | An Expo starter asset shipping as ours, or a listed asset drawn wrong (`draw-brand-assets.py` draws them) |
+| `check-dead-exports.py` | A named export nothing else references |
+| `check-dependencies.py` | npm and `pip-audit` advisories, explained in terms of this app |
+| `check-outbound-fetch.py` | A backend URL fetch missing from the SSRF inventory |
+| `check-migrations.py` | A migration that does not apply, in order, to an empty Postgres (`supabase_stubs.sql` stands in for Supabase's own schema) |
+| `check-font-coverage.py` | A character the app prints that its subset fonts dropped |
+| `check-bundle-size.mjs` | A first visit heavier than the ceiling |
+| `walk-app.mjs` | A control that does not land where it should, driving the built web app |
+| `device-check.mjs` | A broken microphone or camera path, with devices the browser invents |
+| `audit-a11y.mjs` | Touch targets, names and focus order below the floors, in both palettes |
+
+`screen-copy.mjs` and `verdict-states.mjs` are shared by the three browser
+checks; `serve-with-headers.mjs` serves a build with the headers Cloudflare
+Pages sends. `engraver-coverage.py`, `legibility_fixture.py` and
+`sandbox_shared.py` are run by backend tests.
+
+## Generators
+
+`draw-brand-assets.py` (the icon set), `subset-text-fonts.py`,
+`subset-bravura.py` and `subset-accidentals.py` (the shipped fonts), and the two
+single-file HTML tools below.
+
+## Benches and probes, run by hand
+
+| Tool | Question it answers |
+|---|---|
+| `homr-bench.py` | What homr reads, page by page (needs the homr environment from the Modal image) |
+| `pipeline-check.py` | What the production entry point makes of real pages, stage by stage (needs homr) |
+| `reader-speed.py` | How long homr takes per stage, cold then warm (needs homr) |
+| `musicxml-bench.py` | What the importer and beat checks make of the MusicXML corpus; runs without homr |
+| `notation-coverage.py` | Which notation the importer can represent |
+| `novelty-bakeoff.py` | Whether a different onset detector beats spectral flux on the tuning corpus |
+| `check-store-readiness.py` | What a person still has to supply before an App Store submission |
+| `backend/scripts/check_env.py` | Whether `backend/.env` is complete and its keys work, without printing a secret |
+| `backend/scripts/concurrency_probe.py` | Whether the API serves requests in parallel |
+| `backend/scripts/rerun_analyses.py` | Re-runs deployed analyses; driven by `.github/workflows/rerun-analyses.yml` |
 
 ## `build-scan-bench.py`
 
@@ -9,8 +54,13 @@ cd backend && uv run python ../tools/build-scan-bench.py
 ```
 
 Builds `scan-bench.html` — one file, no server, no install. Open it, paste an
-API key, drop in a photograph of sheet music, and see what the pipeline reads
+API key, drop in a photograph of sheet music, and see what a vision model reads
 off it, with the beat-sum check already applied.
+
+**This is the vision models, not the production reader.** Production reads pages
+with homr (`backend/app/config.py`, `OCR_PROVIDER_CHAIN`); the vision models
+now only re-read bars that do not add up and read tempo words. Use
+`pipeline-check.py` for what production does with a page.
 
 **The prompt and the model registry are read out of the backend**, not copied
 by hand: `app/prompts/ocr_prompt.txt` and the provider registries. A bench that

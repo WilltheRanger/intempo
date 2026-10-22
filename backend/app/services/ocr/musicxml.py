@@ -422,6 +422,21 @@ _BAR_REST_FOR: Final[dict[float, str]] = {
 }
 
 
+#: The longest single multi-bar rest that is expanded. A longer one is left as
+#: the one empty measure it is written as — the same visible hole as a rest in a
+#: metre with no single bar rest — because no part rests that long in one place,
+#: and the count is the one number in this file that turns a few bytes into an
+#: arbitrary amount of memory: `<multiple-rest>400000</multiple-rest>` in a
+#: 488-byte file took 828 MB and 7 s inside the import request, on an API host
+#: with 512 MB for everything.
+MAX_MULTIPLE_REST_BARS: Final = 1_000
+
+#: The most measures a part may expand to. Far past any real part — a whole
+#: symphony's bass part is a few thousand bars — and small enough that the
+#: largest score this admits stays tens of megabytes.
+MAX_MEASURES: Final = 10_000
+
+
 def _multiple_rest_count(measure_el: ET.Element) -> int | None:
     """How many bars this measure stands for, if it is a multi-bar rest.
 
@@ -929,11 +944,6 @@ def _metronome_tempo(direction: ET.Element) -> tuple[int, str] | None:
     return None
 
 
-def _metronome_bpm(direction: ET.Element) -> int | None:
-    """Compatibility helper returning the internal quarter-note rate only."""
-    tempo = _metronome_tempo(direction)
-    return tempo[0] if tempo is not None else None
-
 def _staff_carrying_the_music(part_el: ET.Element) -> str | None:
     """Which staff of a multi-staff part is the line to read, or None.
 
@@ -1211,7 +1221,7 @@ def _expand_multiple_rests(
         count, metre = entry
         beats = quarter_beats(metre) or lengths[index]
         rest = _BAR_REST_FOR.get(beats) if beats is not None else None
-        if rest is None:
+        if rest is None or count > MAX_MULTIPLE_REST_BARS:
             out.append(
                 measure.model_copy(
                     update={"measure_number": measure.measure_number + shift}
@@ -1221,6 +1231,13 @@ def _expand_multiple_rests(
             )
             continue
         expanded = True
+        # Everything still to come is at least one bar each, so this is the
+        # least the part can expand to; refuse before building any of it.
+        if len(out) + count + (len(measures) - index - 1) > MAX_MEASURES:
+            raise MusicXMLError(
+                f"this part expands to more than {MAX_MEASURES:,} bars, which is "
+                "more than InTempo can practise — import one movement at a time"
+            )
         for step in range(count):
             out.append(
                 measure.model_copy(
@@ -2282,6 +2299,43 @@ def score_json_from_musicxml(
     measures = _whole_rests_that_mean_a_bar(measures, lengths)
     measures, moved = _expand_multiple_rests(measures, pending_rests, lengths)
 
+    # **A number that repeats identifies no bar at all.**
+    #
+    # Everything downstream keys off `measure_number`: `validate_measures`
+    # groups broken ties and tuplet faults by it, `MeasureConcern` is how a
+    # screen points at a bar, `MeasureEditScreen` is opened by it, and the
+    # verdict groups per-note deltas by it. Measured on three bars all numbered
+    # 3, one of them carrying a tie between two pitches: **three identical
+    # concerns**, on three different bars, two of which were correct — and each
+    # offering to open bar 3 for repair.
+    #
+    # Real, and not hypothetical: `oemer_phone_photo` reads back as
+    # `[1, 2, 3, 3, 3]`. `pipeline.renumber` already fixes this for a *scanned*
+    # page, positionally and always, and it is right to — a page read by a
+    # model has no numbering worth keeping. But it does not run on
+    # `POST /v1/scores/import`, where the numbering usually *is* the printed
+    # part's and a bar labelled 47 should stay 47.
+    #
+    # So the rule here is the narrow one that serves both: keep the file's
+    # numbering unless it cannot identify a bar. Strictly increasing is the
+    # test, which leaves **gaps alone** on purpose — 1, 2, 3, 409 is a boxed
+    # rehearsal mark counted as a bar, and `numbering_gaps` is what catches it.
+    # Renumbering that away is exactly the signal `_expand_multiple_rests`
+    # shifts rather than renumbers to protect.
+    #
+    # **Before the repeats below, which name bars by these numbers.** It ran
+    # after them, so a file numbered 1, 2, X1, 3, 4, 5 with `|: :|` around its
+    # last two bars stored the repeat as bars 3-4 of the renumbered page, and
+    # `expand_repeats` replayed the wrong bars: every expected onset after the
+    # repeat sign was wrong. Tempo changes were already computed afterwards.
+    numbers = [m.measure_number for m in measures]
+    renumbered = any(b <= a for a, b in pairwise(numbers))
+    if renumbered:
+        measures = [
+            measure.model_copy(update={"measure_number": position})
+            for position, measure in enumerate(measures, start=1)
+        ]
+
     #: The repeats, in the numbers the finished page uses.
     #:
     #: An index maps to the *first* bar that measure produced; the end of a
@@ -2326,37 +2380,6 @@ def score_json_from_musicxml(
     unclosed_repeat_starts = [
         bar for bar in (_first_bar(i) for i in unclosed_forwards) if bar is not None
     ]
-
-    # **A number that repeats identifies no bar at all.**
-    #
-    # Everything downstream keys off `measure_number`: `validate_measures`
-    # groups broken ties and tuplet faults by it, `MeasureConcern` is how a
-    # screen points at a bar, `MeasureEditScreen` is opened by it, and the
-    # verdict groups per-note deltas by it. Measured on three bars all numbered
-    # 3, one of them carrying a tie between two pitches: **three identical
-    # concerns**, on three different bars, two of which were correct — and each
-    # offering to open bar 3 for repair.
-    #
-    # Real, and not hypothetical: `oemer_phone_photo` reads back as
-    # `[1, 2, 3, 3, 3]`. `pipeline.renumber` already fixes this for a *scanned*
-    # page, positionally and always, and it is right to — a page read by a
-    # model has no numbering worth keeping. But it does not run on
-    # `POST /v1/scores/import`, where the numbering usually *is* the printed
-    # part's and a bar labelled 47 should stay 47.
-    #
-    # So the rule here is the narrow one that serves both: keep the file's
-    # numbering unless it cannot identify a bar. Strictly increasing is the
-    # test, which leaves **gaps alone** on purpose — 1, 2, 3, 409 is a boxed
-    # rehearsal mark counted as a bar, and `numbering_gaps` is what catches it.
-    # Renumbering that away is exactly the signal `_expand_multiple_rests`
-    # shifts rather than renumbers to protect.
-    numbers = [m.measure_number for m in measures]
-    renumbered = any(b <= a for a, b in pairwise(numbers))
-    if renumbered:
-        measures = [
-            measure.model_copy(update={"measure_number": position})
-            for position, measure in enumerate(measures, start=1)
-        ]
 
     tempo_changes = _tempo_changes(
         tempo_marks,

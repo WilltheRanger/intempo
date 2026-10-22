@@ -44,6 +44,13 @@ export interface QueuedTake {
    */
   capture?: CaptureReport;
   /**
+   * The file's media type, for a picked file (an MP3 or M4A from the Upload
+   * screen). Absent for a recorded take, which is always the WAV the app
+   * wrote, and for entries written before this field existed. Without it a
+   * queued M4A was uploaded later as `audio/wav`.
+   */
+  contentType?: string;
+  /**
    * Progress from an earlier attempt, and the reason this queue can be drained
    * safely.
    *

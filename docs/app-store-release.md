@@ -19,8 +19,8 @@ Photograph or import your part, check the recognized notation, choose a tempo,
 and record a take. Review timing feedback bar by bar and listen back to your
 recording. Return to recent sessions to decide what to practise next.
 
-Choose violin, viola, cello or double bass for instrument playback. Use the
-metronome and count-in to prepare your practice.
+Choose violin, viola, cello, double bass, alto saxophone or tenor saxophone for
+instrument playback. Use the metronome and count-in to prepare your practice.
 
 An account and an internet connection are required for score reading and timing
 analysis. Clear recordings and checked notation produce more useful feedback.
@@ -36,14 +36,37 @@ Provide a dedicated review account through App Store Connect, never in Git.
 Populate it with music the publisher is authorized to use.
 
 1. Sign in using the supplied review account.
-2. Open a piece from Today or Library and inspect its notation.
+2. Open a piece from the Library and inspect its notation.
 3. Choose an instrument in Profile; use Listen on the piece.
 4. Start practice, allow the microphone, and record a short passage.
 5. Stop and wait for analysis. Inspect the result and replay the recording.
-6. Open Insights for history. Comparable takes appear only when the score,
-   settings and usable timing data match; old takes lack this metadata.
+6. Open Insights for the history of recent takes and the trend across them.
 7. Account deletion is under Profile → Delete account. Test only with the
    disposable account. Do not supply the owner's personal account for review.
+
+## Real-device acceptance
+
+Every check in this repository runs in Chromium, and WebKit on an iPhone has
+refused things Chromium allowed (the recording path in `docs/subsystems.md`).
+Before requesting review, on a real iPhone, in Safari and as the installed
+home-screen app separately, against the live deployment rather than localhost:
+
+- **Recording:** allow the microphone; deny it, then restore it; leave the
+  screen while the permission prompt is pending; record after Listen; stop;
+  retry; background the app mid-take and return.
+- **Scanning:** photograph a complete multi-page part, reorder the pages,
+  interrupt an upload and recover it, correct a deliberately misread bar, and
+  confirm the corrected notes are the ones Listen plays and analysis times.
+- **Feel:** 320 px width and the largest text size; keyboard open and close;
+  swipe back; long score and list scrolling; reduced motion.
+- **Accounts:** password recovery and account deletion, with a disposable
+  account only.
+
+Record the exact error and browser version for any failure. Bass timing must
+not be tuned from synthetic signals alone: it needs short real bowed and
+plucked clips with matching notation and hand-checked onset times (low E and A,
+rests, repeated notes, a quiet take), with held-out clips to validate against,
+and every threshold change logged in `TUNING_LOG.md`.
 
 ## TestFlight handoff
 
