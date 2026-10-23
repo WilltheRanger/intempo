@@ -207,6 +207,50 @@ def test_a_missing_package_would_actually_be_caught() -> None:
     assert [n for n in third if n.lower() not in pretend], "the comparison never fails"
 
 
+#: What homr 0.7.0 needs at run time: its `Requires-Dist`, less `types-Pillow`,
+#: which is type stubs. Copied rather than read, because homr is not installed
+#: where these tests run — bumping homr means reading its metadata again.
+_HOMR_RUNS_ON = (
+    "musicxml",
+    "numpy",
+    "onnxruntime",
+    "opencv_python_headless",
+    "pillow",
+    "rapidocr",
+    "requests",
+    "typing_extensions",
+)
+
+
+def test_homr_is_installed_beside_pillow_13_rather_than_resolved_against_it() -> None:
+    """**Every reader deploy from #189 onward failed to build, and nothing said.**
+
+    homr 0.7.0 declares `Pillow<13`, and the image pins Pillow 13.0.0 for the
+    advisories it fixes; one `pip install` holding both is ResolutionImpossible.
+    Modal kept serving the reader built on 2026-10-06, so every scan still
+    worked and every fix since then never reached it. homr is therefore
+    installed in its own step with `--no-deps`, which is only sound while the
+    resolved step installs everything homr needs — this holds both halves.
+    """
+    calls = _image_block("transcription_image").split(".pip_install(")[1:]
+    resolved, rest = calls[0], calls[1:]
+
+    assert '"homr==' not in resolved, (
+        "homr is back in the resolved install beside Pillow 13: pip refuses the "
+        "pair and `modal deploy` fails before anything ships"
+    )
+    assert any(
+        '"homr==' in call and 'extra_options="--no-deps"' in call for call in rest
+    ), "homr must be installed in a later step, with --no-deps"
+
+    provided = _pip_installed(resolved)
+    missing = [name for name in _HOMR_RUNS_ON if name not in provided]
+    assert not missing, (
+        f"homr is installed without its dependencies, so the image must name "
+        f"them itself, and it does not install {missing}"
+    )
+
+
 @pytest.mark.parametrize("function, image, entry", _FUNCTIONS)
 def test_a_worker_image_does_not_carry_the_web_layer(
     function: str, image: str, entry: str

@@ -1,5 +1,34 @@
 # InTempo Decisions
 
+## 2026-10-23 — homr installed without its dependencies, beside Pillow 13
+
+**Context:** the reader's Modal image pinned Pillow 13.0.0 (#189) to clear 35
+published advisories, all fixed in 13.0.0, in a container that decodes
+photographs strangers upload. homr 0.7.0, its latest release, declares
+`Pillow<13`. One `pip install` holding both is ResolutionImpossible, so every
+deploy of the reader since #189 failed, and production kept the image built on
+2026-10-06 — Pillow 12.3.0 and none of the fixes since.
+
+**Decision:** the image installs everything else, Pillow 13 and homr's runtime
+requirements included (pinned to the versions measured), then installs
+`homr==0.7.0` alone with `--no-deps`. `test_modal_images.py` fails if homr goes
+back into the resolved install or one of its requirements goes missing.
+
+**Alternatives considered:**
+- *Pin Pillow back to 12.3.0.* Builds, and ships the 35 advisories to the one
+  container that opens untrusted images. There is no 12.x release after 12.3.0.
+- *A newer homr.* There is none; 0.7.0 is the latest release.
+- *Install Pillow 13 over homr's choice in a later step.* Same result as this,
+  with pip warning on every build and the dependency set decided by whatever
+  homr's ranges resolve to that day.
+
+**Trade-offs accepted:**
+- **homr runs outside its declared range.** Measured rather than assumed: all
+  six pages in `fixtures/scores` and `mobile/assets/captures` gave identical
+  results under 12.3.0 and 13.0.0 — four readings byte for byte, two refusals in
+  the same words — at the same speed. A homr upgrade means reading its
+  metadata again and updating the requirements the test lists.
+
 ## 2026-10-23 — The phone's own camera, not an in-app viewfinder
 
 **Context:** the scanner drew the live camera into a portrait page-shaped

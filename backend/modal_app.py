@@ -188,7 +188,6 @@ transcription_image = (
     # opencv-python-headless still wants these two at import time.
     .apt_install("libglib2.0-0", "libgl1")
     .pip_install(
-        "homr==0.7.0",
         # homr's title reader. homr names it without a version, and
         # `homr_provider` builds the reader itself with keys from this
         # version's config — see `_TITLE_READER_PARAMS` — so it is pinned to
@@ -221,7 +220,32 @@ transcription_image = (
         # import still has to succeed.
         "python-dotenv==1.2.2",
         "supabase==2.29.0",
+        # homr's own requirements, named here because homr is installed
+        # without them in the next step. The versions are the ones the six
+        # fixture pages were read with (see below); `types-Pillow`, the last
+        # entry in homr's metadata, is type stubs and has nothing to run.
+        "musicxml==1.4",
+        "onnxruntime==1.31.0",
+        "opencv-python-headless==4.14.0.94",
+        "requests==2.34.2",
+        "typing-extensions==4.16.0",
     )
+    # **homr goes in on its own, without its dependencies, beside Pillow 13.**
+    #
+    # homr 0.7.0, its latest release, declares `Pillow<13`; Pillow 12.3.0, the
+    # last release under that, has 35 published advisories, every one fixed in
+    # 13.0.0, and this container decodes photographs strangers upload. Asked
+    # for both in one `pip install`, pip refuses (ResolutionImpossible) — and
+    # it did, on every deploy from #189 onward, while production kept serving
+    # the reader built on 2026-10-06.
+    #
+    # The bound predates Pillow 13 rather than describing a break, and that
+    # was measured, not assumed: homr read all six pages in `fixtures/scores`
+    # and `mobile/assets/captures` to byte-identical notation under 12.3.0 and
+    # 13.0.0 — four readings, two refusals with the same words — at the same
+    # speed (2026-10-23). `test_modal_images.py` keeps homr out of the
+    # resolved set and its requirements in it.
+    .pip_install("homr==0.7.0", extra_options="--no-deps")
     # **Fetch the weights at build time, not on the first page.**
     #
     # homr downloads ~151 MB of ONNX into its own package directory the first

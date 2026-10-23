@@ -1141,6 +1141,19 @@ nothing else covers `backend/`. Named here rather than left to be found.
   guarantees an eighth of a core unless asked, and bursting above that is a
   quiet worker's spare capacity. On a busy one a page took minutes and was
   reported as stuck (`modal_app.py`, `test_modal_images.py`).
+- **The reader's image could not be built for a day, and nothing said so.**
+  #189 moved Pillow to 13.0.0 in `modal_app.py` to clear 35 advisories; homr
+  0.7.0, its latest release, declares `Pillow<13`, so the image's one
+  `pip install` was ResolutionImpossible and `deploy-modal.yml` failed on that
+  merge and the next. Production kept serving the reader built on 2026-10-06,
+  so scans still worked and every change to `workers/` and `services/` since
+  then never reached it. That workflow runs on `main`, after the merge, so a
+  red deploy fails no pull-request check: **after merging anything
+  `deploy-modal.yml` watches, look at its run.** homr now installs with
+  `--no-deps` beside Pillow 13 — the six pages in `fixtures/scores` and
+  `mobile/assets/captures` came out the same under 12.3.0 and 13.0.0, four
+  identical readings and two identical refusals — and `test_modal_images.py`
+  holds both halves of that.
 
 ## The recording path (2026-09-02) — level is not the signal you think it is
 
