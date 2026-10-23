@@ -42,7 +42,7 @@ import { createRequire } from 'node:module';
 // bare import would resolve against this directory instead. Same note as
 // `audit-a11y.mjs` and `walk-app.mjs`, which the documented command failed on.
 const require = createRequire(new URL('../mobile/package.json', import.meta.url));
-const { chromium } = require('playwright');
+const { chromium, devices } = require('playwright');
 
 const BASE = `http://localhost:${process.argv[2] ?? '4320'}`;
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -250,6 +250,8 @@ function jpegSize(path) {
 // viewfinder used to crop. The `fixtures/scores` pages are single lines of music
 // and would pass a crop that only trimmed the sides.
 const PAGE = `${ROOT}mobile/assets/captures/page-01.jpg`;
+// Any other photograph, for a scan's second page and for a retake.
+const SECOND_PAGE = `${ROOT}fixtures/scores/02_medium_printed.jpg`;
 
 /**
  * The camera opens from the tap, and the whole photograph is the page.
@@ -317,6 +319,76 @@ async function checkCamera(browser) {
   if (errors.length) fail('no page errors while photographing', errors[0]);
   else pass('no page errors while photographing');
 
+  await context.close();
+}
+
+/** Tap `target` and hand the camera `file`. The input's `capture`, or null if none opened. */
+async function photographWith(page, target, file) {
+  const chooser = page.waitForEvent('filechooser', { timeout: 8000 }).catch(() => null);
+  await target.tap({ timeout: 8000 }).catch(() => {});
+  const camera = await chooser;
+  if (!camera) return null;
+  const capture = await camera.element().getAttribute('capture');
+  await camera.setFiles(file);
+  return capture;
+}
+
+/**
+ * The other three ways into the camera, by tap, on a phone's profile.
+ *
+ * `checkCamera` covers the scan screen's own button. A scan more often starts
+ * from the Library's add-piece sheet, and grows or mends itself from the review
+ * list — and each of those opens the camera from inside a sheet's tap, which is
+ * the one place a browser refuses to open a file input if anything is awaited
+ * first. An iPhone profile rather than a desktop window, because the person this
+ * was reported by photographs on one: touch, a 390-point screen, mobile Safari's
+ * user agent. Still Chromium — what WebKit does with the same tap is a phone's
+ * to answer.
+ */
+async function checkCameraOnAPhone(browser) {
+  console.log('\ncamera, on a phone: the add-piece sheet, Add page and Retake');
+  const context = await browser.newContext({ ...devices['iPhone 13'] });
+  const page = await context.newPage();
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(String(e).slice(0, 160)));
+  const text = async () => (await page.evaluate(() => document.body.innerText)).slice(0, 160);
+
+  await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(1500);
+  await page.getByLabel('Add piece').first().tap({ timeout: 8000 }).catch(() => {});
+  await page.waitForTimeout(800);
+  const fromSheet = await photographWith(page, page.getByText('Photograph sheet music').first(), PAGE);
+  if (fromSheet === 'environment') pass('the add-piece sheet opens the back camera from the tap');
+  else fail('the add-piece sheet opens the back camera from the tap', `capture=${fromSheet}`);
+  try {
+    await page.waitForURL(/\/scan\/pages$/, { timeout: 10000 });
+    pass('and its photograph lands on the review list');
+  } catch {
+    fail('and its photograph lands on the review list', `on ${new URL(page.url()).pathname}`);
+    await context.close();
+    return;
+  }
+
+  await page.getByRole('button', { name: 'Add page' }).first().tap();
+  await page.waitForTimeout(800);
+  const added = await photographWith(page, page.getByText('Photograph a page').last(), SECOND_PAGE);
+  await page.waitForTimeout(1500);
+  if (added === 'environment' && (await page.getByText('Continue with 2 pages').count())) {
+    pass('Add page > Photograph a page adds a second page');
+  } else {
+    fail('Add page > Photograph a page adds a second page', `capture=${added}; ${await text()}`);
+  }
+
+  const retaken = await photographWith(page, page.getByLabel('Retake page 1').first(), SECOND_PAGE);
+  await page.waitForTimeout(1500);
+  if (retaken === 'environment' && (await page.getByText('Continue with 2 pages').count())) {
+    pass('Retake replaces the page rather than adding one');
+  } else {
+    fail('Retake replaces the page rather than adding one', `capture=${retaken}; ${await text()}`);
+  }
+
+  if (errors.length) fail('no page errors on the phone profile', errors[0]);
+  else pass('no page errors on the phone profile');
   await context.close();
 }
 
@@ -544,6 +616,7 @@ async function main() {
   });
   await checkMicrophone(granted);
   await checkCamera(granted);
+  await checkCameraOnAPhone(granted);
   await checkAudioOut(granted);
   await granted.close();
 
