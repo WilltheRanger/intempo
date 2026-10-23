@@ -22,6 +22,7 @@ import {
   deviceHints,
 } from '../../lib/platform/pageCamera';
 import type { RootNavigation } from '../../navigation/types';
+import { usePageCamera } from '../../navigation/usePageCamera';
 
 /**
  * Bringing in pages that were already photographed.
@@ -59,6 +60,7 @@ export function ImportPagesScreen({
   adding?: boolean;
 }) {
   const navigation = useNavigation<RootNavigation>();
+  const photograph = usePageCamera();
   const goBack = useGoBack({ tab: 'Library' });
   /**
    * Where "Add page" returns to, once the images are in the session.
@@ -179,7 +181,9 @@ export function ImportPagesScreen({
           {hasUsableCamera ? (
             <SecondaryButton
               label="Use the camera instead"
-              onPress={() => navigation.replace('Scanner')}
+              // The camera itself, from inside the tap, and the review list in
+              // this screen's place once there is a photograph.
+              onPress={() => photograph({ kind: 'new' }, { replace: true })}
               style={styles.secondary}
             />
           ) : null}

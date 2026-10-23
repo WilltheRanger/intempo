@@ -1852,6 +1852,22 @@ Nine defects between the shutter and a saved score, in a path that had **zero
 tests**. Read these as rules, not history — each one is a mistake that was
 actually made here.
 
+- **The camera is the phone's own, opened inside the tap (2026-10-23).** The
+  viewfinder drew the stream into a page-shaped window with `cover` and cropped
+  every photograph to it, which on a 16:9 phone stream threw away whatever the
+  window did not show; it was reported as cropping "really weirdly". Every
+  button that photographs a page now calls `usePageCamera`, which opens
+  `expo-image-picker`'s camera and keeps the whole photograph. Two rules come
+  with it. **On the web nothing may be awaited before `launchCameraAsync`**: a
+  browser opens a file input only during the user activation that asked for
+  it, so a navigation, a timer or a lazy import first means the camera simply
+  does not open — `photographPage` takes the picker module as an argument for
+  this reason. **On an app build the permission is asked first**: iOS rejects
+  `launchCameraAsync` outright without it. Nothing in the session changes until
+  a photograph arrives (`landPhoto`), so a closed camera leaves the scan as it
+  was. `tools/device-check.mjs` drives it through Playwright's file chooser and
+  compares the stored page's size with the file's.
+
 - **A photograph enters a session only through `captureSession.capture()`.**
   `add` and `replace` are not exported, deliberately: a shutter that *can*
   append is one that can append past a pending retake, which is exactly what

@@ -167,16 +167,18 @@ const ROUTES = [
   // saved piece were the largest unaudited area left.
   //
   // Reached by route, these render their **empty** states — the capture session
-  // starts empty and the scanner needs a camera this container does not have.
+  // starts empty, and a photograph comes from the camera app, which a route
+  // cannot open.
   // That is real coverage of real screens (`/scan/pages` with nothing in it is
   // reachable by backing out of a scan), and it is **not** coverage of the
   // populated flow. `walk-app.mjs` covers that one, by importing two of the
   // repository's own fixture pages through the file picker.
   ['Add piece', 'add/import'],
-  // **No heading, on purpose.** A viewfinder has no title — the system camera
-  // has none either — and the line at the top is a page count that changes
-  // with every shot, which a heading would re-announce as structure.
-  ['Scanner', 'scan', { headings: false }],
+  // **Audited like any other screen since 2026-10-23.** It was a viewfinder
+  // with no title — a page count changing with every shot sat where a heading
+  // would be. The camera is the phone's own now, and this is a plain screen
+  // that says what it is for and offers the camera and photos.
+  ['Scanner', 'scan'],
   ['Captured pages', 'scan/pages'],
   ['Transcribe', 'scan/sending'],
   ['Name the piece', 'scan/name'],

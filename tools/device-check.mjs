@@ -8,13 +8,18 @@
  * the operating system for hardware, which is the edge a musician meets first
  * and the one that has never been run outside a developer's hands.
  *
- * Chromium can invent both. `--use-fake-device-for-media-stream` answers
- * `getUserMedia` with a synthetic stream, and the two `--use-file-for-*`
- * flags feed it real content — a click track into the microphone, a
- * photographed page into the camera — so what the app receives is audio and
- * music rather than a tone and a test pattern. Everything above that is the
- * app's own code: the permission prompt, the worklet, the level meter, the
- * capture, the encode.
+ * Chromium can invent the microphone. `--use-fake-device-for-media-stream`
+ * answers `getUserMedia` with a synthetic stream, and
+ * `--use-file-for-fake-audio-capture` feeds it a click track, so what the app
+ * receives is music rather than a tone. Everything above that is the app's own
+ * code: the permission prompt, the worklet, the level meter, the encode.
+ *
+ * **The camera is the phone's own since 2026-10-23**, not a `getUserMedia`
+ * viewfinder: a page is photographed through an `<input capture>`, which a
+ * phone answers with its camera app. Playwright's file chooser is that input,
+ * so the camera checks hand it a photographed page from `fixtures/scores` —
+ * the same file a phone's camera would hand over — and hold the app to keeping
+ * all of it.
  *
  * What it cannot reach: upload, transcription and analysis, which need
  * `SUPABASE_SERVICE_ROLE_KEY` and a reader. `/v1/ready` is the check for
@@ -28,11 +33,8 @@
  *
  * Exits non-zero on any failure, so it can gate a change.
  */
-import { spawnSync } from 'node:child_process';
 import { TAKE_HEARING } from './screen-copy.mjs';
-import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 
@@ -63,65 +65,6 @@ const pass = (what, detail) => console.log(`  ok    ${what}${detail ? `  (${deta
 const EXECUTABLE = existsSync('/opt/pw-browsers/chromium')
   ? '/opt/pw-browsers/chromium'
   : undefined;
-
-/**
- * A page of real notation, as a video the fake camera can play.
- *
- * Y4M is uncompressed frames behind a one-line header, which is why it can be
- * written here with no encoder: this container has no ffmpeg. The fixture is
- * letterboxed onto white rather than stretched — the scanner's own guidance is
- * "fill the frame, keep the page flat", and a page distorted to 4:3 is not the
- * thing it asks for.
- */
-function sheetMusicVideo() {
-  const W = 640;
-  const H = 480;
-  const dir = mkdtempSync(join(tmpdir(), 'intempo-cam-'));
-  const path = join(dir, 'sheet.y4m');
-
-  // **Pillow, not an npm image library.** The backend virtualenv this
-  // repository already depends on carries it, and the alternative was a
-  // `sharp` that is not in `mobile/`'s tree — an install to make a test
-  // fixture. There is no ffmpeg in this container either, which is fine:
-  // Y4M is uncompressed planes behind a one-line header, so the encoder is
-  // the header.
-  const script = `
-import sys
-from PIL import Image
-W, H, src, dst = ${W}, ${H}, sys.argv[1], sys.argv[2]
-page = Image.new('RGB', (W, H), (255, 255, 255))
-im = Image.open(src).convert('RGB')
-im.thumbnail((W, H), Image.LANCZOS)
-page.paste(im, ((W - im.width) // 2, (H - im.height) // 2))
-y, cb, cr = page.convert('YCbCr').split()
-frame = (y.tobytes() + cb.resize((W//2, H//2), Image.BOX).tobytes()
-         + cr.resize((W//2, H//2), Image.BOX).tobytes())
-with open(dst, 'wb') as f:
-    f.write(f'YUV4MPEG2 W{W} H{H} F25:1 Ip A1:1 C420\\n'.encode())
-    for _ in range(50):
-        f.write(b'FRAME\\n'); f.write(frame)
-`;
-  for (const python of [`${ROOT}backend/.venv/bin/python`, 'python3']) {
-    const run = spawnSync(python, ['-c', script, `${ROOT}fixtures/scores/01_simple_printed.jpg`, path], {
-      encoding: 'utf8',
-    });
-    if (run.status === 0 && existsSync(path)) {
-      return { path, real: true };
-    }
-  }
-
-  // A flat field still proves the stream, the capture and the encode; only the
-  // picture is less interesting. Better than skipping the camera entirely.
-  const frame = Buffer.concat([
-    Buffer.alloc(W * H, 200),
-    Buffer.alloc((W / 2) * (H / 2), 128),
-    Buffer.alloc((W / 2) * (H / 2), 128),
-  ]);
-  const frames = [Buffer.from(`YUV4MPEG2 W${W} H${H} F25:1 Ip A1:1 C420\n`)];
-  for (let i = 0; i < 50; i += 1) frames.push(Buffer.from('FRAME\n'), frame);
-  writeFileSync(path, Buffer.concat(frames));
-  return { path, real: false };
-}
 
 /**
  * Get past the pre-flight checks, on the runs where they appear.
@@ -287,77 +230,92 @@ async function checkMicrophoneRefused(browser) {
   await context.close();
 }
 
+/** The pixel size of a JPEG, read from its frame header. */
+function jpegSize(path) {
+  const bytes = readFileSync(path);
+  let at = 2;
+  while (at < bytes.length) {
+    const marker = bytes[at + 1];
+    const length = bytes.readUInt16BE(at + 2);
+    // SOF0 to SOF15, less the four markers in that range that are not frames.
+    if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)) {
+      return { height: bytes.readUInt16BE(at + 5), width: bytes.readUInt16BE(at + 7) };
+    }
+    at += 2 + length;
+  }
+  return null;
+}
+
+// A whole portrait page, as a phone's camera hands one over — the shape the
+// viewfinder used to crop. The `fixtures/scores` pages are single lines of music
+// and would pass a crop that only trimmed the sides.
+const PAGE = `${ROOT}mobile/assets/captures/page-01.jpg`;
+
+/**
+ * The camera opens from the tap, and the whole photograph is the page.
+ *
+ * Four claims, each one the camera flow exists for. The button opens the
+ * camera *itself* — a file input asking for the back camera, inside the click,
+ * which is the only moment a browser allows it. The photograph lands on the
+ * review list without another screen in between. And it lands **whole**: the
+ * viewfinder this replaced cropped every photograph to a page-shaped window,
+ * so the page kept is compared with the file the camera gave, pixel for pixel
+ * in size.
+ */
 async function checkCamera(browser) {
   console.log('\ncamera');
-  const context = await browser.newContext({
-    viewport: { width: 390, height: 844 },
-    permissions: ['camera'],
-  });
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e).slice(0, 160)));
 
   await page.goto(`${BASE}/scan`, { waitUntil: 'networkidle' });
-  await page.waitForTimeout(2000);
+  await page.waitForTimeout(1500);
 
-  const video = await page.evaluate(() => {
-    const v = document.querySelector('video');
-    return v ? { w: v.videoWidth, h: v.videoHeight, paused: v.paused, ready: v.readyState } : null;
-  });
-  if (video && video.w > 0 && !video.paused && video.ready >= 2) {
-    pass('a live viewfinder is running', `${video.w}x${video.h}`);
+  const chooser = page.waitForEvent('filechooser', { timeout: 8000 }).catch(() => null);
+  await page.getByText('Open camera').first().click({ timeout: 8000 }).catch(() => {});
+  const camera = await chooser;
+  if (!camera) {
+    fail('Open camera opens the camera', 'no file input was opened by the click');
+    await context.close();
+    return;
+  }
+  const capture = await camera.element().getAttribute('capture');
+  const accept = await camera.element().getAttribute('accept');
+  if (capture === 'environment' && /image/.test(accept ?? '')) {
+    pass('Open camera opens the back camera, from the tap', `capture=${capture}`);
   } else {
-    fail('a live viewfinder is running', JSON.stringify(video));
+    fail('Open camera opens the back camera, from the tap', `capture=${capture} accept=${accept}`);
   }
 
-  /*
-    **Counted in the strip, not in a sentence.** This read `body.innerText` for
-    the words "1 page" until 2026-09-16, and then failed for a day on a shutter
-    that works: the counter it was reading was replaced by the filmstrip, and
-    what the screen says after a shot is now the verdict on that shot — "The
-    notes are clear". The check was pinned to copy, the copy was deliberately
-    changed, and the report said the camera was broken.
-
-    So it asserts the outcome instead. `Page 1 of 1` is the filmstrip's own
-    accessible name — what a screen reader says about the page that was just
-    taken — which is the thing "captured and counted" was always trying to
-    mean, and it does not move when the words beside it do. The panel is
-    checked separately, because "the shutter worked" and "the app said
-    something about the shot" are two claims and one of them failing should not
-    be reported as the other.
-  */
+  await camera.setFiles(PAGE);
   try {
-    await page.click('[aria-label="Capture page"]', { timeout: 8000 });
-    await page.waitForTimeout(2500);
-    const counted = await page.locator('[aria-label^="Page 1 of 1"]').count();
-    if (counted > 0) pass('a page is captured and counted');
-    else {
-      const screen = await page.evaluate(() => document.body.innerText || '');
-      fail('a page is captured and counted', screen.slice(0, 120).replace(/\n/g, ' / '));
-    }
-
-    const verdict = await page.evaluate(() => document.body.innerText || '');
-    if (/keep it/i.test(verdict) && /take it again/i.test(verdict)) {
-      pass('the shot is judged before it is kept');
-    } else {
-      fail('the shot is judged before it is kept', verdict.slice(0, 120).replace(/\n/g, ' / '));
-    }
+    await page.waitForURL(/\/scan\/pages$/, { timeout: 10000 });
+    pass('the photograph goes straight to the review list');
   } catch {
-    fail('a page is captured and counted', 'no "Capture page" control responded');
+    fail('the photograph goes straight to the review list', `landed on ${new URL(page.url()).pathname}`);
   }
 
-  try {
-    await page.click('[aria-label="Done capturing"]', { timeout: 8000 });
-    await page.waitForTimeout(2500);
-    const path = new URL(page.url()).pathname;
-    if (path.endsWith('/scan/pages')) pass('review opens on the captured page');
-    else fail('review opens on the captured page', `landed on ${path}`);
-  } catch {
-    fail('review opens on the captured page');
+  const counted = await page.getByText('Continue with 1 page').count();
+  if (counted > 0) pass('it is page 1 of the scan');
+  else fail('it is page 1 of the scan', (await page.evaluate(() => document.body.innerText)).slice(0, 120));
+
+  const expected = jpegSize(PAGE);
+  await page.waitForTimeout(1500);
+  const shown = await page.$$eval('img', (images) =>
+    images.map((image) => ({ width: image.naturalWidth, height: image.naturalHeight })),
+  );
+  if (expected && shown.some((s) => s.width === expected.width && s.height === expected.height)) {
+    pass('the whole photograph is kept, at the camera\'s own size', `${expected.width}x${expected.height}`);
+  } else {
+    fail(
+      'the whole photograph is kept, at the camera\'s own size',
+      `file ${JSON.stringify(expected)}, shown ${JSON.stringify(shown)}`,
+    );
   }
 
-  if (errors.length) fail('no page errors while scanning', errors[0]);
-  else pass('no page errors while scanning');
+  if (errors.length) fail('no page errors while photographing', errors[0]);
+  else pass('no page errors while photographing');
 
   await context.close();
 }
@@ -434,18 +392,50 @@ async function checkStaleDocument(browser) {
   await context.close();
 }
 
-async function checkCameraRefused(browser) {
-  console.log('\ncamera, refused');
-  const context = await browser.newContext({
-    viewport: { width: 390, height: 844 },
-    permissions: [],
-  });
+/**
+ * A camera closed without a photograph changes nothing.
+ *
+ * The viewfinder reset the scan as it opened, so opening the camera and
+ * backing out threw away pages nobody had finished with. Now nothing happens
+ * until a photograph arrives: the scan screen is still the scan screen, and no
+ * page has been added.
+ */
+async function checkCameraCancelled(browser) {
+  console.log('\ncamera, closed without a photograph');
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const page = await context.newPage();
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(String(e).slice(0, 160)));
   await page.goto(`${BASE}/scan`, { waitUntil: 'networkidle' });
-  await page.waitForTimeout(3000);
+  await page.waitForTimeout(1500);
+
+  const chooser = page.waitForEvent('filechooser', { timeout: 8000 }).catch(() => null);
+  await page.getByText('Open camera').first().click({ timeout: 8000 }).catch(() => {});
+  const camera = await chooser;
+  if (!camera) {
+    fail('a closed camera leaves the scan as it was', 'no file input was opened');
+    await context.close();
+    return;
+  }
+  await camera.setFiles([]);
+  await page.waitForTimeout(1500);
+  const path = new URL(page.url()).pathname;
+  const stillOffered = await page.getByText('Open camera').count();
+  if (path === '/scan' && stillOffered > 0 && errors.length === 0) {
+    pass('a closed camera leaves the scan as it was');
+  } else {
+    fail('a closed camera leaves the scan as it was', `on ${path}; ${errors[0] ?? 'no camera offered'}`);
+  }
+
+  // And a camera that gave nothing back says so, with a way round it.
+  await page.goto(`${BASE}/scan?problem=failed`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(1200);
   const screen = await page.evaluate(() => document.body.innerText || '');
-  if (/camera.*photograph/i.test(screen)) pass('says the camera is needed and why');
-  else fail('says the camera is needed and why', screen.slice(0, 160).replace(/\n/g, ' / '));
+  if (/Try again/.test(screen) && /Choose photos/.test(screen)) {
+    pass('a failed photograph offers the camera again and photos instead');
+  } else {
+    fail('a failed photograph offers the camera again and photos instead', screen.slice(0, 160).replace(/\n/g, ' / '));
+  }
   await context.close();
 }
 
@@ -541,9 +531,7 @@ async function checkAudioOut(browser) {
 }
 
 async function main() {
-  const video = sheetMusicVideo();
   console.log(`device-check: driving ${BASE}`);
-  console.log(`  camera is fed ${video.real ? 'a photographed page' : 'a flat field (no image encoder here)'}`);
 
   const granted = await chromium.launch({
     executablePath: EXECUTABLE,
@@ -551,7 +539,6 @@ async function main() {
       '--use-fake-ui-for-media-stream',
       '--use-fake-device-for-media-stream',
       `--use-file-for-fake-audio-capture=${ROOT}fixtures/audio/app_encoder_click_track_48k.wav`,
-      `--use-file-for-fake-video-capture=${video.path}`,
       '--autoplay-policy=no-user-gesture-required',
     ],
   });
@@ -567,7 +554,7 @@ async function main() {
   });
   await checkMicrophoneRefused(refused);
   await checkStaleDocument(refused);
-  await checkCameraRefused(refused);
+  await checkCameraCancelled(refused);
   await refused.close();
 
   console.log(

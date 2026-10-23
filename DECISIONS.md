@@ -1,5 +1,40 @@
 # InTempo Decisions
 
+## 2026-10-23 — The phone's own camera, not an in-app viewfinder
+
+**Context:** the scanner drew the live camera into a portrait page-shaped
+window (`object-fit: cover`) and then cropped every photograph to that window
+(`cropToViewfinder`). On a phone browser the stream is 16:9, so the window
+showed a slice of it and the saved page was whatever the slice held; the owner
+reported "it crops it really weirdly" and asked for the actual camera, capturing
+the whole page at the camera's true aspect. The viewfinder had also needed a
+patch to `expo-camera` just to get more than 640x480 out of the browser.
+
+**Decision:** every button that photographs a page opens the system camera
+through `expo-image-picker` (`launchCameraAsync`): the iPhone's camera in the app
+build, an `<input capture="environment">` on the web, which a phone answers with
+its camera app at full resolution. The whole photograph is the page. The `Scanner`
+route stays as a plain screen for `/scan` and for a camera that gave nothing back.
+`expo-camera`, its patch, the viewfinder, the crop and their tests are removed.
+See `lib/scan/systemCamera.ts`, `lib/scan/pagePhoto.ts`, `navigation/usePageCamera.ts`.
+
+**Alternatives considered:**
+- *Keep the viewfinder and drop the crop.* The preview would still not show what
+  is saved (cover-fit), and the web stream would still be the browser's choice
+  of resolution rather than the camera's.
+- *A full-screen viewfinder at the stream's aspect.* Still a custom camera UI,
+  which is what the owner asked to remove, and still `getUserMedia`'s pixels.
+
+**Trade-offs accepted:**
+- **One more tap per page in a multi-page scan.** The viewfinder stayed open
+  between pages; the camera app returns after each photograph, and "Add page"
+  opens it again.
+- **The web camera must open inside the tap.** A browser blocks a file input
+  opened any later, so nothing may be awaited before `launchCameraAsync` on the
+  web; the add-piece sheet opens the camera instead of navigating after its exit.
+- **No live framing advice.** The legibility check still runs on each photograph
+  and the review list flags a page worth another look.
+
 ## 2026-10-23 — The API carries only what it does, and a listing does not validate notation
 
 **Context:** the API was killed for exceeding 512 MB at 03:55 UTC while one
