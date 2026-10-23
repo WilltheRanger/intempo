@@ -1193,6 +1193,9 @@ def attach_score_pages(
         "transcription_status": "queued",
         "transcription_stage": None,
         "transcription_error": None,
+        # The last read's Modal call is not this one. Left in place it would
+        # be asked about — and found finished — if this read never started.
+        "transcription_call_id": None,
         "transcription_accepted_at": None,
         "page_image_discarded_at": None,
         # **Reset, not incremented.** These are new photographs, and the
@@ -1896,6 +1899,8 @@ def retranscribe(
                 "transcription_status": "queued",
                 "transcription_stage": None,
                 "transcription_error": None,
+                # See `attach_score_pages`: the last read's call is not this one.
+                "transcription_call_id": None,
                 # Computed from the row read above rather than incremented in
                 # the database, which supabase-py cannot express — and safe for
                 # exactly the reason the status filter below exists: two racing

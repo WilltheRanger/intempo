@@ -149,6 +149,9 @@ async def lifespan(_app: FastAPI):
         sweep_stuck_transcriptions()
     except Exception:  # noqa: BLE001 — never let recovery block startup
         log.exception("stuck-transcription sweep failed on startup")
+    # Scans this service accepted and lost before a reader saw them — the
+    # queue they wait in is memory. See `resume_unstarted_reads`.
+    dispatch.resume_unstarted_reads()
 
     # The first take in a fresh process used to wait two minutes on numba
     # compiling librosa. The image carries that compiled code now (see the
@@ -156,6 +159,11 @@ async def lifespan(_app: FastAPI):
     # app rather than after they press stop. Only where takes actually run.
     if settings.ANALYSIS_WARMUP and dispatch.ANALYSIS_RUNTIME == "inprocess":
         warmup.warm_in_background()
+    # The same idea for a deployment that sends its work elsewhere: the Modal
+    # client is ten seconds of import on this instance, and the first page
+    # after a restart used to wait for it. See `preload_modal_client`.
+    if "modal" in (dispatch.ANALYSIS_RUNTIME, dispatch.TRANSCRIPTION_RUNTIME):
+        dispatch.preload_modal_client()
 
     sweeper = asyncio.create_task(_sweep_periodically())
     try:

@@ -233,3 +233,88 @@ def test_the_message_no_longer_names_a_cause_it_cannot_know() -> None:
     said = fake.table("scores").rows[0]["transcription_error"]
     assert "server restarted" not in said
     assert "try reading it again" in said
+
+
+# ---- asking Modal early ----------------------------------------------------
+
+
+def _remote_row(score_id: str, *, age: timedelta, call_id: str | None) -> dict:
+    return {**_row(score_id, "reading", age=age), "transcription_call_id": call_id}
+
+
+def test_a_dead_read_on_modal_is_reported_in_minutes_not_half_an_hour(monkeypatch) -> None:
+    """A container that died at its first import left the progress bar up for
+    the whole thirty-minute cutoff, because elapsed time cannot tell a dead
+    read from a cold start. A call id can: Modal names the exception."""
+    from app.workers import dispatch
+
+    monkeypatch.setattr(dispatch, "TRANSCRIPTION_RUNTIME", "modal")
+    monkeypatch.setattr(
+        transcription_runner, "_modal_verdict", lambda call_id: "Modal says it died."
+    )
+    fake = _scores(_remote_row("s1", age=timedelta(minutes=5), call_id="fc-1"))
+
+    assert sweep_stuck_transcriptions(fake, now=NOW) == 1
+    row = fake.table("scores").rows[0]
+    assert row["transcription_status"] == "failed"
+    assert row["transcription_error"] == "Modal says it died."
+
+
+def test_a_slow_read_modal_says_is_running_is_left_alone(monkeypatch) -> None:
+    from app.workers import dispatch
+
+    monkeypatch.setattr(dispatch, "TRANSCRIPTION_RUNTIME", "modal")
+    monkeypatch.setattr(
+        transcription_runner,
+        "_modal_verdict",
+        lambda call_id: transcription_runner._STILL_RUNNING,
+    )
+    fake = _scores(_remote_row("s1", age=timedelta(minutes=5), call_id="fc-1"))
+
+    assert sweep_stuck_transcriptions(fake, now=NOW) == 0
+    assert fake.table("scores").rows[0]["transcription_status"] == "reading"
+
+
+def test_not_being_able_to_ask_is_not_evidence_inside_the_cutoff(monkeypatch) -> None:
+    """Modal unreachable is a fact about Modal, not about the read. Inside the
+    cutoff the row waits, exactly as it did before anybody asked."""
+    from app.workers import dispatch
+
+    monkeypatch.setattr(dispatch, "TRANSCRIPTION_RUNTIME", "modal")
+    monkeypatch.setattr(
+        transcription_runner,
+        "_modal_verdict",
+        lambda call_id: transcription_runner._SWEPT_WITHOUT_A_REASON,
+    )
+    fake = _scores(_remote_row("s1", age=timedelta(minutes=5), call_id="fc-1"))
+
+    assert sweep_stuck_transcriptions(fake, now=NOW) == 0
+
+
+def test_a_read_with_nothing_to_ask_still_waits_for_the_cutoff(monkeypatch) -> None:
+    from app.workers import dispatch
+
+    monkeypatch.setattr(dispatch, "TRANSCRIPTION_RUNTIME", "modal")
+    asked: list[str | None] = []
+    monkeypatch.setattr(
+        transcription_runner, "_modal_verdict", lambda call_id: asked.append(call_id) or "x"
+    )
+    fake = _scores(_remote_row("s1", age=timedelta(minutes=5), call_id=None))
+
+    assert sweep_stuck_transcriptions(fake, now=NOW) == 0
+    assert asked == [], "a row with no call id has nothing to ask Modal about"
+
+
+def test_a_fresh_read_is_not_asked_about_at_all(monkeypatch) -> None:
+    """Under three minutes since the last progress report is a read working."""
+    from app.workers import dispatch
+
+    monkeypatch.setattr(dispatch, "TRANSCRIPTION_RUNTIME", "modal")
+    asked: list[str | None] = []
+    monkeypatch.setattr(
+        transcription_runner, "_modal_verdict", lambda call_id: asked.append(call_id) or "x"
+    )
+    fake = _scores(_remote_row("s1", age=timedelta(minutes=1), call_id="fc-1"))
+
+    assert sweep_stuck_transcriptions(fake, now=NOW) == 0
+    assert asked == []

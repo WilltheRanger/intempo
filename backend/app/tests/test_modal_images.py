@@ -425,3 +425,22 @@ def test_the_reader_stays_warm_after_a_scan_but_not_around_the_clock() -> None:
     assert _transcribe_setting("min_containers") == 0, (
         "a reader kept warm with nobody scanning is billed around the clock"
     )
+
+
+def _transcribe_cpu() -> float:
+    """The `cpu=` on `transcribe_score`, as a number of cores."""
+    source = _MODAL_APP.read_text()
+    start = source.index("def transcribe_score(")
+    decorator = source.rindex("@app.function(", 0, start)
+    match = re.search(r"\bcpu=([0-9.]+)", source[decorator:start])
+    assert match, "transcribe_score asks for no CPU, which is Modal's guaranteed eighth"
+    return float(match.group(1))
+
+
+def test_the_reader_is_guaranteed_enough_cpu_to_finish_a_page() -> None:
+    """A page is 63 s of CPU (measured; see `modal_app.py`), and Modal guarantees
+    a container an eighth of a core unless it asks for more. On a busy worker
+    that is over eight minutes of a musician watching a progress screen — the
+    scan reported as stuck on 2026-10-23. Bursting above the request is a
+    worker's spare capacity, not a promise."""
+    assert _transcribe_cpu() >= 1.0

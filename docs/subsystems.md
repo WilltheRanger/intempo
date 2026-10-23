@@ -1120,6 +1120,27 @@ nothing else covers `backend/`. Named here rather than left to be found.
   burst (`/me`, `/scores/current`, the listings, the analyses) from several
   clients at once against the real app on a fake Supabase that sleeps per
   query, and watch RSS — one client never shows it.
+- **A scan's queue is memory, so a restart loses it.** `POST /v1/scores`
+  answers before the page is handed to a reader; a restart in between left the
+  row `queued` with nothing coming until the sweeper's thirty-minute remote
+  cutoff. `dispatch.resume_unstarted_reads` starts those again at boot (queued,
+  no Modal call id, older than a minute). A re-read clears the previous call
+  id for the same reason — a stale one reads as a call Modal already finished.
+- **Modal is asked about a quiet read after three minutes, not thirty.**
+  `ASK_MODAL_AFTER`: a call id gets a definite answer — still running, or the
+  named exception — so a read that died at its first import reaches the
+  musician as a reason within one sweep rather than half an hour later. That
+  makes reading Modal's answer correctly matter twice over. **A
+  `FunctionTimeoutError` is a read Modal stopped**, not one still going — it
+  subclasses `TimeoutError`, was matched as "still running", and a read killed
+  at its time limit was skipped by every sweep for good. **A `ConnectionError`
+  from Modal's own API is no answer**, not a failed read: taken as one, it
+  would fail a working scan three minutes in and blame the photograph
+  (`_is_still_running`, `_could_not_ask` in `transcription_runner.py`).
+- **The reader is guaranteed two cores.** A page is 63 s of CPU; Modal
+  guarantees an eighth of a core unless asked, and bursting above that is a
+  quiet worker's spare capacity. On a busy one a page took minutes and was
+  reported as stuck (`modal_app.py`, `test_modal_images.py`).
 
 ## The recording path (2026-09-02) — level is not the signal you think it is
 
