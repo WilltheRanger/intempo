@@ -995,6 +995,26 @@ Run against it, that turned up eight app defects the fixtures could not:
   first await, as the scan's "Save and read" already did, and
   `createOnce.test.ts` holds all three to it.
 
+### The shelf came back blank on every launch (2026-10-23)
+
+The Library is the screen the app opens on, and each tile is engraved from its
+piece's notation. The listing kept on disk was written without notation, on a
+premise that stopped being true when the grid became a shelf: "the library grid
+draws a title, a composer and a photograph — it has never read a note". So every
+launch drew blank pages, and the engravings all arrived at once when the network
+answered. Relaunched in an iPhone-profile browser with the listing held back
+eight seconds, 0 of 8 tiles were drawn; with `listForDisk`, 8 of 8.
+
+**The premise is the part to remember.** `persistCache.ts` throws data away
+because of what screens draw, and nothing ties the two together. When a screen
+starts reading a field, check what that file drops on the way to disk.
+
+A related fact about the tiles, found while sizing this: `layOutStave` fits the
+*whole piece* to the tile's width, so one dense bar anywhere — a run of
+sixteenths on page three — sets the size at which the tile draws its opening.
+A tile showing smaller notes than its neighbours is usually that, not a bug in
+the opening it shows.
+
 ## `npm audit fix --force` would take this app back to SDK 46 (2026-09-09)
 
 `npm audit --omit=dev` reports **24 advisories, 7 of them high**, and closes

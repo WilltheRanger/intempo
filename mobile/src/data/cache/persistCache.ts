@@ -64,14 +64,32 @@ export const MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
  *
  * **Two megabytes, and the number is the notation.** A piece's `score_json` is
  * around 111 bytes a note, so a fifty-piece library's worth of it is megabytes
- * on its own — `pieceForDisk` drops it from the listing for exactly that
- * reason, and this is the backstop for the pieces that keep it. Web stores
+ * on its own — `listForDisk` caps what the listing may spend on it for exactly
+ * that reason, and this is the backstop for everything else. Web stores
  * this in `localStorage`, whose quota is about five megabytes *for the whole
  * origin*, shared with the Supabase session and the take queue; Android's
  * AsyncStorage is a SQLite database with a six-megabyte default. Two leaves
  * room in both for the things that are not this.
  */
 export const BUDGET_CHARS = 2_000_000;
+
+/**
+ * How much of the budget the listing's notation may take: half.
+ *
+ * **The shelf draws every tile from its piece's notation**, so a listing
+ * written without it restored as a shelf of blank pages, and every engraving
+ * arrived at once when the refetch landed — the "loads after the rest of the
+ * page" the owner reported (2026-10-23). The largest library on the live
+ * service that day was twenty-two pieces and about 700 KB of notation, which
+ * fits in this with room to spare; a library that does not fit keeps the
+ * notation of the pieces played most recently, which are the ones at the top
+ * of the shelf, and the rest wait for the network as every tile used to.
+ *
+ * Half, not all: the account, today's piece, the readings and the pieces
+ * opened recently are written after the listing, and a listing that took the
+ * whole budget would cost every one of them.
+ */
+export const LISTING_NOTATION_CHARS = BUDGET_CHARS / 2;
 
 /**
  * The account a cache belongs to, and the shape it was written in.
@@ -160,12 +178,10 @@ export function shouldPersist(queryKey: readonly unknown[], status: string): boo
  * already recognises. Dropping them is choosing the known-good absence over the
  * plausible-looking failure.
  *
- * `keepNotation` is false for the listing alone. The library grid draws a
- * title, a composer and a photograph — it has never read a note — and
- * `pieceFromCaches` already documents that a listed piece's `score` may be
- * absent, so this writes a placeholder the app is built to receive rather than
- * inventing a new one. It is also the entire size problem: with notation, one
- * query is the whole budget.
+ * `keepNotation` is false only for a listed piece past the listing's share of
+ * the budget (`listForDisk`). `pieceFromCaches` already documents that a
+ * listed piece's `score` may be absent, so that writes a placeholder the app is
+ * built to receive rather than inventing a new one.
  */
 export function pieceForDisk(piece: Piece, keepNotation: boolean): Piece {
   return {
@@ -174,6 +190,65 @@ export function pieceForDisk(piece: Piece, keepNotation: boolean): Piece {
     pages: [],
     score: keepNotation ? piece.score : null,
   };
+}
+
+/**
+ * How long a piece's notation is as JSON, measured once per notation.
+ *
+ * The cache is written up to once a second while anything changes — every
+ * three-second poll of a page being read is a change — and measuring meant
+ * writing out every note of the library each time. A correction arrives as new
+ * notation rather than an edit to the old, and React Query hands back the same
+ * object for notation that did not change, so the first measurement of an
+ * object stands. Were one ever stale, it could only misjudge the listing's
+ * share: the budget itself is measured whole, in `serializeForDisk`.
+ */
+const notationChars = new WeakMap<object, number>();
+
+function charsOf(score: NonNullable<Piece['score']>): number {
+  let chars = notationChars.get(score);
+  if (chars === undefined) {
+    chars = JSON.stringify(score).length;
+    notationChars.set(score, chars);
+  }
+  return chars;
+}
+
+/**
+ * The listing as it goes to disk: with its notation, as far as it fits.
+ *
+ * **It used to be written without any**, on the reasoning that "the library
+ * grid draws a title, a composer and a photograph — it has never read a note".
+ * The grid became a shelf of engraved openings, drawn from exactly the field
+ * this threw away, and the reasoning was never revisited: the shelf a
+ * musician saw on every launch was blank pages until the network answered.
+ *
+ * Notation is kept piece by piece, most recently played first, until
+ * `notationChars` is spent — so a library too large for the device loses the
+ * engravings at the bottom of the shelf rather than all of them, and never
+ * loses the listing itself. Order on disk is the listing's own; only the choice
+ * of which pieces keep their notation follows the shelf.
+ */
+export function listForDisk(
+  pieces: Piece[],
+  notationChars: number = LISTING_NOTATION_CHARS,
+): Piece[] {
+  const byRecency = pieces
+    .map((piece, index) => ({ piece, index }))
+    .sort((a, b) => {
+      const played = (b.piece.lastPracticedAt ?? '').localeCompare(a.piece.lastPracticedAt ?? '');
+      return played !== 0 ? played : a.index - b.index;
+    });
+  const keep = new Set<number>();
+  let spent = 0;
+  for (const { piece, index } of byRecency) {
+    const cost = piece.score ? charsOf(piece.score) : 0;
+    if (spent + cost <= notationChars) {
+      keep.add(index);
+      spent += cost;
+    }
+  }
+  return pieces.map((piece, index) => pieceForDisk(piece, keep.has(index)));
 }
 
 /**
@@ -204,7 +279,7 @@ function dataForDisk(kind: Kind, data: unknown): unknown {
     return data && typeof data === 'object' ? musicianForDisk(data as Musician) : data;
   }
   if (kind === 'list') {
-    return Array.isArray(data) ? data.map((piece) => pieceForDisk(piece as Piece, false)) : data;
+    return Array.isArray(data) ? listForDisk(data as Piece[]) : data;
   }
   // `current` is null for an account that has not practised yet, and `detail`
   // is null for a piece that has been deleted in another session. Both are real
