@@ -227,9 +227,18 @@ app.add_middleware(HeavyReadGate, at_once=settings.HEAVY_READS_AT_ONCE)
 # and level 9 bought another 20% for six times the work. Small bodies are left
 # alone; the header and the round trip are the cost there, not the bytes.
 #
+# **Level 3, not 5, for the same reason one step further** (measured the same
+# day, on the real responses). zlib's levels 1 to 3 share its fast strategy,
+# and the cost jumps above them: a 2.5 MB Library listing took 17.6 ms at level
+# 5 and 5.3 ms at level 3, for 46 KB against 56; a take list 0.73 ms against
+# 0.34, for 4.1 KB against 4.9. On a tenth of a CPU that is 176 ms against 53
+# per listing, spent in front of every other request on the instance, to save
+# ten kilobytes a phone receives in a few milliseconds. Profiled under load,
+# compression was a quarter of the API's own CPU.
+#
 # Added before CORS so CORS stays outermost and every response — compressed or
 # not, error or not — carries its headers.
-app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
+app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=3)
 
 # The app and this API are never same-origin — 8081 against 8000 in
 # development, a Pages site against wherever this is hosted in production — so

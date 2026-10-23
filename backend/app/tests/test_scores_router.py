@@ -2886,6 +2886,20 @@ def test_a_large_listing_is_compressed_for_a_client_that_accepts_it(
     assert len(res.json()) == 12
 
 
+def test_responses_are_compressed_at_a_level_a_tenth_of_a_cpu_can_afford() -> None:
+    """Level 5 spent 17.6 ms compressing a 2.5 MB listing and level 3 spends
+    5.3, for a body ten kilobytes larger. On the free instance's tenth of a CPU
+    that is 176 ms against 53, per listing, in front of everyone else's
+    requests. zlib's levels 1 to 3 share one fast strategy; above them the cost
+    jumps, so a level above 3 is that trade made the expensive way round."""
+    from starlette.middleware.gzip import GZipMiddleware
+
+    from app.main import app
+
+    (gzip,) = [m for m in app.user_middleware if m.cls is GZipMiddleware]
+    assert gzip.kwargs["compresslevel"] <= 3
+
+
 def test_the_library_listing_still_carries_the_notation_by_default(
     monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
 ) -> None:

@@ -1187,6 +1187,27 @@ nothing else covers `backend/`. Named here rather than left to be found.
   machine's. **What it still cannot buy is speed**: eighty at once on a tenth
   of a CPU means a median request of 28 s and the slowest at 150. That is the
   instance, and the answer to it is a bigger one.
+- **Under load the API's CPU is parsing, compressing and little else
+  (2026-10-23).** Profile it with `py-spy record --format raw` against the
+  harness server while a few clients replay the opening burst in a loop, then
+  set aside the fake's own work (`fake_supabase._cast` and the harness's
+  `json.dumps`, which Postgres does in production). Of what is left, about 30%
+  was parsing PostgREST's answers and **26% was gzip**, at level 5. zlib's
+  levels 1 to 3 share its fast strategy and the cost jumps above them: a
+  2.5 MB listing took 17.6 ms at level 5 and 5.3 at level 3, for 46 KB against
+  56. At level 3, forty openings at once under the host's limits went from a
+  median request of 18.5 s to 13.4, the slowest from 52.6 to 43.8, with peak
+  memory unchanged at about 215 MB; `main.py` and its test hold the level.
+  Verifying the sign-in token is about 4% and is not worth caching.
+- **The first database call after a quiet minute costs a quarter of a second
+  inside Supabase (2026-10-23).** Measured over a day of live traffic in
+  `edge_logs`: `x_envoy_upstream_service_time` had a median of 19 ms for a call
+  within five seconds of the previous one, and 259–262 ms for the first call
+  after a minute or more of quiet, which on an app with few users is nearly
+  every opening. It is the database side opening a fresh connection, and a
+  keep-warm ping was considered and not built: an opening fires five or six
+  calls at once, so one warm connection would leave the rest cold. More
+  traffic removes it; nothing in this repository can.
 - **The Library's listing passes its notation through unread (2026-10-23).**
   `GET /v1/scores` asks PostgREST for `score_json_text:score_json::text` and
   writes each row's text into the response as it came
