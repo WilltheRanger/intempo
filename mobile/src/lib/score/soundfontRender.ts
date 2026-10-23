@@ -9,6 +9,7 @@ import type { Instrument } from '../../data/types';
 import type { Schedule } from './schedule';
 import { INSTRUMENT_PROGRAMS } from './soundfontBank';
 import { Limiter } from './limiter';
+import { nextTask } from '../nextTask';
 import { soundingOffset } from '../instrument';
 import {
   EXPRESSION_NEUTRAL,
@@ -405,7 +406,9 @@ export async function renderSoundfont(
       sinceYield += length;
       if (sinceYield >= 8192) {
         sinceYield = 0;
-        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        // A task, not a timer: chained timers are clamped to 4 ms each, which
+        // was 3.9 s of a three-minute passage's wait (`nextTask`).
+        await nextTask();
         if (cancelled()) throw new Error('Playback cancelled');
       }
     }
