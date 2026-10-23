@@ -1,5 +1,44 @@
 # InTempo Decisions
 
+## 2026-10-23 — Heavy reads queue in the event loop, a few at a time
+
+**Context:** replayed under the free instance's real limits (a cgroup at a
+tenth of a CPU and 512 MB, OOM killer on), twenty musicians opening the app at
+the same moment killed the API on `main`, every request failing; this branch's
+earlier fixes moved that to forty, where it peaked at 518 MB. Starlette runs as
+many plain-`def` handlers at once as its pool has threads — forty — and each
+library listing or page of takes holds tens of megabytes while it is decoded
+and encoded. On a tenth of a CPU, forty of them in parallel finish no sooner
+than forty in a row; they only hold their memory for the whole time.
+
+**Decision:** an ASGI middleware (`app/heavy_reads.py`) lets at most
+`HEAVY_READS_AT_ONCE` (4) heavy reads — the two listings, unless they ask for
+the light form or twenty rows or fewer — into the app at once. The rest wait in
+the event loop, holding no thread, and a request whose caller disconnects while
+waiting is dropped without being computed. Everything else passes untouched.
+Forty musicians at once: no failures, peak 178 MB instead of 518, median
+request 24 s instead of 79.
+
+**Alternatives considered:**
+- *A smaller thread pool.* Bounds memory too, but light requests queue behind
+  heavy ones — `/v1/health` among them, which the host uses to decide whether
+  to restart the instance.
+- *A semaphore inside the handlers.* A waiting request would hold one of the
+  pool's threads, which brings the same problem back.
+- *Trim the listing to each piece's opening.* Cuts the heavy reads' cost, and
+  is worth doing, but it changes what six screens receive and bounds nothing.
+  A big enough burst still kills the instance.
+- *A bigger instance.* The answer to volume, and the owner's to choose. It
+  would have moved the cliff, not removed it.
+
+**Trade-offs accepted:**
+- **A burst is slower for the last in line**, not faster: at forty at once, a
+  heavy read can wait over a minute on this instance. Waiting is what a tenth
+  of a CPU already meant. Now it is a wait rather than the instance being
+  killed for everybody.
+- **Four is a measurement of this instance**, and wrong on a bigger one;
+  `HEAVY_READS_AT_ONCE` is an environment setting for that reason.
+
 ## 2026-10-23 — homr installed without its dependencies, beside Pillow 13
 
 **Context:** the reader's Modal image pinned Pillow 13.0.0 (#189) to clear 35

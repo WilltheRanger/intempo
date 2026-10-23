@@ -1154,6 +1154,19 @@ nothing else covers `backend/`. Named here rather than left to be found.
   `mobile/assets/captures` came out the same under 12.3.0 and 13.0.0, four
   identical readings and two identical refusals — and `test_modal_images.py`
   holds both halves of that.
+- **A burst of musicians queues; it does not kill the instance (2026-10-23).**
+  Measure it under the host's own limits, not on a laptop: run the API inside
+  a cgroup with `cpu.cfs_quota_us` 10000 of 100000 and `memory.limit_in_bytes`
+  512M, OOM killer left on, against a fake database that sleeps per query,
+  and replay N clients opening the app at the same moment. On `main`, twenty
+  killed it and every request failed. Lean imports and lighter listings moved
+  that to forty, at 518 MB, a few megabytes short. `app/heavy_reads.py` then
+  lets four heavy reads in at a time, waiting in the event loop, and forty ran
+  with no failure at 178 MB, eighty at 209 MB. Run it with
+  `MALLOC_ARENA_MAX=2`, as the image does, or the numbers are another
+  machine's. **What it still cannot buy is speed**: eighty at once on a tenth
+  of a CPU means a median request of 28 s and the slowest at 150. That is the
+  instance, and the answer to it is a bigger one.
 
 ## The recording path (2026-09-02) — level is not the signal you think it is
 

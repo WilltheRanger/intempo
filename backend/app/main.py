@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
 from app.config import settings
+from app.heavy_reads import HeavyReadGate
 from app.logging_config import configure_logging
 from app.routers import (
     analyses,
@@ -211,6 +212,11 @@ async def lifespan(_app: FastAPI):
 # at a time — and shows up only as "the app is stuck" under real use.
 # ---------------------------------------------------------------------------
 app = FastAPI(title="InTempo API", lifespan=lifespan)
+
+# **A burst of musicians queues instead of killing the instance.** Innermost,
+# so compression and CORS wrap whatever it lets through as they wrap everything
+# else. See `app/heavy_reads.py` for the measurement and the waiting rules.
+app.add_middleware(HeavyReadGate, at_once=settings.HEAVY_READS_AT_ONCE)
 
 # **Compressed, because every byte of these responses crosses a phone's
 # connection.** Nothing compressed them: a library listing carries every
