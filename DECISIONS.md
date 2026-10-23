@@ -1,5 +1,94 @@
 # InTempo Decisions
 
+## 2026-10-23 — The notation is kept between renders, and only the marks move
+
+**Context:** The `Stave` draws the bar being heard and the playhead inside
+each system, behind the notes, in the same render as the notes. A take on
+Record steps the playhead ten times a second, and Listen on the score screen
+reported progress every frame into a screen whose stave also laid the piece
+out again on every render. With the CPU slowed four times, a 236-note piece
+blocked the main thread for 5.7 s of every 6 of a take (about 20 frames a
+second) and 5.5 s of every 6 of Listen (12), and a 2,656-note piece drew a
+take at 3.9 frames a second. After this: 60 frames a second through a take on
+both, with nothing blocked, and 59 through Listen.
+
+**Decision:** A system's notation is a memoised component (`SystemInk`), and
+the marks stay in `Stave`. The score screen holds the bar being heard, not the
+time, and hands the stave a layout it made once per piece and width, as
+`ScoreScroll` already did on Record.
+
+**Alternatives considered:**
+- *Memoise the whole `Stave`.* The marks are its props, so every step would
+  still re-render all of it.
+- *Draw the marks in an SVG of their own over the music.* The highlight has to
+  sit behind the notes, and a second layer changes what is drawn and how it
+  stacks. This changes neither: the markup is byte-identical.
+- *Report progress less often.* That would make the stepping coarser and still
+  redraw the whole score at each step.
+
+**Trade-offs accepted:**
+- **The memo depends on its props staying equal.** An object built in a render
+  passed to `SystemInk` would re-render every system on every step, silently.
+  `docs/subsystems.md` says so beside the rule.
+
+## 2026-10-23 — The shelf draws a tile at a time, top first, and keeps what it engraved
+
+**Context:** The Library opens on a shelf of tiles, each the opening of a piece
+engraved from its notation. Every tile measured itself, the measurements landed
+together, and all twenty-two engravings ran in one render: nothing was drawn
+until the last one was. In an iPhone 13 viewport with the CPU slowed four times,
+against a test library served by the API over a fake database (twenty-two
+pieces, 2.5 MB of notation, four of them 1,660 to 2,656 notes long), the two tiles above the fold appeared 5.5 s into a
+first visit and 2.3 s into a relaunch, behind main-thread blocks of 2.1 s and
+1.0 s. A tile that mounted again engraved again — every tile, each time a search
+was cancelled — and every query that landed re-rendered every tile's stave.
+
+**Decision:**
+- A tile waits for its turn to engrave (`engravingTurns.ts`,
+  `useEngravingTurn`). Turns go one at a time in the order the tiles asked,
+  which is the shelf's order, top first, and each turn runs in a task of its
+  own, so a tap is answered between two tiles rather than after the last.
+  `ScoreBand` takes `queued`; only the shelf passes it.
+- Engravings are kept per notation object (`bandEngraving.ts`), three sizes
+  each, so a tile that mounts again draws at once.
+- `ScoreBand` is memoised; its props are a notation object React Query keeps
+  stable and a few numbers.
+- The two page-wide observers stop doing page-wide work for every change: the
+  tab's title is looked for again only after a change that touches a heading
+  (`changesTheTitle`), and the roving focus pass runs at most once a frame.
+- The cache writer serialises each saved query once instead of twice.
+
+Measured the same way, medians of five relaunches: the two visible tiles drawn
+at 1.29 s rather than 2.28 s, the longest block 0.41 s rather than 1.0 s, and
+total blocking time 1.7 s rather than 3.1 s. On a first visit, 3.1 s rather
+than 5.5 s. At full speed the whole shelf finishes when it did (0.92 s), with
+blocking time cut from 384 to 78 ms. Cancelling a search brings the shelf back
+in 1.6 s rather than 2.2 s; returning to the tab blocks for 0.28 s rather than
+0.65 s. The drawing is unchanged: every tile's SVG is byte-identical.
+
+**Alternatives considered:**
+- *Engrave only the bars a tile shows.* Far less work for a long piece, and a
+  different drawing: the whole piece decides the size a tile is drawn at (one
+  dense bar anywhere shrinks it) and where its staff lines end. Exact only if
+  the engraver could measure every system without laying it out, which is a
+  second copy of its arithmetic.
+- *A paint between turns* (`requestAnimationFrame`). The visible tiles came as
+  soon, but a frame of style, layout and paint for each of twenty-two tiles
+  finished the shelf 1.4 s later than one block did.
+- *`startTransition`.* Interruptible, but it commits the shelf in one piece, so
+  nothing is drawn until the last tile is.
+- *Only the tiles in view* (`IntersectionObserver`). Web-only, and turns in
+  shelf order already put the visible tiles first.
+
+**Trade-offs accepted:**
+- **Below the fold the shelf can finish later.** With the CPU slowed four
+  times, the last tile is drawn about 0.2 s later on a relaunch and 1.1 s later
+  on a first visit, because the other launch work now runs between tiles rather
+  than after all of them. At full speed it finishes at the same time.
+- **Engravings stay in memory as long as their notation does**, rather than as
+  long as the tile is mounted. The shelf's tab stays mounted, so this is close
+  to what it held already; at most three sizes are kept per piece.
+
 ## 2026-10-23 — Takes name their pieces, read beside the takes
 
 **Context:** Insights and the recent takes both name each take by its piece,

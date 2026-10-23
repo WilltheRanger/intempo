@@ -809,10 +809,13 @@ level-1 heading, or the level-2 heading of a state that fills the screen,
 followed by " – InTempo". This is the same element screen focus moves to
 (`screenTitleCandidates`), and the auth gate has one too. A screen with no
 heading gets "InTempo" alone. `installDocumentTitle` (in `App.tsx`) keeps it
-current. It runs when the page's text changes, and a few times after each
-navigation, because switching to a tab that is already built changes only
-what is visible. The navigator's own `documentTitle` is off, or it would
-overwrite the title on every change. An open sheet makes the app root inert
+current. It runs when a heading arrives, leaves or changes its text
+(`changesTheTitle`), and a few times after each navigation, because switching
+to a tab that is already built changes only what is visible. It used to run
+after any change to the page, and the Library's tiles made that most of the
+looking (see "The shelf drew every tile in one block", below). The navigator's
+own `documentTitle` is off, or it would overwrite the title on every change.
+An open sheet makes the app root inert
 without changing the screen, so a heading under the root's `inert` still
 counts, and one under any other `inert` does not (`documentTitle.ts`).
 `audit-a11y` fails a route whose tab reads "InTempo" alone or "undefined".
@@ -1014,6 +1017,77 @@ A related fact about the tiles, found while sizing this: `layOutStave` fits the
 sixteenths on page three — sets the size at which the tile draws its opening.
 A tile showing smaller notes than its neighbours is usually that, not a bug in
 the opening it shows.
+
+### The shelf drew every tile in one block (2026-10-23)
+
+Every tile on the Library measures itself, the measurements land together, and
+until this date all twenty-two engravings ran in one render: nothing was drawn
+until the last was. Opened in an iPhone 13 viewport with the CPU slowed four
+times, against a test library served by the API over a fake database
+(twenty-two pieces, 2.5 MB of notation, four pieces of 1,660 to 2,656 notes),
+the two tiles above the fold took 5.5 s on a first visit and 2.3 s on a
+relaunch, behind blocks of 2.1 s and 1.0 s. The live service's largest library
+that day was about 700 KB of notation, so it is a stress case, but long pieces
+are real. The fix and its numbers are in `DECISIONS.md`. What to keep:
+
+- **Many engravings on one screen take turns.** `ScoreBand` takes `queued`
+  (`engravingTurns.ts`). Pass it wherever a screen draws a list of them.
+- **A tile is a whole piece's work.** `layOutStave` lays out the whole piece to
+  draw the opening, because the whole piece decides the scale. In Node, the
+  four long pieces were 70% of the shelf's engraving time. Do not engrave a
+  piece again for the same width: `bandEngraving.ts` keeps it per notation
+  object.
+- **A component with hundreds of SVG nodes is memoised, with props that stay
+  equal.** Every query that landed on the Library re-rendered every tile's
+  stave until `ScoreBand` was memoised.
+- **A page-wide `MutationObserver` filters before it works.** Asking an element
+  whether it is visible (`checkVisibility`) or reading `innerText` brings
+  styles and layout up to date there and then. The tab title did that after
+  every change on the page, including every tile drawn, and now only after
+  changes that touch a heading. Roving focus does it at most once a frame.
+- **Measure with a source map, at phone speed.** `npx expo export --platform
+  web --source-maps` builds a bundle whose CPU profile maps back to files and
+  lines. Chrome's DevTools protocol slows the CPU
+  (`Emulation.setCPUThrottlingRate`), and `Profiler.start`/`Profiler.stop`
+  record the profile. At full speed this machine hid most of the block, which
+  is one reason it went unnoticed.
+- **Check the drawing did not change.** The tiles' SVG markup was compared
+  byte for byte against `main` after the change, on a first visit and a
+  relaunch.
+
+### Listen and a take redrew the whole score at every step (2026-10-23)
+
+The bar being heard and the playhead are drawn inside each system of the
+`Stave`, behind the notes, and they were drawn by the same render as the
+notes. So every step re-rendered every staff line, notehead, beam and slur of
+the piece to move one rectangle: ten steps a second through a take on Record,
+and on the score screen one every frame of Listen. The score screen also kept
+the time rather than the bar, and the stave laid the whole piece out again on
+every render. With the CPU slowed four times, a 236-note piece drew about 20
+frames a second through a take and 12 through Listen, with the main thread
+blocked for 5.5 to 5.7 s of every 6. A 2,656-note piece managed 3.9 frames a
+second through a take. Record's own comment had left the cost of this as a question for a
+device.
+
+**The rules:**
+
+- **The notation is kept between renders, and only the marks move.**
+  `SystemInk` in `Stave.tsx` draws a system's notation and is memoised. Its
+  props are the engraved system and plain numbers and colours, which is what
+  lets a playhead step skip it. A new prop for it must be a value, or an
+  object the engraving owns. An object built in a render, such as an inline
+  `{...}`, re-renders every system on every step, and nothing fails to say so.
+- **Hold the coarsest state the screen draws.** The score screen sets the
+  bar being heard from Listen's progress, not the seconds, so React skips
+  every frame on which the bar did not change.
+- **A screen that re-renders while it plays hands the stave its layout.**
+  `ScoreScroll` on Record always did. The score screen now does too
+  (`engraved`).
+
+After: 60 frames a second through a take on both pieces, with nothing
+blocked, and 59 through Listen, blocked only briefly where the bar changed
+(185 ms in six seconds). The SVG of the score, Record, piece and Library
+screens is byte-identical to before, for three pieces.
 
 ## `npm audit fix --force` would take this app back to SDK 46 (2026-09-09)
 

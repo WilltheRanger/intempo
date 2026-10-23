@@ -1,18 +1,14 @@
-import { useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, useWindowDimensions, View, type LayoutChangeEvent } from 'react-native';
 
 import { Stave } from '../notation/Stave';
 import { BORDER_WIDTH, colors, spacing } from '../../design';
 import type { ScoreJson } from '../../data/types';
-import { layOutStave } from '../../lib/notation/staveLayout';
-import { staveScoreFor } from '../../lib/notation/fromScore';
-import {
-  keySignatureFor,
-  timeSignatureDigits,
-} from '../../lib/notation/keySignature';
+import { bandOf, engraveBand, keptEngraving } from '../../lib/notation/bandEngraving';
 import { paginateSystems } from '../../lib/notation/pages';
 import { fullBleedMusicWidth } from '../../lib/score/musicWidth';
 import { CONTENT_MAX_WIDTH } from '../primitives/ScreenContainer';
+import { useEngravingTurn } from './useEngravingTurn';
 
 /**
  * Small enough that a band is a glance rather than a page, large enough that
@@ -20,9 +16,6 @@ import { CONTENT_MAX_WIDTH } from '../primitives/ScreenContainer';
  * which is sized to be read from a stand.
  */
 const SCALE = 0.95;
-
-/** Where noteheads go while nothing has said which clef the part is in. */
-const UNREAD_CLEF_PLACEMENT = 'treble' as const;
 
 /** The paper's margin either side of the music. */
 const MARGIN = spacing.lg;
@@ -63,6 +56,13 @@ export interface ScoreBandProps {
    * when the music arrives (`musicWidth.ts`).
    */
   fullBleed?: boolean;
+  /**
+   * Wait for a turn to engrave (`engravingTurns.ts`), for a screen that draws
+   * many bands at once — the Library's shelf — so they arrive one at a time,
+   * top first, instead of all together after one long block of work. A band
+   * already engraved at its size is drawn at once either way.
+   */
+  queued?: boolean;
 }
 
 /**
@@ -91,13 +91,21 @@ export interface ScoreBandProps {
  * is a stave with one bar per system. On full-bleed paper it is known from the
  * window before the first frame (`fullBleed`); anywhere else it is measured,
  * and whatever is under the band moves down when the music arrives.
+ *
+ * **Memoised, because a shelf re-renders far more often than its music
+ * changes.** Every query that lands on the Library — the listing, the latest
+ * takes, the readings — and every tile measuring itself re-rendered every
+ * band, and a band's stave is hundreds of SVG elements compared again for a
+ * drawing that had not moved. The props are a notation object React Query
+ * keeps stable and a few numbers, so comparing them is the cheap half.
  */
-export function ScoreBand({
+export const ScoreBand = memo(function ScoreBand({
   score,
   scale = SCALE,
   plain = false,
   viewport = 1,
   fullBleed = false,
+  queued = false,
 }: ScoreBandProps) {
   const { width: windowWidth } = useWindowDimensions();
   const [width, setWidth] = useState(() =>
@@ -109,37 +117,20 @@ export function ScoreBand({
     setWidth((current) => (current === measured ? current : measured));
   }
 
-  const clef = score.clef ?? UNREAD_CLEF_PLACEMENT;
-  const stave = useMemo(() => staveScoreFor(score), [score]);
-  const head = useMemo(
-    () => ({
-      clef: score.clef ?? null,
-      key: keySignatureFor(score.key_signature, clef),
-      time: timeSignatureDigits(score.time_signature),
-    }),
-    [clef, score.clef, score.key_signature, score.time_signature],
-  );
+  // Kept per score rather than per component (`bandEngraving.ts`), so a band
+  // that mounts again — a tile after a search is cleared — draws at once.
+  const known = width > 0 ? keptEngraving(score, width, scale) : null;
+  const [mayEngrave, drawn] = useEngravingTurn(queued && width > 0 && known === null);
+  const engraved = known ?? (width > 0 && mayEngrave ? engraveBand(score, width, scale) : null);
+  const band = engraved ? bandOf(score) : null;
 
-  const engraved = useMemo(
-    () =>
-      stave && width > 0
-        ? layOutStave({
-            notes: stave.items,
-            clef,
-            maxWidth: width,
-            fitWidth: width,
-            scale,
-            justify: true,
-            beatQuarters: stave.beatQuarters,
-            closesWithRepeat: stave.closesWithRepeat,
-            endings: stave.endings,
-            tempoMarks: stave.tempoMarks,
-            head,
-            nameRow: false,
-          })
-        : null,
-    [clef, head, scale, stave, width],
-  );
+  // The turn is handed on once this engraving is on screen, not when it was
+  // computed: the next band waits for the paint (`useEngravingTurn`).
+  useEffect(() => {
+    if (engraved) {
+      drawn();
+    }
+  }, [drawn, engraved]);
 
   // The first page of the engraving at the height it was given. At the default
   // of one point every system is taller than the viewport, and a system is
@@ -163,20 +154,20 @@ export function ScoreBand({
       */}
       <View style={plain ? undefined : styles.inner}>
         <View onLayout={measure}>
-        {engraved && first && stave ? (
+        {engraved && first && band ? (
           <View style={{ height: first.height }}>
             <Stave
-              notes={stave.items}
-              clef={clef}
+              notes={band.stave.items}
+              clef={band.clef}
               maxWidth={width}
               fitWidth={width}
               scale={scale}
               justify
-              beatQuarters={stave.beatQuarters}
-              closesWithRepeat={stave.closesWithRepeat}
-              endings={stave.endings}
-              tempoMarks={stave.tempoMarks}
-              head={head}
+              beatQuarters={band.stave.beatQuarters}
+              closesWithRepeat={band.stave.closesWithRepeat}
+              endings={band.stave.endings}
+              tempoMarks={band.stave.tempoMarks}
+              head={band.head}
               // A letter under every note is a study-book aid, and this is a
               // glance at a piece rather than a page to practise from.
               showNoteNames={false}
@@ -191,7 +182,7 @@ export function ScoreBand({
       </View>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   band: {

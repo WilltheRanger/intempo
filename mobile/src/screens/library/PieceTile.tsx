@@ -146,6 +146,9 @@ export function PieceTile({
               // The music area, not the card: the padding above and below it is
               // the page's margin and is not for systems to sit in.
               viewport={Math.max(1, pageHeight - MUSIC_PADDING * 2)}
+              // One tile a frame, top of the shelf first, rather than the whole
+              // shelf in one block before any of it is drawn.
+              queued
             />
           </View>
         ) : null}

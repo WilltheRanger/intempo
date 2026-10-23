@@ -337,6 +337,33 @@ describe('serializeForDisk', () => {
     expect(out.clientState.queries.map((q) => q.queryKey[2])).toEqual(['small']);
   });
 
+  it('writes the same file as writing the kept queries whole', () => {
+    // Each entry is written once and spliced into the envelope; the file must
+    // be exactly what serialising the kept cache in one go would give.
+    const c = client([
+      stored(['me'], musician(), 5),
+      stored(['pieces', 'list'], [piece('p1'), piece('p2', 3)], 4),
+      stored(['pieces', 'detail', 'p1'], piece('p1', 2), 3),
+    ]);
+    const json = serializeForDisk(c);
+
+    expect(json).toBe(
+      JSON.stringify({ ...c, clientState: { mutations: [], queries: read(json).clientState.queries } }),
+    );
+  });
+
+  it('writes a title with a dollar in it as it is', () => {
+    // `$&` and `$'` are patterns to `String.replace`; the splice must not read them.
+    const titled = { ...piece('p1'), title: "Sonata $& in $' minor, $$1" };
+    const out = read(serializeForDisk(client([stored(['pieces', 'detail', 'p1'], titled)])));
+
+    expect((out.clientState.queries[0]?.state.data as Piece).title).toBe("Sonata $& in $' minor, $$1");
+  });
+
+  it('writes an empty cache as an empty list', () => {
+    expect(read(serializeForDisk(client([]))).clientState.queries).toEqual([]);
+  });
+
   it('has a default budget, so a caller cannot forget one', () => {
     expect(BUDGET_CHARS).toBeGreaterThan(0);
     expect(serializeForDisk(client([stored(['pieces', 'list'], [piece('p1')])])).length).toBeLessThan(
