@@ -323,6 +323,15 @@ function inPriorityOrder(queries: StoredQuery[]): { kind: Kind; query: StoredQue
 }
 
 /**
+ * Where the query list goes in the envelope while its entries are measured.
+ *
+ * A string no real cache can hold — NUL characters, which JSON escapes, so the
+ * slot is found by its escaped form and nothing a musician typed can match it.
+ */
+const QUERIES_GO_HERE = '\u0000queries\u0000';
+const QUERIES_SLOT = JSON.stringify(QUERIES_GO_HERE);
+
+/**
  * The cache as it goes to disk: stripped, ordered, and inside the budget.
  *
  * **One function rather than the library's `dehydrateOptions.serializeData`**,
@@ -340,12 +349,19 @@ function inPriorityOrder(queries: StoredQuery[]): { kind: Kind; query: StoredQue
  * them could do is replay a take on a future launch.
  */
 export function serializeForDisk(client: StoredClient, budget = BUDGET_CHARS): string {
-  const empty: StoredClient = {
+  // **Each query is written out once.** Measuring an entry against the budget
+  // takes its JSON, and the file is those same strings joined, so they are
+  // kept and spliced into the envelope where its query list goes, rather than
+  // the whole cache being written out a second time at the end — two
+  // megabytes, up to once a second while anything changes, on the thread that
+  // draws the screen.
+  const envelope = JSON.stringify({
     ...client,
-    clientState: { mutations: [], queries: [] },
-  };
-  const queries: StoredQuery[] = [];
-  let size = JSON.stringify(empty).length;
+    clientState: { mutations: [], queries: QUERIES_GO_HERE },
+  });
+  const slot = envelope.indexOf(QUERIES_SLOT);
+  const entries: string[] = [];
+  let size = envelope.length - QUERIES_SLOT.length + '[]'.length;
 
   for (const { kind, query } of inPriorityOrder(client.clientState.queries)) {
     const stored: StoredQuery = {
@@ -369,17 +385,21 @@ export function serializeForDisk(client: StoredClient, budget = BUDGET_CHARS): s
         ...(trimmedForDisk(kind) ? { isInvalidated: true } : {}),
       },
     };
+    const entry = JSON.stringify(stored);
     // The comma this entry would need once it is not the first one.
-    const cost = JSON.stringify(stored).length + (queries.length ? 1 : 0);
+    const cost = entry.length + (entries.length ? 1 : 0);
     if (size + cost > budget) {
       continue;
     }
-    queries.push(stored);
+    entries.push(entry);
     size += cost;
   }
 
-  return JSON.stringify({ ...empty, clientState: { mutations: [], queries } });
+  // Sliced rather than `replace`d: a replacement string reads `$&` and `$'` as
+  // patterns, and a piece may well be called something with a dollar in it.
+  return `${envelope.slice(0, slot)}[${entries.join(',')}]${envelope.slice(slot + QUERIES_SLOT.length)}`;
 }
+
 
 /**
  * The stored cache as it comes back, with readings past their shelf life

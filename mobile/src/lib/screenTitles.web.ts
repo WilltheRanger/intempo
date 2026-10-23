@@ -11,3 +11,6 @@ export function screenTitleCandidates(): HTMLElement[] {
     ...document.querySelectorAll<HTMLElement>('h2'),
   ];
 }
+
+/** Every element `screenTitleCandidates` can return, as one selector. */
+export const SCREEN_TITLE_ELEMENTS = 'h1, h2';

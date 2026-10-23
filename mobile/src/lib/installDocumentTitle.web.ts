@@ -1,16 +1,16 @@
-import { formatDocumentTitle, titlesTheScreen } from './documentTitle';
+import { changesTheTitle, formatDocumentTitle, titlesTheScreen } from './documentTitle';
 import type { DocumentTitle } from './installDocumentTitle';
-import { screenTitleCandidates } from './screenTitles.web';
+import { SCREEN_TITLE_ELEMENTS, screenTitleCandidates } from './screenTitles.web';
 
 /**
  * Keep the browser tab's title on the screen showing; the rule is
  * `documentTitle.ts`.
  *
- * Read again at most once a frame whenever the page's text changes — a
- * screen's title can arrive with its data, or change in place on a rename —
- * and a few times after each navigation, because switching between tabs that
- * are already built changes only what is visible, which the observer does not
- * watch. Returns the handle for an effect.
+ * Read again at most once a frame whenever a heading's text changes, or a
+ * heading arrives or leaves — a screen's title can arrive with its data, or
+ * change in place on a rename — and a few times after each navigation, because
+ * switching between tabs that are already built changes only what is visible,
+ * which the observer does not watch. Returns the handle for an effect.
  */
 const LOOKS_MS = [0, 120, 450];
 
@@ -30,7 +30,11 @@ export function installDocumentTitle(): DocumentTitle {
   };
 
   // The <title> is in <head>, so writing it does not set this off again.
-  const observer = new MutationObserver(soon);
+  // Only for a change that could be a new title (`changesTheTitle`): the
+  // Library's tiles alone are hundreds of changes that never are.
+  const observer = new MutationObserver((changes) => {
+    if (changesTheTitle(changes, SCREEN_TITLE_ELEMENTS)) soon();
+  });
   observer.observe(document.body, { subtree: true, childList: true, characterData: true });
   apply();
 
