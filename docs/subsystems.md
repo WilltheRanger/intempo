@@ -1233,6 +1233,19 @@ nothing else covers `backend/`. Named here rather than left to be found.
   each other at once; `/v1/me` and both listings are one trip each now, the
   current piece two. Measured in the harness with every call at 274 ms:
   `/v1/me` 0.83 s to 0.28, the Library 0.57 to 0.29.
+- **A real app opening is read from two logs side by side, and on the free
+  instance most of it is CPU (2026-10-23).** Render's log (`list_logs` with
+  text `*/v1/*`) stamps each response as the API writes it, and the burst of
+  `OPTIONS` preflights marks where an opening starts. Supabase's `edge_logs`
+  stamp each database call as it arrives, with its time. An opening on `main`
+  that day: the preflights at 48.66 s, the first database calls answered by
+  49.45, then no database call at all for 1.7 s while the API worked through
+  the answers, and its last response at 51.99, 3.3 s in; another opening took
+  6.2 s. No query change removes that gap; less work per request, or more
+  CPU, does. To count it, time each launch request with
+  `resource.getrusage` around `TestClient` calls against the fake: one
+  launch cost 140 ms of CPU on `main` and 107 ms after these changes, which
+  is 1.4 s and 1.1 s on a tenth of a CPU.
 
 ## The recording path (2026-09-02) — level is not the signal you think it is
 
