@@ -1,5 +1,37 @@
 # InTempo Decisions
 
+## 2026-10-23 — The API carries only what it does, and a listing does not validate notation
+
+**Context:** the API was killed for exceeding 512 MB at 03:55 UTC while one
+musician scanned a page. It booted at 230 MB: numpy, SciPy, librosa, the
+Anthropic and Google SDKs and Pillow were all imported at startup, though pages
+and takes are read on Modal. Every request then left memory behind in
+per-thread malloc arenas (idle memory stepped from 183 to 460 MB over days),
+and every library listing validated every note of every piece through
+`ScoreJson` to compute `concerns` — 75% of a listing's CPU, which the instance's
+tenth of a CPU turned into seconds.
+
+**Decision:** heavy dependencies are imported where they are used, held by
+`test_api_import_weight.py`; the image sets `MALLOC_ARENA_MAX=2`; listings never
+carry `concerns` (the piece's own read does, memoised by the notation's
+fingerprint); analysis lists take `per_note=false`; responses over 1 KB are
+gzipped; score responses carry `last_practiced_at` so the app stops fetching two
+hundred takes beside every score request. Measured with five musicians opening
+the app at once: peak memory 417 → 196 MB, each burst 3.4 → 1.0 s.
+
+**Alternatives considered:**
+- *A bigger instance.* It would hide the memory waste without removing it, and
+  the waste grew with every request; it remains the answer for real volume.
+- *Storing `concerns` in a column.* Correct and cheaper still, but a migration
+  and a write on every path that changes notation, for a value only one screen
+  reads.
+
+**Trade-offs accepted:**
+- **A piece's concerns arrive only with the piece**, so a placeholder built from
+  the library listing shows none until the piece's own read answers.
+- **The first calibration, analysis or reading in an API process pays its
+  imports**, and calibration is refused with a 503 while another runs.
+
 ## 2026-10-16 — The band is one warm colour, not the piece's key
 
 **Context:** the key colour band shipped in #184. On the owner's iPhone the

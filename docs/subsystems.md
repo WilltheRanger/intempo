@@ -1101,6 +1101,26 @@ nothing else covers `backend/`. Named here rather than left to be found.
   warm-up does not walk. `test_warmup.py` catches both, and it is slow on
   purpose.
 
+- **Memory, measured on the day it ran out (2026-10-23).** The API was killed
+  at 512 MB while one musician scanned a page, and the cause was not the scan:
+  the process **booted at 230 MB** carrying numpy, SciPy, librosa, the
+  Anthropic and Google SDKs and Pillow, none of which a deployment that reads
+  pages and analyses takes on Modal uses — and each burst of requests then left
+  memory in per-thread malloc arenas, so idle memory stepped up a little with
+  every visit and never came back. Three rules hold it now. **Heavy imports live
+  inside the function that needs them** (`test_api_import_weight.py` imports
+  `app.main` in a clean interpreter and fails on any of them; the analysis
+  runner binds `analyze` and `audio_svc` lazily so tests can still replace
+  them). **`MALLOC_ARENA_MAX=2`** is in the Dockerfile. **A listing does no
+  per-row work it does not need**: `concerns` validate every note through
+  `ScoreJson`, so `GET /v1/scores` no longer computes them (the piece's own
+  read does, memoised by the notation's fingerprint), and analysis lists take
+  `per_note=false`, which is 74% of a result and read by no screen.
+  The measurement worth repeating before calling it fixed: replay the app's real request
+  burst (`/me`, `/scores/current`, the listings, the analyses) from several
+  clients at once against the real app on a fake Supabase that sleeps per
+  query, and watch RSS — one client never shows it.
+
 ## The recording path (2026-09-02) — level is not the signal you think it is
 
 - **A synthetic instrument can give you the exact opposite answer, confidently

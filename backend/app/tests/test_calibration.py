@@ -283,3 +283,35 @@ def test_the_route_passes_the_expected_origin_to_the_fetch(
     )
     assert res.status_code == 200, res.text
     assert seen["expected_origin"] == "test.supabase.invalid:443"
+
+
+def test_a_second_calibration_while_one_runs_is_refused_not_queued(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """The route decodes audio inside the web process, on an instance with 512
+    MB for everything, and nothing in the app calls it. One at a time, and a
+    second is told to come back rather than parked on a request thread — the
+    pool every other route shares."""
+    user_id = uuid4()
+    monkeypatch.setattr(
+        calibration_module, "download_audio", lambda _url, **_kw: _wav_bytes()
+    )
+    assert calibration_module._calibrating.acquire(blocking=False)
+    try:
+        busy = client.post(
+            "/v1/calibration",
+            headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+            json={"audio_url": _audio_url(user_id)},
+        )
+    finally:
+        calibration_module._calibrating.release()
+    assert busy.status_code == 503, busy.text
+    assert busy.headers.get("retry-after") == "5"
+
+    # And the slot is given back: the next one is answered.
+    free = client.post(
+        "/v1/calibration",
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+        json={"audio_url": _audio_url(user_id)},
+    )
+    assert free.status_code == 200, free.text

@@ -8,7 +8,11 @@ read so the same access rules apply at the API layer.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
+import threading
+from collections import OrderedDict
 from datetime import datetime, timezone
 from typing import Any, Literal
 from urllib.parse import urlparse
@@ -379,6 +383,15 @@ class ScoreResponse(BaseModel):
     #: an accepted score whose delete merely failed — see migration 013 for why
     #: those two must not look the same.
     page_image_retained_at: datetime | None = None
+    #: When this piece was last recorded against. Null for a piece never played.
+    #:
+    #: **Answered here so the app does not have to ask for it separately.** It
+    #: used to fetch two hundred analysis rows beside every score request —
+    #: every library open, every piece open, and every three-second poll of a
+    #: page being read — to find this one date per piece. That was a second
+    #: round trip from the phone on every one of them. Here it is one indexed
+    #: query next to the database.
+    last_practiced_at: datetime | None = None
     created_at: str
     updated_at: str
 
@@ -454,7 +467,11 @@ def _object_keys_in(urls: list[str]) -> list[str]:
 
 
 def _with_image_urls(
-    rows: list[dict[str, Any]], *, all_pages: bool = False
+    rows: list[dict[str, Any]],
+    *,
+    all_pages: bool = False,
+    with_concerns: bool = True,
+    practiced: dict[str, str] | None = None,
 ) -> list[ScoreResponse]:
     """Rows to responses, signing every recoverable image in one call.
 
@@ -463,6 +480,12 @@ def _with_image_urls(
     of four pages is forty extra URLs in a payload nothing on that screen
     draws, and the listing draws page one. Reading a single piece is where a
     musician looks at the photographs, and where they need all of them.
+
+    `with_concerns` is off for the library listing: concerns are read on the
+    piece's own screen, which asks for the piece, and validating every row of a
+    library to send them was most of what a listing cost. `practiced` is the
+    last-take date per score when the caller already has it; otherwise it is
+    looked up, once, for every row.
 
     **A discarded photograph is not signed.** Signing does not check that the
     object exists, so a row whose page was deleted by `POST /:id/accept` went on
@@ -496,6 +519,8 @@ def _with_image_urls(
     signed = display_urls.signed_display_urls(
         sorted({key for found in keys.values() for key in found})
     )
+    if practiced is None:
+        practiced = _last_practiced(rows)
 
     out = []
     for row in rows:
@@ -511,8 +536,65 @@ def _with_image_urls(
                 image_url=urls[0] if urls else None,
                 expires_at=min(expiries) if expiries else None,
                 image_urls=urls,
+                with_concerns=with_concerns,
+                last_practiced_at=practiced.get(str(row["id"])),
             )
         )
+    return out
+
+
+#: How many of the newest takes are read to date a page of pieces.
+#:
+#: PostgREST's own ceiling on a response is a thousand rows, so asking for more
+#: would be refused silently. A piece whose latest take is older than the
+#: musician's newest thousand reads as never played — the app's own lookup,
+#: which this replaces, stopped at two hundred.
+_PRACTICED_SCAN = 1000
+
+#: Up to this many pieces are named in the query; past it, the musician's
+#: newest takes are read instead. Two hundred ids is seven and a half
+#: kilobytes of address, which is where gateways start refusing one.
+_PRACTICED_BY_ID = 20
+
+
+def _last_practiced(rows: list[dict[str, Any]]) -> dict[str, str]:
+    """When each of these pieces was last recorded against.
+
+    Newest first, so the first take naming a piece is its latest and the rest
+    are ignored. Filtered by owner: the service-role client bypasses row-level
+    security, and a take is only evidence about the musician who recorded it.
+    One query per owner, which for every caller is one query.
+
+    **Never raises.** The date is a courtesy on a response that is about the
+    piece; a library that will not open because this query failed would trade
+    the whole screen for one line on each tile.
+    """
+    by_owner: dict[str, list[str]] = {}
+    for row in rows:
+        if row.get("id") and row.get("user_id"):
+            by_owner.setdefault(str(row["user_id"]), []).append(str(row["id"]))
+    out: dict[str, str] = {}
+    for owner, ids in by_owner.items():
+        wanted = set(ids)
+        try:
+            query = (
+                require_service_client()
+                .table("analyses")
+                .select("score_id, created_at")
+                .eq("user_id", owner)
+            )
+            if len(ids) <= _PRACTICED_BY_ID:
+                query = query.in_("score_id", sorted(ids))
+            takes = (
+                query.order("created_at", desc=True).limit(_PRACTICED_SCAN).execute()
+            ).data or []
+        except Exception:  # noqa: BLE001 — a missing date must not cost the screen
+            log.warning("could not date the last take of %d piece(s)", len(ids), exc_info=True)
+            continue
+        for take in takes:
+            score_id = str(take.get("score_id"))
+            if score_id in wanted and score_id not in out:
+                out[score_id] = take["created_at"]
     return out
 
 
@@ -546,6 +628,48 @@ def _concerns_for(score_json: Any) -> list[MeasureConcern]:
             )
         )
     return out
+
+
+#: The concerns already worked out, by a fingerprint of the notation.
+#:
+#: **Validating a score is the most expensive thing a read does.** Every note
+#: goes through `ScoreJson`'s validators — about 16 µs a note, measured — and
+#: this ran on every response that carried notation: each poll, each piece
+#: opened, Today on every launch, and every row of every library listing. On
+#: the API's tenth of a CPU that made a forty-piece library listing seconds of
+#: work before a byte went back.
+#:
+#: Keyed by the notation itself, not the row, because concerns are a function
+#: of the notation and nothing else: an edit changes the key, so nothing stale
+#: can be served, and two copies of one imported file share an answer.
+#: Serialising to take the fingerprint costs a small fraction of validating.
+_CONCERNS_MEMO_MAX = 1024
+_concerns_memo: OrderedDict[bytes, list[MeasureConcern]] = OrderedDict()
+_concerns_lock = threading.Lock()
+
+
+def _row_concerns(score_json: Any) -> list[MeasureConcern]:
+    """`_concerns_for`, remembered. Never raises, for the same reason."""
+    if not score_json:
+        return []
+    try:
+        fingerprint = hashlib.blake2b(
+            json.dumps(score_json, sort_keys=True, default=str).encode(),
+            digest_size=16,
+        ).digest()
+    except (TypeError, ValueError):
+        return _concerns_for(score_json)
+    with _concerns_lock:
+        known = _concerns_memo.get(fingerprint)
+        if known is not None:
+            _concerns_memo.move_to_end(fingerprint)
+            return known
+    concerns = _concerns_for(score_json)
+    with _concerns_lock:
+        _concerns_memo[fingerprint] = concerns
+        while len(_concerns_memo) > _CONCERNS_MEMO_MAX:
+            _concerns_memo.popitem(last=False)
+    return concerns
 
 
 def _concern_kind(finding: MeasureFinding) -> str:
@@ -815,6 +939,8 @@ def _row_to_response(
     image_url: str | None = None,
     expires_at: datetime | None = None,
     image_urls: list[str] | None = None,
+    with_concerns: bool = True,
+    last_practiced_at: str | None = None,
 ) -> ScoreResponse:
     return ScoreResponse(
         id=row["id"],
@@ -830,7 +956,7 @@ def _row_to_response(
         score_json=row.get("score_json"),
         shared_with_studio=row.get("shared_with_studio"),
         ocr_confidence=row.get("ocr_confidence"),
-        concerns=_concerns_for(row.get("score_json")),
+        concerns=_row_concerns(row.get("score_json")) if with_concerns else [],
         # Defaulted rather than indexed: a row read back from a database that
         # has not run migration 006 yet has no such column, and a library that
         # 500s during a deploy is a worse failure than one that says every
@@ -841,6 +967,7 @@ def _row_to_response(
         transcription_accepted_at=row.get("transcription_accepted_at"),
         page_image_discarded_at=row.get("page_image_discarded_at"),
         page_image_retained_at=row.get("page_image_retained_at"),
+        last_practiced_at=last_practiced_at,
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
@@ -977,7 +1104,9 @@ def create_score(
     # Signed like every other read, so a client can render the page it just
     # uploaded without a second request. This used to return an unsigned row,
     # which meant POST was the one response whose `image_url` was always null.
-    return _with_image_urls(rows)[0]
+    # A piece created a moment ago has never been played, so there is nothing
+    # to look up for its last take.
+    return _with_image_urls(rows, practiced={})[0]
 
 
 @router.post("/{score_id}/transcription", response_model=ScoreResponse)
@@ -1184,7 +1313,7 @@ def import_score(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="failed to persist score",
         )
-    return _with_image_urls(inserted)[0]
+    return _with_image_urls(inserted, practiced={})[0]
 
 
 @router.get("", response_model=list[ScoreResponse])
@@ -1217,11 +1346,17 @@ def list_scores(
     it leaves the expensive half of the transfer where it was, and the database
     read is billed too.
 
-    Two fields go quiet with it, both correctly. `score_json` is null, and
-    `concerns` is empty — the concerns are *computed from* the notation, so
-    without it there is nothing to compute, and running the measure validator
-    over every row of a library listing was never work that screen asked for.
-    `GET /v1/scores/{id}` is where both are answered.
+    `score_json` goes quiet with it, correctly: `GET /v1/scores/{id}` is the
+    authority on what a piece's notation is.
+
+    **`concerns` is empty on every listing, with or without the notation.**
+    They were computed by validating every note of every piece on every
+    request — three quarters of what a listing cost, measured on 2026-10-23 at
+    230 ms of CPU for twenty-five pieces on a fast machine, which the API's
+    tenth of a CPU turns into seconds. No screen reads them from a listing:
+    the piece screen asks for the piece, and that answer carries them.
+
+    Each row carries `last_practiced_at`, from one query for the whole page.
     """
     response = (
         require_service_client()
@@ -1232,7 +1367,7 @@ def list_scores(
         .range(offset, offset + limit - 1)
         .execute()
     )
-    return _with_image_urls(response.data or [])
+    return _with_image_urls(response.data or [], with_concerns=False)
 
 
 class CurrentScoreResponse(BaseModel):
@@ -1282,7 +1417,11 @@ def current_score(user_id: UUID = Depends(current_user_id)) -> CurrentScoreRespo
         ).data or []
         if played:
             return CurrentScoreResponse(
-                score=_with_image_urls(played, all_pages=True)[0],
+                score=_with_image_urls(
+                    played,
+                    all_pages=True,
+                    practiced={str(played[0]["id"]): latest[0]["created_at"]},
+                )[0],
                 last_practiced_at=latest[0].get("created_at"),
             )
 
@@ -1294,8 +1433,17 @@ def current_score(user_id: UUID = Depends(current_user_id)) -> CurrentScoreRespo
         .limit(1)
         .execute()
     ).data or []
+    # No take at all means nothing to date. Past a take whose piece could not
+    # be read, the newest piece is dated the ordinary way rather than assumed
+    # never played.
     return CurrentScoreResponse(
-        score=_with_image_urls(newest, all_pages=True)[0] if newest else None,
+        score=(
+            _with_image_urls(
+                newest, all_pages=True, practiced=None if latest else {}
+            )[0]
+            if newest
+            else None
+        ),
         last_practiced_at=None,
     )
 

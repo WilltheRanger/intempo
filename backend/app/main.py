@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 
 from app.config import settings
 from app.logging_config import configure_logging
@@ -202,6 +203,19 @@ async def lifespan(_app: FastAPI):
 # at a time — and shows up only as "the app is stuck" under real use.
 # ---------------------------------------------------------------------------
 app = FastAPI(title="InTempo API", lifespan=lifespan)
+
+# **Compressed, because every byte of these responses crosses a phone's
+# connection.** Nothing compressed them: a library listing carries every
+# piece's notation and a list of takes carries their bars, both JSON, both
+# repetitive, and both went over the air raw. Measured 2026-10-23 on the
+# shapes this API returns: a take list shrinks about 19x at level 5, in 15 ms
+# per 1.8 MB. Level 5 rather than 9 because the instance has a tenth of a CPU
+# and level 9 bought another 20% for six times the work. Small bodies are left
+# alone; the header and the round trip are the cost there, not the bytes.
+#
+# Added before CORS so CORS stays outermost and every response — compressed or
+# not, error or not — carries its headers.
+app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
 
 # The app and this API are never same-origin — 8081 against 8000 in
 # development, a Pages site against wherever this is hosted in production — so

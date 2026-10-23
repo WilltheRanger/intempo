@@ -8,10 +8,7 @@ from __future__ import annotations
 
 import threading
 import time
-
-from google import genai
-from google.genai import errors as genai_errors
-from google.genai import types
+from typing import TYPE_CHECKING
 
 from app.config import settings
 from app.services.ocr.base import (
@@ -21,6 +18,12 @@ from app.services.ocr.base import (
     json_object_in,
 )
 from app.services.score_schema import ScoreJson
+
+# The SDK is imported where it is used, for the reason `claude_provider` gives:
+# the API reaches this module through its routers and never calls a model, and
+# `google.genai` brings ~200 modules and Pillow with it.
+if TYPE_CHECKING:
+    from google import genai
 
 # Gemini 2.5 has thinking mode on by default and bills thinking tokens
 # against `max_output_tokens`. Even with thinking disabled (we set
@@ -59,6 +62,8 @@ class GeminiProvider:
                         raise OCRProviderError(
                             f"{self.name}: GEMINI_API_KEY is not configured"
                         )
+                    from google import genai
+
                     self._client = genai.Client(api_key=settings.GEMINI_API_KEY)
         return self._client
 
@@ -73,6 +78,9 @@ class GeminiProvider:
         mime_type: str = "image/jpeg",
         note: str | None = None,
     ) -> OCRResponse:
+        from google.genai import errors as genai_errors
+        from google.genai import types
+
         prompt = f"{PROMPT}\n\n{note}" if note else PROMPT
         start = time.monotonic()
         try:
