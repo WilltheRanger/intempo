@@ -1314,3 +1314,194 @@ def test_a_take_is_kept_when_the_table_cannot_hold_its_capture_report(
     rows = fake.table("analyses").rows
     assert len(rows) == 1
     assert "capture" not in rows[0]
+
+
+# ---- a list of takes, labelled with its pieces ----------------------------
+
+
+def _piece(piece_id: UUID, user_id: UUID, title: str, **over: Any) -> dict:
+    row = {
+        "id": str(piece_id),
+        "user_id": str(user_id),
+        "title": title,
+        "composer": None,
+        "score_json": {"measures": []},
+    }
+    row.update(over)
+    return row
+
+
+def test_a_list_of_takes_names_its_pieces_when_asked(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """Insights and the recent takes each listed the whole library to name
+    their takes — a second request on every app opening. Asked with
+    `with_pieces`, the list carries the label itself: the title, the composer,
+    and the beat unit the page's metronome mark counts, which the light
+    library listing never carried, so every listed take read its tempo in
+    quarter notes."""
+    me, someone = uuid4(), uuid4()
+    six_eight, plain, gone, theirs = uuid4(), uuid4(), uuid4(), uuid4()
+    fake = FakeSupabase()
+    fake.seed(
+        "scores",
+        [
+            _piece(six_eight, me, "Barcarolle", composer="Offenbach",
+                   score_json={"tempo_beat_unit": "dotted_quarter", "measures": []}),
+            _piece(plain, me, "Etude"),
+            # Another account's piece, under an id a take of mine names.
+            _piece(theirs, someone, "Not yours", composer="Them"),
+        ],
+    )
+    fake.seed(
+        "analyses",
+        [
+            _analysis_row(me, six_eight),
+            _analysis_row(me, plain),
+            _analysis_row(me, gone),
+            _analysis_row(me, theirs),
+        ],
+    )
+    _install(monkeypatch, fake)
+    headers = {"Authorization": f"Bearer {make_token(sub=me)}"}
+
+    res = client.get("/v1/analyses?with_pieces=true&include_result=false", headers=headers)
+
+    assert res.status_code == 200, res.text
+    labels = {row["score_id"]: row["piece"] for row in res.json()}
+    assert labels[str(six_eight)] == {
+        "title": "Barcarolle",
+        "composer": "Offenbach",
+        "tempo_beat_unit": "dotted_quarter",
+    }
+    assert labels[str(plain)] == {"title": "Etude", "composer": None, "tempo_beat_unit": None}
+    assert labels[str(gone)] is None, "a deleted piece is unlabelled, not mislabelled"
+    assert labels[str(theirs)] is None, "another account's piece named my take"
+
+    # Not asked, not sent: the label costs a query.
+    plain_list = client.get("/v1/analyses?include_result=false", headers=headers)
+    assert all(row["piece"] is None for row in plain_list.json())
+
+
+def _takes_wait_for_the_pieces(monkeypatch: pytest.MonkeyPatch, fake: FakeSupabase) -> list[str]:
+    """Hold every read of the takes until the pieces have been asked for.
+
+    Read one after the other, takes first, the takes would wait a second and
+    fail the request. Returns the tables read, in order.
+    """
+    import threading
+
+    from app.tests import fake_supabase
+
+    scores, analyses = id(fake.table("scores")), id(fake.table("analyses"))
+    asked = threading.Event()
+    read: list[str] = []
+    real = fake_supabase._Query.execute
+
+    def execute(self):
+        if id(self._table) == scores:
+            read.append("scores")
+            asked.set()
+        elif id(self._table) == analyses:
+            read.append("analyses")
+            assert asked.wait(timeout=1), "the takes were read before the pieces were asked for"
+        return real(self)
+
+    monkeypatch.setattr(fake_supabase._Query, "execute", execute)
+    return read
+
+
+def test_the_labels_are_read_beside_the_takes_not_after_them(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """One trip to the database's region, not two in a row (`side_calls`)."""
+    me, piece = uuid4(), uuid4()
+    fake = FakeSupabase()
+    fake.seed("scores", [_piece(piece, me, "Etude")])
+    fake.seed("analyses", [_analysis_row(me, piece)])
+    _install(monkeypatch, fake)
+    _takes_wait_for_the_pieces(monkeypatch, fake)
+
+    res = client.get(
+        "/v1/analyses?with_pieces=true&include_result=false",
+        headers={"Authorization": f"Bearer {make_token(sub=me)}"},
+    )
+
+    assert res.status_code == 200, res.text
+    assert res.json()[0]["piece"]["title"] == "Etude"
+
+
+def test_one_take_names_its_piece_when_asked(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """A take's own screen fetched its whole piece after the take — notation
+    validated, pages signed — for a title and a beat unit: two requests in a
+    row. Asked with `with_piece`, the take carries its label, read beside it.
+
+    Not asked, nothing more is read: the same request is the poll a take in
+    progress makes every second and a half."""
+    me, other = uuid4(), uuid4()
+    six_eight, theirs = uuid4(), uuid4()
+    fake = FakeSupabase()
+    fake.seed(
+        "scores",
+        [
+            _piece(six_eight, me, "Barcarolle", composer="Offenbach",
+                   score_json={"tempo_beat_unit": "dotted_quarter", "measures": []}),
+            _piece(theirs, other, "Not yours"),
+        ],
+    )
+    take, stray = _analysis_row(me, six_eight), _analysis_row(me, theirs)
+    fake.seed("analyses", [take, stray])
+    _install(monkeypatch, fake)
+    from app.tests import fake_supabase
+
+    unhooked = fake_supabase._Query.execute
+    read = _takes_wait_for_the_pieces(monkeypatch, fake)
+    headers = {"Authorization": f"Bearer {make_token(sub=me)}"}
+
+    res = client.get(f"/v1/analyses/{take['id']}?with_piece=true", headers=headers)
+
+    assert res.status_code == 200, res.text
+    assert res.json()["piece"] == {
+        "title": "Barcarolle",
+        "composer": "Offenbach",
+        "tempo_beat_unit": "dotted_quarter",
+    }
+    assert sorted(read) == ["analyses", "scores"]
+
+    named = client.get(f"/v1/analyses/{stray['id']}?with_piece=true", headers=headers)
+    assert named.json()["piece"] is None, "another account's piece named my take"
+
+    tables: list[int] = []
+    monkeypatch.setattr(
+        fake_supabase._Query,
+        "execute",
+        lambda self: (tables.append(id(self._table)), unhooked(self))[1],
+    )
+    polled = client.get(f"/v1/analyses/{take['id']}", headers=headers)
+    assert polled.status_code == 200, polled.text
+    assert polled.json()["piece"] is None
+    assert tables == [id(fake.table("analyses"))], "a poll read more than the take"
+
+
+def test_a_take_on_a_piece_past_the_first_thousand_is_still_named(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """The pieces are read up to `_PIECES_SCAN`. A take on one past them is
+    asked about by name rather than shown as an unknown piece."""
+    me = uuid4()
+    pieces = [uuid4() for _ in range(3)]
+    fake = FakeSupabase()
+    fake.seed("scores", [_piece(p, me, f"Piece {n}") for n, p in enumerate(pieces)])
+    fake.seed("analyses", [_analysis_row(me, pieces[2])])
+    _install(monkeypatch, fake)
+    monkeypatch.setattr(analyses_module, "_PIECES_SCAN", 2)
+
+    res = client.get(
+        "/v1/analyses?with_pieces=true&include_result=false",
+        headers={"Authorization": f"Bearer {make_token(sub=me)}"},
+    )
+
+    assert res.status_code == 200, res.text
+    assert res.json()[0]["piece"]["title"] == "Piece 2"

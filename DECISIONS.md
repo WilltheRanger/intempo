@@ -1,5 +1,44 @@
 # InTempo Decisions
 
+## 2026-10-23 — Takes name their pieces, read beside the takes
+
+**Context:** Insights and the recent takes both name each take by its piece,
+and both got the names by listing the library in a request of their own on
+every app opening — the recent takes only after their takes had come back.
+That listing carries no notation, so every take in those lists also lacked
+its piece's beat unit, and its tempos read in quarter notes whatever the
+page's metronome mark counts. The newest take, and a take's own screen, each
+fetched the whole piece, with its notation and signed pages, after the take,
+for a title and a beat unit.
+
+**Decision:** `GET /v1/analyses?with_pieces=true` labels each take with its
+piece's title, composer and beat unit, and
+`GET /v1/analyses/{id}?with_piece=true` labels one. The labels are read by
+owner, beside the takes (`side_calls.together`), so they add no trip; the beat
+unit is read out of the notation as text (`score_json->>tempo_beat_unit`), so
+the notation is never sent. The app asks for labels wherever it names takes, and lists the library
+or fetches the piece as before only when a server sends none.
+
+**Alternatives considered:**
+- *Read only the pieces on the page.* Fewer rows, and a second trip in a row,
+  since the ids come from the page.
+- *PostgREST embedding (`analyses?select=*,scores(title)`)*. One query, but it
+  evaluates the beat unit per take rather than per piece, and needs syntax the
+  test fake does not model.
+- *A `tempo_beat_unit` column.* The cheapest read, and a migration and a
+  backfill for a value that reads in well under a millisecond as it is.
+
+**Trade-offs accepted:**
+- **Every piece the musician owns is read, up to a thousand**, to label a page
+  that may show a few of them. Measured on a local Postgres, with rows shaped
+  like the live project's (32 KB of notation each, stored compressed to
+  2.3 KB): 0.3 ms for 22 pieces, the largest library on the live project, and
+  5.7 ms for 500. Past a thousand pieces, the takes whose pieces were not
+  among them are labelled by id.
+- **`piece` is null unless asked for**, so a read that does not ask costs what
+  it did — the poll of a take being analysed among them — and an older app,
+  which never reads the field, is untouched.
+
 ## 2026-10-23 — A request's independent database calls run at once, on threads
 
 **Context:** every call from this API to the database took a median of 274 ms

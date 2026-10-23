@@ -177,7 +177,8 @@ def _column_names(cols: tuple[Any, ...]) -> dict[str, tuple[str, str | None]] | 
     reads and the cast it is read through: `score_json_text:score_json::text`
     is `{"score_json_text": ("score_json", "text")}`, the alias-and-cast form
     `GET /v1/scores` reads its notation in (PostgREST 14.5 and 12.2.3, checked
-    2026-10-23).
+    2026-10-23). A path into a JSON column keeps its arrow:
+    `unit:score_json->>tempo_beat_unit` is `{"unit": ("score_json->>tempo_beat_unit", None)}`.
 
     Nothing here parses the embedding syntax (`scores(title)`), because nothing
     in this codebase uses it; a column containing a bracket is passed through
@@ -231,9 +232,12 @@ def _project(
     if columns is None:
         return dict(row)
     return {
-        name: _cast(row[column], cast)
+        name: _cast(_value(row, column), cast)
         for name, (column, cast) in columns.items()
-        if column in row
+        # A path into a JSON column is always answered, null when the key or
+        # the column is missing, as PostgREST does; a plain column only when
+        # the row has it.
+        if column in row or ("->>" in column and column.split("->>", 1)[0] in row)
     }
 
 

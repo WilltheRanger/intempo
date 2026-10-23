@@ -24,4 +24,32 @@ describe('critical API responses', () => {
     expect(() => parseAnalysis({ id: accountId, status: 'mystery' }))
       .toThrow('unexpected analysis response');
   });
+
+  describe("a take's piece label", () => {
+    const take = {
+      id: accountId, user_id: accountId, score_id: accountId, status: 'done',
+      target_bpm: 96, bpm_source: 'manual', metronome_mode: 'off', instrument: null,
+      result_json: null, failure_reason: null, alignment_quality: null,
+      created_at: '2026-10-23T00:00:00Z', updated_at: '2026-10-23T00:00:00Z',
+      finished_at: null,
+    };
+
+    it('is optional, so a server that does not label takes still parses', () => {
+      expect(parseAnalysis(take).piece).toBeUndefined();
+    });
+
+    it('may be null, for a take whose piece was deleted', () => {
+      expect(parseAnalysis({ ...take, piece: null }).piece).toBeNull();
+    });
+
+    it('is read when whole', () => {
+      const piece = { title: 'Etude', composer: null, tempo_beat_unit: 'quarter' };
+      expect(parseAnalysis({ ...take, piece }).piece).toEqual(piece);
+    });
+
+    it('is refused when it has no title to show', () => {
+      expect(() => parseAnalysis({ ...take, piece: { composer: 'Kreutzer' } }))
+        .toThrow('unexpected analysis response');
+    });
+  });
 });
