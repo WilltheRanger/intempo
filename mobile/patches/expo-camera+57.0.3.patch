@@ -1,5 +1,5 @@
 diff --git a/node_modules/expo-camera/build/web/WebCameraUtils.js b/node_modules/expo-camera/build/web/WebCameraUtils.js
-index 9fc05b8..4796cf2 100644
+index 9fc05b8..37a1671 100644
 --- a/node_modules/expo-camera/build/web/WebCameraUtils.js
 +++ b/node_modules/expo-camera/build/web/WebCameraUtils.js
 @@ -65,14 +65,39 @@ function getSupportedConstraints() {
@@ -57,3 +57,27 @@ index 9fc05b8..4796cf2 100644
      }
      return preferredConstraints;
  }
+@@ -138,9 +163,21 @@ export function compareStreams(a, b) {
+     }
+     return settingsA.deviceId === settingsB.deviceId;
+ }
++// --- InTempo patch: report the size of the picture, not of the stream. ---
++//
++// This used to return `settings.width/height`: `track.getSettings()`, read once
++// when the stream started. The canvas is drawn at `video.videoWidth/Height` *at
++// the moment of capture*, and those are not the same numbers — the video
++// follows the device's orientation (rotate the phone and they swap), and
++// WebKit reports `getSettings()` in the sensor's landscape orientation even
++// while a portrait phone delivers portrait frames. `framing.ts` crops the photo
++// to what the viewfinder showed using exactly these two numbers, so a swapped
++// pair cut the wrong rectangle out of the page. Measure the canvas instead.
+ export function capture(video, settings, config) {
+-    const base64 = captureImage(video, config);
+-    const { width = 0, height = 0 } = settings;
++    const canvas = captureImageContext(video, ensureCameraPictureOptions(config));
++    const { imageType, quality = DEFAULT_QUALITY } = ensureCameraPictureOptions(config);
++    const base64 = toDataURL(canvas, imageType, quality);
++    const { width, height } = canvas;
+     const capturedPicture = {
+         uri: base64,
+         base64,

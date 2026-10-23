@@ -72,4 +72,13 @@ describe('the expo-camera resolution patch', () => {
     expect(patch).toContain('-    if (hasValidConstraints(preferredCameraType, width, height)) {');
     expect(patch).toContain('-        return MinimumConstraints;');
   });
+
+  it('reports the size of the picture it drew, not the stream settings', () => {
+    // `framing.ts` crops to the viewfinder using the photo's width and height.
+    // `getSettings()` is read once at stream start and WebKit reports it in the
+    // sensor's landscape orientation, so a portrait phone's photo was cropped
+    // with its sides swapped. The canvas is the only size that is the picture.
+    expect(patch).toContain('-    const { width = 0, height = 0 } = settings;');
+    expect(patch).toContain('+    const { width, height } = canvas;');
+  });
 });
