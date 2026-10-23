@@ -1218,6 +1218,21 @@ nothing else covers `backend/`. Named here rather than left to be found.
   is the fix. **Once supabase-py is handed a client it ignores its own timeout
   options**, so the ten-second guard lives on that client now, and
   `test_blocking_timeouts.py` reads it from there.
+- **A call to the database costs this API a quarter of a second, and almost
+  none of it is the database (2026-10-23).** Supabase's edge logs time every
+  call: `mcp__Supabase__query_logs` on `edge_logs`, with
+  `log_attributes['response.origin_time']` against
+  `['response.headers.x_envoy_upstream_service_time']`, split by
+  `['request.headers.x_client_info']` (`supabase-py` is this API). Measured
+  that day: a median of 274 ms per call, 21 ms of it PostgREST and the
+  database. The rest is the trip between this API's region and the
+  database's, and over half of the calls paid for a fresh connection at the
+  far end (a floor of about 70 ms, a hump at 270–310). So **count round
+  trips, not queries**: a request that makes its calls one after another pays
+  that per call. `app/side_calls.together` runs the ones that do not depend on
+  each other at once; `/v1/me` and both listings are one trip each now, the
+  current piece two. Measured in the harness with every call at 274 ms:
+  `/v1/me` 0.83 s to 0.28, the Library 0.57 to 0.29.
 
 ## The recording path (2026-09-02) — level is not the signal you think it is
 

@@ -1,5 +1,37 @@
 # InTempo Decisions
 
+## 2026-10-23 — A request's independent database calls run at once, on threads
+
+**Context:** every call from this API to the database took a median of 274 ms
+on the live project, 21 ms of it the database's own work. Three of the
+requests the app makes on opening made their calls one after another, and so
+paid that trip two or three times.
+
+**Decision:** `app/side_calls.together` runs calls that do not depend on each
+other on a small shared thread pool (sixteen threads) and returns their
+results in order. `/v1/me` asks for the account row and this month's two
+counts at once, and a listing reads its takes beside its page. Both are now
+one trip.
+
+**Alternatives considered:**
+- *An async database client.* The same overlap without threads, but every
+  handler and every caller of the Supabase client would have to become
+  async — the whole API, for three requests.
+- *Fewer, larger queries* — PostgREST embedding, an `or=` filter, an RPC.
+  Each is one trip, but each needs syntax the test fake does not model, or a
+  migration, and the gain is the same.
+- *Moving the API and the database into one region.* The bigger win, and the
+  owner's call: it cuts each trip rather than the number of them. Both can
+  be had.
+
+**Trade-offs accepted:**
+- **A second pool of threads**, bounded so a burst cannot open an unbounded
+  number of database connections. A request that finds it full waits, which
+  costs what one-at-a-time cost before.
+- **`/v1/me` counts takes for unlimited tiers too**, before the row says the
+  tier, and then ignores the count. Two small queries for a paying musician
+  cost less than a trip in a row for everyone.
+
 ## 2026-10-23 — The database client speaks HTTP/1.1
 
 **Context:** three requests of one app opening failed together in production

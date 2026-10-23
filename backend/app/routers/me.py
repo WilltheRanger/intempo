@@ -29,7 +29,8 @@ from app.services.audio_storage import object_key_from
 from app.services.page_image import display_key_for
 from app.services.provisioning import ensure_user_row
 from app.services.score_pages import page_keys, pages_of
-from app.services.tier_limits import usage_for
+from app.services.tier_limits import count_analyses_this_month, usage_for
+from app.side_calls import together
 from app.services.training import may_keep_corrections
 from app.routers.upload import AUDIO_BUCKET, SCORE_BUCKET
 from app.services.avatar_shrink import shrink_if_oversized
@@ -84,6 +85,20 @@ def _provision_user(client: Any, user_id: UUID, email: str) -> dict[str, Any]:
     return rows[0]
 
 
+
+def _used_this_month(client: Any, user_id: UUID) -> int | None:
+    """This month's counted takes, or None when they could not be counted.
+
+    Never raises: it runs beside the account lookup in `get_me`, and a usage
+    counter that failed must not cost the musician the account — the same
+    best-effort rule `get_me` applies to the allowance it builds from this.
+    """
+    try:
+        return count_analyses_this_month(client, user_id)
+    except Exception:  # noqa: BLE001
+        log.warning("could not count this month's takes", exc_info=True)
+        return None
+
 @router.get("/me", response_model=MeResponse)
 def get_me(
     background: BackgroundTasks,
@@ -106,7 +121,17 @@ def get_me(
 
     client = require_service_client()
 
-    existing = client.table("users").select("*").eq("id", str(user_id)).limit(1).execute()
+    # **The month's count and the account row at once.** The whole app waits
+    # behind this request at launch, and it used to make three trips to the
+    # database's region one after another (`side_calls`). The count needs only
+    # the id, so it is asked before the row says which tier it is for — and it
+    # goes first, in this thread, because it makes its own two calls at once.
+    # An account on an unlimited tier wastes those two counts, which is cheaper
+    # than waiting for its row to find that out.
+    used, existing = together(
+        lambda: _used_this_month(client, user_id),
+        lambda: client.table("users").select("*").eq("id", str(user_id)).limit(1).execute(),
+    )
     rows = existing.data or []
     row = rows[0] if rows else _provision_user(client, user_id, email)
 
@@ -116,7 +141,9 @@ def get_me(
     # failing it over a usage counter would lock someone out of the app on the
     # very first request they make.
     try:
-        usage = usage_for(client, user_id, tier.value)
+        if used is None:
+            raise LookupError("this month's takes could not be counted")
+        usage = usage_for(client, user_id, tier.value, used=used)
         analyses = UsageResponse(
             used=usage.used,
             limit=usage.limit,

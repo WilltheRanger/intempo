@@ -71,6 +71,7 @@ from app.services.training import (
 # and a test or the concurrency probe swapping the signer out has one place to
 # do it rather than one per importer.
 from app.services import display_urls
+from app.side_calls import together
 from app.services.page_image import object_key_from as _object_key_from
 
 router = APIRouter(prefix="/scores", tags=["scores"])
@@ -516,11 +517,17 @@ def _with_image_urls(
     # batched. That is what makes signing every page of a single piece cost the
     # same as signing its first — and it is why `page_count`'s note about "one
     # storage call per page" no longer describes this code.
-    signed = display_urls.signed_display_urls(
-        sorted({key for found in keys.values() for key in found})
-    )
+    def sign() -> dict[str, tuple[str, datetime]]:
+        return display_urls.signed_display_urls(
+            sorted({key for found in keys.values() for key in found})
+        )
+
+    # **Signed and dated at once.** Neither needs the other — both read only
+    # these rows — and each is a trip to the database's region (`side_calls`).
     if practiced is None:
-        practiced = _last_practiced(rows)
+        signed, practiced = together(sign, lambda: _last_practiced(rows))
+    else:
+        signed = sign()
 
     out = []
     for row in rows:
@@ -575,26 +582,40 @@ def _last_practiced(rows: list[dict[str, Any]]) -> dict[str, str]:
             by_owner.setdefault(str(row["user_id"]), []).append(str(row["id"]))
     out: dict[str, str] = {}
     for owner, ids in by_owner.items():
-        wanted = set(ids)
-        try:
-            query = (
-                require_service_client()
-                .table("analyses")
-                .select("score_id, created_at")
-                .eq("user_id", owner)
-            )
-            if len(ids) <= _PRACTICED_BY_ID:
-                query = query.in_("score_id", sorted(ids))
-            takes = (
-                query.order("created_at", desc=True).limit(_PRACTICED_SCAN).execute()
-            ).data or []
-        except Exception:  # noqa: BLE001 — a missing date must not cost the screen
-            log.warning("could not date the last take of %d piece(s)", len(ids), exc_info=True)
-            continue
-        for take in takes:
-            score_id = str(take.get("score_id"))
-            if score_id in wanted and score_id not in out:
-                out[score_id] = take["created_at"]
+        takes = _newest_takes(owner, ids if len(ids) <= _PRACTICED_BY_ID else None)
+        if takes is not None:
+            out.update(_latest_of(takes, set(ids)))
+    return out
+
+
+def _newest_takes(owner: str, ids: list[str] | None) -> list[dict[str, Any]] | None:
+    """The owner's takes, newest first — of these pieces, or of any when `ids`
+    is None — up to `_PRACTICED_SCAN`. None when the query failed, which a
+    missing date must not turn into a failed screen."""
+    try:
+        query = (
+            require_service_client()
+            .table("analyses")
+            .select("score_id, created_at")
+            .eq("user_id", owner)
+        )
+        if ids is not None:
+            query = query.in_("score_id", sorted(ids))
+        return (
+            query.order("created_at", desc=True).limit(_PRACTICED_SCAN).execute()
+        ).data or []
+    except Exception:  # noqa: BLE001 — a missing date must not cost the screen
+        log.warning("could not read the newest takes to date pieces", exc_info=True)
+        return None
+
+
+def _latest_of(takes: list[dict[str, Any]], wanted: set[str]) -> dict[str, str]:
+    """Each wanted piece's first take in `takes`, which are newest first."""
+    out: dict[str, str] = {}
+    for take in takes:
+        score_id = str(take.get("score_id"))
+        if score_id in wanted and score_id not in out:
+            out[score_id] = take["created_at"]
     return out
 
 
@@ -1386,18 +1407,29 @@ def list_scores(
 
     **The notation is passed through, not parsed** — see `_SCORE_AS_TEXT`.
     """
-    response = (
-        require_service_client()
+    # **The pieces and their dates at once.** The dates come from the
+    # musician's newest takes, which need only their id, so they are read
+    # beside the page rather than after it (`side_calls`).
+    response, takes = together(
+        lambda: require_service_client()
         .table("scores")
         .select(f"{_WITHOUT_SCORE}, {_SCORE_AS_TEXT}" if include_score else _WITHOUT_SCORE)
         .eq("user_id", str(user_id))
         .order("created_at", desc=True)
         .range(offset, offset + limit - 1)
-        .execute()
+        .execute(),
+        lambda: _newest_takes(str(user_id), None),
     )
     rows = response.data or []
     notation = [row.pop(_SCORE_TEXT, None) for row in rows]
-    listed = _with_image_urls(rows, with_concerns=False)
+    wanted = {str(row["id"]) for row in rows}
+    practiced = _latest_of(takes, wanted) if takes is not None else None
+    # A scan that stopped at its limit before reaching every piece cannot say
+    # the rest were never played: the page is then dated the old way, which
+    # asks by name for a page of `_PRACTICED_BY_ID` or fewer.
+    if practiced is not None and len(takes) >= _PRACTICED_SCAN and len(practiced) < len(wanted):
+        practiced = None
+    listed = _with_image_urls(rows, with_concerns=False, practiced=practiced)
     if not include_score:
         return listed
     return _with_notation_as_stored(listed, notation)

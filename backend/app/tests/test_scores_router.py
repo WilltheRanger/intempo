@@ -8,6 +8,7 @@ on `parse_sheet_music`. Supabase is mocked via the chained
 
 from __future__ import annotations
 
+import threading
 from types import SimpleNamespace
 from typing import Any, Callable
 from unittest.mock import MagicMock
@@ -2740,6 +2741,102 @@ def test_a_large_listing_is_dated_without_naming_every_piece_in_the_query(
     assert dated[str(pieces[3])].startswith("2026-05-04T09:00:00")
     assert dated[str(pieces[4])] is None, "another account's take dated this piece"
     assert sum(1 for when in dated.values() if when) == 1
+
+
+def _waits_for_the_other(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeSupabase, waiter: str, other: str
+) -> list[str]:
+    """Make every `waiter` query wait until an `other` query has started.
+
+    So a request that asked them one at a time, `waiter` first, finds `other`
+    never starting and fails after a second, where at once it passes. Returns
+    the tables in the order their queries began.
+    """
+    started = threading.Event()
+    began: list[str] = []
+    tables = {id(fake.table(name)): name for name in (waiter, other)}
+    real = fake_supabase._Query.execute
+
+    def execute(self):
+        name = tables.get(id(self._table))
+        began.append(name or "other")
+        if name == other:
+            started.set()
+        elif name == waiter:
+            assert started.wait(timeout=1), f"{waiter} was asked before {other} began"
+        return real(self)
+
+    monkeypatch.setattr(fake_supabase._Query, "execute", execute)
+    return began
+
+
+def test_a_listing_dates_its_pieces_while_it_reads_them(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """The page and the takes that date it are one trip to the database's
+    region, not two in a row: the takes need only the musician's id
+    (`side_calls`)."""
+    user_id = uuid4()
+    piece = uuid4()
+    fake = FakeSupabase()
+    fake.seed("scores", [_row_for(piece, user_id)])
+    fake.seed(
+        "analyses",
+        [{"id": str(uuid4()), "user_id": str(user_id), "score_id": str(piece),
+          "created_at": "2026-05-04T09:00:00+00:00"}],
+    )
+    monkeypatch.setattr(db_module, "get_service_client", lambda: fake)
+    monkeypatch.setattr(display_urls, "signed_display_urls", lambda keys: {})
+    _waits_for_the_other(monkeypatch, fake, waiter="scores", other="analyses")
+
+    res = client.get(
+        "/v1/scores", headers={"Authorization": f"Bearer {make_token(sub=user_id)}"}
+    )
+
+    assert res.status_code == 200, res.text
+    assert res.json()[0]["last_practiced_at"].startswith("2026-05-04T09:00:00")
+
+
+def test_a_scan_that_stops_at_its_limit_still_dates_every_piece(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """The newest takes are read beside the page, up to `_PRACTICED_SCAN`. A
+    piece last played before that many takes is not "never played", so a
+    full scan that missed a piece dates the page by name instead."""
+    user_id = uuid4()
+    # Newest piece first, as the listing orders them; the page asked for below
+    # is the last one alone, and it was played longest ago.
+    pieces = [uuid4() for _ in range(3)]
+    fake = FakeSupabase()
+    fake.seed(
+        "scores",
+        [
+            _row_for(piece, user_id, created_at=f"2026-04-0{3 - n}T00:00:00+00:00")
+            for n, piece in enumerate(pieces)
+        ],
+    )
+    fake.seed(
+        "analyses",
+        [
+            {"id": str(uuid4()), "user_id": str(user_id), "score_id": str(piece),
+             "created_at": f"2026-05-0{3 - n}T09:00:00+00:00"}
+            for n, piece in enumerate(pieces)
+        ],
+    )
+    monkeypatch.setattr(db_module, "get_service_client", lambda: fake)
+    monkeypatch.setattr(display_urls, "signed_display_urls", lambda keys: {})
+    # The scan holds the two newest takes, neither of them this page's piece.
+    monkeypatch.setattr(scores_module, "_PRACTICED_SCAN", 2)
+
+    res = client.get(
+        "/v1/scores?limit=1&offset=2",
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+
+    assert res.status_code == 200, res.text
+    (row,) = res.json()
+    assert row["id"] == str(pieces[2])
+    assert row["last_practiced_at"].startswith("2026-05-01"), "read as never played"
 
 
 def test_a_failed_lookup_of_the_last_take_costs_the_date_not_the_library(
