@@ -1,5 +1,33 @@
 # InTempo Decisions
 
+## 2026-10-23 — The database client speaks HTTP/1.1
+
+**Context:** three requests of one app opening failed together in production
+with `ConnectionTerminated error_code:9`. supabase-py's clients speak HTTP/2,
+the API's worker threads share one of them, and httpcore's sync HTTP/2
+compresses headers outside any lock, so concurrent requests can corrupt the
+shared connection, and its loss fails all of them. Reproduced locally: one
+shared HTTP/2 client, forty threads, 99% failed; over HTTP/1.1, none.
+
+**Decision:** `db._http_client` hands supabase-py an HTTP/1.1 client: a failed
+connection attempt retried once, idle connections kept thirty seconds, and the
+ten-second guard set on the client, where it now applies.
+
+**Alternatives considered:**
+- *A lock around each request on the HTTP/2 client.* Correct, and it would
+  serialise every database call the API makes behind one another.
+- *One HTTP/2 client per thread.* Forty connections and forty handshakes, plus
+  a client per thread to keep alive, for multiplexing nothing uses.
+- *Retry on `ConnectionTerminated`.* Safe only for reads, and it leaves the
+  corruption in place: every write in flight would still fail.
+
+**Trade-offs accepted:**
+- **Requests in flight at once use a connection each.** After the pool has
+  been idle, a burst pays a TLS handshake per connection, in parallel, rather
+  than one. The longer keep-alive makes that the exception.
+- **Storage reads are held to ten seconds rather than fifteen**, since storage
+  and the database now share one client. Uploads keep fifteen per chunk.
+
 ## 2026-10-23 — The listing passes its notation through, and the shelf keeps it on disk
 
 **Context:** the Library is the screen the app opens on, and every tile on it

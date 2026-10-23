@@ -1203,6 +1203,21 @@ nothing else covers `backend/`. Named here rather than left to be found.
   `test_the_light_listing_loses_the_notation_and_nothing_else` compares the
   listing with the piece's own read instead. It found `page_image_retained_at`,
   absent from the light listing since migration 013.
+- **The database client speaks HTTP/1.1, because a shared HTTP/2 connection
+  fails every request on it together (2026-10-23).** supabase-py builds its
+  PostgREST, storage and auth clients with `http2=True`, and the service client
+  is one object shared by every worker thread. httpcore 1.0.9's sync HTTP/2
+  takes a stream id and compresses a request's headers outside any lock, so
+  two threads sending at once can corrupt the connection's header state, and
+  the server closes it under everything in flight. Production, 2026-10-22: three
+  requests of one app opening, three 500s, `ConnectionTerminated
+  error_code:9`. It is a race, so a quiet test passes. To see it, share one
+  `httpx.Client(http2=True)` between forty threads against any TLS HTTP/2
+  server and shorten `sys.setswitchinterval`, which a throttled CPU does for
+  you: nearly every request fails, and none does over HTTP/1.1. `db._http_client`
+  is the fix. **Once supabase-py is handed a client it ignores its own timeout
+  options**, so the ten-second guard lives on that client now, and
+  `test_blocking_timeouts.py` reads it from there.
 
 ## The recording path (2026-09-02) — level is not the signal you think it is
 
