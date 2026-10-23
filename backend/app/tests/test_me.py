@@ -1316,3 +1316,54 @@ def test_account_export_contains_owned_records_without_storage_tokens(
     media_fields = _stored_media_fields()
     assert media_fields, "the stored_media reader found nothing"
     assert set(body["stored_media"]) == media_fields
+
+
+def test_the_account_and_its_monthly_count_are_one_trip_not_three(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    """The whole app waits behind `/v1/me` at launch, and it made three calls
+    to the database's region one after another: the account row, then the two
+    counts that make up this month's allowance. The counts need only the id,
+    so all three are asked at once (`side_calls`).
+
+    The account lookup here waits until a count has started — asked in turn,
+    the lookup would come first and fail after a second.
+    """
+    import threading
+
+    from app.tests import fake_supabase
+
+    user_id = uuid4()
+    fake = FakeSupabase()
+    fake.seed(
+        "users",
+        [{"id": str(user_id), "email": "m@example.com", "tier": "free", "role": "student"}],
+    )
+    fake.seed(
+        "analyses",
+        [{"id": str(uuid4()), "user_id": str(user_id), "status": "done",
+          "result_json": {"status": "ok"}, "created_at": "2026-10-02T09:00:00+00:00"}],
+    )
+    users, analyses = id(fake.table("users")), id(fake.table("analyses"))
+    counting = threading.Event()
+    real = fake_supabase._Query.execute
+
+    def execute(self):
+        if id(self._table) == analyses:
+            counting.set()
+        elif id(self._table) == users:
+            assert counting.wait(timeout=1), "the account was looked up before any count began"
+        return real(self)
+
+    monkeypatch.setattr(fake_supabase._Query, "execute", execute)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: fake)
+
+    res = client.get(
+        "/v1/me",
+        headers={"Authorization": f"Bearer {make_token(sub=user_id, email='m@example.com')}"},
+    )
+
+    assert res.status_code == 200, res.text
+    assert res.json()["analyses"] is not None, "the allowance went missing"

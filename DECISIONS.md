@@ -1,5 +1,155 @@
 # InTempo Decisions
 
+## 2026-10-23 — Takes name their pieces, read beside the takes
+
+**Context:** Insights and the recent takes both name each take by its piece,
+and both got the names by listing the library in a request of their own on
+every app opening — the recent takes only after their takes had come back.
+That listing carries no notation, so every take in those lists also lacked
+its piece's beat unit, and its tempos read in quarter notes whatever the
+page's metronome mark counts. The newest take, and a take's own screen, each
+fetched the whole piece, with its notation and signed pages, after the take,
+for a title and a beat unit.
+
+**Decision:** `GET /v1/analyses?with_pieces=true` labels each take with its
+piece's title, composer and beat unit, and
+`GET /v1/analyses/{id}?with_piece=true` labels one. The labels are read by
+owner, beside the takes (`side_calls.together`), so they add no trip; the beat
+unit is read out of the notation as text (`score_json->>tempo_beat_unit`), so
+the notation is never sent. The app asks for labels wherever it names takes, and lists the library
+or fetches the piece as before only when a server sends none.
+
+**Alternatives considered:**
+- *Read only the pieces on the page.* Fewer rows, and a second trip in a row,
+  since the ids come from the page.
+- *PostgREST embedding (`analyses?select=*,scores(title)`)*. One query, but it
+  evaluates the beat unit per take rather than per piece, and needs syntax the
+  test fake does not model.
+- *A `tempo_beat_unit` column.* The cheapest read, and a migration and a
+  backfill for a value that reads in well under a millisecond as it is.
+
+**Trade-offs accepted:**
+- **Every piece the musician owns is read, up to a thousand**, to label a page
+  that may show a few of them. Measured on a local Postgres, with rows shaped
+  like the live project's (32 KB of notation each, stored compressed to
+  2.3 KB): 0.3 ms for 22 pieces, the largest library on the live project, and
+  5.7 ms for 500. Past a thousand pieces, the takes whose pieces were not
+  among them are labelled by id.
+- **`piece` is null unless asked for**, so a read that does not ask costs what
+  it did — the poll of a take being analysed among them — and an older app,
+  which never reads the field, is untouched.
+
+## 2026-10-23 — A request's independent database calls run at once, on threads
+
+**Context:** every call from this API to the database took a median of 274 ms
+on the live project, 21 ms of it the database's own work. Three of the
+requests the app makes on opening made their calls one after another, and so
+paid that trip two or three times.
+
+**Decision:** `app/side_calls.together` runs calls that do not depend on each
+other on a small shared thread pool (sixteen threads) and returns their
+results in order. `/v1/me` asks for the account row and this month's two
+counts at once, and a listing reads its takes beside its page. Both are now
+one trip.
+
+**Alternatives considered:**
+- *An async database client.* The same overlap without threads, but every
+  handler and every caller of the Supabase client would have to become
+  async — the whole API, for three requests.
+- *Fewer, larger queries* — PostgREST embedding, an `or=` filter, an RPC.
+  Each is one trip, but each needs syntax the test fake does not model, or a
+  migration, and the gain is the same.
+- *Moving the API and the database into one region.* The bigger win, and the
+  owner's call: it cuts each trip rather than the number of them. Both can
+  be had.
+
+**Trade-offs accepted:**
+- **A second pool of threads**, bounded so a burst cannot open an unbounded
+  number of database connections. A request that finds it full waits, which
+  costs what one-at-a-time cost before.
+- **`/v1/me` counts takes for unlimited tiers too**, before the row says the
+  tier, and then ignores the count. Two small queries for a paying musician
+  cost less than a trip in a row for everyone.
+
+## 2026-10-23 — The database client speaks HTTP/1.1
+
+**Context:** three requests of one app opening failed together in production
+with `ConnectionTerminated error_code:9`. supabase-py's clients speak HTTP/2,
+the API's worker threads share one of them, and httpcore's sync HTTP/2
+compresses headers outside any lock, so concurrent requests can corrupt the
+shared connection, and its loss fails all of them. Reproduced locally: one
+shared HTTP/2 client, forty threads, 99% failed; over HTTP/1.1, none.
+
+**Decision:** `db._http_client` hands supabase-py an HTTP/1.1 client: a failed
+connection attempt retried once, idle connections kept thirty seconds, and the
+ten-second guard set on the client, where it now applies.
+
+**Alternatives considered:**
+- *A lock around each request on the HTTP/2 client.* Correct, and it would
+  serialise every database call the API makes behind one another.
+- *One HTTP/2 client per thread.* Forty connections and forty handshakes, plus
+  a client per thread to keep alive, for multiplexing nothing uses.
+- *Retry on `ConnectionTerminated`.* Safe only for reads, and it leaves the
+  corruption in place: every write in flight would still fail.
+
+**Trade-offs accepted:**
+- **Requests in flight at once use a connection each.** After the pool has
+  been idle, a burst pays a TLS handshake per connection, in parallel, rather
+  than one. The longer keep-alive makes that the exception.
+- **Storage reads are held to ten seconds rather than fifteen**, since storage
+  and the database now share one client. Uploads keep fifteen per chunk.
+
+## 2026-10-23 — The listing passes its notation through, and the shelf keeps it on disk
+
+**Context:** the Library is the screen the app opens on, and every tile on it
+is engraved from its piece's notation. Two things made it slow. The listing
+kept on disk was written without notation, a rule from when the grid drew a
+photograph, so every launch showed a shelf of blank pages until the network
+answered — seconds, on a tenth of a CPU. And the listing that then answered
+spent most of its CPU decoding every note into Python objects and encoding the
+same notes straight back out.
+
+**Decision:**
+- The app writes the listing to disk with its notation, up to half the storage
+  budget (`LISTING_NOTATION_CHARS`), keeping the pieces played most recently
+  when a library does not fit (`listForDisk`). Relaunched in an iPhone-profile
+  browser with the listing held back eight seconds: 0 of 8 tiles drawn before,
+  8 of 8 after.
+- `GET /v1/scores` reads the notation as `score_json::text` and writes each
+  row's text into the response unread (`_with_notation_as_stored`). The API's
+  time per listing, measured through the whole request: 56 ms to 35 for
+  twenty-two pieces and 2.5 MB of notation, 16 ms to 11 for five.
+
+**Alternatives considered:**
+- *Trim the listing to each tile's opening*, which the entry below calls worth
+  doing. Measured on the live library, it is not. A tile's page holds up to
+  about ninety notes at its nominal size, and more when a dense bar shrinks the
+  engraving, so a safe opening is about 190 sounding notes — and the average
+  piece that day had about 165. It saved 17% of the bytes. It would also change
+  how some tiles look: `layOutStave` fits the whole piece to the tile's width,
+  so one dense bar anywhere in a piece sets the size its opening is drawn at,
+  and a trimmed piece would be drawn at another.
+- *Compact the notation*, dropping keys that hold their default (about four
+  times smaller). Per request it is a Python walk over every note, which costs
+  about what it saves. At rest it changes what every reader of `score_json`
+  receives, in the backend and in every installed build of the app.
+- *A SQL computed column*, for the text or for an opening. It needs a migration
+  applied before the code that reads it is deployed, and the text cast already
+  removes the decode without one.
+- *Write the whole listing to disk, whatever its size.* It is written second,
+  after the account, so a listing that took the budget would cost today's
+  piece, the readings and every opened piece behind it. One over the budget is
+  skipped entirely, which is worse than blank tiles.
+
+**Trade-offs accepted:**
+- **One endpoint writes its JSON by hand.** Everything but the notation still
+  goes through the response model. The notation is Postgres's own JSON text,
+  valid by construction, and lands last in each object.
+- **PostgREST sends the API about 12% more bytes**, the quotes inside the text
+  escaped.
+- **A device holds up to a megabyte more**, inside the budget the cache already
+  had.
+
 ## 2026-10-23 — Heavy reads queue in the event loop, a few at a time
 
 **Context:** replayed under the free instance's real limits (a cgroup at a

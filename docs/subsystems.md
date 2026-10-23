@@ -995,6 +995,26 @@ Run against it, that turned up eight app defects the fixtures could not:
   first await, as the scan's "Save and read" already did, and
   `createOnce.test.ts` holds all three to it.
 
+### The shelf came back blank on every launch (2026-10-23)
+
+The Library is the screen the app opens on, and each tile is engraved from its
+piece's notation. The listing kept on disk was written without notation, on a
+premise that stopped being true when the grid became a shelf: "the library grid
+draws a title, a composer and a photograph — it has never read a note". So every
+launch drew blank pages, and the engravings all arrived at once when the network
+answered. Relaunched in an iPhone-profile browser with the listing held back
+eight seconds, 0 of 8 tiles were drawn; with `listForDisk`, 8 of 8.
+
+**The premise is the part to remember.** `persistCache.ts` throws data away
+because of what screens draw, and nothing ties the two together. When a screen
+starts reading a field, check what that file drops on the way to disk.
+
+A related fact about the tiles, found while sizing this: `layOutStave` fits the
+*whole piece* to the tile's width, so one dense bar anywhere — a run of
+sixteenths on page three — sets the size at which the tile draws its opening.
+A tile showing smaller notes than its neighbours is usually that, not a bug in
+the opening it shows.
+
 ## `npm audit fix --force` would take this app back to SDK 46 (2026-09-09)
 
 `npm audit --omit=dev` reports **24 advisories, 7 of them high**, and closes
@@ -1167,6 +1187,65 @@ nothing else covers `backend/`. Named here rather than left to be found.
   machine's. **What it still cannot buy is speed**: eighty at once on a tenth
   of a CPU means a median request of 28 s and the slowest at 150. That is the
   instance, and the answer to it is a bigger one.
+- **The Library's listing passes its notation through unread (2026-10-23).**
+  `GET /v1/scores` asks PostgREST for `score_json_text:score_json::text` and
+  writes each row's text into the response as it came
+  (`_with_notation_as_stored`). Decoding every note into Python objects and
+  encoding the same objects back out had been most of the request's CPU. Two
+  things to know before touching it. The alias-and-cast form was checked
+  against real PostgREST — 14.5, the version the live project runs, which its
+  connections name in `pg_stat_activity.application_name`, and 12.2.3 — through
+  the `postgrest` client, because the test fake models only what it is told
+  to: a broken select there would be a 400 on the screen the app opens on, and
+  every test would pass. And both
+  listings now read through `_WITHOUT_SCORE`, so a column missing from it goes
+  missing from both, and comparing them stopped proving anything —
+  `test_the_light_listing_loses_the_notation_and_nothing_else` compares the
+  listing with the piece's own read instead. It found `page_image_retained_at`,
+  absent from the light listing since migration 013.
+- **The database client speaks HTTP/1.1, because a shared HTTP/2 connection
+  fails every request on it together (2026-10-23).** supabase-py builds its
+  PostgREST, storage and auth clients with `http2=True`, and the service client
+  is one object shared by every worker thread. httpcore 1.0.9's sync HTTP/2
+  takes a stream id and compresses a request's headers outside any lock, so
+  two threads sending at once can corrupt the connection's header state, and
+  the server closes it under everything in flight. Production, 2026-10-22: three
+  requests of one app opening, three 500s, `ConnectionTerminated
+  error_code:9`. It is a race, so a quiet test passes. To see it, share one
+  `httpx.Client(http2=True)` between forty threads against any TLS HTTP/2
+  server and shorten `sys.setswitchinterval`, which a throttled CPU does for
+  you: nearly every request fails, and none does over HTTP/1.1. `db._http_client`
+  is the fix. **Once supabase-py is handed a client it ignores its own timeout
+  options**, so the ten-second guard lives on that client now, and
+  `test_blocking_timeouts.py` reads it from there.
+- **A call to the database costs this API a quarter of a second, and almost
+  none of it is the database (2026-10-23).** Supabase's edge logs time every
+  call: `mcp__Supabase__query_logs` on `edge_logs`, with
+  `log_attributes['response.origin_time']` against
+  `['response.headers.x_envoy_upstream_service_time']`, split by
+  `['request.headers.x_client_info']` (`supabase-py` is this API). Measured
+  that day: a median of 274 ms per call, 21 ms of it PostgREST and the
+  database. The rest is the trip between this API's region and the
+  database's, and over half of the calls paid for a fresh connection at the
+  far end (a floor of about 70 ms, a hump at 270–310). So **count round
+  trips, not queries**: a request that makes its calls one after another pays
+  that per call. `app/side_calls.together` runs the ones that do not depend on
+  each other at once; `/v1/me` and both listings are one trip each now, the
+  current piece two. Measured in the harness with every call at 274 ms:
+  `/v1/me` 0.83 s to 0.28, the Library 0.57 to 0.29.
+- **A real app opening is read from two logs side by side, and on the free
+  instance most of it is CPU (2026-10-23).** Render's log (`list_logs` with
+  text `*/v1/*`) stamps each response as the API writes it, and the burst of
+  `OPTIONS` preflights marks where an opening starts. Supabase's `edge_logs`
+  stamp each database call as it arrives, with its time. An opening on `main`
+  that day: the preflights at 48.66 s, the first database calls answered by
+  49.45, then no database call at all for 1.7 s while the API worked through
+  the answers, and its last response at 51.99, 3.3 s in; another opening took
+  6.2 s. No query change removes that gap; less work per request, or more
+  CPU, does. To count it, time each launch request with
+  `resource.getrusage` around `TestClient` calls against the fake: one
+  launch cost 140 ms of CPU on `main` and 107 ms after these changes, which
+  is 1.4 s and 1.1 s on a tenth of a CPU.
 
 ## The recording path (2026-09-02) — level is not the signal you think it is
 

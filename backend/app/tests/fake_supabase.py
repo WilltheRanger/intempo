@@ -21,6 +21,7 @@ than what was called.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
@@ -65,7 +66,7 @@ class _Query:
         self._limit: int | None = None
         self._count: str | None = None
         #: None means "the whole row" — `select("*")`, or no argument.
-        self._columns: set[str] | None = None
+        self._columns: dict[str, tuple[str, str | None]] | None = None
         #: `(column, desc)`, or None for the order the rows were seeded in.
         self._order: tuple[str, bool] | None = None
         #: `(start, end)`, inclusive at both ends, as PostgREST means it.
@@ -167,28 +168,59 @@ class _Not:
         return self._query
 
 
-def _column_names(cols: tuple[Any, ...]) -> set[str] | None:
+def _column_names(cols: tuple[Any, ...]) -> dict[str, tuple[str, str | None]] | None:
     """The columns a `select(...)` asked for, or None for everything.
 
     PostgREST takes them as one comma-separated string — `select("id, score_json")`
-    — and `select("*")` or `select()` means the whole row. Nothing here parses
-    the embedding syntax (`scores(title)`), because nothing in this codebase
-    uses it; a column containing a bracket is passed through as itself and will
-    simply not match, which fails loudly rather than quietly.
+    — and `select("*")` or `select()` means the whole row. Each is answered
+    under the name it is asked for, so this maps that name to the column it
+    reads and the cast it is read through: `score_json_text:score_json::text`
+    is `{"score_json_text": ("score_json", "text")}`, the alias-and-cast form
+    `GET /v1/scores` reads its notation in (PostgREST 14.5 and 12.2.3, checked
+    2026-10-23). A path into a JSON column keeps its arrow:
+    `unit:score_json->>tempo_beat_unit` is `{"unit": ("score_json->>tempo_beat_unit", None)}`.
+
+    Nothing here parses the embedding syntax (`scores(title)`), because nothing
+    in this codebase uses it; a column containing a bracket is passed through
+    as itself and will simply not match, which fails loudly rather than quietly.
     """
-    names = {
-        part.strip()
-        for col in cols
-        if isinstance(col, str)
-        for part in col.split(",")
-        if part.strip()
-    }
-    if not names or "*" in names:
-        return None
-    return names
+    names: dict[str, tuple[str, str | None]] = {}
+    for col in cols:
+        if not isinstance(col, str):
+            continue
+        for part in col.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            if part == "*":
+                return None
+            field, _, cast = part.partition("::")
+            alias, _, column = field.rpartition(":")
+            names[alias or column] = (column, cast or None)
+    return names or None
 
 
-def _project(row: dict[str, Any], columns: set[str] | None) -> dict[str, Any]:
+def _cast(value: Any, cast: str | None) -> Any:
+    """A value read through a PostgREST cast. Only `::text` is modelled.
+
+    A `jsonb` read as text is its JSON — Postgres writes it with the same `, `
+    and `: ` separators `json.dumps` does — and null stays null rather than
+    becoming the string "null".
+    """
+    if cast is None or value is None:
+        return value
+    if cast != "text":
+        raise NotImplementedError(f"the fake models ::text only, not ::{cast}")
+    if isinstance(value, (dict, list)):
+        return json.dumps(value)
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
+def _project(
+    row: dict[str, Any], columns: dict[str, tuple[str, str | None]] | None
+) -> dict[str, Any]:
     """One row, narrowed to what was asked for.
 
     A requested column the row does not have is simply absent, which is what
@@ -199,7 +231,14 @@ def _project(row: dict[str, Any], columns: set[str] | None) -> dict[str, Any]:
     """
     if columns is None:
         return dict(row)
-    return {k: v for k, v in row.items() if k in columns}
+    return {
+        name: _cast(_value(row, column), cast)
+        for name, (column, cast) in columns.items()
+        # A path into a JSON column is always answered, null when the key or
+        # the column is missing, as PostgREST does; a plain column only when
+        # the row has it.
+        if column in row or ("->>" in column and column.split("->>", 1)[0] in row)
+    }
 
 
 class _Table:

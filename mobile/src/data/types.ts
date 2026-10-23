@@ -531,6 +531,20 @@ export interface AnalysisResponse {
   created_at: string;
   updated_at: string;
   finished_at: string | null;
+  /**
+   * The piece this take was played from, as a list of takes labels it — when
+   * the list was asked with `withPieces`. Null when it was not asked, and for
+   * a take whose piece has been deleted; **absent from a server that does not
+   * label takes**, which is how a caller knows to fetch the titles itself.
+   */
+  piece?: AnalysisPieceLabel | null;
+}
+
+/** What `GET /v1/analyses?with_pieces=true` labels each take with. */
+export interface AnalysisPieceLabel {
+  title: string;
+  composer: string | null;
+  tempo_beat_unit: TempoBeatUnit | null;
 }
 
 /**

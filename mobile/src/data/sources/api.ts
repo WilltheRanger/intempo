@@ -19,6 +19,7 @@ import { judgeAggregate } from '../../lib/insights/tendency';
 import { wasTimed } from '../../lib/verdict/measureReading';
 import { BY_NOTE_SHOW_NOTES } from '../../lib/verdict/pitchByNote';
 import type {
+  AnalysisPieceLabel,
   AnalysisResponse,
   AnalysisResultJson,
   AnalysisStatus,
@@ -472,19 +473,15 @@ function outerWidth(tolerance: Tolerance | null): number {
  */
 export const apiInsightsSource: InsightsSource = {
   async getInsights(): Promise<PracticeInsights | null> {
-    const [analyses, scores] = await Promise.all([
-      // Without the per-note timings: three quarters of every result, and
-      // nothing here reads them — the summary is built from the bars.
-      listAnalyses({ status: 'done', perNote: false }),
-      // All of them, not the first 200: this is the id → title map, and a
-      // missing entry renders as "Unknown piece" on the insights list. A
-      // library past the cap would have quietly started mislabelling its
-      // oldest pieces. Titles only — no notation is drawn here.
-      listAllScores({ includeScore: false }),
-    ]);
+    // Without the per-note timings: three quarters of every result, and
+    // nothing here reads them — the summary is built from the bars. Labelled
+    // by the server, so the titles need no request of their own.
+    const analyses = await listAnalyses({ status: 'done', perNote: false, withPieces: true });
+    // A server that does not label takes is answered the old way: every piece,
+    // not the first 200, because a missing entry renders as "Unknown piece".
+    const titles = labelsOf(analyses) ?? labelsOfScores(await listAllScores({ includeScore: false }));
 
     const since = Date.now() - INSIGHTS_WINDOW_DAYS * 24 * 60 * 60 * 1000;
-    const titles = new Map(scores.map((score) => [score.id, score]));
 
     const readings = analyses
       .filter((analysis) => Date.parse(analysis.created_at) >= since)
@@ -526,12 +523,12 @@ export const apiInsightsSource: InsightsSource = {
 
     const pieces: PieceInsight[] = [...byScore.entries()]
       .map(([scoreId, group]) => {
-        const score = titles.get(scoreId);
+        const label = titles.get(scoreId);
         const summary = summarise(group);
         return {
           pieceId: scoreId,
-          title: score?.title ?? 'Unknown piece',
-          composer: score?.composer ?? null,
+          title: label?.title ?? 'Unknown piece',
+          composer: label?.composer ?? null,
           sessions: group.length,
           ...summary,
         };
@@ -553,6 +550,68 @@ export const apiInsightsSource: InsightsSource = {
   },
 };
 
+/** What a take is labelled with: its piece, as it is named. */
+interface PieceLabel {
+  title: string;
+  composer: string | null;
+  tempoBeatUnit: AnalysisPieceLabel['tempo_beat_unit'];
+}
+
+/** A take's label as the server sent it; undefined from a server that sends none. */
+function labelOfRow(row: AnalysisResponse): PieceLabel | null | undefined {
+  if (row.piece === undefined) {
+    return undefined;
+  }
+  return row.piece === null
+    ? null
+    : {
+        title: row.piece.title,
+        composer: row.piece.composer,
+        tempoBeatUnit: row.piece.tempo_beat_unit,
+      };
+}
+
+/** Every take's label by piece id, or null when the server labelled none. */
+function labelsOf(rows: AnalysisResponse[]): Map<string, PieceLabel> | null {
+  if (rows.some((row) => row.piece === undefined)) {
+    return null;
+  }
+  const labels = new Map<string, PieceLabel>();
+  for (const row of rows) {
+    const label = labelOfRow(row);
+    if (label) {
+      labels.set(row.score_id, label);
+    }
+  }
+  return labels;
+}
+
+/**
+ * One take's label: the server's, or — from a server that sends none — its
+ * piece fetched whole, as before labels existed. A deleted piece degrades to
+ * "Unknown piece" rather than 404 the screen over a title.
+ */
+async function labelOf(row: AnalysisResponse): Promise<PieceLabel | null> {
+  const labelled = labelOfRow(row);
+  if (labelled !== undefined) {
+    return labelled;
+  }
+  const score = await getScore(row.score_id).catch(() => null);
+  return score ? labelFromScore(score) : null;
+}
+
+function labelFromScore(score: ScoreResponse): PieceLabel {
+  return {
+    title: score.title,
+    composer: score.composer,
+    tempoBeatUnit: score.score_json?.tempo_beat_unit ?? null,
+  };
+}
+
+function labelsOfScores(scores: ScoreResponse[]): Map<string, PieceLabel> {
+  return new Map(scores.map((score) => [score.id, labelFromScore(score)]));
+}
+
 /**
  * One analysed take.
  *
@@ -564,7 +623,7 @@ export const apiInsightsSource: InsightsSource = {
 function toTake(
   analysis: AnalysisResponse,
   result: AnalysisResultJson,
-  score: ScoreResponse | null,
+  piece: PieceLabel | null,
 ): TakeResult {
   const measures: MeasureVerdict[] = (result.per_measure ?? []).map((m) => ({
     measure: m.measure_number,
@@ -590,11 +649,11 @@ function toTake(
     recordingAvailable: true,
     comparisonKey: typeof result.comparison_key === 'string' ? result.comparison_key : null,
     pieceId: analysis.score_id,
-    pieceTitle: score?.title ?? 'Unknown piece',
-    composer: score?.composer ?? null,
+    pieceTitle: piece?.title ?? 'Unknown piece',
+    composer: piece?.composer ?? null,
     recordedAt: analysis.created_at,
     targetBpm: analysis.target_bpm,
-    tempoBeatUnit: score?.score_json?.tempo_beat_unit ?? null,
+    tempoBeatUnit: piece?.tempoBeatUnit ?? null,
     failure: null,
     status: result.status,
     headline: result.verdict,
@@ -658,17 +717,17 @@ export function toIntonation(
  */
 function toFailedTake(
   analysis: AnalysisResponse,
-  score: ScoreResponse | null,
+  piece: PieceLabel | null,
 ): TakeResult {
   return {
     id: analysis.id,
     recordingAvailable: true,
     pieceId: analysis.score_id,
-    pieceTitle: score?.title ?? 'Unknown piece',
-    composer: score?.composer ?? null,
+    pieceTitle: piece?.title ?? 'Unknown piece',
+    composer: piece?.composer ?? null,
     recordedAt: analysis.created_at,
     targetBpm: analysis.target_bpm,
-    tempoBeatUnit: score?.score_json?.tempo_beat_unit ?? null,
+    tempoBeatUnit: piece?.tempoBeatUnit ?? null,
     failure: {
       recoverable: analysis.status === 'failed_recoverable',
       reason: analysis.failure_reason,
@@ -712,7 +771,7 @@ function donePage(
     // The verdicts are drawn from the bars, the trend and the tuning; the
     // per-note timings are read by nothing and are most of each result.
     (offset, limit) =>
-      listAnalyses({ status: 'done', limit, offset, perNote: false }),
+      listAnalyses({ status: 'done', limit, offset, perNote: false, withPieces: true }),
     asResult,
     want,
   );
@@ -730,7 +789,10 @@ const HISTORY_PAGE = 200;
 
 export const apiTakeSource: TakeSource = {
   async getTake(analysisId) {
-    const analysis = await getAnalysis(analysisId);
+    // Labelled by the server: this fetched the whole piece after the take, for
+    // its title and beat unit — two requests in a row before the screen could
+    // say anything.
+    const analysis = await getAnalysis(analysisId, { withPiece: true });
     // Before `asResult`, because a failed run has no `result_json` and would
     // otherwise fall into the same null as an id that doesn't exist. The
     // screen then said "It may have been removed, or the analysis never
@@ -738,17 +800,13 @@ export const apiTakeSource: TakeSource = {
     // the cause, and dropping the backend's own recoverable/not distinction,
     // which exists precisely so a retry can be offered.
     if (RUN_FAILED.has(analysis.status)) {
-      const score = await getScore(analysis.score_id).catch(() => null);
-      return toFailedTake(analysis, score);
+      return toFailedTake(analysis, await labelOf(analysis));
     }
     const result = asResult(analysis);
     if (!result) {
       return null;
     }
-    // A deleted score would 404 the whole screen over a title, so a missing
-    // one degrades to "Unknown piece" instead.
-    const score = await getScore(analysis.score_id).catch(() => null);
-    return toTake(analysis, result, score);
+    return toTake(analysis, result, await labelOf(analysis));
   },
 
   async getLatestTake() {
@@ -768,10 +826,10 @@ export const apiTakeSource: TakeSource = {
       return null;
     }
 
-    // A deleted score would 404 the whole screen over a title, so a missing
-    // one degrades to "Unknown piece" instead.
-    const score = await getScore(newest.row.score_id).catch(() => null);
-    return toTake(newest.row, newest.result, score);
+    // **Named by the server.** This fetched the whole piece — its notation
+    // validated and its pages signed — for a title and a beat unit, in a
+    // second request after the first.
+    return toTake(newest.row, newest.result, await labelOf(newest.row));
   },
 
   async getRecentTakes(limit = 3) {
@@ -787,14 +845,17 @@ export const apiTakeSource: TakeSource = {
       return [];
     }
 
-    // One score listing instead of one request per row. A missing score only
-    // costs its title; the take and its verdict remain valid practice history.
-    // Titles and composers for the takes on Today. No notation is drawn here
-    // at all — `toTake` reads the piece's name and nothing else from these.
-    const scores = await listScores({ includeScore: false }).catch(() => []);
-    const scoresById = new Map(scores.map((score) => [score.id, score]));
+    // **Labelled by the server, so there is no second request.** This listed
+    // the library after the takes to find their titles — two requests in a
+    // row before a tile could say how its last take went — and the listing
+    // carried no notation, so every take's beat unit was missing. A server
+    // that does not label takes is still answered by listing; a missing score
+    // only costs its title, never the take.
+    const labels =
+      labelsOf(recent.map(({ row }) => row)) ??
+      labelsOfScores(await listScores({ includeScore: false }).catch(() => []));
     return recent.map(({ row, result }) =>
-      toTake(row, result, scoresById.get(row.score_id) ?? null),
+      toTake(row, result, labels.get(row.score_id) ?? null),
     );
   },
 
@@ -834,6 +895,8 @@ export const apiTakeSource: TakeSource = {
         status: 'done',
         includeResult: true,
         perNote: false,
+        // For the beat unit: a take's tempo reads in the page's own unit.
+        withPieces: true,
         limit: Math.max(1, window),
       }),
     ]);
@@ -848,7 +911,7 @@ export const apiTakeSource: TakeSource = {
     const recent = detailed
       .map((analysis) => {
         const result = asResult(analysis);
-        return result ? toTake(analysis, result, null) : null;
+        return result ? toTake(analysis, result, labelOfRow(analysis) ?? null) : null;
       })
       .filter((take): take is TakeResult => take !== null);
 

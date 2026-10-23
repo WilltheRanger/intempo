@@ -4,9 +4,11 @@ import { QueryClient, hydrate } from '@tanstack/react-query';
 import {
   BUDGET_CHARS,
   CACHE_SHAPE,
+  LISTING_NOTATION_CHARS,
   READING_SHELF_LIFE_MS,
   busterFor,
   deserializeFromDisk,
+  listForDisk,
   musicianForDisk,
   persistedKind,
   pieceForDisk,
@@ -129,7 +131,7 @@ describe('pieceForDisk', () => {
     expect(pieceForDisk(piece('p1'), true).score).not.toBeNull();
   });
 
-  it('drops the notation when not — the listing has never drawn a note', () => {
+  it('drops the notation when not', () => {
     expect(pieceForDisk(piece('p1'), false).score).toBeNull();
   });
 
@@ -139,6 +141,69 @@ describe('pieceForDisk', () => {
     expect(onDisk.composer).toBe('Wohlfahrt');
     expect(onDisk.markedBpm).toBe(72);
     expect(onDisk.transcriptionStatus).toBe('done');
+  });
+});
+
+describe('listForDisk', () => {
+  function played(id: string, at: string | null, notes = 10): Piece {
+    return { ...piece(id, notes), lastPracticedAt: at };
+  }
+  const cost = (p: Piece) => JSON.stringify(p.score).length;
+
+  it('keeps every piece’s notation when the listing fits its share', () => {
+    const onDisk = listForDisk([played('a', null), played('b', '2026-10-20T10:00:00Z')]);
+    expect(onDisk.every((p) => p.score !== null)).toBe(true);
+    // And still drops what cannot survive the trip.
+    expect(onDisk.every((p) => p.thumbnail === null && p.pages.length === 0)).toBe(true);
+  });
+
+  it('past its share, keeps the pieces played most recently — the top of the shelf', () => {
+    const pieces = [
+      played('never', null),
+      played('old', '2026-09-01T10:00:00Z'),
+      played('recent', '2026-10-22T10:00:00Z'),
+    ];
+    const onDisk = listForDisk(pieces, cost(pieces[2]) + cost(pieces[1]));
+    expect(onDisk.map((p) => [p.id, p.score !== null])).toEqual([
+      // The listing's own order, whichever pieces kept their notation.
+      ['never', false],
+      ['old', true],
+      ['recent', true],
+    ]);
+  });
+
+  it('breaks a tie in recency by the listing’s order', () => {
+    const pieces = [played('first', null), played('second', null)];
+    const onDisk = listForDisk(pieces, cost(pieces[0]));
+    expect(onDisk.map((p) => p.score !== null)).toEqual([true, false]);
+  });
+
+  it('skips one piece too large for what is left rather than stopping there', () => {
+    const pieces = [
+      played('huge', '2026-10-22T10:00:00Z', 2_000),
+      played('small', '2026-10-21T10:00:00Z', 1),
+    ];
+    const onDisk = listForDisk(pieces, cost(pieces[1]) + 10);
+    expect(onDisk.map((p) => p.score !== null)).toEqual([false, true]);
+  });
+
+  it('charges nothing for a piece that has no notation', () => {
+    const bare = { ...played('bare', null), score: null };
+    const onDisk = listForDisk([bare, played('read', null)], cost(played('read', null)));
+    expect(onDisk[1]?.score).not.toBeNull();
+  });
+
+  it('never loses the listing to its notation — a listing past its share is still written', () => {
+    const big = Array.from({ length: 30 }, (_, i) => played(`p${i}`, null, 2_000));
+    const json = serializeForDisk(client([stored(['pieces', 'list'], big)]));
+    const written = JSON.parse(json).clientState.queries as { state: { data: Piece[] } }[];
+    expect(written).toHaveLength(1);
+    expect(written[0]?.state.data).toHaveLength(30);
+    expect(json.length).toBeLessThanOrEqual(BUDGET_CHARS);
+    // Half the budget at most, so the pieces and readings behind it still fit.
+    const notation = written[0]!.state.data.reduce((sum, p) => sum + (p.score ? cost(p) : 0), 0);
+    expect(notation).toBeLessThanOrEqual(LISTING_NOTATION_CHARS);
+    expect(written[0]?.state.data.some((p) => p.score === null)).toBe(true);
   });
 });
 
@@ -152,7 +217,10 @@ describe('serializeForDisk', () => {
     };
   }
 
-  it('strips the listing of notation but keeps a piece that was opened', () => {
+  it('keeps the notation of the listing and of a piece that was opened', () => {
+    // The shelf engraves every tile from its piece's notation. Written
+    // without it, the Library came back from every launch as blank pages
+    // until the network answered.
     const out = read(
       serializeForDisk(
         client([
@@ -163,7 +231,7 @@ describe('serializeForDisk', () => {
     );
     const list = out.clientState.queries.find((q) => q.queryKey[1] === 'list');
     const detail = out.clientState.queries.find((q) => q.queryKey[1] === 'detail');
-    expect((list?.state.data as Piece[]).every((p) => p.score === null)).toBe(true);
+    expect((list?.state.data as Piece[]).every((p) => p.score !== null)).toBe(true);
     expect((detail?.state.data as Piece).score).not.toBeNull();
   });
 

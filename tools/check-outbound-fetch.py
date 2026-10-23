@@ -86,6 +86,15 @@ KNOWN: dict[tuple[str, str], dict] = {
             "the analysis worker passes one it signed itself."
         ),
     },
+    ("db.py", "_http_client"): {
+        "caller_influenced": False,
+        "why": (
+            "The one HTTP client every Supabase call goes through, built here so "
+            "it speaks HTTP/1.1 (see its docstring). supabase-py builds every "
+            "URL from `SUPABASE_URL` in the API's own settings: a caller names "
+            "a table, a bucket or an object key, never a host."
+        ),
+    },
 }
 
 #: `expected_origin` is the parameter that carries the answer. A site marked
