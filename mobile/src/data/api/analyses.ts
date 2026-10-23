@@ -22,6 +22,16 @@ export interface ListAnalysesParams {
    * — about four kilobytes of answer — on every Library open.
    */
   includeResult?: boolean;
+  /**
+   * Whether each result keeps its `per_note` timings.
+   *
+   * **Say `false` from every list.** They are three quarters of a result and
+   * nothing in the app reads them: the verdicts, Insights and a piece's recent
+   * takes are all drawn from the bars, the trend and the tuning. An older
+   * server ignores the parameter and sends them anyway, which costs bytes and
+   * changes nothing on screen.
+   */
+  perNote?: boolean;
 }
 
 /** GET /v1/analyses — the caller's takes, newest first. */
@@ -31,6 +41,7 @@ export function listAnalyses({
   limit = 200,
   offset = 0,
   includeResult = true,
+  perNote = true,
 }: ListAnalysesParams = {}): Promise<AnalysisResponse[]> {
   const query = new URLSearchParams({
     limit: String(limit),
@@ -42,6 +53,8 @@ export function listAnalyses({
   // every caller here still expects.
   if (!includeResult) {
     query.set('include_result', 'false');
+  } else if (!perNote) {
+    query.set('per_note', 'false');
   }
   if (scoreId) {
     query.set('score_id', scoreId);

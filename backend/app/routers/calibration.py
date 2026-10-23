@@ -10,6 +10,7 @@ turns into a toast, not a failure the client has to special-case.
 
 from __future__ import annotations
 
+import threading
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -18,12 +19,20 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.auth import current_user_id
 from app.config import settings
 from app.routers.upload import AUDIO_BUCKET
-from app.services import audio as audio_svc
-from app.services.calibration import calibrate
 from app.services.storage_origin import is_owned_storage_url, storage_origin
 from app.workers.analysis_runner import AudioFetchError, download_audio
 
 router = APIRouter(prefix="/calibration", tags=["calibration"])
+
+#: One calibration at a time, refused rather than queued.
+#:
+#: **This decodes a recording with librosa inside the web process**, on an
+#: instance with 512 MB for everything, and no client calls it
+#: (`test_client_reachability.py`). Unbounded, any signed-in account could
+#: start forty at once and take sign-in down for everybody. Refused with a 503
+#: rather than waited for, because waiting would park a request thread per
+#: caller — the pool every other route shares.
+_calibrating = threading.BoundedSemaphore(1)
 
 
 class CalibrationRequest(BaseModel):
@@ -81,8 +90,22 @@ def calibrate_tempo(
     except AudioFetchError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
-    y, sr = audio_svc.load_audio_bytes(audio_bytes)
-    result = calibrate(y, sr)
+    if not _calibrating.acquire(blocking=False):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="another tempo is being worked out — try again in a moment",
+            headers={"Retry-After": "5"},
+        )
+    try:
+        # Imported here, not at the top: they are the audio stack, and the web
+        # process should only carry it while it is actually listening.
+        from app.services import audio as audio_svc
+        from app.services.calibration import calibrate
+
+        y, sr = audio_svc.load_audio_bytes(audio_bytes)
+        result = calibrate(y, sr)
+    finally:
+        _calibrating.release()
     return CalibrationResponse(
         ok=result.ok,
         bpm=result.bpm,

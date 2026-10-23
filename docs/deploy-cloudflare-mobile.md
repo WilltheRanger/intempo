@@ -215,7 +215,7 @@ geometry is genuine. It is **not** the native app.
 | Works | Doesn't |
 |---|---|
 | Every screen and the whole capture-to-practice flow | Haptics (silently no-op in a browser) |
-| The camera, through the browser's `getUserMedia` (`expo-camera` on the web) | Native text rendering — this is the browser's, not CoreText's |
+| The camera: the phone's own camera app, through an `<input capture>` (`expo-image-picker` on the web) | Native text rendering — this is the browser's, not CoreText's |
 | Navigation, tabs, sheets, reordering, search, deep links | The native audio paths (`expo-audio`); the web records through Web Audio instead |
 | Safe-area layout, driven by real insets on a phone | |
 | Fixture data without the three variables; live accounts with them | |

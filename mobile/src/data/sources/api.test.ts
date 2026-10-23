@@ -659,6 +659,101 @@ describe('reading the whole library', () => {
       expect.objectContaining({ includeResult: false }),
     );
   });
+
+  it('asks for no takes at all when the server dates the pieces itself', async () => {
+    // Two hundred takes fetched beside every listing to find one date per
+    // piece; a server that sends `last_practiced_at` has answered already.
+    serve(
+      shelf(3).map((row, i) => ({
+        ...row,
+        last_practiced_at: i === 0 ? '2026-10-20T09:00:00Z' : null,
+      })),
+    );
+
+    const pieces = await apiPieceSource.listPieces();
+
+    expect(listAnalyses).not.toHaveBeenCalled();
+    expect(pieces.map((p) => p.lastPracticedAt)).toEqual([
+      '2026-10-20T09:00:00Z',
+      null,
+      null,
+    ]);
+  });
+});
+
+describe('one piece, and the date it was last played', () => {
+  it('takes the date from the score when the server sends it', async () => {
+    // Every open of a piece, and every three-second poll of a page being
+    // read, used to cost a second request for this one date.
+    const { getScore } = await import('../api/scores');
+    vi.mocked(getScore).mockResolvedValue({
+      ...SCORE,
+      user_id: 'u',
+      movement: null,
+      image_url: null,
+      score_json: null,
+      last_practiced_at: '2026-10-21T08:00:00Z',
+    } as never);
+
+    const piece = await apiPieceSource.getPiece('s1');
+
+    expect(piece?.lastPracticedAt).toBe('2026-10-21T08:00:00Z');
+    expect(listAnalyses).not.toHaveBeenCalled();
+  });
+
+  it('looks the date up from the takes on a server that does not send it', async () => {
+    // So the app and the API can deploy in either order.
+    const { getScore } = await import('../api/scores');
+    vi.mocked(getScore).mockResolvedValue({
+      ...SCORE,
+      user_id: 'u',
+      movement: null,
+      image_url: null,
+      score_json: null,
+    } as never);
+    listAnalyses.mockResolvedValue([analysis({ created_at: '2026-10-19T07:00:00Z' })]);
+
+    const piece = await apiPieceSource.getPiece('s1');
+
+    expect(piece?.lastPracticedAt).toBe('2026-10-19T07:00:00Z');
+    expect(listAnalyses).toHaveBeenCalledWith(
+      expect.objectContaining({ includeResult: false }),
+    );
+  });
+});
+
+describe('what Insights asks for', () => {
+  it('asks for titles without notation, and takes without per-note timings', async () => {
+    // Insights walked the whole library with every note of every piece — at
+    // the same moment the Library did — to label its rows, and fetched every
+    // take's per-note timings, which nothing here reads.
+    listAnalyses.mockResolvedValue([analysis()]);
+
+    await apiInsightsSource.getInsights();
+
+    expect(listScores).toHaveBeenCalledWith(
+      expect.objectContaining({ includeScore: false }),
+    );
+    expect(listScores).not.toHaveBeenCalledWith(
+      expect.objectContaining({ includeScore: true }),
+    );
+    expect(listAnalyses).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'done', perNote: false }),
+    );
+  });
+
+  it('asks for recent takes without per-note timings too', async () => {
+    listAnalyses.mockResolvedValue([analysis()]);
+
+    await apiTakeSource.getRecentTakes(3);
+    await apiTakeSource.getPieceHistory('s1');
+
+    for (const [params] of listAnalyses.mock.calls) {
+      if (params.includeResult !== false) {
+        expect(params.perNote).toBe(false);
+      }
+    }
+  });
 });
 
 describe("a piece's history", () => {

@@ -526,17 +526,113 @@ def test_a_still_running_call_is_recognised_by_name_not_by_class() -> None:
     version bump silently reclassify every in-flight read as a failure."""
     from app.workers.transcription_runner import _is_still_running
 
-    class FunctionTimeoutError(Exception):
-        pass
-
     class OutputNotFinished(Exception):
         pass
 
     assert _is_still_running(TimeoutError())
-    assert _is_still_running(FunctionTimeoutError())
     assert _is_still_running(OutputNotFinished())
     assert not _is_still_running(RuntimeError("homr is not installed"))
     assert not _is_still_running(ValueError("Invalid metadata value"))
+
+
+def _modal_raising(monkeypatch, exc: BaseException) -> None:
+    """Install a `modal` whose call answers `get(timeout=0)` by raising `exc`."""
+    import sys
+    import types
+
+    fake = types.ModuleType("modal")
+
+    class _Call:
+        @staticmethod
+        def from_id(_id):
+            def _get(**_k):
+                raise exc
+
+            return type("C", (), {"get": staticmethod(_get)})()
+
+    fake.FunctionCall = _Call
+    monkeypatch.setitem(sys.modules, "modal", fake)
+
+
+def test_a_read_modal_stopped_for_time_is_over_not_still_running(monkeypatch) -> None:
+    """`FunctionTimeoutError` is the call's *result* — it ran past its limit
+    and Modal stopped it. It subclasses `TimeoutError`, which is how it was
+    read as "still running", and every sweep then skipped the row: a page that
+    stayed on "Reading the notation" for good. Built here with the same
+    ancestry as Modal's, because the ancestry is what fooled the old check."""
+    from app.workers.transcription_runner import (
+        _STILL_RUNNING,
+        _is_still_running,
+        _modal_verdict,
+    )
+
+    class TimeoutError(Exception):  # noqa: A001 — Modal's own name for it
+        pass
+
+    class FunctionTimeoutError(TimeoutError):
+        pass
+
+    assert not _is_still_running(FunctionTimeoutError())
+    assert _is_still_running(TimeoutError()), "unfinished is still unfinished"
+
+    _modal_raising(monkeypatch, FunctionTimeoutError("Function timed out"))
+    reason = _modal_verdict("fc-1")
+
+    assert reason is not _STILL_RUNNING
+    assert "ran out of time" in reason
+    assert "not with your photograph" in reason
+
+
+def test_modal_that_cannot_be_reached_is_no_answer_about_the_read(monkeypatch) -> None:
+    """The sweeper asks three minutes in, while a read may still be running.
+    "Could not connect to the Modal server" says nothing about that read, and
+    taken as an answer it would fail a working scan and blame the photograph."""
+    from app.workers.transcription_runner import (
+        _SWEPT_WITHOUT_A_REASON,
+        _could_not_ask,
+        _modal_verdict,
+    )
+
+    class GRPCError(Exception):
+        pass
+
+    class ServiceError(GRPCError):  # Modal's gRPC wrappers derive from this
+        pass
+
+    class ConnectionError(Exception):  # noqa: A001 — Modal's own name for it
+        pass
+
+    for exc in (
+        ConnectionError("Could not connect to the Modal server."),
+        ServiceError("UNAVAILABLE"),
+        ConnectionRefusedError(),
+    ):
+        assert _could_not_ask(exc), type(exc).__name__
+        _modal_raising(monkeypatch, exc)
+        assert _modal_verdict("fc-1") == _SWEPT_WITHOUT_A_REASON
+
+    # What the read itself raised is an answer, and stays one.
+    assert not _could_not_ask(RuntimeError("homr is not installed"))
+    assert not _could_not_ask(MemoryError())
+
+
+def test_modals_other_endings_do_not_blame_the_photograph(monkeypatch) -> None:
+    """Modal losing the container, or no longer holding a finished call's
+    outcome, is a machine's doing; the default sentence sends someone out to
+    re-shoot a page that was fine."""
+    from app.workers.transcription_runner import _modal_verdict
+
+    class InternalFailure(Exception):
+        pass
+
+    class OutputExpiredError(Exception):
+        pass
+
+    for exc in (InternalFailure("worker lost"), OutputExpiredError()):
+        _modal_raising(monkeypatch, exc)
+        reason = _modal_verdict("fc-1")
+        assert "our side" in reason, type(exc).__name__
+        assert "flatter" not in reason, "that is the re-photograph advice"
 
 
 # ---- the tempo words homr does not read ------------------------------------

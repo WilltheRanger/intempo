@@ -1101,6 +1101,73 @@ nothing else covers `backend/`. Named here rather than left to be found.
   warm-up does not walk. `test_warmup.py` catches both, and it is slow on
   purpose.
 
+- **Memory, measured on the day it ran out (2026-10-23).** The API was killed
+  at 512 MB while one musician scanned a page, and the cause was not the scan:
+  the process **booted at 230 MB** carrying numpy, SciPy, librosa, the
+  Anthropic and Google SDKs and Pillow, none of which a deployment that reads
+  pages and analyses takes on Modal uses — and each burst of requests then left
+  memory in per-thread malloc arenas, so idle memory stepped up a little with
+  every visit and never came back. Three rules hold it now. **Heavy imports live
+  inside the function that needs them** (`test_api_import_weight.py` imports
+  `app.main` in a clean interpreter and fails on any of them; the analysis
+  runner binds `analyze` and `audio_svc` lazily so tests can still replace
+  them). **`MALLOC_ARENA_MAX=2`** is in the Dockerfile. **A listing does no
+  per-row work it does not need**: `concerns` validate every note through
+  `ScoreJson`, so `GET /v1/scores` no longer computes them (the piece's own
+  read does, memoised by the notation's fingerprint), and analysis lists take
+  `per_note=false`, which is 74% of a result and read by no screen.
+  The measurement worth repeating before calling it fixed: replay the app's real request
+  burst (`/me`, `/scores/current`, the listings, the analyses) from several
+  clients at once against the real app on a fake Supabase that sleeps per
+  query, and watch RSS — one client never shows it.
+- **A scan's queue is memory, so a restart loses it.** `POST /v1/scores`
+  answers before the page is handed to a reader; a restart in between left the
+  row `queued` with nothing coming until the sweeper's thirty-minute remote
+  cutoff. `dispatch.resume_unstarted_reads` starts those again at boot (queued,
+  no Modal call id, older than a minute). A re-read clears the previous call
+  id for the same reason — a stale one reads as a call Modal already finished.
+- **Modal is asked about a quiet read after three minutes, not thirty.**
+  `ASK_MODAL_AFTER`: a call id gets a definite answer — still running, or the
+  named exception — so a read that died at its first import reaches the
+  musician as a reason within one sweep rather than half an hour later. That
+  makes reading Modal's answer correctly matter twice over. **A
+  `FunctionTimeoutError` is a read Modal stopped**, not one still going — it
+  subclasses `TimeoutError`, was matched as "still running", and a read killed
+  at its time limit was skipped by every sweep for good. **A `ConnectionError`
+  from Modal's own API is no answer**, not a failed read: taken as one, it
+  would fail a working scan three minutes in and blame the photograph
+  (`_is_still_running`, `_could_not_ask` in `transcription_runner.py`).
+- **The reader is guaranteed two cores.** A page is 63 s of CPU; Modal
+  guarantees an eighth of a core unless asked, and bursting above that is a
+  quiet worker's spare capacity. On a busy one a page took minutes and was
+  reported as stuck (`modal_app.py`, `test_modal_images.py`).
+- **The reader's image could not be built for a day, and nothing said so.**
+  #189 moved Pillow to 13.0.0 in `modal_app.py` to clear 35 advisories; homr
+  0.7.0, its latest release, declares `Pillow<13`, so the image's one
+  `pip install` was ResolutionImpossible and `deploy-modal.yml` failed on that
+  merge and the next. Production kept serving the reader built on 2026-10-06,
+  so scans still worked and every change to `workers/` and `services/` since
+  then never reached it. That workflow runs on `main`, after the merge, so a
+  red deploy fails no pull-request check: **after merging anything
+  `deploy-modal.yml` watches, look at its run.** homr now installs with
+  `--no-deps` beside Pillow 13 — the six pages in `fixtures/scores` and
+  `mobile/assets/captures` came out the same under 12.3.0 and 13.0.0, four
+  identical readings and two identical refusals — and `test_modal_images.py`
+  holds both halves of that.
+- **A burst of musicians queues; it does not kill the instance (2026-10-23).**
+  Measure it under the host's own limits, not on a laptop: run the API inside
+  a cgroup with `cpu.cfs_quota_us` 10000 of 100000 and `memory.limit_in_bytes`
+  512M, OOM killer left on, against a fake database that sleeps per query,
+  and replay N clients opening the app at the same moment. On `main`, twenty
+  killed it and every request failed. Lean imports and lighter listings moved
+  that to forty, at 518 MB, a few megabytes short. `app/heavy_reads.py` then
+  lets four heavy reads in at a time, waiting in the event loop, and forty ran
+  with no failure at 178 MB, eighty at 209 MB. Run it with
+  `MALLOC_ARENA_MAX=2`, as the image does, or the numbers are another
+  machine's. **What it still cannot buy is speed**: eighty at once on a tenth
+  of a CPU means a median request of 28 s and the slowest at 150. That is the
+  instance, and the answer to it is a bigger one.
+
 ## The recording path (2026-09-02) — level is not the signal you think it is
 
 - **A synthetic instrument can give you the exact opposite answer, confidently
@@ -1810,6 +1877,22 @@ Record still offered "Send it again", one tap from a second analysis.
 Nine defects between the shutter and a saved score, in a path that had **zero
 tests**. Read these as rules, not history — each one is a mistake that was
 actually made here.
+
+- **The camera is the phone's own, opened inside the tap (2026-10-23).** The
+  viewfinder drew the stream into a page-shaped window with `cover` and cropped
+  every photograph to it, which on a 16:9 phone stream threw away whatever the
+  window did not show; it was reported as cropping "really weirdly". Every
+  button that photographs a page now calls `usePageCamera`, which opens
+  `expo-image-picker`'s camera and keeps the whole photograph. Two rules come
+  with it. **On the web nothing may be awaited before `launchCameraAsync`**: a
+  browser opens a file input only during the user activation that asked for
+  it, so a navigation, a timer or a lazy import first means the camera simply
+  does not open — `photographPage` takes the picker module as an argument for
+  this reason. **On an app build the permission is asked first**: iOS rejects
+  `launchCameraAsync` outright without it. Nothing in the session changes until
+  a photograph arrives (`landPhoto`), so a closed camera leaves the scan as it
+  was. `tools/device-check.mjs` drives it through Playwright's file chooser and
+  compares the stored page's size with the file's.
 
 - **A photograph enters a session only through `captureSession.capture()`.**
   `add` and `replace` are not exported, deliberately: a shutter that *can*

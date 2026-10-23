@@ -5,8 +5,10 @@ import scoreScreen from './pieceScore/PieceScoreScreen.tsx?raw';
 
 describe('failed transcription recovery', () => {
   it('keeps a camera retake attached to the failed piece', () => {
+    // The camera opens from the tap itself now (`usePageCamera`), and the
+    // piece travels with it: the photograph lands in a scan for this piece.
     expect(scoreScreen).toMatch(
-      /navigate\('Scanner',\s*\{ attachToPieceId: piece\.id \}\)/,
+      /photograph\(\{ kind: 'new', attachToPieceId: piece\.id \}\)/,
     );
   });
 

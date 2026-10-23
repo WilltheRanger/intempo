@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { MIN_PAGE_ROWS } from './legibility';
-import { shotVerdict, viewfinderGuide } from './shotVerdict';
+import { shotVerdict } from './shotVerdict';
 
 /**
  * The verdict a musician sees while still standing at the stand.
@@ -94,32 +94,5 @@ describe('shotVerdict', () => {
       shotVerdict({ verdict: 'tooSmall', spacing: 3 }, MIN_PAGE_ROWS * 4).retakeLabel,
     ).toBe('Take this page again');
     expect(shotVerdict({ verdict: 'ok', spacing: 12 }).retakeLabel).toBe('Take it again');
-  });
-});
-
-describe('viewfinderGuide', () => {
-  it('gives the general advice before anything has been measured', () => {
-    expect(viewfinderGuide(null)).toContain('Fill the frame');
-  });
-
-  it('stops repeating it once a page has read well', () => {
-    const guide = viewfinderGuide(shotVerdict({ verdict: 'ok', spacing: 12 }));
-    expect(guide).toContain('Same distance');
-    expect(guide).not.toContain('Fill the frame');
-  });
-
-  it('says what to change when the last page was too far', () => {
-    const guide = viewfinderGuide(
-      shotVerdict({ verdict: 'tooSmall', spacing: 3 }, MIN_PAGE_ROWS * 4),
-    );
-    expect(guide).toContain('Move closer');
-  });
-
-  it('does not say "move in" when moving in cannot help', () => {
-    const guide = viewfinderGuide(
-      shotVerdict({ verdict: 'tooSmall', spacing: 3 }, MIN_PAGE_ROWS - 1),
-    );
-    expect(guide).not.toContain('Move closer');
-    expect(guide).toContain('camera app');
   });
 });

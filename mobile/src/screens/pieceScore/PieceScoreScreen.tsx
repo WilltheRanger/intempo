@@ -80,6 +80,7 @@ import { barCells, barGridSummary } from '../../lib/notation/barGrid';
 import { proposalsFor, proposalsRowLabel } from '../../lib/notation/proposals';
 import { usePreferences } from '../../data/preferences';
 import { TrailingChevron } from '../../components/primitives/TrailingChevron';
+import { usePageCamera } from '../../navigation/usePageCamera';
 
 /** Read from a stand, not glanced at — the same size the warmup page uses. */
 const STAVE_SCALE = 1.25;
@@ -176,6 +177,7 @@ type ScoreView = 'notation' | 'original';
  */
 export function PieceScoreScreen() {
   const navigation = useNavigation<RootNavigation>();
+  const photograph = usePageCamera();
   const { params } = useRoute<RouteProp<RootStackParamList, 'PieceScore'>>();
   const goBack = useGoBack({
     route: 'PieceDetail',
@@ -428,9 +430,8 @@ export function PieceScoreScreen() {
         <SecondaryButton
           label="Retake photos"
           icon={Camera}
-          onPress={() =>
-            navigation.navigate('Scanner', { attachToPieceId: piece.id })
-          }
+          // The camera itself, from inside the tap: see `usePageCamera`.
+          onPress={() => photograph({ kind: 'new', attachToPieceId: piece.id })}
           disabled={reread.isPending}
           style={styles.recoveryAction}
         />

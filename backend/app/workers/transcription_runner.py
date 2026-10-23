@@ -233,6 +233,30 @@ _FAILURE_REASONS: tuple[tuple[str, str], ...] = (
         "fault on our side, not with your photograph — the photograph is "
         "still here, so try reading it again.",
     ),
+    #: The three ways Modal itself ends a read, as `_modal_verdict` hears them.
+    #: Exception names, so they can only arrive through that channel — and
+    #: every one of them used to fall through to the default and blame the
+    #: photograph for something that happened on a machine.
+    (
+        # The read ran past `transcribe_score`'s execution limit and Modal
+        # stopped it. Not "still running": see `_is_still_running`.
+        "functiontimeouterror",
+        "Reading this page ran out of time. That is a fault on our side, not "
+        "with your photograph — try reading it again; if it runs out again, "
+        "photographing a system or two at a time gets through it.",
+    ),
+    (
+        # Modal's own infrastructure lost the container mid-read.
+        "internalfailure",
+        "The machine reading this page stopped partway through. That is a "
+        "fault on our side, not with your photograph — try reading it again.",
+    ),
+    (
+        # The call finished so long ago that Modal no longer holds its outcome.
+        "outputexpirederror",
+        "This page was read but the result never arrived. That is a fault on "
+        "our side, not with your photograph — try reading it again.",
+    ),
     (
         # Reached only through homr: `score_json_from_musicxml` is run on the
         # reader's *own* output, so unparseable XML here is the reader
@@ -756,6 +780,18 @@ def _stuck_after() -> timedelta:
     return STUCK_AFTER_REMOTE if TRANSCRIPTION_RUNTIME == "modal" else STUCK_AFTER
 
 
+#: How long a read handed to Modal may go without progress before Modal is asked.
+#:
+#: **Asking is cheap and knowing is not a guess.** `STUCK_AFTER_REMOTE` is long
+#: because elapsed time cannot tell a cold start from a dead container — but a
+#: call id can: Modal answers "still running" or names the exception. A read
+#: that died at its first import used to sit on a moving progress bar for half
+#: an hour before anything said so, which to a musician is the app stuck.
+#: Three minutes is longer than any page has gone between two progress reports,
+#: and a read Modal says is still running is left alone whatever its age.
+ASK_MODAL_AFTER = timedelta(minutes=3)
+
+
 #: A read Modal says is still in flight. Not an error string, so it can never
 #: be written into `transcription_error` by accident.
 _STILL_RUNNING = object()
@@ -802,6 +838,8 @@ def _modal_verdict(call_id: str | None):
     except Exception as exc:  # noqa: BLE001 — every outcome arrives as one
         if _is_still_running(exc):
             return _STILL_RUNNING
+        if _could_not_ask(exc):
+            return _SWEPT_WITHOUT_A_REASON
         # The remote failure, named. `_why_it_failed` already knows how to turn
         # "not installed", "api key" and the rest into something a musician can
         # act on — and how to say "this is our fault, not your photograph"
@@ -816,6 +854,22 @@ def _modal_verdict(call_id: str | None):
     )
 
 
+def _older_than(updated_at: object, cutoff: datetime) -> bool:
+    """Whether a row's `updated_at` is before `cutoff`.
+
+    A row that cannot be dated counts as old: the query that found it already
+    filtered on this column, so an unreadable value is a malformed row, and the
+    sweeper's whole job is that no row is left reading forever.
+    """
+    try:
+        stamp = datetime.fromisoformat(str(updated_at))
+    except ValueError:
+        return True
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    return stamp < cutoff
+
+
 def _is_still_running(exc: BaseException) -> bool:
     """Whether this exception means "not finished yet" rather than "failed".
 
@@ -824,9 +878,45 @@ def _is_still_running(exc: BaseException) -> bool:
     would make a version bump silently reclassify every in-flight read as a
     failure. A name that says timeout is Modal declining to wait, which is what
     `timeout=0` asked for.
+
+    **Except `FunctionTimeoutError`, which is the opposite.** An unfinished call
+    raises plain `TimeoutError`; `FunctionTimeoutError` is a finished call's
+    result — it ran past the function's own `timeout` and Modal stopped it
+    (`_process_result` in modal 1.5). It subclasses `TimeoutError` and says
+    "timeout" in its name, so it read as still running, and a read Modal had
+    already killed was skipped by every sweep and left `reading` for good.
     """
     name = type(exc).__name__.lower()
+    if "functiontimeout" in name:
+        return False
     return "timeout" in name or "notfinished" in name
+
+
+#: Ancestor class names meaning Modal's client could not get an answer at all.
+#: `grpcerror` covers every gRPC status Modal re-raises as its own class —
+#: `ServiceError`, `NotFoundError`, `AuthError` and the rest derive from
+#: `grpclib.GRPCError`.
+_COULD_NOT_ASK = ("grpcerror", "connectionerror", "clientclosed", "versionerror")
+
+
+def _could_not_ask(exc: BaseException) -> bool:
+    """Whether asking Modal failed, as opposed to Modal answering "it failed".
+
+    **This decides whether a read that may still be running is thrown away.**
+    The sweeper asks about a read after three minutes, long before the cutoff,
+    so an unreachable Modal must not be taken as an answer: it says nothing
+    about the read, and `_why_it_failed` would turn "Could not connect to the
+    Modal server" into a failed scan that blames the photograph. Treated as no
+    answer, the row waits for the cutoff like any row there is nothing to ask
+    about.
+
+    Matched on names anywhere in the class's ancestry, for the reason
+    `_is_still_running` gives, and erring this way is the safe direction: a
+    failure misread as "could not ask" is reported at the cutoff instead of
+    early, while the opposite fails a read that was working.
+    """
+    names = [cls.__name__.lower() for cls in type(exc).__mro__]
+    return any(needle in name for name in names for needle in _COULD_NOT_ASK)
 
 
 def sweep_stuck_transcriptions(client=None, *, now: datetime | None = None) -> int:
@@ -866,13 +956,17 @@ def sweep_stuck_transcriptions(client=None, *, now: datetime | None = None) -> i
     client = client or get_service_client()
     if client is None:
         return 0
-    cutoff = ((now or datetime.now(tz=timezone.utc)) - _stuck_after()).isoformat()
+    now = now or datetime.now(tz=timezone.utc)
+    cutoff = now - _stuck_after()
+    # The earlier of the two, so the rows Modal can be asked about early are in
+    # the same answer as the rows that have run out of time.
+    asked_from = now - min(ASK_MODAL_AFTER, _stuck_after())
     try:
         stuck = (
             client.table("scores")
-            .select("id, transcription_call_id")
+            .select("id, transcription_call_id, updated_at")
             .in_("transcription_status", sorted(TRANSCRIPTION_IN_PROGRESS))
-            .lt("updated_at", cutoff)
+            .lt("updated_at", asked_from.isoformat())
             .execute()
         ).data or []
     except Exception:  # noqa: BLE001 — one sweep, not every sweep
@@ -881,11 +975,21 @@ def sweep_stuck_transcriptions(client=None, *, now: datetime | None = None) -> i
 
     swept = 0
     for row in stuck:
-        verdict = _modal_verdict(row.get("transcription_call_id"))
+        out_of_time = _older_than(row.get("updated_at"), cutoff)
+        call_id = row.get("transcription_call_id")
+        if not call_id and not out_of_time:
+            # Nothing to ask and not yet long enough to presume: in-process,
+            # or a read Modal gave no handle for. The old cutoff decides.
+            continue
+        verdict = _modal_verdict(call_id)
         if verdict is _STILL_RUNNING:
             # Not stuck — working, and slower than the cutoff. Failing this
             # would throw away a read that is about to succeed, which is worse
             # than leaving the progress screen up a little longer.
+            continue
+        if verdict == _SWEPT_WITHOUT_A_REASON and not out_of_time:
+            # Modal could not be asked. Inside the cutoff that is not evidence
+            # of anything, so the row waits for the cutoff like any other.
             continue
         try:
             client.table("scores").update(

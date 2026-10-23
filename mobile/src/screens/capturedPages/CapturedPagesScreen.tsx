@@ -23,6 +23,7 @@ import {
 } from '../../data/captureSession';
 import { spacing } from '../../design';
 import type { RootNavigation } from '../../navigation/types';
+import { usePageCamera } from '../../navigation/usePageCamera';
 import { DraggablePageList } from './DraggablePageList';
 import { PagePreview } from './PagePreview';
 import { doubtfulCount, queueSummary } from '../../lib/scan/pageQueue';
@@ -39,6 +40,7 @@ import { doubtfulCount, queueSummary } from '../../lib/scan/pageQueue';
 export function CapturedPagesScreen() {
   const navigation = useNavigation<RootNavigation>();
   const goBack = useGoBack({ tab: 'Library' });
+  const photograph = usePageCamera();
   const pages = useCapturedPages();
   // A captured page can't be recovered — the photo is gone with it — and the
   // bin sits a thumb's width from the drag handle.
@@ -60,18 +62,7 @@ export function CapturedPagesScreen() {
     setPendingDelete(id);
   }
 
-  // Whether the viewfinder is underneath us.
-  //
-  // It is on the scan route and it is not on the import route, where
-  // `ImportPages` *replaces* itself with this screen. Four controls here need
-  // to know: three of them called `goBack()` regardless, which on the import
-  // route meant the Today tab — with the pages still in the session and
-  // nothing able to reach them, since the only screens that navigate here both
-  // start a new one.
   const atPageLimit = pages.length >= MAX_SCAN_PAGES;
-
-  const scannerBelow =
-    navigation.getState()?.routes.some((route) => route.name === 'Scanner') ?? false;
 
   /**
    * **"Add page" used to mean the viewfinder, and only the viewfinder.**
@@ -83,18 +74,16 @@ export function CapturedPagesScreen() {
    * roll threw page one away. A photograph already on the phone could join a
    * scan in the first action or not at all.
    *
-   * Both are offered now. `adding` is what stops either of them resetting the
-   * scan they were opened to extend — the caller decides, because from inside
+   * Both are offered now, and the camera is the phone's own, opened from this
+   * tap (`usePageCamera`): the new page joins this scan and the list is where
+   * it lands. `add` is what stops either route resetting the scan it was
+   * opened to extend — the caller decides, because from inside
    * `captureSession` an abandoned scan and one being added to are the same
    * array.
    */
   function addFromCamera() {
     setAddSheet(false);
-    if (scannerBelow) {
-      goBack();
-      return;
-    }
-    navigation.navigate('Scanner', { adding: true });
+    photograph({ kind: 'add' });
   }
 
   function addFromLibrary() {
@@ -110,9 +99,10 @@ export function CapturedPagesScreen() {
   }
 
   function handleRetake(id: string) {
-    // **Nothing is deleted here.** The page is marked as the one the next
-    // photograph replaces, and `captureSession.capture` swaps it in where it
-    // already sits. Both halves of that are fixes:
+    // **Nothing is deleted here, and nothing is marked until there is a
+    // photograph.** The camera opens from this tap; a photograph is swapped in
+    // where the old page sits (`landPhoto`), and a camera closed without one
+    // leaves the scan exactly as it was. Both halves of that were fixes once:
     //
     // It used to `remove` first, so closing the viewfinder — or a shutter that
     // returned no image — left the page gone with nothing in its place, no
@@ -123,18 +113,7 @@ export function CapturedPagesScreen() {
     // position 4 and promoted page 2 into its place — and since the upload
     // sends `pages[0]`, the app then transcribed page 2 while the page just
     // re-shot was never sent at all.
-    //
-    // Back to the viewfinder when it is below this screen, and a fresh one
-    // when it is not. Pages that arrived through Import have no scanner below
-    // them, and `goBack` there dropped the musician onto the first tab with
-    // the scan unreachable. `navigate` alone pushed a second scanner on top of
-    // the first in React Navigation 7 (`navigation/returnTo.ts`).
-    captureSession.beginRetake(id);
-    if (scannerBelow) {
-      navigation.popTo('Scanner', undefined, { merge: true });
-    } else {
-      navigation.navigate('Scanner');
-    }
+    photograph({ kind: 'retake', pageId: id });
   }
 
   if (pages.length === 0) {
@@ -149,7 +128,7 @@ export function CapturedPagesScreen() {
           wrong. The empty state is the whole screen, so it is the title too.
           The back row stays, for the touch-target reason `PageHeader` gives.
         */}
-        <PageHeader onBack={goBack} backLabel={scannerBelow ? 'Back to the scanner' : 'Back'} />
+        <PageHeader onBack={goBack} backLabel="Back" />
         {/*
           **Two empty states, because empty means two things.** A scan whose
           pages were all removed, and one that never had any — which is what a
@@ -228,8 +207,7 @@ export function CapturedPagesScreen() {
         where it is a promise ("Continue with 4 pages") rather than a caption.
       */}
       <View style={styles.head}>
-        {/* It said "Back to the scanner" on a route with no scanner on it. */}
-        <BackLink label={scannerBelow ? 'Back to the scanner' : 'Back'} onPress={goBack} />
+        <BackLink label="Back" onPress={goBack} />
         <Text variant="screenTitle" accessibilityRole="header" style={styles.title}>
           Review pages
         </Text>

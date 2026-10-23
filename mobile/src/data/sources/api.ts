@@ -141,14 +141,18 @@ const MAX_SCORE_PAGES = 200;
  * number. This asks until the answer is short, which is the only way to know it
  * has them all.
  */
-async function listAllScores(): Promise<ScoreResponse[]> {
+async function listAllScores({
+  includeScore,
+}: {
+  includeScore: boolean;
+}): Promise<ScoreResponse[]> {
   const all: ScoreResponse[] = [];
   for (let page = 0; page < MAX_SCORE_PAGES; page += 1) {
     const batch = await listScores({
       limit: SCORES_PAGE,
       offset: page * SCORES_PAGE,
       /*
-        **On again, and the cost is the point of the feature.**
+        **On for the Library, and the cost is the point of the feature.**
 
         This was turned off because it walks the whole library, so the notation
         it carried was every piece's, every time the tab was opened past
@@ -170,8 +174,13 @@ async function listAllScores(): Promise<ScoreResponse[]> {
         app could rely on it; fetching per visible tile would be forty requests
         where this is one. If the payload becomes a problem, the first of those
         is the fix.
+
+        **Off for Insights**, which wants the titles and nothing else — it
+        used to walk the whole library with every note of every piece, at the
+        same moment the Library did, so opening the app fetched all the
+        notation twice.
       */
-      includeScore: true,
+      includeScore,
     });
     all.push(...batch);
     // A short page is the last page. An exactly-full final page costs one more
@@ -183,12 +192,36 @@ async function listAllScores(): Promise<ScoreResponse[]> {
   return all;
 }
 
+/**
+ * Whether the server dated these scores itself — `last_practiced_at` present,
+ * null included, on every one.
+ *
+ * **A server that dates its scores answers in one request what this used to
+ * ask two for.** Every listing, every piece opened and every three-second poll
+ * of a page being read fetched two hundred takes beside the score to find one
+ * date per piece. An older server sends no such field, and then the takes are
+ * still asked for, so the app and the API can deploy in either order.
+ */
+function datedByServer(scores: ScoreResponse[]): boolean {
+  return scores.every((score) => score.last_practiced_at !== undefined);
+}
+
+/** One score's last-take date, from the server when it says and looked up when not. */
+async function lastPracticedOf(score: ScoreResponse): Promise<string | null> {
+  if (score.last_practiced_at !== undefined) {
+    return score.last_practiced_at;
+  }
+  const practiced = await lastPracticedByScore();
+  return practiced.get(score.id) ?? null;
+}
+
 export const apiPieceSource: PieceSource = {
   async listPieces() {
-    const [scores, practiced] = await Promise.all([
-      listAllScores(),
-      lastPracticedByScore(),
-    ]);
+    const scores = await listAllScores({ includeScore: true });
+    if (datedByServer(scores)) {
+      return scores.map((score) => toPiece(score, score.last_practiced_at ?? null));
+    }
+    const practiced = await lastPracticedByScore();
     return scores.map((score) => toPiece(score, practiced.get(score.id) ?? null));
   },
 
@@ -227,11 +260,8 @@ export const apiPieceSource: PieceSource = {
   },
 
   async getPiece(id) {
-    const [score, practiced] = await Promise.all([
-      getScore(id),
-      lastPracticedByScore(),
-    ]);
-    return toPiece(score, practiced.get(id) ?? null);
+    const score = await getScore(id);
+    return toPiece(score, await lastPracticedOf(score));
   },
 
   async createPiece(input) {
@@ -255,8 +285,7 @@ export const apiPieceSource: PieceSource = {
     });
     // The edit doesn't touch practice history, so keep the date the rest of
     // the app is showing rather than dropping it to null.
-    const practiced = await lastPracticedByScore();
-    return toPiece(score, practiced.get(id) ?? null);
+    return toPiece(score, await lastPracticedOf(score));
   },
 
   async deletePiece(id) {
@@ -444,12 +473,14 @@ function outerWidth(tolerance: Tolerance | null): number {
 export const apiInsightsSource: InsightsSource = {
   async getInsights(): Promise<PracticeInsights | null> {
     const [analyses, scores] = await Promise.all([
-      listAnalyses({ status: 'done' }),
+      // Without the per-note timings: three quarters of every result, and
+      // nothing here reads them — the summary is built from the bars.
+      listAnalyses({ status: 'done', perNote: false }),
       // All of them, not the first 200: this is the id → title map, and a
       // missing entry renders as "Unknown piece" on the insights list. A
       // library past the cap would have quietly started mislabelling its
-      // oldest pieces.
-      listAllScores(),
+      // oldest pieces. Titles only — no notation is drawn here.
+      listAllScores({ includeScore: false }),
     ]);
 
     const since = Date.now() - INSIGHTS_WINDOW_DAYS * 24 * 60 * 60 * 1000;
@@ -678,8 +709,10 @@ function donePage(
   want: number,
 ): Promise<Readable<AnalysisResponse, AnalysisResultJson>[]> {
   return newestReadable(
+    // The verdicts are drawn from the bars, the trend and the tuning; the
+    // per-note timings are read by nothing and are most of each result.
     (offset, limit) =>
-      listAnalyses({ status: 'done', limit, offset }),
+      listAnalyses({ status: 'done', limit, offset, perNote: false }),
     asResult,
     want,
   );
@@ -800,6 +833,7 @@ export const apiTakeSource: TakeSource = {
         scoreId: pieceId,
         status: 'done',
         includeResult: true,
+        perNote: false,
         limit: Math.max(1, window),
       }),
     ]);

@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+import importlib
 import logging
 import tempfile
 from datetime import datetime, timedelta, timezone
@@ -27,12 +28,10 @@ from pathlib import Path
 import httpx
 
 from app.db import get_service_client
-from app.services import audio as audio_svc
 from app.services.audio_intake import inspect_upload
 from app.services.audio_config import load_audio_config
 from app.services.audio_storage import AudioStorageError, readable_audio_url
 from app.services.take_archive import keep_playback_copy
-from app.services.analysis import analyze
 from app.services.storage_origin import origin_of
 from app.services.take_comparison import comparison_key
 from app.services.long_rests import shorten_long_rests
@@ -40,6 +39,39 @@ from app.services.start_at import start_from_measure
 from app.services.score_schema import ScoreJson
 
 log = logging.getLogger("intempo.analysis")
+
+#: The analysis pipeline itself, bound on first use rather than at import.
+#:
+#: **The web process imports this module and never analyses anything.** `main`
+#: needs the sweeps below and the calibration route needs `download_audio`, and
+#: with `ANALYSIS_RUNTIME=modal` — which is how production runs — every take is
+#: analysed in another container. Importing `analysis` and `audio` here loaded
+#: numpy, SciPy and librosa into the API on every boot: about 80 MB of a 512 MB
+#: instance spent before the first request, measured 2026-10-23, on the day that
+#: instance was killed for running out of memory.
+#:
+#: Still module attributes, so a test that replaces `analysis_runner.analyze`
+#: replaces what `run_analysis` calls — `_bound` reads the module's own binding.
+_PIPELINE = {
+    "analyze": ("app.services.analysis", "analyze"),
+    "audio_svc": ("app.services.audio", None),
+}
+
+
+def __getattr__(name: str):
+    target = _PIPELINE.get(name)
+    if target is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module_name, attribute = target
+    module = importlib.import_module(module_name)
+    value = getattr(module, attribute) if attribute else module
+    globals()[name] = value
+    return value
+
+
+def _bound(name: str):
+    """A pipeline name as this module holds it now, loading it the first time."""
+    return globals()[name] if name in globals() else __getattr__(name)
 
 #: The largest recording this will fetch, which must be at least what storage
 #: agreed to hold.
@@ -322,7 +354,7 @@ def run_analysis(analysis_id: str) -> None:
             return
 
         _stage(client, analysis_id, "decoding")
-        y, sr = audio_svc.load_audio_bytes(audio_bytes)
+        y, sr = _bound("audio_svc").load_audio_bytes(audio_bytes)
         # The one caller that has ever set this. `analyze()` has taken a
         # `double_bass` flag since Batch 3 — a high-pass filter and a lower
         # onset threshold for the register where attacks are softest and the
@@ -333,7 +365,7 @@ def run_analysis(analysis_id: str) -> None:
         # response is sent, so the row is the only thing that survives.
         _stage(client, analysis_id, "listening")
         trace: dict = {}
-        result = analyze(
+        result = _bound("analyze")(
             (y, sr),
             score,
             float(row["target_bpm"]),

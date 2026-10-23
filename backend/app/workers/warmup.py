@@ -62,8 +62,6 @@ import logging
 import threading
 import time
 
-import numpy as np
-
 log = logging.getLogger("intempo.analysis")
 
 #: What the app's recorder writes: 16-bit mono PCM at the audio context's rate,
@@ -103,6 +101,9 @@ def synthetic_take(notes: int) -> bytes:
     `fixtures/audio/make_synthetic.py`, so the detector finds one onset per
     note and the alignment has something to align.
     """
+    # Here rather than at the top: `main` imports this module on every boot,
+    # and only a process that analyses takes should load numpy for it.
+    import numpy as np
     import soundfile as sf
 
     beat = 60.0 / _BPM

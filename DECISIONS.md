@@ -1,5 +1,140 @@
 # InTempo Decisions
 
+## 2026-10-23 — Heavy reads queue in the event loop, a few at a time
+
+**Context:** replayed under the free instance's real limits (a cgroup at a
+tenth of a CPU and 512 MB, OOM killer on), twenty musicians opening the app at
+the same moment killed the API on `main`, every request failing; this branch's
+earlier fixes moved that to forty, where it peaked at 518 MB. Starlette runs as
+many plain-`def` handlers at once as its pool has threads — forty — and each
+library listing or page of takes holds tens of megabytes while it is decoded
+and encoded. On a tenth of a CPU, forty of them in parallel finish no sooner
+than forty in a row; they only hold their memory for the whole time.
+
+**Decision:** an ASGI middleware (`app/heavy_reads.py`) lets at most
+`HEAVY_READS_AT_ONCE` (4) heavy reads — the two listings, unless they ask for
+the light form or twenty rows or fewer — into the app at once. The rest wait in
+the event loop, holding no thread, and a request whose caller disconnects while
+waiting is dropped without being computed. Everything else passes untouched.
+Forty musicians at once: no failures, peak 178 MB instead of 518, median
+request 24 s instead of 79.
+
+**Alternatives considered:**
+- *A smaller thread pool.* Bounds memory too, but light requests queue behind
+  heavy ones — `/v1/health` among them, which the host uses to decide whether
+  to restart the instance.
+- *A semaphore inside the handlers.* A waiting request would hold one of the
+  pool's threads, which brings the same problem back.
+- *Trim the listing to each piece's opening.* Cuts the heavy reads' cost, and
+  is worth doing, but it changes what six screens receive and bounds nothing.
+  A big enough burst still kills the instance.
+- *A bigger instance.* The answer to volume, and the owner's to choose. It
+  would have moved the cliff, not removed it.
+
+**Trade-offs accepted:**
+- **A burst is slower for the last in line**, not faster: at forty at once, a
+  heavy read can wait over a minute on this instance. Waiting is what a tenth
+  of a CPU already meant. Now it is a wait rather than the instance being
+  killed for everybody.
+- **Four is a measurement of this instance**, and wrong on a bigger one;
+  `HEAVY_READS_AT_ONCE` is an environment setting for that reason.
+
+## 2026-10-23 — homr installed without its dependencies, beside Pillow 13
+
+**Context:** the reader's Modal image pinned Pillow 13.0.0 (#189) to clear 35
+published advisories, all fixed in 13.0.0, in a container that decodes
+photographs strangers upload. homr 0.7.0, its latest release, declares
+`Pillow<13`. One `pip install` holding both is ResolutionImpossible, so every
+deploy of the reader since #189 failed, and production kept the image built on
+2026-10-06 — Pillow 12.3.0 and none of the fixes since.
+
+**Decision:** the image installs everything else, Pillow 13 and homr's runtime
+requirements included (pinned to the versions measured), then installs
+`homr==0.7.0` alone with `--no-deps`. `test_modal_images.py` fails if homr goes
+back into the resolved install or one of its requirements goes missing.
+
+**Alternatives considered:**
+- *Pin Pillow back to 12.3.0.* Builds, and ships the 35 advisories to the one
+  container that opens untrusted images. There is no 12.x release after 12.3.0.
+- *A newer homr.* There is none; 0.7.0 is the latest release.
+- *Install Pillow 13 over homr's choice in a later step.* Same result as this,
+  with pip warning on every build and the dependency set decided by whatever
+  homr's ranges resolve to that day.
+
+**Trade-offs accepted:**
+- **homr runs outside its declared range.** Measured rather than assumed: all
+  six pages in `fixtures/scores` and `mobile/assets/captures` gave identical
+  results under 12.3.0 and 13.0.0 — four readings byte for byte, two refusals in
+  the same words — at the same speed. A homr upgrade means reading its
+  metadata again and updating the requirements the test lists.
+
+## 2026-10-23 — The phone's own camera, not an in-app viewfinder
+
+**Context:** the scanner drew the live camera into a portrait page-shaped
+window (`object-fit: cover`) and then cropped every photograph to that window
+(`cropToViewfinder`). On a phone browser the stream is 16:9, so the window
+showed a slice of it and the saved page was whatever the slice held; the owner
+reported "it crops it really weirdly" and asked for the actual camera, capturing
+the whole page at the camera's true aspect. The viewfinder had also needed a
+patch to `expo-camera` just to get more than 640x480 out of the browser.
+
+**Decision:** every button that photographs a page opens the system camera
+through `expo-image-picker` (`launchCameraAsync`): the iPhone's camera in the app
+build, an `<input capture="environment">` on the web, which a phone answers with
+its camera app at full resolution. The whole photograph is the page. The `Scanner`
+route stays as a plain screen for `/scan` and for a camera that gave nothing back.
+`expo-camera`, its patch, the viewfinder, the crop and their tests are removed.
+See `lib/scan/systemCamera.ts`, `lib/scan/pagePhoto.ts`, `navigation/usePageCamera.ts`.
+
+**Alternatives considered:**
+- *Keep the viewfinder and drop the crop.* The preview would still not show what
+  is saved (cover-fit), and the web stream would still be the browser's choice
+  of resolution rather than the camera's.
+- *A full-screen viewfinder at the stream's aspect.* Still a custom camera UI,
+  which is what the owner asked to remove, and still `getUserMedia`'s pixels.
+
+**Trade-offs accepted:**
+- **One more tap per page in a multi-page scan.** The viewfinder stayed open
+  between pages; the camera app returns after each photograph, and "Add page"
+  opens it again.
+- **The web camera must open inside the tap.** A browser blocks a file input
+  opened any later, so nothing may be awaited before `launchCameraAsync` on the
+  web; the add-piece sheet opens the camera instead of navigating after its exit.
+- **No live framing advice.** The legibility check still runs on each photograph
+  and the review list flags a page worth another look.
+
+## 2026-10-23 — The API carries only what it does, and a listing does not validate notation
+
+**Context:** the API was killed for exceeding 512 MB at 03:55 UTC while one
+musician scanned a page. It booted at 230 MB: numpy, SciPy, librosa, the
+Anthropic and Google SDKs and Pillow were all imported at startup, though pages
+and takes are read on Modal. Every request then left memory behind in
+per-thread malloc arenas (idle memory stepped from 183 to 460 MB over days),
+and every library listing validated every note of every piece through
+`ScoreJson` to compute `concerns` — 75% of a listing's CPU, which the instance's
+tenth of a CPU turned into seconds.
+
+**Decision:** heavy dependencies are imported where they are used, held by
+`test_api_import_weight.py`; the image sets `MALLOC_ARENA_MAX=2`; listings never
+carry `concerns` (the piece's own read does, memoised by the notation's
+fingerprint); analysis lists take `per_note=false`; responses over 1 KB are
+gzipped; score responses carry `last_practiced_at` so the app stops fetching two
+hundred takes beside every score request. Measured with five musicians opening
+the app at once: peak memory 417 → 196 MB, each burst 3.4 → 1.0 s.
+
+**Alternatives considered:**
+- *A bigger instance.* It would hide the memory waste without removing it, and
+  the waste grew with every request; it remains the answer for real volume.
+- *Storing `concerns` in a column.* Correct and cheaper still, but a migration
+  and a write on every path that changes notation, for a value only one screen
+  reads.
+
+**Trade-offs accepted:**
+- **A piece's concerns arrive only with the piece**, so a placeholder built from
+  the library listing shows none until the piece's own read answers.
+- **The first calibration, analysis or reading in an API process pays its
+  imports**, and calibration is refused with a 503 while another runs.
+
 ## 2026-10-16 — The band is one warm colour, not the piece's key
 
 **Context:** the key colour band shipped in #184. On the owner's iPhone the

@@ -39,6 +39,7 @@ import queue
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from app.config import settings
@@ -124,6 +125,41 @@ TRANSCRIPTION_RUNTIME: Runtime = (
     if os.getenv("TRANSCRIPTION_RUNTIME", "").strip().lower() == "modal"
     else "inprocess"
 )
+
+
+_preloaded = False
+_preload_lock = threading.Lock()
+
+
+def preload_modal_client() -> None:
+    """Import the Modal client on a thread of its own, once. Never raises.
+
+    **The first page after every restart waited ten seconds for this.** On
+    2026-10-23 the first scan's `POST /v1/scores` answered at 03:52:07 and the
+    page reached Modal at 03:52:17: `import modal` is about two hundred modules,
+    a second of import on a laptop and ten on the API's tenth of a CPU, and it
+    happened on the reader thread with the musician already watching the
+    progress screen. The second scan, with the module loaded, was handed over
+    in 0.15 s.
+
+    Paid at boot instead, where nobody is waiting. It costs no memory the first
+    scan was not going to spend anyway, and only a deployment that sends work
+    to Modal does it.
+    """
+    global _preloaded
+    with _preload_lock:
+        if _preloaded:
+            return
+        _preloaded = True
+
+    def run() -> None:
+        try:
+            clean_modal_credentials()
+            import modal  # noqa: F401 — the import is the work
+        except Exception:  # noqa: BLE001 — a failed preload is the first spawn's cost
+            log.warning("could not preload the Modal client", exc_info=True)
+
+    threading.Thread(target=run, name="modal-preload", daemon=True).start()
 
 
 def _spawn_on_modal(analysis_id: str) -> bool:
@@ -424,6 +460,61 @@ def start_transcription(score_id: str) -> None:
     photographed a page should not lose it to a deployment setting.
     """
     _reading.submit(score_id)
+
+
+#: How long a scan may sit `queued` with no reader before it counts as lost.
+#:
+#: A healthy dispatch names its Modal call within seconds of the row being
+#: written, so a row older than this with no call id was dropped rather than
+#: delayed. The margin also keeps one instance from re-reading a scan another
+#: instance accepted a moment ago and is still handing over.
+UNSTARTED_GRACE = timedelta(seconds=60)
+
+
+def resume_unstarted_reads(client=None, *, now: datetime | None = None) -> int:
+    """Hand every scan this service accepted and then lost to a reader again.
+
+    **The queue a scan waits in is memory.** `POST /v1/scores` writes the row,
+    answers, and puts the id on `_reading`; a restart in between — a deploy, or
+    the out-of-memory kill that took this service down on 2026-10-23 a minute
+    after a scan — empties the queue and leaves the row `queued` with nothing
+    coming for it. The musician then watched a progress screen until the
+    sweeper's cutoff: thirty minutes, on a deployment that reads on Modal.
+
+    So at startup, a scan still `queued` with no Modal call recorded, younger
+    than the cutoff that would sweep it and older than `UNSTARTED_GRACE`, is
+    started again. One that did reach Modal has a call id and is left alone; a
+    re-read clears the old one (`scores.retranscribe`), so it counts as new.
+    Reading a page twice is the worse case only in money, and this runs once
+    per process.
+
+    Never raises: a failed lookup costs these scans the sweeper's slower
+    answer, which is what they had before this existed.
+    """
+    from app.db import get_service_client
+    from app.workers.transcription_runner import _stuck_after
+
+    now = now or datetime.now(tz=timezone.utc)
+    try:
+        client = client or get_service_client()
+        if client is None:
+            return 0
+        rows = (
+            client.table("scores")
+            .select("id")
+            .eq("transcription_status", "queued")
+            .is_("transcription_call_id", "null")
+            .gte("updated_at", (now - _stuck_after()).isoformat())
+            .lt("updated_at", (now - UNSTARTED_GRACE).isoformat())
+            .execute()
+        ).data or []
+    except Exception:  # noqa: BLE001 — the sweeper still answers for these
+        log.exception("could not look for scans lost before they were read")
+        return 0
+    for row in rows:
+        log.info("score %s: was never handed to a reader; starting it again", row["id"])
+        start_transcription(str(row["id"]))
+    return len(rows)
 
 
 def start_analysis(analysis_id: str) -> None:

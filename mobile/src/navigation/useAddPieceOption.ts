@@ -3,6 +3,7 @@ import { useNavigation } from '@react-navigation/native';
 import { motion } from '../design';
 import { addPieceDestination } from './addPieceDestination';
 import type { AddPieceOption, RootNavigation } from './types';
+import { usePageCamera } from './usePageCamera';
 
 /**
  * Handles a choice made in the add-piece sheet, from any screen that offers it.
@@ -19,9 +20,18 @@ import type { AddPieceOption, RootNavigation } from './types';
  */
 export function useAddPieceOption(closeSheet: () => void) {
   const navigation = useNavigation<RootNavigation>();
+  const photograph = usePageCamera();
 
   return (option: AddPieceOption) => {
     closeSheet();
+    if (option === 'scan') {
+      // **The camera, now, not after the sheet has gone.** On the web it opens
+      // only inside the tap that asked for it, and the wait below would be
+      // outside it. The camera covers the screen as it opens, so there is no
+      // sheet exit to collide with; the review list follows the photograph.
+      photograph({ kind: 'new' });
+      return;
+    }
     setTimeout(() => {
       const destination = addPieceDestination(option);
       // The union of every route and its own params is exactly what `navigate`
