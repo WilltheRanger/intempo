@@ -1,7 +1,8 @@
-"""Layer 3 of the audio pipeline: matched onsets → deltas, bands, verdict.
+"""Step 3 of the audio pipeline: turn paired notes into feedback a musician can use.
 
-Given the cleaned alignment, this module answers the two questions the
-user actually cares about:
+Once every heard note is paired with its written note (`alignment.py`), this
+module measures how early or late each one was and answers the two questions
+the musician actually cares about:
   - per note: "did I rush or drag this note, and by how much?"
     (`compute_deltas` + `classify_band`)
   - overall: "am I systematically drifting across the page?"
@@ -9,8 +10,8 @@ user actually cares about:
 
 Sign convention throughout: delta_ms = actual - expected. Negative means
 the note landed EARLY = rushing = "ahead"; positive means LATE =
-dragging = "behind". The trend/verdict flip this to rush-positive so
-"ahead" reads as a positive number, matching spec §4.
+dragging = "behind". The trend and verdict flip this to rush-positive so
+"ahead" reads as a positive number, which is how musicians say it.
 """
 
 from __future__ import annotations
@@ -103,11 +104,20 @@ class Delta:
 
 
 def classify_band(delta_pct: float, *, config: AudioConfig | None = None) -> Band:
-    """Classify a signed per-beat % deviation into a tolerance band (§4).
+    """Grade one note's timing as on time, slight, clear, or severe.
 
     Thresholds are asymmetric: rushing and dragging have independent
-    inner/mid/outer cutoffs (humans tolerate dragging more). The sign of
-    `delta_pct` selects which set to use.
+    inner/mid/outer cutoffs, because listeners forgive dragging more than
+    rushing. The sign of `delta_pct` selects which set to use; the values
+    live under `[tolerance]` in `config.toml`.
+
+    Args:
+        delta_pct: How far off the note was, as a percentage of one beat.
+            Negative is early (rushing), positive is late (dragging).
+        config: Thresholds; defaults to `config.toml`.
+
+    Returns:
+        The band, which the app shows as green, yellow, orange or red.
     """
     cfg = config or load_audio_config()
     tol = cfg.tolerance
@@ -269,7 +279,7 @@ def compute_deltas(
     config: AudioConfig | None = None,
     by_pitch: bool = False,
 ) -> list[Delta]:
-    """Per matched note-pair, compute the timing delta in ms and % of beat.
+    """Measure how early or late each paired note was, in ms and in % of a beat.
 
     The recording's lead-in latency (reaction time before the first note) is
     not a timing error, so the origin sits where the take starts: the level its
@@ -288,6 +298,17 @@ def compute_deltas(
     `skipped_ahead`. Only by pitch: a timing pairing that lost notes to a live
     room looks exactly like one that went past them, and only the pitches can
     say which it was.
+
+    Args:
+        cleaned: The one-to-one pairing from `alignment.apply_fuzzy_match`.
+        detected: Heard note-start times, in seconds.
+        timeline: The expected start times from `alignment.build_timeline`.
+        target_bpm: Tempo in quarter notes per minute.
+        config: Thresholds; defaults to `config.toml`.
+        by_pitch: The pairing was made by matching pitches, not timing.
+
+    Returns:
+        One `Delta` per paired note, in score order, each with its band.
     """
     cfg = config or load_audio_config()
     detected = np.asarray(detected, dtype=float)
@@ -408,7 +429,7 @@ def rolling_trend(
     window: int | None = None,
     config: AudioConfig | None = None,
 ) -> list[float]:
-    """Rolling mean of the rush-positive per-beat deviation (§4).
+    """The running average of rushing and dragging, for the trend chart.
 
     Accepts either `Delta` objects or a raw list of signed %-of-beat
     values. Output is rush-positive (ahead = +), length equal to the
@@ -768,7 +789,7 @@ def generate_verdict(
     tempo_spans: list[TempoSpan] | None = None,
     tempi: BarTempi | None = None,
 ) -> Verdict:
-    """One-line human verdict from the largest same-direction run (§4).
+    """The one sentence the musician reads first, e.g. "You dragged bars 1–12 by 7 BPM".
 
     **Given the take's bar tempi, the run is of bars** — the longest stretch
     the chart below the sentence shows off the target, and the figure is the
@@ -780,7 +801,7 @@ def generate_verdict(
     We surface the longest contiguous run of notes that drift the same
     way (all rushing or all dragging, ignoring notes inside tolerance and
     slur interiors) and phrase it in BPM, never percentages — musicians
-    think in BPM (§3.5 language rules). The BPM figure is the tempo the run
+    think in BPM. The BPM figure is the tempo the run
     was actually played at against the target — see `run_tempo_difference`
     — and a run has to be long enough that chance does not explain it — see
     `MIN_VERDICT_RUN`.
@@ -789,6 +810,16 @@ def generate_verdict(
     out of the run-finding altogether rather than counted as on the beat.
     Their band is `on` by refusal, not by measurement, so letting one break a
     run would split a rushed passage at every ornament in it.
+
+    Args:
+        deltas: Per-note timings from `compute_deltas`.
+        target_bpm: The tempo the musician chose.
+        config: Thresholds; defaults to `config.toml`.
+        tempo_spans: Written tempo changes, so a marked `rit.` is not blamed.
+        tempi: The tempo each bar was actually played at, when known.
+
+    Returns:
+        The sentence and its overall direction (rush, drag or on).
     """
     judged = [d for d in deltas if not d.is_slur_interior]
     if not judged:

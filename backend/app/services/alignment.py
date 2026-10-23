@@ -1,17 +1,21 @@
-"""Layer 2 of the audio pipeline: match detected onsets to the score.
+"""Step 2 of the audio pipeline: work out which played note is which written note.
+
+Before the app can say "you rushed bar 12", it has to know which sound in the
+recording *was* bar 12. Musicians speed up, slow down, skip a note or add one,
+so the sounds and the page never line up one-to-one. This module pairs them.
 
 Three jobs:
-  1. Turn the score JSON into the sequence of onset times we *expect* at
-     the target tempo (`compute_expected_onsets` / `build_timeline`).
-  2. Warp the detected onset sequence onto the expected one with DTW
-     (`align_dtw`), returning a monotonic index mapping + a 0..1 quality
-     score.
-  3. Clean up the count mismatches DTW can't (`apply_fuzzy_match`):
-     missed notes (one-to-many) and extra/false-trigger notes
-     (many-to-one), per spec §7.
+  1. Turn the score into the list of times each note *should* start at the
+     chosen tempo (`build_timeline`).
+  2. Line the heard note starts up against that list with dynamic time
+     warping, or DTW (`align_dtw`): a standard algorithm that stretches one
+     sequence against another to find the best in-order pairing. It returns
+     the pairing and a 0-1 quality score.
+  3. Tidy up what DTW cannot (`apply_fuzzy_match`): a written note nobody
+     played (missed) and a sound that matches no written note (extra).
 
-If alignment is too poor to trust, `is_alignment_broken` says so and the
-orchestrator refuses to report rather than inventing deltas.
+If the pairing is too poor to trust, `is_alignment_broken` says so, and the
+caller asks the musician to record again rather than inventing feedback.
 """
 
 from __future__ import annotations
@@ -392,19 +396,35 @@ def build_timeline(
     legato: bool = False,
     take_repeats: bool = True,
 ) -> ExpectedTimeline:
-    """Walk the score, accumulating time, emitting one entry per *sounded* onset.
+    """Build the list of times each note should start, at the chosen tempo.
+
+    Walks the score bar by bar, keeping a running clock, and emits one entry
+    per note that is actually *attacked*:
 
     - Rests advance the clock but produce no onset.
     - A note tied FROM the previous note is not re-attacked: it advances
       the clock but produces no onset of its own.
     - Slur interiors are marked so classification can suppress per-note
-      timing there (musical license within one bow; §4 layer 2).
+      timing there (musical licence within one bow).
     - **Repeated sections are written out twice**, because the musician plays
       them twice. See `expand_repeats`; `take_repeats=False` is the reading
       where they did not.
 
     `legato=True` is the other reading of a slur: the notes under the bow
     *are* heard. See `ExpectedNote.under_slur`.
+
+    Args:
+        score: The transcribed piece.
+        target_bpm: Tempo in quarter notes per minute. Bars with their own
+            written tempo change use that instead.
+        legato: Expect a separate attack for every note under a slur.
+        take_repeats: Play repeated sections twice, as written.
+
+    Returns:
+        The expected start times and the note each one belongs to.
+
+    Raises:
+        ValueError: If `target_bpm` is not positive.
     """
     under_tempo_change = measures_under_tempo_change(score)
     if target_bpm <= 0:
@@ -1591,13 +1611,32 @@ def align_dtw(
     optional: np.ndarray | None = None,
     subsequence_allowed: bool = True,
 ) -> AlignmentResult:
-    """Align detected onsets to expected onsets with a constrained DTW.
+    """Pair each heard note start with a written note, keeping both in order.
 
-    Onsets are 1-D time sequences; we hand librosa `(1, N)` feature rows
-    (1 feature = time, N steps). A Sakoe-Chiba band keeps the warp near
-    the diagonal so a lost passage can't cause a wild excursion (§7.5a).
-    The warping path is walked start→end and collapsed to the best
-    expected index per detected onset.
+    Uses dynamic time warping (DTW), constrained so the pairing cannot wander
+    far from the straight line between "first note" and "last note". That
+    limit (a Sakoe-Chiba band) stops one lost passage from dragging every
+    later note onto the wrong bar. The warping path is walked start to end and
+    collapsed to the best written note for each heard one.
+
+    Matching happens in the score's units, not in seconds, so a take that is
+    uniformly fast still pairs note-for-note; the long comment below has the
+    measurements that made that necessary.
+
+    Args:
+        detected: Heard note-start times, in seconds.
+        expected: Written note-start times from `build_timeline`, in seconds.
+        target_bpm: Tempo the expected times were built at.
+        config: Thresholds; defaults to `config.toml`.
+        steady: Written notes a steady tempo should explain (not under a
+            marked `rit.`); the written pace and the quality score are read
+            from these only.
+        optional: Written notes it is not a mistake to miss (grace notes).
+        subsequence_allowed: Allow a take that covers only part of the page.
+
+    Returns:
+        The pairing, its total cost, and a 0-1 quality score. Empty input
+        gives an empty pairing with quality 0.
     """
     cfg = config or load_audio_config()
     sec_per_beat = 60.0 / target_bpm if target_bpm > 0 else 0.5
@@ -2246,7 +2285,7 @@ def apply_fuzzy_match(
     optional: np.ndarray | None = None,
     reclaimable: np.ndarray | None = None,
 ) -> CleanedAlignment:
-    """Resolve count mismatches DTW leaves behind (§7).
+    """Settle the notes DTW paired more than once or not at all.
 
     - Many-to-one: several detected onsets hit the same expected note.
       Keep the closest in time as the real note; the rest are
@@ -2266,6 +2305,9 @@ def apply_fuzzy_match(
     optional but not reclaimable: it sits a whole written note from the next
     one, so a detection on it is that note, not a misplaced ornament, and
     handing it on would report the next note a whole note early.
+
+    Returns:
+        One-to-one pairs, plus the lists of extra and missed notes.
     """
     detected = np.asarray(detected, dtype=float)
     expected = np.asarray(expected, dtype=float)
@@ -2342,11 +2384,16 @@ def apply_fuzzy_match(
 
 
 def is_alignment_broken(quality: float, *, config: AudioConfig | None = None) -> bool:
-    """True when quality is below the 'don't show anything' cutoff (§7).
+    """True when the pairing is too poor to show the musician anything.
 
-    <0.4 → we ask the user to re-record instead of reporting garbage.
-    (The softer <0.7 warn threshold is applied downstream, where we can
-    still show results alongside a caveat.)
+    Below `[alignment] broken_quality` in `config.toml` the app asks for a new
+    recording instead of reporting feedback it cannot stand behind. The softer
+    `warn_quality` cutoff is applied later, where results can still be shown
+    with a caveat.
+
+    Args:
+        quality: The 0-1 score from `align_dtw`.
+        config: Thresholds; defaults to `config.toml`.
     """
     cfg = config or load_audio_config()
     return quality < cfg.alignment.broken_quality
