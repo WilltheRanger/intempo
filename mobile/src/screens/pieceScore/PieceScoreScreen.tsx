@@ -54,6 +54,7 @@ import {
   staveScoreFor,
 } from '../../lib/notation/fromScore';
 import { shortenLongRests, skippableBars } from '../../lib/notation/longRests';
+import { layOutStave } from '../../lib/notation/staveLayout';
 import { CLEF_LABELS } from '../../lib/notation/clefLabels';
 import {
   scheduleScore,
@@ -240,6 +241,57 @@ export function PieceScoreScreen() {
   const stave = useMemo(() => (heard ? staveScoreFor(heard) : null), [heard]);
 
   /**
+   * **The page's own furniture.** `key_signature` has been read off the page
+   * since Batch 2 and shown only as text, so a piece in E major was engraved
+   * with four accidentals missing from every system and an inline sharp on
+   * every note that needed one. That is a list of pitches, not a line of music.
+   */
+  const head = useMemo(
+    () =>
+      piece?.score
+        ? {
+            clef: piece.score.clef ?? null,
+            key: keySignatureFor(
+              piece.score.key_signature,
+              piece.score.clef ?? UNREAD_CLEF_PLACEMENT,
+            ),
+            time: timeSignatureDigits(piece.score.time_signature),
+          }
+        : undefined,
+    [piece?.score],
+  );
+
+  /**
+   * The engraving, laid out once per piece and width and handed to the stave.
+   *
+   * **The stave laid it out itself, on every render**, and this screen
+   * re-renders whenever the bar being heard changes — so Listen laid out the
+   * whole piece again at every barline, and before the bar was held as state
+   * below, at every frame. The same request the stave would have made from its
+   * props, as `ScoreScroll` already does on Record.
+   */
+  const engraved = useMemo(
+    () =>
+      stave
+        ? layOutStave({
+            notes: stave.items,
+            clef: piece?.score?.clef ?? UNREAD_CLEF_PLACEMENT,
+            maxWidth: width,
+            fitWidth: width,
+            scale: STAVE_SCALE,
+            justify: true,
+            beatQuarters: stave.beatQuarters,
+            closesWithRepeat: stave.closesWithRepeat,
+            endings: stave.endings,
+            tempoMarks: stave.tempoMarks,
+            head,
+            nameRow: false,
+          })
+        : null,
+    [head, piece?.score?.clef, stave, width],
+  );
+
+  /**
    * Which bar the playback is in, or null when nothing is sounding.
    *
    * Built from the same schedule the player is running, so the stave and the
@@ -247,8 +299,16 @@ export function PieceScoreScreen() {
    * threading it out of `ListenButton` keeps the button's job to one thing —
    * and it is the same pure function with the same inputs, so it is the same
    * schedule.
+   *
+   * **Held as the bar, not as the time.** Listen reports its progress every
+   * frame, and held as seconds that re-rendered this whole screen — and laid
+   * the piece out again — sixty times a second, for a highlight that moves
+   * once a bar. With the CPU slowed to phone speed, a 236-note piece drew 12.6
+   * frames a second while it played, the main thread blocked for 5.5 s of 6
+   * (2026-10-23). Set to the same bar, the state is unchanged and React skips
+   * the render.
    */
-  const [elapsedS, setElapsedS] = useState<number | null>(null);
+  const [soundingMeasure, setSoundingMeasure] = useState<number | null>(null);
   /**
    * The tempo playback runs at, remembered per piece.
    *
@@ -279,10 +339,6 @@ export function PieceScoreScreen() {
   const playback = useMemo(
     () => (whole ? startAtMeasure(whole, listenFrom) : null),
     [whole, listenFrom],
-  );
-  const soundingMeasure = useMemo(
-    () => soundingMeasureAt(playback, elapsedS),
-    [elapsedS, playback],
   );
 
   const reading = useMemo(
@@ -597,19 +653,8 @@ export function PieceScoreScreen() {
               closesWithRepeat={stave.closesWithRepeat}
               endings={stave.endings}
               tempoMarks={stave.tempoMarks}
-              // **The page's own furniture.** `key_signature` has been read
-              // off the page since Batch 2 and shown only as text, so a piece
-              // in E major was engraved with four accidentals missing from
-              // every system and an inline sharp on every note that needed
-              // one. That is a list of pitches, not a line of music.
-              head={{
-                clef: piece.score?.clef ?? null,
-                key: keySignatureFor(
-                  piece.score?.key_signature,
-                  piece.score?.clef ?? UNREAD_CLEF_PLACEMENT,
-                ),
-                time: timeSignatureDigits(piece.score?.time_signature),
-              }}
+              // The page's own furniture: see `head` above.
+              head={head}
               // A letter under every note is a study-book aid. On repertoire it
               // reads as a crib, so the clef is stated as metadata above
               // instead — which is where a clef belongs on a screen for reading
@@ -635,6 +680,9 @@ export function PieceScoreScreen() {
               }
               measurePressRole="open"
               measurePressLabel={(measureNumber) => `Correct bar ${measureNumber}`}
+              // Laid out above, once per piece and width, rather than by the
+              // stave on every render.
+              layout={engraved ?? undefined}
             />
           </View>
         </View>
@@ -677,7 +725,7 @@ export function PieceScoreScreen() {
               bpm={listenBpm}
               fromMeasure={listenFrom}
               onProgress={(elapsed, total) =>
-                setElapsedS(total > 0 ? elapsed : null)
+                setSoundingMeasure(total > 0 ? soundingMeasureAt(playback, elapsed) : null)
               }
             />
           </View>

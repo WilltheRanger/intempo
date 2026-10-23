@@ -1,5 +1,36 @@
 # InTempo Decisions
 
+## 2026-10-23 — The notation is kept between renders, and only the marks move
+
+**Context:** The `Stave` draws the bar being heard and the playhead inside
+each system, behind the notes, in the same render as the notes. A take on
+Record steps the playhead ten times a second, and Listen on the score screen
+reported progress every frame into a screen whose stave also laid the piece
+out again on every render. With the CPU slowed four times, a 236-note piece
+blocked the main thread for 5.7 s of every 6 of a take (about 20 frames a
+second) and 5.5 s of every 6 of Listen (12), and a 2,656-note piece drew a
+take at 3.9 frames a second. After this: 60 frames a second through a take on
+both, with nothing blocked, and 59 through Listen.
+
+**Decision:** A system's notation is a memoised component (`SystemInk`), and
+the marks stay in `Stave`. The score screen holds the bar being heard, not the
+time, and hands the stave a layout it made once per piece and width, as
+`ScoreScroll` already did on Record.
+
+**Alternatives considered:**
+- *Memoise the whole `Stave`.* The marks are its props, so every step would
+  still re-render all of it.
+- *Draw the marks in an SVG of their own over the music.* The highlight has to
+  sit behind the notes, and a second layer changes what is drawn and how it
+  stacks. This changes neither: the markup is byte-identical.
+- *Report progress less often.* That would make the stepping coarser and still
+  redraw the whole score at each step.
+
+**Trade-offs accepted:**
+- **The memo depends on its props staying equal.** An object built in a render
+  passed to `SystemInk` would re-render every system on every step, silently.
+  `docs/subsystems.md` says so beside the rule.
+
 ## 2026-10-23 — The shelf draws a tile at a time, top first, and keeps what it engraved
 
 **Context:** The Library opens on a shelf of tiles, each the opening of a piece

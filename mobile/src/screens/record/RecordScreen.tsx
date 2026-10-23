@@ -1025,11 +1025,15 @@ export function RecordScreen() {
    *
    * **It advances at 100ms**, the rate `elapsedMs` already ticks at, which is
    * about four percent of a bar at 92 BPM. Deliberately not given a faster
-   * clock of its own: the mark lives inside the engraved SVG, so every tick
-   * re-renders the notation, and a take is exactly the moment the JavaScript
-   * thread must stay free for the recorder. Whether the stepping is visible,
-   * and whether ten notation renders a second cost anything on a real phone,
-   * are both device questions - see the PR.
+   * clock of its own: the mark lives inside the engraved SVG, and a take is
+   * exactly the moment the JavaScript thread must stay free for the recorder.
+   * Whether the stepping is visible is still a device question.
+   *
+   * **Ten renders of the whole notation a second did cost something**, which
+   * was the other open question: with the CPU slowed to phone speed, a
+   * 236-note piece kept the main thread blocked for 5.7 s of every 6 of a take
+   * (2026-10-23). A tick now redraws only the marks; the notation is kept
+   * between renders (`SystemInk` in `Stave.tsx`).
    */
   // Where the take is on the page, as a steady take at `targetBpm` would have
   // reached it — so the mark and the rest countdown follow a "meno mosso · 88"

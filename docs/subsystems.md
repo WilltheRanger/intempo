@@ -1055,6 +1055,40 @@ are real. The fix and its numbers are in `DECISIONS.md`. What to keep:
   byte for byte against `main` after the change, on a first visit and a
   relaunch.
 
+### Listen and a take redrew the whole score at every step (2026-10-23)
+
+The bar being heard and the playhead are drawn inside each system of the
+`Stave`, behind the notes, and they were drawn by the same render as the
+notes. So every step re-rendered every staff line, notehead, beam and slur of
+the piece to move one rectangle: ten steps a second through a take on Record,
+and on the score screen one every frame of Listen. The score screen also kept
+the time rather than the bar, and the stave laid the whole piece out again on
+every render. With the CPU slowed four times, a 236-note piece drew about 20
+frames a second through a take and 12 through Listen, with the main thread
+blocked for 5.5 to 5.7 s of every 6. A 2,656-note piece managed 3.9 frames a
+second through a take. Record's own comment had left the cost of this as a question for a
+device.
+
+**The rules:**
+
+- **The notation is kept between renders, and only the marks move.**
+  `SystemInk` in `Stave.tsx` draws a system's notation and is memoised. Its
+  props are the engraved system and plain numbers and colours, which is what
+  lets a playhead step skip it. A new prop for it must be a value, or an
+  object the engraving owns. An object built in a render, such as an inline
+  `{...}`, re-renders every system on every step, and nothing fails to say so.
+- **Hold the coarsest state the screen draws.** The score screen sets the
+  bar being heard from Listen's progress, not the seconds, so React skips
+  every frame on which the bar did not change.
+- **A screen that re-renders while it plays hands the stave its layout.**
+  `ScoreScroll` on Record always did. The score screen now does too
+  (`engraved`).
+
+After: 60 frames a second through a take on both pieces, with nothing
+blocked, and 59 through Listen, blocked only briefly where the bar changed
+(185 ms in six seconds). The SVG of the score, Record, piece and Library
+screens is byte-identical to before, for three pieces.
+
 ## `npm audit fix --force` would take this app back to SDK 46 (2026-09-09)
 
 `npm audit --omit=dev` reports **24 advisories, 7 of them high**, and closes
