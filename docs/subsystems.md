@@ -1187,6 +1187,22 @@ nothing else covers `backend/`. Named here rather than left to be found.
   machine's. **What it still cannot buy is speed**: eighty at once on a tenth
   of a CPU means a median request of 28 s and the slowest at 150. That is the
   instance, and the answer to it is a bigger one.
+- **The Library's listing passes its notation through unread (2026-10-23).**
+  `GET /v1/scores` asks PostgREST for `score_json_text:score_json::text` and
+  writes each row's text into the response as it came
+  (`_with_notation_as_stored`). Decoding every note into Python objects and
+  encoding the same objects back out had been most of the request's CPU. Two
+  things to know before touching it. The alias-and-cast form was checked
+  against real PostgREST — 14.5, the version the live project runs, which its
+  connections name in `pg_stat_activity.application_name`, and 12.2.3 — through
+  the `postgrest` client, because the test fake models only what it is told
+  to: a broken select there would be a 400 on the screen the app opens on, and
+  every test would pass. And both
+  listings now read through `_WITHOUT_SCORE`, so a column missing from it goes
+  missing from both, and comparing them stopped proving anything —
+  `test_the_light_listing_loses_the_notation_and_nothing_else` compares the
+  listing with the piece's own read instead. It found `page_image_retained_at`,
+  absent from the light listing since migration 013.
 
 ## The recording path (2026-09-02) — level is not the signal you think it is
 

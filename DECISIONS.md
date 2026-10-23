@@ -1,5 +1,56 @@
 # InTempo Decisions
 
+## 2026-10-23 — The listing passes its notation through, and the shelf keeps it on disk
+
+**Context:** the Library is the screen the app opens on, and every tile on it
+is engraved from its piece's notation. Two things made it slow. The listing
+kept on disk was written without notation, a rule from when the grid drew a
+photograph, so every launch showed a shelf of blank pages until the network
+answered — seconds, on a tenth of a CPU. And the listing that then answered
+spent most of its CPU decoding every note into Python objects and encoding the
+same notes straight back out.
+
+**Decision:**
+- The app writes the listing to disk with its notation, up to half the storage
+  budget (`LISTING_NOTATION_CHARS`), keeping the pieces played most recently
+  when a library does not fit (`listForDisk`). Relaunched in an iPhone-profile
+  browser with the listing held back eight seconds: 0 of 8 tiles drawn before,
+  8 of 8 after.
+- `GET /v1/scores` reads the notation as `score_json::text` and writes each
+  row's text into the response unread (`_with_notation_as_stored`). The API's
+  time per listing, measured through the whole request: 56 ms to 35 for
+  twenty-two pieces and 2.5 MB of notation, 16 ms to 11 for five.
+
+**Alternatives considered:**
+- *Trim the listing to each tile's opening*, which the entry below calls worth
+  doing. Measured on the live library, it is not. A tile's page holds up to
+  about ninety notes at its nominal size, and more when a dense bar shrinks the
+  engraving, so a safe opening is about 190 sounding notes — and the average
+  piece that day had about 165. It saved 17% of the bytes. It would also change
+  how some tiles look: `layOutStave` fits the whole piece to the tile's width,
+  so one dense bar anywhere in a piece sets the size its opening is drawn at,
+  and a trimmed piece would be drawn at another.
+- *Compact the notation*, dropping keys that hold their default (about four
+  times smaller). Per request it is a Python walk over every note, which costs
+  about what it saves. At rest it changes what every reader of `score_json`
+  receives, in the backend and in every installed build of the app.
+- *A SQL computed column*, for the text or for an opening. It needs a migration
+  applied before the code that reads it is deployed, and the text cast already
+  removes the decode without one.
+- *Write the whole listing to disk, whatever its size.* It is written second,
+  after the account, so a listing that took the budget would cost today's
+  piece, the readings and every opened piece behind it. One over the budget is
+  skipped entirely, which is worse than blank tiles.
+
+**Trade-offs accepted:**
+- **One endpoint writes its JSON by hand.** Everything but the notation still
+  goes through the response model. The notation is Postgres's own JSON text,
+  valid by construction, and lands last in each object.
+- **PostgREST sends the API about 12% more bytes**, the quotes inside the text
+  escaped.
+- **A device holds up to a megabyte more**, inside the budget the cache already
+  had.
+
 ## 2026-10-23 — Heavy reads queue in the event loop, a few at a time
 
 **Context:** replayed under the free instance's real limits (a cgroup at a

@@ -927,10 +927,33 @@ _WITHOUT_SCORE = ", ".join(
         "transcription_error",
         "transcription_accepted_at",
         "page_image_discarded_at",
+        "page_image_retained_at",
         "created_at",
         "updated_at",
     )
 )
+
+#: The notation, read as the JSON text Postgres stores rather than as objects.
+#:
+#: **A listing never reads a note, so it no longer parses one.** Every piece's
+#: notation was decoded from PostgREST's answer into Python objects, carried
+#: unchanged through the response model, and encoded back to the same JSON —
+#: the two largest costs of the request the Library makes on every open, for
+#: work whose output equals its input. Read as text it is one string per row,
+#: which `_with_notation_as_stored` writes into the response as it came.
+#:
+#: Measured through the whole request on twenty-two pieces of reader output,
+#: 2.5 MB of notation: 56 ms of the API's time per listing as objects, 35 ms as
+#: text; five pieces, 16 ms and 11. The decode fell from about 22 ms to 7 and
+#: the re-encode went entirely. What is left is mostly gzip.
+#:
+#: The `alias:column::text` form was checked on 2026-10-23 against PostgREST
+#: 14.5, the version the live project runs (its connections name it in
+#: `pg_stat_activity.application_name`), and 12.2.3, through the `postgrest`
+#: client this API uses: a row's text is the stored JSON exactly, and a null
+#: stays null.
+_SCORE_AS_TEXT = "score_json_text:score_json::text"
+_SCORE_TEXT = "score_json_text"
 
 
 def _row_to_response(
@@ -1331,7 +1354,7 @@ def list_scores(
             "pieces — it is by far the largest field."
         ),
     ),
-) -> list[ScoreResponse]:
+) -> list[ScoreResponse] | Response:
     """The caller's scores, newest first.
 
     **`include_score=false` exists because `score_json` dwarfs the rest of the
@@ -1360,17 +1383,41 @@ def list_scores(
     the piece screen asks for the piece, and that answer carries them.
 
     Each row carries `last_practiced_at`, from one query for the whole page.
+
+    **The notation is passed through, not parsed** — see `_SCORE_AS_TEXT`.
     """
     response = (
         require_service_client()
         .table("scores")
-        .select("*" if include_score else _WITHOUT_SCORE)
+        .select(f"{_WITHOUT_SCORE}, {_SCORE_AS_TEXT}" if include_score else _WITHOUT_SCORE)
         .eq("user_id", str(user_id))
         .order("created_at", desc=True)
         .range(offset, offset + limit - 1)
         .execute()
     )
-    return _with_image_urls(response.data or [], with_concerns=False)
+    rows = response.data or []
+    notation = [row.pop(_SCORE_TEXT, None) for row in rows]
+    listed = _with_image_urls(rows, with_concerns=False)
+    if not include_score:
+        return listed
+    return _with_notation_as_stored(listed, notation)
+
+
+def _with_notation_as_stored(
+    listed: list[ScoreResponse], notation: list[str | None]
+) -> Response:
+    """The listing as JSON, each row's notation written in exactly as stored.
+
+    Everything but the notation is serialised by the response model as it
+    always was; the notation is Postgres's own JSON text, which is already
+    valid JSON and goes in without being read. The key lands last in each
+    object, which no JSON reader can tell from anywhere else.
+    """
+    out = []
+    for scored, text in zip(listed, notation, strict=True):
+        head = scored.model_dump_json(exclude={"score_json"})
+        out.append(f'{head[:-1]},"score_json":{"null" if text is None else text}}}')
+    return Response(content="[" + ",".join(out) + "]", media_type="application/json")
 
 
 class CurrentScoreResponse(BaseModel):
