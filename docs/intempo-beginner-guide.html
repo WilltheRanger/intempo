@@ -1,0 +1,1226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>InTempo Visual Guide</title>
+<meta name="description" content="A beginner-friendly, plain-English guide to how the InTempo app is built and how it works, with a ready-to-film video script.">
+<style>
+  :root {
+    --bg: #f7f2e9;
+    --surface: #ffffff;
+    --surface-2: #fbf8f2;
+    --text: #14110e;
+    --text-2: #4a453e;
+    --muted: #6b645a;
+    --border: #e4ddd0;
+    --accent: #8a3b12;
+    --accent-soft: #f4e6db;
+    --blue: #1f5f8b;
+    --blue-soft: #e3eef6;
+    --green: #2f6b3a;
+    --green-soft: #e3f0e4;
+    --yellow: #8a6a00;
+    --yellow-soft: #f8efcf;
+    --orange: #a4520f;
+    --orange-soft: #f9e5d3;
+    --red: #9b2323;
+    --red-soft: #f6dddd;
+    --code-bg: #1c1916;
+    --code-text: #efe8dc;
+    --code-comment: #a39a8b;
+    --code-key: #f0b27a;
+    --code-str: #a8d5a2;
+    --shadow: 0 1px 2px rgba(20,17,14,.05), 0 4px 16px rgba(20,17,14,.05);
+    --radius: 14px;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #15130f; --surface: #1e1b17; --surface-2: #231f1a; --text: #f3ede3; --text-2: #cfc6b8;
+      --muted: #a39a8b; --border: #342f28; --accent: #f0a46f; --accent-soft: #3a2518;
+      --blue: #8cc3ea; --blue-soft: #16293a; --green: #93d19c; --green-soft: #173020;
+      --yellow: #e9cf6b; --yellow-soft: #332b10; --orange: #f2a766; --orange-soft: #3a2413;
+      --red: #f19a9a; --red-soft: #3a1818; --code-bg: #0f0d0b; --shadow: none; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #15130f; --surface: #1e1b17; --surface-2: #231f1a; --text: #f3ede3; --text-2: #cfc6b8;
+    --muted: #a39a8b; --border: #342f28; --accent: #f0a46f; --accent-soft: #3a2518;
+    --blue: #8cc3ea; --blue-soft: #16293a; --green: #93d19c; --green-soft: #173020;
+    --yellow: #e9cf6b; --yellow-soft: #332b10; --orange: #f2a766; --orange-soft: #3a2413;
+    --red: #f19a9a; --red-soft: #3a1818; --code-bg: #0f0d0b; --shadow: none; color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 72px; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text); font: 16px/1.65 var(--font);
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); }
+  code, pre { font-family: var(--mono); }
+  :not(pre) > code {
+    background: var(--accent-soft); color: var(--text); padding: .1em .38em; border-radius: 6px; font-size: .88em;
+    overflow-wrap: anywhere;
+  }
+
+  /* ---------- top bar ---------- */
+  .topbar {
+    position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-bottom: 1px solid var(--border);
+  }
+  .topbar-inner {
+    max-width: 1180px; margin: 0 auto; padding: 10px 16px; display: flex; align-items: center; gap: 12px;
+  }
+  .brand { font-family: var(--serif); font-size: 1.25rem; font-weight: 700; white-space: nowrap; text-decoration: none; color: var(--text); }
+  .brand span { color: var(--accent); }
+  .nav { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; flex: 1; }
+  .nav::-webkit-scrollbar { display: none; }
+  .nav a {
+    text-decoration: none; color: var(--text-2); font-size: .9rem; padding: 6px 10px; border-radius: 8px; white-space: nowrap;
+  }
+  .nav a:hover, .nav a.active { background: var(--accent-soft); color: var(--text); }
+  .btn {
+    font: inherit; font-size: .85rem; border: 1px solid var(--border); background: var(--surface); color: var(--text);
+    border-radius: 8px; padding: 6px 10px; cursor: pointer; white-space: nowrap;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn:active { transform: translateY(1px); }
+
+  /* ---------- layout ---------- */
+  main { max-width: 1180px; margin: 0 auto; padding: 0 16px 80px; }
+  section { padding-top: 56px; }
+  .eyebrow { text-transform: uppercase; letter-spacing: .12em; font-size: .75rem; font-weight: 700; color: var(--accent); margin: 0 0 6px; }
+  h1, h2, h3 { font-family: var(--serif); line-height: 1.2; margin: 0; }
+  h1 { font-size: clamp(2.2rem, 6vw, 3.6rem); letter-spacing: -.01em; }
+  h2 { font-size: clamp(1.7rem, 4vw, 2.3rem); margin-bottom: 10px; }
+  h3 { font-size: 1.25rem; margin-bottom: 6px; }
+  .lede { font-size: 1.15rem; color: var(--text-2); max-width: 720px; }
+  p { margin: 0 0 12px; }
+  .muted { color: var(--muted); }
+  .grid { display: grid; gap: 16px; }
+  .g2 { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .g3 { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow);
+    min-width: 0;
+  }
+  .card.flat { box-shadow: none; background: var(--surface-2); }
+
+  /* ---------- hero ---------- */
+  .hero { padding-top: 48px; display: grid; gap: 28px; grid-template-columns: 1.3fr 1fr; align-items: center; }
+  @media (max-width: 860px) { .hero { grid-template-columns: 1fr; } }
+  .hero h1 em { font-style: italic; color: var(--accent); }
+  .pill-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .pill { font-size: .82rem; padding: 4px 10px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); color: var(--text-2); }
+  .phone {
+    justify-self: center; width: 260px; max-width: 100%; aspect-ratio: 9 / 18; border-radius: 36px; border: 10px solid #1a1714;
+    background: var(--bg); box-shadow: 0 20px 50px rgba(0,0,0,.18); padding: 26px 18px; display: flex; flex-direction: column; gap: 12px;
+  }
+  .phone .small { font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; }
+  .phone .title { font-family: var(--serif); font-size: 1.35rem; font-weight: 700; line-height: 1.15; }
+  .phone .verdict { font-family: var(--serif); font-size: 1.05rem; color: var(--text-2); }
+  .bars { display: flex; align-items: flex-end; gap: 5px; height: 90px; margin-top: 6px; }
+  .bars i { flex: 1; border-radius: 3px 3px 0 0; display: block; }
+  .phone .tabs { margin-top: auto; display: flex; justify-content: space-around; font-size: .66rem; color: var(--muted); border-top: 1px solid var(--border); padding-top: 10px; }
+  .phone .tabs b { color: var(--text); }
+
+  /* ---------- steps ---------- */
+  .big3 { counter-reset: s; }
+  .big3 .card { position: relative; padding-top: 52px; }
+  .big3 .card::before {
+    counter-increment: s; content: counter(s); position: absolute; top: 16px; left: 20px; width: 28px; height: 28px; border-radius: 50%;
+    background: var(--accent); color: #fff; display: grid; place-items: center; font-weight: 700; font-size: .9rem;
+  }
+  .emoji { font-size: 1.6rem; position: absolute; top: 12px; right: 18px; }
+
+  /* ---------- glossary ---------- */
+  dl.gloss { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin: 0; }
+  dl.gloss div { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+  dl.gloss dt { font-weight: 700; }
+  dl.gloss dd { margin: 4px 0 0; color: var(--text-2); font-size: .95rem; }
+
+  /* ---------- architecture diagram ---------- */
+  .diagram { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; overflow-x: auto; }
+  .diagram svg { display: block; width: 100%; min-width: 640px; height: auto; }
+  .diagram text { font-family: var(--font); fill: var(--text); }
+  .diagram .sub { fill: var(--muted); font-size: 11px; }
+  .diagram .box { fill: var(--surface-2); stroke: var(--border); stroke-width: 1.5; }
+  .diagram .box.a { fill: var(--accent-soft); stroke: var(--accent); }
+  .diagram .box.b { fill: var(--blue-soft); stroke: var(--blue); }
+  .diagram .box.g { fill: var(--green-soft); stroke: var(--green); }
+  .diagram .box.y { fill: var(--yellow-soft); stroke: var(--yellow); }
+  .diagram .arrow { stroke: var(--muted); stroke-width: 1.6; fill: none; marker-end: url(#arr); }
+  .diagram .lbl { font-size: 11px; fill: var(--text-2); }
+  .scroll-hint { font-size: .8rem; color: var(--muted); margin-top: 6px; display: none; }
+  @media (max-width: 700px) { .scroll-hint { display: block; } }
+
+  .analogy { border-left: 4px solid var(--accent); background: var(--accent-soft); border-radius: 0 12px 12px 0; padding: 14px 18px; margin: 16px 0; }
+  .analogy strong { color: var(--accent); }
+  .note { border-left: 4px solid var(--blue); background: var(--blue-soft); border-radius: 0 12px 12px 0; padding: 14px 18px; margin: 16px 0; }
+
+  table { width: 100%; border-collapse: collapse; font-size: .95rem; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+  .table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+  .table-wrap td:first-child code { white-space: nowrap; }
+
+  /* ---------- user flow ---------- */
+  .flow { list-style: none; margin: 0; padding: 0; position: relative; }
+  .flow::before { content: ""; position: absolute; left: 19px; top: 8px; bottom: 8px; width: 2px; background: var(--border); }
+  .flow li { position: relative; padding: 0 0 22px 56px; }
+  .flow li .dot {
+    position: absolute; left: 0; top: 0; width: 40px; height: 40px; border-radius: 50%; background: var(--surface); border: 2px solid var(--accent);
+    display: grid; place-items: center; font-weight: 700; color: var(--accent);
+  }
+  .flow h3 { font-size: 1.1rem; margin-bottom: 2px; }
+  .flow .where { font-size: .85rem; color: var(--muted); margin-top: 4px; }
+  .tag { display: inline-block; font-size: .72rem; font-weight: 600; padding: 2px 8px; border-radius: 999px; margin-right: 4px; margin-top: 4px; }
+  .tag.app { background: var(--accent-soft); color: var(--accent); }
+  .tag.api { background: var(--blue-soft); color: var(--blue); }
+  .tag.db { background: var(--green-soft); color: var(--green); }
+  .tag.ai { background: var(--yellow-soft); color: var(--yellow); }
+
+  /* ---------- code breakdown ---------- */
+  .filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 20px; }
+  .filters button { font: inherit; font-size: .88rem; border: 1px solid var(--border); background: var(--surface); color: var(--text-2); padding: 6px 12px; border-radius: 999px; cursor: pointer; }
+  .filters button[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
+  .block { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 0; margin-bottom: 20px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); }
+  @media (max-width: 900px) { .block { grid-template-columns: 1fr; } }
+  .block[hidden] { display: none; }
+  .block .code { background: var(--code-bg); color: var(--code-text); padding: 16px; min-width: 0; display: flex; flex-direction: column; }
+  .block .code .file { font-family: var(--mono); font-size: .78rem; color: var(--code-comment); margin-bottom: 10px; display: flex; justify-content: space-between; gap: 8px; }
+  .block pre { margin: 0; overflow-x: auto; font-size: .8rem; line-height: 1.55; tab-size: 4; }
+  .c { color: var(--code-comment); }
+  .k { color: var(--code-key); }
+  .s { color: var(--code-str); }
+  .block .explain { padding: 20px 22px; min-width: 0; }
+  .block .explain h3 { margin-bottom: 4px; }
+  .block .explain .kind { font-size: .75rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 8px; }
+  .block .explain ul { padding-left: 20px; margin: 8px 0 12px; }
+  .block .explain li { margin-bottom: 6px; }
+  .say { font-size: .9rem; background: var(--surface-2); border: 1px dashed var(--border); border-radius: 10px; padding: 10px 12px; color: var(--text-2); }
+  .say b { color: var(--text); }
+
+  .bands { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 10px 0; }
+  .bands div { border-radius: 8px; padding: 8px; font-size: .8rem; text-align: center; font-weight: 600; }
+  @media (max-width: 480px) { .bands { grid-template-columns: repeat(2, 1fr); } }
+
+  .pipeline { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 10px 0 14px; }
+  .pipeline span { background: var(--blue-soft); color: var(--blue); font-size: .8rem; font-weight: 600; padding: 4px 9px; border-radius: 8px; }
+  .pipeline i { color: var(--muted); font-style: normal; }
+
+  /* ---------- video script ---------- */
+  .script { display: grid; gap: 14px; }
+  .scene { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; box-shadow: var(--shadow); }
+  .scene-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+  .scene-head h3 { margin: 0; }
+  .time { font-family: var(--mono); font-size: .8rem; background: var(--accent-soft); color: var(--accent); padding: 3px 8px; border-radius: 6px; }
+  .scene-cols { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 16px; }
+  @media (max-width: 760px) { .scene-cols { grid-template-columns: 1fr; } }
+  .label { font-size: .72rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+  .line { font-family: var(--serif); font-size: 1.08rem; line-height: 1.6; }
+  .show { font-size: .92rem; color: var(--text-2); }
+  .show ul { margin: 0; padding-left: 18px; }
+  .copy { float: right; margin-left: 8px; }
+
+  .checklist { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+  .checklist label { display: flex; gap: 10px; align-items: flex-start; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; cursor: pointer; }
+  .checklist input { margin-top: 5px; accent-color: var(--accent); width: 16px; height: 16px; flex: none; }
+  .checklist input:checked + span { color: var(--muted); text-decoration: line-through; }
+
+  /* ---------- presenter mode ---------- */
+  body.presenter { font-size: 19px; }
+  body.presenter .block .code pre { font-size: .9rem; }
+  body.presenter .say, body.presenter .scene-cols .show { display: none; }
+  body.presenter .scene-cols { grid-template-columns: 1fr; }
+  body.presenter .line { font-size: 1.4rem; }
+
+  footer { max-width: 1180px; margin: 0 auto; padding: 24px 16px 60px; color: var(--muted); font-size: .88rem; border-top: 1px solid var(--border); }
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: .88rem; opacity: 0; pointer-events: none; transition: opacity .2s; }
+  .toast.on { opacity: 1; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } .toast { transition: none; } }
+  @media print {
+    .topbar, .filters, .btn, .toast { display: none !important; }
+    .block, .scene, .card { break-inside: avoid; box-shadow: none; }
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="#top">In<span>Tempo</span></a>
+    <nav class="nav" aria-label="Sections">
+      <a href="#overview">1 · Overview</a>
+      <a href="#architecture">2 · Architecture</a>
+      <a href="#flow">3 · User journey</a>
+      <a href="#code">4 · Code breakdown</a>
+      <a href="#video">5 · Video script</a>
+    </nav>
+    <button class="btn" id="presenterBtn" type="button" aria-pressed="false" title="Bigger text, hides helper notes — for screen recording">Presenter mode</button>
+    <button class="btn" id="themeBtn" type="button" title="Switch light / dark">Theme</button>
+  </div>
+</header>
+
+<main id="top">
+
+<!-- =============================== HERO =============================== -->
+<div class="hero">
+  <div>
+    <p class="eyebrow">A visual guide for absolute beginners</p>
+    <h1>How <em>InTempo</em> works, explained without the jargon.</h1>
+    <p class="lede" style="margin-top:16px">InTempo is a practice app for string players: violin, viola, cello and double bass. You photograph a page of sheet music and play it. The app then tells you whether you <b>rushed</b> (got faster), <b>dragged</b> (got slower) or <b>held the tempo</b>, and exactly where.</p>
+    <div class="pill-row">
+      <span class="pill">📱 Phone app + web</span>
+      <span class="pill">🧠 Listens to your playing</span>
+      <span class="pill">📷 Reads sheet music from a photo</span>
+      <span class="pill">🎻 Built for string musicians</span>
+    </div>
+  </div>
+  <div class="phone" aria-label="Illustration of the verdict screen">
+    <div class="small">Verdict · Bach, Minuet in G</div>
+    <div class="title">You rushed bars 9–12</div>
+    <div class="verdict">That stretch went by at 104 BPM against your target of 92. The opening held steady.</div>
+    <div class="bars" aria-hidden="true">
+      <i style="height:40%;background:var(--green)"></i><i style="height:45%;background:var(--green)"></i>
+      <i style="height:42%;background:var(--green)"></i><i style="height:55%;background:var(--yellow)"></i>
+      <i style="height:70%;background:var(--orange)"></i><i style="height:88%;background:var(--red)"></i>
+      <i style="height:74%;background:var(--orange)"></i><i style="height:48%;background:var(--green)"></i>
+    </div>
+    <div class="small" style="text-transform:none;letter-spacing:0">Each bar is one measure. Taller and redder means further off the beat.</div>
+    <div class="tabs"><b>Today</b><span>Library</span><span>Insights</span><span>Profile</span></div>
+  </div>
+</div>
+
+<!-- =============================== 1 OVERVIEW =============================== -->
+<section id="overview">
+  <p class="eyebrow">Section 1</p>
+  <h2>App overview and core concept</h2>
+  <p class="lede">A metronome only clicks at you. It can't tell you that you sped up in bar 9. InTempo works like a patient teacher holding a stopwatch: it listens to one take and points to the bars where your timing drifted.</p>
+
+  <div class="grid g3 big3" style="margin-top:22px">
+    <div class="card"><span class="emoji">📷</span><h3>Photograph the music</h3><p class="muted">Take a picture of the printed page. The app reads the notes off the photo, so it knows what you <i>should</i> be playing and when.</p></div>
+    <div class="card"><span class="emoji">🎻</span><h3>Play it</h3><p class="muted">Pick a target speed (for example 92 beats per minute), then press record and play. The phone's microphone records the take.</p></div>
+    <div class="card"><span class="emoji">📊</span><h3>Get a verdict</h3><p class="muted">The server compares <i>when you played each note</i> with <i>when it was supposed to happen</i>, and answers in one plain sentence plus a bar-by-bar chart.</p></div>
+  </div>
+
+  <div class="analogy"><strong>One-line analogy for your video:</strong> "InTempo is a karaoke score for classical musicians. Instead of rating whether you hit the notes, it rates whether you hit them <em>on time</em>."</div>
+
+  <h3 style="margin-top:32px">Words you'll hear (mini glossary)</h3>
+  <p class="muted">Keep this list on screen if a viewer might not know a term.</p>
+  <dl class="gloss">
+    <div><dt>Tempo / BPM</dt><dd>The speed of the music, measured in <b>beats per minute</b>. 60 BPM is one beat per second.</dd></div>
+    <div><dt>Rushing / dragging</dt><dd>Playing faster than the target (rushing) or slower (dragging). Very common, and very hard to hear in your own playing.</dd></div>
+    <div><dt>Onset</dt><dd>The instant a note <i>starts</i>, the moment the bow bites the string. The app hunts for these in the audio.</dd></div>
+    <div><dt>OCR / OMR</dt><dd>"Optical character / music recognition": software that <i>reads</i> a picture and turns it into data the computer understands.</dd></div>
+    <div><dt>Frontend (the app)</dt><dd>Everything you see and touch on the phone: screens, buttons, charts.</dd></div>
+    <div><dt>Backend (the server)</dt><dd>A computer in the cloud that does the heavy work, like reading music and analysing audio, and keeps your data.</dd></div>
+    <div><dt>API</dt><dd>The menu of requests the app can send to the server, such as "save this piece" or "analyse this recording".</dd></div>
+    <div><dt>Database</dt><dd>An organised filing cabinet on the server that holds your pieces, takes and results.</dd></div>
+  </dl>
+</section>
+
+<!-- =============================== 2 ARCHITECTURE =============================== -->
+<section id="architecture">
+  <p class="eyebrow">Section 2</p>
+  <h2>High-level architecture: how the pieces fit together</h2>
+  <p class="lede">InTempo has two halves that talk over the internet: the <b>app</b> in your hand and the <b>server</b> in the cloud. They share one storage service for accounts, data and files.</p>
+
+  <div class="analogy"><strong>Restaurant analogy:</strong> the <b>app</b> is the dining room where you sit and order. The <b>API</b> is the waiter who carries orders back and forth. The <b>services</b> are the kitchen where the real cooking happens. <b>Supabase</b> is the pantry and filing cabinet. The <b>AI music readers</b> are specialist chefs the kitchen calls on for one dish.</div>
+
+  <div class="diagram" role="img" aria-label="Architecture diagram: the mobile app talks to Supabase for sign-in and to the FastAPI backend; the backend uses Supabase for data and files, AI readers for sheet music, and an audio analysis engine.">
+    <svg viewBox="0 0 900 400" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" style="fill:var(--muted)"/>
+        </marker>
+      </defs>
+      <!-- user -->
+      <rect class="box" x="20" y="160" width="120" height="70" rx="12"/>
+      <text x="80" y="192" text-anchor="middle" font-weight="700" font-size="14">🎻 Musician</text>
+      <text x="80" y="212" text-anchor="middle" class="sub">taps, plays, reads</text>
+
+      <!-- app -->
+      <rect class="box a" x="190" y="120" width="200" height="150" rx="14"/>
+      <text x="290" y="150" text-anchor="middle" font-weight="700" font-size="15">📱 The App</text>
+      <text x="290" y="170" text-anchor="middle" class="sub">folder: mobile/</text>
+      <text x="290" y="196" text-anchor="middle" font-size="12">Screens · buttons · charts</text>
+      <text x="290" y="214" text-anchor="middle" font-size="12">Camera · microphone</text>
+      <text x="290" y="232" text-anchor="middle" font-size="12">Expo + React Native</text>
+      <text x="290" y="252" text-anchor="middle" class="sub">iPhone and web browser</text>
+
+      <!-- backend -->
+      <rect class="box b" x="470" y="120" width="210" height="150" rx="14"/>
+      <text x="575" y="150" text-anchor="middle" font-weight="700" font-size="15">🖥️ The Server (API)</text>
+      <text x="575" y="170" text-anchor="middle" class="sub">folder: backend/</text>
+      <text x="575" y="196" text-anchor="middle" font-size="12">Python + FastAPI</text>
+      <text x="575" y="214" text-anchor="middle" font-size="12">Checks who you are</text>
+      <text x="575" y="232" text-anchor="middle" font-size="12">Reads music · analyses audio</text>
+      <text x="575" y="252" text-anchor="middle" class="sub">address: /v1/…</text>
+
+      <!-- supabase -->
+      <rect class="box g" x="330" y="310" width="260" height="70" rx="12"/>
+      <text x="460" y="338" text-anchor="middle" font-weight="700" font-size="14">🗄️ Supabase</text>
+      <text x="460" y="358" text-anchor="middle" class="sub">sign-in · database · file storage (photos, audio)</text>
+
+      <!-- AI readers -->
+      <rect class="box y" x="730" y="40" width="150" height="80" rx="12"/>
+      <text x="805" y="68" text-anchor="middle" font-weight="700" font-size="13">🤖 Music readers</text>
+      <text x="805" y="88" text-anchor="middle" class="sub">homr · Claude · Gemini</text>
+      <text x="805" y="104" text-anchor="middle" class="sub">photo → notes</text>
+
+      <!-- analysis engine -->
+      <rect class="box y" x="730" y="250" width="150" height="90" rx="12"/>
+      <text x="805" y="278" text-anchor="middle" font-weight="700" font-size="13">🎧 Audio engine</text>
+      <text x="805" y="298" text-anchor="middle" class="sub">librosa + numpy</text>
+      <text x="805" y="314" text-anchor="middle" class="sub">on the server, or on</text>
+      <text x="805" y="328" text-anchor="middle" class="sub">Modal (extra machines)</text>
+
+      <!-- arrows -->
+      <path class="arrow" d="M140 195 L188 195"/>
+      <path class="arrow" d="M390 180 L468 180"/>
+      <path class="arrow" d="M468 214 L392 214"/>
+      <text x="429" y="172" text-anchor="middle" class="lbl">request</text>
+      <text x="429" y="230" text-anchor="middle" class="lbl">answer</text>
+      <path class="arrow" d="M300 270 L360 308"/>
+      <text x="300" y="300" class="lbl">sign in</text>
+      <path class="arrow" d="M560 270 L520 308"/>
+      <text x="556" y="300" class="lbl">save / load</text>
+      <path class="arrow" d="M680 150 L728 100"/>
+      <text x="688" y="116" class="lbl">read page</text>
+      <path class="arrow" d="M680 240 L728 280"/>
+      <text x="690" y="276" class="lbl">judge take</text>
+    </svg>
+  </div>
+  <p class="scroll-hint">← Swipe sideways to see the whole diagram →</p>
+
+  <h3 style="margin-top:32px">The folder map: what lives where</h3>
+  <p class="muted">A code project is a set of folders. These are the ones that matter, in the order you'd show them on screen.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Folder / file</th><th>In plain English</th><th>Built with</th></tr></thead>
+      <tbody>
+        <tr><td><code>mobile/</code></td><td><b>The app itself.</b> Every screen, button and chart the musician sees. One codebase builds both the iPhone app and the website version.</td><td>TypeScript, React Native, Expo</td></tr>
+        <tr><td><code>mobile/src/screens/</code></td><td>One folder per screen: <i>today</i>, <i>library</i>, <i>scanner</i>, <i>record</i>, <i>verdict</i>, <i>insights</i>…</td><td>React components</td></tr>
+        <tr><td><code>mobile/src/design/</code></td><td>The <b>style rulebook</b>: colours, spacing, fonts. The only place a colour code is allowed to appear.</td><td>TypeScript "tokens"</td></tr>
+        <tr><td><code>mobile/src/data/</code></td><td>How the app <b>talks to the server</b> and remembers things (caching, sign-in).</td><td>Supabase client, React Query</td></tr>
+        <tr><td><code>backend/</code></td><td><b>The server.</b> Receives requests from the app, does the thinking and returns answers.</td><td>Python, FastAPI</td></tr>
+        <tr><td><code>backend/app/routers/</code></td><td>The <b>API menu</b>: one file per topic (scores, analyses, uploads, me, studios…).</td><td>FastAPI routes</td></tr>
+        <tr><td><code>backend/app/services/</code></td><td>The <b>kitchen</b>: music reading (<code>ocr/</code>), audio analysis (<code>analysis.py</code>, <code>alignment.py</code>, <code>classification.py</code>) and more.</td><td>librosa, numpy, scipy</td></tr>
+        <tr><td><code>backend/app/workers/</code></td><td><b>Background helpers</b> that run long jobs after the app has had its reply, so nobody stares at a frozen screen.</td><td>Thread pool / Modal</td></tr>
+        <tr><td><code>backend/app/migrations/</code></td><td>27 numbered <b>blueprints for the database</b>. Each one adds or changes a table, like renovations applied in order.</td><td>SQL</td></tr>
+        <tr><td><code>backend/config.toml</code></td><td>The <b>tuning knobs</b>: how strict the timing judge is, as numbers you can change without touching code.</td><td>TOML settings file</td></tr>
+        <tr><td><code>fixtures/</code></td><td>Saved sample scores and recordings used as <b>practice exams</b> for the code.</td><td>Test data</td></tr>
+        <tr><td><code>tools/</code></td><td><b>Quality inspectors</b> that run before every change is accepted (security, dead code, database checks).</td><td>Python scripts, GitHub Actions</td></tr>
+        <tr><td><code>docs/</code></td><td>Guides for deploying, the design system, and lessons learned the hard way.</td><td>Markdown, HTML</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- =============================== 3 FLOW =============================== -->
+<section id="flow">
+  <p class="eyebrow">Section 3</p>
+  <h2>The user journey, step by step</h2>
+  <p class="lede">This is what happens from the moment someone opens the app to the moment they read their verdict. Each step names the <span class="tag app">app screen</span>, the <span class="tag api">server address</span>, and any <span class="tag db">storage</span> or <span class="tag ai">AI</span> involved.</p>
+
+  <ol class="flow" style="margin-top:24px">
+    <li><span class="dot">1</span>
+      <h3>Sign in</h3>
+      <p>The musician signs in with email. Supabase handles the password or magic link and hands the app a digital <b>ID badge</b> (a "token"). The app shows that badge on every request from then on.</p>
+      <div><span class="tag app">screens/auth/AuthScreen</span><span class="tag db">Supabase Auth</span><span class="tag api">GET /v1/me</span></div>
+    </li>
+    <li><span class="dot">2</span>
+      <h3>Land on "Today"</h3>
+      <p>The home tab shows the piece you're working on and a big button to practise it. The bottom bar holds four tabs: <b>Today, Library, Insights, Profile</b>.</p>
+      <div><span class="tag app">screens/today/TodayScreen</span><span class="tag api">GET /v1/scores/current</span></div>
+    </li>
+    <li><span class="dot">3</span>
+      <h3>Add a piece by photographing it</h3>
+      <p>The camera screen captures one or more pages. Each photo is uploaded to storage first, and then the server is asked to create the piece.</p>
+      <div><span class="tag app">screens/scanner, capturedPages</span><span class="tag api">POST /v1/upload/score-image</span><span class="tag api">POST /v1/scores</span><span class="tag db">photo stored</span></div>
+    </li>
+    <li><span class="dot">4</span>
+      <h3>The server reads the music</h3>
+      <p>A chain of music readers takes turns. The first one is sure enough, it wins. If one fails, the next one tries. The result is a tidy list of bars and notes.</p>
+      <div><span class="tag app">screens/transcribe</span><span class="tag ai">homr → Claude → Gemini</span><span class="tag api">POST /v1/scores/{id}/transcribe</span></div>
+    </li>
+    <li><span class="dot">5</span>
+      <h3>Check and fix the reading</h3>
+      <p>No reader is perfect, so the musician proof-reads the result and can correct any bar: its notes, clef, key or tempo marking. Then they accept it.</p>
+      <div><span class="tag app">transcriptionReview, proofRead, measureEdit</span><span class="tag api">PATCH /v1/scores/{id}</span><span class="tag api">POST …/accept</span></div>
+    </li>
+    <li><span class="dot">6</span>
+      <h3>Pick a tempo and record</h3>
+      <p>Choose a target speed with a slider. A metronome can count you in. Press record and play; the microphone captures the take as an audio file.</p>
+      <div><span class="tag app">screens/tempo, screens/record</span><span class="tag app">lib/audio/</span></div>
+    </li>
+    <li><span class="dot">7</span>
+      <h3>Send the take off to be judged</h3>
+      <p>The recording is uploaded. The app then asks the server to analyse it. The server replies <b>straight away</b> with "got it, working on it" (code <code>202 Accepted</code>) rather than making the phone wait.</p>
+      <div><span class="tag api">POST /v1/upload/audio</span><span class="tag api">POST /v1/analyses</span><span class="tag db">audio stored</span></div>
+    </li>
+    <li><span class="dot">8</span>
+      <h3>The audio engine does its work</h3>
+      <p>In the background, the server finds every note start in the recording, lines them up with the notes on the page, and measures how early or late each one was.</p>
+      <div><span class="tag api">workers/analysis_runner</span><span class="tag ai">services/analysis.py</span></div>
+    </li>
+    <li><span class="dot">9</span>
+      <h3>Read the verdict</h3>
+      <p>While it waits, the app asks "done yet?" every few seconds (this is called <b>polling</b>). When the answer arrives, it shows one sentence ("You rushed bars 9–12…"), a coloured bar chart and the annotated score.</p>
+      <div><span class="tag app">screens/verdict/VerdictScreen</span><span class="tag api">GET /v1/analyses/{id}</span></div>
+    </li>
+    <li><span class="dot">10</span>
+      <h3>See progress over time</h3>
+      <p>The Insights tab collects every take so the musician can watch a tricky passage improve across the week.</p>
+      <div><span class="tag app">screens/insights</span><span class="tag api">GET /v1/analyses</span></div>
+    </li>
+  </ol>
+</section>
+
+<!-- =============================== 4 CODE =============================== -->
+<section id="code">
+  <p class="eyebrow">Section 4</p>
+  <h2>Step-by-step code breakdown</h2>
+  <p class="lede">Real, lightly trimmed excerpts from the project, each paired with a plain-English translation. Use the filters to show one half of the project at a time while recording.</p>
+
+  <div class="filters" role="group" aria-label="Filter code blocks">
+    <button type="button" data-filter="all" aria-pressed="true">All</button>
+    <button type="button" data-filter="server" aria-pressed="false">🖥️ Server</button>
+    <button type="button" data-filter="brain" aria-pressed="false">🧠 Timing brain</button>
+    <button type="button" data-filter="app" aria-pressed="false">📱 App</button>
+    <button type="button" data-filter="quality" aria-pressed="false">✅ Quality &amp; data</button>
+  </div>
+
+  <!-- 1 main.py -->
+  <article class="block" data-cat="server">
+    <div class="code">
+      <div class="file"><span>backend/app/main.py</span><span>Python</span></div>
+<pre><span class="k">from</span> fastapi <span class="k">import</span> FastAPI
+<span class="k">from</span> app.routers <span class="k">import</span> (
+    analyses, assignments, calibration, corrections,
+    health, me, scores, studios, upload,
+)
+
+app.include_router(health.router,   prefix=<span class="s">"/v1"</span>)
+app.include_router(me.router,       prefix=<span class="s">"/v1"</span>)
+app.include_router(upload.router,   prefix=<span class="s">"/v1"</span>)
+app.include_router(scores.router,   prefix=<span class="s">"/v1"</span>)
+app.include_router(analyses.router, prefix=<span class="s">"/v1"</span>)
+<span class="c"># …corrections, calibration, assignments, studios</span>
+
+<span class="k">async def</span> _sweep_periodically() -&gt; <span class="k">None</span>:
+    <span class="s">"""Recover orphaned analyses for as long
+    as the server is up."""</span>
+    <span class="k">while True</span>:
+        <span class="k">await</span> asyncio.sleep(SWEEP_INTERVAL_SECONDS)
+        <span class="k">await</span> asyncio.to_thread(sweep_once)
+        <span class="k">await</span> asyncio.to_thread(sweep_stuck_transcriptions)
+        <span class="k">await</span> asyncio.to_thread(pending_uploads.sweep_unclaimed)</pre>
+    </div>
+    <div class="explain">
+      <div class="kind" style="color:var(--blue)">Server · the front door</div>
+      <h3>Where the server starts</h3>
+      <p>This is the first file the server runs. Think of it as the <b>reception desk</b> of a building.</p>
+      <ul>
+        <li><b><code>FastAPI</code></b> is the framework, a ready-made kit for building a web server in Python.</li>
+        <li>Each <b><code>include_router</code></b> line opens one department: "uploads are down this hall, scores down that one." The <code>/v1</code> means "version 1 of our menu", so the menu can change later without breaking older apps.</li>
+        <li><b><code>_sweep_periodically</code></b> is a <b>night janitor</b>. Every so often it looks for jobs that got stuck (the server restarted mid-analysis, say) and for photos nobody ever used, and tidies them up so a musician is never left waiting forever.</li>
+      </ul>
+      <div class="say"><b>Say:</b> "Everything the app can ask for comes through this one front door, split into departments."</div>
+    </div>
+  </article>
+
+  <!-- 2 auth -->
+  <article class="block" data-cat="server">
+    <div class="code">
+      <div class="file"><span>backend/app/auth.py</span><span>Python</span></div>
+<pre><span class="s">"""Supabase JWT verification.
+
+Verifies user access tokens using the project's
+JWKS endpoint. Modern Supabase projects sign user
+tokens with an asymmetric ES256 key — there is no
+shared secret to load from env.
+
+The single most common silent-failure mode is
+omitting `audience="authenticated"` …"""</span>
+
+<span class="k">import</span> jwt
+<span class="k">from</span> fastapi.security <span class="k">import</span> HTTPBearer
+<span class="k">from</span> jwt <span class="k">import</span> PyJWKClient</pre>
+    </div>
+    <div class="explain">
+      <div class="kind" style="color:var(--blue)">Server · security guard</div>
+      <h3>Checking your ID badge</h3>
+      <p>When you sign in, Supabase gives the app a <b>JWT</b>, a digitally signed ID badge. On every request, this file checks the badge is real before letting anything else happen.</p>
+      <ul>
+        <li>The badge is signed with a secret key only Supabase holds. The server downloads the matching <b>public</b> key to check the signature, a bit like checking a hologram on a passport.</li>
+        <li>The comment points out a classic trap: forget to check who the badge was issued <i>for</i> ("audience") and every valid user gets rejected.</li>
+        <li>Because of this check, one user can never see another user's pieces or recordings.</li>
+      </ul>
+      <div class="say"><b>Say:</b> "No badge, no entry. And the badge can't be forged, because only Supabase can sign it."</div>
+    </div>
+  </article>
+
+  <!-- 3 OCR pipeline -->
+  <article class="block" data-cat="server">
+    <div class="code">
+      <div class="file"><span>backend/app/services/ocr/pipeline.py</span><span>Python</span></div>
+<pre><span class="s">"""Pipeline orchestration: try providers in order,
+fall through on failure.
+
+- Each provider is called once per image. If it
+  raises, the next provider is tried.
+- A provider that returns a ScoreJson with
+  ocr_confidence &gt;= 0.7 is the winner —
+  pipeline returns immediately.
+- A low-confidence result is remembered but not
+  returned yet — we keep trying for someone better.
+- Only when nothing parseable comes back do we
+  raise OCRError.
+"""</span>
+
+<span class="k">from</span> app.services.ocr.claude_provider <span class="k">import</span> (
+    claude_opus_provider, claude_sonnet_provider,
+)
+<span class="k">from</span> app.services.ocr.homr_provider <span class="k">import</span> homr_provider
+<span class="k">from</span> app.services.ocr.gemini_provider <span class="k">import</span> …</pre>
+    </div>
+    <div class="explain">
+      <div class="kind" style="color:var(--blue)">Server · reading sheet music</div>
+      <h3>A relay team of music readers</h3>
+      <p>Turning a photo into notes is hard, so the server doesn't rely on one reader. It lines several up, like a <b>relay team</b>:</p>
+      <ul>
+        <li><b>homr</b> is a specialised sheet-music recognition model. <b>Claude</b> and <b>Gemini</b> are general AI models that can also read a photographed page.</li>
+        <li>Each reader returns a <b>confidence score</b>. At 70% (<code>0.7</code>) or above, the answer is taken right away.</li>
+        <li>A shaky answer is kept as a backup while the next reader has a go. A shaky answer the musician can fix beats no answer at all.</li>
+        <li>Only if <i>every</i> reader fails does the app say "we couldn't read this page".</li>
+      </ul>
+      <div class="say"><b>Say:</b> "If the first expert isn't sure, we ask a second opinion, then a third."</div>
+    </div>
+  </article>
+
+  <!-- 4 create analysis -->
+  <article class="block" data-cat="server">
+    <div class="code">
+      <div class="file"><span>backend/app/routers/analyses.py</span><span>Python</span></div>
+<pre><span class="k">@router.post</span>(
+    <span class="s">""</span>, response_model=CreateAnalysisResponse,
+    status_code=status.HTTP_202_ACCEPTED
+)
+<span class="k">def</span> create_analysis(
+    body: CreateAnalysisRequest,
+    user_id: UUID = Depends(current_user_id_provisioned),
+) -&gt; CreateAnalysisResponse:
+    client = require_service_client()
+    score_row = _assert_score_owned(client, body.score_id, user_id)
+    _assert_measure_in_score(score_row, body.from_measure)
+
+    <span class="c"># One uploaded object is one take. If the POST</span>
+    <span class="c"># response was lost, the recording screen retries</span>
+    <span class="c"># with the same key; return the existing row rather</span>
+    <span class="c"># than charging quota twice or running the same</span>
+    <span class="c"># audio twice.</span>
+    existing = (
+        client.table(<span class="s">"analyses"</span>).select(<span class="s">"*"</span>)
+        .eq(<span class="s">"user_id"</span>, str(user_id))
+        .eq(<span class="s">"audio_url"</span>, audio_reference) …
+    )</pre>
+    </div>
+    <div class="explain">
+      <div class="kind" style="color:var(--blue)">Server · taking an order</div>
+      <h3>"Please analyse my take"</h3>
+      <p>This is the waiter taking your order. It runs when the app sends <code>POST /v1/analyses</code>.</p>
+      <ul>
+        <li><b><code>Depends(current_user_id…)</code></b> means "check the ID badge first". No valid user, no analysis.</li>
+        <li><b><code>_assert_score_owned</code></b> makes sure the piece really belongs to you.</li>
+        <li><b><code>HTTP_202_ACCEPTED</code></b> is the server saying "order received, it's cooking" without keeping you on hold while it cooks.</li>
+        <li>The comment describes a <b>safety net</b>: if the phone loses signal and sends the same take twice, the server spots the duplicate and returns the first order instead of cooking it twice.</li>
+      </ul>
+      <div class="say"><b>Say:</b> "The server answers instantly with a ticket number, and does the real work in the background."</div>
+    </div>
+  </article>
+
+  <!-- 5 dispatch -->
+  <article class="block" data-cat="server">
+    <div class="code">
+      <div class="file"><span>backend/app/workers/dispatch.py</span><span>Python</span></div>
+<pre><span class="s">"""Where an analysis actually runs, decided in one
+place.
+
+The instance this deploys to has 512 MB for the
+*whole* application, and one analysis peaks near
+460 — so two musicians finishing takes within a
+few seconds of each other is an out-of-memory kill…
+"""</span>
+
+Runtime = Literal[<span class="s">"inprocess"</span>, <span class="s">"modal"</span>]
+
+ANALYSIS_RUNTIME: Runtime = (
+    <span class="s">"modal"</span>
+    <span class="k">if</span> os.getenv(<span class="s">"ANALYSIS_RUNTIME"</span>, <span class="s">""</span>).strip().lower() == <span class="s">"modal"</span>
+    <span class="k">else</span> <span class="s">"inprocess"</span>
+)</pre>
+    </div>
+    <div class="explain">
+      <div class="kind" style="color:var(--blue)">Server · the kitchen manager</div>
+      <h3>Deciding which kitchen cooks the order</h3>
+      <p>Analysing audio needs a lot of memory. The small server has 512 MB in total, and one analysis can use about 460 MB of that.</p>
+      <ul>
+        <li>Two analyses at once on the small server could crash it, and take sign-in down with it.</li>
+        <li>So the job can run in one of two places: <b><code>inprocess</code></b> (on the server itself, one at a time) or <b><code>modal</code></b> (sent to <b>Modal</b>, a service that rents out extra machines on demand).</li>
+        <li>A single setting decides which. The code that <i>takes</i> the order never needs to know.</li>
+      </ul>
+      <div class="say"><b>Say:</b> "When the small kitchen is full, the order goes to a bigger kitchen down the road."</div>
+    </div>
+  </article>
+
+  <!-- 6 analyze -->
+  <article class="block" data-cat="brain">
+    <div class="code">
+      <div class="file"><span>backend/app/services/analysis.py</span><span>Python</span></div>
+<pre><span class="s">"""Orchestrator: ties audio → alignment →
+classification into `analyze()`.
+
+Flow:
+    load → pre-emphasis → onset detect →
+    expected onsets → DTW → (bail if broken) →
+    fuzzy match → deltas → bands → trend → verdict
+"""</span>
+
+<span class="k">def</span> analyze(
+    audio, score: ScoreJson, target_bpm: float, *,
+    instrument: str | <span class="k">None</span> = <span class="k">None</span>,
+    config: AudioConfig | <span class="k">None</span> = <span class="k">None</span>,
+) -&gt; AnalysisResult:
+    <span class="s">"""Analyze a recording against a score at a
+    target tempo.
+
+    Returns a graceful `alignment_failed` /
+    `no_onsets` / `not_played` result rather than
+    raising when the input can't be trusted."""</span>
+    cfg = config <span class="k">or</span> load_audio_config()
+    heard = prepare_for_alignment(audio, score, target_bpm, …)
+    onsets = heard.onsets
+    <span class="c"># … align, measure, classify, write the verdict</span></pre>
+    </div>
+    <div class="explain">
+      <div class="kind" style="color:var(--orange)">Timing brain · the heart of the app</div>
+      <h3>How a recording becomes a verdict</h3>
+      <p>This is the most important function in the project. The docstring at the top lists the recipe:</p>
+      <div class="pipeline">
+        <span>load</span><i>→</i><span>clean up</span><i>→</i><span>find note starts</span><i>→</i><span>predict where they should be</span><i>→</i><span>line them up</span><i>→</i><span>measure</span><i>→</i><span>colour</span><i>→</i><span>verdict</span>
+      </div>
+      <ul>
+        <li><b>Load and pre-emphasis:</b> open the audio and boost the crisp "attack" sounds so note starts stand out.</li>
+        <li><b>Onset detect:</b> find every moment a new note begins.</li>
+        <li><b>Expected onsets:</b> from the sheet music and target BPM, work out exactly when each note <i>should</i> start.</li>
+        <li><b>DTW (dynamic time warping):</b> a clever way to pair up "what was played" with "what was written", even if you skipped or repeated something. Like lining up two rulers that stretch differently.</li>
+        <li><b>Graceful failure:</b> if the take can't be trusted (silence, wrong piece), it says so politely instead of inventing a verdict.</li>
+      </ul>
+      <div class="say"><b>Say:</b> "It's a spot-the-difference game between the page and your performance, measured in milliseconds."</div>
+    </div>
+  </article>
+
+  <!-- 7 classify -->
+  <article class="block" data-cat="brain">
+    <div class="code">
+      <div class="file"><span>backend/app/services/classification.py</span><span>Python</span></div>
+<pre><span class="k">def</span> classify_band(delta_pct: float, *, config=<span class="k">None</span>) -&gt; Band:
+    <span class="s">"""Classify a signed per-beat % deviation into
+    a tolerance band.
+
+    Thresholds are asymmetric: rushing and dragging
+    have independent inner/mid/outer cutoffs (humans
+    tolerate dragging more)."""</span>
+    tol = (config <span class="k">or</span> load_audio_config()).tolerance
+    magnitude = abs(delta_pct)
+    <span class="k">if</span> delta_pct &lt; 0:  <span class="c"># rushing / ahead</span>
+        inner, mid, outer = tol.rushing_inner_pct, …
+    <span class="k">else</span>:              <span class="c"># dragging / behind</span>
+        inner, mid, outer = tol.dragging_inner_pct, …
+    <span class="k">if</span> magnitude &lt;= inner: <span class="k">return</span> Band.on
+    <span class="k">if</span> magnitude &lt;= mid:   <span class="k">return</span> Band.slight
+    <span class="k">if</span> magnitude &lt;= outer: <span class="k">return</span> Band.rush_drag
+    <span class="k">return</span> Band.severe</pre>
+    </div>
+    <div class="explain">
+      <div class="kind" style="color:var(--orange)">Timing brain · traffic lights</div>
+      <h3>Turning "how late" into a colour</h3>
+      <p>For each note, the app knows how far off it was as a percentage of a beat. This function sorts that number into one of four <b>traffic-light bands</b>:</p>
+      <div class="bands">
+        <div style="background:var(--green-soft);color:var(--green)">≤ 5%<br>On time</div>
+        <div style="background:var(--yellow-soft);color:var(--yellow)">5–10%<br>Slight</div>
+        <div style="background:var(--orange-soft);color:var(--orange)">10–20%<br>Rush / drag</div>
+        <div style="background:var(--red-soft);color:var(--red)">&gt; 20%<br>Severe</div>
+      </div>
+      <ul>
+        <li>A <b>negative</b> number means the note came early (rushing). A <b>positive</b> one means it came late (dragging).</li>
+        <li>Rushing and dragging get <b>separate</b> rules, because listeners forgive slightly late notes more than early ones.</li>
+        <li>The cut-off numbers are not in the code. They come from <code>config.toml</code>, so they can be tuned by ear without a programmer.</li>
+      </ul>
+      <div class="say"><b>Say:</b> "Every note gets a traffic light, and those lights become the chart you saw earlier."</div>
+    </div>
+  </article>
+
+  <!-- 8 verdict -->
+  <article class="block" data-cat="brain">
+    <div class="code">
+      <div class="file"><span>backend/app/services/classification.py</span><span>Python</span></div>
+<pre><span class="k">def</span> generate_verdict(
+    deltas: list[Delta], target_bpm: float, *, …
+) -&gt; Verdict:
+    <span class="s">"""One-line human verdict from the largest
+    same-direction run.
+
+    We surface the longest contiguous run of notes
+    that drift the same way (all rushing or all
+    dragging) and phrase it in BPM, never
+    percentages — musicians think in BPM.
+
+    A run has to be long enough that chance does
+    not explain it — see `MIN_VERDICT_RUN`."""</span>
+    judged = [d <span class="k">for</span> d <span class="k">in</span> deltas <span class="k">if not</span> d.is_slur_interior]
+    <span class="c"># … find the longest run, name its bars and tempo</span></pre>
+    </div>
+    <div class="explain">
+      <div class="kind" style="color:var(--orange)">Timing brain · the sentence you read</div>
+      <h3>Writing a verdict a human understands</h3>
+      <p>Hundreds of note measurements are useless to a musician on their own. This function boils them down to <b>one sentence</b>.</p>
+      <ul>
+        <li>It looks for the <b>longest stretch</b> of notes that all drifted the same way. That's the real problem, not one stray note.</li>
+        <li>It speaks in <b>BPM</b> ("104 against your 92") rather than percentages, because that's how musicians think.</li>
+        <li>The stretch has to be long enough that it isn't just random wobble, so the app doesn't nag you about noise.</li>
+      </ul>
+      <div class="say"><b>Say:</b> "The code speaks the musician's language, not the computer's."</div>
+    </div>
+  </article>
+
+  <!-- 9 config -->
+  <article class="block" data-cat="brain">
+    <div class="code">
+      <div class="file"><span>backend/config.toml</span><span>TOML</span></div>
+<pre><span class="c"># InTempo audio-analysis tuning config.</span>
+<span class="c"># Every change to a value in this file MUST be</span>
+<span class="c"># logged in TUNING_LOG.md with clip-by-clip</span>
+<span class="c"># regression results.</span>
+
+[onset]
+sr = 22050        <span class="c"># sample rate — mono, 22.05 kHz</span>
+delta = 0.07      <span class="c"># how loud a bump must be to count as a note</span>
+
+[onset.double_bass]
+delta = 0.05
+highpass_hz = 80.0
+
+[tolerance]
+rushing_inner_pct = 5.0    <span class="c"># below this = on (green)</span>
+rushing_mid_pct = 10.0     <span class="c"># inner..mid = slight (yellow)</span>
+rushing_outer_pct = 20.0   <span class="c"># mid..outer = rush (orange); beyond = severe (red)</span>
+dragging_inner_pct = 5.0
+dragging_mid_pct = 10.0
+dragging_outer_pct = 20.0</pre>
+    </div>
+    <div class="explain">
+      <div class="kind" style="color:var(--orange)">Timing brain · tuning knobs</div>
+      <h3>A mixing desk, not hard-coded numbers</h3>
+      <p>Rather than burying "5%" deep in the code, every sensitivity setting lives in this one file, like faders on a mixing desk.</p>
+      <ul>
+        <li><b><code>sr = 22050</code></b>: the audio is sampled 22,050 times a second. Plenty for timing, and quicker to process.</li>
+        <li><b><code>[onset.double_bass]</code></b>: the double bass is very low and rumbly, so it gets its own settings. There's also a filter that ignores sound below 80 Hz.</li>
+        <li><b><code>[tolerance]</code></b>: the traffic-light cut-offs from the previous block.</li>
+        <li>The project's own rule: every change here must be written up in <code>TUNING_LOG.md</code> and re-tested against the saved recordings.</li>
+      </ul>
+      <div class="say"><b>Say:</b> "Changing how strict the app is means editing a number, not rewriting code."</div>
+    </div>
+  </article>
+
+  <!-- 10 navigator -->
+  <article class="block" data-cat="app">
+    <div class="code">
+      <div class="file"><span>mobile/src/navigation/RootNavigator.tsx</span><span>TypeScript / React</span></div>
+<pre><span class="k">const</span> Tab = createBottomTabNavigator&lt;TabParamList&gt;();
+
+<span class="c">// The four tabs always visible at the bottom</span>
+&lt;Tab.Screen name=<span class="s">"Today"</span>    component={TodayTab} /&gt;
+&lt;Tab.Screen name=<span class="s">"Library"</span>  component={LibraryTab} /&gt;
+&lt;Tab.Screen name=<span class="s">"Insights"</span> component={InsightsTab} /&gt;
+&lt;Tab.Screen name=<span class="s">"Profile"</span>  component={ProfileTab} /&gt;
+
+<span class="c">// Screens that slide in on top of the tabs</span>
+&lt;Stack.Screen name=<span class="s">"Tabs"</span>      component={TabNavigator} /&gt;
+&lt;Stack.Screen name=<span class="s">"AddPiece"</span>  component={AddPieceScreen} /&gt;
+&lt;Stack.Screen name=<span class="s">"Transcribe"</span> component={TranscribeScreen} /&gt;
+&lt;Stack.Screen name=<span class="s">"Record"</span>    component={RecordScreen} /&gt;
+&lt;Stack.Screen name=<span class="s">"Tempo"</span>     component={TempoScreen} /&gt;
+&lt;Stack.Screen name=<span class="s">"Verdict"</span>   component={VerdictScreen} /&gt;</pre>
+    </div>
+    <div class="explain">
+      <div class="kind" style="color:var(--accent)">App · the map of screens</div>
+      <h3>How you get from screen to screen</h3>
+      <p>This file is the app's <b>floor plan</b>. It lists every screen and how they connect.</p>
+      <ul>
+        <li><b>Tabs</b> are the four rooms you can always walk into from the bottom bar.</li>
+        <li><b>Stack screens</b> are like sheets of paper laid on top: open Record, then Verdict on top of that, and swipe back to peel them off.</li>
+        <li>Each <code>component={…}</code> points to a file in <code>mobile/src/screens/</code> that draws that screen.</li>
+        <li>The <code>&lt;…/&gt;</code> tags are <b>React</b> syntax: a way of describing screens as building blocks.</li>
+      </ul>
+      <div class="say"><b>Say:</b> "Four permanent rooms, and everything else slides in on top."</div>
+    </div>
+  </article>
+
+  <!-- 11 design tokens -->
+  <article class="block" data-cat="app">
+    <div class="code">
+      <div class="file"><span>mobile/src/design/colors.ts</span><span>TypeScript</span></div>
+<pre><span class="c">/**
+ * Colour tokens. The only place a hex value may
+ * appear in this codebase.
+ */</span>
+<span class="k">export const</span> lightColors = {
+  <span class="c">/** Warm ivory page background. */</span>
+  bg: <span class="s">'#F7F2E9'</span>,
+  <span class="c">/** Cards and raised surfaces. */</span>
+  surface: <span class="s">'#FFFFFF'</span>,
+  <span class="c">/** Warm near-black. Headings and body copy. */</span>
+  textPrimary: <span class="s">'#14110E'</span>,
+  <span class="c">/**
+   * Warm gray. Composer names, supporting copy.
+   * 8.51:1 on `bg` — past WCAG AAA's 7:1.
+   */</span>
+  textSecondary: <span class="s">'#4A453E'</span>,
+  …
+};</pre>
+    </div>
+    <div class="explain">
+      <div class="kind" style="color:var(--accent)">App · the style rulebook</div>
+      <h3>One paint box for the whole app</h3>
+      <p>Colours are stored once, with names like <code>bg</code> or <code>textPrimary</code>, instead of scattered codes like <code>#F7F2E9</code>. These named values are called <b>design tokens</b>.</p>
+      <ul>
+        <li>Change a token once and every screen updates together, so nothing ends up "almost the same beige".</li>
+        <li>There's a light <i>and</i> a dark palette. The app follows the phone's setting.</li>
+        <li>Numbers like <b>8.51:1</b> are <b>contrast ratios</b>: proof the text is easy to read, even for people with weaker eyesight. Automated tests check them.</li>
+        <li>This guide borrows the same ivory and near-black colours.</li>
+      </ul>
+      <div class="say"><b>Say:</b> "The look of the app lives in one small file, and readability is tested, not guessed."</div>
+    </div>
+  </article>
+
+  <!-- 12 api client -->
+  <article class="block" data-cat="app">
+    <div class="code">
+      <div class="file"><span>mobile/src/data/api/analyses.ts</span><span>TypeScript</span></div>
+<pre><span class="k">export function</span> createAnalysis(input: CreateAnalysisInput) { … }
+<span class="c">// → POST /v1/analyses  (returns a ticket straight away)</span>
+
+<span class="k">export function</span> getAnalysis(id: string): Promise&lt;AnalysisResponse&gt; { … }
+<span class="c">// → GET /v1/analyses/{id}  (is my verdict ready?)</span>
+
+<span class="k">export function</span> listAnalyses({ … }) { … }
+<span class="c">// → GET /v1/analyses  (every take, for Insights)</span>
+
+<span class="c">// mobile/src/data/hooks/usePieces.ts</span>
+useQuery({
+  …,
+  refetchInterval: (query) =&gt; { <span class="c">/* keep asking while still processing */</span> },
+});</pre>
+    </div>
+    <div class="explain">
+      <div class="kind" style="color:var(--accent)">App · talking to the server</div>
+      <h3>The app's side of the conversation</h3>
+      <p>These small functions are the app's <b>phrasebook</b>. Each one sends a single, well-defined request to the server.</p>
+      <ul>
+        <li><b><code>createAnalysis</code></b> hands over the recording and gets a ticket back.</li>
+        <li><b><code>getAnalysis</code></b> asks "is ticket #123 ready?"</li>
+        <li><b><code>refetchInterval</code></b>, from a library called <b>React Query</b>, keeps asking every few seconds while the job is running and stops once the answer is in. That's the polling from step 9.</li>
+        <li>React Query also remembers answers (caching), so going back to a screen is instant.</li>
+      </ul>
+      <div class="say"><b>Say:</b> "The app asks politely every few seconds, 'done yet?', until the verdict arrives."</div>
+    </div>
+  </article>
+
+  <!-- 13 migrations -->
+  <article class="block" data-cat="quality">
+    <div class="code">
+      <div class="file"><span>backend/app/migrations/</span><span>SQL files</span></div>
+<pre>001_initial.sql
+002_rls_policies.sql
+003_users_auth_fk.sql
+004_manual_scores.sql
+…
+011_score_pages.sql
+016_storage_buckets.sql
+018_analysis_playback.sql
+…
+025_analysis_stage.sql
+026_analysis_capture.sql
+027_analysis_diagnostics.sql</pre>
+    </div>
+    <div class="explain">
+      <div class="kind" style="color:var(--green)">Data · the filing cabinet</div>
+      <h3>Building the database one step at a time</h3>
+      <p>The database holds tables: users, scores (pieces), analyses (takes and verdicts) and so on. Nobody builds it all at once. It grows through <b>numbered migrations</b>.</p>
+      <ul>
+        <li>Each file is one <b>renovation</b>: "add a table for score pages", "remember which bar the take started from".</li>
+        <li>The numbers force a strict order, so any empty database can be rebuilt exactly by applying 001 → 027.</li>
+        <li><b>RLS</b> ("row-level security", file 002) is a database rule that means you can only ever see <i>your own</i> rows.</li>
+        <li>A CI check applies every migration to a blank database on each change, to catch broken SQL early.</li>
+      </ul>
+      <div class="say"><b>Say:</b> "The database has a paper trail. Every change to its shape is a numbered file."</div>
+    </div>
+  </article>
+
+  <!-- 14 quality gates -->
+  <article class="block" data-cat="quality">
+    <div class="code">
+      <div class="file"><span>tools/ · .github/workflows/ci.yml</span><span>Shell</span></div>
+<pre><span class="c"># Run the local checks before committing</span>
+tools/preflight.py            <span class="c"># the fast gates</span>
+tools/preflight.py --full     <span class="c"># + builds, app walk, audits</span>
+
+<span class="c"># Checks that run on every push:</span>
+check-brand-assets.py     <span class="c"># no placeholder app icons</span>
+check-dead-exports.py     <span class="c"># no unused code left lying around</span>
+check-dependencies.py     <span class="c"># no libraries with known security holes</span>
+check-migrations.py       <span class="c"># database blueprints all apply cleanly</span>
+check-outbound-fetch.py   <span class="c"># every place the server reaches out to the web</span>
+
+<span class="c"># Plus automated tests:</span>
+<span class="c">#   ~140 backend test files  (pytest)</span>
+<span class="c">#   ~230 app test files      (*.test.ts)</span></pre>
+    </div>
+    <div class="explain">
+      <div class="kind" style="color:var(--green)">Quality · the inspectors</div>
+      <h3>How the project stops mistakes shipping</h3>
+      <p>Every time code is pushed to GitHub, a robot (<b>CI</b>, "continuous integration") runs a checklist. If anything fails, the change isn't merged.</p>
+      <ul>
+        <li><b>Tests</b> are little programs that check other programs. For example: "feed in this saved recording and the verdict must say 'rushed'."</li>
+        <li><b>Fixtures</b> (saved sample recordings and scores) mean the tests never pay for or wait on a real AI service.</li>
+        <li><b>preflight</b> runs the same checklist on the developer's own computer first. It's faster than waiting for the robot.</li>
+      </ul>
+      <div class="say"><b>Say:</b> "Hundreds of automatic checks run before any change reaches users."</div>
+    </div>
+  </article>
+
+  <div class="note"><b>Honest status (worth saying on camera):</b> the backend pipeline (reading music, analysing audio, the API) is built and heavily tested, and the app's screens are built. Recording has been confirmed on a real iPhone. Checking the full live loop (record → upload → analyse → verdict against the deployed server) end to end, and fine-tuning the timing thresholds against real recordings by ear, are still in progress.</div>
+</section>
+
+<!-- =============================== 5 VIDEO =============================== -->
+<section id="video">
+  <p class="eyebrow">Section 5</p>
+  <h2>Video script and talking points</h2>
+  <p class="lede">A ready-to-read script for an 8–10 minute walkthrough. Each scene has <b>what to say</b> on the left and <b>what to show</b> on the right. Turn on <b>Presenter mode</b> (top right) to enlarge the lines and hide helper notes while you record.</p>
+
+  <div class="script" style="margin-top:22px">
+
+    <div class="scene">
+      <div class="scene-head"><h3>Scene 1 · The hook</h3><span class="time">0:00 – 0:40</span></div>
+      <div class="scene-cols">
+        <div><div class="label">Say <button class="btn copy" type="button" data-copy>Copy</button></div>
+          <p class="line">"If you've ever learned an instrument, you know the feeling: you <i>think</i> you played it steady, but your teacher says you rushed the hard bit. InTempo is an app that hears that for you. You photograph your sheet music, play it, and it tells you exactly which bars ran fast or slow. In this video I'll show you how it's built, even if you've never written a line of code."</p></div>
+        <div class="show"><div class="label">Show</div><ul><li>The top of this guide (hero + phone mock-up)</li><li>Optional: a clip of someone playing a violin</li></ul></div>
+      </div>
+    </div>
+
+    <div class="scene">
+      <div class="scene-head"><h3>Scene 2 · What it does</h3><span class="time">0:40 – 1:45</span></div>
+      <div class="scene-cols">
+        <div><div class="label">Say <button class="btn copy" type="button" data-copy>Copy</button></div>
+          <p class="line">"The whole app is three steps. One: photograph the music, so the app knows what you're <i>meant</i> to play. Two: pick a speed and play it. Three: get a verdict, one plain sentence and a coloured chart, bar by bar. Green means on time, yellow slightly off, orange rushing or dragging, red way off. Think of it as a karaoke score, but for timing instead of pitch."</p></div>
+        <div class="show"><div class="label">Show</div><ul><li>Section 1: the three numbered cards</li><li>Hover over the glossary for "BPM" and "rushing"</li></ul></div>
+      </div>
+    </div>
+
+    <div class="scene">
+      <div class="scene-head"><h3>Scene 3 · The big picture</h3><span class="time">1:45 – 3:00</span></div>
+      <div class="scene-cols">
+        <div><div class="label">Say <button class="btn copy" type="button" data-copy>Copy</button></div>
+          <p class="line">"Under the hood there are two halves. The <b>app</b> is what you hold, built with Expo and React Native so one codebase makes both an iPhone app and a website. The <b>server</b> is a Python program in the cloud that does the heavy thinking. They share Supabase, which handles sign-in, the database and file storage. Picture a restaurant: the app is the dining room, the API is the waiter, the server's services are the kitchen, and Supabase is the pantry."</p></div>
+        <div class="show"><div class="label">Show</div><ul><li>Section 2 diagram; trace the arrows with your cursor</li><li>Then scroll through the folder map table</li></ul></div>
+      </div>
+    </div>
+
+    <div class="scene">
+      <div class="scene-head"><h3>Scene 4 · Follow one take</h3><span class="time">3:00 – 4:30</span></div>
+      <div class="scene-cols">
+        <div><div class="label">Say <button class="btn copy" type="button" data-copy>Copy</button></div>
+          <p class="line">"Let's follow a single practice session. You sign in and get a secure digital badge. You photograph a page; it's uploaded and a team of AI music readers turns it into notes. You check and fix anything they got wrong. You pick a tempo and record. The recording is uploaded, and the server replies instantly: 'got it, working on it'. Meanwhile the app keeps asking 'done yet?' every few seconds until your verdict appears."</p></div>
+        <div class="show"><div class="label">Show</div><ul><li>Section 3 timeline, one step at a time</li><li>Point at the coloured tags: app / server / storage / AI</li></ul></div>
+      </div>
+    </div>
+
+    <div class="scene">
+      <div class="scene-head"><h3>Scene 5 · The server's front door</h3><span class="time">4:30 – 5:30</span></div>
+      <div class="scene-cols">
+        <div><div class="label">Say <button class="btn copy" type="button" data-copy>Copy</button></div>
+          <p class="line">"Here's real code. This file is the server's reception desk. Each of these lines opens a department: uploads, scores, analyses. Every request has to show a valid badge, checked here, so nobody can see anyone else's recordings. And when you ask for an analysis, the server doesn't make you wait. It hands you a ticket and cooks in the background. If your phone accidentally sends the same take twice, it notices and doesn't do the work twice."</p></div>
+        <div class="show"><div class="label">Show</div><ul><li>Filter: 🖥️ Server</li><li>Blocks: main.py → auth.py → analyses.py</li></ul></div>
+      </div>
+    </div>
+
+    <div class="scene">
+      <div class="scene-head"><h3>Scene 6 · Reading sheet music</h3><span class="time">5:30 – 6:15</span></div>
+      <div class="scene-cols">
+        <div><div class="label">Say <button class="btn copy" type="button" data-copy>Copy</button></div>
+          <p class="line">"Reading music from a photo is hard, so the app uses a relay team. A specialised music-reading model goes first, and general AI models like Claude and Gemini are next in line. If a reader is at least 70% confident, we take its answer. If not, we get a second opinion. And because no reader is perfect, the musician always gets to proof-read the result."</p></div>
+        <div class="show"><div class="label">Show</div><ul><li>The ocr/pipeline.py block</li><li>Highlight <code>ocr_confidence &gt;= 0.7</code></li></ul></div>
+      </div>
+    </div>
+
+    <div class="scene">
+      <div class="scene-head"><h3>Scene 7 · The timing brain</h3><span class="time">6:15 – 7:45</span></div>
+      <div class="scene-cols">
+        <div><div class="label">Say <button class="btn copy" type="button" data-copy>Copy</button></div>
+          <p class="line">"This is the heart of the app. The server listens for the exact instant each note starts. From the sheet music and your chosen speed, it works out when each note <i>should</i> have started. Then it lines the two lists up, even if you skipped a bar, and measures the gap for every note. Each gap gets a traffic light. Finally it finds the longest stretch where you drifted the same way and writes one sentence in beats per minute, because that's how musicians think. And all the strictness settings live in one file of numbers, so they can be tuned by ear."</p></div>
+        <div class="show"><div class="label">Show</div><ul><li>Filter: 🧠 Timing brain</li><li>analysis.py recipe → classify_band traffic lights → verdict → config.toml</li></ul></div>
+      </div>
+    </div>
+
+    <div class="scene">
+      <div class="scene-head"><h3>Scene 8 · The app side</h3><span class="time">7:45 – 8:45</span></div>
+      <div class="scene-cols">
+        <div><div class="label">Say <button class="btn copy" type="button" data-copy>Copy</button></div>
+          <p class="line">"On the phone, this file is the floor plan: four tabs that are always there (Today, Library, Insights, Profile) and screens that slide in on top. All the colours live in one small file of design tokens, with readability checked by tests. And these tiny functions are how the app talks to the server."</p></div>
+        <div class="show"><div class="label">Show</div><ul><li>Filter: 📱 App</li><li>RootNavigator → colors.ts → analyses.ts</li></ul></div>
+      </div>
+    </div>
+
+    <div class="scene">
+      <div class="scene-head"><h3>Scene 9 · Quality and wrap-up</h3><span class="time">8:45 – 10:00</span></div>
+      <div class="scene-cols">
+        <div><div class="label">Say <button class="btn copy" type="button" data-copy>Copy</button></div>
+          <p class="line">"Last thing: how do you keep an app like this from breaking? The database grows through numbered blueprint files, and a robot checks every change against hundreds of automatic tests, using saved sample recordings so it never depends on the internet. The core engine is built and tested; the next milestone is running the full live loop end to end and tuning the timing judge by ear. So that's InTempo: photograph, play, and find out where your timing slipped. Thanks for watching."</p></div>
+        <div class="show"><div class="label">Show</div><ul><li>Filter: ✅ Quality &amp; data</li><li>End on the "Honest status" box, then scroll back to the top</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid g2" style="margin-top:32px">
+    <div>
+      <h3>Filming checklist</h3>
+      <p class="muted">Ticks are saved in this browser only.</p>
+      <ul class="checklist" id="checklist">
+        <li><label><input type="checkbox" data-k="c1"><span>Close other tabs and silence notifications</span></label></li>
+        <li><label><input type="checkbox" data-k="c2"><span>Zoom the browser to 125–150% so code is readable in the video</span></label></li>
+        <li><label><input type="checkbox" data-k="c3"><span>Turn on Presenter mode, or print this page as notes</span></label></li>
+        <li><label><input type="checkbox" data-k="c4"><span>Do a 30-second test recording to check mic levels</span></label></li>
+        <li><label><input type="checkbox" data-k="c5"><span>Have the app (or a screenshot) open for the Today and Verdict screens</span></label></li>
+        <li><label><input type="checkbox" data-k="c6"><span>Record scene by scene; it's easier to redo one short scene</span></label></li>
+        <li><label><input type="checkbox" data-k="c7"><span>Add chapter markers matching the scene titles when you upload</span></label></li>
+      </ul>
+    </div>
+    <div>
+      <h3>Presenting tips for beginners</h3>
+      <div class="card flat">
+        <ul style="margin:0;padding-left:18px">
+          <li style="margin-bottom:8px"><b>Explain the "why" before the "how".</b> Viewers follow code far better once they know what problem it solves.</li>
+          <li style="margin-bottom:8px"><b>You don't need to read every line.</b> Point at the one or two lines the plain-English box mentions.</li>
+          <li style="margin-bottom:8px"><b>Reuse the analogies</b> (restaurant, relay team, traffic lights). Repetition is what makes them stick.</li>
+          <li style="margin-bottom:8px"><b>Say "I don't know" honestly.</b> If a viewer asks something off-script, point them to <code>docs/subsystems.md</code> and the code comments. This project documents <i>why</i> things are the way they are.</li>
+          <li><b>Keep scenes under 90 seconds.</b> Attention drops fast on screen recordings.</li>
+        </ul>
+      </div>
+      <h3 style="margin-top:20px">Suggested video titles</h3>
+      <div class="card flat">
+        <ul style="margin:0;padding-left:18px">
+          <li>"How an app hears if you're rushing: InTempo explained"</li>
+          <li>"From a photo of sheet music to a timing verdict"</li>
+          <li>"I explain a real music app's code (no experience needed)"</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  InTempo visual guide · generated from the repository's source on 2026-09-28. Code excerpts are lightly trimmed (marked with …) for readability. Exact numbers such as test counts and thresholds reflect the code at that date.
+</footer>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  var root = document.documentElement;
+
+  // Theme toggle (light / dark), remembered per browser when storage is available.
+  function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
+  var saved = store('intempo-guide-theme');
+  if (saved === 'light' || saved === 'dark') root.setAttribute('data-theme', saved);
+  document.getElementById('themeBtn').addEventListener('click', function () {
+    var cur = root.getAttribute('data-theme') ||
+      (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    store('intempo-guide-theme', next);
+  });
+
+  // Presenter mode
+  var pBtn = document.getElementById('presenterBtn');
+  pBtn.addEventListener('click', function () {
+    var on = document.body.classList.toggle('presenter');
+    pBtn.setAttribute('aria-pressed', String(on));
+    toast(on ? 'Presenter mode on' : 'Presenter mode off');
+  });
+
+  // Code filters
+  var filterBtns = document.querySelectorAll('.filters button');
+  var blocks = document.querySelectorAll('.block');
+  filterBtns.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var f = b.getAttribute('data-filter');
+      filterBtns.forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+      blocks.forEach(function (el) { el.hidden = !(f === 'all' || el.getAttribute('data-cat') === f); });
+    });
+  });
+
+  // Copy script lines
+  document.querySelectorAll('[data-copy]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var text = btn.closest('div').parentNode.querySelector('.line').innerText.trim();
+      var done = function () { toast('Line copied'); };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, function () { fallback(text); done(); });
+      } else { fallback(text); done(); }
+    });
+  });
+  function fallback(text) {
+    var t = document.createElement('textarea'); t.value = text; document.body.appendChild(t); t.select();
+    try { document.execCommand('copy'); } catch (e) {}
+    document.body.removeChild(t);
+  }
+
+  // Filming checklist
+  document.querySelectorAll('#checklist input').forEach(function (cb) {
+    var k = 'intempo-guide-' + cb.getAttribute('data-k');
+    cb.checked = store(k) === '1';
+    cb.addEventListener('change', function () { store(k, cb.checked ? '1' : '0'); });
+  });
+
+  // Highlight the current section in the nav
+  var links = document.querySelectorAll('.nav a');
+  if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.isIntersecting) {
+          links.forEach(function (a) { a.classList.toggle('active', a.getAttribute('href') === '#' + e.target.id); });
+        }
+      });
+    }, { rootMargin: '-40% 0px -55% 0px' });
+    document.querySelectorAll('main section').forEach(function (s) { io.observe(s); });
+  }
+
+  var tEl = document.getElementById('toast'), tTimer;
+  function toast(msg) {
+    tEl.textContent = msg; tEl.classList.add('on');
+    clearTimeout(tTimer); tTimer = setTimeout(function () { tEl.classList.remove('on'); }, 1400);
+  }
+})();
+</script>
+</body>
+</html>
