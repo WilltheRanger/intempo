@@ -16,6 +16,7 @@ import {
 } from './score/voice';
 import type { PlaybackHandle, PlayOptions } from './score/player.types';
 import { beginSampledPlayback } from './score/sampledPlayback';
+import { CHUNK_OVERLAP, chunkSamples, nextChunk, type ChunkPlan } from './score/audioChunks';
 
 /**
  * Playing a score in a browser, with Web Audio.
@@ -43,6 +44,25 @@ const END_SWEEP_SLACK_MS = 50;
 
 /** How often to look, while waiting for the audio clock to start. */
 const START_POLL_MS = 120;
+
+/**
+ * Listen plays the opening while the rest is still being rendered
+ * (`audioChunks.ts`): once this much is ready, from a render running at least
+ * twice as fast as the music, and in chunks of at least `CHUNK_S` after that.
+ *
+ * Measured on a three-minute passage before this: the whole render stood
+ * between the tap and the first note, 4.9 s on a laptop and 25.5 s with the
+ * CPU slowed to phone speed (2026-10-23).
+ */
+const STREAM = { leadS: 2.5, minSpeed: 2 };
+const CHUNK_S = 2;
+
+/**
+ * How close to now a chunk may be scheduled. One that would start sooner than
+ * this — the render fell behind the music — starts now, at the point the music
+ * has reached, rather than late and out of step with the playhead.
+ */
+const SCHEDULE_MARGIN_S = 0.02;
 
 /**
  * One playback's wait for the audio clock to start moving, shared by both
@@ -170,37 +190,74 @@ export function playSchedule(
       schedule,
       voice,
       { onProgress, onEnd, onLoading, onError },
-      async (audio, cancelled, finish) => {
+      async (audio, cancelled, finish, rendering) => {
         if (cancelled()) return () => {};
-        const buffer = context.createBuffer(
-          audio.channels,
-          audio.pcm.length / audio.channels,
-          audio.sampleRate,
-        );
-        for (let c = 0; c < audio.channels; c++) {
-          const channel = buffer.getChannelData(c);
-          for (let i = 0; i < channel.length; i++)
-            channel[i] = audio.pcm[i * audio.channels + c] / 32768;
-        }
-        const source = context.createBufferSource();
-        source.buffer = buffer;
-        source.connect(context.destination);
-        const startedAt = context.currentTime + 0.08;
+        const total = audio.pcm.length / audio.channels;
+        // On a whole sample of the context, so every chunk is too
+        // (`chunkBoundary`).
+        const startFrame = Math.round((context.currentTime + 0.08) * context.sampleRate);
+        const startedAt = startFrame / context.sampleRate;
+        const sources: AudioBufferSourceNode[] = [];
+        let scheduled = 0;
+
+        const play = (plan: ChunkPlan) => {
+          const buffer = context.createBuffer(audio.channels, plan.to - plan.from, audio.sampleRate);
+          chunkSamples(audio.pcm, audio.channels, plan).forEach((samples, c) =>
+            buffer.getChannelData(c).set(samples),
+          );
+          const source = context.createBufferSource();
+          source.buffer = buffer;
+          source.connect(context.destination);
+          const at =
+            (startFrame + (plan.from * context.sampleRate) / audio.sampleRate) / context.sampleRate;
+          const soonest = context.currentTime + SCHEDULE_MARGIN_S;
+          if (at >= soonest) {
+            source.start(at);
+          } else if (soonest - at < buffer.duration) {
+            source.start(soonest, soonest - at);
+          } else {
+            source.disconnect();
+            return;
+          }
+          if (plan.last) source.onended = finish;
+          sources.push(source);
+        };
+        // Everything final that is not scheduled yet, in chunks.
+        const pump = (written: number) => {
+          for (;;) {
+            const plan = nextChunk(
+              scheduled,
+              written,
+              total,
+              Math.round(CHUNK_S * audio.sampleRate),
+              audio.sampleRate,
+              context.sampleRate,
+            );
+            if (!plan) return;
+            play(plan);
+            scheduled = plan.fadeOut ? plan.to - CHUNK_OVERLAP : plan.to;
+          }
+        };
+
         const watch = clockWatch(context);
         let timer: ReturnType<typeof setInterval> | undefined;
+        let unsubscribe = () => {};
         const cleanup = () => {
           clearInterval(timer);
-          source.onended = null;
-          try {
-            source.stop();
-          } catch {
-            /* Already ended. */
+          unsubscribe();
+          for (const source of sources) {
+            source.onended = null;
+            try {
+              source.stop();
+            } catch {
+              /* Already ended. */
+            }
+            source.disconnect();
           }
-          source.disconnect();
         };
         try {
-          source.onended = finish;
-          source.start(startedAt);
+          pump(rendering.written());
+          unsubscribe = rendering.subscribe(pump);
           timer = setInterval(() => {
             const elapsed = context.currentTime - startedAt;
             if (elapsed >= audio.durationS) {
@@ -224,6 +281,7 @@ export function playSchedule(
         }
         return cleanup;
       },
+      STREAM,
     );
   }
 

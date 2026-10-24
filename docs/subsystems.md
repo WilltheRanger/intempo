@@ -1089,6 +1089,41 @@ blocked, and 59 through Listen, blocked only briefly where the bar changed
 (185 ms in six seconds). The SVG of the score, Record, piece and Library
 screens is byte-identical to before, for three pieces.
 
+### Listen waited for the whole passage before its first note (2026-10-23)
+
+Listen renders the passage with a JavaScript synthesiser before playing it.
+At 23 to 45 times real time that is a second for a minute of music, which is
+why `warmPlayback.ts` found the network to be the wait. A whole piece is three
+or four minutes, though, and Listen from bar one renders all of it. A
+236-note piece at 80 BPM is 207 s of audio. Its first note came 9.6 s after
+the tap on a laptop, and 27.5 s with the CPU slowed four times. 3.9 s of the
+laptop's wait was idle: the render yielded about 970 times with `setTimeout(0)`,
+and a browser clamps a timer set inside a timer to at least 4 ms.
+
+**The rules:**
+
+- **Yield with `nextTask`, never a chained `setTimeout(0)`.** Chromium took
+  395 ms for a hundred chained zero timers and 2 ms for a hundred
+  `MessageChannel` hops.
+- **On the web, Listen plays the opening while the rest renders**
+  (`audioChunks.ts`, `STREAM` in `scorePlayer.web.ts`). It starts once 2.5 s
+  are final from a render going at least twice real time, and schedules the
+  rest in chunks of 2 s or more as they come. A slower render finishes first
+  and plays whole, as before. The native player writes a WAV file and still
+  waits for the whole render.
+- **Chunks meet across a 256-frame overlap with complementary fades, on whole
+  samples of the context.** Each chunk resamples its own samples, so this is
+  what makes the joins inaudible. The outgoing fade reaches zero one frame
+  early, because Chromium extrapolates a buffer's last output sample from its
+  last two frames. Rendered both ways through an `OfflineAudioContext`, the
+  chunked passage matches the single buffer to −106 dB at 48 kHz, −99 dB at
+  96 kHz, and exactly at 44.1 kHz. That is below 16-bit quantisation noise.
+
+After: the first chunk is scheduled 0.25 s after the tap on the laptop and
+0.85 s at a quarter speed. There were 101 chunks, all 100 joins exact, and
+none late. While the rest renders at a quarter speed, the score screen holds
+38 frames a second, and 59 once the render is done.
+
 ## `npm audit fix --force` would take this app back to SDK 46 (2026-09-09)
 
 `npm audit --omit=dev` reports **24 advisories, 7 of them high**, and closes
