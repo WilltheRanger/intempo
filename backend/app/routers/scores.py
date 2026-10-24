@@ -21,6 +21,7 @@ from uuid import UUID
 from fastapi import (
     APIRouter,
     Depends,
+    Header,
     HTTPException,
     Query,
     Response,
@@ -1375,7 +1376,14 @@ def list_scores(
             "pieces — it is by far the largest field."
         ),
     ),
-) -> list[ScoreResponse] | Response:
+    if_none_match: str | None = Header(
+        default=None,
+        description=(
+            "The `ETag` of a copy of this page already held. Answered 304, with "
+            "no body, while it is still the page."
+        ),
+    ),
+) -> Response:
     """The caller's scores, newest first.
 
     **`include_score=false` exists because `score_json` dwarfs the rest of the
@@ -1406,21 +1414,81 @@ def list_scores(
     Each row carries `last_practiced_at`, from one query for the whole page.
 
     **The notation is passed through, not parsed** — see `_SCORE_AS_TEXT`.
+
+    **A copy the caller already holds is confirmed, not sent again.** Every
+    answer carries an `ETag` and `Cache-Control: private, no-cache`, so a
+    browser keeps the page and asks with `If-None-Match` before using it again
+    — by itself; there is no code for it in the app. The Library asks on every
+    launch, a library seldom changes between two of them, and each of those
+    requests read the whole notation of every piece out of Postgres, decoded it
+    and compressed it again on a tenth of a CPU, to send a phone what it
+    already had — 786 KB of it for the largest library on the live project
+    (2026-10-24). Asked that way, the page is read without its notation, and
+    the notation only for a copy that turns out to be out of date;
+    `_listing_tag` says why the rows alone can tell. Measured on a library of
+    twenty-two pieces, 2.85 MB as Postgres sends it: 15.5 ms of CPU to answer
+    in full and 0.5 ms to confirm, and 244 bytes to the phone where the
+    compressed page was 57 KB.
+
+    **A restart costs one full answer per copy.** The photographs' signed URLs
+    are memoised in the process (`display_urls`), so a new process signs them
+    afresh, every row's URL differs from the copy's, and the copy is sent
+    again — once, after which the new URLs are what is held.
     """
-    # **The pieces and their dates at once.** The dates come from the
+    # **Without the notation first, for a caller holding a copy.** The rows
+    # alone say whether it is current, and when it is, the notation — nearly
+    # every byte of the page — is never read. The dates come from the
     # musician's newest takes, which need only their id, so they are read
     # beside the page rather than after it (`side_calls`).
-    response, takes = together(
-        lambda: require_service_client()
-        .table("scores")
-        .select(f"{_WITHOUT_SCORE}, {_SCORE_AS_TEXT}" if include_score else _WITHOUT_SCORE)
-        .eq("user_id", str(user_id))
-        .order("created_at", desc=True)
-        .range(offset, offset + limit - 1)
-        .execute(),
+    holds_a_copy = bool(if_none_match)
+    rows, takes = together(
+        lambda: _page_of_scores(
+            user_id, limit, offset, with_notation=include_score and not holds_a_copy
+        ),
         lambda: _newest_takes(str(user_id), None),
     )
-    rows = response.data or []
+    heads, notation = _listing_of(rows, takes)
+    tag = _listing_tag(heads, include_score)
+    if if_none_match and _names(if_none_match, tag):
+        return Response(
+            status_code=status.HTTP_304_NOT_MODIFIED,
+            # A 304 repeats what the full answer would have said about keeping
+            # it, `Vary` included (RFC 9110 §15.4.5); the compressor adds that
+            # one to a full answer, and has no body here to do it for.
+            headers={**_listing_headers(tag), "Vary": "Accept-Encoding"},
+        )
+    if include_score and holds_a_copy:
+        # Out of date, so the notation is wanted after all. The page is read
+        # again with it, rather than the notation alone by id, so that the
+        # rows, their notation and the tag sent with them are one read.
+        rows = _page_of_scores(user_id, limit, offset, with_notation=True)
+        heads, notation = _listing_of(rows, takes)
+        tag = _listing_tag(heads, include_score)
+    return _with_notation_as_stored(heads, notation, tag)
+
+
+def _page_of_scores(
+    owner: UUID, limit: int, offset: int, *, with_notation: bool
+) -> list[dict[str, Any]]:
+    """A page of the owner's scores, newest first, with the notation as text
+    (`_SCORE_AS_TEXT`) or without it."""
+    return (
+        require_service_client()
+        .table("scores")
+        .select(f"{_WITHOUT_SCORE}, {_SCORE_AS_TEXT}" if with_notation else _WITHOUT_SCORE)
+        .eq("user_id", str(owner))
+        .order("created_at", desc=True)
+        .range(offset, offset + limit - 1)
+        .execute()
+    ).data or []
+
+
+def _listing_of(
+    rows: list[dict[str, Any]], takes: list[dict[str, Any]] | None
+) -> tuple[list[str], list[str | None]]:
+    """A page as the listing sends it: each row's JSON but for its notation,
+    and the notation as Postgres stored it — null where there is none, or
+    where it was not read."""
     notation = [row.pop(_SCORE_TEXT, None) for row in rows]
     wanted = {str(row["id"]) for row in rows}
     practiced = _latest_of(takes, wanted) if takes is not None else None
@@ -1430,26 +1498,79 @@ def list_scores(
     if practiced is not None and len(takes) >= _PRACTICED_SCAN and len(practiced) < len(wanted):
         practiced = None
     listed = _with_image_urls(rows, with_concerns=False, practiced=practiced)
-    if not include_score:
-        return listed
-    return _with_notation_as_stored(listed, notation)
+    return [scored.model_dump_json(exclude={"score_json"}) for scored in listed], notation
+
+
+def _listing_tag(heads: list[str], include_score: bool) -> str:
+    """A listing's `ETag`: a digest of every row as sent, but for the notation.
+
+    **Whether the notation changed is known without reading it.** It is sent
+    exactly as Postgres stores it (`_SCORE_AS_TEXT`), and it cannot be stored
+    without its row's `updated_at` moving — a trigger sets that on every update
+    of a score (migration 001) — and `updated_at` is in every row's JSON. So
+    the rows say everything the notation would. **If the notation is ever
+    reshaped on its way out rather than passed through, whatever reshapes it
+    belongs in this digest**, or a reshaped listing is confirmed as the old one.
+
+    The rest is in as sent: the signed photograph, the last take's date, the
+    progress of a reading. Weak, because one listing goes out compressed or
+    not; and a digest of the content rather than anything about the caller,
+    so two musicians can share a tag only by having the same listing — which
+    is two empty libraries.
+    """
+    digest = hashlib.blake2b(digest_size=16)
+    digest.update(b"with notation\n" if include_score else b"without notation\n")
+    for head in heads:
+        # Compact JSON escapes a newline inside a string, so the rows cannot
+        # run into one another.
+        digest.update(head.encode())
+        digest.update(b"\n")
+    return f'W/"{digest.hexdigest()}"'
+
+
+def _names(if_none_match: str, tag: str) -> bool:
+    """Whether an `If-None-Match` names `tag`: compared weakly, as RFC 9110
+    §13.1.2 has it for this header, and `*` names every listing."""
+    opaque = tag.removeprefix("W/")
+    return any(
+        candidate == "*" or candidate.removeprefix("W/") == opaque
+        for candidate in (part.strip() for part in if_none_match.split(","))
+    )
+
+
+def _listing_headers(tag: str) -> dict[str, str]:
+    """What a listing says about being kept.
+
+    `private`: the phone that asked may keep it and nothing in between may —
+    it is one musician's library, fetched with their token. `no-cache`: never
+    used again without asking, so a kept copy is only ever as old as the
+    request that confirmed it, and a change made anywhere is seen on the next
+    one exactly as before.
+    """
+    return {"ETag": tag, "Cache-Control": "private, no-cache"}
 
 
 def _with_notation_as_stored(
-    listed: list[ScoreResponse], notation: list[str | None]
+    heads: list[str], notation: list[str | None], tag: str
 ) -> Response:
     """The listing as JSON, each row's notation written in exactly as stored.
 
     Everything but the notation is serialised by the response model as it
-    always was; the notation is Postgres's own JSON text, which is already
-    valid JSON and goes in without being read. The key lands last in each
-    object, which no JSON reader can tell from anywhere else.
+    always was (`_listing_of`); the notation is Postgres's own JSON text, which
+    is already valid JSON and goes in without being read. The key lands last in
+    each object, which no JSON reader can tell from anywhere else. A listing
+    without the notation is written the same way, with `null` in its place, so
+    the rows its tag was taken from are the rows it sends.
     """
-    out = []
-    for scored, text in zip(listed, notation, strict=True):
-        head = scored.model_dump_json(exclude={"score_json"})
-        out.append(f'{head[:-1]},"score_json":{"null" if text is None else text}}}')
-    return Response(content="[" + ",".join(out) + "]", media_type="application/json")
+    out = [
+        f'{head[:-1]},"score_json":{"null" if text is None else text}}}'
+        for head, text in zip(heads, notation, strict=True)
+    ]
+    return Response(
+        content="[" + ",".join(out) + "]",
+        media_type="application/json",
+        headers=_listing_headers(tag),
+    )
 
 
 class CurrentScoreResponse(BaseModel):

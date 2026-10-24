@@ -2967,6 +2967,231 @@ def test_the_listing_hands_back_the_notation_exactly_as_stored(
     assert "*" not in "".join(listing)
 
 
+# ---- A copy the caller already holds ---------------------------------------
+#
+# The Library revalidates on every launch, through the browser's own cache:
+# `ETag` and `Cache-Control: private, no-cache` on the answer, `If-None-Match`
+# on the next request. These hold what a 304 may stand for, and that it is
+# decided without reading the notation it saves sending.
+
+
+def _listing_library(
+    monkeypatch: pytest.MonkeyPatch, user_id: UUID, count: int = 2
+) -> tuple[FakeSupabase, list[tuple[Any, ...]]]:
+    """A library of `count` unphotographed pieces, and every projection the
+    listing asks the database for."""
+    fake = FakeSupabase()
+    fake.seed(
+        "scores",
+        [
+            _unphotographed(user_id, title=f"Study {n}", created_at=f"2026-04-0{n + 1}T00:00:00+00:00")
+            for n in range(count)
+        ],
+    )
+    monkeypatch.setattr(db_module, "get_service_client", lambda: fake)
+    asked: list[tuple[Any, ...]] = []
+    select = fake_supabase._Table.select
+
+    def recording_select(self, *cols, **kwargs):
+        asked.append(cols)
+        return select(self, *cols, **kwargs)
+
+    monkeypatch.setattr(fake_supabase._Table, "select", recording_select)
+    return fake, asked
+
+
+def _reads_notation(cols: tuple[Any, ...]) -> bool:
+    return "score_json" in "".join(str(c) for c in cols)
+
+
+def test_a_listing_says_how_it_may_be_kept(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """Kept by the phone and by nothing in between — it is one musician's
+    library, fetched with their token — and never used without asking."""
+    user_id = uuid4()
+    _listing_library(monkeypatch, user_id)
+
+    res = client.get(
+        "/v1/scores", headers={"Authorization": f"Bearer {make_token(sub=user_id)}"}
+    )
+
+    assert res.status_code == 200, res.text
+    assert res.headers["cache-control"] == "private, no-cache"
+    assert res.headers["etag"].startswith('W/"')
+
+
+def test_a_copy_still_current_is_confirmed_without_reading_the_notation(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """The point of the tag. The notation is nearly every byte of a listing,
+    and confirming a copy must not read it, decode it or send it."""
+    user_id = uuid4()
+    _, asked = _listing_library(monkeypatch, user_id)
+    headers = {"Authorization": f"Bearer {make_token(sub=user_id)}"}
+    first = client.get("/v1/scores", headers=headers)
+    asked.clear()
+
+    again = client.get(
+        "/v1/scores", headers={**headers, "If-None-Match": first.headers["etag"]}
+    )
+
+    assert again.status_code == 304
+    assert again.content == b""
+    assert again.headers["etag"] == first.headers["etag"]
+    # What the full answer said about keeping it, repeated (RFC 9110 §15.4.5).
+    assert again.headers["cache-control"] == "private, no-cache"
+    assert "Accept-Encoding" in again.headers["vary"]
+    scores_reads = [cols for cols in asked if "title" in "".join(str(c) for c in cols)]
+    assert scores_reads, "the page was not read at all"
+    assert not any(_reads_notation(cols) for cols in scores_reads)
+
+
+@pytest.mark.parametrize(
+    "change",
+    ["renamed", "notation rewritten", "played", "added", "deleted", "reading finished"],
+)
+def test_a_copy_out_of_date_is_sent_again_in_full(
+    change: str,
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    """Everything a listing shows moves its tag, and an out-of-date copy gets
+    the whole page again — notation included, though the question was first
+    put without it.
+
+    "notation rewritten" moves `updated_at` beside the notation, because that is
+    what Postgres does: a trigger sets it on every update of a score (migration
+    001), and the tag relies on it rather than reading the notation."""
+    user_id = uuid4()
+    fake, _ = _listing_library(monkeypatch, user_id)
+    headers = {"Authorization": f"Bearer {make_token(sub=user_id)}"}
+    first = client.get("/v1/scores", headers=headers)
+    rows = fake.table("scores").rows
+    rewritten = {**GOOD_PAYLOAD, "notes_to_human": "the second reading"}
+    if change == "renamed":
+        rows[0].update(title="Study, retitled", updated_at="2026-05-01T00:00:00+00:00")
+    elif change == "notation rewritten":
+        rows[0].update(score_json=rewritten, updated_at="2026-05-01T00:00:00+00:00")
+    elif change == "played":
+        fake.seed(
+            "analyses",
+            [{"id": str(uuid4()), "user_id": str(user_id), "score_id": rows[0]["id"],
+              "created_at": "2026-05-04T09:00:00+00:00"}],
+        )
+    elif change == "added":
+        fake.seed("scores", [_unphotographed(user_id, title="Study 9")])
+    elif change == "deleted":
+        rows.pop()
+    elif change == "reading finished":
+        # The copy is taken while the page is still being read.
+        rows[1].update(transcription_status="reading", transcription_stage="Reading the notes")
+        first = client.get("/v1/scores", headers=headers)
+        rows[1].update(
+            transcription_status="done",
+            transcription_stage=None,
+            updated_at="2026-05-02T00:00:00+00:00",
+        )
+
+    again = client.get(
+        "/v1/scores", headers={**headers, "If-None-Match": first.headers["etag"]}
+    )
+
+    assert again.status_code == 200, again.text
+    assert again.headers["etag"] != first.headers["etag"]
+    # The answer is the whole page, as a request without a copy would get it.
+    fresh = client.get("/v1/scores", headers=headers)
+    assert again.json() == fresh.json()
+    assert again.headers["etag"] == fresh.headers["etag"]
+    if change == "notation rewritten":
+        assert rewritten in [row["score_json"] for row in again.json()]
+
+
+def test_a_copy_of_the_light_listing_is_confirmed_on_its_own_tag(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """The same rows with and without their notation are different answers,
+    so neither may confirm the other's copy."""
+    user_id = uuid4()
+    _listing_library(monkeypatch, user_id)
+    headers = {"Authorization": f"Bearer {make_token(sub=user_id)}"}
+    full = client.get("/v1/scores", headers=headers)
+    light = client.get("/v1/scores?include_score=false", headers=headers)
+
+    assert light.headers["etag"] != full.headers["etag"]
+    assert (
+        client.get(
+            "/v1/scores?include_score=false",
+            headers={**headers, "If-None-Match": light.headers["etag"]},
+        ).status_code
+        == 304
+    )
+    assert (
+        client.get(
+            "/v1/scores?include_score=false",
+            headers={**headers, "If-None-Match": full.headers["etag"]},
+        ).status_code
+        == 200
+    )
+
+
+@pytest.mark.parametrize(
+    "held",
+    [
+        "{tag}",
+        "{bare}",
+        'W/"0123", {tag}',
+        "*",
+    ],
+)
+def test_if_none_match_is_read_as_the_standard_writes_it(
+    held: str,
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    """Weak comparison, a list of tags, and `*` (RFC 9110 §13.1.2). A cache
+    that kept the tag strong, or kept two copies, still names this listing."""
+    user_id = uuid4()
+    _listing_library(monkeypatch, user_id)
+    headers = {"Authorization": f"Bearer {make_token(sub=user_id)}"}
+    tag = client.get("/v1/scores", headers=headers).headers["etag"]
+
+    res = client.get(
+        "/v1/scores",
+        headers={**headers, "If-None-Match": held.format(tag=tag, bare=tag.removeprefix("W/"))},
+    )
+
+    assert res.status_code == 304
+
+
+def test_somebody_elses_tag_confirms_nothing(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """The tag is a digest of the listing, not of who asked — and a listing
+    names its pieces, which are nobody else's. A browser that kept one
+    musician's copy and is now signed in as another asks with the first one's
+    tag; the second musician must get their own library."""
+    mine, theirs = uuid4(), uuid4()
+    fake, _ = _listing_library(monkeypatch, mine)
+    fake.seed("scores", [_unphotographed(theirs, title="Somebody else's study")])
+    their_tag = client.get(
+        "/v1/scores", headers={"Authorization": f"Bearer {make_token(sub=theirs)}"}
+    ).headers["etag"]
+
+    res = client.get(
+        "/v1/scores",
+        headers={
+            "Authorization": f"Bearer {make_token(sub=mine)}",
+            "If-None-Match": their_tag,
+        },
+    )
+
+    assert res.status_code == 200
+    assert {row["title"] for row in res.json()} == {"Study 0", "Study 1"}
+
+
 # ---- The cost guard on starting a reading ---------------------------------
 #
 # `services/reading_rate` holds the rule and its own tests drive the clock.
