@@ -513,7 +513,11 @@ def _intonation(
         dtype=float,
     ) + pitch.transpose
     cents = note_cents(
-        pitch.track, pitch.sr, np.array([attacks_s[d] for d, _ in kept]), sounding
+        pitch.track,
+        pitch.sr,
+        np.array([attacks_s[d] for d, _ in kept]),
+        sounding,
+        note_trim_cents=config.intonation.note_trim_cents,
     )
     return intonation_of(
         cents,
