@@ -32,21 +32,64 @@ terms and provenance. Nothing new is added or redistributed by this tool.
 ## Rendering is best-effort
 
 `render_take()` needs a `fluidsynth` binary on `PATH`; it returns `False`
-without writing anything when it's missing, which is the normal state of
-this sandbox (no network, no package install) and may be CI's state too —
-see `tools/README.md`'s note on checks that have never run there. The
-ground-truth JSON itself (`build_ground_truth()`) never depends on
-rendering: it's derived purely from the expected timeline
-(`backend/app/services/alignment.build_timeline`) and the error config, so
-it can be produced, tested and reviewed with no audio toolchain installed.
+without writing anything when it's missing. This sandbox now has
+`fluidsynth` installed, and the render path is exercised by
+`test_synthetic_takes.py`'s `test_render_take_*` tests (skipped, not failed,
+on a machine without the binary — see `tools/README.md`'s note on checks
+that have never run in CI). The ground-truth JSON itself
+(`build_ground_truth()`) never depends on rendering: it's derived purely
+from the expected timeline (`backend/app/services/alignment.build_timeline`)
+and the error config, so it can be produced, tested and reviewed with no
+audio toolchain installed.
 
-What rendering does not attempt: vibrato shaping, bowed-string envelopes
-beyond the soundfont's own articulation, an accompaniment mix, and phone-mic
-degradation (EQ/noise/room/compression) are recorded in the ground truth as
-intent (`injected_errors`) but not yet applied to the audio signal — the
-MIDI writer only places note on/off events at the labelled onsets. Treat the
-current `render_take()` as the plumbing the rest plugs into, not the
-finished pipeline; see the open items below.
+**JERA-562 shipped this gated on a binary nobody had run it against.** The
+first real render was silent: channel 0 defaults to GM program 0 (Grand
+Piano), and none of the bundled soundfonts carries a preset there, so
+`fluidsynth` logged "No preset found on channel 0" and wrote 90 dB of
+16-bit quantization noise. `_write_midi` now opens every track with a
+Program Change to the instrument's own GM number (`_GM_PROGRAM`); see
+`test_render_take_actually_renders_audible_sound`, which is the test that
+would have caught it.
+
+Every effect `injected_errors` could already name is now applied to the
+signal, not just labelled:
+
+- **Vibrato** is driven into the render as MIDI pitch-bend events around
+  each note's on/off pair (`_vibrato_bend_events`) — fluidsynth's own
+  soundfont resynthesizes it, rather than a DSP pitch-shift bolted on after.
+- **Bow envelope** re-shapes each note's rendered samples with an
+  attack/decay ramp (`_apply_bow_envelope`), since a struck-note soundfont's
+  own envelope doesn't sound bowed.
+- **Accompaniment** (`"piano"` or `"drone"`) is synthesised directly
+  (`_synth_tone`/`_mix_accompaniment`) rather than reaching for a second
+  soundfont, and mixed in at the stated `level_db` by RMS ratio.
+- **Phone-mic degradation** band-limits, adds noise at a stated SNR, adds a
+  light synthetic room reverb, and compresses — in that order
+  (`_apply_degradation`) — all parameters recorded on the `Degradation`
+  dataclass, including the RNG `seed`, so a stored take's audio is
+  reproducible from its ground truth alone.
+
+Onset fidelity — does the render actually land where the ground truth says
+— is covered against both `fixtures/musicxml/orchestral_part.musicxml` and
+a real JERA-568 reference piece
+(`test_render_take_matches_a_real_jera_568_reference_score`, skipped if
+`intempo-eval-data/` isn't checked out next to this repo) by
+`test_render_take_onsets_match_ground_truth_within_a_few_ms`: a plain
+amplitude-threshold onset detector, not spectral onset detection, because
+this generator already knows exactly when each note was told to start —
+the open question is only how much latency the soundfont render adds
+(observed: a few ms, consistent take to take).
+
+A real piece's MusicXML (e.g. `intempo-eval-data/scores/<id>/reference.musicxml`)
+can be fed straight into `build_ground_truth`/`render_take` — `_load_score`
+dispatches on the file suffix, so a `Path` ending `.musicxml`/`.xml` goes
+through the OCR pipeline's own `score_json_from_musicxml` instead of the
+`{"score": ...}` fixture-JSON shape.
+
+`tools/eval/build_benchmark_set.py` builds a small benchmark set — 5 real
+pieces (JERA-568 reference scores, truncated to their first 24 measures) x
+5 conditions (clean/rushed/out_of_tune/accompanied/phone) — into
+`intempo-eval-data/synthetic/`; see that directory's own `README.md`.
 
 ## Schema
 
@@ -65,9 +108,14 @@ ground_truth = build_ground_truth(Path("fixtures/scores/01_simple.json"), cfg)
 
 ## Open for follow-up (not blocking this generator)
 
-- Vibrato and bowed envelope shaping on render.
-- Accompaniment mixing and phone-mic degradation actually applied to the
-  rendered signal, not just labelled as intent.
-- Feeding the Telemann/Paganini MusicXML once the Scout task produces it —
-  today this only consumes the `score` JSON shape, so that piece needs the
-  same OCR-shaped conversion every other fixture went through first.
+- `_load_score` raises on a multi-part MusicXML file with no `part`
+  threaded through — fine for every JERA-568 reference piece so far (all
+  solo-violin, single-part), not yet wired up as a `TakeConfig` option for
+  a file that needs one (`fixtures/musicxml/violin_duo.musicxml`, e.g.).
+- Vibrato and bow envelope are take-level (every sounded note gets the same
+  treatment) rather than scoped to a phrase or note range the way
+  `IntonationOffset`/`TimingOffset` can be — see `SCHEMA.md`'s design notes
+  for why that's a deliberate v1 choice, not an oversight.
+- The accompaniment synth (`_synth_tone`) is a plain sine+harmonics voice,
+  not a sampled piano — good enough to test that a mix at a stated level
+  doesn't swamp the melody, not a listening reference.

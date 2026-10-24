@@ -23,7 +23,22 @@ What `synthetic_takes.py` writes for every rendered take, next to the audio
     {"type": "extra_note", "after_global_index": 7, "pitch": "A4"},
     {"type": "restart", "at_global_index": 15},
     {"type": "accompaniment", "track": "piano", "level_db": -12},
-    {"type": "degradation", "profile": "phone_mic_room"}
+    // v1 addition (JERA-571): every field below is applied to the render,
+    // not just labelled — see `render_take` and `README.md`.
+    {"type": "vibrato", "rate_hz": 5.5, "depth_cents": 30},
+    {"type": "bow_envelope", "attack_ms": 25, "decay_ms": 60},
+    {
+      "type": "degradation",
+      "profile": "phone_mic_room",
+      "band_low_hz": 300.0,
+      "band_high_hz": 3400.0,
+      "noise_snr_db": 20.0,
+      "reverb_wet": 0.15,
+      "reverb_decay_s": 0.25,
+      "compression_ratio": 4.0,
+      "compression_threshold_db": -18.0,
+      "seed": 0
+    }
   ],
   "notes": [
     // one entry per note in the *expected* timeline (alignment.build_timeline),
@@ -65,9 +80,20 @@ What `synthetic_takes.py` writes for every rendered take, next to the audio
   per-event result.** Keeping both means a harness can either replay "what
   did the generator decide to do" or just check "is the per-note ground
   truth internally consistent" without re-deriving one from the other.
-- Degradation (`phone_mic_room`-style profiles) and accompaniment mix are
-  recorded as applied at the *take* level, not per note — they change the
-  audio's acoustic conditions, not the labelled timeline.
+- Degradation (`phone_mic_room`-style profiles), accompaniment mix, vibrato
+  and bow envelope are all recorded as applied at the *take* level, not per
+  note — they change the audio's acoustic conditions or its whole-signal
+  shaping, not the labelled timeline. (A per-note `vibrato`/`bow_envelope`
+  label was considered and dropped: every sounded note in a take gets the
+  same bend/envelope treatment, so a take-level entry says exactly as much
+  as a label on every note would, for one entry instead of N.)
+- **This is still schema v1.** `vibrato`, `bow_envelope` and `degradation`'s
+  new fields (JERA-571) are additions to the open-ended `injected_errors`
+  list this file already described as "the generator's own record" with no
+  closed set of shapes — no existing field changed meaning or was removed,
+  so nothing reading `notes`/`extra_notes` or an older `injected_errors`
+  entry breaks. `schema_version` stays `1`; it moves only if that stops
+  being true.
 
 Open for discussion before the generator is relied on for tuning — comment
 on this file's PR if a field should move or a label is missing.
