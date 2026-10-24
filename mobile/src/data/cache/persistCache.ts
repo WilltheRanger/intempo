@@ -44,8 +44,10 @@ export const CACHE_KEY = 'intempo.library-cache';
  * 4, 2026-09-26: takes gained `wrongNotes` and `restEntries`.
  *
  * 5, 2026-09-30: a take's pitch gained `byNote` and `byNoteShowNotes`.
+ *
+ * 6, 2026-10-24: takes gained `instrumentationFlagged`.
  */
-export const CACHE_SHAPE = 5;
+export const CACHE_SHAPE = 6;
 
 /**
  * How long a saved library is still worth showing.

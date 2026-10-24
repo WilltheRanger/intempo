@@ -1,0 +1,302 @@
+[
+  {
+    "video_id": "-qiQDnQfOHk",
+    "instrumentation_assessment": "sub_violin_range_content",
+    "low_band_40_180hz_ratio_median": 0.051,
+    "frac_active_frames_low_band_gt_10pct": 0.336
+  },
+  {
+    "video_id": "56vQsMqrfYI",
+    "instrumentation_assessment": "consistent_with_solo_violin",
+    "low_band_40_180hz_ratio_median": 0.0005,
+    "frac_active_frames_low_band_gt_10pct": 0.001
+  },
+  {
+    "video_id": "5Z56PBVAcGk",
+    "instrumentation_assessment": "consistent_with_solo_violin",
+    "low_band_40_180hz_ratio_median": 0.0001,
+    "frac_active_frames_low_band_gt_10pct": 0.0
+  },
+  {
+    "video_id": "5rL2LEGFzxI",
+    "instrumentation_assessment": "consistent_with_solo_violin",
+    "low_band_40_180hz_ratio_median": 0.0002,
+    "frac_active_frames_low_band_gt_10pct": 0.002
+  },
+  {
+    "video_id": "6aFVHrDzbB8",
+    "instrumentation_assessment": "consistent_with_solo_violin",
+    "low_band_40_180hz_ratio_median": 0.0009,
+    "frac_active_frames_low_band_gt_10pct": 0.005
+  },
+  {
+    "video_id": "9qm7AZXSwLU",
+    "instrumentation_assessment": "consistent_with_solo_violin",
+    "low_band_40_180hz_ratio_median": 0.0,
+    "frac_active_frames_low_band_gt_10pct": 0.0
+  },
+  {
+    "video_id": "CivvhZ0FN4c",
+    "instrumentation_assessment": "consistent_with_solo_violin",
+    "low_band_40_180hz_ratio_median": 0.0001,
+    "frac_active_frames_low_band_gt_10pct": 0.0
+  },
+  {
+    "video_id": "EU1uG__m6GY",
+    "instrumentation_assessment": "consistent_with_solo_violin",
+    "low_band_40_180hz_ratio_median": 0.0,
+    "frac_active_frames_low_band_gt_10pct": 0.0
+  },
+  {
+    "video_id": "G01Y2DRCkYE",
+    "instrumentation_assessment": "consistent_with_solo_violin",
+    "low_band_40_180hz_ratio_median": 0.0001,
+    "frac_active_frames_low_band_gt_10pct": 0.003
+  },
+  {
+    "video_id": "G2CLuYkoJuc",
+    "instrumentation_assessment": "accompaniment_or_backing_likely",
+    "low_band_40_180hz_ratio_median": 0.0158,
+    "frac_active_frames_low_band_gt_10pct": 0.034
+  },
+  {
+    "video_id": "GiXWZ60ZvAM",
+    "instrumentation_assessment": "consistent_with_solo_violin",
+    "low_band_40_180hz_ratio_median": 0.0002,
+    "frac_active_frames_low_band_gt_10pct": 0.0
+  },
+  {
+    "video_id": "HIyCwSYTPFg",
+    "instrumentation_assessment": "consistent_with_solo_violin",
+    "low_band_40_180hz_ratio_median": 0.0001,
+    "frac_active_frames_low_band_gt_10pct": 0.0
+  },
+  {
+    "video_id": "HzPZwFIdAQk",
+    "instrumentation_assessment": "consistent_with_solo_violin",
+    "low_band_40_180hz_ratio_median": 0.0,
+    "frac_active_frames_low_band_gt_10pct": 0.0
+  },
+  {
+    "video_id": "LMd1ooGqD6o",
+    "instrumentation_assessment": "consistent_with_solo_violin",
+    "low_band_40_180hz_ratio_median": 0.0,
+    "frac_active_frames_low_band_gt_10pct": 0.0
+  },
+  {
+    "video_id": "Lbzlby9vsPQ",
+    "instrumentation_assessment": "consistent_with_solo_violin",
+    "low_band_40_180hz_ratio_median": 0.0001,
+    "frac_active_frames_low_band_gt_10pct": 0.001
+  },
+  {
+    "video_id": "M7ed4GcHrDU",
+    "instrumentation_assessment": "accompaniment_or_backing_likely",
+    "low_band_40_180hz_ratio_median": 0.0064,
+    "frac_active_frames_low_band_gt_10pct": 0.083
+  },
+  {
+    "video_id": "MlhwO532Kq8",
+    "instrumentation_assessment": "consistent_with_solo_violin",
+    "low_band_40_180hz_ratio_median": 0.0001,
+    "frac_active_frames_low_band_gt_10pct": 0.0
+  },
+  {
+    "video_id": "N0IfEhz1Mk4",
+    "instrumentation_assessment": "consistent_with_solo_violin",
+    "low_band_40_180hz_ratio_median": 0.0,
+    "frac_active_frames_low_band_gt_10pct": 0.0
+  },
+  {
+    "video_id": "NLCNBML_klU",
+    "instrumentation_assessment": "consistent_with_solo_violin",
+    "low_band_40_180hz_ratio_median": 0.0001,
+    "frac_active_frames_low_band_gt_10pct": 0.0
+  },
+  {
+    "video_id": "NajymY4e3Sc",
+    "instrumentation_assessment": "accompaniment_or_backing_likely",
+    "low_band_40_180hz_ratio_median": 0.0208,
+    "frac_active_frames_low_band_gt_10pct": 0.153
+  },
+  {
+    "video_id": "O1lMaGtgYNU",
+    "instrumentation_assessment": "consistent_with_solo_violin",
+    "low_band_40_180hz_ratio_median": 0.0,
+    "frac_active_frames_low_band_gt_10pct": 0.0
+  },
+  {
+    "video_id": "QhE5akgBAsE",
+    "instrumentation_assessment": "consistent_with_solo_violin",
+    "low_band_40_180hz_ratio_median": 0.0,
+    "frac_active_frames_low_band_gt_10pct": 0.0
+  },
+  {
+    "video_id": "UVdV0StMhJw",
+    "instrumentation_assessment": "accompaniment_or_backing_likely",
+    "low_band_40_180hz_ratio_median": 0.0416,
+    "frac_active_frames_low_band_gt_10pct": 0.118
+  },
+  {
+    "video_id": "UXE7XJv90k4",
+    "instrumentation_assessment": "consistent_with_solo_violin",
+    "low_band_40_180hz_ratio_median": 0.0002,
+    "frac_active_frames_low_band_gt_10pct": 0.002
+  },
+  {
+    "video_id": "VuoARsko2mU",
+    "instrumentation_assessment": "consistent_with_solo_violin",
+    "low_band_40_180hz_ratio_median": 0.0001,
+    "frac_active_frames_low_band_gt_10pct": 0.0
+  },
+  {
+    "video_id": "YFmxW8AIjzQ",
+    "instrumentation_assessment": "consistent_with_solo_violin",
+    "low_band_40_180hz_ratio_median": 0.0,
+    "frac_active_frames_low_band_gt_10pct": 0.0
+  },
+  {
+    "video_id": "YsVRtszht4w",
+    "instrumentation_assessment": "consistent_with_solo_violin",
+    "low_band_40_180hz_ratio_median": 0.0001,
+    "frac_active_frames_low_band_gt_10pct": 0.0
+  },
+  {
+    "video_id": "b7TazR2kH70",
+    "instrumentation_assessment": "consistent_with_solo_violin",
+    "low_band_40_180hz_ratio_median": 0.0001,
+    "frac_active_frames_low_band_gt_10pct": 0.0
+  },
+  {
+    "video_id": "bOU42l_7tDs",
+    "instrumentation_assessment": "consistent_with_solo_violin",
+    "low_band_40_180hz_ratio_median": 0.0001,
+    "frac_active_frames_low_band_gt_10pct": 0.0
+  },
+  {
+    "video_id": "bQKNmMOdzf0",
+    "instrumentation_assessment": "sub_violin_range_content",
+    "low_band_40_180hz_ratio_median": 0.1022,
+    "frac_active_frames_low_band_gt_10pct": 0.51
+  },
+  {
+    "video_id": "bibaK9eoyuA",
+    "instrumentation_assessment": "accompaniment_or_backing_likely",
+    "low_band_40_180hz_ratio_median": 0.0296,
+    "frac_active_frames_low_band_gt_10pct": 0.305
+  },
+  {
+    "video_id": "boYvij5VqVY",
+    "instrumentation_assessment": "sub_violin_range_content",
+    "low_band_40_180hz_ratio_median": 0.0042,
+    "frac_active_frames_low_band_gt_10pct": 0.113
+  },
+  {
+    "video_id": "c2Wv60_X17A",
+    "instrumentation_assessment": "consistent_with_solo_violin",
+    "low_band_40_180hz_ratio_median": 0.0002,
+    "frac_active_frames_low_band_gt_10pct": 0.001
+  },
+  {
+    "video_id": "cEHZC_Y3pYY",
+    "instrumentation_assessment": "consistent_with_solo_violin",
+    "low_band_40_180hz_ratio_median": 0.0002,
+    "frac_active_frames_low_band_gt_10pct": 0.012
+  },
+  {
+    "video_id": "cgYCpqyQuWc",
+    "instrumentation_assessment": "consistent_with_solo_violin",
+    "low_band_40_180hz_ratio_median": 0.0002,
+    "frac_active_frames_low_band_gt_10pct": 0.002
+  },
+  {
+    "video_id": "f1vryKuo7Oo",
+    "instrumentation_assessment": "uncertain",
+    "low_band_40_180hz_ratio_median": 0.0007,
+    "frac_active_frames_low_band_gt_10pct": 0.021
+  },
+  {
+    "video_id": "gDyUV07XELM",
+    "instrumentation_assessment": "consistent_with_solo_violin",
+    "low_band_40_180hz_ratio_median": 0.0,
+    "frac_active_frames_low_band_gt_10pct": 0.0
+  },
+  {
+    "video_id": "grPjVXnkrWU",
+    "instrumentation_assessment": "consistent_with_solo_violin",
+    "low_band_40_180hz_ratio_median": 0.0001,
+    "frac_active_frames_low_band_gt_10pct": 0.0
+  },
+  {
+    "video_id": "lZgWBwsO2EM",
+    "instrumentation_assessment": "consistent_with_solo_violin",
+    "low_band_40_180hz_ratio_median": 0.0001,
+    "frac_active_frames_low_band_gt_10pct": 0.0
+  },
+  {
+    "video_id": "mYo_eRDZb6w",
+    "instrumentation_assessment": "sub_violin_range_content",
+    "low_band_40_180hz_ratio_median": 0.0061,
+    "frac_active_frames_low_band_gt_10pct": 0.071
+  },
+  {
+    "video_id": "mjosTH1RJTw",
+    "instrumentation_assessment": "consistent_with_solo_violin",
+    "low_band_40_180hz_ratio_median": 0.0001,
+    "frac_active_frames_low_band_gt_10pct": 0.0
+  },
+  {
+    "video_id": "ogbNqfvsyM8",
+    "instrumentation_assessment": "uncertain",
+    "low_band_40_180hz_ratio_median": 0.0001,
+    "frac_active_frames_low_band_gt_10pct": 0.061
+  },
+  {
+    "video_id": "pBb7dTTAoGY",
+    "instrumentation_assessment": "consistent_with_solo_violin",
+    "low_band_40_180hz_ratio_median": 0.0,
+    "frac_active_frames_low_band_gt_10pct": 0.0
+  },
+  {
+    "video_id": "qKuNt_DRp54",
+    "instrumentation_assessment": "consistent_with_solo_violin",
+    "low_band_40_180hz_ratio_median": 0.0002,
+    "frac_active_frames_low_band_gt_10pct": 0.0
+  },
+  {
+    "video_id": "rHton6P43bo",
+    "instrumentation_assessment": "uncertain",
+    "low_band_40_180hz_ratio_median": 0.0014,
+    "frac_active_frames_low_band_gt_10pct": 0.029
+  },
+  {
+    "video_id": "tUKPPRN-Y00",
+    "instrumentation_assessment": "consistent_with_solo_violin",
+    "low_band_40_180hz_ratio_median": 0.0003,
+    "frac_active_frames_low_band_gt_10pct": 0.0
+  },
+  {
+    "video_id": "tq6X3q7VnF4",
+    "instrumentation_assessment": "uncertain",
+    "low_band_40_180hz_ratio_median": 0.0029,
+    "frac_active_frames_low_band_gt_10pct": 0.03
+  },
+  {
+    "video_id": "uALsg4aWKB0",
+    "instrumentation_assessment": "consistent_with_solo_violin",
+    "low_band_40_180hz_ratio_median": 0.0002,
+    "frac_active_frames_low_band_gt_10pct": 0.0
+  },
+  {
+    "video_id": "wciRSR1rpqw",
+    "instrumentation_assessment": "consistent_with_solo_violin",
+    "low_band_40_180hz_ratio_median": 0.0,
+    "frac_active_frames_low_band_gt_10pct": 0.0
+  },
+  {
+    "video_id": "yAJ1SDa5iJc",
+    "instrumentation_assessment": "consistent_with_solo_violin",
+    "low_band_40_180hz_ratio_median": 0.0,
+    "frac_active_frames_low_band_gt_10pct": 0.0
+  }
+]

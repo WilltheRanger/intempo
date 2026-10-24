@@ -651,6 +651,8 @@ def test_the_light_projection_names_every_other_field(
         # rather than `uuid4()`: the assertion only needs it to be non-null and
         # a stable one reads the same in every failure message.
         "assignment_id": "6bd3f2e1-0000-4000-8000-00000000a551",
+        "low_band_ratio": 0.0041,
+        "instrumentation_flagged": True,
     }
     user_id = uuid4()
     row = _analysis_row(user_id, uuid4(), status="done", **distinctive)

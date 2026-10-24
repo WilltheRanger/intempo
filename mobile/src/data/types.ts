@@ -520,6 +520,12 @@ export interface AnalysisResponse {
   failure_reason: string | null;
   alignment_quality: number | null;
   /**
+   * The advisory low-band instrumentation signal, from migration 031. Null
+   * on an older row, an un-migrated row, or a failed computation; absent
+   * from a server predating the column, which `readAnalysis` reads as null.
+   */
+  instrumentation_flagged?: boolean | null;
+  /**
    * Which leg of the pipeline an in-flight run has reached, or null.
    *
    * Advisory: `status` remains the authority on whether an analysis is
@@ -1115,6 +1121,14 @@ export interface TakeResult {
   measures: MeasureVerdict[];
   /** Rolling trend across the take, rush-positive. */
   trend: number[];
+  /**
+   * The advisory low-band instrumentation signal: another instrument or
+   * accompaniment may have been audible, so accuracy may be lower. `false`
+   * when the pipeline checked and found nothing; `null` on an older take,
+   * an un-migrated row, or a failed computation — never shown as "all
+   * clear", only as the caveat when `true`.
+   */
+  instrumentationFlagged: boolean | null;
   /** What this take was judged by. Null on older analyses. */
   tolerance: Tolerance | null;
   /** How in tune it was, or null — an older result, or too few notes read. */
