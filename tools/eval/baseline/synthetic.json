@@ -1,0 +1,18 @@
+{
+  "alignment_accuracy": 0.8002049180327869,
+  "false_rush_drag_rate": 0.125,
+  "intonation_mae_cents": 25.0,
+  "intonation_pct_within_loose": 0.0,
+  "intonation_pct_within_tight": 0.0,
+  "missed_note_precision": 0.0,
+  "missed_note_recall": 0.9166666666666666,
+  "n_takes": 12,
+  "onset_f1": 0.8532943067033977,
+  "onset_precision": 0.8821428571428571,
+  "onset_recall": 0.8275273224043715,
+  "refusal_rate": 0.08333333333333333,
+  "timing_mae_ms": 7.05332370699476,
+  "verdict_agreement_rate": 0.75,
+  "wrong_note_precision": 1.0,
+  "wrong_note_recall": 0.9166666666666666
+}
