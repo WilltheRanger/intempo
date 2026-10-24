@@ -2,11 +2,12 @@ import { useIsFocused } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import { Image, type ImageSource } from 'expo-image';
 import { useEffect, useId, useRef, type ReactNode } from 'react';
-import { Animated, Easing, Platform, StyleSheet, View } from 'react-native';
+import { Animated, Easing, Platform, StyleSheet, View, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { colors } from '../../design';
+import { SINE_IN_OUT_CSS, SWING_PAUSED, swingStyle } from '../../lib/motion/loops';
 import { useReducedMotion } from '../../lib/useReducedMotion';
 
 /**
@@ -42,8 +43,25 @@ const DRIFT = { distance: 16, ms: 14000 } as const;
 /** How far past the band's top and bottom edges the photograph is drawn. */
 const SLACK = 24;
 
-/** The web has no native driver, and asking for one there only warns. */
-const NATIVE_DRIVER = Platform.OS !== 'web';
+/**
+ * The drift on the web, which has no native driver: the same travel, time and
+ * curve as the native loop, run by the browser's compositor instead of by
+ * JavaScript on every frame (`lib/motion/loops`). Created on the web only;
+ * native has no use for keyframes.
+ */
+const webDrift =
+  Platform.OS === 'web'
+    ? StyleSheet.create({
+        drifting: swingStyle({
+          from: { transform: `translateY(${-DRIFT.distance}px)` },
+          to: { transform: `translateY(${DRIFT.distance}px)` },
+          ms: DRIFT.ms,
+          easing: SINE_IN_OUT_CSS,
+          fromMiddle: true,
+        }) as ViewStyle,
+        paused: SWING_PAUSED as ViewStyle,
+      })
+    : null;
 
 /** `[offset, opacity]` pairs down the band: how much of its own colour covers the photograph. */
 export type PhotoBandScrim = readonly (readonly [number, number])[];
@@ -98,8 +116,15 @@ export function PhotoBand({ photo, scrim, scrollY, children }: PhotoBandProps) {
         image role, which the web announces as an image with no name.
       */}
       <View pointerEvents="none" style={styles.photoFrame} aria-hidden>
-        <Animated.View style={[styles.photo, { transform: photoMotion }]}>
-          <Image source={photo} style={StyleSheet.absoluteFill} contentFit="cover" />
+        <Animated.View style={[styles.photo, { transform: photoMotion.transform }]}>
+          {/*
+            The drift's own layer on the web. A CSS animation of `transform`
+            replaces the element's whole transform, so it cannot share one with
+            the scroll above it.
+          */}
+          <View style={[StyleSheet.absoluteFill, photoMotion.drift]}>
+            <Image source={photo} style={StyleSheet.absoluteFill} contentFit="cover" />
+          </View>
         </Animated.View>
         <Svg style={StyleSheet.absoluteFill} width="100%" height="100%">
           <Defs>
@@ -124,10 +149,18 @@ export function PhotoBand({ photo, scrim, scrollY, children }: PhotoBandProps) {
  * The photograph moves at half the page's speed as it scrolls, and drifts up
  * and down very slowly while its screen is the one in front.
  *
- * Both run on the native driver. The drift stops when the screen is left —
- * tabs and stacked screens stay mounted, and a loop nobody can see is a battery
- * cost with nothing to show — and does not run at all under Reduce Motion,
- * where the photograph sits still in the middle of its travel.
+ * On a phone both run on the native driver. The web has none, and there the
+ * drift is the CSS animation `webDrift`, on a layer of its own. **It used to be
+ * the same `Animated` loop as on a phone, driven by JavaScript on every
+ * frame:** a settled Library kept the main thread busy for 806 ms of every
+ * second with the CPU slowed four times, and for none of it once the drift was
+ * stopped (2026-10-24), so every tap and scroll on the two screens with a band
+ * waited behind a photograph moving a hundredth of a point a frame.
+ *
+ * The drift stops when the screen is left (tabs and stacked screens stay
+ * mounted, and a loop nobody can see is a battery cost with nothing to show)
+ * and does not run at all under Reduce Motion, where the photograph sits still
+ * in the middle of its travel.
  */
 function usePhotoMotion(scrollY: Animated.Value | undefined) {
   const reduced = useReducedMotion();
@@ -135,7 +168,7 @@ function usePhotoMotion(scrollY: Animated.Value | undefined) {
   const drift = useRef(new Animated.Value(0.5)).current;
 
   useEffect(() => {
-    if (reduced || !focused) {
+    if (webDrift || reduced || !focused) {
       return undefined;
     }
     const step = (toValue: number) =>
@@ -143,32 +176,50 @@ function usePhotoMotion(scrollY: Animated.Value | undefined) {
         toValue,
         duration: DRIFT.ms,
         easing: Easing.inOut(Easing.sin),
-        useNativeDriver: NATIVE_DRIVER,
+        useNativeDriver: true,
       });
-    const loop = Animated.loop(Animated.sequence([step(1), step(0)]));
+    // **Not put back between rounds.** `Animated.loop` returns its value to
+    // where it started before every round unless told not to, and this one
+    // starts in the middle: the photograph jumped from the top of its travel
+    // to the middle every 28 seconds, and again each time its screen came back
+    // to the front (traced in Chromium, 2026-10-24).
+    const loop = Animated.loop(Animated.sequence([step(1), step(0)]), {
+      resetBeforeIteration: false,
+    });
     loop.start();
     return () => loop.stop();
   }, [drift, focused, reduced]);
 
-  return [
-    {
-      // Clamped at the top: pulling the page down past its start holds the
-      // photograph where it is instead of sliding it up out of the band.
-      translateY: scrollY
-        ? scrollY.interpolate({
-            inputRange: [0, 1000],
-            outputRange: [0, 500],
-            extrapolateLeft: 'clamp',
-          })
-        : 0,
-    },
-    {
-      translateY: drift.interpolate({
-        inputRange: [0, 1],
-        outputRange: [-DRIFT.distance, DRIFT.distance],
-      }),
-    },
-  ];
+  // Clamped at the top: pulling the page down past its start holds the
+  // photograph where it is instead of sliding it up out of the band.
+  const scroll = {
+    translateY: scrollY
+      ? scrollY.interpolate({
+          inputRange: [0, 1000],
+          outputRange: [0, 500],
+          extrapolateLeft: 'clamp',
+        })
+      : 0,
+  };
+
+  if (webDrift) {
+    return {
+      transform: [scroll],
+      drift: reduced ? null : focused ? webDrift.drifting : [webDrift.drifting, webDrift.paused],
+    };
+  }
+  return {
+    transform: [
+      scroll,
+      {
+        translateY: drift.interpolate({
+          inputRange: [0, 1],
+          outputRange: [-DRIFT.distance, DRIFT.distance],
+        }),
+      },
+    ],
+    drift: null,
+  };
 }
 
 /**
