@@ -1124,6 +1124,46 @@ After: the first chunk is scheduled 0.25 s after the tap on the laptop and
 none late. While the rest renders at a quarter speed, the score screen holds
 38 frames a second, and 59 once the render is done.
 
+### A photograph drifting a hundredth of a point a frame took the main thread (2026-10-24)
+
+The band at the head of the Library and of the piece screen drifts its
+photograph 16pt up and down every 14 s, with an `Animated.loop`. The web has
+no native driver, so that loop was JavaScript on every frame, followed by the
+style and layout work its new transform caused. On a Library with nothing
+loading and nothing touched, the main thread was busy for 806 ms of every
+second with the CPU slowed four times, and for none of it with the drift
+stopped under Reduce Motion. Scrolling that Library kept the thread 82% busy.
+A profile of a relaunch showed it as busy stretches that went on after
+everything had been drawn. Asking which elements kept changing, with a
+`MutationObserver` on `style`, named one `div` sixty times a second.
+
+The same trace found a second fault. `Animated.loop` returns its value to
+where it started before every round unless `resetBeforeIteration` is false.
+The drift starts in the middle of its travel, so every 28 s the photograph
+jumped 16pt from the top back to the middle, and again whenever its screen
+came back to the front.
+
+**The rules:**
+
+- **On the web, motion with no end is a CSS animation, not an `Animated`
+  loop.** `lib/motion/loops.ts` writes a swing as `@keyframes` for
+  `StyleSheet.create`. React Native for Web drops `animationKeyframes` from an
+  inline style. Animating `transform` or `opacity` that way runs on the
+  compositor and costs the main thread nothing while it runs. The band's
+  drift and the skeleton's pulse are both written this way. `FadeIn` made the
+  same move for entrances.
+- **A CSS animation of `transform` replaces the element's whole transform,**
+  so it gets a layer of its own. In the band, the scroll parallax stays on the
+  outer view and the drift goes on an inner one.
+- **A loop that does not start at one of its ends needs
+  `resetBeforeIteration: false`.**
+
+After: the settled Library's main thread is busy 5 ms a second rather than
+792, and scrolling it 23% rather than 82%. The photograph covers the same
+32pt, and its largest move between two samples 50 ms apart is 0.24pt, where
+the reset moved it 16. Under Reduce Motion the band is pixel-identical to
+before.
+
 ## `npm audit fix --force` would take this app back to SDK 46 (2026-09-09)
 
 `npm audit --omit=dev` reports **24 advisories, 7 of them high**, and closes

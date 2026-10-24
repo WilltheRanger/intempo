@@ -14,6 +14,8 @@ import screenContainerSource from '../primitives/ScreenContainer?raw';
 import stackSceneSource from '../../navigation/StackScene?raw';
 import rootNavigatorSource from '../../navigation/RootNavigator?raw';
 import motionSource from '../../design/motion?raw';
+import photoBandSource from '../pieces/PhotoBand?raw';
+import skeletonSource from '../primitives/Skeleton?raw';
 
 /**
  * Motion is a performance and interaction contract, not decoration.
@@ -212,5 +214,37 @@ describe('interaction motion', () => {
     // The curve's shape is the reason for the number, and a duration with no
     // note of it is one somebody halves again next time.
     expect(motionSource).toContain('96%');
+  });
+
+  /**
+   * **Motion that never ends runs on the compositor on the web.** The web has
+   * no native driver, so an `Animated.loop` there is JavaScript on every frame
+   * for as long as the screen is open. The band's drift was one: a settled
+   * Library kept the main thread busy for 806 ms of every second with the CPU
+   * slowed four times, and for none of it with the drift stopped. Each loop is
+   * held on both branches, because they are separate implementations of one
+   * motion.
+   */
+  it('drifts the band’s photograph in CSS on the web, and on the native driver elsewhere', () => {
+    expect(photoBandSource).toContain('swingStyle(');
+    expect(photoBandSource).toContain('easing: SINE_IN_OUT_CSS');
+    expect(photoBandSource).toContain('if (webDrift || reduced || !focused)');
+    expect(photoBandSource).toContain('useNativeDriver: true');
+    expect(photoBandSource).not.toContain("Platform.OS !== 'web'");
+  });
+
+  /**
+   * `Animated.loop` puts its value back where it started before every round,
+   * and the drift starts in the middle of its travel: the photograph jumped
+   * from the top to the middle every 28 seconds.
+   */
+  it('does not put the drift back between rounds', () => {
+    expect(photoBandSource).toContain('resetBeforeIteration: false');
+  });
+
+  it('pulses a skeleton in CSS on the web, where a loading screen needs the thread', () => {
+    expect(skeletonSource).toContain('swingStyle(');
+    expect(skeletonSource).toContain('if (reduceMotion || webPulse)');
+    expect(skeletonSource).not.toContain("useNativeDriver: Platform.OS !== 'web'");
   });
 });
