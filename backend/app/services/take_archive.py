@@ -76,7 +76,7 @@ from typing import TYPE_CHECKING
 from app.db import get_service_client
 from app.services.audio_storage import SIGNED_AUDIO_DOWNLOAD_TTL_SECONDS, object_key_from
 from app.services.buckets import AUDIO_BUCKET
-from app.services.cache_headers import CACHE_FOREVER
+from app.services.storage_writes import write_object
 
 # numpy and soundfile are imported by the two functions that encode, not here.
 # `main` imports this module for its sweeps, which only delete, and the web
@@ -180,18 +180,9 @@ def keep_playback_copy(client, analysis_id: str, reference: str, wav_bytes: byte
 
     bucket = client.storage.from_(AUDIO_BUCKET)
     try:
-        bucket.upload(
-            key,
-            opus,
-            # See `cache_headers.CACHE_FOREVER`: without this Supabase serves
-            # the take `no-cache` and the verdict screen re-downloads it on
-            # every visit.
-            {
-                "content-type": "audio/ogg",
-                "upsert": "true",
-                "cache-control": CACHE_FOREVER,
-            },
-        )
+        # Cached for good (`storage_writes`), or the verdict screen
+        # re-downloads the take on every visit.
+        write_object(bucket, key, opus, content_type="audio/ogg", upsert=True)
     except Exception:  # noqa: BLE001
         log.warning("analysis %s: could not upload %s", analysis_id, key, exc_info=True)
         return None

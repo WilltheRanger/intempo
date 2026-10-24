@@ -29,9 +29,9 @@ from fastapi import HTTPException, status
 
 from app.db import get_service_client
 from app.services.buckets import SCORE_BUCKET
-from app.services.cache_headers import CACHE_FOREVER
 from app.services.signed_urls import absolute, signed_url_in
 from app.services.storage_origin import origin_of
+from app.services.storage_writes import write_object
 
 log = logging.getLogger("intempo.scores")
 
@@ -410,22 +410,19 @@ def store_display_copy(key: str, jpeg_bytes: bytes, original_bytes: bytes) -> bo
     if client is None:
         return False
     try:
-        client.storage.from_(SCORE_BUCKET).upload(
+        # Cached for good (`storage_writes`), or the app re-downloads this
+        # derivative on every single view.
+        write_object(
+            client.storage.from_(SCORE_BUCKET),
             display_key_for(key),
             jpeg_bytes,
-            # `upsert`, because a re-transcription re-prepares the same page and
-            # should replace the copy rather than fail on a key that exists.
-            # `cache-control`, because Supabase stores what an upload sends
-            # and serves it forever after; with none it defaults to `no-cache`
-            # and the app re-downloads this derivative on every single view.
-            # The key is stable but its content is not variable: the derivative
-            # is a deterministic resize of the same photograph, so a
+            content_type="image/jpeg",
+            # Because a re-transcription re-prepares the same page and should
+            # replace the copy rather than fail on a key that exists. The key
+            # is stable but its content is not variable: the derivative is a
+            # deterministic resize of the same photograph, so a
             # re-transcription writes identical bytes.
-            {
-                "content-type": "image/jpeg",
-                "upsert": "true",
-                "cache-control": CACHE_FOREVER,
-            },
+            upsert=True,
         )
     except Exception:  # noqa: BLE001 — see the docstring: a page still shows
         log.warning("could not store a display copy of %s", key, exc_info=True)

@@ -27,6 +27,7 @@ import pytest
 import soundfile as sf
 
 from app.services import take_archive
+from app.services.cache_headers import CACHE_FOREVER
 from app.services.take_archive import keep_playback_copy, playback_key_for, to_opus
 from app.tests.fake_supabase import FakeSupabase
 
@@ -41,15 +42,22 @@ def _wav(seconds: float = 1.0, rate: int = 48_000) -> bytes:
 
 class _Bucket:
     def __init__(self, *, upload_fails: bool = False, remove_fails: bool = False) -> None:
+        self.id = "audio-uploads"
         self.uploaded: list[tuple[str, int]] = []
+        #: The headers each object was written with, by key.
+        self.headers: dict[str, dict] = {}
         self.removed: list[list[str]] = []
         self._upload_fails = upload_fails
         self._remove_fails = remove_fails
 
-    def upload(self, key, data, options=None):  # noqa: ANN001, ARG002
+    def _request(self, method, path, headers=None, content=None, **_kw):  # noqa: ANN001
+        """The raw write `storage_writes.write_object` makes."""
+        assert method == "POST" and path[:2] == ["object", self.id]
         if self._upload_fails:
             raise RuntimeError("storage said no")
-        self.uploaded.append((key, len(data)))
+        key = "/".join(path[2:])
+        self.uploaded.append((key, len(content)))
+        self.headers[key] = dict(headers or {})
 
     def remove(self, keys):  # noqa: ANN001
         if self._remove_fails:
@@ -175,6 +183,22 @@ def test_the_copy_is_stored_and_recorded_and_the_wav_is_left_for_the_sweep() -> 
     assert [name for name, _ in bucket.uploaded] == ["user-1/take.opus"]
     assert client.patches == [{"playback_key": "user-1/take.opus"}]
     assert bucket.removed == []
+
+
+def test_the_copy_is_written_to_be_cached_for_good() -> None:
+    """As the object itself, so Storage keeps `CACHE_FOREVER` as it is sent
+    (`storage_writes`). Through `upload` it was stored as `max-age=private,
+    max-age=31536000, immutable`, and the verdict screen downloaded the take
+    again on every visit."""
+    bucket = _Bucket()
+
+    keep_playback_copy(_Client(bucket), "a1", "user-1/take.wav", _wav())
+
+    headers = bucket.headers["user-1/take.opus"]
+    assert headers["cache-control"] == CACHE_FOREVER
+    assert headers["content-type"] == "audio/ogg"
+    # Replaced rather than refused: a re-run of the take writes the same key.
+    assert headers["x-upsert"] == "true"
 
 
 def test_a_failed_upload_leaves_the_wav_alone() -> None:

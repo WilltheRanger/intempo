@@ -334,14 +334,41 @@ class _Bucket:
     `remove` takes a list and ignores keys that are not there, which is what
     Supabase does — it answers with the rows it deleted and does not error on a
     key that is already gone. Both sweeps depend on that being harmless.
+
+    **`cache_control` is what Storage would store, not what was sent.** A
+    multipart `upload` gets `max-age=` written in front of its `cache-control`
+    option, as Storage does to a form's `cacheControl` field. A raw write
+    (`storage_writes.write_object`, through `_request`) keeps the request's
+    header as it is. That difference is how every object the API wrote came to
+    carry an unusable header, so the fake keeps it where a test can see it.
     """
 
     def __init__(self, name: str) -> None:
         self.name = name
+        self.id = name
         self.objects: dict[str, bytes] = {}
+        self.cache_control: dict[str, str] = {}
 
     def upload(self, key: str, data: bytes, options: dict | None = None) -> None:
         self.objects[key] = bytes(data)
+        self.cache_control[key] = f"max-age={(options or {}).get('cache-control', '3600')}"
+
+    def _request(
+        self,
+        method: str,
+        path: list[str],
+        headers: dict[str, str] | None = None,
+        content: bytes | None = None,
+        **_: Any,
+    ) -> None:
+        """The one raw request the API makes: an object written as the body."""
+        assert method == "POST" and path[:2] == ["object", self.id], (method, path)
+        headers = headers or {}
+        key = "/".join(path[2:])
+        if key in self.objects and headers.get("x-upsert") != "true":
+            raise RuntimeError(f"The resource already exists: {key}")
+        self.objects[key] = bytes(content or b"")
+        self.cache_control[key] = headers.get("cache-control", "no-cache")
 
     def remove(self, keys: list[str]) -> list[dict]:
         removed = [key for key in keys if self.objects.pop(key, None) is not None]
