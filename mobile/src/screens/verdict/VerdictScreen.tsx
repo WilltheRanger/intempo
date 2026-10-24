@@ -26,6 +26,7 @@ import { pitchWord } from '../../lib/verdict/intonation';
 import { namedMarks, noteDetail, notesLine, takeNoteMarks } from '../../lib/verdict/pitchByNote';
 import { NoteRow } from '../../components/charts/NoteRow';
 import { headlinePassage, practiceLabel } from '../../lib/verdict/passage';
+import { shouldShowInstrumentationHint } from '../../lib/verdict/instrumentationHint';
 import { mistakeBars, mistakesInPassage } from '../../lib/verdict/mistakes';
 import {
   barsLabel,
@@ -414,6 +415,13 @@ export function VerdictScreen() {
       {take.lowConfidence ? (
         <Text variant="body" color="textSecondary" style={styles.headline}>
           Hard to hear. Try a quieter room, closer to the mic.
+        </Text>
+      ) : null}
+
+      {shouldShowInstrumentationHint(take.instrumentationFlagged) ? (
+        <Text variant="body" color="textSecondary" style={styles.headline}>
+          This take may have accompaniment or another instrument, so accuracy
+          may be lower.
         </Text>
       ) : null}
 
