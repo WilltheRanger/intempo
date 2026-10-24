@@ -1,4 +1,101 @@
-# Synthetic ground-truth takes
+# Evaluation harness (JERA-563)
+
+`run.py` runs the real `backend/app/services/analysis.analyze()` over every
+take a dataset contributes and scores the result against ground truth —
+onset precision/recall/F1, alignment accuracy, timing error, intonation
+error, wrong/missed-note precision and recall, verdict agreement, false
+rush/drag rate on clean takes, and refusals. `harness.py` is where the
+scoring happens; `report.py` turns a run into the markdown/JSON report
+below; `run_gate.py` is the fast, synthetic-only subset
+`tools/preflight.py` and CI run on every push.
+
+```
+tools/eval/run.py                # synthetic takes only — always available
+tools/eval/run.py --urmp         # + URMP, once fetch_urmp.py has populated it
+tools/eval/run_gate.py           # the regression gate, against baseline/synthetic.json
+tools/eval/run_gate.py --update  # after a deliberate grading change — log it
+                                  # in TUNING_LOG.md first
+```
+
+## Datasets
+
+**`datasets/synthetic.py`** — always available. Twelve hand-curated
+scenarios over `synthetic_takes.py`'s generator (one per injected-error
+type, plus clean and mixed takes), rendered to a plain-tone waveform by
+`synth_audio.py`. Nothing here is committed audio; everything is generated
+at run time from the score fixtures already in the repo. See the section
+below for what the generator does and does not model — in particular, its
+plain sine-wave renderer is good enough to exercise every metric but is not
+a substitute for a real recording, and the baseline numbers below should be
+read with that in mind (a detector tuned against bowed-string attacks will
+not always find a clean attack in a continuous harmonic tone).
+
+**`datasets/urmp.py`** — real recordings, eval-only, never committed. URMP
+(University of Rochester Multi-Modal Music Performance dataset) is **CC BY
+4.0** — see
+<https://www.ece.rochester.edu/projects/air/projects/URMP.html>. Per
+Lens's JERA-560 research: manually-corrected note-level ground truth
+(pYIN via Tony, hand-checked), professional/conservatory performers,
+studio conditions — a strong *independent* reference for pitch-tracker and
+onset accuracy, and a ceiling measurement rather than a phone-mic
+robustness test. Bach10 (non-commercial license) and MusicNet
+(piano-skewed) were considered and skipped, per that research and the
+user's direction. Violin Etudes (Tamer et al., ISMIR 2022, Zenodo
+10.5281/zenodo.6564408, also CC BY 4.0) is the second real dataset for
+scale once URMP's numbers look right — not yet wired into
+`datasets/`, since URMP alone already gives independently-verified ground
+truth and Violin Etudes' f0 labels are automatic rather than
+hand-corrected (lower-confidence ground truth, better suited to a
+volume/generalisation check than a first baseline).
+
+### Getting the data
+
+**The official 12.5 GB release is gated behind a Google Form on the project
+page, not a plain URL** — a human fills it in and gets a download link by
+email, the same shape as this codebase's magic-link auth gate elsewhere:
+not something a session can do on anyone's behalf. `fetch_urmp.py` instead
+pulls the same CC-BY-4.0-licensed files, piece by piece, from a
+long-standing third-party mirror that reproduces the official layout
+exactly (see its docstring for the exact URL and the files it does and does
+not fetch — never the videos, never a non-violin instrument's audio).
+
+```
+tools/eval/fetch_urmp.py
+```
+
+Populates `intempo-eval-data/urmp/` (outside the repository, gitignored at
+the workspace root) with four pieces — a violin/cello duet, a two-violin
+duet, and two quartets, a deliberately small first slice rather than the
+full 44-piece corpus. Add to `PIECES` in that file and re-run to grow it.
+
+### What URMP's ground truth is, and is not
+
+`Notes_<n>_vn_<piece>.txt` is a flat, unindexed list of the notes a
+violinist actually played (onset, Hz, duration) — it has no correspondence
+to this pipeline's own written-score note indices, because a real player
+does not attack notes at the written score's positions the way the
+synthetic generator's ground truth does by construction. The harness scores
+onset accuracy against it *by time* (exactly the independent check Lens's
+research recommends), and reads `AnalysisResult` as a real pipeline run for
+everything else — it does not try to force URMP's ground truth into
+`SCHEMA.md`'s synthetic shape. Two consequences:
+
+- **No rush/drag ground truth.** URMP's performers are not playing to a
+  metronome; a steady-tempo verdict direction has no independent answer to
+  compare against here, so `verdict_agreement_rate` and
+  `false_rush_drag_rate` are not scored on URMP takes — only
+  onset/alignment/intonation are. The synthetic dataset is what the
+  regression gate watches for exactly this reason.
+- **The written score is reconstructed, not sourced from an engraving.**
+  `datasets/midi_score.py` reads `Sco_<piece>.mid` directly (no `mido`/
+  `pretty_midi` dependency — a from-scratch Standard MIDI File reader, a
+  couple hundred lines, since this is the only caller) and quantizes
+  performed durations to the nearest notated value to build a `ScoreJson`.
+  Onset times drift by a few milliseconds from quantization error
+  accumulated across a piece — well inside the default 50 ms onset
+  tolerance, but worth knowing before reading a borderline number as exact.
+
+## Synthetic ground-truth takes (JERA-562)
 
 `synthetic_takes.py` turns a score JSON fixture into a labelled "take":
 a timeline of expected vs. played note onsets and pitches, with chosen
