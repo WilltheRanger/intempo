@@ -39,7 +39,7 @@ from uuid import UUID
 
 from app.services import pending_uploads
 from app.services.buckets import AVATAR_BUCKET
-from app.services.cache_headers import CACHE_FOREVER
+from app.services.storage_writes import write_object
 
 log = logging.getLogger("intempo.me")
 
@@ -127,11 +127,7 @@ def shrink_if_oversized(client: Any, user_id: UUID, key: str) -> str | None:
     new_key = f"{user_id}/{uuid.uuid4()}.jpg"
     pending_uploads.record(user_id, AVATAR_BUCKET, new_key)
     try:
-        bucket.upload(
-            new_key,
-            small,
-            {"content-type": "image/jpeg", "cache-control": CACHE_FOREVER},
-        )
+        write_object(bucket, new_key, small, content_type="image/jpeg")
         moved = (
             client.table("users")
             .update({"avatar_key": new_key})
