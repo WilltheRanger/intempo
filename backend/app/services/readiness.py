@@ -154,6 +154,13 @@ REQUIRED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     # — so a deployment missing it analyses exactly as before and keeps no
     # record of why a take was refused, which is the one thing it is for.
     ("analyses", "diagnostics", "027"),
+    # 031. The advisory low-band instrumentation signal. Degrades quietly the
+    # same way as 026/027 — `_update` drops both keys and logs rather than
+    # lose the verdict over them — so a deployment missing them analyses
+    # exactly as before and simply never learns whether a take sounded like it
+    # had company.
+    ("analyses", "low_band_ratio", "031"),
+    ("analyses", "instrumentation_flagged", "031"),
     # 013. All three degrade quietly on purpose — every caller narrows its
     # select or retries its write without them, because the alternative was a
     # save that 500s and a scan that sits `reading` forever during the window

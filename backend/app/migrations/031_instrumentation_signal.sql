@@ -14,7 +14,8 @@
 -- this migration yet. No backfill: the signal is only ever measured on the
 -- audio already in hand while a take is being analysed.
 alter table public.analyses
-  add column if not exists low_band_ratio double precision,
+  add column if not exists low_band_ratio double precision;
+alter table public.analyses
   add column if not exists instrumentation_flagged boolean;
 
 comment on column public.analyses.low_band_ratio is
