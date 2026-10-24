@@ -1543,11 +1543,11 @@ console.log('\n## A take that records');
     // player and two choices; nothing is uploaded until Analyse. The player
     // has to have opened the take — a length under its rail — or the review
     // is a promise with nothing behind it.
-    const analyse = loud.getByRole('button', { name: /^Analyse$/ }).first();
+    const analyse = loud.getByRole('button', { name: /^Analyze$/ }).first();
     const offered = await analyse.waitFor({ timeout: 10000 }).then(() => true, () => false);
     const again = await loud.getByRole('button', { name: /^Record again$/ }).count();
-    if (offered && again > 0) pass('Stop holds the take: Analyse or Record again');
-    else fail(`after Stop: Analyse ${offered ? 'offered' : 'missing'}, Record again ${again ? 'offered' : 'missing'}`);
+    if (offered && again > 0) pass('Stop holds the take: Analyze or Record again');
+    else fail(`after Stop: Analyze ${offered ? 'offered' : 'missing'}, Record again ${again ? 'offered' : 'missing'}`);
     const length = await awaitLine((l) => /^\d+:\d\d$/.test(l) && l !== '0:00', 8000);
     if (length) pass(`the held take plays back: ${length} long`);
     else fail('the held take never loaded into its player');
