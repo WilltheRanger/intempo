@@ -162,8 +162,11 @@ def test_it_is_wired_into_the_periodic_sweep() -> None:
         "serving stays stuck until the next deploy"
     )
 
+    # Recovery runs as a task the lifespan starts, so the server answers while
+    # it works. Both halves: the task is started, and the sweep is in it.
     startup = code.split("async def lifespan")[1]
-    assert "sweep_stuck_transcriptions()" in startup, (
+    recovery = code.split("async def _recover_after_restart")[1].split("@asynccontextmanager")[0]
+    assert "_recover_after_restart()" in startup and "sweep_stuck_transcriptions" in recovery, (
         "nothing recovers the reads that were in flight when the process died"
     )
 

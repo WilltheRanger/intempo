@@ -97,6 +97,41 @@ async def _sweep_periodically() -> None:
             log.info("reading-rate: forgot %d idle account(s)", forgotten)
 
 
+async def _recover_after_restart() -> None:
+    """Recover what the last process left in flight, once the server answers.
+
+    BackgroundTasks don't survive a crash/restart (spec Batch 4 §4), so the jobs
+    a dead process was holding have to be found again. **This used to run
+    before the server would answer anything**, and on a free instance that is
+    in front of every wake: uvicorn accepts no connection until the lifespan
+    yields, and the three database round trips here, the first of them opening
+    the TLS connection to Supabase at a tenth of a CPU, took 2.2 s on the live
+    instance (02:07:34.5 to 02:07:36.8 on 2026-10-24, "Waiting for application
+    startup" to "complete"). The app wakes the host on `/v1/health` and holds
+    every screen on the answer, so those seconds were added to every cold open.
+
+    Nothing in it has to come first. Each step touches only rows that have
+    stood still for minutes — `STUCK_AFTER`, the transcription sweeper's own
+    limits, `UNSTARTED_GRACE` — so a request arriving meanwhile is about a row
+    it will not touch, and a musician polling a stuck one sees it released a
+    second later than before rather than not at all.
+
+    In the order it always ran, each step in a thread and each contained: a
+    failed sweep costs that sweep, and an API that will not start because
+    recovery failed is strictly worse than one with some rows still stuck.
+    """
+    steps = (
+        ("stuck-analysis sweep", sweep_stuck_analyses),
+        ("stuck-transcription sweep", sweep_stuck_transcriptions),
+        ("resuming unstarted reads", dispatch.resume_unstarted_reads),
+    )
+    for name, step in steps:
+        try:
+            await asyncio.to_thread(step)
+        except Exception:  # noqa: BLE001 — never let recovery stop the server
+            log.exception("%s failed on startup", name)
+
+
 def _report_reader_configuration() -> None:
     """Say, at startup, whether this build can read a page at all.
 
@@ -140,19 +175,9 @@ async def lifespan(_app: FastAPI):
     configure_logging()
     _report_reader_configuration()
 
-    # BackgroundTasks don't survive a crash/restart, so recover any job
-    # orphaned mid-analysis before we start serving (spec Batch 4 §4).
-    try:
-        sweep_stuck_analyses()
-    except Exception:  # noqa: BLE001 — never let recovery block startup
-        log.exception("stuck-analysis sweep failed on startup")
-    try:
-        sweep_stuck_transcriptions()
-    except Exception:  # noqa: BLE001 — never let recovery block startup
-        log.exception("stuck-transcription sweep failed on startup")
-    # Scans this service accepted and lost before a reader saw them — the
-    # queue they wait in is memory. See `resume_unstarted_reads`.
-    dispatch.resume_unstarted_reads()
+    # Jobs the last process died holding, recovered beside the first requests
+    # rather than in front of them. See `_recover_after_restart`.
+    recovery = asyncio.create_task(_recover_after_restart())
 
     # The first take in a fresh process used to wait two minutes on numba
     # compiling librosa. The image carries that compiled code now (see the
@@ -172,9 +197,10 @@ async def lifespan(_app: FastAPI):
     finally:
         # Without this the task outlives the app under a reloader, and each
         # restart leaves another one sweeping.
-        sweeper.cancel()
-        with suppress(asyncio.CancelledError):
-            await sweeper
+        for task in (sweeper, recovery):
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
 
 
 # ---------------------------------------------------------------------------

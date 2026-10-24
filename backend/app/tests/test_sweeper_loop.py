@@ -34,6 +34,18 @@ def _sweeper_tasks() -> list[asyncio.Task]:
     return [t for t in asyncio.all_tasks() if "_sweep_periodically" in repr(t.get_coro())]
 
 
+def _recovery_tasks() -> list[asyncio.Task]:
+    return [t for t in asyncio.all_tasks() if "_recover_after_restart" in repr(t.get_coro())]
+
+
+async def _recovered() -> None:
+    """Wait, with a deadline, for the startup recovery to finish."""
+    tasks = _recovery_tasks()
+    if tasks:
+        async with asyncio.timeout(5):
+            await asyncio.gather(*tasks)
+
+
 @asynccontextmanager
 async def _running_app():
     """The app's lifespan, entered and always left.
@@ -156,12 +168,78 @@ def test_startup_sweeps_once_and_starts_the_periodic_one(monkeypatch) -> None:
 
     async def body() -> None:
         async with _running_app():
+            await _recovered()
             assert startup == [1], "the crash you restart after is the startup sweep's job"
             assert _sweeper_tasks(), (
                 "nothing watches for the crash you do not restart after"
             )
 
     asyncio.run(body())
+
+
+def test_the_server_answers_before_recovery_finishes(monkeypatch) -> None:
+    """Recovery runs beside the first requests, never in front of them.
+
+    uvicorn accepts no connection until the lifespan yields, and on a free
+    instance every wake starts with the app waiting on `/v1/health`. Recovery
+    held that answer for 2.2 s of database round trips on the live instance. So
+    the sweep here blocks until released, and starting the app must not wait
+    for it — then, released, it must still run, in the order it always did.
+    """
+    released = threading.Event()
+    order: list[str] = []
+    monkeypatch.setattr(main, "SWEEP_INTERVAL_SECONDS", 3600)
+    monkeypatch.setattr(main, "sweep_once", lambda: None)
+
+    def _slow_sweep() -> None:
+        released.wait(5)
+        order.append("analyses")
+
+    monkeypatch.setattr(main, "sweep_stuck_analyses", _slow_sweep)
+    monkeypatch.setattr(main, "sweep_stuck_transcriptions", lambda: order.append("transcriptions"))
+    monkeypatch.setattr(main.dispatch, "resume_unstarted_reads", lambda: order.append("unstarted"))
+
+    async def body() -> None:
+        context = main.lifespan(main.app)
+        try:
+            async with asyncio.timeout(1):
+                await context.__aenter__()
+        except TimeoutError:
+            released.set()
+            raise AssertionError("the server waited on recovery before answering") from None
+        try:
+            assert order == [], "recovery finished before it was released"
+            released.set()
+            await _recovered()
+            assert order == ["analyses", "transcriptions", "unstarted"]
+        finally:
+            released.set()
+            closing = asyncio.create_task(context.__aexit__(None, None, None))
+            await asyncio.wait({closing}, timeout=2)
+
+    asyncio.run(body())
+
+
+def test_a_failed_recovery_step_does_not_stop_the_next(monkeypatch) -> None:
+    """Each step contained on its own, as the startup sweeps always were."""
+    ran: list[str] = []
+    monkeypatch.setattr(main, "SWEEP_INTERVAL_SECONDS", 3600)
+    monkeypatch.setattr(main, "sweep_once", lambda: None)
+
+    def _raises() -> None:
+        raise RuntimeError("no database")
+
+    monkeypatch.setattr(main, "sweep_stuck_analyses", _raises)
+    monkeypatch.setattr(main, "sweep_stuck_transcriptions", lambda: ran.append("transcriptions"))
+    monkeypatch.setattr(main.dispatch, "resume_unstarted_reads", lambda: ran.append("unstarted"))
+
+    async def body() -> None:
+        async with _running_app():
+            await _recovered()
+
+    asyncio.run(body())
+
+    assert ran == ["transcriptions", "unstarted"]
 
 
 def test_a_broken_startup_sweep_does_not_stop_the_server(monkeypatch) -> None:
