@@ -1,5 +1,48 @@
 # InTempo Decisions
 
+## 2026-10-24 — The browser revalidates the Library listing; the API confirms it without the notation
+
+**Context:** The Library refetches `GET /v1/scores` on every launch, and that
+page carries every piece's notation. The largest library on the live project
+is 23 pieces and 786 KB of it. Each launch read all of it out of Postgres,
+decoded it and compressed it again on a tenth of a CPU, to send a phone what
+it already had. On a 22-piece library of 2.85 MB that is 15.5 ms of CPU per
+launch, more than any other request the app makes on opening.
+
+**Decision:** Every listing carries a weak `ETag` and `Cache-Control:
+private, no-cache`. The browser keeps the page and sends `If-None-Match` by
+itself. The API then reads the page *without* the notation, and answers 304
+when the rows match the tag. The tag is a digest of every row as sent except
+for the notation. That is enough because the notation goes out exactly as
+stored, and a trigger moves `updated_at` on every update of a score. A copy
+that is out of date gets the whole page again, read once more with its
+notation. Confirming costs 0.5 ms and 244 bytes to the phone, against 15.5 ms
+and 57 KB compressed.
+
+**Alternatives considered:**
+- *The app keeps the tag and sends it.* The phone would also skip parsing the
+  page (23 ms with the CPU slowed four times). But the tag has to travel with
+  the persisted copy it vouches for, and the persisted list is a bare
+  `Piece[]` with nowhere to put one. `If-None-Match` from script also needs a
+  CORS allowance: an API rolled back past it would refuse every listing from
+  a phone still holding a tag.
+- *Hash the whole response body.* No read is saved, because the notation has
+  to be fetched before it can be hashed. Only the transfer to the phone is
+  saved.
+- *Sign photographs so their URLs survive a restart.* The URLs come from
+  Supabase Storage, and the API does not control their tokens.
+
+**Trade-offs accepted:**
+- **A changed library costs one extra query.** The rows are read without
+  notation, then again with it. That is one more round trip, and only when
+  the copy is out of date.
+- **A restart re-signs every photograph,** so each copy is sent in full once
+  afterwards. A free instance that sleeps after fifteen idle minutes restarts
+  often, so the saving shows mostly when the API is busy, which is when it
+  counts.
+- **The notation must stay passed through.** If it is ever reshaped on its way
+  out, whatever reshapes it has to go into the tag (`_listing_tag`).
+
 ## 2026-10-24 — Listen plays the opening while the rest is rendered
 
 **Context:** Listen renders the passage with `spessasynth_core` before it plays
