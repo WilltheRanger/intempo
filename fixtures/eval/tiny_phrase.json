@@ -1,0 +1,32 @@
+{
+  "what": "A four-note synthetic phrase for tools/eval/synthetic_takes.py's own tests.",
+  "why": "Small enough to read in one glance and reason about by hand: four quarter notes, one bar each, so an injected error lands on an obvious note rather than somewhere in a real piece's bar count.",
+  "score": {
+    "clef": "treble",
+    "time_signature": "4/4",
+    "key_signature": "C major",
+    "tempo_marking": null,
+    "bpm_hint": 90,
+    "ocr_confidence": 1.0,
+    "measures": [
+      {
+        "measure_number": 1,
+        "notes": [
+          {"pitch": "A4", "duration": "quarter", "articulation": null, "tied_to_next": false, "dynamics": null},
+          {"pitch": "B4", "duration": "quarter", "articulation": null, "tied_to_next": false, "dynamics": null},
+          {"pitch": "C5", "duration": "quarter", "articulation": null, "tied_to_next": false, "dynamics": null},
+          {"pitch": "D5", "duration": "quarter", "articulation": null, "tied_to_next": false, "dynamics": null}
+        ]
+      },
+      {
+        "measure_number": 2,
+        "notes": [
+          {"pitch": "E5", "duration": "quarter", "articulation": null, "tied_to_next": false, "dynamics": null},
+          {"pitch": "D5", "duration": "quarter", "articulation": null, "tied_to_next": false, "dynamics": null},
+          {"pitch": "C5", "duration": "quarter", "articulation": null, "tied_to_next": false, "dynamics": null},
+          {"pitch": "A4", "duration": "quarter", "articulation": null, "tied_to_next": false, "dynamics": null}
+        ]
+      }
+    ]
+  }
+}
