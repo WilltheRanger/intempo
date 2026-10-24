@@ -1575,6 +1575,7 @@ function buildFixtureTake(): TakeResult | null {
     direction: 'rush',
     verdict: verdictFor('rush_drag', 'rush'),
     lowConfidence: false,
+    instrumentationFlagged: null,
     measures,
     // Only the timed bars — which is what the pipeline now sends too:
     // `rolling_trend` excludes notes under a written change, the same

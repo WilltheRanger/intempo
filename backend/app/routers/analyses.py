@@ -171,6 +171,16 @@ class AnalysisResponse(BaseModel):
     result_json: dict[str, Any] | None = None
     failure_reason: str | None = None
     alignment_quality: float | None = None
+    #: The advisory low-band instrumentation signal
+    #: (`services.instrumentation_signal`), measured on this take's audio
+    #: while it was analysed. Read-only, never enforced and never a reason a
+    #: take fails: null on a take recorded before migration 031, one whose
+    #: signal failed to compute, an un-migrated deployment, or any
+    #: unfinished run. A flagged take may be exactly what the musician meant
+    #: to record — see the module docstring before building anything that
+    #: reads this as ground truth.
+    low_band_ratio: float | None = None
+    instrumentation_flagged: bool | None = None
     #: Which leg of the pipeline an in-flight run has reached, or null.
     #:
     #: Advisory, and the client must treat it that way: `status` says whether
@@ -377,6 +387,8 @@ def _response_fields(row: dict[str, Any]) -> dict[str, Any]:
         result_json=row.get("result_json"),
         failure_reason=row.get("failure_reason"),
         alignment_quality=row.get("alignment_quality"),
+        low_band_ratio=row.get("low_band_ratio"),
+        instrumentation_flagged=row.get("instrumentation_flagged"),
         stage=row.get("stage"),
         created_at=row["created_at"],
         updated_at=row["updated_at"],

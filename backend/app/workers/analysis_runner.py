@@ -55,6 +55,7 @@ log = logging.getLogger("intempo.analysis")
 _PIPELINE = {
     "analyze": ("app.services.analysis", "analyze"),
     "audio_svc": ("app.services.audio", None),
+    "low_band_signal": ("app.services.instrumentation_signal", "low_band_signal"),
 }
 
 
@@ -355,6 +356,21 @@ def run_analysis(analysis_id: str) -> None:
 
         _stage(client, analysis_id, "decoding")
         y, sr = _bound("audio_svc").load_audio_bytes(audio_bytes)
+        # Advisory only (see `services.instrumentation_signal`'s docstring):
+        # measured on the audio already decoded above, never a second decode,
+        # and never allowed to cost a take its verdict. `None` on any failure,
+        # which the API and migration 031 both already treat the same as a
+        # take recorded before this existed.
+        low_band_ratio: float | None = None
+        instrumentation_flagged: bool | None = None
+        try:
+            signal = _bound("low_band_signal")(y, sr)
+            low_band_ratio = signal.low_band_ratio
+            instrumentation_flagged = signal.flagged
+        except Exception:  # noqa: BLE001 — advisory, see above
+            log.warning(
+                "analysis %s: instrumentation signal failed", analysis_id, exc_info=True
+            )
         # The one caller that has ever set this. `analyze()` has taken a
         # `double_bass` flag since Batch 3 — a high-pass filter and a lower
         # onset threshold for the register where attacks are softest and the
@@ -406,6 +422,8 @@ def run_analysis(analysis_id: str) -> None:
             "stage": None,
             "result_json": result_payload,
             "alignment_quality": result.quality,
+            "low_band_ratio": low_band_ratio,
+            "instrumentation_flagged": instrumentation_flagged,
             "failure_reason": None,
             "finished_at": _now_iso(),
             "updated_at": _now_iso(),
@@ -471,8 +489,28 @@ def _load_score(client, score_id: str, user_id: str) -> ScoreJson:
     return ScoreJson.model_validate(rows[0]["score_json"])
 
 
+#: Columns that may not exist yet on a deployment that hasn't applied
+#: migration 031 — dropped from a write that otherwise fails because of them,
+#: the same accommodation `_insert_analysis` makes for `capture` and
+#: migration 026. The verdict itself must never be lost over an advisory
+#: signal's column.
+_ADVISORY_ONLY_COLUMNS = ("low_band_ratio", "instrumentation_flagged")
+
+
 def _update(client, analysis_id: str, patch: dict) -> None:
-    client.table("analyses").update(patch).eq("id", analysis_id).execute()
+    try:
+        client.table("analyses").update(patch).eq("id", analysis_id).execute()
+    except Exception as exc:  # noqa: BLE001 — re-raised unless it is the one we expect
+        advisory_keys = [k for k in _ADVISORY_ONLY_COLUMNS if k in patch]
+        if not advisory_keys or not any(k in str(exc) for k in advisory_keys):
+            raise
+        log.warning(
+            "analysis %s: instrumentation columns missing (migration 031); "
+            "writing the verdict without them",
+            analysis_id,
+        )
+        without = {k: v for k, v in patch.items() if k not in _ADVISORY_ONLY_COLUMNS}
+        client.table("analyses").update(without).eq("id", analysis_id).execute()
 
 
 def _finish_failed(client, analysis_id: str, reason: str) -> None:
