@@ -77,6 +77,9 @@ const analysis = shape({
   result_json: nullable(isObject),
   failure_reason: nullable(isString),
   alignment_quality: nullable(isNumber),
+  // Added after the rest (migration 031); absent reads as "no signal computed".
+  instrumentation_flagged: (value) =>
+    value === undefined || value === null || isBoolean(value),
   created_at: isString,
   updated_at: isString,
   finished_at: nullable(isString),
@@ -117,7 +120,11 @@ function readAnalysis(value: unknown): AnalysisResponse {
     throw unexpected('analysis');
   }
   const row = value as Record<string, unknown>;
-  return { ...row, stage: row.stage ?? null } as unknown as AnalysisResponse;
+  return {
+    ...row,
+    stage: row.stage ?? null,
+    instrumentation_flagged: row.instrumentation_flagged ?? null,
+  } as unknown as AnalysisResponse;
 }
 
 export const parseAnalysis = (value: unknown): AnalysisResponse =>

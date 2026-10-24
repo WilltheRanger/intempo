@@ -661,6 +661,7 @@ function toTake(
     direction: result.verdict_direction,
     verdict: verdictFor(worstBandOf(result), result.verdict_direction),
     lowConfidence: result.low_confidence,
+    instrumentationFlagged: analysis.instrumentation_flagged ?? null,
     measures,
     // Already rush-positive from the pipeline — the one field that isn't flipped.
     trend: result.trend ?? [],
@@ -740,6 +741,7 @@ function toFailedTake(
     direction: 'on',
     verdict: 'on_tempo',
     lowConfidence: false,
+    instrumentationFlagged: null,
     measures: [],
     trend: [],
     tolerance: null,
