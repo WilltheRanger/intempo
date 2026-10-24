@@ -9,6 +9,7 @@ import type { Instrument } from '../../data/types';
 import type { Schedule } from './schedule';
 import { INSTRUMENT_PROGRAMS } from './soundfontBank';
 import { Limiter } from './limiter';
+import { nextTask } from '../nextTask';
 import { soundingOffset } from '../instrument';
 import {
   EXPRESSION_NEUTRAL,
@@ -288,12 +289,20 @@ export function handoffEvents(schedule: Schedule): ControlEvent[] {
 /** One engine and preset per play: no effects/notes leak into a later take.
  * Stereo at 44.1 kHz. The engine owns all filters, modulation and releases.
  * Note events split the audio blocks so rhythm never depends on JS timers.
+ *
+ * `onWritten`, if given, is told how many frames of the passage are final each
+ * time the render gives the thread back, and once more when it has all of
+ * them — with the passage's own buffer, which fills from the start — so a
+ * player can begin on the opening while the rest is still being rendered
+ * (`audioChunks.ts`). A passage served from the cache is complete at once and
+ * reports nothing.
  */
 export async function renderSoundfont(
   schedule: Schedule,
   bank: BasicSoundBank,
   instrument: Instrument,
   cancelled: () => boolean,
+  onWritten?: (audio: RenderedInstrument, written: number) => void,
 ): Promise<RenderedInstrument> {
   if (
     !Number.isFinite(schedule.durationS) ||
@@ -341,6 +350,12 @@ export async function renderSoundfont(
   synth.reverbProcessor.preDelayTime = 10;
   const frames = Math.ceil((schedule.durationS + TAIL) * RATE);
   const pcm = new Int16Array(frames * 2);
+  const audio: RenderedInstrument = {
+    pcm,
+    sampleRate: RATE,
+    channels: 2,
+    durationS: frames / RATE,
+  };
   const limiter = new Limiter(RATE, CEILING);
   const limited: [number, number] = [0, 0];
   // The limiter hands each sample back `lookahead` samples late; writing it
@@ -405,7 +420,10 @@ export async function renderSoundfont(
       sinceYield += length;
       if (sinceYield >= 8192) {
         sinceYield = 0;
-        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        onWritten?.(audio, written);
+        // A task, not a timer: chained timers are clamped to 4 ms each, which
+        // was 3.9 s of a three-minute passage's wait (`nextTask`).
+        await nextTask();
         if (cancelled()) throw new Error('Playback cancelled');
       }
     }
@@ -414,12 +432,7 @@ export async function renderSoundfont(
       if (limiter.push(0, 0, limited)) write();
     }
     if (cancelled()) throw new Error('Playback cancelled');
-    const audio: RenderedInstrument = {
-      pcm,
-      sampleRate: RATE,
-      channels: 2,
-      durationS: frames / RATE,
-    };
+    onWritten?.(audio, written);
     recent =
       schedule.durationS <= 60 ? { bank, key: cacheKey, audio } : undefined;
     return audio;

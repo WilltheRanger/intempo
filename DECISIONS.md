@@ -1,5 +1,44 @@
 # InTempo Decisions
 
+## 2026-10-24 — Listen plays the opening while the rest is rendered
+
+**Context:** Listen renders the passage with `spessasynth_core` before it plays
+a note. A whole piece is three or four minutes of music. A 236-note piece
+(207 s) took 9.6 s from the tap to the first note on a laptop, and 27.5 s with
+the CPU slowed four times. A clamped `setTimeout(0)` yield made 3.9 s of the
+laptop's wait idle.
+
+**Decision:** The render yields with `nextTask`. On the web, it reports each
+stretch it finishes, and the player starts once 2.5 s are final from a render
+going at least twice real time. It then schedules the rest as `AudioBuffer`
+chunks, at least 2 s each. Consecutive chunks overlap by 256 frames with
+complementary fades and begin on whole samples of the context. The native
+player still takes the passage whole.
+
+**Alternatives considered:**
+- *Render in a Web Worker.* It frees the main thread but not the wait, since
+  the music still begins after the last sample.
+- *An `AudioWorklet` reading a ring buffer.* One continuous stream with no
+  joins, but it needs its own resampler (the context is rarely at 44.1 kHz) or
+  `SharedArrayBuffer`, which needs cross-origin isolation this site does not
+  have.
+- *Render at the context's sample rate.* No resampling and no joins to worry
+  about, but it changes the sound the owner tuned by ear at 44.1 kHz.
+- *Chunks laid end to end.* Each chunk's resampler is missing the neighbour at
+  its edge, so every join would carry an error.
+
+**Trade-offs accepted:**
+- **The render now runs while the music plays.** With the CPU slowed four
+  times, the score screen draws 38 frames a second for those twenty seconds,
+  rather than 59.
+- **Joins match the single buffer to float rounding, verified in Chromium**
+  (−106 dB at 48 kHz). WebKit was not available to test. The method holds for
+  any resampler that is linear and reaches no further than two frames past a
+  buffer's edge, which is how Chromium's behaves. One that reaches further
+  would leave a small error at each join, every 2 s or more.
+- **The native app still waits for the whole render.** Streaming there means
+  several files and several players, and their joins are not sample-accurate.
+
 ## 2026-10-23 — The notation is kept between renders, and only the marks move
 
 **Context:** The `Stave` draws the bar being heard and the playhead inside

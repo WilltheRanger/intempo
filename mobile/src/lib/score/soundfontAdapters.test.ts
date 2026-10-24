@@ -68,6 +68,7 @@ beforeEach(() => {
   state.prepare.mockResolvedValue(undefined);
   state.context = {
     currentTime: 0,
+    sampleRate: 48000,
     destination: {},
     createBuffer: vi.fn(() => {
       const channels = [new Float32Array(2), new Float32Array(2)];
@@ -94,6 +95,8 @@ it('web unlocks during the tap, sends stereo to the speaker, and allows the rele
     audio,
     () => false,
     finish,
+    // Rendered whole: one chunk, as the passage always played.
+    { written: () => 2, subscribe: () => () => {} },
   );
   expect(state.context.createBuffer).toHaveBeenCalledWith(2, 2, 44100);
   const buffer = state.context.createBuffer.mock.results[0].value;
@@ -141,4 +144,58 @@ it('cancel before output allocation creates no web audio node or native file', a
   native(schedule, { voice: 'viola' });
   await state.begin.mock.calls[1][3](audio, () => true, vi.fn());
   expect(state.file).toBeNull();
+});
+
+it('web starts on the opening of a passage still rendering, and schedules the rest as it arrives', async () => {
+  const RATE = 44100;
+  const long = {
+    pcm: new Int16Array(RATE * 12 * 2),
+    channels: 2,
+    sampleRate: RATE,
+    durationS: 12,
+  };
+  const sources: { start: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn>; onended: unknown }[] = [];
+  state.context.createBuffer = vi.fn((channels: number, length: number) => {
+    const data = Array.from({ length: channels }, () => new Float32Array(length));
+    return { getChannelData: (c: number) => data[c], duration: length / RATE };
+  });
+  state.context.createBufferSource = vi.fn(() => {
+    const source = { connect: vi.fn(), disconnect: vi.fn(), start: vi.fn(), stop: vi.fn(), onended: null };
+    sources.push(source);
+    return source;
+  });
+  let written = RATE * 3;
+  const listeners: ((written: number) => void)[] = [];
+  const finish = vi.fn();
+  web(schedule, { voice: 'cello' });
+  // The engine: the player's options are the last argument, and say to stream.
+  expect(state.begin.mock.calls[0][4]).toMatchObject({ leadS: expect.any(Number) });
+
+  const cleanup = await state.begin.mock.calls[0][3](long, () => false, finish, {
+    written: () => written,
+    subscribe: (listener: (written: number) => void) => {
+      listeners.push(listener);
+      return () => {};
+    },
+  });
+  // The opening is out at once; nothing past what is rendered.
+  expect(sources).toHaveLength(1);
+  const first = state.context.createBuffer.mock.calls[0][1];
+  expect(first).toBeLessThanOrEqual(RATE * 3);
+
+  written = RATE * 7;
+  listeners.forEach((listener) => listener(written));
+  written = RATE * 12;
+  listeners.forEach((listener) => listener(written));
+
+  expect(sources.length).toBeGreaterThan(2);
+  // Each chunk starts on a whole sample of the 48 kHz context.
+  for (const source of sources) {
+    expect(Math.abs(source.start.mock.calls[0][0] * 48000 - Math.round(source.start.mock.calls[0][0] * 48000))).toBeLessThan(1e-6);
+  }
+  // Only the last chunk ends the playback.
+  expect(sources.slice(0, -1).every((source) => source.onended === null)).toBe(true);
+  expect(sources[sources.length - 1].onended).toBe(finish);
+  cleanup();
+  expect(sources.every((source) => source.stop.mock.calls.length === 1)).toBe(true);
 });
