@@ -57,7 +57,10 @@ not something a session can do on anyone's behalf. `fetch_urmp.py` instead
 pulls the same CC-BY-4.0-licensed files, piece by piece, from a
 long-standing third-party mirror that reproduces the official layout
 exactly (see its docstring for the exact URL and the files it does and does
-not fetch — never the videos, never a non-violin instrument's audio).
+not fetch — never the videos, never a non-violin instrument's audio). The
+mirror's files have since been checked, file by file, against the official
+release — see "Provenance and integrity" below; the Google Form is still
+the official route, and still a human step.
 
 ```
 tools/eval/fetch_urmp.py
@@ -67,6 +70,73 @@ Populates `intempo-eval-data/urmp/` (outside the repository, gitignored at
 the workspace root) with four pieces — a violin/cello duet, a two-violin
 duet, and two quartets, a deliberately small first slice rather than the
 full 44-piece corpus. Add to `PIECES` in that file and re-run to grow it.
+
+### Provenance and integrity (JERA-578)
+
+**The mirror was checked against the official release on 2026-10-27, and all
+eighteen files are byte-identical.** Every URMP take is therefore in the
+baseline; nothing is held out.
+
+How it was checked, since "a mirror says it is URMP" is not evidence: the
+authors deposited the dataset themselves — Li, Liu, Dinesh, Duan and Sharma,
+the same five as the TMM paper (`doi:10.1109/TMM.2018.2856090`) — in Dryad
+(`doi:10.5061/dryad.ng3r749`), mirrored as **Zenodo record 5034983**, which
+publishes an md5 for the whole archive. That archive was downloaded
+(12,097,672,571 bytes), its md5 matched
+(`8452b1a734fad6f3c10bd19940bc09b4`), and the eighteen members the fetch
+pulls were hashed out of it and compared with what was already on disk.
+Sizes agree too, but sizes are the weak form of this check; the table is
+`sha256`.
+
+| Piece | File | Official size | Mirror size | sha256 |
+|---|---|---|---|---|
+| 01_Jupiter_vn_vc | `AuSep_1_vn_01_Jupiter.wav` | 9,023,456 | 9,023,456 | match |
+| 01_Jupiter_vn_vc | `Notes_1_vn_01_Jupiter.txt` | 2,108 | 2,108 | match |
+| 01_Jupiter_vn_vc | `Sco_01_Jupiter_vn_vc.mid` | 1,463 | 1,463 | match |
+| 02_Sonata_vn_vn | `AuSep_1_vn_02_Sonata.wav` | 6,630,668 | 6,630,668 | match |
+| 02_Sonata_vn_vn | `AuSep_2_vn_02_Sonata.wav` | 6,630,668 | 6,630,668 | match |
+| 02_Sonata_vn_vn | `Notes_1_vn_02_Sonata.txt` | 1,873 | 1,873 | match |
+| 02_Sonata_vn_vn | `Notes_2_vn_02_Sonata.txt` | 1,144 | 1,144 | match |
+| 02_Sonata_vn_vn | `Sco_02_Sonata_vn_vn.mid` | 1,324 | 1,324 | match |
+| 12_Spring_vn_vn_vc | `AuSep_1_vn_12_Spring.wav` | 18,854,078 | 18,854,078 | match |
+| 12_Spring_vn_vn_vc | `AuSep_2_vn_12_Spring.wav` | 18,854,078 | 18,854,078 | match |
+| 12_Spring_vn_vn_vc | `Notes_1_vn_12_Spring.txt` | 10,002 | 10,002 | match |
+| 12_Spring_vn_vn_vc | `Notes_2_vn_12_Spring.txt` | 7,816 | 7,816 | match |
+| 12_Spring_vn_vn_vc | `Sco_12_Spring_vn_vn_vc.mid` | 9,562 | 9,562 | match |
+| 24_Pirates_vn_vn_va_vc | `AuSep_1_vn_24_Pirates.wav` | 7,173,611 | 7,173,611 | match |
+| 24_Pirates_vn_vn_va_vc | `AuSep_2_vn_24_Pirates.wav` | 7,173,611 | 7,173,611 | match |
+| 24_Pirates_vn_vn_va_vc | `Notes_1_vn_24_Pirates.txt` | 3,023 | 3,023 | match |
+| 24_Pirates_vn_vn_va_vc | `Notes_2_vn_24_Pirates.txt` | 1,991 | 1,991 | match |
+| 24_Pirates_vn_vn_va_vc | `Sco_24_Pirates_vn_vn_va_vc.mid` | 5,098 | 5,098 | match |
+
+18 files, 18 identical, 0 mismatches, 0 unverified. The audio also reads
+back as what URMP documents it to be — mono, 48 kHz, 24-bit — with every
+annotation file's last note ending inside its recording.
+
+**That one-off download is distilled into `urmp_checksums.txt`, which is
+committed and is what runs from now on.** `fetch_urmp.py` checks every file
+it fetches or finds against it and exits non-zero on a mismatch;
+`datasets/urmp.py` re-checks the tree on load and drops any take one of
+whose three files does not match, warning with the file names. So the rule
+for anything that *cannot* be verified is enforced rather than remembered: a
+piece added to `PIECES` without a manifest entry loads as `unverified` and
+stays out of the numbers until someone extends the manifest the way its
+header describes. Re-verifying from scratch means another 12.1 GB download —
+the manifest exists so that nobody has to.
+
+Two smaller things that came out of reading the official release:
+
+- **The license is stated two ways.** The project page says CC BY 4.0; the
+  authors' Dryad/Zenodo deposit of the same data says CC0 1.0. Either
+  permits the eval-only use here, and attribution is recorded either way.
+- **The official release has two files the fetch skips**, and one bears on a
+  caveat below: `F0s_<n>_<inst>_<piece>.txt`, a frame-level f0 track
+  (~10 ms hop) next to the note-level `Notes_*`, which would give intonation
+  a per-frame reference instead of a per-note one; and `Sco_<piece>.pdf`,
+  the engraved score — the thing "reconstructed, not sourced from an
+  engraving" below says we do not have. It is a page image, so it is OCR
+  input, not a `ScoreJson`. Neither is wired in; whether either is worth it
+  is a separate call, not a gap in this fetch.
 
 ### What URMP's ground truth is, and is not
 
