@@ -585,6 +585,36 @@ def test_the_header_is_the_metre_the_piece_starts_in() -> None:
     assert validate_measures(score)[0].expected_beats == 4.0
 
 
+def test_a_metre_first_stated_mid_page_is_not_the_header() -> None:
+    """A continuation page does not print the metre at the top — it was printed
+    on the page before — so the first `<time>` in the file is a mid-page
+    *change*. Adopting it as the header captions the bars above it with a metre
+    they do not use: on Caprice 3 page 2 that made all 61 correctly-read bars
+    `long` and the whole page was refused (JERA-596). With no header metre the
+    metre is inferred from the music, which is what `None` is for.
+    """
+    score = score_json_from_musicxml(_partwise('''
+      <measure number="1">
+        <attributes><divisions>2</divisions>
+          <clef><sign>G</sign><line>2</line></clef>
+        </attributes>
+        <note><pitch><step>D</step><octave>5</octave></pitch>
+          <duration>6</duration><type>half</type><dot/></note>
+      </measure>
+      <measure number="2">
+        <attributes><time><beats>2</beats><beat-type>4</beat-type></time></attributes>
+        <note><pitch><step>E</step><octave>5</octave></pitch>
+          <duration>4</duration><type>half</type></note>
+      </measure>'''))
+
+    assert score.time_signature is None, (
+        "the mid-page change was promoted to the header and applied to bar 1"
+    )
+    # The change still lands on the measure that states it, so
+    # `meters_in_force` carries it forward from there.
+    assert [m.time_signature for m in score.measures] == [None, "2/4"]
+
+
 def test_a_metre_restated_unchanged_is_not_a_change() -> None:
     """Engines repeat the metre at a system break. Treating each restatement as
     a change would put a `time_signature` on measures that do not have one, and
