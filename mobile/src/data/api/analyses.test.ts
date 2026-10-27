@@ -52,3 +52,34 @@ describe('asking for the takes without the analysis', () => {
     expect(path).toContain('limit=200');
   });
 });
+
+describe('asking for the takes without their per-note timings', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    apiFetch.mockResolvedValue([]);
+  });
+
+  it('asks the server to leave them out', async () => {
+    await listAnalyses({ status: 'done', perNote: false });
+
+    const [path] = apiFetch.mock.calls[0];
+    expect(path).toContain('per_note=false');
+    expect(path).not.toContain('include_result');
+  });
+
+  it('says nothing when they are wanted, so an older server is unchanged', async () => {
+    await listAnalyses({ status: 'done' });
+
+    const [path] = apiFetch.mock.calls[0];
+    expect(path).not.toContain('per_note');
+  });
+
+  it('says nothing about them when there is no result to trim', async () => {
+    // `include_result=false` already leaves the whole result out.
+    await listAnalyses({ includeResult: false, perNote: false });
+
+    const [path] = apiFetch.mock.calls[0];
+    expect(path).toContain('include_result=false');
+    expect(path).not.toContain('per_note');
+  });
+});

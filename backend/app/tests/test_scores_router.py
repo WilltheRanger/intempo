@@ -2440,8 +2440,12 @@ def test_the_light_listing_loses_the_notation_and_nothing_else(
 
     So this is a comparison rather than a list of column names. Every column
     carries a value it does not share with another, both listings are fetched,
-    and the two responses must differ in exactly `score_json` and `concerns` —
-    the notation, and the concerns computed from it.
+    and the two responses must differ in exactly `score_json` — the notation.
+
+    **`concerns` is empty on both since 2026-10-23**, because no listing
+    computes them any more (`list_scores`). The piece's own read still does,
+    and the end of this test holds that, so dropping them from the listing
+    cannot quietly become dropping them altogether.
 
     **Two rows, because one cannot exercise every column.** A row with a
     photograph is the only one that populates `page_count`, `image_url` and
@@ -2456,9 +2460,9 @@ def test_the_light_listing_loses_the_notation_and_nothing_else(
 
     user_id = uuid4()
 
-    # A bar that runs short of its metre, so `concerns` is non-empty and the
-    # comparison below is between two populated lists rather than two empty
-    # ones. `GOOD_PAYLOAD` is a clean reading and raises nothing.
+    # A bar that runs short of its metre, so the piece's own read has a
+    # concern to report and the listing visibly has none.
+    # `GOOD_PAYLOAD` is a clean reading and raises nothing.
     short_bar = {
         "time_signature": "4/4",
         "key_signature": "D major",
@@ -2536,7 +2540,6 @@ def test_the_light_listing_loses_the_notation_and_nothing_else(
     # of defaults and passes on a projection of one column.
     heavy_pages, heavy_gone = full.json()
     assert heavy_pages["score_json"], "the seeded row has no notation to drop"
-    assert heavy_pages["concerns"], "the seeded row raises no concerns to drop"
     assert heavy_pages["page_count"] == 3, "the photographed row has no pages to lose"
     assert heavy_pages["image_url"], "the photographed row has no thumbnail to lose"
     assert len(heavy_pages["image_urls"]) == 1, "the listing signs page one"
@@ -2544,13 +2547,223 @@ def test_the_light_listing_loses_the_notation_and_nothing_else(
 
     for heavy, thin in zip(full.json(), light.json(), strict=True):
         assert thin["score_json"] is None
-        assert thin["concerns"] == []
+        assert heavy["concerns"] == thin["concerns"] == []
         differing = {key for key in heavy if heavy[key] != thin[key]}
-        assert differing == {"score_json", "concerns"}, (
-            f"the light listing changed {differing - {'score_json', 'concerns'}}, "
+        assert differing == {"score_json"}, (
+            f"the light listing changed {differing - {'score_json'}}, "
             "which it has no business changing — a column is missing from "
             "_WITHOUT_SCORE"
         )
+
+    # Where the concerns went: the read a piece screen makes.
+    one = client.get(f"/v1/scores/{photographed['id']}", headers=headers)
+    assert one.status_code == 200, one.text
+    assert [c["measure_number"] for c in one.json()["concerns"]] == [2]
+
+
+def _short_bar_score() -> dict[str, Any]:
+    """Three bars of 4/4 whose second is a beat short, so it raises one concern."""
+    return {
+        "time_signature": "4/4",
+        "key_signature": "D major",
+        "clef": "treble",
+        "tempo_marking": None,
+        "bpm_hint": None,
+        "ocr_confidence": 0.9,
+        "measures": [
+            {
+                "measure_number": number,
+                "notes": [
+                    {"pitch": "D4", "duration": "quarter"}
+                    for _ in range(3 if number == 2 else 4)
+                ],
+                "slurs": [],
+                "ties": [],
+            }
+            for number in (1, 2, 3)
+        ],
+    }
+
+
+def test_a_pieces_concerns_are_worked_out_once_per_version_of_its_notation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Validating a score is the most expensive thing a read does, and it was
+    done on every response — every poll, every piece opened, Today on every
+    launch. The answer depends on the notation alone, so it is remembered by
+    the notation: the same notes are validated once, and an edit is a new
+    answer rather than a stale one."""
+    import copy
+    from collections import OrderedDict
+
+    calls: list[int] = []
+    real = scores_module._concerns_for
+
+    def counted(score_json):
+        calls.append(1)
+        return real(score_json)
+
+    monkeypatch.setattr(scores_module, "_concerns_for", counted)
+    monkeypatch.setattr(scores_module, "_concerns_memo", OrderedDict())
+
+    score = _short_bar_score()
+    first = scores_module._row_concerns(score)
+    again = scores_module._row_concerns(copy.deepcopy(score))
+    assert [c.measure_number for c in first] == [2]
+    assert again == first
+    assert len(calls) == 1, "the same notation was validated twice"
+
+    # The musician fixes bar 2 — a different version, so a different answer.
+    fixed = copy.deepcopy(score)
+    fixed["measures"][1]["notes"].append({"pitch": "D4", "duration": "quarter"})
+    assert scores_module._row_concerns(fixed) == []
+    assert len(calls) == 2
+
+    # Nothing to validate is not worth remembering.
+    assert scores_module._row_concerns(None) == []
+    assert scores_module._row_concerns({}) == []
+    assert len(calls) == 2
+
+
+def test_the_concerns_memo_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An unbounded memo is a slow leak on a host that stays up for weeks."""
+    from collections import OrderedDict
+
+    monkeypatch.setattr(scores_module, "_concerns_memo", OrderedDict())
+    monkeypatch.setattr(scores_module, "_CONCERNS_MEMO_MAX", 3)
+    for bpm in range(40, 50):
+        score = _short_bar_score()
+        score["bpm_hint"] = bpm
+        scores_module._row_concerns(score)
+    assert len(scores_module._concerns_memo) == 3
+
+
+def test_every_score_response_says_when_the_piece_was_last_played(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """The app used to fetch two hundred analysis rows beside every score
+    request to find this one date, so the listing, the piece screen and each
+    three-second poll of a page being read were all two round trips from the
+    phone. Now the score says it.
+
+    The newest take wins, a piece never played says null, and a take recorded
+    under another account says nothing about this musician's piece.
+    """
+    user_id, someone_else = uuid4(), uuid4()
+    played, unplayed = uuid4(), uuid4()
+    fake = FakeSupabase()
+    fake.seed(
+        "scores",
+        [
+            _row_for(played, user_id, created_at="2026-05-02T00:00:00+00:00"),
+            _row_for(unplayed, user_id, created_at="2026-05-01T00:00:00+00:00"),
+        ],
+    )
+    fake.seed(
+        "analyses",
+        [
+            {"id": str(uuid4()), "user_id": str(user_id), "score_id": str(played),
+             "created_at": "2026-05-03T09:00:00+00:00"},
+            {"id": str(uuid4()), "user_id": str(user_id), "score_id": str(played),
+             "created_at": "2026-05-07T09:00:00+00:00"},
+            {"id": str(uuid4()), "user_id": str(someone_else), "score_id": str(unplayed),
+             "created_at": "2026-05-09T09:00:00+00:00"},
+        ],
+    )
+    monkeypatch.setattr(db_module, "get_service_client", lambda: fake)
+    monkeypatch.setattr(display_urls, "signed_display_urls", lambda keys: {})
+    headers = {"Authorization": f"Bearer {make_token(sub=user_id)}"}
+
+    listing = client.get("/v1/scores?include_score=false", headers=headers)
+    assert listing.status_code == 200, listing.text
+    dated = {row["id"]: row["last_practiced_at"] for row in listing.json()}
+    assert dated[str(played)].startswith("2026-05-07T09:00:00")
+    assert dated[str(unplayed)] is None
+
+    one = client.get(f"/v1/scores/{played}", headers=headers)
+    assert one.status_code == 200, one.text
+    assert one.json()["last_practiced_at"].startswith("2026-05-07T09:00:00")
+
+
+def test_a_large_listing_is_dated_without_naming_every_piece_in_the_query(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """Past `_PRACTICED_BY_ID` pieces the query reads the musician's newest
+    takes rather than listing two hundred ids in an address a gateway may
+    refuse — and still dates only this musician's pieces."""
+    user_id, someone_else = uuid4(), uuid4()
+    pieces = [uuid4() for _ in range(scores_module._PRACTICED_BY_ID + 5)]
+    fake = FakeSupabase()
+    fake.seed("scores", [_row_for(piece, user_id) for piece in pieces])
+    fake.seed(
+        "analyses",
+        [
+            {"id": str(uuid4()), "user_id": str(user_id), "score_id": str(pieces[3]),
+             "created_at": "2026-05-04T09:00:00+00:00"},
+            {"id": str(uuid4()), "user_id": str(someone_else), "score_id": str(pieces[4]),
+             "created_at": "2026-05-05T09:00:00+00:00"},
+        ],
+    )
+    monkeypatch.setattr(db_module, "get_service_client", lambda: fake)
+    monkeypatch.setattr(display_urls, "signed_display_urls", lambda keys: {})
+
+    res = client.get(
+        "/v1/scores?include_score=false",
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+
+    assert res.status_code == 200, res.text
+    dated = {row["id"]: row["last_practiced_at"] for row in res.json()}
+    assert dated[str(pieces[3])].startswith("2026-05-04T09:00:00")
+    assert dated[str(pieces[4])] is None, "another account's take dated this piece"
+    assert sum(1 for when in dated.values() if when) == 1
+
+
+def test_a_failed_lookup_of_the_last_take_costs_the_date_not_the_library(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """The date is a courtesy on a response about the piece."""
+    user_id = uuid4()
+    fake = FakeSupabase()
+    fake.seed("scores", [_row_for(uuid4(), user_id)])
+    real_table = fake.table
+
+    def table(name: str):
+        if name == "analyses":
+            raise RuntimeError("analyses is unreachable")
+        return real_table(name)
+
+    monkeypatch.setattr(fake, "table", table)
+    monkeypatch.setattr(db_module, "get_service_client", lambda: fake)
+    monkeypatch.setattr(display_urls, "signed_display_urls", lambda keys: {})
+
+    res = client.get(
+        "/v1/scores", headers={"Authorization": f"Bearer {make_token(sub=user_id)}"}
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()[0]["last_practiced_at"] is None
+
+
+def test_a_large_listing_is_compressed_for_a_client_that_accepts_it(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """Every byte of a listing crosses a phone's connection, and none of it was
+    compressed. JSON notation is repetitive, which is what gzip is for."""
+    user_id = uuid4()
+    fake = FakeSupabase()
+    fake.seed("scores", [_row_for(uuid4(), user_id) for _ in range(12)])
+    monkeypatch.setattr(db_module, "get_service_client", lambda: fake)
+    monkeypatch.setattr(display_urls, "signed_display_urls", lambda keys: {})
+    headers = {
+        "Authorization": f"Bearer {make_token(sub=user_id)}",
+        "Accept-Encoding": "gzip",
+    }
+
+    res = client.get("/v1/scores", headers=headers)
+
+    assert res.status_code == 200, res.text
+    assert res.headers.get("content-encoding") == "gzip"
+    assert len(res.json()) == 12
 
 
 def test_the_library_listing_still_carries_the_notation_by_default(

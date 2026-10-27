@@ -469,6 +469,14 @@ export interface ScoreResponse {
   transcription_accepted_at: string | null;
   /** When the photograph was deleted. Null while it is still in storage. */
   page_image_discarded_at: string | null;
+  /**
+   * When the piece was last recorded against; null for one never played.
+   *
+   * **Absent on an older backend**, which is the cue to look it up from the
+   * takes instead (`lastPracticedOf`). Present, null included, means the
+   * server has answered and nothing more needs asking.
+   */
+  last_practiced_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -670,7 +678,11 @@ export interface AnalysisResultJson {
   verdict_direction: Direction;
   /** Null on takes analysed before the pipeline recorded them. */
   tolerance: Tolerance | null;
-  per_note: PerNoteResult[];
+  /**
+   * Absent from every list the app makes: they ask with `perNote: false`,
+   * because this is three quarters of a result and no screen draws it.
+   */
+  per_note?: PerNoteResult[];
   per_measure: PerMeasureResult[];
   /** Rolling mean, rush-positive. */
   trend: number[];

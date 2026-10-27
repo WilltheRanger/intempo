@@ -551,6 +551,13 @@ def list_analyses(
             "need the rows — it is by far the largest field."
         ),
     ),
+    per_note: bool = Query(
+        default=True,
+        description=(
+            "Keep `per_note` inside each result. Say false for a list: it is "
+            "three quarters of a result and no screen reads it from one."
+        ),
+    ),
 ) -> list[AnalysisResponse]:
     """The caller's analyses, newest first.
 
@@ -588,7 +595,30 @@ def list_analyses(
     res = (
         query.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
     )
-    return [_row_to_response(row) for row in (res.data or [])]
+    rows = res.data or []
+    if include_result and not per_note:
+        rows = [_without_per_note(row) for row in rows]
+    return [_row_to_response(row) for row in rows]
+
+
+def _without_per_note(row: dict[str, Any]) -> dict[str, Any]:
+    """The row with its result's per-note timings left out.
+
+    **The one field no list needs and the bulk of every result** — 74% of a
+    thirty-bar take's `result_json`, measured 2026-10-23. Insights, a piece's
+    recent takes and Today all read the bars, the trend, the tuning and the
+    wrong notes; the per-note timings are read by nothing in the app at all.
+    Two pages of them at once were in flight when the API was killed for
+    running out of memory that morning.
+
+    Removed after the read rather than in the SQL: PostgREST can select a path
+    inside a JSON column but cannot select one *without* a key, and the request
+    this saves is the one to the phone.
+    """
+    result = row.get("result_json")
+    if not isinstance(result, dict) or "per_note" not in result:
+        return row
+    return {**row, "result_json": {k: v for k, v in result.items() if k != "per_note"}}
 
 
 @router.get("/{analysis_id}", response_model=AnalysisResponse)

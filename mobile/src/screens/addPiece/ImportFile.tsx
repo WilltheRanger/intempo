@@ -27,6 +27,7 @@ import {
   type MusicXMLPart,
 } from '../../lib/musicxml/file';
 import type { RootNavigation } from '../../navigation/types';
+import { usePageCamera } from '../../navigation/usePageCamera';
 
 /**
  * What a file picker can be told to offer.
@@ -83,6 +84,7 @@ interface Chosen {
  */
 export function ImportFileScreen() {
   const navigation = useNavigation<RootNavigation>();
+  const photograph = usePageCamera();
   const goBack = useGoBack({ tab: 'Library' });
   const importPiece = useImportPiece();
 
@@ -216,7 +218,9 @@ export function ImportFileScreen() {
 
           <SecondaryButton
             label="Photograph the music instead"
-            onPress={() => navigation.replace('Scanner')}
+            // The camera itself, from inside the tap, and the review list in
+            // this screen's place once there is a photograph.
+            onPress={() => photograph({ kind: 'new' }, { replace: true })}
             style={styles.secondary}
           />
 

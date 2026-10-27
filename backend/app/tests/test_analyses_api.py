@@ -677,6 +677,67 @@ def test_the_light_projection_names_every_other_field(
     assert differing == {"result_json"}, differing
 
 
+def test_per_note_false_leaves_out_the_per_note_timings_and_nothing_else(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """The list the app reads takes from, without the field it never reads.
+
+    `per_note` is three quarters of a result, and two pages of results were in
+    flight when the API ran out of memory on 2026-10-23. Every other key has to
+    survive: Insights reads the bars and the tolerance, a piece's recent takes
+    read the trend, the tuning and the wrong notes, and a projection that lost
+    any of them would 200 with a screen quietly missing its numbers.
+    """
+    result = {
+        "status": "ok",
+        "verdict": "Steady.",
+        "per_note": [{"measure_number": 1, "delta_ms": 4.0}] * 40,
+        "per_measure": [{"measure_number": 1, "avg_delta_pct": -1.5}],
+        "trend": [0.1, 0.2],
+        "tolerance": {"rushing_outer_pct": 8.0},
+        "intonation": {"spread_cents": 9.0},
+        "wrong_notes": [],
+    }
+    user_id = uuid4()
+    fake = FakeSupabase()
+    fake.seed("analyses", [_analysis_row(user_id, uuid4(), result_json=result)])
+    _install(monkeypatch, fake)
+    headers = {"Authorization": f"Bearer {make_token(sub=user_id)}"}
+
+    full = client.get("/v1/analyses?status=done", headers=headers).json()[0]
+    lean = client.get("/v1/analyses?status=done&per_note=false", headers=headers).json()[0]
+
+    assert "per_note" in full["result_json"]
+    assert "per_note" not in lean["result_json"]
+    assert {k: v for k, v in full["result_json"].items() if k != "per_note"} == lean[
+        "result_json"
+    ]
+    assert {k for k in full if full[k] != lean[k]} == {"result_json"}
+    # The rows in storage are untouched: the projection is the response's.
+    assert "per_note" in fake.table("analyses").rows[0]["result_json"]
+
+
+def test_a_single_take_still_carries_its_per_note_timings(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """The projection is a list's. Reading one take is unchanged, so a client
+    that wants every note of a take still has a way to ask for it."""
+    user_id = uuid4()
+    row = _analysis_row(
+        user_id, uuid4(), result_json={"status": "ok", "verdict": "x", "per_note": [{"a": 1}]}
+    )
+    fake = FakeSupabase()
+    fake.seed("analyses", [row])
+    _install(monkeypatch, fake)
+
+    one = client.get(
+        f"/v1/analyses/{row['id']}",
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    ).json()
+
+    assert one["result_json"]["per_note"] == [{"a": 1}]
+
+
 def test_the_list_is_newest_first(
     monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
 ) -> None:

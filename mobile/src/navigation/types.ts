@@ -32,19 +32,25 @@ export type RootStackParamList = {
     adding?: boolean;
   };
   /**
-   * `adding` is set only when the scan is already in progress — "Add page"
-   * from the review list.
+   * The scan screen: where `/scan` lands, and where a camera that gave no
+   * photograph says why. Every button that photographs a page opens the
+   * phone's camera directly (`usePageCamera`), so a scan only comes here when
+   * something went wrong or someone followed a link.
    *
-   * The viewfinder resets the capture session when it opens, because opening
-   * it is normally how a scan *starts*. It is not the only way back into one:
-   * pages that arrived through Import have no scanner beneath the review list
-   * at all, so "Add page" there pushed a fresh viewfinder whose mount wiped
-   * the whole import. This says which of the two it is, rather than leaving
-   * the screen to guess from a session that looks the same either way — a
-   * lingering scan someone abandoned looks exactly like one they are adding to.
+   * The parameters say what the camera was for, so "Try again" asks for the
+   * same thing: `adding` a page to the scan on the review list, a `retake` of
+   * one page by id, or a new scan — for an existing piece when
+   * `attachToPieceId` is set. A lingering scan someone abandoned looks exactly
+   * like one they are adding to, so the caller says which it is. `problem` is
+   * what went wrong. See `lib/scan/pagePhoto.ts`.
    */
   Scanner:
-    | { adding?: boolean; attachToPieceId?: string }
+    | {
+        adding?: boolean;
+        attachToPieceId?: string;
+        retake?: string;
+        problem?: 'refused' | 'failed';
+      }
     | undefined;
   /** Pages live in the shared capture session, not in params. */
   CapturedPages: undefined;

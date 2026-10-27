@@ -21,7 +21,9 @@ export type AddPieceDestination =
  * test both hold it.
  */
 export function addPieceDestination(option: AddPieceOption): AddPieceDestination {
-  // The camera is presented over everything rather than pushed into the form.
+  // The scan screen rather than the form. `useAddPieceOption` opens the camera
+  // itself for a scan, inside the tap — the web allows nothing else — so this
+  // is where a scan goes when it is reached any other way.
   return option === 'scan'
     ? { route: 'Scanner' }
     : { route: 'AddPiece', params: { option } };

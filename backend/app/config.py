@@ -157,6 +157,17 @@ class Settings:
     #: `ANALYSIS_RUNTIME=modal`, where each take gets its own container.
     ANALYSIS_MAX_CONCURRENT: int = int(os.getenv("ANALYSIS_MAX_CONCURRENT", "1"))
 
+    #: How many heavy reads — a library listing with notation, a list of takes
+    #: with results — the API works on at once; the rest wait their turn. See
+    #: `app/heavy_reads.py`.
+    #:
+    #: **Sized by memory, not speed**, on the 512 MB, tenth-of-a-CPU instance:
+    #: CPU-bound work finishes no sooner for running in parallel there, so the
+    #: only thing a higher number buys is more of it held in memory at once.
+    #: Measured 2026-10-23 replaying forty musicians opening the app together.
+    #: Raise it on a bigger instance, by the same measurement.
+    HEAVY_READS_AT_ONCE: int = int(os.getenv("HEAVY_READS_AT_ONCE", "4"))
+
     #: Load the analysis pipeline at boot, so the first take after a deploy or
     #: a wake from sleep does not wait for it. See `workers/warmup.py`. On
     #: unless set to `0` — the tests set it, so entering the app's lifespan

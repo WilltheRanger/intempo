@@ -10,8 +10,7 @@ from __future__ import annotations
 import base64
 import threading
 import time
-
-from anthropic import Anthropic
+from typing import TYPE_CHECKING
 
 from app.services.ocr.base import (
     PROMPT,
@@ -21,6 +20,13 @@ from app.services.ocr.base import (
 )
 from app.config import settings
 from app.services.score_schema import ScoreJson
+
+# **The SDK is imported where a client is made, not here.** This module is
+# reached from the API's routers through `ocr.pipeline`, and the API never
+# calls a model: pages are read on Modal. Importing `anthropic` at module level
+# loaded ~780 modules into a 512 MB web process on every boot for nothing.
+if TYPE_CHECKING:
+    from anthropic import Anthropic
 
 #: Output budget for one transcription.
 #:
@@ -101,6 +107,8 @@ class ClaudeProvider:
                         raise OCRProviderError(
                             f"{self.name}: ANTHROPIC_API_KEY is not configured"
                         )
+                    from anthropic import Anthropic
+
                     self._client = Anthropic()
         return self._client
 

@@ -71,14 +71,18 @@ from __future__ import annotations
 import io
 import logging
 from datetime import datetime, timedelta, timezone
-
-import numpy as np
-import soundfile as sf
+from typing import TYPE_CHECKING
 
 from app.db import get_service_client
 from app.services.audio_storage import SIGNED_AUDIO_DOWNLOAD_TTL_SECONDS, object_key_from
 from app.services.buckets import AUDIO_BUCKET
 from app.services.cache_headers import CACHE_FOREVER
+
+# numpy and soundfile are imported by the two functions that encode, not here.
+# `main` imports this module for its sweeps, which only delete, and the web
+# process should not carry an audio stack for them.
+if TYPE_CHECKING:
+    import numpy as np
 
 log = logging.getLogger("intempo.analysis")
 
@@ -114,6 +118,8 @@ def to_opus(wav_bytes: bytes) -> bytes:
     nearest-neighbour, and that is fine for a playback copy in a way it would
     never be for the analysis that has already happened.
     """
+    import soundfile as sf
+
     data, rate = sf.read(io.BytesIO(wav_bytes), dtype="float32", always_2d=False)
     if rate not in _OPUS_RATES:
         data = _resample_to_48k(data, rate)
@@ -138,6 +144,8 @@ _OPUS_RATES = frozenset({8_000, 12_000, 16_000, 24_000, 48_000})
 
 def _resample_to_48k(data: "np.ndarray", rate: int) -> "np.ndarray":
     """Nearest-neighbour to 48 kHz. Good enough for a copy nobody measures."""
+    import numpy as np
+
     if rate <= 0:
         raise ValueError(f"sample rate {rate} is not a rate")
     length = int(round(data.shape[0] * 48_000 / rate))

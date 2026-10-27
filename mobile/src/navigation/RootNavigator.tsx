@@ -312,12 +312,12 @@ function SignedInApp() {
     >
       <Stack.Screen name="Tabs" component={TabNavigator} />
       <Stack.Screen name="AddPiece" component={AddPieceScreen} />
-      {/* Full-bleed dark camera surface — presented over everything. */}
-      <Stack.Screen
-        name="Scanner"
-        component={ScannerScreen}
-        options={{ animation: 'slide_from_bottom' }}
-      />
+      {/*
+        The scan screen: where `/scan` lands and where a camera that gave no
+        photograph explains itself. The camera is the phone's own, opened from
+        the tap that asked for it, so this is an ordinary screen now.
+      */}
+      <Stack.Screen name="Scanner" component={ScannerScreen} />
       <Stack.Screen name="CapturedPages" component={CapturedPagesScreen} />
       <Stack.Screen name="Transcribe" component={TranscribeScreen} />
       <Stack.Screen

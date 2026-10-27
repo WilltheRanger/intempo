@@ -105,30 +105,5 @@ export function shotVerdict(
   };
 }
 
-/**
- * What to tell the next shot, based on the last one.
- *
- * The Guided frame asks for live feedback on the page in the viewfinder, and
- * this app cannot honestly give that: reading tilt and shadow off a live
- * preview needs a frame processor `expo-camera` does not expose, and sampling
- * by taking hidden photographs would cost more than it saves.
- *
- * What it *can* do is stop repeating generic advice. A musician who has just
- * had a page come back too small is told to move in; one whose last page read
- * well is told it did. The guidance is specific because it is measured, which
- * is the part of the frame that was actually available.
- */
-export function viewfinderGuide(last: ShotVerdict | null): string {
-  if (!last) {
-    return 'Fill the frame · flat · no shadows';
-  }
-  if (last.tone === 'good') {
-    return 'Same distance again';
-  }
-  return last.retake === 'cameraApp'
-    ? 'Try the camera app'
-    : 'Move closer'
-}
-
 /** Re-exported so a screen can name the floor without importing two modules. */
 export { MIN_PAGE_ROWS };

@@ -4,8 +4,10 @@ from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 
 from app.config import settings
+from app.heavy_reads import HeavyReadGate
 from app.logging_config import configure_logging
 from app.routers import (
     analyses,
@@ -148,6 +150,9 @@ async def lifespan(_app: FastAPI):
         sweep_stuck_transcriptions()
     except Exception:  # noqa: BLE001 — never let recovery block startup
         log.exception("stuck-transcription sweep failed on startup")
+    # Scans this service accepted and lost before a reader saw them — the
+    # queue they wait in is memory. See `resume_unstarted_reads`.
+    dispatch.resume_unstarted_reads()
 
     # The first take in a fresh process used to wait two minutes on numba
     # compiling librosa. The image carries that compiled code now (see the
@@ -155,6 +160,11 @@ async def lifespan(_app: FastAPI):
     # app rather than after they press stop. Only where takes actually run.
     if settings.ANALYSIS_WARMUP and dispatch.ANALYSIS_RUNTIME == "inprocess":
         warmup.warm_in_background()
+    # The same idea for a deployment that sends its work elsewhere: the Modal
+    # client is ten seconds of import on this instance, and the first page
+    # after a restart used to wait for it. See `preload_modal_client`.
+    if "modal" in (dispatch.ANALYSIS_RUNTIME, dispatch.TRANSCRIPTION_RUNTIME):
+        dispatch.preload_modal_client()
 
     sweeper = asyncio.create_task(_sweep_periodically())
     try:
@@ -202,6 +212,24 @@ async def lifespan(_app: FastAPI):
 # at a time — and shows up only as "the app is stuck" under real use.
 # ---------------------------------------------------------------------------
 app = FastAPI(title="InTempo API", lifespan=lifespan)
+
+# **A burst of musicians queues instead of killing the instance.** Innermost,
+# so compression and CORS wrap whatever it lets through as they wrap everything
+# else. See `app/heavy_reads.py` for the measurement and the waiting rules.
+app.add_middleware(HeavyReadGate, at_once=settings.HEAVY_READS_AT_ONCE)
+
+# **Compressed, because every byte of these responses crosses a phone's
+# connection.** Nothing compressed them: a library listing carries every
+# piece's notation and a list of takes carries their bars, both JSON, both
+# repetitive, and both went over the air raw. Measured 2026-10-23 on the
+# shapes this API returns: a take list shrinks about 19x at level 5, in 15 ms
+# per 1.8 MB. Level 5 rather than 9 because the instance has a tenth of a CPU
+# and level 9 bought another 20% for six times the work. Small bodies are left
+# alone; the header and the round trip are the cost there, not the bytes.
+#
+# Added before CORS so CORS stays outermost and every response — compressed or
+# not, error or not — carries its headers.
+app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
 
 # The app and this API are never same-origin — 8081 against 8000 in
 # development, a Pages site against wherever this is hosted in production — so

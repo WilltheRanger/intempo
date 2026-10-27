@@ -6,8 +6,19 @@
 # it. See DECISIONS.md, 2026-08-25.
 FROM python:3.12-slim
 
+# **`MALLOC_ARENA_MAX=2` is a memory setting, and this service ran out of
+# memory.** glibc gives each thread that allocates its own heap arena, up to
+# eight per core the host reports — not the tenth of a core the instance is
+# allowed — and freed memory stays in the arena it was freed in. Every request
+# runs on one of Starlette's forty threads, so each burst of requests left a
+# little more resident behind it: measured on Render, idle memory stepped from
+# 183 to 317 MB over a day, and to 460 MB on an instance that had been up for
+# four, against a 512 MB limit. Measured locally with five musicians opening
+# the app at once, two arenas took the peak from 304 to 234 MB with no change
+# in latency.
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
+    MALLOC_ARENA_MAX=2 \
     UV_LINK_MODE=copy \
     UV_PROJECT_ENVIRONMENT=/usr/local
 

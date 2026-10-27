@@ -731,3 +731,107 @@ def test_recording_the_call_id_never_breaks_the_read(monkeypatch) -> None:
     monkeypatch.setattr("app.db.get_service_client", lambda: _Boom())
 
     dispatch._record_call_id("s1", "fc-1")  # must not raise
+
+
+def test_the_modal_client_is_preloaded_once_and_never_raises(monkeypatch) -> None:
+    """The first page after every restart waited ten seconds on `import
+    modal` (measured on the API, 2026-10-23). Preloading moves that to boot —
+    once, on its own thread, and a failure there is only the first spawn's
+    cost, never the app's."""
+    import builtins
+    import threading
+
+    started: list[str] = []
+
+    class _Inline:
+        def __init__(self, *, target, name, daemon):
+            assert daemon, "a preload must not hold the process open at exit"
+            self._target = target
+            started.append(name)
+
+        def start(self) -> None:
+            self._target()
+
+    real_import = builtins.__import__
+
+    def _no_modal(name, *args, **kwargs):
+        if name == "modal":
+            raise ImportError("no modal here")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(dispatch, "_preloaded", False)
+    monkeypatch.setattr(threading, "Thread", _Inline)
+    monkeypatch.setattr(builtins, "__import__", _no_modal)
+
+    dispatch.preload_modal_client()
+    dispatch.preload_modal_client()
+
+    assert started == ["modal-preload"]
+
+
+# ---- scans lost before a reader saw them ------------------------------------
+
+
+def _queued_row(score_id: str, *, age_s: float, call_id: str | None = None,
+                status: str = "queued") -> dict:
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime(2026, 10, 23, 4, 0, tzinfo=timezone.utc)
+    return {
+        "id": score_id,
+        "transcription_status": status,
+        "transcription_call_id": call_id,
+        "updated_at": (now - timedelta(seconds=age_s)).isoformat(),
+    }
+
+
+def test_a_scan_lost_in_a_restart_is_read_after_all(monkeypatch) -> None:
+    """The queue a scan waits in is memory. A restart between the row being
+    written and the page reaching a reader left the musician on a progress
+    screen until the sweeper's thirty-minute cutoff (2026-10-23)."""
+    from datetime import datetime, timezone
+
+    from app.tests.fake_supabase import FakeSupabase
+
+    started: list[str] = []
+    monkeypatch.setattr(dispatch, "start_transcription", started.append)
+    monkeypatch.setattr(dispatch, "TRANSCRIPTION_RUNTIME", "modal")
+    fake = FakeSupabase()
+    fake.seed(
+        "scores",
+        [
+            _queued_row("lost", age_s=120),
+            # Handed to Modal already: a cold container, not a lost scan.
+            _queued_row("on-modal", age_s=120, call_id="fc-1"),
+            # Moments old: probably still being handed over by whoever took it.
+            _queued_row("just-now", age_s=10),
+            # Past the cutoff: the sweeper's, not this.
+            _queued_row("ancient", age_s=3 * 60 * 60),
+            # Being read: not lost.
+            _queued_row("reading", age_s=120, status="reading"),
+        ],
+    )
+    now = datetime(2026, 10, 23, 4, 0, tzinfo=timezone.utc)
+
+    assert dispatch.resume_unstarted_reads(fake, now=now) == 1
+    assert started == ["lost"]
+
+
+def test_looking_for_lost_scans_never_stops_startup(monkeypatch) -> None:
+    class _Broken:
+        def table(self, _name):
+            raise RuntimeError("database unreachable")
+
+    monkeypatch.setattr(dispatch, "start_transcription", lambda _id: None)
+    assert dispatch.resume_unstarted_reads(_Broken()) == 0
+
+
+def test_a_reread_forgets_the_last_reads_modal_call() -> None:
+    """A re-read that never started would otherwise carry the previous read's
+    call id, and be taken for a read Modal had already finished."""
+    from pathlib import Path
+
+    source = (Path(dispatch.__file__).parents[1] / "routers" / "scores.py").read_text()
+    for handler in ("def attach_score_pages(", "def retranscribe("):
+        body = source.split(handler, 1)[1].split("\n@router.", 1)[0]
+        assert '"transcription_call_id": None' in body, handler

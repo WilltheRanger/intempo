@@ -48,6 +48,7 @@ import type { RootNavigation, RootStackParamList } from '../../navigation/types'
 import { historyCount } from '../../lib/insights/pieceHistory';
 import { loadStateFor } from '../../lib/loadState';
 import { FIELD_LIMITS } from '../../lib/fieldLimits';
+import { usePageCamera } from '../../navigation/usePageCamera';
 
 /**
  * How tall the score band across the top of the screen is.
@@ -96,6 +97,7 @@ const SCRIM: PhotoBandScrim = [
  */
 export function PieceDetailScreen() {
   const navigation = useNavigation<RootNavigation>();
+  const photograph = usePageCamera();
   /**
    * "Back to library" goes to the Library, whatever is under this screen.
    *
@@ -409,9 +411,8 @@ export function PieceDetailScreen() {
           <PrimaryButton
             label="Photograph it"
             icon={Camera}
-            onPress={() =>
-              navigation.navigate('Scanner', { attachToPieceId: piece.id })
-            }
+            // The camera itself, from inside the tap: see `usePageCamera`.
+            onPress={() => photograph({ kind: 'new', attachToPieceId: piece.id })}
             style={styles.notationPrimary}
           />
           <SecondaryButton
