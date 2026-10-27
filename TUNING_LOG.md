@@ -6,6 +6,37 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-10-23 — Intonation: new `[intonation] note_trim_cents = 150.0`
+
+**Old value:** none — `note_cents` read the straight median of every voiced
+frame in a note's window. **New value:** `note_trim_cents = 150.0`, a second
+pass that drops frames further than 150 cents from the window's own raw
+median before re-reading the median on what remains (`MIN_FRAMES = 3` or more
+must survive, else the untrimmed reading is kept).
+
+**Why:** a short note's window can still catch a few frames of a bow's
+residual noise, the previous note's tail bleeding past `RELEASE_S`, or a YIN
+octave slip — those frames don't move the median *value* when they're a
+minority of the window, but they can still shift the median's *position* in
+the sorted order when combined with an in-between cluster (e.g. the previous
+note a semitone off), pulling the reading toward that cluster rather than the
+true pitch. `backend/app/tests/test_intonation.py::TestNoteCents::test_a_couple_of_octave_slip_frames_are_trimmed_out`
+is the synthetic case: 5 true-pitch frames, 4 a semitone off, 2 a full octave
+off — untrimmed reads 100 cents off (the semitone cluster wins the sorted
+middle), trimmed reads 0.
+
+150 cents is wide enough that ordinary vibrato (recorded 14–15 cents typical
+spread against a take's own tuning, 2026-09-25 entry below) is never touched,
+and tight enough to reject a bled-in neighbour a semitone (100 cents) or more
+away.
+
+**Not yet regression-tested against the six fixture clips or real
+recordings** — this is a change to `intonation.py`, not the onset/tolerance
+pipeline those six clips exercise, and there is no recorded-audio corpus for
+intonation yet (same gap the 2026-09-25 intonation entry below notes). Covered
+by the synthetic unit test above and by the existing intonation suite, which
+all still pass; honest status per the batch's own DoD note.
+
 ## 2026-09-30 — Saxophone: two new rows, no existing value changed
 
 `[onset.instrument.alto_sax]` and `[onset.instrument.tenor_sax]`, both

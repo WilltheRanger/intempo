@@ -67,6 +67,7 @@ def note_cents(
     sr: int,
     attacks_s: np.ndarray,
     written_midi: np.ndarray,
+    note_trim_cents: float | None = None,
 ) -> np.ndarray:
     """How far each note sounded from its written pitch, in cents, octave-folded.
 
@@ -75,6 +76,14 @@ def note_cents(
     they were played. Each note is listened to from `SETTLE_S` after its attack
     to `RELEASE_S` before the next, and read as the median of what was voiced
     there. NaN where there is too little to read, or no written pitch.
+
+    A short note's window can still catch a few frames of a bow's residual
+    noise or the previous note's tail bleeding past `RELEASE_S` on fast
+    playing — YIN reads *some* pitch for them regardless. When
+    `note_trim_cents` is given, those frames are dropped before the median is
+    read: a coarse center is read first, then anything further than
+    `note_trim_cents` from it is excluded and the median re-read on what is
+    left, provided enough frames survive.
     """
     attacks_s = np.asarray(attacks_s, dtype=float)
     written_midi = np.asarray(written_midi, dtype=float)
@@ -97,7 +106,12 @@ def note_cents(
         window = window[np.isfinite(window)]
         if window.size < MIN_FRAMES:
             continue
-        out[i] = float(np.median(window) - written_midi[i]) * 100.0
+        center = float(np.median(window))
+        if note_trim_cents is not None:
+            trimmed = window[np.abs(window - center) * 100.0 <= note_trim_cents]
+            if trimmed.size >= MIN_FRAMES:
+                center = float(np.median(trimmed))
+        out[i] = (center - written_midi[i]) * 100.0
     return fold_cents(out)
 
 
