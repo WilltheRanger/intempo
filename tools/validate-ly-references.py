@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import logging
 import re
+import xml.etree.ElementTree as ET
 import sys
 from pathlib import Path
 
@@ -113,6 +114,21 @@ def main(argv: list[str] | None = None) -> int:
 
         want = written_bars(d / spec["source"], spec["voices"])
         nx = new.read_text(encoding="utf-8", errors="replace")
+
+        # **Parse before measuring.** Every other check here is a regex over the
+        # text, which happily counts `<measure>` elements in a document that is
+        # not well-formed XML — so this script once reported Caprice 24 as WARN
+        # (153 bars against 165 written) for a file the benchmark could not open
+        # at all: the splice had dropped its `<part>` opening tag. A reference
+        # that no parser accepts is not a close call, it is unusable, and the
+        # check that says so must be the first one.
+        try:
+            ET.fromstring(nx)
+        except ET.ParseError as exc:
+            rows.append((vid, "-", "-", "-", "-", "-", "-", f"FAIL(unparseable: {exc})"))
+            worst = "FAIL"
+            continue
+
         bars = measures_of(nx)
         old_bars = len(measures_of(old.read_text(encoding="utf-8", errors="replace"))) if old.exists() else 0
         time, key = signatures(nx)

@@ -211,7 +211,7 @@ def convert(wrapper: Path, out: Path) -> subprocess.CompletedProcess:
 
 def measures_of(xml: str) -> list[str]:
     """Return the raw <measure> elements of the first part, in order."""
-    part = re.search(r"<part\b[^>]*>(.*)</part>", xml, re.S)
+    part = re.search(r'<part\s+id="[^"]*">(.*)</part>', xml, re.S)
     if not part:
         return []
     return re.findall(r"<measure\b.*?</measure>", part.group(1), re.S)
@@ -241,7 +241,7 @@ def merge_sections(sections: list[tuple[str, str]]) -> str:
             )
     body = "\n".join(out)
     return re.sub(
-        r"(<part\b[^>]*>).*(</part>)",
+        r'(<part\s+id="[^"]*">).*(</part>)',
         lambda m: m.group(1) + "\n" + body + "\n" + m.group(2),
         head,
         flags=re.S,
