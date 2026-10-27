@@ -1,7 +1,7 @@
 <!--
   Before submitting: add the demo video link and the live web app link here.
   Demo video: https://…
-  Live app:   https://…
+  Live app:   https://idk-41z.pages.dev
 -->
 
 <h1 align="center">InTempo</h1>
@@ -9,6 +9,10 @@
 <p align="center">
   <strong>A practice partner that reads your sheet music, listens to you play it,<br>
   and tells you exactly where you rushed or dragged, bar by bar.</strong>
+</p>
+
+<p align="center">
+  <a href="https://idk-41z.pages.dev"><strong>Open the live app →</strong></a>
 </p>
 
 <p align="center">
@@ -72,7 +76,6 @@ flowchart LR
     API -->|"dispatch"| Workers["Modal workers<br/>page reading · audio analysis"]
     Workers --> DB
     Workers --> Store
-    Workers -.->|"only the bars that do not add up,<br/>and tempo words"| Claude["Claude API"]
 ```
 
 **Reading a page.** A photograph goes to [homr](https://github.com/liebharc/homr),
