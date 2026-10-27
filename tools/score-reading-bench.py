@@ -47,9 +47,11 @@ the first run does not look hung on page 1).
 
 from __future__ import annotations
 
+import argparse
 import contextlib
 import csv
 import difflib
+import hashlib
 import io
 import os
 import sys
@@ -66,9 +68,15 @@ use_backend_python()
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-EVAL_DATA = ROOT.parent / "intempo-eval-data"
+# Sibling of the checkout by default. $INTEMPO_EVAL_DATA overrides it, which a
+# worktree needs: the program's workspace rule puts working copies under
+# intempo-wt/<agent>-<JERA-n>/, whose parent is not where the eval data lives.
+EVAL_DATA = Path(
+    os.environ.get("INTEMPO_EVAL_DATA") or ROOT.parent / "intempo-eval-data"
+)
 SCORES_DIR = EVAL_DATA / "scores"
 PAGE_CACHE_DIRNAME = ".bench-pages"
+READ_CACHE_DIRNAME = ".bench-reads"
 
 # **homr writes its working files under `tempfile.gettempdir()`, which reads
 # `$TMPDIR`.** In a sandbox that hands out a run-scoped `$TMPDIR` and deletes
@@ -116,6 +124,7 @@ class PieceResult:
     double_stops_ref: int
     dense_notes_ref: int
     grace_notes_ref: int
+    cached: bool = False
     failed: str | None = None
     page_failures: list[str] = field(default_factory=list)
 
@@ -144,17 +153,40 @@ class PieceResult:
         return self.clef_ocr == self.clef_ref
 
 
-def _load_pieces(filter_ids: list[str]) -> list[tuple[str, str]]:
-    """(piece_id, piece title) for every INDEX.csv row with a reference.musicxml."""
+# JERA-568 wrote reference_method=converted for the MIDI-derived files; JERA-577
+# rebuilt them from LilyPond source and writes converted-from-ly. Both are real
+# references, so both are read.
+REFERENCE_METHODS = {"converted", "converted-from-ly"}
+
+
+def _load_pieces(
+    filter_ids: list[str], reference_name: str, include_unverified: bool = False
+) -> list[tuple[str, str]]:
+    """(piece_id, piece title) for every INDEX.csv row with a usable reference.
+
+    A row whose ``reference_verified`` is FAIL is skipped: JERA-577 found that
+    python-ly times a polyphonic source's voices sequentially, so the Ciaccona's
+    rebuilt file has twice its written bar count. Benchmarking against a
+    reference known to be wrong produces a number that means nothing, so it
+    stays out unless ``--include-unverified`` is passed to look at it
+    deliberately.
+    """
     rows: list[tuple[str, str]] = []
     with (SCORES_DIR / "INDEX.csv").open(newline="") as fh:
         for row in csv.DictReader(fh):
-            if row.get("reference_method") != "converted":
+            if row.get("reference_method") not in REFERENCE_METHODS:
                 continue
             piece_id = row["video_id"]
             if filter_ids and piece_id not in filter_ids:
                 continue
-            if not (SCORES_DIR / piece_id / "reference.musicxml").exists():
+            if not (SCORES_DIR / piece_id / reference_name).exists():
+                continue
+            if row.get("reference_verified") == "FAIL" and not include_unverified:
+                print(
+                    f"skipping {piece_id}: reference_verified=FAIL in INDEX.csv "
+                    f"(--include-unverified to read it anyway)",
+                    file=sys.stderr,
+                )
                 continue
             rows.append((piece_id, row["piece"]))
     return rows
@@ -179,15 +211,43 @@ def _render_pages(piece_id: str) -> list[Path]:
     return pages
 
 
-def _read_pages(pages: list[Path]) -> tuple[list, list[str]]:
-    """Run homr on each page in order; return (ScoreJson per readable page, failures)."""
+def _read_pages(piece_id: str, pages: list[Path]) -> tuple[list, list[str], bool]:
+    """Run homr on each page in order; return (ScoreJson per page, failures, cached).
+
+    **The read is cached next to the page render, because it does not depend on
+    the reference.** JERA-577 has to score one set of pages against two
+    references — the MIDI-derived file and the LilyPond-derived one — and homr
+    is by far the most expensive thing here (minutes a page on CPU, against
+    milliseconds for the alignment). Re-running it for the second reference
+    would not just cost twice the wall clock: it would make the comparison
+    *inexact*, because any non-determinism in the read would show up as a
+    difference the reference rebuild gets credited or blamed for. Caching the
+    read is what makes "old reference vs new reference, same pages, same
+    transcription" a true statement rather than an assumption.
+
+    The cache key is the page file's own bytes, so a re-rendered page (a new
+    `score-a4.pdf`, a different DPI) misses rather than silently serving a read
+    of an image that no longer exists. Delete `.bench-reads/` to force a
+    re-read after changing the provider or its weights — the provider version
+    is not in the key, and `homr_provider` carries no version to put there.
+    """
     from app.services.ocr.homr_provider import homr_provider
     from app.services.ocr.base import OCRProviderError
+    from app.services.score_schema import ScoreJson
+
+    cache_dir = SCORES_DIR / piece_id / READ_CACHE_DIRNAME
+    cache_dir.mkdir(exist_ok=True)
 
     scores = []
     failures = []
+    all_cached = True
     for page in pages:
         raw = page.read_bytes()
+        cached = cache_dir / f"{page.stem}-{hashlib.sha256(raw).hexdigest()[:16]}.json"
+        if cached.exists():
+            scores.append(ScoreJson.model_validate_json(cached.read_text()))
+            continue
+        all_cached = False
         try:
             with contextlib.redirect_stdout(io.StringIO()):
                 response = homr_provider.parse(raw, mime_type="image/png")
@@ -197,8 +257,9 @@ def _read_pages(pages: list[Path]) -> tuple[list, list[str]]:
         except Exception as exc:  # noqa: BLE001 — a bench reports, it does not raise
             failures.append(f"{page.name}: {type(exc).__name__}: {str(exc)[:80]}")
             continue
+        cached.write_text(response.score.model_dump_json())
         scores.append(response.score)
-    return scores, failures
+    return scores, failures, all_cached
 
 
 def _tokens(measures) -> tuple[list[str], list[str]]:
@@ -225,10 +286,10 @@ def _align_count(a: list[str], b: list[str]) -> tuple[int, int]:
     return matches, len(a)
 
 
-def measure(piece_id: str, piece: str) -> PieceResult:
+def measure(piece_id: str, piece: str, reference_name: str = "reference.musicxml") -> PieceResult:
     from app.services.ocr.musicxml import score_json_from_musicxml, MusicXMLError
 
-    ref_xml = (SCORES_DIR / piece_id / "reference.musicxml").read_text()
+    ref_xml = (SCORES_DIR / piece_id / reference_name).read_text()
     try:
         ref = score_json_from_musicxml(ref_xml)
     except MusicXMLError as exc:
@@ -238,12 +299,12 @@ def measure(piece_id: str, piece: str) -> PieceResult:
             pitch_matches=0, rhythm_matches=0, joint_matches=0, aligned=0,
             time_sig_ocr=None, time_sig_ref=None, clef_ocr=None, clef_ref=None,
             double_stops_ref=0, dense_notes_ref=0, grace_notes_ref=0,
-            failed=f"reference.musicxml: {exc}",
+            failed=f"{reference_name}: {exc}",
         )
 
     pages = _render_pages(piece_id)
     started = time.perf_counter()
-    page_scores, page_failures = _read_pages(pages)
+    page_scores, page_failures, cached = _read_pages(piece_id, pages)
     elapsed = time.perf_counter() - started
 
     ocr_measures = [m for s in page_scores for m in s.measures]
@@ -264,6 +325,7 @@ def measure(piece_id: str, piece: str) -> PieceResult:
         piece=piece,
         pages=len(pages),
         seconds=elapsed,
+        cached=cached,
         bars_ocr=len(ocr_measures),
         bars_ref=len(ref.measures),
         notes_ocr=len(ocr_pitches),
@@ -293,10 +355,22 @@ def _warm_up_homr() -> None:
 
 
 def main(argv: list[str]) -> int:
-    pieces = _load_pieces(argv)
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("pieces", nargs="*", metavar="VIDEO_ID")
+    ap.add_argument(
+        "--reference-name",
+        default="reference.musicxml",
+        help="which reference file to read, so the same pages can be scored "
+             "against the old and the rebuilt reference and compared "
+             "(reference.from-midi.musicxml vs reference.from-ly.musicxml)",
+    )
+    ap.add_argument("--include-unverified", action="store_true")
+    args = ap.parse_args(argv)
+
+    pieces = _load_pieces(args.pieces, args.reference_name, args.include_unverified)
     if not pieces:
-        print("no piece in intempo-eval-data/scores has a reference.musicxml "
-              "(run JERA-568's conversion first)", file=sys.stderr)
+        print(f"no piece in intempo-eval-data/scores has a {args.reference_name} "
+              "(run tools/build-ly-references.py first)", file=sys.stderr)
         return 1
 
     _warm_up_homr()
@@ -304,7 +378,7 @@ def main(argv: list[str]) -> int:
     results = []
     for piece_id, piece in pieces:
         print(f"reading {piece_id} ({piece})...", file=sys.stderr)
-        results.append(measure(piece_id, piece))
+        results.append(measure(piece_id, piece, args.reference_name))
 
     print(
         f"\n{'piece':<14} {'bars':>10} {'notes':>10} {'pitch':>6} {'rhythm':>6} "
@@ -321,7 +395,7 @@ def main(argv: list[str]) -> int:
         print(
             f"{r.piece_id:<14} {bars:>10} {notes:>10} {r.pitch_accuracy:>6.0%} "
             f"{r.rhythm_accuracy:>6.0%} {r.joint_accuracy:>6.0%}  {sig:>4} {clef:>4}"
-            f"  {r.pages:>5}  {r.seconds:>4.0f}"
+            f"  {r.pages:>5}  {'cache' if r.cached else format(r.seconds, '.0f')}"
         )
         for f in r.page_failures:
             print(f"{'':<14}   page failed: {f}")
