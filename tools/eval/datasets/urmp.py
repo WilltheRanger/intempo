@@ -1,7 +1,9 @@
 """Loads real violin takes from URMP — eval-only, never committed.
 
 See `tools/eval/fetch_urmp.py` for provenance (CC BY 4.0, source URL) and
-how `intempo-eval-data/urmp/` gets populated. This module only reads it.
+how `intempo-eval-data/urmp/` gets populated. This module only reads it —
+and, per JERA-578, only reads files whose `sha256` matches the official
+release (`urmp_integrity.py`); anything else is left out of the numbers.
 
 Expects, per piece directory: `Sco_<piece>.mid` (the written score, every
 instrument on its own track), and for each violin part, `AuSep_<n>_vn_
@@ -29,8 +31,12 @@ import numpy as np
 _BACKEND = Path(__file__).resolve().parents[3] / "backend"
 if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
+_EVAL = Path(__file__).resolve().parents[1]
+if str(_EVAL) not in sys.path:
+    sys.path.insert(0, str(_EVAL))
 
 from app.services.score_schema import ScoreJson
+from urmp_integrity import check_tree, summarize, unusable
 
 from .base import Take
 from .midi_score import parse_midi, to_score_json
@@ -110,6 +116,21 @@ class UrmpDataset:
             )
             return []
 
+        # JERA-578: a take is only in the numbers if all three of its files
+        # hash to the official release. Anything else — a mirror that changed,
+        # or a piece somebody added without extending the manifest — is
+        # skipped here rather than silently graded.
+        checks = check_tree(DATA_ROOT)
+        rejected = unusable(checks)
+        if rejected:
+            log.warning(
+                "eval: %s — %s; leaving %d file(s) out of the numbers: %s",
+                DATA_ROOT,
+                summarize(checks),
+                len(rejected),
+                ", ".join(sorted(rejected)),
+            )
+
         takes: list[Take] = []
         for piece_dir in sorted(p for p in DATA_ROOT.iterdir() if p.is_dir()):
             sco_paths = list(piece_dir.glob("Sco_*.mid"))
@@ -117,6 +138,9 @@ class UrmpDataset:
             if not sco_paths or not parts:
                 continue
             for instrument_number, wav_path, notes_path in parts:
+                trio = (sco_paths[0], wav_path, notes_path)
+                if any(p.relative_to(DATA_ROOT).as_posix() in rejected for p in trio):
+                    continue
                 try:
                     takes.append(
                         self._load_take(piece_dir, sco_paths[0], wav_path, notes_path, instrument_number)

@@ -259,6 +259,16 @@ jobs:
       - name: Eval regression gate
         run: uv run python3 ../tools/eval/run_gate.py
 
+      # JERA-578: `tools/eval/` has its own tests and this file ran none of
+      # them — the step above exercises the pipeline's *numbers*, not the
+      # harness code that produces them. They need no fixtures outside the
+      # repository and finish in under a second, and one of them is the guard
+      # that `urmp_checksums.txt` still covers every file `fetch_urmp.py`
+      # fetches: a piece added without a hash silently leaves the baseline,
+      # which is precisely the kind of thing nobody notices locally.
+      - name: Eval harness tests (pytest)
+        run: uv run pytest -q ../tools/eval
+
       # **A gate that existed only on somebody's laptop.** `preflight.py` has
       # run this since the day it was written and this file never did, so the
       # npm advisories and the backend's `pip-audit` were checked exactly when

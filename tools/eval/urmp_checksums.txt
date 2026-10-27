@@ -1,0 +1,38 @@
+# URMP checksums — the files `fetch_urmp.py` fetches, as they are in the
+# official release (JERA-578).
+#
+# Produced on 2026-10-27 by downloading the authors' own archival deposit of
+# URMP — Zenodo record 5034983, a mirror of Dryad doi:10.5061/dryad.ng3r749,
+# deposited by Li, Liu, Dinesh, Duan and Sharma, the dataset behind
+# doi:10.1109/TMM.2018.2856090 — checking the whole 12,097,672,571-byte
+# `Dataset.tar.gz` against the md5 that record publishes
+# (8452b1a734fad6f3c10bd19940bc09b4, matched), and hashing the 18 members
+# below out of it. All 18 were byte-identical to what `fetch_urmp.py` had
+# already pulled from the Hugging Face mirror; see `README.md`'s
+# "Provenance and integrity" section for the table.
+#
+# This is why no file is held out of the baseline. `fetch_urmp.py` checks
+# every file it fetches or finds against this list, so a mirror that changes
+# under us fails the fetch instead of quietly moving the numbers.
+#
+# Format: sha256sum(1), relative to `intempo-eval-data/urmp/`. Verify by hand
+# with: cd $INTEMPO_EVAL_DATA/urmp && sha256sum -c --ignore-missing \
+#   <(grep -v '^#' .../urmp_checksums.txt)
+44f731744ead3e188d828e5b64a331081bd6a2e4703fb64587f834d979688030  01_Jupiter_vn_vc/AuSep_1_vn_01_Jupiter.wav
+285772ef718ffc29e6c1fda995f9b377688cac85e84915e4d7a77031fc6669b8  01_Jupiter_vn_vc/Notes_1_vn_01_Jupiter.txt
+e9793a13783581bfea88959e74b4309d70b34813f8782622e6f6aa6a0876e10c  01_Jupiter_vn_vc/Sco_01_Jupiter_vn_vc.mid
+61c86822cfb041726022efadd3c8e00898fc1e1c8a7809f0174a3b55f559c862  02_Sonata_vn_vn/AuSep_1_vn_02_Sonata.wav
+d074cd1f2790c0ff28890171a23731b107f450de801b26e317afdc1f6c986013  02_Sonata_vn_vn/AuSep_2_vn_02_Sonata.wav
+5f532727a6015e37dc3ca99f3f30036c72492d3cd5a0ab90aeab0bfb2fabd20a  02_Sonata_vn_vn/Notes_1_vn_02_Sonata.txt
+fcf826ad8206566f30e63472c5db45a3d2ebaf7c16f429decb958fa90a4ecca9  02_Sonata_vn_vn/Notes_2_vn_02_Sonata.txt
+e48ff0cb136144ee72e675bec8750b27e09dfbe9fad775bc448cb6a4428ac1fc  02_Sonata_vn_vn/Sco_02_Sonata_vn_vn.mid
+1e5a34a0fe2a5f146edce73505b2812b420493042b0cf110893e473e4f8bc37e  12_Spring_vn_vn_vc/AuSep_1_vn_12_Spring.wav
+8d8afaeb63745217b2f338e46b0ef0a64575ae904b7648f3896376253a6e5b83  12_Spring_vn_vn_vc/AuSep_2_vn_12_Spring.wav
+ee3ed0381c0d36bdfc5e37838758307e27936e7d22951d246194ccef0f725857  12_Spring_vn_vn_vc/Notes_1_vn_12_Spring.txt
+a374a724f0a9eb683ab0892fdcb4bbc5a01e5d883eb7725383fd6304daf1f26a  12_Spring_vn_vn_vc/Notes_2_vn_12_Spring.txt
+4fd23109a074692aaa6251f55cd6c4ab0092cfc1e52f434afac9de7d8545726b  12_Spring_vn_vn_vc/Sco_12_Spring_vn_vn_vc.mid
+ba80b2fa0a0d32b45ad0c441499aab7ce0ca8cb989e2fd70a3df4d57e9b518a0  24_Pirates_vn_vn_va_vc/AuSep_1_vn_24_Pirates.wav
+0fea09ab82ce15b5fb8d69ebebe1edfec7cb6aa350414ca5508b6605193c021f  24_Pirates_vn_vn_va_vc/AuSep_2_vn_24_Pirates.wav
+ea49a066e570f67fa2894b020d44ece8adf7f66dcc0a484f98215287c50174ab  24_Pirates_vn_vn_va_vc/Notes_1_vn_24_Pirates.txt
+1fcec60f14f4d13b8de3d6cf9e3890e0bcd31eda90e332859bc0918470a3c1eb  24_Pirates_vn_vn_va_vc/Notes_2_vn_24_Pirates.txt
+0be211d045aac0c827a662b0722d179960048e3d02523c5c2f4b6137193ec0da  24_Pirates_vn_vn_va_vc/Sco_24_Pirates_vn_vn_va_vc.mid
