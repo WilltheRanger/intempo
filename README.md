@@ -1,7 +1,7 @@
 <!--
   Before submitting: add the demo video link and the live web app link here.
   Demo video: https://…
-  Live app:   https://…
+  Live app:   https://idk-41z.pages.dev
 -->
 
 <h1 align="center">InTempo</h1>
@@ -12,12 +12,15 @@
 </p>
 
 <p align="center">
+  <a href="https://idk-41z.pages.dev"><strong>Open the live app →</strong></a>
+</p>
+
+<p align="center">
   <img alt="Expo SDK 57" src="https://img.shields.io/badge/Expo-SDK%2057-000020?logo=expo&logoColor=white">
   <img alt="React Native 0.86" src="https://img.shields.io/badge/React%20Native-0.86-61DAFB?logo=react&logoColor=black">
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white">
   <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-Python%203.12-009688?logo=fastapi&logoColor=white">
   <img alt="Supabase" src="https://img.shields.io/badge/Supabase-Postgres%20%2B%20Auth-3ECF8E?logo=supabase&logoColor=white">
-  <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue">
 </p>
 
 <p align="center">
@@ -72,7 +75,6 @@ flowchart LR
     API -->|"dispatch"| Workers["Modal workers<br/>page reading · audio analysis"]
     Workers --> DB
     Workers --> Store
-    Workers -.->|"only the bars that do not add up,<br/>and tempo words"| Claude["Claude API"]
 ```
 
 **Reading a page.** A photograph goes to [homr](https://github.com/liebharc/homr),
@@ -266,7 +268,3 @@ GeneralUser GS 2.0.3 (`mobile/assets/soundfonts/NOTICE.md`). Notation is set in
 Bravura and Noto Music, text in Newsreader and Inter (SIL OFL). Page reading
 uses [homr](https://github.com/liebharc/homr) (AGPL-3.0), unmodified, in its own
 container.
-
-## License
-
-MIT, see [LICENSE](LICENSE).
