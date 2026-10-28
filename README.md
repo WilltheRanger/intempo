@@ -21,7 +21,6 @@
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white">
   <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-Python%203.12-009688?logo=fastapi&logoColor=white">
   <img alt="Supabase" src="https://img.shields.io/badge/Supabase-Postgres%20%2B%20Auth-3ECF8E?logo=supabase&logoColor=white">
-  <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue">
 </p>
 
 <p align="center">
@@ -269,7 +268,3 @@ GeneralUser GS 2.0.3 (`mobile/assets/soundfonts/NOTICE.md`). Notation is set in
 Bravura and Noto Music, text in Newsreader and Inter (SIL OFL). Page reading
 uses [homr](https://github.com/liebharc/homr) (AGPL-3.0), unmodified, in its own
 container.
-
-## License
-
-MIT, see [LICENSE](LICENSE).
