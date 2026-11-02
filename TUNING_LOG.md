@@ -6,6 +6,227 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-02 — Intonation: `in_tune_cents` 15 → 20, measured on real violin
+
+**Old value:** `[intonation] in_tune_cents = 15.0`. **New value:** `20.0`, and
+the matching default on `IntonationConfig` in `audio_config.py`. Nothing else
+in `[intonation]` moved; `slight_cents` and `by_note_within_cents` were checked
+against the same corpus and deliberately left where they were.
+
+**The corpus, which is the point of this entry.** 1,212 manually-corrected
+violin note labels from URMP (CC BY 4.0) — seven separated parts across four
+pieces, 516 seconds, eval-only and never committed; `tools/eval/datasets/
+urmp.py` reads them and `urmp_integrity.py` checks every file against the
+official release first. Every intonation number in this log before today came
+from **the owner's two bass takes**, recorded on a phone, and `in_tune_cents`
+was set to the distance a steady player's typical note sat from the take's own
+tuning *on those two takes*.
+
+Distance from each take's own tuning, pooled over all 1,212 notes:
+
+| p50 | p75 | p80 | p85 | p90 | p95 | p99 | max |
+|---|---|---|---|---|---|---|---|
+| 8.0 | 14.2 | 15.7 | 17.8 | 20.6 | 24.3 | 36.4 | 64.4 |
+
+| within | 15c | 18c | 20c | 22c | 25c | 30c | 50c | 80c |
+|---|---|---|---|---|---|---|---|---|
+| share | 0.781 | 0.853 | **0.890** | 0.922 | 0.954 | 0.980 | 0.995 | 1.000 |
+
+**Rationale.** 15 cents is not the typical violin note, it is the 75th
+percentile of one. At 15 a competent professional is told **21.9%** of their
+notes are not in tune; at 20, **11.0%**. The brief for this work asks for fewer
+false accusations on clean takes before detection rate, and a pitch chart that
+is a fifth yellow for somebody playing well is exactly the accusation it means.
+20 sits at roughly p90 — "in tune" then means what a good player achieves,
+which is the only definition the chart can defend.
+
+Not widened further: at 25 cents the band swallows 95% of notes and stops
+distinguishing anything, and the 30-cent "clearly off" edge would have to move
+with it.
+
+**Two numbers confirmed and not changed**, both for the first time against
+something other than the owner's bass:
+
+* `slight_cents = 30.0` — 98.0% of a professional's notes sit within it, so
+  "clearly off" is still a thing worth saying rather than a band that fires on
+  ordinary playing.
+* `by_note_within_cents = 50.0` — 99.5% of real readings sit within it, so the
+  per-note breakdown throws away half a percent of them. The 2026-09-30 entry
+  set this from four E-flats on one bass take.
+
+`[mistakes] clear_note_semitones = 0.2` is also confirmed by the same table and
+untouched: it names a note wrong only at 80 cents or more from the written
+pitch, and **100%** of the 1,212 real notes sit inside 80 cents (max 64.4). It
+cannot fire on a correctly-played note in this corpus.
+
+### Regression
+
+**Not the six fixture clips, because there are none.** `fixtures/audio/` holds
+a click track and nothing else; the 2026-09-30 and 2026-09-25 entries say the
+same thing. What this change was regressed against instead is a better corpus
+than the six clips were — the evaluation harness (JERA-563) over all 19 takes,
+synthetic (12) and URMP (7):
+
+| metric | before | after |
+|---|---|---|
+| refusal rate | 0.053 | 0.053 |
+| onset F1 | 0.827 | 0.827 |
+| alignment accuracy | 0.800 | 0.800 |
+| timing MAE (ms) | 7.053 | 7.053 |
+| verdict agreement rate | 0.750 | 0.750 |
+| false rush/drag rate (clean takes) | 0.125 | 0.125 |
+| intonation MAE (cents) | 3.678 | 3.678 |
+| wrong-note precision / recall | 1.000 / 0.917 | 1.000 / 0.917 |
+
+**`report.md` is byte-identical apart from its generation timestamp, and that
+is a finding about the harness, not a clean bill of health for the change.**
+`in_tune_cents` colours bars and writes the verdict's pitch line; no metric the
+harness computes reads it — its `intonation within tight/loose band` columns
+use the harness's own `tight_cents`/`loose_cents` from `eval_config.toml`, and
+both read 0.000 on every take, which is a separate defect worth raising against
+JERA-563. So the honest claim is: this change moves nothing the harness
+measures, and what it does move is unmeasured by it.
+
+Unit tests: `test_intonation.py`, `test_tuning_knobs.py` and
+`test_onset_recovery.py` — 105 passed, 2 skipped. The full backend suite was
+not run to completion in the session that made this change; `tools/preflight.py`
+and CI are the gate.
+
+**Known side effect, stated because it is visible.** Every bar whose notes sat
+15–20 cents from the take's tuning now reads "in tune" where it read "slightly
+off", on every existing take including the owner's two bass ones. That is the
+intended change.
+
+**Not tuned here, and the reason is the corpus rather than the thresholds.**
+
+* `[tolerance]` — the rushing/dragging bands. URMP is expressive chamber
+  playing with no metronome and no target BPM, so it carries no ground truth
+  about timing *against a click*; the only takes in the benchmark that do are
+  the 12 synthetic ones, and their timing errors are injected by the same
+  generator the harness grades. Moving a band on that evidence would tune the
+  pipeline to `synthetic_takes.py` rather than to a musician. It needs real
+  recordings against a known tempo — the gap this program is still waiting on.
+* `[pitch]` — `steady`, `min_share`. Nothing to fix: on the seven real takes
+  the pipeline held a pitch after 0.86–0.99 of attacks and refused **none** of
+  them, which is the behaviour these knobs exist to produce. On the synthetic
+  takes it holds a pitch after ~0.30 of attacks, which is the additive-sine
+  renderer, not the threshold.
+* `[mistakes]` — `clear_note_semitones` confirmed above; `wrong_note_max_share`
+  and `rest_entry_min_beats` have no ground truth in URMP, which labels what
+  was played and not what was written as a mistake.
+
+## 2026-11-02 — Pitch tracker: YIN kept, pYIN measured and rejected
+
+**No value changed.** This records a measurement that settles an open question
+and corrects a claim in the code.
+
+`pitch_evidence.pitch_track` uses `librosa.yin`, and its docstring justifies
+that against pYIN with numbers taken on one of the owner's unlabelled takes:
+"pYIN costs 13.7 s per minute of audio, YIN 1.7 s, and the two agree within
+half a semitone on 88% of attacks and an octave apart on 3%". Lens's brief
+(JERA-560) quoted public-benchmark accuracy figures for the same pair, which
+were never measured on intempo. Both are now measured here, against labels
+rather than against each other — `tools/eval/pitch_bakeoff.py`, same seven URMP
+parts, 71,571 scored frames and 1,212 notes:
+
+| metric | yin | pyin |
+|---|---|---|
+| CPU s / audio min | **1.37** | 37.13 |
+| wall s / audio min | 0.82 | 37.72 |
+| frames with a reading | 1.000 | 0.999 |
+| frame RPA (±50c) | 0.992 | **0.999** |
+| frame RCA (±50c) | 0.996 | 0.999 |
+| frame octave errors | 0.004 | **0.000** |
+| frame median \|err\| (c) | **5.34** | 5.84 |
+| notes with no reading | 0.000 | 0.000 |
+| note RPA (±50c) | 0.993 | **1.000** |
+| note octave errors | 0.005 | **0.000** |
+| note median \|err\| (c) | **2.79** | 3.82 |
+
+**Decision: keep YIN.** JERA-565 asks that a tracker be adopted "only if it
+clearly wins without blowing the worker budget". pYIN costs **27×** the CPU for
+0.7 percentage points of note accuracy, and it is *worse* on the one number the
+intonation chart actually reads: the median absolute error on notes it gets
+right is 3.82 cents against YIN's 2.79. Its HMM prefers a continuous track,
+which is what removes the octave slips and also what drags a note's reading
+toward its neighbours. A grading product that reports a bar as 8 cents off
+cannot afford a tracker that adds a cent of smoothing to every note in exchange
+for an octave error it already prices at half (`_OCTAVE_AWAY`).
+
+**Two corrections to what the code says.** The 13.7 s/min figure is 37.1 s/min
+at URMP's 48 kHz — the old measurement was at a lower sample rate, and pYIN's
+cost scales with frame count. And "an octave apart on 3%" was a *disagreement*
+rate, which says nothing about which tracker was wrong; against labels, YIN is
+the wrong one on 0.5% of notes. The docstring is left as it stands, pointing at
+its own measurement, rather than rewritten in this change.
+
+**torchcrepe was not measured.** It is not installed and this sandbox has no
+network, so `--tracker torchcrepe` reports it as not measured. Lens put it
+behind pYIN conditional on "pyin is not enough"; pYIN did not clear the bar, so
+the condition was never reached. The code path exists and has never run.
+
+**Caveat on the corpus, which bounds all of the above.** URMP `AuSep` tracks
+are close-mic'd, studio-recorded and source-separated. YIN reaching 0.992 frame
+RPA here says it is excellent on clean monophonic violin; it says nothing about
+a phone microphone in a live room, which is the recording the product actually
+gets and which this repository still has no labelled example of.
+
+## 2026-11-02 — Prototype: onsets from pitch change, measured and not wired
+
+**No value changed and nothing in the pipeline calls it.**
+`onset_recovery.pitch_change_times` is new, with nine tests, and no caller.
+
+**The problem it is for.** A flux detector reads a change in the spectrum's
+*energy*. A bow articulating a new note softly — slurred, or détaché in the
+middle of a phrase — changes the spectrum's *shape* and leaves its energy flat,
+so the note is never reported. Measured for the first time here, on URMP's
+hand-labelled onsets (`tools/eval/onset_bakeoff.py`, 50 ms tolerance):
+
+| | |
+|---|---|
+| labelled onsets | 1,212 |
+| detected onsets | 994 |
+| onset precision | 0.852 |
+| onset recall | **0.699** |
+| missed onsets | 365 |
+
+Nearly a third of a real violin take's notes are not reported at all. The
+synthetic suite cannot show this — every attack it renders is as loud as every
+other — and it is the largest single accuracy gap this program has measured.
+
+**How far the pitch reaches into it.** The share of those 365 misses with a
+pitch change within 50 ms, swept over the rule's two knobs:
+
+| min semitones (rows) vs steady frames | 3 | 4 | 6 |
+|---|---|---|---|
+| 0.6 | 0.310 | 0.258 | 0.189 |
+| 0.8 | 0.373 | 0.266 | 0.181 |
+| **1.0** | **0.455** | 0.340 | not recorded |
+
+…and what it costs, as the share of reported changes landing nowhere near any
+labelled onset: 0.245 at 1.0/3, 0.248 at 1.0/4, 0.264–0.292 elsewhere. 1.0
+semitones over 3 frames is best on *both* axes and is the default.
+
+**So: a ceiling of recall 0.699 → 0.836 if every reachable miss were
+recovered, and a quarter of the candidates are phantoms.** That ratio is fine
+inside `onset_recovery`'s existing shape — look only where the score writes a
+note and the alignment found none — and is not fine as a detector. Wiring it
+into the recovery pass is the follow-up; it is left out of this change because
+doing it properly means a config block, a second search over the window, and a
+regression on takes this corpus does not yet contain.
+
+**One real defect found and fixed in the prototype.** The first draft fired
+four times on a single portamento: a steep glide looks flat over four frames,
+so each frame in it has a "settled" reading either side a semitone apart. The
+fix measures the same step at two window widths — a true step reads the same
+distance at both, a glide reads twice as far — and rejects a candidate whose
+step grows past 1.5× when the windows double. `_SLIDE_GROWTH = 1.5` is a shape
+argument, not a measurement: nothing here has heard a labelled real slide.
+
+Vibrato is excluded by the semitone threshold rather than by that check — ±40
+cents at 6 Hz, wider than the 14–15 cents this log records for a steady player,
+reports nothing.
+
 ## 2026-09-30 — Saxophone: two new rows, no existing value changed
 
 `[onset.instrument.alto_sax]` and `[onset.instrument.tenor_sax]`, both

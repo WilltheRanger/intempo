@@ -1,5 +1,47 @@
 # InTempo Decisions
 
+## 2026-11-02 — YIN over pYIN for the pitch track, on labelled data this time
+
+**Context:** `pitch_evidence.pitch_track` uses `librosa.yin`. The choice was
+made on 2026-09-25 by comparing the two trackers *with each other* on one of
+the owner's unlabelled takes — which could measure how far they disagree and
+not which one was right — and Lens's research brief (JERA-560) recommended
+trying `librosa.pyin` first as a cheap swap, quoting accuracy figures from a
+public benchmark that had never been run against intempo. URMP's
+manually-corrected note labels made the real question answerable.
+
+**Decision:** Keep YIN. On 7 URMP violin parts (71,571 frames, 1,212 notes),
+pYIN costs 27× the CPU (37.1 s against 1.37 s per minute of audio) for 0.7
+percentage points of note accuracy (0.993 → 1.000 within 50 cents), and it is
+**worse** on the number the intonation chart reads: median absolute error on
+correctly-identified notes, 3.82 cents against YIN's 2.79.
+
+**Alternatives considered:**
+
+* **pYIN.** Measured and rejected, above. Its HMM is what removes YIN's octave
+  slips (0.005 of notes → 0.000) and also what pulls a note's reading toward
+  its neighbours. The slips are already priced at half a wrong note by
+  `_OCTAVE_AWAY`, and the chain around one decides; a cent of smoothing on
+  *every* note is the worse trade for a product that reports a bar as 8 cents
+  sharp.
+* **torchcrepe.** Not measured — not installed, no network in this sandbox.
+  Lens conditioned it on "only if pyin is not enough and the CPU cost is
+  acceptable"; pYIN at 27× did not clear the CPU bar, so a model that is
+  heavier still was not reached. The code path exists in
+  `tools/eval/pitch_bakeoff.py` and has never run.
+* **Keeping the question open.** Rejected: the measurement is cheap to
+  reproduce (`tools/eval/pitch_bakeoff.py --tracker pyin`) and leaving it
+  undecided is how the 2026-09-25 numbers came to be quoted as accuracy when
+  they were disagreement.
+
+**Trade-offs accepted:** URMP `AuSep` tracks are close-mic'd, studio-recorded
+and source-separated, so YIN's 0.992 frame accuracy is a statement about clean
+monophonic violin and not about a phone microphone in a live room. This decision
+is therefore reversible on evidence this repository does not yet have, and the
+bake-off tool is committed so that re-asking costs one command rather than a
+session. The 0.5% of notes YIN reads an octave out remain, mitigated rather
+than removed.
+
 ## 2026-10-24 — The browser revalidates the Library listing; the API confirms it without the notation
 
 **Context:** The Library refetches `GET /v1/scores` on every launch, and that

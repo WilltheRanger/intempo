@@ -238,3 +238,38 @@ ground_truth = build_ground_truth(Path("fixtures/scores/01_simple.json"), cfg)
 - Feeding the Telemann/Paganini MusicXML once the Scout task produces it —
   today this only consumes the `score` JSON shape, so that piece needs the
   same OCR-shaped conversion every other fixture went through first.
+
+---
+
+# The bake-offs (JERA-565)
+
+Two tools that answer "would a different algorithm be better", against URMP's
+manually-corrected labels rather than against each other. Neither changes the
+pipeline; both write into `.report/` beside the harness report.
+
+    tools/eval/pitch_bakeoff.py --tracker yin     # ~7 s on the URMP corpus
+    tools/eval/pitch_bakeoff.py --tracker pyin    # ~5 min, and memory-hungry
+    tools/eval/onset_bakeoff.py                   # ~1 min
+
+**`pitch_bakeoff.py`** scores a pitch tracker two ways, because the pipeline
+asks the track two different questions: per frame (what `intonation.py` medians
+over — RPA/RCA in the MIREX sense, whose gap is the octave-error rate) and per
+note (one reading through `pitch_evidence.heights_at`, which is what the
+matcher and the verdict actually see). A tracker can win the first and lose the
+second, and on this corpus pYIN does exactly that — see `TUNING_LOG.md`,
+2026-11-02, for the table and the decision.
+
+**Run it one tracker per process.** pYIN holds a transition matrix the length
+of the take; both trackers in one process peaked near 1.5 GB on URMP's longest
+part and a session container killed it without writing a report.
+
+**`onset_bakeoff.py`** asks which hand-labelled onsets `audio.detect_onsets`
+misses — 365 of 1,212 on this corpus, a recall of 0.699 the synthetic suite
+cannot show because every attack it renders is as loud as every other — and
+how many of those misses have a pitch change sitting where they should be. It
+reports a *ceiling* on what `onset_recovery.pitch_change_times` could add, not
+what adding it would achieve, plus the phantom rate that is the reason nothing
+calls that function yet.
+
+Both need `intempo-eval-data/urmp/` populated (`fetch_urmp.py`) and exit 1 with
+a message rather than raising when it is not.
