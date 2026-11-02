@@ -13,7 +13,11 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from app.services.onset_recovery import predict_audio_times, recover_onsets
+from app.services.onset_recovery import (
+    pitch_change_times,
+    predict_audio_times,
+    recover_onsets,
+)
 
 SR = 22050
 HOP = 512
@@ -159,3 +163,83 @@ class TestRecoverOnsets:
 
     def test_a_silent_take_recovers_nothing(self):
         assert _recover(np.zeros(400, dtype=np.float32), [], [1.0]).size == 0
+
+
+# ---------------------------------------------------------------------------
+# The pitch-change pass (JERA-565)
+
+
+def _track(segments: list[tuple[float, float]]):
+    """A pitch track as `(midi, seconds)` segments, each held exactly."""
+    out: list[float] = []
+    for midi, seconds in segments:
+        out.extend([midi] * int(round(seconds * SR / HOP)))
+    return np.array(out, dtype=float)
+
+
+def _changes(track, *, min_semitones=1.0, steady_frames=3):
+    return pitch_change_times(
+        track,
+        hop_length=HOP,
+        sr=SR,
+        min_semitones=min_semitones,
+        steady_frames=steady_frames,
+    )
+
+
+class TestPitchChangeTimes:
+    """A bow change a flux detector cannot hear, found in the pitch instead.
+    Every test is the envelope pass's question from the other side: can this
+    report a change where the player did not make one?"""
+
+    def test_a_step_between_two_settled_notes_is_reported(self):
+        found = _changes(_track([(69.0, 0.5), (71.0, 0.5)]))
+
+        assert found.size == 1
+        assert found[0] == pytest.approx(0.5, abs=2 * HOP / SR)
+
+    def test_a_held_note_reports_nothing(self):
+        assert _changes(_track([(69.0, 1.0)])).size == 0
+
+    def test_vibrato_is_not_a_change(self):
+        """±40 cents at 6 Hz — wider than the 14–15 cents `[intonation]`
+        records for a steady player, and still nowhere near a semitone."""
+        frames = int(1.5 * SR / HOP)
+        t = np.arange(frames) * HOP / SR
+
+        assert _changes(69.0 + 0.4 * np.sin(2 * np.pi * 6.0 * t)).size == 0
+
+    def test_a_slide_between_two_notes_is_not_a_change(self):
+        """A portamento passes the settled-window test — over four frames a
+        steep glide looks flat — and is caught by the two-width check instead.
+        Without it this fires four times on one gesture, which is what the
+        first draft did."""
+        held = int(0.4 * SR / HOP)
+        glide = np.linspace(69.0, 74.0, int(0.5 * SR / HOP))
+        track = np.concatenate([np.full(held, 69.0), glide, np.full(held, 74.0)])
+
+        assert _changes(track).size == 0
+
+    def test_a_step_smaller_than_the_threshold_is_not_a_change(self):
+        assert _changes(_track([(69.0, 0.5), (69.5, 0.5)]), min_semitones=1.0).size == 0
+
+    def test_one_change_is_reported_once(self):
+        """Several adjacent frames can qualify; the largest step wins, so a
+        single bow change does not become three recovered notes."""
+        assert _changes(_track([(69.0, 0.5), (74.0, 0.5), (69.0, 0.5)])).size == 2
+
+    def test_unreported_frames_break_a_window(self):
+        """A tracker that says nothing — pYIN's unvoiced, or silence — cannot
+        have a settled reading either side, so no change is claimed across it.
+        """
+        track = np.concatenate(
+            [_track([(69.0, 0.3)]), np.full(6, np.nan), _track([(74.0, 0.3)])]
+        )
+
+        assert _changes(track).size == 0
+
+    def test_a_track_shorter_than_one_window_reports_nothing(self):
+        assert _changes(np.full(5, 69.0), steady_frames=4).size == 0
+
+    def test_a_silent_take_reports_no_change(self):
+        assert _changes(np.full(400, np.nan)).size == 0
