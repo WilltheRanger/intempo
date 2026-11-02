@@ -28,6 +28,9 @@ pnpm-debug.log*
 __pycache__/
 *.py[cod]
 *$py.class
+
+# --- Eval harness (JERA-563): generated reports, never the baseline it checks against ---
+tools/eval/.report/
 *.so
 .Python
 *.egg

@@ -168,6 +168,12 @@ FAST: list[tuple[str, list[str], Path, tuple[Prereq, ...]]] = [
     ),
     ("mobile tests", ["npm", "test"], MOBILE, (NODE_MODULES,)),
     ("backend tests", ["uv", "run", "pytest", "-q"], BACKEND, ()),
+    (
+        "eval regression gate",
+        ["uv", "run", "python3", str(ROOT / "tools" / "eval" / "run_gate.py")],
+        BACKEND,
+        (),
+    ),
 ]
 
 

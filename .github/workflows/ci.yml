@@ -253,6 +253,12 @@ jobs:
       - name: Run pytest
         run: uv run pytest -q
 
+      # JERA-563: the same fast, synthetic-only regression gate
+      # `tools/preflight.py` runs before a push, run here too so a fork or a
+      # skipped preflight still catches a grading regression before merge.
+      - name: Eval regression gate
+        run: uv run python3 ../tools/eval/run_gate.py
+
       # **A gate that existed only on somebody's laptop.** `preflight.py` has
       # run this since the day it was written and this file never did, so the
       # npm advisories and the backend's `pip-audit` were checked exactly when

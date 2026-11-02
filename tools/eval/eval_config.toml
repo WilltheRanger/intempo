@@ -1,0 +1,34 @@
+# Evaluation-harness tuning config (JERA-563).
+#
+# Mirrors backend/config.toml's spirit: numbers a reviewer might reasonably
+# want to change live here, not buried in harness.py or metrics.py. These are
+# the harness's own grading knobs — they do not touch backend/config.toml's
+# analysis thresholds, which the harness treats as the thing under test.
+
+[onset]
+tolerance_ms = 50.0        # a detected/expected onset pair counts as matched within this window
+
+[intonation]
+tight_cents = 10.0         # "close" bucket for the %-within-N-cents breakdown
+loose_cents = 20.0         # "acceptable" bucket for the %-within-N-cents breakdown
+
+[verdict]
+# Ground truth takes with no injected timing/tempo error are "clean" for the
+# purposes of the false-positive rates below.
+clean_rush_drag_bands = ["rush_drag", "severe"]
+
+[regression_gate]
+# tools/preflight.py's fast subset: tolerance before a drop fails the push.
+onset_f1_tolerance = 0.02
+alignment_accuracy_tolerance = 0.02
+verdict_agreement_tolerance = 0.02
+false_positive_rate_tolerance = 0.02
+
+[synth]
+# tools/eval/synth_audio.py's additive sine-wave renderer — not a soundfont,
+# just enough signal for the onset/pitch detectors under test to catch.
+note_duration_s = 0.35     # sustain, excluding attack/release
+attack_s = 0.01
+release_s = 0.08
+amplitude = 0.6
+harmonics = 4              # a plain sawtooth-ish tone, not a pure sine
