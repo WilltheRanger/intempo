@@ -136,7 +136,7 @@ class PitchConfig:
 class IntonationConfig:
     """See `[intonation]` in config.toml and `services/intonation.py`."""
 
-    in_tune_cents: float = 15.0
+    in_tune_cents: float = 20.0
     slight_cents: float = 30.0
     not_this_note_cents: float = 100.0
     min_notes: int = 8

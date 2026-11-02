@@ -133,3 +133,110 @@ def recover_onsets(
         found.append(at)
 
     return np.array(sorted(found), dtype=float)
+
+
+#: Doubling the windows either side of a change may read a step at most this
+#: much larger than the narrow windows did. A true step reads the same two
+#: notes at both widths (1.0); a steady glide reads twice as far (2.0). 1.5 is
+#: the midpoint, and nothing here has yet heard a real slide — it is a shape
+#: argument, not a measurement, and `TUNING_LOG.md` says so.
+_SLIDE_GROWTH = 1.5
+
+
+def pitch_change_times(
+    track: np.ndarray,
+    *,
+    hop_length: int,
+    sr: int,
+    min_semitones: float,
+    steady_frames: int,
+) -> np.ndarray:
+    """Where the pitch track steps from one settled note to another.
+
+    **The attack a flux detector cannot hear.** Spectral flux measures how much
+    the spectrum changed in *energy*, so it reads a bow articulating a new note
+    as an attack only when that articulation is loud. Two notes slurred under
+    one bow, or a soft détaché in the middle of a phrase, change the spectrum's
+    *shape* without a step in its energy: the envelope stays flat and the note
+    is simply not reported. The pitch, meanwhile, moves a semitone or more and
+    stays there, which is what this looks for. Measured on URMP, a third to a
+    half of the onsets `detect_onsets` misses have a pitch change within 50 ms
+    — see `tools/eval/onset_bakeoff.py` and `TUNING_LOG.md`, 2026-11-02.
+
+    A frame is a candidate when the `steady_frames` before it and the
+    `steady_frames` after it each hold a settled reading — a median whose own
+    frames all sit within half of `min_semitones` of it, so vibrato is not read
+    as a step — and the two medians differ by at least `min_semitones`.
+
+    **A slide is rejected by measuring the same step twice, at two widths.** A
+    portamento has no settled frame to point at, but it does pass the test
+    above: over a short enough window a steep glide looks flat, and four frames
+    of it differ from the next four by a semitone. The two cases come apart on
+    how the step grows with the window — across a real step, widening the
+    windows reads the same two notes and the same distance; across a glide it
+    reads further along the slide and the distance grows with it. A candidate
+    is kept only when doubling the windows leaves the step below
+    `_SLIDE_GROWTH` times what the narrow windows read.
+
+    Where several adjacent frames qualify, the largest step wins, so one change
+    is one time and not three.
+
+    This reports *every* such step, the ones the first pass already found
+    included: a note both loud and newly pitched is in both lists. Thinning
+    that to the ones worth adding is the caller's job — the same division
+    `recover_onsets` makes, and for the same reason: nothing here may invent a
+    note the page does not write. **Nothing in the pipeline calls this yet.**
+    On URMP a quarter of the changes it reports land nowhere near a labelled
+    onset, which is fine inside a score-chosen window and not fine as a
+    detector; wiring it into the recovery pass is JERA-565's follow-up, not
+    this change.
+
+    NaN frames (a tracker reporting nothing, or silence) break a window — a
+    settled reading either side has to be settled in frames that exist.
+    """
+    track = np.asarray(track, dtype=float)
+    span = int(steady_frames)
+    if span < 1 or min_semitones <= 0 or track.size < 2 * span + 1:
+        return np.array([], dtype=float)
+
+    settle = min_semitones / 2.0
+    steps = np.zeros(track.size)
+
+    def _step(index: int, width: int) -> float | None:
+        """How far the track moves across `index`, read over `width` frames
+        either side. `None` where the window runs off the track or over a
+        frame the tracker did not report."""
+        if index - width < 0 or index + width > track.size:
+            return None
+        before, after = track[index - width : index], track[index : index + width]
+        if not (np.isfinite(before).all() and np.isfinite(after).all()):
+            return None
+        return abs(float(np.median(after)) - float(np.median(before)))
+
+    for i in range(span, track.size - span):
+        before, after = track[i - span : i], track[i : i + span]
+        if not (np.isfinite(before).all() and np.isfinite(after).all()):
+            continue
+        low, high = float(np.median(before)), float(np.median(after))
+        if np.max(np.abs(before - low)) > settle or np.max(np.abs(after - high)) > settle:
+            continue
+        narrow = abs(high - low)
+        if narrow < min_semitones:
+            continue
+        wide = _step(i, 2 * span)
+        if wide is not None and wide > _SLIDE_GROWTH * narrow:
+            continue
+        steps[i] = narrow
+
+    # One time per change: a frame counts only where it is the largest step in
+    # its own neighbourhood — the same "a level is not an attack" rule the
+    # envelope pass applies to peaks.
+    found: list[int] = []
+    for index in np.flatnonzero(steps):
+        index = int(index)
+        if steps[index] < steps[max(0, index - span) : index + span + 1].max():
+            continue
+        if found and (index - found[-1]) < span:
+            continue
+        found.append(index)
+    return np.array([i * hop_length / sr for i in found], dtype=float)

@@ -307,10 +307,17 @@ confirmed_min_pitches = 3
 # tuning, the takes themselves 25 cents sharp and 25 flat of A = 440.
 #
 # A bar whose notes sat within this many cents of the player's tuning is in
-# tune. 15: the spread of a steady player on these takes, and about the
-# smallest difference a listener hears between two held notes.
-in_tune_cents = 15.0
-# ...within this many, slightly off; beyond it, clearly off.
+# tune. **20 since 2026-11-02, measured on 1,212 manually-corrected violin
+# notes** (URMP, seven real parts — see TUNING_LOG.md). Was 15, which is the
+# spread of a steady player on the owner's two *bass* takes, and on real
+# violin playing it is the 75th percentile rather than the typical note: at 15
+# a competent professional is told 21.9% of their notes are not in tune, at 20
+# cents 11.0%. "In tune" has to mean what a good player achieves, and the
+# alternative is a chart that is mostly yellow for somebody playing well.
+in_tune_cents = 20.0
+# ...within this many, slightly off; beyond it, clearly off. 30 confirmed
+# against the same corpus and deliberately left alone: 98.0% of a
+# professional's notes sit within it, so "clearly off" stays worth saying.
 slight_cents = 30.0
 # A note further than this from its written pitch, after the tuning, is not a
 # reading of that note: another note, the last one still ringing, or the
@@ -328,6 +335,11 @@ tuning_worth_saying_cents = 10.0
 # Tighter than `not_this_note_cents`, which a bar can afford and a note read
 # four times cannot — the owner's 0313 E-flats read +20, +29, -20 and -98, the
 # -98 the D before them ringing on, and it alone put them in tune.
+#
+# Confirmed and left at 50 on 2026-11-02 against the same 1,212 URMP violin
+# notes: 99.5% of them sit within 50 cents of their take's own tuning, so this
+# discards half a percent of real readings. The first time the number has been
+# checked against anything but the owner's bass.
 by_note_within_cents = 50.0
 # Reported with fewer readings than this: nothing. Two, so Insights can pool a
 # note across takes that each heard it only a few times.
