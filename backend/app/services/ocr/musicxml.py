@@ -1764,7 +1764,17 @@ def score_json_from_musicxml(
             # what `unknown` and `None` are already for.
             if beats and beat_type and TIME_SIG_PATTERN.match(f"{beats}/{beat_type}"):
                 stated = f"{beats}/{beat_type}"
-                if time_signature is None:
+                # **Only a metre printed on the first bar is the header's.** An
+                # OCR'd continuation page does not print the metre at the top —
+                # it was printed on the page before — so the first `<time>` in
+                # the file is a mid-page *change*, and adopting it as the header
+                # captions every bar above it with a metre those bars do not
+                # use. On Caprice 3 page 2 that made all 61 correctly-read bars
+                # `long` and `_refuse_if_it_is_not_a_reading` threw the page
+                # away (JERA-596). With no header metre, the metre is inferred
+                # from the music, which is what `None` is for.
+                took_the_header = time_signature is None and len(measures) == 0
+                if took_the_header:
                     time_signature = stated
                 if stated != running_time:
                     # A metre printed mid-piece is a change of metre, and it
@@ -1780,7 +1790,15 @@ def score_json_from_musicxml(
                     # dropped the return — bar 9 states 4/4, which *equals* the
                     # header — and `meters_in_force` then held 2/4 to the end,
                     # calling every correctly-read bar after 9 long.
-                    if running_time is not None:
+                    #
+                    # **Everything the header did not take goes on the
+                    # measure**, including the first `<time>` in a file whose
+                    # opening bar states none: the header stays `None` so the
+                    # bars above are inferred, and the metre still takes effect
+                    # from the bar that prints it. The test was
+                    # `running_time is not None`, which dropped exactly that
+                    # case once the header stopped swallowing it.
+                    if not took_the_header:
                         measure_time = stated
                     running_time = stated
 

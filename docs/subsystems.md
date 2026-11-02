@@ -2176,6 +2176,29 @@ actually made here.
   identically to a reading *and* places every note of a bass part a seventh off.
   A clef control on `PieceScoreScreen` sets it; **"Not stated" is a real choice**,
   not a cancel.
+- **The header carries only what the page states at its top, and what the
+  header does not take must land on the measure** (2026-10-27, JERA-596/597).
+  The same shape as the clef rule above, and the importer got the metre half
+  wrong in both directions at once. `score_json_from_musicxml` took
+  `time_signature` from the first `<time>` element *anywhere* in the file. A
+  musician photographs page 2 of a piece; the metre is not printed there,
+  because it was printed on page 1 — so that first `<time>` is a mid-page
+  *change*, and it was captioned onto every bar above it. On Caprice 3 page 2
+  that made all 61 correctly-read bars `long` and
+  `_refuse_if_it_is_not_a_reading` threw the page away, for a reading of 61
+  bars and 336 notes that was essentially right. **One page is not one piece,
+  and the top of a photograph is not the start of the music.**
+  The second half is the part that is easy to get wrong while fixing the first:
+  the measure-level branch tested `running_time is not None`, which was only
+  ever true because the header had already swallowed the first `<time>`. Stop
+  the header taking it and that test drops the change from the measure too —
+  the metre then takes effect *nowhere*, on exactly the pages the fix was for,
+  and one wrong answer becomes a missing one. The guard is now
+  `not took_the_header`: whatever the header declines, the measure records.
+  A header metre of `None` is a real answer, like `clef` null above —
+  `meters_in_force` leaves those bars `unverifiable` and the metre is inferred
+  from the music, which is the honest verdict for bars whose metre nobody
+  printed on the page that was photographed.
 - **The upload's extension follows the *type*, never the filename.** They had
   separate fallbacks, so an unrecognised name declared `image/jpeg` and filed
   the object as `page.heif` — which `_extract_ext` refuses, showing the musician
