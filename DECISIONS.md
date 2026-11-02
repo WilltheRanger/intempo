@@ -11,9 +11,11 @@ public benchmark that had never been run against intempo. URMP's
 manually-corrected note labels made the real question answerable.
 
 **Decision:** Keep YIN. On 7 URMP violin parts (71,571 frames, 1,212 notes),
-pYIN costs 27× the CPU (37.1 s against 1.37 s per minute of audio) for 0.7
-percentage points of note accuracy (0.993 → 1.000 within 50 cents), and it is
-**worse** on the number the intonation chart reads: median absolute error on
+pYIN costs 27–56× the CPU (37.1 s against 1.37 s per minute of audio over the
+whole corpus; 51.6 against 0.92 for both trackers back-to-back on one part — the
+absolute numbers move with machine load, the order of magnitude does not) for
+0.7 percentage points of note accuracy (0.993 → 1.000 within 50 cents), and it
+is **worse** on the number the intonation chart reads: median absolute error on
 correctly-identified notes, 3.82 cents against YIN's 2.79.
 
 **Alternatives considered:**

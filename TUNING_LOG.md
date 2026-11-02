@@ -143,9 +143,17 @@ parts, 71,571 scored frames and 1,212 notes:
 | note octave errors | 0.005 | **0.000** |
 | note median \|err\| (c) | **2.79** | 3.82 |
 
+**The CPU column is load-dependent and the ratio is the claim.** The table
+above is one pass over the whole corpus. A second session re-measured YIN at
+0.83 s/min over the same corpus, and both trackers back-to-back on a single
+46-second part at 0.92 against 51.63 — so pYIN costs somewhere between **27×
+and 56×** YIN depending on the machine and the take. Every accuracy figure in
+the table reproduced to the digit across both sessions; only the timings moved.
+
 **Decision: keep YIN.** JERA-565 asks that a tracker be adopted "only if it
-clearly wins without blowing the worker budget". pYIN costs **27×** the CPU for
-0.7 percentage points of note accuracy, and it is *worse* on the one number the
+clearly wins without blowing the worker budget". pYIN costs tens of times the
+CPU for 0.7 percentage points of note accuracy, and it is *worse* on the one
+number the
 intonation chart actually reads: the median absolute error on notes it gets
 right is 3.82 cents against YIN's 2.79. Its HMM prefers a continuous track,
 which is what removes the octave slips and also what drags a note's reading

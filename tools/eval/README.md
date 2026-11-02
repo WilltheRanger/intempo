@@ -249,6 +249,7 @@ pipeline; both write into `.report/` beside the harness report.
 
     tools/eval/pitch_bakeoff.py --tracker yin     # ~7 s on the URMP corpus
     tools/eval/pitch_bakeoff.py --tracker pyin    # ~5 min, and memory-hungry
+                                                  # (tens of times YIN's CPU)
     tools/eval/onset_bakeoff.py                   # ~1 min
 
 **`pitch_bakeoff.py`** scores a pitch tracker two ways, because the pipeline
