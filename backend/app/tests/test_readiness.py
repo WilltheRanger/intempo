@@ -46,6 +46,27 @@ def unconfigured(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(_settings(), "ANTHROPIC_API_KEY", "")
     monkeypatch.setattr(_settings(), "GEMINI_API_KEY", "")
 
+    # Blanking the keys is not enough to make the deployment bare. A provider
+    # with no `api_key_setting` — homr — is an engine in this container, and
+    # `readiness.check()` asks `provider.available()` instead of reading a
+    # setting, so on any machine that has homr installed a "bare" deployment
+    # still reports a working sheet-music reader and the `sheet-music reader`
+    # blocking line is never emitted. CI runners have no homr, so this read as
+    # a real failure only locally — and cost a session on JERA-565.
+    from app.services.ocr.pipeline import _default_chain
+
+    for provider in _default_chain():
+        if not getattr(provider, "api_key_setting", "") and callable(
+            getattr(provider, "available", None)
+        ):
+            # Patched on the class, not the instance: the registry holds
+            # singletons, and `monkeypatch.setattr` on an instance restores by
+            # *setting* the old bound method back, which leaves a permanent
+            # instance attribute shadowing any later class-level patch. Two
+            # later tests in this file patch `HomrProvider.available` and went
+            # red when this fixture patched the instance.
+            monkeypatch.setattr(type(provider), "available", lambda self: False)
+
 
 def test_a_bare_deployment_is_not_ready_and_says_why(unconfigured) -> None:
     result = readiness.check()
