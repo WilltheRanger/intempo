@@ -102,7 +102,24 @@ export function installRovingFocus(): () => void {
     }
   };
 
-  const observer = new MutationObserver(settle);
+  // **Once a frame at most**, like the tab's title (`installDocumentTitle`).
+  // The observer fires after every change anywhere on the page, and `settle`
+  // asks each item whether it is visible, which brings the page's styles up to
+  // date there and then — once per change, where the browser would have done
+  // it once per frame. The Library draws its shelf a tile at a time
+  // (`engravingTurns.ts`), several to a frame on a fast phone; with this the
+  // shelf was drawn 40–90 ms sooner and the main thread blocked 70–85 ms less
+  // (two pairs of runs, five relaunches each, 2026-10-23).
+  let frame = 0;
+  const soon = () => {
+    if (frame === 0) {
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        settle();
+      });
+    }
+  };
+  const observer = new MutationObserver(soon);
   observer.observe(document.body, {
     subtree: true,
     childList: true,
@@ -115,6 +132,7 @@ export function installRovingFocus(): () => void {
   document.addEventListener('focusin', enter);
   return () => {
     observer.disconnect();
+    if (frame !== 0) cancelAnimationFrame(frame);
     document.removeEventListener('keydown', move, true);
     document.removeEventListener('keydown', tab, true);
     document.removeEventListener('focusin', enter);

@@ -95,3 +95,27 @@ def test_a_copy_that_is_not_smaller_is_not_stored(monkeypatch) -> None:
     assert page_image.store_display_copy(f"{USER}/a.jpg", b"x" * 100, b"y" * 100) is False
     assert page_image.store_display_copy(f"{USER}/a.jpg", b"x" * 101, b"y" * 100) is False
     assert calls == []
+
+
+def test_a_smaller_copy_is_stored_to_be_cached_for_good(monkeypatch) -> None:
+    """Written as the object itself, so Storage keeps `CACHE_FOREVER` as sent
+    (`storage_writes`). Through `upload`, every display copy on the live
+    project was stored as `max-age=private, max-age=31536000, immutable`, and a
+    piece's screen downloaded its pages again on every visit.
+
+    And written again on a re-read rather than refused: the key is the same
+    and the bytes are a deterministic resize of the same photograph."""
+    from app.services import page_image
+    from app.services.cache_headers import CACHE_FOREVER
+    from app.tests.fake_supabase import FakeSupabase
+
+    fake = FakeSupabase()
+    monkeypatch.setattr(page_image, "get_service_client", lambda: fake)
+    key = f"{USER}/a.jpg"
+
+    assert page_image.store_display_copy(key, b"small", b"x" * 1000) is True
+    assert page_image.store_display_copy(key, b"small", b"x" * 1000) is True
+
+    bucket = fake.storage.from_("score-images")
+    assert bucket.objects[display_key_for(key)] == b"small"
+    assert bucket.cache_control[display_key_for(key)] == CACHE_FOREVER

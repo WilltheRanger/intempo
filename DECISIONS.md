@@ -1,5 +1,326 @@
 # InTempo Decisions
 
+## 2026-10-24 — The browser revalidates the Library listing; the API confirms it without the notation
+
+**Context:** The Library refetches `GET /v1/scores` on every launch, and that
+page carries every piece's notation. The largest library on the live project
+is 23 pieces and 786 KB of it. Each launch read all of it out of Postgres,
+decoded it and compressed it again on a tenth of a CPU, to send a phone what
+it already had. On a 22-piece library of 2.85 MB that is 15.5 ms of CPU per
+launch, more than any other request the app makes on opening.
+
+**Decision:** Every listing carries a weak `ETag` and `Cache-Control:
+private, no-cache`. The browser keeps the page and sends `If-None-Match` by
+itself. The API then reads the page *without* the notation, and answers 304
+when the rows match the tag. The tag is a digest of every row as sent except
+for the notation. That is enough because the notation goes out exactly as
+stored, and a trigger moves `updated_at` on every update of a score. A copy
+that is out of date gets the whole page again, read once more with its
+notation. Confirming costs 0.5 ms and 244 bytes to the phone, against 15.5 ms
+and 57 KB compressed.
+
+**Alternatives considered:**
+- *The app keeps the tag and sends it.* The phone would also skip parsing the
+  page (23 ms with the CPU slowed four times). But the tag has to travel with
+  the persisted copy it vouches for, and the persisted list is a bare
+  `Piece[]` with nowhere to put one. `If-None-Match` from script also needs a
+  CORS allowance: an API rolled back past it would refuse every listing from
+  a phone still holding a tag.
+- *Hash the whole response body.* No read is saved, because the notation has
+  to be fetched before it can be hashed. Only the transfer to the phone is
+  saved.
+- *Sign photographs so their URLs survive a restart.* The URLs come from
+  Supabase Storage, and the API does not control their tokens.
+
+**Trade-offs accepted:**
+- **A changed library costs one extra query.** The rows are read without
+  notation, then again with it. That is one more round trip, and only when
+  the copy is out of date.
+- **A restart re-signs every photograph,** so each copy is sent in full once
+  afterwards. A free instance that sleeps after fifteen idle minutes restarts
+  often, so the saving shows mostly when the API is busy, which is when it
+  counts.
+- **The notation must stay passed through.** If it is ever reshaped on its way
+  out, whatever reshapes it has to go into the tag (`_listing_tag`).
+
+## 2026-10-24 — Listen plays the opening while the rest is rendered
+
+**Context:** Listen renders the passage with `spessasynth_core` before it plays
+a note. A whole piece is three or four minutes of music. A 236-note piece
+(207 s) took 9.6 s from the tap to the first note on a laptop, and 27.5 s with
+the CPU slowed four times. A clamped `setTimeout(0)` yield made 3.9 s of the
+laptop's wait idle.
+
+**Decision:** The render yields with `nextTask`. On the web, it reports each
+stretch it finishes, and the player starts once 2.5 s are final from a render
+going at least twice real time. It then schedules the rest as `AudioBuffer`
+chunks, at least 2 s each. Consecutive chunks overlap by 256 frames with
+complementary fades and begin on whole samples of the context. The native
+player still takes the passage whole.
+
+**Alternatives considered:**
+- *Render in a Web Worker.* It frees the main thread but not the wait, since
+  the music still begins after the last sample.
+- *An `AudioWorklet` reading a ring buffer.* One continuous stream with no
+  joins, but it needs its own resampler (the context is rarely at 44.1 kHz) or
+  `SharedArrayBuffer`, which needs cross-origin isolation this site does not
+  have.
+- *Render at the context's sample rate.* No resampling and no joins to worry
+  about, but it changes the sound the owner tuned by ear at 44.1 kHz.
+- *Chunks laid end to end.* Each chunk's resampler is missing the neighbour at
+  its edge, so every join would carry an error.
+
+**Trade-offs accepted:**
+- **The render now runs while the music plays.** With the CPU slowed four
+  times, the score screen draws 38 frames a second for those twenty seconds,
+  rather than 59.
+- **Joins match the single buffer to float rounding, verified in Chromium**
+  (−106 dB at 48 kHz). WebKit was not available to test. The method holds for
+  any resampler that is linear and reaches no further than two frames past a
+  buffer's edge, which is how Chromium's behaves. One that reaches further
+  would leave a small error at each join, every 2 s or more.
+- **The native app still waits for the whole render.** Streaming there means
+  several files and several players, and their joins are not sample-accurate.
+
+## 2026-10-23 — The notation is kept between renders, and only the marks move
+
+**Context:** The `Stave` draws the bar being heard and the playhead inside
+each system, behind the notes, in the same render as the notes. A take on
+Record steps the playhead ten times a second, and Listen on the score screen
+reported progress every frame into a screen whose stave also laid the piece
+out again on every render. With the CPU slowed four times, a 236-note piece
+blocked the main thread for 5.7 s of every 6 of a take (about 20 frames a
+second) and 5.5 s of every 6 of Listen (12), and a 2,656-note piece drew a
+take at 3.9 frames a second. After this: 60 frames a second through a take on
+both, with nothing blocked, and 59 through Listen.
+
+**Decision:** A system's notation is a memoised component (`SystemInk`), and
+the marks stay in `Stave`. The score screen holds the bar being heard, not the
+time, and hands the stave a layout it made once per piece and width, as
+`ScoreScroll` already did on Record.
+
+**Alternatives considered:**
+- *Memoise the whole `Stave`.* The marks are its props, so every step would
+  still re-render all of it.
+- *Draw the marks in an SVG of their own over the music.* The highlight has to
+  sit behind the notes, and a second layer changes what is drawn and how it
+  stacks. This changes neither: the markup is byte-identical.
+- *Report progress less often.* That would make the stepping coarser and still
+  redraw the whole score at each step.
+
+**Trade-offs accepted:**
+- **The memo depends on its props staying equal.** An object built in a render
+  passed to `SystemInk` would re-render every system on every step, silently.
+  `docs/subsystems.md` says so beside the rule.
+
+## 2026-10-23 — The shelf draws a tile at a time, top first, and keeps what it engraved
+
+**Context:** The Library opens on a shelf of tiles, each the opening of a piece
+engraved from its notation. Every tile measured itself, the measurements landed
+together, and all twenty-two engravings ran in one render: nothing was drawn
+until the last one was. In an iPhone 13 viewport with the CPU slowed four times,
+against a test library served by the API over a fake database (twenty-two
+pieces, 2.5 MB of notation, four of them 1,660 to 2,656 notes long), the two tiles above the fold appeared 5.5 s into a
+first visit and 2.3 s into a relaunch, behind main-thread blocks of 2.1 s and
+1.0 s. A tile that mounted again engraved again — every tile, each time a search
+was cancelled — and every query that landed re-rendered every tile's stave.
+
+**Decision:**
+- A tile waits for its turn to engrave (`engravingTurns.ts`,
+  `useEngravingTurn`). Turns go one at a time in the order the tiles asked,
+  which is the shelf's order, top first, and each turn runs in a task of its
+  own, so a tap is answered between two tiles rather than after the last.
+  `ScoreBand` takes `queued`; only the shelf passes it.
+- Engravings are kept per notation object (`bandEngraving.ts`), three sizes
+  each, so a tile that mounts again draws at once.
+- `ScoreBand` is memoised; its props are a notation object React Query keeps
+  stable and a few numbers.
+- The two page-wide observers stop doing page-wide work for every change: the
+  tab's title is looked for again only after a change that touches a heading
+  (`changesTheTitle`), and the roving focus pass runs at most once a frame.
+- The cache writer serialises each saved query once instead of twice.
+
+Measured the same way, medians of five relaunches: the two visible tiles drawn
+at 1.29 s rather than 2.28 s, the longest block 0.41 s rather than 1.0 s, and
+total blocking time 1.7 s rather than 3.1 s. On a first visit, 3.1 s rather
+than 5.5 s. At full speed the whole shelf finishes when it did (0.92 s), with
+blocking time cut from 384 to 78 ms. Cancelling a search brings the shelf back
+in 1.6 s rather than 2.2 s; returning to the tab blocks for 0.28 s rather than
+0.65 s. The drawing is unchanged: every tile's SVG is byte-identical.
+
+**Alternatives considered:**
+- *Engrave only the bars a tile shows.* Far less work for a long piece, and a
+  different drawing: the whole piece decides the size a tile is drawn at (one
+  dense bar anywhere shrinks it) and where its staff lines end. Exact only if
+  the engraver could measure every system without laying it out, which is a
+  second copy of its arithmetic.
+- *A paint between turns* (`requestAnimationFrame`). The visible tiles came as
+  soon, but a frame of style, layout and paint for each of twenty-two tiles
+  finished the shelf 1.4 s later than one block did.
+- *`startTransition`.* Interruptible, but it commits the shelf in one piece, so
+  nothing is drawn until the last tile is.
+- *Only the tiles in view* (`IntersectionObserver`). Web-only, and turns in
+  shelf order already put the visible tiles first.
+
+**Trade-offs accepted:**
+- **Below the fold the shelf can finish later.** With the CPU slowed four
+  times, the last tile is drawn about 0.2 s later on a relaunch and 1.1 s later
+  on a first visit, because the other launch work now runs between tiles rather
+  than after all of them. At full speed it finishes at the same time.
+- **Engravings stay in memory as long as their notation does**, rather than as
+  long as the tile is mounted. The shelf's tab stays mounted, so this is close
+  to what it held already; at most three sizes are kept per piece.
+
+## 2026-10-23 — Takes name their pieces, read beside the takes
+
+**Context:** Insights and the recent takes both name each take by its piece,
+and both got the names by listing the library in a request of their own on
+every app opening — the recent takes only after their takes had come back.
+That listing carries no notation, so every take in those lists also lacked
+its piece's beat unit, and its tempos read in quarter notes whatever the
+page's metronome mark counts. The newest take, and a take's own screen, each
+fetched the whole piece, with its notation and signed pages, after the take,
+for a title and a beat unit.
+
+**Decision:** `GET /v1/analyses?with_pieces=true` labels each take with its
+piece's title, composer and beat unit, and
+`GET /v1/analyses/{id}?with_piece=true` labels one. The labels are read by
+owner, beside the takes (`side_calls.together`), so they add no trip; the beat
+unit is read out of the notation as text (`score_json->>tempo_beat_unit`), so
+the notation is never sent. The app asks for labels wherever it names takes, and lists the library
+or fetches the piece as before only when a server sends none.
+
+**Alternatives considered:**
+- *Read only the pieces on the page.* Fewer rows, and a second trip in a row,
+  since the ids come from the page.
+- *PostgREST embedding (`analyses?select=*,scores(title)`)*. One query, but it
+  evaluates the beat unit per take rather than per piece, and needs syntax the
+  test fake does not model.
+- *A `tempo_beat_unit` column.* The cheapest read, and a migration and a
+  backfill for a value that reads in well under a millisecond as it is.
+
+**Trade-offs accepted:**
+- **Every piece the musician owns is read, up to a thousand**, to label a page
+  that may show a few of them. Measured on a local Postgres, with rows shaped
+  like the live project's (32 KB of notation each, stored compressed to
+  2.3 KB): 0.3 ms for 22 pieces, the largest library on the live project, and
+  5.7 ms for 500. Past a thousand pieces, the takes whose pieces were not
+  among them are labelled by id.
+- **`piece` is null unless asked for**, so a read that does not ask costs what
+  it did — the poll of a take being analysed among them — and an older app,
+  which never reads the field, is untouched.
+
+## 2026-10-23 — A request's independent database calls run at once, on threads
+
+**Context:** every call from this API to the database took a median of 274 ms
+on the live project, 21 ms of it the database's own work. Three of the
+requests the app makes on opening made their calls one after another, and so
+paid that trip two or three times.
+
+**Decision:** `app/side_calls.together` runs calls that do not depend on each
+other on a small shared thread pool (sixteen threads) and returns their
+results in order. `/v1/me` asks for the account row and this month's two
+counts at once, and a listing reads its takes beside its page. Both are now
+one trip.
+
+**Alternatives considered:**
+- *An async database client.* The same overlap without threads, but every
+  handler and every caller of the Supabase client would have to become
+  async — the whole API, for three requests.
+- *Fewer, larger queries* — PostgREST embedding, an `or=` filter, an RPC.
+  Each is one trip, but each needs syntax the test fake does not model, or a
+  migration, and the gain is the same.
+- *Moving the API and the database into one region.* The bigger win, and the
+  owner's call: it cuts each trip rather than the number of them. Both can
+  be had.
+
+**Trade-offs accepted:**
+- **A second pool of threads**, bounded so a burst cannot open an unbounded
+  number of database connections. A request that finds it full waits, which
+  costs what one-at-a-time cost before.
+- **`/v1/me` counts takes for unlimited tiers too**, before the row says the
+  tier, and then ignores the count. Two small queries for a paying musician
+  cost less than a trip in a row for everyone.
+
+## 2026-10-23 — The database client speaks HTTP/1.1
+
+**Context:** three requests of one app opening failed together in production
+with `ConnectionTerminated error_code:9`. supabase-py's clients speak HTTP/2,
+the API's worker threads share one of them, and httpcore's sync HTTP/2
+compresses headers outside any lock, so concurrent requests can corrupt the
+shared connection, and its loss fails all of them. Reproduced locally: one
+shared HTTP/2 client, forty threads, 99% failed; over HTTP/1.1, none.
+
+**Decision:** `db._http_client` hands supabase-py an HTTP/1.1 client: a failed
+connection attempt retried once, idle connections kept thirty seconds, and the
+ten-second guard set on the client, where it now applies.
+
+**Alternatives considered:**
+- *A lock around each request on the HTTP/2 client.* Correct, and it would
+  serialise every database call the API makes behind one another.
+- *One HTTP/2 client per thread.* Forty connections and forty handshakes, plus
+  a client per thread to keep alive, for multiplexing nothing uses.
+- *Retry on `ConnectionTerminated`.* Safe only for reads, and it leaves the
+  corruption in place: every write in flight would still fail.
+
+**Trade-offs accepted:**
+- **Requests in flight at once use a connection each.** After the pool has
+  been idle, a burst pays a TLS handshake per connection, in parallel, rather
+  than one. The longer keep-alive makes that the exception.
+- **Storage reads are held to ten seconds rather than fifteen**, since storage
+  and the database now share one client. Uploads keep fifteen per chunk.
+
+## 2026-10-23 — The listing passes its notation through, and the shelf keeps it on disk
+
+**Context:** the Library is the screen the app opens on, and every tile on it
+is engraved from its piece's notation. Two things made it slow. The listing
+kept on disk was written without notation, a rule from when the grid drew a
+photograph, so every launch showed a shelf of blank pages until the network
+answered — seconds, on a tenth of a CPU. And the listing that then answered
+spent most of its CPU decoding every note into Python objects and encoding the
+same notes straight back out.
+
+**Decision:**
+- The app writes the listing to disk with its notation, up to half the storage
+  budget (`LISTING_NOTATION_CHARS`), keeping the pieces played most recently
+  when a library does not fit (`listForDisk`). Relaunched in an iPhone-profile
+  browser with the listing held back eight seconds: 0 of 8 tiles drawn before,
+  8 of 8 after.
+- `GET /v1/scores` reads the notation as `score_json::text` and writes each
+  row's text into the response unread (`_with_notation_as_stored`). The API's
+  time per listing, measured through the whole request: 56 ms to 35 for
+  twenty-two pieces and 2.5 MB of notation, 16 ms to 11 for five.
+
+**Alternatives considered:**
+- *Trim the listing to each tile's opening*, which the entry below calls worth
+  doing. Measured on the live library, it is not. A tile's page holds up to
+  about ninety notes at its nominal size, and more when a dense bar shrinks the
+  engraving, so a safe opening is about 190 sounding notes — and the average
+  piece that day had about 165. It saved 17% of the bytes. It would also change
+  how some tiles look: `layOutStave` fits the whole piece to the tile's width,
+  so one dense bar anywhere in a piece sets the size its opening is drawn at,
+  and a trimmed piece would be drawn at another.
+- *Compact the notation*, dropping keys that hold their default (about four
+  times smaller). Per request it is a Python walk over every note, which costs
+  about what it saves. At rest it changes what every reader of `score_json`
+  receives, in the backend and in every installed build of the app.
+- *A SQL computed column*, for the text or for an opening. It needs a migration
+  applied before the code that reads it is deployed, and the text cast already
+  removes the decode without one.
+- *Write the whole listing to disk, whatever its size.* It is written second,
+  after the account, so a listing that took the budget would cost today's
+  piece, the readings and every opened piece behind it. One over the budget is
+  skipped entirely, which is worse than blank tiles.
+
+**Trade-offs accepted:**
+- **One endpoint writes its JSON by hand.** Everything but the notation still
+  goes through the response model. The notation is Postgres's own JSON text,
+  valid by construction, and lands last in each object.
+- **PostgREST sends the API about 12% more bytes**, the quotes inside the text
+  escaped.
+- **A device holds up to a megabyte more**, inside the budget the cache already
+  had.
+
 ## 2026-10-23 — Heavy reads queue in the event loop, a few at a time
 
 **Context:** replayed under the free instance's real limits (a cgroup at a

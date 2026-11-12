@@ -21,6 +21,7 @@ from uuid import UUID
 from fastapi import (
     APIRouter,
     Depends,
+    Header,
     HTTPException,
     Query,
     Response,
@@ -71,6 +72,7 @@ from app.services.training import (
 # and a test or the concurrency probe swapping the signer out has one place to
 # do it rather than one per importer.
 from app.services import display_urls
+from app.side_calls import together
 from app.services.page_image import object_key_from as _object_key_from
 
 router = APIRouter(prefix="/scores", tags=["scores"])
@@ -516,11 +518,17 @@ def _with_image_urls(
     # batched. That is what makes signing every page of a single piece cost the
     # same as signing its first — and it is why `page_count`'s note about "one
     # storage call per page" no longer describes this code.
-    signed = display_urls.signed_display_urls(
-        sorted({key for found in keys.values() for key in found})
-    )
+    def sign() -> dict[str, tuple[str, datetime]]:
+        return display_urls.signed_display_urls(
+            sorted({key for found in keys.values() for key in found})
+        )
+
+    # **Signed and dated at once.** Neither needs the other — both read only
+    # these rows — and each is a trip to the database's region (`side_calls`).
     if practiced is None:
-        practiced = _last_practiced(rows)
+        signed, practiced = together(sign, lambda: _last_practiced(rows))
+    else:
+        signed = sign()
 
     out = []
     for row in rows:
@@ -575,26 +583,40 @@ def _last_practiced(rows: list[dict[str, Any]]) -> dict[str, str]:
             by_owner.setdefault(str(row["user_id"]), []).append(str(row["id"]))
     out: dict[str, str] = {}
     for owner, ids in by_owner.items():
-        wanted = set(ids)
-        try:
-            query = (
-                require_service_client()
-                .table("analyses")
-                .select("score_id, created_at")
-                .eq("user_id", owner)
-            )
-            if len(ids) <= _PRACTICED_BY_ID:
-                query = query.in_("score_id", sorted(ids))
-            takes = (
-                query.order("created_at", desc=True).limit(_PRACTICED_SCAN).execute()
-            ).data or []
-        except Exception:  # noqa: BLE001 — a missing date must not cost the screen
-            log.warning("could not date the last take of %d piece(s)", len(ids), exc_info=True)
-            continue
-        for take in takes:
-            score_id = str(take.get("score_id"))
-            if score_id in wanted and score_id not in out:
-                out[score_id] = take["created_at"]
+        takes = _newest_takes(owner, ids if len(ids) <= _PRACTICED_BY_ID else None)
+        if takes is not None:
+            out.update(_latest_of(takes, set(ids)))
+    return out
+
+
+def _newest_takes(owner: str, ids: list[str] | None) -> list[dict[str, Any]] | None:
+    """The owner's takes, newest first — of these pieces, or of any when `ids`
+    is None — up to `_PRACTICED_SCAN`. None when the query failed, which a
+    missing date must not turn into a failed screen."""
+    try:
+        query = (
+            require_service_client()
+            .table("analyses")
+            .select("score_id, created_at")
+            .eq("user_id", owner)
+        )
+        if ids is not None:
+            query = query.in_("score_id", sorted(ids))
+        return (
+            query.order("created_at", desc=True).limit(_PRACTICED_SCAN).execute()
+        ).data or []
+    except Exception:  # noqa: BLE001 — a missing date must not cost the screen
+        log.warning("could not read the newest takes to date pieces", exc_info=True)
+        return None
+
+
+def _latest_of(takes: list[dict[str, Any]], wanted: set[str]) -> dict[str, str]:
+    """Each wanted piece's first take in `takes`, which are newest first."""
+    out: dict[str, str] = {}
+    for take in takes:
+        score_id = str(take.get("score_id"))
+        if score_id in wanted and score_id not in out:
+            out[score_id] = take["created_at"]
     return out
 
 
@@ -927,10 +949,33 @@ _WITHOUT_SCORE = ", ".join(
         "transcription_error",
         "transcription_accepted_at",
         "page_image_discarded_at",
+        "page_image_retained_at",
         "created_at",
         "updated_at",
     )
 )
+
+#: The notation, read as the JSON text Postgres stores rather than as objects.
+#:
+#: **A listing never reads a note, so it no longer parses one.** Every piece's
+#: notation was decoded from PostgREST's answer into Python objects, carried
+#: unchanged through the response model, and encoded back to the same JSON —
+#: the two largest costs of the request the Library makes on every open, for
+#: work whose output equals its input. Read as text it is one string per row,
+#: which `_with_notation_as_stored` writes into the response as it came.
+#:
+#: Measured through the whole request on twenty-two pieces of reader output,
+#: 2.5 MB of notation: 56 ms of the API's time per listing as objects, 35 ms as
+#: text; five pieces, 16 ms and 11. The decode fell from about 22 ms to 7 and
+#: the re-encode went entirely. What is left is mostly gzip.
+#:
+#: The `alias:column::text` form was checked on 2026-10-23 against PostgREST
+#: 14.5, the version the live project runs (its connections name it in
+#: `pg_stat_activity.application_name`), and 12.2.3, through the `postgrest`
+#: client this API uses: a row's text is the stored JSON exactly, and a null
+#: stays null.
+_SCORE_AS_TEXT = "score_json_text:score_json::text"
+_SCORE_TEXT = "score_json_text"
 
 
 def _row_to_response(
@@ -1331,7 +1376,14 @@ def list_scores(
             "pieces — it is by far the largest field."
         ),
     ),
-) -> list[ScoreResponse]:
+    if_none_match: str | None = Header(
+        default=None,
+        description=(
+            "The `ETag` of a copy of this page already held. Answered 304, with "
+            "no body, while it is still the page."
+        ),
+    ),
+) -> Response:
     """The caller's scores, newest first.
 
     **`include_score=false` exists because `score_json` dwarfs the rest of the
@@ -1360,17 +1412,165 @@ def list_scores(
     the piece screen asks for the piece, and that answer carries them.
 
     Each row carries `last_practiced_at`, from one query for the whole page.
+
+    **The notation is passed through, not parsed** — see `_SCORE_AS_TEXT`.
+
+    **A copy the caller already holds is confirmed, not sent again.** Every
+    answer carries an `ETag` and `Cache-Control: private, no-cache`, so a
+    browser keeps the page and asks with `If-None-Match` before using it again
+    — by itself; there is no code for it in the app. The Library asks on every
+    launch, a library seldom changes between two of them, and each of those
+    requests read the whole notation of every piece out of Postgres, decoded it
+    and compressed it again on a tenth of a CPU, to send a phone what it
+    already had — 786 KB of it for the largest library on the live project
+    (2026-10-24). Asked that way, the page is read without its notation, and
+    the notation only for a copy that turns out to be out of date;
+    `_listing_tag` says why the rows alone can tell. Measured on a library of
+    twenty-two pieces, 2.85 MB as Postgres sends it: 15.5 ms of CPU to answer
+    in full and 0.5 ms to confirm, and 244 bytes to the phone where the
+    compressed page was 57 KB.
+
+    **A restart costs one full answer per copy.** The photographs' signed URLs
+    are memoised in the process (`display_urls`), so a new process signs them
+    afresh, every row's URL differs from the copy's, and the copy is sent
+    again — once, after which the new URLs are what is held.
     """
-    response = (
+    # **Without the notation first, for a caller holding a copy.** The rows
+    # alone say whether it is current, and when it is, the notation — nearly
+    # every byte of the page — is never read. The dates come from the
+    # musician's newest takes, which need only their id, so they are read
+    # beside the page rather than after it (`side_calls`).
+    holds_a_copy = bool(if_none_match)
+    rows, takes = together(
+        lambda: _page_of_scores(
+            user_id, limit, offset, with_notation=include_score and not holds_a_copy
+        ),
+        lambda: _newest_takes(str(user_id), None),
+    )
+    heads, notation = _listing_of(rows, takes)
+    tag = _listing_tag(heads, include_score)
+    if if_none_match and _names(if_none_match, tag):
+        return Response(
+            status_code=status.HTTP_304_NOT_MODIFIED,
+            # A 304 repeats what the full answer would have said about keeping
+            # it, `Vary` included (RFC 9110 §15.4.5); the compressor adds that
+            # one to a full answer, and has no body here to do it for.
+            headers={**_listing_headers(tag), "Vary": "Accept-Encoding"},
+        )
+    if include_score and holds_a_copy:
+        # Out of date, so the notation is wanted after all. The page is read
+        # again with it, rather than the notation alone by id, so that the
+        # rows, their notation and the tag sent with them are one read.
+        rows = _page_of_scores(user_id, limit, offset, with_notation=True)
+        heads, notation = _listing_of(rows, takes)
+        tag = _listing_tag(heads, include_score)
+    return _with_notation_as_stored(heads, notation, tag)
+
+
+def _page_of_scores(
+    owner: UUID, limit: int, offset: int, *, with_notation: bool
+) -> list[dict[str, Any]]:
+    """A page of the owner's scores, newest first, with the notation as text
+    (`_SCORE_AS_TEXT`) or without it."""
+    return (
         require_service_client()
         .table("scores")
-        .select("*" if include_score else _WITHOUT_SCORE)
-        .eq("user_id", str(user_id))
+        .select(f"{_WITHOUT_SCORE}, {_SCORE_AS_TEXT}" if with_notation else _WITHOUT_SCORE)
+        .eq("user_id", str(owner))
         .order("created_at", desc=True)
         .range(offset, offset + limit - 1)
         .execute()
+    ).data or []
+
+
+def _listing_of(
+    rows: list[dict[str, Any]], takes: list[dict[str, Any]] | None
+) -> tuple[list[str], list[str | None]]:
+    """A page as the listing sends it: each row's JSON but for its notation,
+    and the notation as Postgres stored it — null where there is none, or
+    where it was not read."""
+    notation = [row.pop(_SCORE_TEXT, None) for row in rows]
+    wanted = {str(row["id"]) for row in rows}
+    practiced = _latest_of(takes, wanted) if takes is not None else None
+    # A scan that stopped at its limit before reaching every piece cannot say
+    # the rest were never played: the page is then dated the old way, which
+    # asks by name for a page of `_PRACTICED_BY_ID` or fewer.
+    if practiced is not None and len(takes) >= _PRACTICED_SCAN and len(practiced) < len(wanted):
+        practiced = None
+    listed = _with_image_urls(rows, with_concerns=False, practiced=practiced)
+    return [scored.model_dump_json(exclude={"score_json"}) for scored in listed], notation
+
+
+def _listing_tag(heads: list[str], include_score: bool) -> str:
+    """A listing's `ETag`: a digest of every row as sent, but for the notation.
+
+    **Whether the notation changed is known without reading it.** It is sent
+    exactly as Postgres stores it (`_SCORE_AS_TEXT`), and it cannot be stored
+    without its row's `updated_at` moving — a trigger sets that on every update
+    of a score (migration 001) — and `updated_at` is in every row's JSON. So
+    the rows say everything the notation would. **If the notation is ever
+    reshaped on its way out rather than passed through, whatever reshapes it
+    belongs in this digest**, or a reshaped listing is confirmed as the old one.
+
+    The rest is in as sent: the signed photograph, the last take's date, the
+    progress of a reading. Weak, because one listing goes out compressed or
+    not; and a digest of the content rather than anything about the caller,
+    so two musicians can share a tag only by having the same listing — which
+    is two empty libraries.
+    """
+    digest = hashlib.blake2b(digest_size=16)
+    digest.update(b"with notation\n" if include_score else b"without notation\n")
+    for head in heads:
+        # Compact JSON escapes a newline inside a string, so the rows cannot
+        # run into one another.
+        digest.update(head.encode())
+        digest.update(b"\n")
+    return f'W/"{digest.hexdigest()}"'
+
+
+def _names(if_none_match: str, tag: str) -> bool:
+    """Whether an `If-None-Match` names `tag`: compared weakly, as RFC 9110
+    §13.1.2 has it for this header, and `*` names every listing."""
+    opaque = tag.removeprefix("W/")
+    return any(
+        candidate == "*" or candidate.removeprefix("W/") == opaque
+        for candidate in (part.strip() for part in if_none_match.split(","))
     )
-    return _with_image_urls(response.data or [], with_concerns=False)
+
+
+def _listing_headers(tag: str) -> dict[str, str]:
+    """What a listing says about being kept.
+
+    `private`: the phone that asked may keep it and nothing in between may —
+    it is one musician's library, fetched with their token. `no-cache`: never
+    used again without asking, so a kept copy is only ever as old as the
+    request that confirmed it, and a change made anywhere is seen on the next
+    one exactly as before.
+    """
+    return {"ETag": tag, "Cache-Control": "private, no-cache"}
+
+
+def _with_notation_as_stored(
+    heads: list[str], notation: list[str | None], tag: str
+) -> Response:
+    """The listing as JSON, each row's notation written in exactly as stored.
+
+    Everything but the notation is serialised by the response model as it
+    always was (`_listing_of`); the notation is Postgres's own JSON text, which
+    is already valid JSON and goes in without being read. The key lands last in
+    each object, which no JSON reader can tell from anywhere else. A listing
+    without the notation is written the same way, with `null` in its place, so
+    the rows its tag was taken from are the rows it sends.
+    """
+    out = [
+        f'{head[:-1]},"score_json":{"null" if text is None else text}}}'
+        for head, text in zip(heads, notation, strict=True)
+    ]
+    return Response(
+        content="[" + ",".join(out) + "]",
+        media_type="application/json",
+        headers=_listing_headers(tag),
+    )
 
 
 class CurrentScoreResponse(BaseModel):

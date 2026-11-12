@@ -70,7 +70,7 @@ image = (
         # `inprocess` today, so nothing had ever tried.
         "python-dotenv==1.2.2",
         "scipy==1.18.0",
-        "supabase==2.29.0",
+        "supabase==2.32.0",
         # librosa's, pinned for the reason above.
         "numba==0.66.0",
         "soundfile==0.14.0",
@@ -219,7 +219,7 @@ transcription_image = (
         # container, and `load_dotenv` on a missing file is a no-op — but the
         # import still has to succeed.
         "python-dotenv==1.2.2",
-        "supabase==2.29.0",
+        "supabase==2.32.0",
         # homr's own requirements, named here because homr is installed
         # without them in the next step. The versions are the ones the six
         # fixture pages were read with (see below); `types-Pillow`, the last

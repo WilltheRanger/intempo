@@ -29,6 +29,7 @@ from app.services.audio_storage import (
     readable_audio_url,
 )
 from app.services.tier_limits import tier_of, usage_for
+from app.side_calls import together
 from app.models.analysis import (
     MAX_TARGET_BPM,
     MIN_TARGET_BPM,
@@ -183,6 +184,30 @@ class AnalysisResponse(BaseModel):
     finished_at: str | None = None
 
 
+class PieceLabel(BaseModel):
+    """What a take is labelled with: the piece it was played from, as named."""
+
+    title: str
+    composer: str | None = None
+    #: The note value the printed metronome mark counts (`ScoreJson
+    #: .tempo_beat_unit`), so a take's tempo reads in the page's own unit.
+    tempo_beat_unit: str | None = None
+
+
+class LabelledAnalysis(AnalysisResponse):
+    """A take, with the piece it was played from when asked.
+
+    **A subclass, not a field on `AnalysisResponse`**, because every field
+    there is also a column: `_WITHOUT_RESULT` is built from them, and a field
+    that is not a column would be asked of Postgres and refused.
+    """
+
+    #: The piece's label when it was asked for (`with_pieces=true` on a list,
+    #: `with_piece=true` on one take); null otherwise, and for a take whose
+    #: piece has since been deleted.
+    piece: PieceLabel | None = None
+
+
 class RecordingPlaybackResponse(BaseModel):
     """A short-lived, private read permission for one saved take."""
 
@@ -331,8 +356,8 @@ def _insert_analysis(client: Any, payload: dict[str, Any]) -> Any:
         return client.table("analyses").insert(without).execute()
 
 
-def _row_to_response(row: dict[str, Any]) -> AnalysisResponse:
-    return AnalysisResponse(
+def _response_fields(row: dict[str, Any]) -> dict[str, Any]:
+    return dict(
         id=row["id"],
         user_id=row["user_id"],
         score_id=row["score_id"],
@@ -531,7 +556,7 @@ def create_analysis(
     return CreateAnalysisResponse(analysis_id=analysis_id, status="queued")
 
 
-@router.get("", response_model=list[AnalysisResponse])
+@router.get("", response_model=list[LabelledAnalysis])
 def list_analyses(
     user_id: UUID = Depends(current_user_id),
     score_id: UUID | None = Query(
@@ -558,7 +583,14 @@ def list_analyses(
             "three quarters of a result and no screen reads it from one."
         ),
     ),
-) -> list[AnalysisResponse]:
+    with_pieces: bool = Query(
+        default=False,
+        description=(
+            "Label each take with its piece's title, composer and printed beat "
+            "unit, so a list of takes needs no second request to name them."
+        ),
+    ),
+) -> list[LabelledAnalysis]:
     """The caller's analyses, newest first.
 
     Insights aggregates across takes — how often a piece was played and
@@ -592,13 +624,84 @@ def list_analyses(
     if status_filter is not None:
         query = query.eq("status", status_filter)
 
-    res = (
-        query.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
-    )
+    def page() -> Any:
+        return (
+            query.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
+        )
+
+    # **The labels beside the page, not after it.** They are read by owner, so
+    # they need nothing from the page, and each read is a trip to the
+    # database's region (`side_calls`).
+    if with_pieces:
+        res, pieces = together(page, lambda: _pieces_of(user_id))
+    else:
+        res, pieces = page(), None
     rows = res.data or []
     if include_result and not per_note:
         rows = [_without_per_note(row) for row in rows]
-    return [_row_to_response(row) for row in rows]
+    if pieces is not None:
+        pieces = _reaching(rows, pieces, user_id)
+    return [
+        LabelledAnalysis(
+            **_response_fields(row),
+            piece=pieces.get(str(row["score_id"])) if pieces is not None else None,
+        )
+        for row in rows
+    ]
+
+
+#: How many of a musician's pieces are read to label takes: PostgREST answers at
+#: most a thousand rows. A take on a piece past them is labelled by asking for
+#: that piece by id (`_reaching`).
+_PIECES_SCAN = 1000
+
+
+def _pieces_of(user_id: UUID, ids: list[str] | None = None) -> dict[str, PieceLabel]:
+    """The musician's pieces as a take is named, by id.
+
+    **This is why the app no longer lists the library to label its takes.**
+    Insights and the recent takes each fetched every piece's title in a request
+    of their own, beside or after the takes, on every app opening, and a take's
+    own screen fetched its whole piece after the take; the label is three short
+    fields, read here in the same request. The beat unit comes out of the
+    notation as text (`score_json->>tempo_beat_unit`), so the notation itself
+    is never sent.
+
+    Read by owner rather than by the takes' piece ids so it can be read
+    *beside* the takes, which are what name those ids (`side_calls`).
+    """
+    query = (
+        require_service_client()
+        .table("scores")
+        .select("id, title, composer, tempo_beat_unit:score_json->>tempo_beat_unit")
+        .eq("user_id", str(user_id))
+    )
+    if ids is not None:
+        query = query.in_("id", ids)
+    rows = (query.limit(_PIECES_SCAN).execute()).data or []
+    return {
+        str(row["id"]): PieceLabel(
+            title=row["title"],
+            composer=row.get("composer"),
+            tempo_beat_unit=row.get("tempo_beat_unit"),
+        )
+        for row in rows
+    }
+
+
+def _reaching(
+    rows: list[dict[str, Any]], pieces: dict[str, PieceLabel], user_id: UUID
+) -> dict[str, PieceLabel]:
+    """`pieces`, with any piece of `rows` that a full scan did not reach.
+
+    A scan short of `_PIECES_SCAN` read every piece there is, so a take whose
+    piece is missing from it is a take whose piece is gone, and is left
+    unlabelled rather than asked about again.
+    """
+    missing = {str(row["score_id"]) for row in rows} - pieces.keys()
+    if missing and len(pieces) >= _PIECES_SCAN:
+        pieces.update(_pieces_of(user_id, sorted(missing)))
+    return pieces
 
 
 def _without_per_note(row: dict[str, Any]) -> dict[str, Any]:
@@ -621,26 +724,48 @@ def _without_per_note(row: dict[str, Any]) -> dict[str, Any]:
     return {**row, "result_json": {k: v for k, v in result.items() if k != "per_note"}}
 
 
-@router.get("/{analysis_id}", response_model=AnalysisResponse)
+@router.get("/{analysis_id}", response_model=LabelledAnalysis)
 def get_analysis(
     analysis_id: UUID,
     user_id: UUID = Depends(current_user_id),
-) -> AnalysisResponse:
-    res = (
-        require_service_client()
-        .table("analyses")
-        .select("*")
-        .eq("id", str(analysis_id))
-        .eq("user_id", str(user_id))
-        .limit(1)
-        .execute()
-    )
-    rows = res.data or []
+    with_piece: bool = Query(
+        default=False,
+        description=(
+            "Label the take with its piece's title, composer and printed beat "
+            "unit, so the take's screen needs no second request to name it."
+        ),
+    ),
+) -> LabelledAnalysis:
+    def take() -> list[dict[str, Any]]:
+        return (
+            require_service_client()
+            .table("analyses")
+            .select("*")
+            .eq("id", str(analysis_id))
+            .eq("user_id", str(user_id))
+            .limit(1)
+            .execute()
+        ).data or []
+
+    # Beside the take, as a list's labels are: which piece it names is not
+    # known until it arrives.
+    if with_piece:
+        rows, pieces = together(take, lambda: _pieces_of(user_id))
+    else:
+        rows, pieces = take(), None
     if not rows:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="analysis not found"
         )
-    return _row_to_response(rows[0])
+    row = rows[0]
+    return LabelledAnalysis(
+        **_response_fields(row),
+        piece=(
+            _reaching(rows, pieces, user_id).get(str(row["score_id"]))
+            if pieces is not None
+            else None
+        ),
+    )
 
 
 @router.get("/{analysis_id}/recording", response_model=RecordingPlaybackResponse)

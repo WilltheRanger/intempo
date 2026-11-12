@@ -782,3 +782,118 @@ describe("a piece's history", () => {
     expect(history.recent).toEqual([]);
   });
 });
+
+describe('takes the server has already named', () => {
+  const LABEL = { title: 'Barcarolle', composer: 'Offenbach', tempo_beat_unit: 'dotted_quarter' };
+
+  it('label Insights without listing the library', async () => {
+    // Insights listed every piece beside its takes to find their titles: a
+    // second request on every app opening, for three short fields a piece.
+    listAnalyses.mockResolvedValue([analysis({ piece: LABEL })]);
+
+    const insights = await apiInsightsSource.getInsights();
+
+    expect(listScores).not.toHaveBeenCalled();
+    expect(insights!.pieces[0]).toMatchObject({ title: 'Barcarolle', composer: 'Offenbach' });
+    expect(listAnalyses).toHaveBeenCalledWith(expect.objectContaining({ withPieces: true }));
+  });
+
+  it('label the recent takes in one request, beat unit included', async () => {
+    // Two requests in a row before a tile could say how its last take went —
+    // and the listing carried no notation, so the beat unit was always lost.
+    listAnalyses.mockResolvedValue([analysis({ piece: LABEL })]);
+
+    const [take] = await apiTakeSource.getRecentTakes(1);
+
+    expect(listScores).not.toHaveBeenCalled();
+    expect(take).toMatchObject({
+      pieceTitle: 'Barcarolle',
+      composer: 'Offenbach',
+      tempoBeatUnit: 'dotted_quarter',
+    });
+  });
+
+  it('name the newest take without fetching its whole piece', async () => {
+    const { getScore } = await import('../api/scores');
+    listAnalyses.mockResolvedValue([analysis({ piece: LABEL })]);
+
+    const take = await apiTakeSource.getLatestTake();
+
+    expect(getScore).not.toHaveBeenCalled();
+    expect(take).toMatchObject({ pieceTitle: 'Barcarolle', tempoBeatUnit: 'dotted_quarter' });
+  });
+
+  it('read a deleted piece as unknown, not as a reason to ask again', async () => {
+    listAnalyses.mockResolvedValue([analysis({ piece: null })]);
+
+    const [take] = await apiTakeSource.getRecentTakes(1);
+
+    expect(listScores).not.toHaveBeenCalled();
+    expect(take!.pieceTitle).toBe('Unknown piece');
+  });
+
+  it('fall back to listing the library for a server that names nothing', async () => {
+    // An older deployment ignores `with_pieces` and sends no `piece` at all.
+    listAnalyses.mockResolvedValue([analysis()]);
+
+    const [take] = await apiTakeSource.getRecentTakes(1);
+
+    expect(listScores).toHaveBeenCalledWith(expect.objectContaining({ includeScore: false }));
+    expect(take!.pieceTitle).toBe('Suite No. 1');
+  });
+
+  it("give a piece's recent takes their beat unit", async () => {
+    listAnalyses.mockImplementation(async (params: { includeResult?: boolean }) =>
+      params.includeResult === false ? [analysis()] : [analysis({ piece: LABEL })],
+    );
+
+    const history = await apiTakeSource.getPieceHistory('s1');
+
+    expect(history.recent[0]!.tempoBeatUnit).toBe('dotted_quarter');
+    expect(listAnalyses).toHaveBeenCalledWith(
+      expect.objectContaining({ includeResult: true, withPieces: true }),
+    );
+  });
+
+  it("name a take's own screen in one request", async () => {
+    // The screen fetched the whole piece after the take — two requests in a
+    // row before it could say anything — for a title and a beat unit.
+    const { getAnalysis } = await import('../api/analyses');
+    const { getScore } = await import('../api/scores');
+    vi.mocked(getAnalysis).mockResolvedValueOnce(analysis({ piece: LABEL }) as never);
+
+    const take = await apiTakeSource.getTake('a1');
+
+    expect(getAnalysis).toHaveBeenCalledWith('a1', { withPiece: true });
+    expect(getScore).not.toHaveBeenCalled();
+    expect(take).toMatchObject({ pieceTitle: 'Barcarolle', tempoBeatUnit: 'dotted_quarter' });
+  });
+
+  it('name a failed take the same way', async () => {
+    const { getAnalysis } = await import('../api/analyses');
+    const { getScore } = await import('../api/scores');
+    vi.mocked(getAnalysis).mockResolvedValueOnce(
+      analysis({ status: 'failed_recoverable', result_json: null, piece: LABEL }) as never,
+    );
+
+    const take = await apiTakeSource.getTake('a1');
+
+    expect(getScore).not.toHaveBeenCalled();
+    expect(take).toMatchObject({ pieceTitle: 'Barcarolle', failure: { recoverable: true } });
+  });
+
+  it("fetch a take's piece whole from a server that names nothing", async () => {
+    const { getAnalysis } = await import('../api/analyses');
+    const { getScore } = await import('../api/scores');
+    vi.mocked(getAnalysis).mockResolvedValueOnce(analysis() as never);
+    vi.mocked(getScore).mockResolvedValueOnce({
+      ...SCORE,
+      score_json: { tempo_beat_unit: 'half' },
+    } as never);
+
+    const take = await apiTakeSource.getTake('a1');
+
+    expect(getScore).toHaveBeenCalledWith('s1');
+    expect(take).toMatchObject({ pieceTitle: 'Suite No. 1', tempoBeatUnit: 'half' });
+  });
+});

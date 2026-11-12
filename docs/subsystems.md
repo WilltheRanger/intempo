@@ -809,10 +809,13 @@ level-1 heading, or the level-2 heading of a state that fills the screen,
 followed by " – InTempo". This is the same element screen focus moves to
 (`screenTitleCandidates`), and the auth gate has one too. A screen with no
 heading gets "InTempo" alone. `installDocumentTitle` (in `App.tsx`) keeps it
-current. It runs when the page's text changes, and a few times after each
-navigation, because switching to a tab that is already built changes only
-what is visible. The navigator's own `documentTitle` is off, or it would
-overwrite the title on every change. An open sheet makes the app root inert
+current. It runs when a heading arrives, leaves or changes its text
+(`changesTheTitle`), and a few times after each navigation, because switching
+to a tab that is already built changes only what is visible. It used to run
+after any change to the page, and the Library's tiles made that most of the
+looking (see "The shelf drew every tile in one block", below). The navigator's
+own `documentTitle` is off, or it would overwrite the title on every change.
+An open sheet makes the app root inert
 without changing the screen, so a heading under the root's `inert` still
 counts, and one under any other `inert` does not (`documentTitle.ts`).
 `audit-a11y` fails a route whose tab reads "InTempo" alone or "undefined".
@@ -995,6 +998,172 @@ Run against it, that turned up eight app defects the fixtures could not:
   first await, as the scan's "Save and read" already did, and
   `createOnce.test.ts` holds all three to it.
 
+### The shelf came back blank on every launch (2026-10-23)
+
+The Library is the screen the app opens on, and each tile is engraved from its
+piece's notation. The listing kept on disk was written without notation, on a
+premise that stopped being true when the grid became a shelf: "the library grid
+draws a title, a composer and a photograph — it has never read a note". So every
+launch drew blank pages, and the engravings all arrived at once when the network
+answered. Relaunched in an iPhone-profile browser with the listing held back
+eight seconds, 0 of 8 tiles were drawn; with `listForDisk`, 8 of 8.
+
+**The premise is the part to remember.** `persistCache.ts` throws data away
+because of what screens draw, and nothing ties the two together. When a screen
+starts reading a field, check what that file drops on the way to disk.
+
+A related fact about the tiles, found while sizing this: `layOutStave` fits the
+*whole piece* to the tile's width, so one dense bar anywhere — a run of
+sixteenths on page three — sets the size at which the tile draws its opening.
+A tile showing smaller notes than its neighbours is usually that, not a bug in
+the opening it shows.
+
+### The shelf drew every tile in one block (2026-10-23)
+
+Every tile on the Library measures itself, the measurements land together, and
+until this date all twenty-two engravings ran in one render: nothing was drawn
+until the last was. Opened in an iPhone 13 viewport with the CPU slowed four
+times, against a test library served by the API over a fake database
+(twenty-two pieces, 2.5 MB of notation, four pieces of 1,660 to 2,656 notes),
+the two tiles above the fold took 5.5 s on a first visit and 2.3 s on a
+relaunch, behind blocks of 2.1 s and 1.0 s. The live service's largest library
+that day was about 700 KB of notation, so it is a stress case, but long pieces
+are real. The fix and its numbers are in `DECISIONS.md`. What to keep:
+
+- **Many engravings on one screen take turns.** `ScoreBand` takes `queued`
+  (`engravingTurns.ts`). Pass it wherever a screen draws a list of them.
+- **A tile is a whole piece's work.** `layOutStave` lays out the whole piece to
+  draw the opening, because the whole piece decides the scale. In Node, the
+  four long pieces were 70% of the shelf's engraving time. Do not engrave a
+  piece again for the same width: `bandEngraving.ts` keeps it per notation
+  object.
+- **A component with hundreds of SVG nodes is memoised, with props that stay
+  equal.** Every query that landed on the Library re-rendered every tile's
+  stave until `ScoreBand` was memoised.
+- **A page-wide `MutationObserver` filters before it works.** Asking an element
+  whether it is visible (`checkVisibility`) or reading `innerText` brings
+  styles and layout up to date there and then. The tab title did that after
+  every change on the page, including every tile drawn, and now only after
+  changes that touch a heading. Roving focus does it at most once a frame.
+- **Measure with a source map, at phone speed.** `npx expo export --platform
+  web --source-maps` builds a bundle whose CPU profile maps back to files and
+  lines. Chrome's DevTools protocol slows the CPU
+  (`Emulation.setCPUThrottlingRate`), and `Profiler.start`/`Profiler.stop`
+  record the profile. At full speed this machine hid most of the block, which
+  is one reason it went unnoticed.
+- **Check the drawing did not change.** The tiles' SVG markup was compared
+  byte for byte against `main` after the change, on a first visit and a
+  relaunch.
+
+### Listen and a take redrew the whole score at every step (2026-10-23)
+
+The bar being heard and the playhead are drawn inside each system of the
+`Stave`, behind the notes, and they were drawn by the same render as the
+notes. So every step re-rendered every staff line, notehead, beam and slur of
+the piece to move one rectangle: ten steps a second through a take on Record,
+and on the score screen one every frame of Listen. The score screen also kept
+the time rather than the bar, and the stave laid the whole piece out again on
+every render. With the CPU slowed four times, a 236-note piece drew about 20
+frames a second through a take and 12 through Listen, with the main thread
+blocked for 5.5 to 5.7 s of every 6. A 2,656-note piece managed 3.9 frames a
+second through a take. Record's own comment had left the cost of this as a question for a
+device.
+
+**The rules:**
+
+- **The notation is kept between renders, and only the marks move.**
+  `SystemInk` in `Stave.tsx` draws a system's notation and is memoised. Its
+  props are the engraved system and plain numbers and colours, which is what
+  lets a playhead step skip it. A new prop for it must be a value, or an
+  object the engraving owns. An object built in a render, such as an inline
+  `{...}`, re-renders every system on every step, and nothing fails to say so.
+- **Hold the coarsest state the screen draws.** The score screen sets the
+  bar being heard from Listen's progress, not the seconds, so React skips
+  every frame on which the bar did not change.
+- **A screen that re-renders while it plays hands the stave its layout.**
+  `ScoreScroll` on Record always did. The score screen now does too
+  (`engraved`).
+
+After: 60 frames a second through a take on both pieces, with nothing
+blocked, and 59 through Listen, blocked only briefly where the bar changed
+(185 ms in six seconds). The SVG of the score, Record, piece and Library
+screens is byte-identical to before, for three pieces.
+
+### Listen waited for the whole passage before its first note (2026-10-23)
+
+Listen renders the passage with a JavaScript synthesiser before playing it.
+At 23 to 45 times real time that is a second for a minute of music, which is
+why `warmPlayback.ts` found the network to be the wait. A whole piece is three
+or four minutes, though, and Listen from bar one renders all of it. A
+236-note piece at 80 BPM is 207 s of audio. Its first note came 9.6 s after
+the tap on a laptop, and 27.5 s with the CPU slowed four times. 3.9 s of the
+laptop's wait was idle: the render yielded about 970 times with `setTimeout(0)`,
+and a browser clamps a timer set inside a timer to at least 4 ms.
+
+**The rules:**
+
+- **Yield with `nextTask`, never a chained `setTimeout(0)`.** Chromium took
+  395 ms for a hundred chained zero timers and 2 ms for a hundred
+  `MessageChannel` hops.
+- **On the web, Listen plays the opening while the rest renders**
+  (`audioChunks.ts`, `STREAM` in `scorePlayer.web.ts`). It starts once 2.5 s
+  are final from a render going at least twice real time, and schedules the
+  rest in chunks of 2 s or more as they come. A slower render finishes first
+  and plays whole, as before. The native player writes a WAV file and still
+  waits for the whole render.
+- **Chunks meet across a 256-frame overlap with complementary fades, on whole
+  samples of the context.** Each chunk resamples its own samples, so this is
+  what makes the joins inaudible. The outgoing fade reaches zero one frame
+  early, because Chromium extrapolates a buffer's last output sample from its
+  last two frames. Rendered both ways through an `OfflineAudioContext`, the
+  chunked passage matches the single buffer to −106 dB at 48 kHz, −99 dB at
+  96 kHz, and exactly at 44.1 kHz. That is below 16-bit quantisation noise.
+
+After: the first chunk is scheduled 0.25 s after the tap on the laptop and
+0.85 s at a quarter speed. There were 101 chunks, all 100 joins exact, and
+none late. While the rest renders at a quarter speed, the score screen holds
+38 frames a second, and 59 once the render is done.
+
+### A photograph drifting a hundredth of a point a frame took the main thread (2026-10-24)
+
+The band at the head of the Library and of the piece screen drifts its
+photograph 16pt up and down every 14 s, with an `Animated.loop`. The web has
+no native driver, so that loop was JavaScript on every frame, followed by the
+style and layout work its new transform caused. On a Library with nothing
+loading and nothing touched, the main thread was busy for 806 ms of every
+second with the CPU slowed four times, and for none of it with the drift
+stopped under Reduce Motion. Scrolling that Library kept the thread 82% busy.
+A profile of a relaunch showed it as busy stretches that went on after
+everything had been drawn. Asking which elements kept changing, with a
+`MutationObserver` on `style`, named one `div` sixty times a second.
+
+The same trace found a second fault. `Animated.loop` returns its value to
+where it started before every round unless `resetBeforeIteration` is false.
+The drift starts in the middle of its travel, so every 28 s the photograph
+jumped 16pt from the top back to the middle, and again whenever its screen
+came back to the front.
+
+**The rules:**
+
+- **On the web, motion with no end is a CSS animation, not an `Animated`
+  loop.** `lib/motion/loops.ts` writes a swing as `@keyframes` for
+  `StyleSheet.create`. React Native for Web drops `animationKeyframes` from an
+  inline style. Animating `transform` or `opacity` that way runs on the
+  compositor and costs the main thread nothing while it runs. The band's
+  drift and the skeleton's pulse are both written this way. `FadeIn` made the
+  same move for entrances.
+- **A CSS animation of `transform` replaces the element's whole transform,**
+  so it gets a layer of its own. In the band, the scroll parallax stays on the
+  outer view and the drift goes on an inner one.
+- **A loop that does not start at one of its ends needs
+  `resetBeforeIteration: false`.**
+
+After: the settled Library's main thread is busy 5 ms a second rather than
+792, and scrolling it 23% rather than 82%. The photograph covers the same
+32pt, and its largest move between two samples 50 ms apart is 0.24pt, where
+the reset moved it 16. Under Reduce Motion the band is pixel-identical to
+before.
+
 ## `npm audit fix --force` would take this app back to SDK 46 (2026-09-09)
 
 `npm audit --omit=dev` reports **24 advisories, 7 of them high**, and closes
@@ -1167,6 +1336,86 @@ nothing else covers `backend/`. Named here rather than left to be found.
   machine's. **What it still cannot buy is speed**: eighty at once on a tenth
   of a CPU means a median request of 28 s and the slowest at 150. That is the
   instance, and the answer to it is a bigger one.
+- **Under load the API's CPU is parsing, compressing and little else
+  (2026-10-23).** Profile it with `py-spy record --format raw` against the
+  harness server while a few clients replay the opening burst in a loop, then
+  set aside the fake's own work (`fake_supabase._cast` and the harness's
+  `json.dumps`, which Postgres does in production). Of what is left, about 30%
+  was parsing PostgREST's answers and **26% was gzip**, at level 5. zlib's
+  levels 1 to 3 share its fast strategy and the cost jumps above them: a
+  2.5 MB listing took 17.6 ms at level 5 and 5.3 at level 3, for 46 KB against
+  56. At level 3, forty openings at once under the host's limits went from a
+  median request of 18.5 s to 13.4, the slowest from 52.6 to 43.8, with peak
+  memory unchanged at about 215 MB; `main.py` and its test hold the level.
+  Verifying the sign-in token is about 4% and is not worth caching.
+- **The first database call after a quiet minute costs a quarter of a second
+  inside Supabase (2026-10-23).** Measured over a day of live traffic in
+  `edge_logs`: `x_envoy_upstream_service_time` had a median of 19 ms for a call
+  within five seconds of the previous one, and 259–262 ms for the first call
+  after a minute or more of quiet, which on an app with few users is nearly
+  every opening. It is the database side opening a fresh connection, and a
+  keep-warm ping was considered and not built: an opening fires five or six
+  calls at once, so one warm connection would leave the rest cold. More
+  traffic removes it; nothing in this repository can.
+- **The Library's listing passes its notation through unread (2026-10-23).**
+  `GET /v1/scores` asks PostgREST for `score_json_text:score_json::text` and
+  writes each row's text into the response as it came
+  (`_with_notation_as_stored`). Decoding every note into Python objects and
+  encoding the same objects back out had been most of the request's CPU. Two
+  things to know before touching it. The alias-and-cast form was checked
+  against real PostgREST — 14.5, the version the live project runs, which its
+  connections name in `pg_stat_activity.application_name`, and 12.2.3 — through
+  the `postgrest` client, because the test fake models only what it is told
+  to: a broken select there would be a 400 on the screen the app opens on, and
+  every test would pass. And both
+  listings now read through `_WITHOUT_SCORE`, so a column missing from it goes
+  missing from both, and comparing them stopped proving anything —
+  `test_the_light_listing_loses_the_notation_and_nothing_else` compares the
+  listing with the piece's own read instead. It found `page_image_retained_at`,
+  absent from the light listing since migration 013.
+- **The database client speaks HTTP/1.1, because a shared HTTP/2 connection
+  fails every request on it together (2026-10-23).** supabase-py builds its
+  PostgREST, storage and auth clients with `http2=True`, and the service client
+  is one object shared by every worker thread. httpcore 1.0.9's sync HTTP/2
+  takes a stream id and compresses a request's headers outside any lock, so
+  two threads sending at once can corrupt the connection's header state, and
+  the server closes it under everything in flight. Production, 2026-10-22: three
+  requests of one app opening, three 500s, `ConnectionTerminated
+  error_code:9`. It is a race, so a quiet test passes. To see it, share one
+  `httpx.Client(http2=True)` between forty threads against any TLS HTTP/2
+  server and shorten `sys.setswitchinterval`, which a throttled CPU does for
+  you: nearly every request fails, and none does over HTTP/1.1. `db._http_client`
+  is the fix. **Once supabase-py is handed a client it ignores its own timeout
+  options**, so the ten-second guard lives on that client now, and
+  `test_blocking_timeouts.py` reads it from there.
+- **A call to the database costs this API a quarter of a second, and almost
+  none of it is the database (2026-10-23).** Supabase's edge logs time every
+  call: `mcp__Supabase__query_logs` on `edge_logs`, with
+  `log_attributes['response.origin_time']` against
+  `['response.headers.x_envoy_upstream_service_time']`, split by
+  `['request.headers.x_client_info']` (`supabase-py` is this API). Measured
+  that day: a median of 274 ms per call, 21 ms of it PostgREST and the
+  database. The rest is the trip between this API's region and the
+  database's, and over half of the calls paid for a fresh connection at the
+  far end (a floor of about 70 ms, a hump at 270–310). So **count round
+  trips, not queries**: a request that makes its calls one after another pays
+  that per call. `app/side_calls.together` runs the ones that do not depend on
+  each other at once; `/v1/me` and both listings are one trip each now, the
+  current piece two. Measured in the harness with every call at 274 ms:
+  `/v1/me` 0.83 s to 0.28, the Library 0.57 to 0.29.
+- **A real app opening is read from two logs side by side, and on the free
+  instance most of it is CPU (2026-10-23).** Render's log (`list_logs` with
+  text `*/v1/*`) stamps each response as the API writes it, and the burst of
+  `OPTIONS` preflights marks where an opening starts. Supabase's `edge_logs`
+  stamp each database call as it arrives, with its time. An opening on `main`
+  that day: the preflights at 48.66 s, the first database calls answered by
+  49.45, then no database call at all for 1.7 s while the API worked through
+  the answers, and its last response at 51.99, 3.3 s in; another opening took
+  6.2 s. No query change removes that gap; less work per request, or more
+  CPU, does. To count it, time each launch request with
+  `resource.getrusage` around `TestClient` calls against the fake: one
+  launch cost 140 ms of CPU on `main` and 107 ms after these changes, which
+  is 1.4 s and 1.1 s on a tenth of a CPU.
 
 ## The recording path (2026-09-02) — level is not the signal you think it is
 

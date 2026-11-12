@@ -32,6 +32,12 @@ export interface ListAnalysesParams {
    * changes nothing on screen.
    */
   perNote?: boolean;
+  /**
+   * Label each take with its piece's title, composer and beat unit, read by
+   * the server beside the takes. Callers that name their takes ask for this
+   * instead of listing the library in a request of their own.
+   */
+  withPieces?: boolean;
 }
 
 /** GET /v1/analyses — the caller's takes, newest first. */
@@ -42,6 +48,7 @@ export function listAnalyses({
   offset = 0,
   includeResult = true,
   perNote = true,
+  withPieces = false,
 }: ListAnalysesParams = {}): Promise<AnalysisResponse[]> {
   const query = new URLSearchParams({
     limit: String(limit),
@@ -62,12 +69,30 @@ export function listAnalyses({
   if (status) {
     query.set('status', status);
   }
+  // An older deployment ignores it and sends no labels, which the callers
+  // notice (`piece` absent) and answer by fetching the titles themselves.
+  if (withPieces) {
+    query.set('with_pieces', 'true');
+  }
   return apiFetch<unknown>(`/v1/analyses?${query}`).then(parseAnalyses);
 }
 
 /** GET /v1/analyses/:id — poll one take while it runs. */
-export function getAnalysis(id: string): Promise<AnalysisResponse> {
-  return apiFetch<unknown>(`/v1/analyses/${id}`).then(parseAnalysis);
+export function getAnalysis(
+  id: string,
+  {
+    withPiece = false,
+  }: {
+    /**
+     * Label the take with its piece's title, composer and beat unit, read by
+     * the server beside the take — for a caller that names it.
+     */
+    withPiece?: boolean;
+  } = {},
+): Promise<AnalysisResponse> {
+  return apiFetch<unknown>(
+    withPiece ? `/v1/analyses/${id}?with_piece=true` : `/v1/analyses/${id}`,
+  ).then(parseAnalysis);
 }
 
 export interface RecordingPlaybackResponse {

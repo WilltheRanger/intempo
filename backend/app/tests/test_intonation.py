@@ -13,7 +13,7 @@ import pytest
 
 from app.services.analysis import analyze
 from app.services.audio_config import IntonationConfig
-from app.services.intonation import fold_cents, intonation_of, note_cents
+from app.services.intonation import SETTLE_S, fold_cents, intonation_of, note_cents
 from app.services.pitch_evidence import HOP, midi
 from app.services.score_schema import Measure, Note, ScoreJson
 from app.tests.audio_helpers import synth_bowed_take
@@ -65,6 +65,34 @@ class TestNoteCents:
 
         assert np.isnan(cents[0])
         assert np.isfinite(cents[1]) and np.isfinite(cents[2])
+
+    def test_a_couple_of_octave_slip_frames_are_trimmed_out(self):
+        # Five frames read the true pitch, four read a semitone off (the
+        # previous note ringing on), and two read a full octave high (a YIN
+        # slip). The two slip frames are a small minority, but they push the
+        # four semitone-off frames into the sorted middle, so the plain
+        # median reads the semitone-off value rather than the true one.
+        # Trimming the slip frames out — distant enough from the raw median
+        # to be clearly not this note, close enough that ordinary readings
+        # never are — lets the median land back on the true pitch.
+        attacks = np.array([0.0])
+        n_slip, n_off, n_true = 2, 4, 5
+        first = round(SETTLE_S * SR / HOP)
+        track = np.full(first + n_slip + n_off + n_true + 5, np.nan)
+        i = first
+        track[i : i + n_slip] = 81.0  # an octave above 69, a YIN slip
+        i += n_slip
+        track[i : i + n_off] = 70.0  # a semitone off, the previous note
+        i += n_off
+        track[i : i + n_true] = 69.0  # the true pitch
+
+        untrimmed = note_cents(track, SR, attacks, np.array([69.0]))
+        trimmed = note_cents(
+            track, SR, attacks, np.array([69.0]), note_trim_cents=150.0
+        )
+
+        assert untrimmed[0] == pytest.approx(100.0, abs=0.5)
+        assert trimmed[0] == pytest.approx(0.0, abs=0.5)
 
     def test_attacks_out_of_order_are_read_in_time(self):
         attacks = np.array([0.5, 0.0])

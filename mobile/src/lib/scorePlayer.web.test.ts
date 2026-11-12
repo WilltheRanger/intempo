@@ -64,6 +64,8 @@ class StubNode {
 
 class StubContext {
   state: 'running' | 'suspended' = 'running';
+  // What a phone's context usually runs at; the passage is resampled to it.
+  sampleRate = 48000;
   destination = {};
   closed = false;
   constructor() {

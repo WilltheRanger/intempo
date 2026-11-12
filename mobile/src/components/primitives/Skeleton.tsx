@@ -2,7 +2,27 @@ import { useEffect, useRef } from 'react';
 import { Animated, Platform, StyleSheet, View, type DimensionValue, type StyleProp, type ViewStyle } from 'react-native';
 
 import { SKELETON_PULSE, colors, radii, spacing } from '../../design';
+import { EASE_IN_OUT_CSS, swingStyle } from '../../lib/motion/loops';
 import { useReducedMotion } from '../../lib/useReducedMotion';
+
+/**
+ * The pulse on the web, which has no native driver: run by the browser's
+ * compositor rather than by one JavaScript loop per block on every frame
+ * (`lib/motion/loops`). Those loops ran exactly while a screen was loading,
+ * on the thread the loading needed. The curve is `Animated.timing`'s default,
+ * which is what the native pulse uses.
+ */
+const webPulse =
+  Platform.OS === 'web'
+    ? StyleSheet.create({
+        pulsing: swingStyle({
+          from: { opacity: SKELETON_PULSE.from },
+          to: { opacity: SKELETON_PULSE.to },
+          ms: SKELETON_PULSE.duration,
+          easing: EASE_IN_OUT_CSS,
+        }) as ViewStyle,
+      })
+    : null;
 
 export interface SkeletonProps {
   width?: DimensionValue;
@@ -30,7 +50,7 @@ export function Skeleton({ width = '100%', height = 16, radius, style }: Skeleto
   const pulse = useRef(new Animated.Value(SKELETON_PULSE.from)).current;
 
   useEffect(() => {
-    if (reduceMotion) {
+    if (reduceMotion || webPulse) {
       return;
     }
     const loop = Animated.loop(
@@ -38,12 +58,12 @@ export function Skeleton({ width = '100%', height = 16, radius, style }: Skeleto
         Animated.timing(pulse, {
           toValue: SKELETON_PULSE.to,
           duration: SKELETON_PULSE.duration,
-          useNativeDriver: Platform.OS !== 'web',
+          useNativeDriver: true,
         }),
         Animated.timing(pulse, {
           toValue: SKELETON_PULSE.from,
           duration: SKELETON_PULSE.duration,
-          useNativeDriver: Platform.OS !== 'web',
+          useNativeDriver: true,
         }),
       ]),
     );
@@ -59,7 +79,9 @@ export function Skeleton({ width = '100%', height = 16, radius, style }: Skeleto
       style={[
         styles.block,
         { width, height, borderRadius: radius ?? radii.sm },
-        reduceMotion ? { opacity: SKELETON_PULSE.to } : { opacity: pulse },
+        reduceMotion
+          ? { opacity: SKELETON_PULSE.to }
+          : (webPulse?.pulsing ?? { opacity: pulse }),
         style,
       ]}
     />

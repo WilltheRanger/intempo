@@ -139,6 +139,7 @@ class IntonationConfig:
     in_tune_cents: float = 15.0
     slight_cents: float = 30.0
     not_this_note_cents: float = 100.0
+    note_trim_cents: float = 150.0
     min_notes: int = 8
     tuning_worth_saying_cents: float = 10.0
     by_note_within_cents: float = 50.0
@@ -297,6 +298,7 @@ def _intonation(row: dict) -> IntonationConfig:
         not_this_note_cents=float(
             row.get("not_this_note_cents", default.not_this_note_cents)
         ),
+        note_trim_cents=float(row.get("note_trim_cents", default.note_trim_cents)),
         min_notes=int(row.get("min_notes", default.min_notes)),
         by_note_within_cents=float(
             row.get("by_note_within_cents", default.by_note_within_cents)

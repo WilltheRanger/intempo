@@ -518,6 +518,18 @@ def _score(row):
     return out
 
 
+def _piece_label(sid):
+    """A take's piece as `GET /v1/analyses?with_pieces=true` names it.
+
+    None when the piece is gone, which the real router answers the same way.
+    """
+    row = CREATED.get(sid) or next((score_row(*s) for s in SCORES if s[0] == sid), None)
+    if row is None:
+        return None
+    return {"title": row["title"], "composer": row.get("composer"),
+            "tempo_beat_unit": (row.get("score_json") or {}).get("tempo_beat_unit")}
+
+
 def _b64(obj):
     """base64url with the padding stripped, the way JWT segments are encoded."""
     raw = json.dumps(obj, separators=(",", ":")).encode()
@@ -659,6 +671,11 @@ class H(http.server.BaseHTTPRequestHandler):
                 rows = [a for a in rows if a["status"] == q["status"][0]]
             if (q.get("include_result") or ["true"])[0] == "false":
                 rows = [dict(a, result_json=None) for a in rows]
+            # The app names its takes from these, and lists the library only
+            # when they are absent — so a stub without them would exercise the
+            # fallback and never the path the real API takes.
+            if (q.get("with_pieces") or ["false"])[0] == "true":
+                rows = [dict(a, piece=_piece_label(a["score_id"])) for a in rows]
             offset = int((q.get("offset") or ["0"])[0])
             limit = int((q.get("limit") or ["50"])[0])
             return self._send(200, json.dumps(rows[offset:offset + limit]).encode())
@@ -673,10 +690,16 @@ class H(http.server.BaseHTTPRequestHandler):
         if path.startswith("/v1/analyses/"):
             aid = path.rsplit("/", 1)[-1]
             row = SUBMITTED.get(aid)
+            # The take's screen names it from this, as the lists do.
+            labelled = "with_piece=true" in self.path
             if row is None:
                 match = next((a for a in ANALYSES if a["id"] == aid), None)
-                return self._send(200 if match else 404,
-                                  json.dumps(_public(match) if match else {"detail": "not found"}).encode())
+                if match is None:
+                    return self._send(404, b'{"detail":"not found"}')
+                out = _public(match)
+                if labelled:
+                    out["piece"] = _piece_label(match["score_id"])
+                return self._send(200, json.dumps(out).encode())
             # The pipeline takes real seconds, and the client polls every 1.5 s
             # for up to a minute. Advancing one step per poll exercises the
             # waiting state instead of handing back a finished analysis on the
@@ -688,7 +711,10 @@ class H(http.server.BaseHTTPRequestHandler):
             elif row["_polls"] >= 2 and row["status"] != "done":
                 _finish(row)
             row["updated_at"] = iso(NOW)
-            return self._send(200, json.dumps(_public(row)).encode())
+            out = _public(row)
+            if labelled:
+                out["piece"] = _piece_label(row["score_id"])
+            return self._send(200, json.dumps(out).encode())
         if path == "/auth/v1/user":
             return self._send(200, json.dumps(_session()["user"]).encode())
         if path == "/auth/v1/settings":

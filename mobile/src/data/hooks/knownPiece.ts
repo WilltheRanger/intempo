@@ -32,10 +32,10 @@ export function pieceFromCaches(
  * photographs, or truly neither.
  *
  * **A placeholder with neither cannot tell "none" from "not loaded yet".** The
- * library listing kept on disk (`persistCache.pieceForDisk`) drops every
- * piece's notation and its signed photograph to stay inside the storage
- * budget, so a piece opened from the Library just after launch arrives here
- * with `score` and `thumbnail` both null whatever it really holds. Read as
+ * library listing kept on disk (`persistCache.listForDisk`) drops every
+ * piece's signed photograph, and the notation of any piece past its share of
+ * the storage budget, so a piece opened from the Library just after launch can
+ * arrive here with `score` and `thumbnail` both null whatever it really holds. Read as
  * fact, that drew "Add the sheet music to record" with Photograph it and
  * Choose photos over a piece that had both, for as long as the piece's own
  * request took: about a second on a good connection, and the whole cold start

@@ -20,6 +20,7 @@ from typing import Any
 from uuid import UUID
 
 from app.models.user import UserTier
+from app.side_calls import together
 
 #: Analyses a free account may run per calendar month (spec §8 tier table).
 FREE_MONTHLY_ANALYSES = 3
@@ -96,7 +97,9 @@ def count_analyses_this_month(client: Any, user_id: UUID, now: datetime | None =
     Two counts rather than one query, because PostgREST's filters cannot
     express the union of "in flight" and "finished with a verdict" without an
     `or=` that the test fake would have to parse. `result_json->>status` is the
-    `status` inside the stored result, text or null.
+    `status` inside the stored result, text or null. **Asked at once**
+    (`side_calls`): neither needs the other, and each is a trip to the
+    database's region.
     """
     start, end = month_bounds(now)
 
@@ -109,9 +112,11 @@ def count_analyses_this_month(client: Any, user_id: UUID, now: datetime | None =
             .lt("created_at", end.isoformat())
         )
 
-    in_flight = _count(rows().in_("status", ["queued", "processing"]).execute())
-    with_verdict = _count(
-        rows().eq("status", "done").eq("result_json->>status", "ok").execute()
+    in_flight, with_verdict = together(
+        lambda: _count(rows().in_("status", ["queued", "processing"]).execute()),
+        lambda: _count(
+            rows().eq("status", "done").eq("result_json->>status", "ok").execute()
+        ),
     )
     return in_flight + with_verdict
 
@@ -131,7 +136,20 @@ def _count(response: Any) -> int:
     return len(response.data or [])
 
 
-def usage_for(client: Any, user_id: UUID, tier: str, now: datetime | None = None) -> Usage:
+def usage_for(
+    client: Any,
+    user_id: UUID,
+    tier: str,
+    now: datetime | None = None,
+    *,
+    used: int | None = None,
+) -> Usage:
+    """This month's allowance for `tier`.
+
+    `used` is `count_analyses_this_month` when the caller has already asked it
+    — `/v1/me` asks while the account row is still on its way, before it knows
+    the tier — and is counted here otherwise.
+    """
     start, end = month_bounds(now)
     if tier in UNLIMITED_TIERS:
         # No query: an unlimited account's count changes nothing, and this is
@@ -140,7 +158,7 @@ def usage_for(client: Any, user_id: UUID, tier: str, now: datetime | None = None
 
     return Usage(
         tier=tier,
-        used=count_analyses_this_month(client, user_id, now),
+        used=used if used is not None else count_analyses_this_month(client, user_id, now),
         limit=FREE_MONTHLY_ANALYSES,
         period_start=start,
         period_end=end,

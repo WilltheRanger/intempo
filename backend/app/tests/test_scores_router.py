@@ -8,6 +8,7 @@ on `parse_sheet_music`. Supabase is mocked via the chained
 
 from __future__ import annotations
 
+import threading
 from types import SimpleNamespace
 from typing import Any, Callable
 from unittest.mock import MagicMock
@@ -21,6 +22,7 @@ from app.main import app
 from app.services.transcription_budget import EXHAUSTED_MESSAGE, MAX_RUNS_PER_PAGE
 from app.routers import scores as scores_module
 from app.services import display_urls
+from app.tests import fake_supabase
 from app.tests.fake_supabase import FakeSupabase
 
 
@@ -2495,6 +2497,9 @@ def test_the_light_listing_loses_the_notation_and_nothing_else(
         ocr_confidence=0.77,
         transcription_status="reading",
         transcription_stage="Reading the page",
+        # Kept for the reader's training rather than deleted: the third state a
+        # photograph can be in, and a column `_WITHOUT_SCORE` once left out.
+        page_image_retained_at="2026-05-07T00:00:00+00:00",
         created_at="2026-05-02T00:00:00+00:00",
         updated_at="2026-05-03T00:00:00+00:00",
     )
@@ -2544,6 +2549,7 @@ def test_the_light_listing_loses_the_notation_and_nothing_else(
     assert heavy_pages["image_url"], "the photographed row has no thumbnail to lose"
     assert len(heavy_pages["image_urls"]) == 1, "the listing signs page one"
     assert heavy_gone["page_image_discarded_at"], "no discarded row to check"
+    assert heavy_pages["page_image_retained_at"], "no retained row to check"
 
     for heavy, thin in zip(full.json(), light.json(), strict=True):
         assert thin["score_json"] is None
@@ -2553,6 +2559,24 @@ def test_the_light_listing_loses_the_notation_and_nothing_else(
             f"the light listing changed {differing - {'score_json'}}, "
             "which it has no business changing — a column is missing from "
             "_WITHOUT_SCORE"
+        )
+
+    # **Both listings now read through `_WITHOUT_SCORE`**, the full one with the
+    # notation added as text, so a column missing from it would go missing from
+    # both and the comparison above would pass. The piece's own read selects
+    # the whole row, and a listing must say what it says about the piece —
+    # bar the concerns it no longer computes and the pages past the first it
+    # does not sign. `page_image_retained_at` was the column it caught.
+    for heavy in full.json():
+        own = client.get(f"/v1/scores/{heavy['id']}", headers=headers)
+        assert own.status_code == 200, own.text
+        whole = own.json()
+        assert heavy["score_json"] == whole["score_json"], "the notation changed in transit"
+        assert heavy["image_urls"] == whole["image_urls"][:1]
+        differing = {key for key in whole if heavy.get(key) != whole[key]}
+        assert differing <= {"concerns", "image_urls"}, (
+            f"the listing disagrees with the piece about {differing - {'concerns', 'image_urls'}}"
+            " — a column is missing from _WITHOUT_SCORE"
         )
 
     # Where the concerns went: the read a piece screen makes.
@@ -2719,6 +2743,102 @@ def test_a_large_listing_is_dated_without_naming_every_piece_in_the_query(
     assert sum(1 for when in dated.values() if when) == 1
 
 
+def _waits_for_the_other(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeSupabase, waiter: str, other: str
+) -> list[str]:
+    """Make every `waiter` query wait until an `other` query has started.
+
+    So a request that asked them one at a time, `waiter` first, finds `other`
+    never starting and fails after a second, where at once it passes. Returns
+    the tables in the order their queries began.
+    """
+    started = threading.Event()
+    began: list[str] = []
+    tables = {id(fake.table(name)): name for name in (waiter, other)}
+    real = fake_supabase._Query.execute
+
+    def execute(self):
+        name = tables.get(id(self._table))
+        began.append(name or "other")
+        if name == other:
+            started.set()
+        elif name == waiter:
+            assert started.wait(timeout=1), f"{waiter} was asked before {other} began"
+        return real(self)
+
+    monkeypatch.setattr(fake_supabase._Query, "execute", execute)
+    return began
+
+
+def test_a_listing_dates_its_pieces_while_it_reads_them(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """The page and the takes that date it are one trip to the database's
+    region, not two in a row: the takes need only the musician's id
+    (`side_calls`)."""
+    user_id = uuid4()
+    piece = uuid4()
+    fake = FakeSupabase()
+    fake.seed("scores", [_row_for(piece, user_id)])
+    fake.seed(
+        "analyses",
+        [{"id": str(uuid4()), "user_id": str(user_id), "score_id": str(piece),
+          "created_at": "2026-05-04T09:00:00+00:00"}],
+    )
+    monkeypatch.setattr(db_module, "get_service_client", lambda: fake)
+    monkeypatch.setattr(display_urls, "signed_display_urls", lambda keys: {})
+    _waits_for_the_other(monkeypatch, fake, waiter="scores", other="analyses")
+
+    res = client.get(
+        "/v1/scores", headers={"Authorization": f"Bearer {make_token(sub=user_id)}"}
+    )
+
+    assert res.status_code == 200, res.text
+    assert res.json()[0]["last_practiced_at"].startswith("2026-05-04T09:00:00")
+
+
+def test_a_scan_that_stops_at_its_limit_still_dates_every_piece(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """The newest takes are read beside the page, up to `_PRACTICED_SCAN`. A
+    piece last played before that many takes is not "never played", so a
+    full scan that missed a piece dates the page by name instead."""
+    user_id = uuid4()
+    # Newest piece first, as the listing orders them; the page asked for below
+    # is the last one alone, and it was played longest ago.
+    pieces = [uuid4() for _ in range(3)]
+    fake = FakeSupabase()
+    fake.seed(
+        "scores",
+        [
+            _row_for(piece, user_id, created_at=f"2026-04-0{3 - n}T00:00:00+00:00")
+            for n, piece in enumerate(pieces)
+        ],
+    )
+    fake.seed(
+        "analyses",
+        [
+            {"id": str(uuid4()), "user_id": str(user_id), "score_id": str(piece),
+             "created_at": f"2026-05-0{3 - n}T09:00:00+00:00"}
+            for n, piece in enumerate(pieces)
+        ],
+    )
+    monkeypatch.setattr(db_module, "get_service_client", lambda: fake)
+    monkeypatch.setattr(display_urls, "signed_display_urls", lambda keys: {})
+    # The scan holds the two newest takes, neither of them this page's piece.
+    monkeypatch.setattr(scores_module, "_PRACTICED_SCAN", 2)
+
+    res = client.get(
+        "/v1/scores?limit=1&offset=2",
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+
+    assert res.status_code == 200, res.text
+    (row,) = res.json()
+    assert row["id"] == str(pieces[2])
+    assert row["last_practiced_at"].startswith("2026-05-01"), "read as never played"
+
+
 def test_a_failed_lookup_of_the_last_take_costs_the_date_not_the_library(
     monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
 ) -> None:
@@ -2766,6 +2886,20 @@ def test_a_large_listing_is_compressed_for_a_client_that_accepts_it(
     assert len(res.json()) == 12
 
 
+def test_responses_are_compressed_at_a_level_a_tenth_of_a_cpu_can_afford() -> None:
+    """Level 5 spent 17.6 ms compressing a 2.5 MB listing and level 3 spends
+    5.3, for a body ten kilobytes larger. On the free instance's tenth of a CPU
+    that is 176 ms against 53, per listing, in front of everyone else's
+    requests. zlib's levels 1 to 3 share one fast strategy; above them the cost
+    jumps, so a level above 3 is that trade made the expensive way round."""
+    from starlette.middleware.gzip import GZipMiddleware
+
+    from app.main import app
+
+    (gzip,) = [m for m in app.user_middleware if m.cls is GZipMiddleware]
+    assert gzip.kwargs["compresslevel"] <= 3
+
+
 def test_the_library_listing_still_carries_the_notation_by_default(
     monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
 ) -> None:
@@ -2782,6 +2916,280 @@ def test_the_library_listing_still_carries_the_notation_by_default(
 
     assert res.status_code == 200, res.text
     assert res.json()[0]["score_json"] == GOOD_PAYLOAD
+
+
+def test_the_listing_hands_back_the_notation_exactly_as_stored(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """The notation is written into the listing as Postgres's own JSON text,
+    unread (`_SCORE_AS_TEXT`), so the text has to survive being spliced into
+    the response: quotes, a newline and non-ASCII inside it, and a row with no
+    notation at all, which must stay `null` rather than become a string.
+
+    And the database is asked for the text form. Equality alone would pass on
+    a revert to `select("*")`, which costs the parse and the re-encode this
+    exists to save — so the request itself is held here too."""
+    user_id = uuid4()
+    awkward = {
+        **GOOD_PAYLOAD,
+        "notes_to_human": 'a "dolce" in the margin\nand a ü on the next line',
+    }
+    fake = FakeSupabase()
+    fake.seed(
+        "scores",
+        [
+            _row_for(uuid4(), user_id, score_json=awkward, title="Élégie"),
+            _row_for(uuid4(), user_id, score_json=None),
+        ],
+    )
+    monkeypatch.setattr(db_module, "get_service_client", lambda: fake)
+    monkeypatch.setattr(display_urls, "signed_display_urls", lambda keys: {})
+    asked: list[tuple[Any, ...]] = []
+    select = fake_supabase._Table.select
+
+    def recording_select(self, *cols, **kwargs):
+        asked.append(cols)
+        return select(self, *cols, **kwargs)
+
+    monkeypatch.setattr(fake_supabase._Table, "select", recording_select)
+
+    res = client.get(
+        "/v1/scores", headers={"Authorization": f"Bearer {make_token(sub=user_id)}"}
+    )
+
+    assert res.status_code == 200, res.text
+    assert res.headers["content-type"] == "application/json"
+    notation = {row["title"]: row["score_json"] for row in res.json()}
+    assert notation["Élégie"] == awkward
+    assert [value for title, value in notation.items() if title != "Élégie"] == [None]
+    listing = next(cols for cols in asked if any("score_json" in str(c) for c in cols))
+    assert "score_json_text:score_json::text" in "".join(listing)
+    assert "*" not in "".join(listing)
+
+
+# ---- A copy the caller already holds ---------------------------------------
+#
+# The Library revalidates on every launch, through the browser's own cache:
+# `ETag` and `Cache-Control: private, no-cache` on the answer, `If-None-Match`
+# on the next request. These hold what a 304 may stand for, and that it is
+# decided without reading the notation it saves sending.
+
+
+def _listing_library(
+    monkeypatch: pytest.MonkeyPatch, user_id: UUID, count: int = 2
+) -> tuple[FakeSupabase, list[tuple[Any, ...]]]:
+    """A library of `count` unphotographed pieces, and every projection the
+    listing asks the database for."""
+    fake = FakeSupabase()
+    fake.seed(
+        "scores",
+        [
+            _unphotographed(user_id, title=f"Study {n}", created_at=f"2026-04-0{n + 1}T00:00:00+00:00")
+            for n in range(count)
+        ],
+    )
+    monkeypatch.setattr(db_module, "get_service_client", lambda: fake)
+    asked: list[tuple[Any, ...]] = []
+    select = fake_supabase._Table.select
+
+    def recording_select(self, *cols, **kwargs):
+        asked.append(cols)
+        return select(self, *cols, **kwargs)
+
+    monkeypatch.setattr(fake_supabase._Table, "select", recording_select)
+    return fake, asked
+
+
+def _reads_notation(cols: tuple[Any, ...]) -> bool:
+    return "score_json" in "".join(str(c) for c in cols)
+
+
+def test_a_listing_says_how_it_may_be_kept(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """Kept by the phone and by nothing in between — it is one musician's
+    library, fetched with their token — and never used without asking."""
+    user_id = uuid4()
+    _listing_library(monkeypatch, user_id)
+
+    res = client.get(
+        "/v1/scores", headers={"Authorization": f"Bearer {make_token(sub=user_id)}"}
+    )
+
+    assert res.status_code == 200, res.text
+    assert res.headers["cache-control"] == "private, no-cache"
+    assert res.headers["etag"].startswith('W/"')
+
+
+def test_a_copy_still_current_is_confirmed_without_reading_the_notation(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """The point of the tag. The notation is nearly every byte of a listing,
+    and confirming a copy must not read it, decode it or send it."""
+    user_id = uuid4()
+    _, asked = _listing_library(monkeypatch, user_id)
+    headers = {"Authorization": f"Bearer {make_token(sub=user_id)}"}
+    first = client.get("/v1/scores", headers=headers)
+    asked.clear()
+
+    again = client.get(
+        "/v1/scores", headers={**headers, "If-None-Match": first.headers["etag"]}
+    )
+
+    assert again.status_code == 304
+    assert again.content == b""
+    assert again.headers["etag"] == first.headers["etag"]
+    # What the full answer said about keeping it, repeated (RFC 9110 §15.4.5).
+    assert again.headers["cache-control"] == "private, no-cache"
+    assert "Accept-Encoding" in again.headers["vary"]
+    scores_reads = [cols for cols in asked if "title" in "".join(str(c) for c in cols)]
+    assert scores_reads, "the page was not read at all"
+    assert not any(_reads_notation(cols) for cols in scores_reads)
+
+
+@pytest.mark.parametrize(
+    "change",
+    ["renamed", "notation rewritten", "played", "added", "deleted", "reading finished"],
+)
+def test_a_copy_out_of_date_is_sent_again_in_full(
+    change: str,
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    """Everything a listing shows moves its tag, and an out-of-date copy gets
+    the whole page again — notation included, though the question was first
+    put without it.
+
+    "notation rewritten" moves `updated_at` beside the notation, because that is
+    what Postgres does: a trigger sets it on every update of a score (migration
+    001), and the tag relies on it rather than reading the notation."""
+    user_id = uuid4()
+    fake, _ = _listing_library(monkeypatch, user_id)
+    headers = {"Authorization": f"Bearer {make_token(sub=user_id)}"}
+    first = client.get("/v1/scores", headers=headers)
+    rows = fake.table("scores").rows
+    rewritten = {**GOOD_PAYLOAD, "notes_to_human": "the second reading"}
+    if change == "renamed":
+        rows[0].update(title="Study, retitled", updated_at="2026-05-01T00:00:00+00:00")
+    elif change == "notation rewritten":
+        rows[0].update(score_json=rewritten, updated_at="2026-05-01T00:00:00+00:00")
+    elif change == "played":
+        fake.seed(
+            "analyses",
+            [{"id": str(uuid4()), "user_id": str(user_id), "score_id": rows[0]["id"],
+              "created_at": "2026-05-04T09:00:00+00:00"}],
+        )
+    elif change == "added":
+        fake.seed("scores", [_unphotographed(user_id, title="Study 9")])
+    elif change == "deleted":
+        rows.pop()
+    elif change == "reading finished":
+        # The copy is taken while the page is still being read.
+        rows[1].update(transcription_status="reading", transcription_stage="Reading the notes")
+        first = client.get("/v1/scores", headers=headers)
+        rows[1].update(
+            transcription_status="done",
+            transcription_stage=None,
+            updated_at="2026-05-02T00:00:00+00:00",
+        )
+
+    again = client.get(
+        "/v1/scores", headers={**headers, "If-None-Match": first.headers["etag"]}
+    )
+
+    assert again.status_code == 200, again.text
+    assert again.headers["etag"] != first.headers["etag"]
+    # The answer is the whole page, as a request without a copy would get it.
+    fresh = client.get("/v1/scores", headers=headers)
+    assert again.json() == fresh.json()
+    assert again.headers["etag"] == fresh.headers["etag"]
+    if change == "notation rewritten":
+        assert rewritten in [row["score_json"] for row in again.json()]
+
+
+def test_a_copy_of_the_light_listing_is_confirmed_on_its_own_tag(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """The same rows with and without their notation are different answers,
+    so neither may confirm the other's copy."""
+    user_id = uuid4()
+    _listing_library(monkeypatch, user_id)
+    headers = {"Authorization": f"Bearer {make_token(sub=user_id)}"}
+    full = client.get("/v1/scores", headers=headers)
+    light = client.get("/v1/scores?include_score=false", headers=headers)
+
+    assert light.headers["etag"] != full.headers["etag"]
+    assert (
+        client.get(
+            "/v1/scores?include_score=false",
+            headers={**headers, "If-None-Match": light.headers["etag"]},
+        ).status_code
+        == 304
+    )
+    assert (
+        client.get(
+            "/v1/scores?include_score=false",
+            headers={**headers, "If-None-Match": full.headers["etag"]},
+        ).status_code
+        == 200
+    )
+
+
+@pytest.mark.parametrize(
+    "held",
+    [
+        "{tag}",
+        "{bare}",
+        'W/"0123", {tag}',
+        "*",
+    ],
+)
+def test_if_none_match_is_read_as_the_standard_writes_it(
+    held: str,
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    """Weak comparison, a list of tags, and `*` (RFC 9110 §13.1.2). A cache
+    that kept the tag strong, or kept two copies, still names this listing."""
+    user_id = uuid4()
+    _listing_library(monkeypatch, user_id)
+    headers = {"Authorization": f"Bearer {make_token(sub=user_id)}"}
+    tag = client.get("/v1/scores", headers=headers).headers["etag"]
+
+    res = client.get(
+        "/v1/scores",
+        headers={**headers, "If-None-Match": held.format(tag=tag, bare=tag.removeprefix("W/"))},
+    )
+
+    assert res.status_code == 304
+
+
+def test_somebody_elses_tag_confirms_nothing(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """The tag is a digest of the listing, not of who asked — and a listing
+    names its pieces, which are nobody else's. A browser that kept one
+    musician's copy and is now signed in as another asks with the first one's
+    tag; the second musician must get their own library."""
+    mine, theirs = uuid4(), uuid4()
+    fake, _ = _listing_library(monkeypatch, mine)
+    fake.seed("scores", [_unphotographed(theirs, title="Somebody else's study")])
+    their_tag = client.get(
+        "/v1/scores", headers={"Authorization": f"Bearer {make_token(sub=theirs)}"}
+    ).headers["etag"]
+
+    res = client.get(
+        "/v1/scores",
+        headers={
+            "Authorization": f"Bearer {make_token(sub=mine)}",
+            "If-None-Match": their_tag,
+        },
+    )
+
+    assert res.status_code == 200
+    assert {row["title"] for row in res.json()} == {"Study 0", "Study 1"}
 
 
 # ---- The cost guard on starting a reading ---------------------------------

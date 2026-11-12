@@ -30,6 +30,7 @@ from __future__ import annotations
 import inspect
 from typing import Any
 
+import httpx
 import pytest
 
 from app import auth as auth_module
@@ -100,12 +101,45 @@ def test_every_supabase_client_is_built_with_both_timeouts(
     options = built[-1]
     assert options is not None, f"{name} passed no options, so both timeouts default"
 
-    for field in ("postgrest_client_timeout", "storage_client_timeout"):
-        value = getattr(options, field, None)
-        assert isinstance(value, (int, float)), f"{name} left {field} to the library"
+    # **The timeouts that apply are the HTTP client's.** The factories hand
+    # supabase-py their own client (`db._http_client`), and once it has one it
+    # ignores `postgrest_client_timeout` and `storage_client_timeout` — so this
+    # used to check two numbers that would have done nothing.
+    client = getattr(options, "httpx_client", None)
+    assert isinstance(client, httpx.Client), f"{name} left the HTTP client to the library"
+    for part in ("connect", "read", "write", "pool"):
+        value = getattr(client.timeout, part)
+        assert isinstance(value, (int, float)), f"{name} has no {part} timeout"
         # Positive because zero or negative is not a timeout, and bounded well
         # under the 120s default that made this worth writing down.
-        assert 0 < value <= 60, f"{name} set {field} to {value}"
+        assert 0 < value <= 60, f"{name} set its {part} timeout to {value}"
+    client.close()
+
+
+def test_the_database_client_never_shares_a_connection_between_threads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """HTTP/1.1, so one request's connection is never another's.
+
+    supabase-py's own clients speak HTTP/2, and the API's worker threads share
+    one service client. On 2026-10-22 three requests of one app opening failed
+    together with `ConnectionTerminated error_code:9`: two threads had corrupted
+    the shared connection's header state and the server closed it under all of
+    them (`db._http_client` has the reproduction). Asked of the transport the
+    factory builds, because `httpx.Client` keeps the protocol choice on it.
+    """
+    seen: list[dict[str, Any]] = []
+    real = httpx.HTTPTransport
+
+    def recording_transport(**kwargs: Any) -> httpx.HTTPTransport:
+        seen.append(kwargs)
+        return real(**kwargs)
+
+    monkeypatch.setattr(db_module.httpx, "HTTPTransport", recording_transport)
+    db_module._http_client().close()
+
+    assert seen, "the client was built without its own transport"
+    assert seen[-1].get("http2") is False, seen[-1]
 
 
 def test_the_jwks_fetch_cannot_hang_a_request(monkeypatch: pytest.MonkeyPatch) -> None:

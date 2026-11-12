@@ -33,4 +33,9 @@ from __future__ import annotations
 #: Keep in step with `mobile/src/data/api/upload.ts`, which sends the same
 #: value on the client's direct-to-storage PUT — the uploads that do not pass
 #: through this service at all.
+#:
+#: **This service writes with `storage_writes.write_object`, never `upload`.**
+#: `upload` sends a form, and Storage stores a form's value as
+#: `max-age=<value>`. Handed this, every object the service wrote was stored
+#: as `max-age=private, max-age=31536000, immutable`, which no browser caches.
 CACHE_FOREVER = "private, max-age=31536000, immutable"

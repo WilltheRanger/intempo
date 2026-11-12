@@ -19,6 +19,7 @@ from PIL import Image
 
 from app.services import avatar_shrink, pending_uploads
 from app.services.buckets import AVATAR_BUCKET
+from app.services.cache_headers import CACHE_FOREVER
 from app.tests.fake_supabase import FakeSupabase
 
 
@@ -47,8 +48,12 @@ class _Bucket:
             raise RuntimeError("storage unreachable")
         return self.inner.objects[key]
 
-    def upload(self, key: str, data: bytes, options: dict | None = None) -> None:
-        self.inner.upload(key, data, options)
+    @property
+    def id(self) -> str:
+        return self.inner.id
+
+    def _request(self, *args: Any, **kwargs: Any) -> None:
+        self.inner._request(*args, **kwargs)
 
     def remove(self, keys: list[str]) -> list[dict]:
         return self.inner.remove(keys)
@@ -108,6 +113,9 @@ def test_a_large_photograph_is_replaced_by_a_small_one_under_a_new_key(pending) 
     # Never an overwrite: the old object is gone rather than rewritten, because
     # every avatar is served `immutable`.
     assert key not in bucket.inner.objects
+    # And stored to be served that way. Through `upload` it was stored as
+    # `max-age=private, max-age=31536000, immutable` (`storage_writes`).
+    assert bucket.inner.cache_control[new_key] == CACHE_FOREVER
     # Recorded before it was written and claimed once the row named it.
     assert pending.table(pending_uploads.TABLE).rows == []
 

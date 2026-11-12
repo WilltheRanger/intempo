@@ -59,6 +59,12 @@ const shape =
 
 const instrument = oneOf('violin', 'viola', 'cello', 'double_bass', 'alto_sax', 'tenor_sax');
 
+const pieceLabel = shape({
+  title: isString,
+  composer: nullable(isString),
+  tempo_beat_unit: nullable(isString),
+});
+
 const analysis = shape({
   id: isUuid,
   user_id: isUuid,
@@ -77,6 +83,8 @@ const analysis = shape({
   // Added after the rest (migration 025), so a server predating it may omit
   // it; absent reads as "no stage to show".
   stage: (value) => value === undefined || value === null || isString(value),
+  // Absent from a server that does not label takes; null for a deleted piece.
+  piece: (value) => value === undefined || value === null || pieceLabel(value),
 });
 
 const usage = shape({

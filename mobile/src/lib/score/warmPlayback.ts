@@ -9,6 +9,10 @@ import type { Instrument } from '../../data/types';
  * than real time** (5 s of audio in 216 ms, 60 s in 1325 ms), and parsing the
  * soundfont costs 24 ms. Rendering a minute-long passage is about a second.
  *
+ * A whole piece is three or four minutes, and there the render *was* the wait
+ * — 9.6 s on a laptop for 207 s of music (2026-10-23). The web player now
+ * starts on the opening while the rest renders (`audioChunks.ts`).
+ *
  * What is actually on the path between the tap and the first note is the
  * network, and none of it starts until the tap:
  *

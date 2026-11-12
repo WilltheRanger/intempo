@@ -317,6 +317,12 @@ slight_cents = 30.0
 # tracker slipping. A fifth of the owner's bass notes read that far off, which
 # per-note listening confirms was the previous note ringing into the window.
 not_this_note_cents = 100.0
+# Inside one note's own window, a frame further than this from the window's
+# coarse center is dropped before the median is read — a bow's residual noise
+# or the previous note's tail bleeding past `RELEASE_S` on fast playing, not
+# this note. 150: wide enough to leave ordinary vibrato alone, tight enough to
+# reject a bled-in neighbour (a semitone is 100 cents away).
+note_trim_cents = 150.0
 # Fewer measured notes than this and the take says nothing about pitch.
 min_notes = 8
 # A whole take this far from A = 440 is told so ("Tuned 25 cents sharp").

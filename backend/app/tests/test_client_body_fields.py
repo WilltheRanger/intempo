@@ -42,7 +42,7 @@ from fastapi import HTTPException
 import pytest
 
 from app.models.user import MeResponse, UpdateMeRequest, UsageResponse
-from app.routers.analyses import AnalysisResponse, CaptureReport, CreateAnalysisRequest
+from app.routers.analyses import CaptureReport, CreateAnalysisRequest, LabelledAnalysis
 from app.routers.corrections import Correction
 from app.routers.scores import (
     AttachScorePagesRequest,
@@ -295,7 +295,9 @@ RESPONSE_PAIRS: tuple[tuple[str, type], ...] = (
     ("MeResponse", MeResponse),
     ("UsageResponse", UsageResponse),
     ("ScoreResponse", ScoreResponse),
-    ("AnalysisResponse", AnalysisResponse),
+    # What `GET /v1/analyses` and `GET /v1/analyses/{id}` send: the take, and
+    # the label they add when asked for it.
+    ("AnalysisResponse", LabelledAnalysis),
     ("UploadResponse", UploadResponse),
 )
 
