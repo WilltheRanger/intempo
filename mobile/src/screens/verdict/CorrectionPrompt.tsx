@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { Check } from '../../components/icons';
 import { FadeIn, PopIn } from '../../components/motion';
 import { Text } from '../../components/primitives/Text';
+import { TextAction } from '../../components/primitives/TextAction';
 import type { UserVerdict } from '../../data/types';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import {
@@ -98,16 +99,12 @@ export function CorrectionPrompt({
           <Text variant="metadataSmall" color="textSecondary">
             {thanks.answer}
           </Text>
-          <Pressable
-            onPress={onChange}
-            accessibilityRole="button"
+          <TextAction
+            label="Change"
+            size="small"
             accessibilityLabel="Change your answer"
-            style={({ pressed }) => [styles.change, pressed && styles.changePressed]}
-          >
-            <Text variant="metadataSmall" color="accentText" style={styles.appsChoice}>
-              Change
-            </Text>
-          </Pressable>
+            onPress={onChange}
+          />
         </View>
       </FadeIn>
     );
@@ -192,6 +189,9 @@ export function CorrectionPrompt({
   );
 }
 
+/** The well's padding around its answers, as `SegmentedControl` draws it. */
+const TRACK_INSET = 3;
+
 const styles = StyleSheet.create({
   block: {
     paddingBottom: spacing.md,
@@ -206,7 +206,7 @@ const styles = StyleSheet.create({
     borderWidth: BORDER_WIDTH,
     borderColor: colors.border,
     borderRadius: radii.md,
-    padding: 3,
+    padding: TRACK_INSET,
     gap: 2,
   },
   choice: {
@@ -214,7 +214,8 @@ const styles = StyleSheet.create({
     minHeight: MIN_TOUCH_TARGET,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 9,
+    // Concentric with the well (`radii.ts`).
+    borderRadius: radii.md - TRACK_INSET,
   },
   choiceApps: {
     backgroundColor: colors.surface,

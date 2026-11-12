@@ -275,12 +275,15 @@ export function TempoScreen() {
         Hear the opening at the tempo on the screen, before committing to it —
         in setup only, and only once there is notation to play.
       */}
+      {/*
+        The button alone, under the quick picks it is heard at. "Hear bar 1"
+        stood beside it, a grey caption that read as a second control and
+        undersold the button, which plays on from bar 1 until it is stopped
+        (the UI review, 2026-11-12).
+      */}
       {setup && hasNotation && piece.score ? (
         <View style={styles.listen}>
           <ListenButton score={piece.score} bpm={quarter} />
-          <Text variant="metadata" color="textTertiary" style={styles.listenHint}>
-            Hear bar 1
-          </Text>
         </View>
       ) : null}
 
@@ -334,10 +337,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 28,
   },
+  // An action, so a capsule (`radii.ts`).
   tap: {
     height: 48,
     paddingHorizontal: 26,
-    borderRadius: 24,
+    borderRadius: radii.pill,
     justifyContent: 'center',
   },
   tapLabel: {
@@ -371,12 +375,7 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
   },
   listen: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.lg,
     marginTop: 36,
-  },
-  listenHint: {
-    flex: 1,
   },
 });

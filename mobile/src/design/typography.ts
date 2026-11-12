@@ -164,23 +164,18 @@ export const typography = {
     fontSize: 13,
     lineHeight: 18,
   },
-  /** Section labels. Sentence case — the brief rules out decorative uppercase. */
   /**
-   * The label above a group of content.
+   * **The app's one label register**: the name over a group of rows
+   * (`RuledHeading`), over a field (`Input`), and the kicker over a title
+   * ("Last 6 takes", "Warmup"). Sentence case, medium, a step under body.
    *
-   * Small, uppercase and letterspaced, so it reads as a different *register*
-   * from the content under it rather than as a smaller heading. That
-   * separation is what lets a screen carry several groups without their labels
-   * competing with the titles inside them.
-   *
-   * `letterSpacing` is absolute in React Native, not em: 1.1 is 0.09em at 12px.
+   * **There were three** until the UI review (2026-11-12): this; an `eyebrow`
+   * set in letterspaced capitals on Insights, Warmup and the bar editor; and
+   * caps field labels with "(optional)" in lower case beside them. The brief
+   * rules out decorative uppercase, and a comment saying so sat over the
+   * caps style itself. The register is carried by size, weight and the
+   * quieter ink, and the rule `RuledHeading` draws, not by capitals.
    */
-  eyebrow: {
-    fontFamily: fontFamily.sansMedium,
-    fontSize: 12,
-    lineHeight: 16,
-    letterSpacing: 1.1,
-  },
   sectionLabel: {
     fontFamily: fontFamily.sansMedium,
     fontSize: 13,
@@ -227,8 +222,7 @@ export const typography = {
    * The smallest running text: a clock under a scrubber, the line under a
    * setting's label. The redesign set both at 11; 12 since the owner found the
    * app hard to read (2026-09-25), and 12 is the smallest size anything in the
-   * app is set in. Regular weight and no tracking, which is what separates it
-   * from `eyebrow`.
+   * app is set in. Regular weight, which is what separates it from a label.
    */
   caption: {
     fontFamily: fontFamily.sansRegular,

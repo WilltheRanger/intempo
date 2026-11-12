@@ -29,6 +29,7 @@ import {
   Text,
   ToggleRow,
 } from '../../components/primitives';
+import { TextAction } from '../../components/primitives/TextAction';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePiece } from '../../data/hooks/usePieces';
 import { usePieceHistory } from '../../data/hooks/useLatestTake';
@@ -122,7 +123,6 @@ import { ScoreScroll } from '../../components/score/ScoreScroll';
 import { startBarFor, startOptions } from '../../lib/record/startOptions';
 import { entryAccessibilityLabel, entryRowLabel } from '../../lib/score/entryCopy';
 import { ListenPlayer } from './ListenPlayer';
-import { PillRow } from './PillRow';
 import { StartFromSheet } from './StartFromSheet';
 import { scheduleScore, startableMeasures } from '../../lib/score';
 import { startFromMeasure } from '../../lib/score/startFrom';
@@ -1409,20 +1409,11 @@ export function RecordScreen() {
           </Text>
         </View>
         {canLeave ? (
-          <Pressable
+          <TextAction
+            label="Leave while it works"
             onPress={() => navigation.popTo('Tabs', { screen: 'Library' } as never)}
-            accessibilityRole="button"
-            style={({ pressed }) => [
-              styles.quiet,
-              styles.leave,
-              { bottom: spacing['3xl'] + insets.bottom },
-              pressed && styles.quietPressed,
-            ]}
-          >
-            <Text variant="metadata" color="textSecondary">
-              Leave while it works
-            </Text>
-          </Pressable>
+            style={[styles.leave, { bottom: spacing['3xl'] + insets.bottom }]}
+          />
         ) : null}
       </ScreenContainer>
     );
@@ -1515,51 +1506,52 @@ export function RecordScreen() {
               shared state both read, so coming back shows the new number with
               no hand-off.
             */}
-            <PillRow
-              label="Tempo"
-              value={`${displayedBpm} ${tempoUnitLabel(tempoBeatUnit)}`}
-              chevron="right"
-              onPress={() => navigation.navigate('Tempo', { pieceId: params.pieceId })}
-              accessibilityLabel={`Tempo ${displayedBpm} ${tempoUnitLabel(tempoBeatUnit)}. Change it`}
-            />
             {/*
-              **One bar for both**, which is what makes it safe to say so. The
-              take carries this bar to the server, which trims the score before
-              building its timeline — so hearing the passage and recording it
-              start in the same place, and the analysis is told which.
+              The app's settings row (`LinkRow`), as on Upload and the score:
+              these were the same rows with each value in a bordered pill.
+              Closed by a rule under the last one, whichever that is.
             */}
-            <PillRow
-              // The words say the bar governs the take — `entryCopy`.
-              label={entryRowLabel('take')}
-              value={`Bar ${startFrom}`}
-              chevron="down"
-              onPress={() => setPickingStart(true)}
-              accessibilityLabel={entryAccessibilityLabel('take', startFrom)}
-            />
-            <PillRow
-              label="Metronome"
-              value={metronomeValueLabel(metronomeMode)}
-              chevron="down"
-              onPress={() => setPickingMetronome(true)}
-              accessibilityLabel={`Metronome ${metronomeValueLabel(metronomeMode)}. Choose how the beat is marked`}
-              last={skippable === 0}
-            />
-            {/*
-              Only where there is something to skip — a control that is always
-              there and does nothing on most pieces teaches a musician to stop
-              reading the controls. The redesign does not draw it because its
-              sample piece has no long rests; a piece that does needs it, or the
-              take is judged against rests it skipped.
-            */}
-            {skippable > 0 ? (
-              <View style={styles.lastRow}>
+            <View style={styles.settings}>
+              <LinkRow
+                label="Tempo"
+                value={`${displayedBpm} ${tempoUnitLabel(tempoBeatUnit)}`}
+                onPress={() => navigation.navigate('Tempo', { pieceId: params.pieceId })}
+                accessibilityLabel={`Tempo ${displayedBpm} ${tempoUnitLabel(tempoBeatUnit)}. Change it`}
+              />
+              {/*
+                **One bar for both**, which is what makes it safe to say so. The
+                take carries this bar to the server, which trims the score before
+                building its timeline — so hearing the passage and recording it
+                start in the same place, and the analysis is told which.
+              */}
+              <LinkRow
+                // The words say the bar governs the take — `entryCopy`.
+                label={entryRowLabel('take')}
+                value={`Bar ${startFrom}`}
+                onPress={() => setPickingStart(true)}
+                accessibilityLabel={entryAccessibilityLabel('take', startFrom)}
+              />
+              <LinkRow
+                label="Metronome"
+                value={metronomeValueLabel(metronomeMode)}
+                onPress={() => setPickingMetronome(true)}
+                accessibilityLabel={`Metronome ${metronomeValueLabel(metronomeMode)}. Choose how the beat is marked`}
+              />
+              {/*
+                Only where there is something to skip — a control that is always
+                there and does nothing on most pieces teaches a musician to stop
+                reading the controls. The redesign does not draw it because its
+                sample piece has no long rests; a piece that does needs it, or the
+                take is judged against rests it skipped.
+              */}
+              {skippable > 0 ? (
                 <ToggleRow
                   label={`Skip ${skippable} ${skippable === 1 ? 'bar' : 'bars'} of rest`}
                   value={skipRests}
                   onChange={setSkipRests}
                 />
-              </View>
-            ) : null}
+              ) : null}
+            </View>
 
             {/*
               **A feature named in the settings and connected to nothing was
@@ -1740,16 +1732,12 @@ export function RecordScreen() {
               disabled={!takeReady || Boolean(limitMessage)}
               loading={!takeReady}
             />
-            <Pressable
+            <TextAction
+              label="Record again"
               onPress={discardReview}
               disabled={!takeReady}
-              accessibilityRole="button"
-              style={({ pressed }) => [styles.quiet, pressed && styles.quietPressed]}
-            >
-              <Text variant="metadata" color="textSecondary">
-                Record again
-              </Text>
-            </Pressable>
+              style={styles.quiet}
+            />
           </>
         ) : (
           <RecordButton
@@ -2057,7 +2045,7 @@ const styles = StyleSheet.create({
   playerGap: {
     height: 14,
   },
-  lastRow: {
+  settings: {
     borderBottomWidth: BORDER_WIDTH,
     borderBottomColor: colors.border,
   },
@@ -2199,13 +2187,7 @@ const styles = StyleSheet.create({
    * wait. No fill and no border (§3 law 6), 44pt tall, dimmed while pressed.
    */
   quiet: {
-    minHeight: MIN_TOUCH_TARGET,
-    alignItems: 'center',
-    justifyContent: 'center',
     marginTop: spacing.sm,
-  },
-  quietPressed: {
-    opacity: 0.55,
   },
   leave: {
     position: 'absolute',

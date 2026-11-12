@@ -10,7 +10,7 @@ import {
   Trash2,
 } from '../../components/icons';
 import { useRef, useState } from 'react';
-import { Animated, Pressable, StyleSheet, View } from 'react-native';
+import { Animated, StyleSheet, View } from 'react-native';
 import { ComposerField } from '../../components/pieces/ComposerField';
 import { useFieldOrder } from '../../components/primitives/useFieldOrder';
 
@@ -38,6 +38,7 @@ import {
   SecondaryButton,
   Text,
 } from '../../components/primitives';
+import { TextAction } from '../../components/primitives/TextAction';
 import {
   useDeletePiece,
   usePiece,
@@ -45,7 +46,7 @@ import {
   useUpdatePiece,
 } from '../../data/hooks/usePieces';
 import type { Piece } from '../../data/types';
-import { BORDER_WIDTH, MIN_TOUCH_TARGET, colors, spacing } from '../../design';
+import { BORDER_WIDTH, colors, spacing } from '../../design';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
 import { lastTakeLine } from '../../lib/insights/pieceHistory';
 import { practiceLabel, practicePassage } from '../../lib/verdict/passage';
@@ -262,15 +263,11 @@ export function PieceDetailScreen() {
                   })
                 }
               />
-              <Pressable
+              <TextAction
+                label="From the start"
                 onPress={() => navigation.navigate('Record', { pieceId: piece.id })}
-                accessibilityRole="button"
-                style={({ pressed }) => [styles.quiet, pressed && styles.quietPressed]}
-              >
-                <Text variant="metadata" color="textTertiary">
-                  From the start
-                </Text>
-              </Pressable>
+                style={styles.quiet}
+              />
             </View>
           ) : (
             <PrimaryButton
@@ -622,14 +619,7 @@ export function PieceDetailScreen() {
 const styles = StyleSheet.create({
   /** "From the start", under the passage's button: the result screen's quiet line. */
   quiet: {
-    alignSelf: 'center',
-    justifyContent: 'center',
-    minHeight: MIN_TOUCH_TARGET,
-    paddingHorizontal: spacing.lg,
     marginTop: spacing.xs,
-  },
-  quietPressed: {
-    opacity: 0.55,
   },
   editCard: {
     marginTop: spacing.lg,

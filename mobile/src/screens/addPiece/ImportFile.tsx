@@ -15,6 +15,7 @@ import {
   SecondaryButton,
   Text,
 } from '../../components/primitives';
+import { TextAction } from '../../components/primitives/TextAction';
 import { useImportPiece } from '../../data/hooks/usePieces';
 import { BORDER_WIDTH, colors, MIN_TOUCH_TARGET, spacing } from '../../design';
 import {
@@ -245,14 +246,7 @@ export function ImportFileScreen() {
             {chosenPart ? `${chosen.fileName} · ${chosenPart.name}` : chosen.fileName}
           </Text>
           {chosen.parts.length > 1 && !choosingPart ? (
-            <Pressable
-              onPress={() => setPart(null)}
-              accessibilityRole="button"
-              accessibilityLabel="Change part"
-              style={({ pressed }) => [styles.change, pressed && styles.pressed]}
-            >
-              <Text variant="sectionAction">Change part</Text>
-            </Pressable>
+            <TextAction label="Change part" size="small" onPress={() => setPart(null)} />
           ) : null}
         </View>
       )}
@@ -339,10 +333,6 @@ const styles = StyleSheet.create({
   },
   fileName: {
     flex: 1,
-  },
-  change: {
-    justifyContent: 'center',
-    minHeight: MIN_TOUCH_TARGET,
   },
   action: {
     marginTop: spacing['2xl'],

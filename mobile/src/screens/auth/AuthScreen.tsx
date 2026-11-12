@@ -23,6 +23,7 @@ import {
 } from '../../components/primitives';
 import { SCREEN_GUTTER } from '../../components/primitives/ScreenContainer';
 import { useFieldOrder } from '../../components/primitives/useFieldOrder';
+import { TextAction } from '../../components/primitives/TextAction';
 import {
   type AuthResult,
   hasSession,
@@ -344,8 +345,8 @@ export function AuthScreen() {
         // The two things you can ask for from the sign-in form, on one line:
         // a link instead of a password, and a link because you have forgotten it.
         <View style={styles.signInLinks}>
-          <TextLink label="Email me a link" onPress={() => go('magicLink')} />
-          <TextLink label="Forgot password?" onPress={() => go('reset')} />
+          <TextAction label="Email me a link" onPress={() => go('magicLink')} />
+          <TextAction label="Forgot password?" onPress={() => go('reset')} />
         </View>
       ) : null}
 
@@ -356,7 +357,7 @@ export function AuthScreen() {
       */}
       {mode === 'magicLink' || mode === 'reset' ? (
         <View style={styles.signInLinks}>
-          <TextLink label="Use a password" onPress={() => go('signIn')} />
+          <TextAction label="Use a password" align="start" onPress={() => go('signIn')} />
         </View>
       ) : null}
 
@@ -558,21 +559,6 @@ function SignInFrame({
   );
 }
 
-/** A link-coloured word at a full touch target: "Email me a link". */
-function TextLink({ label, onPress }: { label: string; onPress: () => void }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      style={({ pressed }) => [styles.target, pressed && styles.pressed]}
-    >
-      <Text variant="metadata" color="accentText">
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
 /**
  * A link inside a sentence, with a touch target taller than its line.
  *
@@ -598,19 +584,7 @@ function InlineLink({ label, onPress }: { label: string; onPress: () => void }) 
 
 /** The other door: "Create an account", "Sign in instead", "Back to sign in". */
 function SwitchLine({ action, onPress }: { action: string; onPress: () => void }) {
-  return (
-    <View style={styles.switch}>
-      <Pressable
-        onPress={onPress}
-        accessibilityRole="button"
-        style={({ pressed }) => [styles.target, pressed && styles.pressed]}
-      >
-        <Text variant="metadata" color="accentText" style={styles.switchAction}>
-          {action}
-        </Text>
-      </Pressable>
-    </View>
-  );
+  return <TextAction label={action} onPress={onPress} style={styles.switch} />;
 }
 
 const SIGN_IN_PHOTO = require('../../../assets/hero/signin-hero.jpg');
@@ -709,13 +683,6 @@ const styles = StyleSheet.create({
     marginTop: spacing['2xl'],
   },
   switch: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    alignItems: 'center',
     marginTop: spacing.md,
-  },
-  switchAction: {
-    fontFamily: fontFamily.sansMedium,
   },
 });

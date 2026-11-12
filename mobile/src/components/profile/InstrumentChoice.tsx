@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { spacing } from '../../design';
+import { radii, spacing } from '../../design';
 import type { Instrument } from '../../data/types';
 import { INSTRUMENT_GROUPS } from '../../lib/instrumentGroups';
 import { INSTRUMENT_LABELS } from '../../lib/warmup';
@@ -104,7 +104,6 @@ function Cell({
 }
 
 const CELL_HEIGHT = 80;
-const CELL_RADIUS = 14;
 
 const styles = StyleSheet.create({
   laterGroup: {
@@ -133,6 +132,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: CELL_RADIUS,
+    // A choice, so `md` — never the button's capsule (`radii.ts`).
+    borderRadius: radii.md,
   },
 });

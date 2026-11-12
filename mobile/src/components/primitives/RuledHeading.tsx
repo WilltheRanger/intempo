@@ -21,9 +21,10 @@ export interface RuledHeadingProps {
  * on a rule rather than in a box (`redesign/Verdict.dc.html`,
  * `redesign/Profile.dc.html`).
  *
- * It replaces `SectionHeader`'s uppercase eyebrow on redesigned screens. The
- * rule does the separating the letterspacing used to, which leaves the label
- * free to read as words. Spacing around it is the caller's: a heading over a
+ * Every group label in the app is one of these (2026-11-12, the last caps
+ * eyebrows on Insights and the bar editor included). The rule does the
+ * separating that letterspacing used to, which leaves the label free to read
+ * as words. Spacing around it is the caller's: a heading over a
  * chart wants room below it, one over a list of ruled rows wants none.
  */
 export function RuledHeading({ label, rule = 'border', style }: RuledHeadingProps) {

@@ -1,12 +1,13 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 
 import { PressableScale } from '../../components/motion';
 import { PieceHeading } from '../../components/pieces/PieceHeading';
 import { Text } from '../../components/primitives/Text';
+import { TextAction } from '../../components/primitives/TextAction';
 import { ScoreBand } from '../../components/score/ScoreBand';
 import type { Piece, PieceInsight, TakeResult } from '../../data/types';
-import { BORDER_WIDTH, MIN_TOUCH_TARGET, colors, radii, spacing } from '../../design';
+import { BORDER_WIDTH, colors, radii, spacing } from '../../design';
 import { formatLastPracticedShort, joinMetadata } from '../../lib/format';
 import { pieceStatus } from '../../lib/library/pieceStatus';
 import {
@@ -224,35 +225,22 @@ export function PieceTile({
       {unreadable && (onReadAgain || onDiscard) ? (
         <View style={styles.actions}>
           {state.canReadAgain && onReadAgain ? (
-            <Pressable
+            <TextAction
+              label={READ_AGAIN_LABEL}
+              size="small"
               onPress={onReadAgain}
               disabled={busy}
-              accessibilityRole="button"
-              accessibilityState={{ disabled: busy, busy }}
               accessibilityLabel={`Read ${piece.title} again`}
-              style={({ pressed }) => [styles.action, pressed && styles.actionPressed]}
-            >
-              <Text
-                variant="sectionAction"
-                color={busy ? 'textTertiary' : 'textPrimary'}
-              >
-                {READ_AGAIN_LABEL}
-              </Text>
-            </Pressable>
+            />
           ) : null}
           {onDiscard ? (
-            <Pressable
+            <TextAction
+              label={DISCARD_LABEL}
+              size="small"
               onPress={onDiscard}
               disabled={busy}
-              accessibilityRole="button"
-              accessibilityState={{ disabled: busy }}
               accessibilityLabel={`Discard ${piece.title}`}
-              style={({ pressed }) => [styles.action, pressed && styles.actionPressed]}
-            >
-              <Text variant="sectionAction" color="textTertiary">
-                {DISCARD_LABEL}
-              </Text>
-            </Pressable>
+            />
           ) : null}
         </View>
       ) : null}
@@ -306,13 +294,6 @@ const styles = StyleSheet.create({
     // ordinary sizes, two when the type is large enough to need them.
     flexWrap: 'wrap',
     columnGap: spacing.md,
-  },
-  action: {
-    minHeight: MIN_TOUCH_TARGET,
-    justifyContent: 'center',
-  },
-  actionPressed: {
-    opacity: 0.6,
   },
   // The shelf's serif, a size under `pieceTitle`: a tile is half a screen
   // wide and a repertoire title gets two narrow lines here.

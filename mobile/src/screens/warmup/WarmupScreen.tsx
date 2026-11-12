@@ -79,13 +79,14 @@ export function WarmupScreen() {
         a chevron in a white disc, announced as "Back to today", a tab that no
         longer exists; no other pushed screen draws its way back as a disc.
 
-        "Warmup" is the eyebrow over the exercise, as Insights' count is over
-        its finding: the screen is the warmup, and which one changes daily.
+        "Warmup" is the kicker over the exercise, as Insights' count is over
+        its finding: the screen is the warmup, and which one changes daily. In
+        the app's one label register, sentence case (2026-11-12).
       */}
       <View style={styles.nav}>
         <BackLink label="Back to profile" onPress={goBack} />
       </View>
-      <Text variant="eyebrow" color="textTertiary" style={styles.eyebrow}>
+      <Text variant="sectionLabel" color="textTertiary" style={styles.kicker}>
         Warmup
       </Text>
       <Text variant="heroTitle" accessibilityRole="header">
@@ -162,10 +163,9 @@ const styles = StyleSheet.create({
   nav: {
     paddingTop: spacing.md,
   },
-  eyebrow: {
-    textTransform: 'uppercase',
+  kicker: {
     marginTop: spacing.lg,
-    marginBottom: 6,
+    marginBottom: spacing.xs,
   },
   focus: {
     marginTop: spacing.xs,

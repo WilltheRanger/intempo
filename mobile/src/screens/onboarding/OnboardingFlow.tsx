@@ -5,7 +5,7 @@ import { Input, Text, choiceTile } from '../../components/primitives';
 import { InstrumentChoice } from '../../components/profile/InstrumentChoice';
 import { preferences, usePreferences } from '../../data/preferences';
 import type { Instrument } from '../../data/types';
-import { spacing } from '../../design';
+import { radii, spacing } from '../../design';
 import type { PickedPhoto } from '../../lib/onboarding';
 import {
   canContinue,
@@ -221,13 +221,13 @@ export function OnboardingFlow({
   }
 }
 
-const CHOICE_RADIUS = 14;
 
 const styles = StyleSheet.create({
   roleChoice: {
     paddingVertical: spacing.lg,
     paddingHorizontal: 18,
     marginBottom: 10,
-    borderRadius: CHOICE_RADIUS,
+    // A choice, so `md` — never the button's capsule (`radii.ts`).
+    borderRadius: radii.md,
   },
 });

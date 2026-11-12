@@ -8,6 +8,7 @@ import { AddPieceSheet } from '../../components/pieces/AddPieceSheet';
 import {
   EmptyState,
   PageHeader,
+  RuledHeading,
   ScreenContainer,
   SecondaryButton,
   Text,
@@ -17,7 +18,7 @@ import { useInsights } from '../../data/hooks/useInsights';
 import { useLibrary } from '../../data/hooks/usePieces';
 import { useRecentTakes } from '../../data/hooks/useLatestTake';
 import { describeLoadError } from '../../data/describeLoadError';
-import { colors, fontFamily, spacing, ICON_SIZE, ICON_STROKE_WIDTH } from '../../design';
+import { colors, spacing, ICON_SIZE, ICON_STROKE_WIDTH } from '../../design';
 import { readTendency } from '../../lib/insights/tendency';
 import { axisLabels, sessionTrendData, sessionTrendFrom } from '../../lib/insights/sessionTrend';
 import { worthALook } from '../../lib/insights/passageTempo';
@@ -50,8 +51,8 @@ import { loadStateFor } from '../../lib/loadState';
  * boxes in fact, stacked on the page ground, each carrying the same visual
  * weight: from three feet away the screen read as a column of white rectangles
  * with no first thing to look at (§3 laws 3, 4 and 8). The screen name moved
- * into the eyebrow, where a screen the tab bar already names belongs, and the
- * verdict took the title.
+ * into the kicker over the title, where a screen the tab bar already names
+ * belongs, and the verdict took the title.
  *
  * **Nothing here is a card any more.** The tendency, its bar and its two end
  * labels are one thought, and typography groups them — a border around them
@@ -226,7 +227,12 @@ export function InsightsScreen() {
         title — the tab bar already says Insights — so the finding is the
         heading.
       */}
-      <Text variant="eyebrow" color="textTertiary" style={styles.eyebrow}>
+      {/*
+        The count the finding is about, over it in the label register. It was
+        a caps eyebrow, one of three label styles; the app has one now,
+        sentence case (the UI review, 2026-11-12).
+      */}
+      <Text variant="sectionLabel" color="textTertiary" style={styles.kicker}>
         {sessionTrend
           ? `Last ${sessionTrend.points.length} takes`
           : windowLabel(insights.windowDays)}
@@ -266,10 +272,12 @@ export function InsightsScreen() {
       */}
       {pitchLine ? (
         <View style={styles.pitch}>
-          <Text variant="eyebrow" color="textTertiary" style={styles.eyebrowCaps}>
-            In tune
-          </Text>
-          <Text variant="metadata" color="textSecondary" style={styles.pitchSentence}>
+          <RuledHeading label="In tune" />
+          {/*
+            In ink: the finding is the section's content, and its heading the
+            label over it. Both grey, the two read as one register.
+          */}
+          <Text variant="metadata" style={styles.pitchSentence}>
             {pitchLine}
           </Text>
           {pitchTrend && pitchData ? (
@@ -293,10 +301,8 @@ export function InsightsScreen() {
       */}
       {notesHabit ? (
         <View style={styles.pitch}>
-          <Text variant="eyebrow" color="textTertiary" style={styles.eyebrowCaps}>
-            By note
-          </Text>
-          <Text variant="metadata" color="textSecondary" style={styles.pitchSentence}>
+          <RuledHeading label="By note" />
+          <Text variant="metadata" style={styles.pitchSentence}>
             {notesHabit.line}
           </Text>
           <View style={styles.pitchChart}>
@@ -325,9 +331,7 @@ export function InsightsScreen() {
             button: still the thing to do next, no longer the first thing seen.
           */}
           <View style={styles.worth}>
-            <Text variant="eyebrow" color="textTertiary" style={styles.eyebrowCaps}>
-              Worth a look
-            </Text>
+            <RuledHeading label="Worth a look" />
             <PieceHeading
               title={focus.title}
               variant="heroTitle"
@@ -397,7 +401,7 @@ export function InsightsScreen() {
             aria-expanded={showAll}
             style={({ pressed }) => [styles.toggle, pressed && styles.togglePressed]}
           >
-            <Text variant="metadata" color="accentText" style={styles.toggleLabel}>
+            <Text variant="metadata" color="accentText">
               {showAll ? 'Show less' : `See all ${others.length} pieces`}
             </Text>
             {/* Turned on a wrapper: a transform on the icon itself is lost on web. */}
@@ -407,14 +411,13 @@ export function InsightsScreen() {
           </Pressable>
           {showAll ? (
             <View style={styles.list}>
-              <Text variant="eyebrow" color="textTertiary" style={styles.eyebrowCaps}>
-                Your pieces
-              </Text>
+              <RuledHeading label="Your pieces" />
               <View style={styles.rows}>
-                {others.map((piece) => (
+                {others.map((piece, index) => (
                   <PieceInsightRow
                     key={piece.pieceId}
                     insight={piece}
+                    divided={index > 0}
                     onPress={() => navigation.navigate('PieceDetail', { pieceId: piece.pieceId })}
                   />
                 ))}
@@ -444,13 +447,9 @@ export function InsightsScreen() {
 }
 
 const styles = StyleSheet.create({
-  eyebrow: {
-    textTransform: 'uppercase',
+  kicker: {
     marginTop: spacing.xl,
-    marginBottom: 6,
-  },
-  eyebrowCaps: {
-    textTransform: 'uppercase',
+    marginBottom: spacing.xs,
   },
   detail: {
     marginTop: spacing.md,
@@ -486,9 +485,6 @@ const styles = StyleSheet.create({
   },
   togglePressed: {
     opacity: 0.55,
-  },
-  toggleLabel: {
-    fontFamily: fontFamily.sansMedium,
   },
   chevronOpen: {
     transform: [{ rotate: '180deg' }],

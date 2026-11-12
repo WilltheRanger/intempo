@@ -91,6 +91,9 @@ export function SegmentedControl<T extends string>({
   );
 }
 
+/** The well's padding around its tiles. */
+const TRACK_INSET = 3;
+
 const styles = StyleSheet.create({
   /**
    * The redesign's track (`redesign/Profile.dc.html`): a sunken well with a
@@ -103,7 +106,7 @@ const styles = StyleSheet.create({
     borderWidth: BORDER_WIDTH,
     borderColor: colors.border,
     borderRadius: radii.md,
-    padding: 3,
+    padding: TRACK_INSET,
     gap: 2,
   },
   segment: {
@@ -112,7 +115,8 @@ const styles = StyleSheet.create({
     minHeight: MIN_TOUCH_TARGET,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 9,
+    // Concentric with the track it sits in (`radii.ts`).
+    borderRadius: radii.md - TRACK_INSET,
   },
   segmentSelected: {
     backgroundColor: colors.surface,

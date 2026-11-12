@@ -2,7 +2,7 @@ import { useNavigation, useRoute, type RouteProp } from '@react-navigation/nativ
 import { useGoBack } from '../../navigation/useGoBack';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import {
   BackLink,
@@ -13,10 +13,11 @@ import {
   SegmentedControl,
   Text,
 } from '../../components/primitives';
+import { TextAction } from '../../components/primitives/TextAction';
 import { VerdictSkeleton } from '../../components/skeletons';
 import { takeSource } from '../../data/sources';
 import type { MeasureVerdict, TakeResult, UserVerdict } from '../../data/types';
-import { MIN_TOUCH_TARGET, spacing } from '../../design';
+import { spacing } from '../../design';
 import { formatTakeVerdict } from '../../lib/tempo';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
 import { appVerdictForBar, barTempo } from '../../lib/verdict/barTempo';
@@ -388,15 +389,7 @@ export function VerdictScreen() {
                 })
               }
             />
-            <Pressable
-              onPress={recordAgain}
-              accessibilityRole="button"
-              style={({ pressed }) => [styles.quiet, pressed && styles.quietPressed]}
-            >
-              <Text variant="metadata" color="textTertiary">
-                Record again
-              </Text>
-            </Pressable>
+            <TextAction label="Record again" onPress={recordAgain} style={styles.quiet} />
           </View>
         ) : (
           <PrimaryButton label="Record again" onPress={recordAgain} />
@@ -617,13 +610,6 @@ const styles = StyleSheet.create({
   },
   /** "Record again" under the passage: quiet, and still a 44pt target. */
   quiet: {
-    alignSelf: 'center',
-    justifyContent: 'center',
-    minHeight: MIN_TOUCH_TARGET,
-    paddingHorizontal: spacing.lg,
     marginTop: spacing.xs,
-  },
-  quietPressed: {
-    opacity: 0.55,
   },
 });

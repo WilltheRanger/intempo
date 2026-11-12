@@ -10,6 +10,8 @@ import { sessionLabel } from '../../lib/format';
 export interface PieceInsightRowProps {
   insight: PieceInsight;
   onPress: () => void;
+  /** Hairline above the row. Off for the first, under its heading (`rowMetrics`). */
+  divided?: boolean;
 }
 
 /**
@@ -23,7 +25,7 @@ export interface PieceInsightRowProps {
  * It opens the piece: a screen that names your pieces and measures them and
  * then does not open them is a report rather than an app.
  */
-export function PieceInsightRow({ insight, onPress }: PieceInsightRowProps) {
+export function PieceInsightRow({ insight, onPress, divided = true }: PieceInsightRowProps) {
   // "Tempo wandered" where a direction would be false — see `readPieceWord`.
   const word = readPieceWord(insight);
 
@@ -33,7 +35,7 @@ export function PieceInsightRow({ insight, onPress }: PieceInsightRowProps) {
       accessibilityRole="button"
       accessibilityLabel={`${insight.title}. ${word} across ${sessionLabel(insight.sessions)}.`}
       activeScale={0.99}
-      style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+      style={({ pressed }) => [styles.row, divided && styles.divided, pressed && styles.pressed]}
     >
       <Text variant="metadata" numberOfLines={1} style={styles.title}>
         {insight.title}
@@ -51,6 +53,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     minHeight: MIN_TOUCH_TARGET,
+  },
+  divided: {
     borderTopWidth: BORDER_WIDTH,
     borderTopColor: colors.border,
   },

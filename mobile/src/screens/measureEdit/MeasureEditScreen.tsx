@@ -20,11 +20,14 @@ import { BottomSheet } from '../../components/overlays/BottomSheet';
 import { useCorrectScore, usePiece } from '../../data/hooks/usePieces';
 import type { Clef, ScoreJson, ScoreNote, ScoreTempoChange } from '../../data/types';
 import { Check, Minus, Plus } from '../../components/icons';
+import { TrailingChevron } from '../../components/primitives/TrailingChevron';
+import { ROW_PADDING_VERTICAL } from '../../components/rowMetrics';
 import {
   BORDER_WIDTH,
   colors,
   disabledOpacity,
   fontFamily,
+  MIN_TOUCH_TARGET,
   pressedOpacity,
   radii,
   spacing,
@@ -741,22 +744,12 @@ export function MeasureEditScreen() {
         invite spellings the engraver cannot read, so this opens the complete
         set of fifteen printed signatures.
       */}
-      <Text variant="caption" color="textTertiary" style={styles.keyLabel}>
-        {isFirstBar ? 'Opening key' : 'Key'}
-      </Text>
-      <Pressable
+      <SettingRow
+        name={isFirstBar ? 'Opening key' : 'Key'}
+        value={keyDescription}
         onPress={() => setPickingKey(true)}
-        accessibilityRole="button"
         accessibilityLabel={`Change key signature. ${keyDescription}`}
-        style={({ pressed }) => [styles.keySetting, pressed && styles.pressed]}
-      >
-        <View style={styles.keyCopy}>
-          <Text variant="body" style={styles.settingValue}>{keyDescription}</Text>
-        </View>
-        <Text variant="metadata" color="accentText" style={styles.change}>
-          Change
-        </Text>
-      </Pressable>
+      />
 
       {/*
         And the clef, which is bar-level music for the same reason.
@@ -766,27 +759,17 @@ export function MeasureEditScreen() {
         a sixth off — so a misread one had to be correctable without
         re-scanning the page.
       */}
-      <Text variant="caption" color="textTertiary" style={styles.keyLabel}>
-        {isFirstBar ? 'Opening clef' : 'Clef'}
-      </Text>
-      <Pressable
+      <SettingRow
+        name={isFirstBar ? 'Opening clef' : 'Clef'}
+        value={clefDescription}
+        hint={
+          !isFirstBar && workingClef === null
+            ? 'Choose a clef only if a new one is printed at this bar.'
+            : null
+        }
         onPress={() => setPickingClef(true)}
-        accessibilityRole="button"
         accessibilityLabel={`Change clef. ${clefDescription}`}
-        style={({ pressed }) => [styles.keySetting, pressed && styles.pressed]}
-      >
-        <View style={styles.keyCopy}>
-          <Text variant="body" style={styles.settingValue}>{clefDescription}</Text>
-          {!isFirstBar && workingClef === null ? (
-            <Text variant="metadataSmall" color="textTertiary">
-              Choose a clef only if a new one is printed at this bar.
-            </Text>
-          ) : null}
-        </View>
-        <Text variant="metadata" color="accentText" style={styles.change}>
-          Change
-        </Text>
-      </Pressable>
+      />
 
       {/*
         A tempo change printed at this bar — "poco rit.", "a tempo", "meno
@@ -794,27 +777,13 @@ export function MeasureEditScreen() {
         "how am I supposed to account for tempo variations or where it says
         poco"), so a musician marks it here, where the key and clef are.
       */}
-      <Text variant="caption" color="textTertiary" style={styles.keyLabel}>
-        Tempo
-      </Text>
-      <Pressable
+      <SettingRow
+        name="Tempo"
+        value={tempoDescription}
+        hint={workingTempo === null ? 'Mark one where the page prints it.' : null}
         onPress={openTempo}
-        accessibilityRole="button"
         accessibilityLabel={`Change the tempo marking. ${tempoDescription}`}
-        style={({ pressed }) => [styles.keySetting, pressed && styles.pressed]}
-      >
-        <View style={styles.keyCopy}>
-          <Text variant="body" style={styles.settingValue}>{tempoDescription}</Text>
-          {workingTempo === null ? (
-            <Text variant="metadataSmall" color="textTertiary">
-              Mark one where the page prints it.
-            </Text>
-          ) : null}
-        </View>
-        <Text variant="metadata" color="accentText" style={styles.change}>
-          Change
-        </Text>
-      </Pressable>
+      />
       </View>
 
       <BottomSheet
@@ -966,6 +935,54 @@ export function MeasureEditScreen() {
 }
 
 /**
+ * The bar's key, clef or tempo: what it is, and a way to change it.
+ *
+ * **The app's settings row**, top-ruled and closed by the group's rule
+ * (`rowMetrics`), with the value under its name because a key's reads
+ * "2 flats · B♭ major / G minor" and would not fit beside it. These were three
+ * caps labels over three boxed rows, each with a gold "Change", the only
+ * place in the app a setting looked like that (the UI review, 2026-11-12: one
+ * label style, one row). The chevron says the row opens; the sheet it opens
+ * is where the choosing happens.
+ */
+function SettingRow({
+  name,
+  value,
+  hint = null,
+  onPress,
+  accessibilityLabel,
+}: {
+  name: string;
+  value: string;
+  /** What to do about it, while nothing is marked. */
+  hint?: string | null;
+  onPress: () => void;
+  accessibilityLabel: string;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      style={({ pressed }) => [styles.setting, pressed && styles.pressed]}
+    >
+      <View style={styles.settingCopy}>
+        <Text variant="rowLabel">{name}</Text>
+        <Text variant="metadata" color="textSecondary">
+          {value}
+        </Text>
+        {hint ? (
+          <Text variant="caption" color="textTertiary">
+            {hint}
+          </Text>
+        ) : null}
+      </View>
+      <TrailingChevron />
+    </Pressable>
+  );
+}
+
+/**
  * One row of the key, clef and tempo sheets.
  *
  * **The chosen row carries a check**, the mark every other list in the app
@@ -1035,8 +1052,11 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
     marginBottom: spacing.lg,
   },
+  // Closed by a rule under the last row; each row rules its own top.
   barSettings: {
     marginTop: spacing['3xl'],
+    borderBottomWidth: BORDER_WIDTH,
+    borderBottomColor: colors.border,
   },
   valueChip: {
     minWidth: 52,
@@ -1079,38 +1099,21 @@ const styles = StyleSheet.create({
     fontSize: 17,
     lineHeight: 22,
   },
-  settingValue: {
-    fontSize: 17,
-    lineHeight: 22,
-  },
-  change: {
-    fontSize: 15,
-  },
   beatsOff: {
     // `accentText`, not `accent`: this is type on the ivory ground, where the
     // plain accent measures 3.26:1 and fails. See `colors.accentText`.
     color: colors.accentText,
   },
-  keyLabel: {
-    marginTop: spacing['2xl'],
-    fontSize: 12,
-    lineHeight: 16,
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
-  },
-  keySetting: {
-    minHeight: 56,
-    marginTop: spacing.sm,
-    marginBottom: spacing.xl,
-    paddingVertical: spacing.sm,
+  setting: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
+    minHeight: MIN_TOUCH_TARGET,
+    paddingVertical: ROW_PADDING_VERTICAL,
     borderTopWidth: BORDER_WIDTH,
-    borderBottomWidth: BORDER_WIDTH,
-    borderColor: colors.border,
+    borderTopColor: colors.border,
   },
-  keyCopy: {
+  settingCopy: {
     flex: 1,
     minWidth: 0,
     gap: 2,

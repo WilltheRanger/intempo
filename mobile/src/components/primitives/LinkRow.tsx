@@ -30,13 +30,26 @@ export interface LinkRowProps {
   disabled?: boolean;
   /** Announced after the label, for a row whose destination isn't obvious. */
   hint?: string;
+  /**
+   * Read out instead of "label, value", where the row is better announced as
+   * what tapping it does (Record's "Start at bar 3. Change where the take
+   * begins.").
+   */
+  accessibilityLabel?: string;
 }
 
 /**
- * A settings row that opens something else.
+ * A settings row that opens something else: another screen, or a sheet here.
  *
  * The chevron is the whole point: it separates rows that go somewhere from
  * rows that only report a value, which otherwise look identical.
+ *
+ * **Record's settings are these rows** (the UI review, 2026-11-12). Tempo,
+ * Start at and Metronome were the same row with the value drawn in a bordered
+ * pill (`PillRow`), where Upload and the score draw the same settings as plain
+ * rows — three shapes for one kind of line. Pills are not this app's control
+ * shape (`radii.ts`), and a value does not need a box to be tappable when the
+ * whole row is.
  *
  * **A primitive, since 2026-09-20, and it was Profile's own.** The record
  * panel needed the same row and had been drawing three near-misses of it by
@@ -52,6 +65,7 @@ export function LinkRow({
   divided = true,
   disabled = false,
   hint,
+  accessibilityLabel,
 }: LinkRowProps) {
   return (
     <PressableScale
@@ -65,7 +79,7 @@ export function LinkRow({
       disabled={disabled}
       activeScale={0.99}
       accessibilityRole="button"
-      accessibilityLabel={value ? `${label}, ${value}` : label}
+      accessibilityLabel={accessibilityLabel ?? (value ? `${label}, ${value}` : label)}
       accessibilityHint={hint}
       accessibilityState={{ disabled }}
       style={({ pressed }) => [
@@ -80,10 +94,15 @@ export function LinkRow({
       </Text>
 
       <View style={styles.trailing}>
+        {/*
+          The value in the row's own size, one step quieter than its name: what
+          Upload, the score's playback rows and Record all draw, so a setting
+          reads the same on every screen it appears on.
+        */}
         {value ? (
           <Text
-            variant="metadata"
-            color="textTertiary"
+            variant="rowLabel"
+            color={disabled ? 'textTertiary' : 'textSecondary'}
             numberOfLines={1}
             style={styles.value}
           >

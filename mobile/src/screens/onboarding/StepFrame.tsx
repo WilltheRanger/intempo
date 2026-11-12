@@ -3,7 +3,6 @@ import {
   Animated,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   StyleSheet,
   View,
 } from 'react-native';
@@ -15,7 +14,8 @@ import {
   ScreenContainer,
   Text,
 } from '../../components/primitives';
-import { colors, EASE_OUT, MIN_TOUCH_TARGET, motion, spacing } from '../../design';
+import { TextAction } from '../../components/primitives/TextAction';
+import { colors, EASE_OUT, motion, spacing } from '../../design';
 import { ONBOARDING_STEPS, stepNumber, type OnboardingStep } from '../../lib/onboardingSteps';
 import { progressValue } from '../../lib/progressValue';
 import { useReducedMotion } from '../../lib/useReducedMotion';
@@ -197,19 +197,7 @@ function StepEntrance({
  * do.
  */
 function QuietAction({ label, onPress, disabled = false }: StepAction) {
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      accessibilityRole="button"
-      accessibilityState={{ disabled }}
-      style={({ pressed }) => [styles.quiet, pressed && styles.quietPressed]}
-    >
-      <Text variant="metadata" color="textTertiary">
-        {label}
-      </Text>
-    </Pressable>
-  );
+  return <TextAction label={label} onPress={onPress} disabled={disabled} style={styles.quiet} />;
 }
 
 const styles = StyleSheet.create({
@@ -258,12 +246,6 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
   quiet: {
-    minHeight: MIN_TOUCH_TARGET,
     marginTop: spacing.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  quietPressed: {
-    opacity: 0.55,
   },
 });
