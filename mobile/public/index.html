@@ -11,7 +11,7 @@
     -->
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover"
+      content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover, interactive-widget=resizes-content"
     />
     <title>InTempo</title>
 
@@ -72,6 +72,16 @@
        */
       html {
         color-scheme: light;
+        /*
+         * **The page root, not only `body`.** Chromium and WebKit apply the
+         * root's overscroll value to the viewport, and `body` alone left
+         * `html` at `auto`, so a drag that began on the tab bar, a sheet or
+         * most of the Record screen (anywhere outside a contained scroller)
+         * could still bounce the whole app, and a double tap there could zoom
+         * the page (measured 2026-11-12). `manipulation` keeps pinch-zoom.
+         */
+        overscroll-behavior: none;
+        touch-action: manipulation;
       }
 
       /* These styles make the body full-height */

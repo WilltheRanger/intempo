@@ -3,8 +3,19 @@ import {
   NavigationContainerRefContext,
   NavigationContext,
   useFocusEffect,
+  useIsFocused,
+  useScrollToTop,
 } from '@react-navigation/native';
-import { useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import {
   Animated,
   Platform,
@@ -21,6 +32,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BORDER_WIDTH, colors, spacing } from '../../design';
+import { shouldRefreshOnReturn } from '../../lib/returnRefresh';
 import { useChromeToneReporter } from '../../navigation/ChromeToneContext';
 import { chromeToneFor } from '../../navigation/chromeTone';
 import { useTabBarHeight, useTabBarMidline } from '../../navigation/tabBarMetrics';
@@ -30,7 +42,9 @@ const WEB_SCROLL_STYLE = Platform.select({
     // Keep wheel, trackpad, and touch scrolling inside the app's own viewport
     // and let the browser compositor carry momentum independently of React.
     overscrollBehaviorY: 'contain',
-    overscrollBehaviorX: 'hidden',
+    // `none`, not `hidden`, which is not a value of this property: it
+    // computed to `auto` and let a sideways drag bounce the page (2026-11-12).
+    overscrollBehaviorX: 'none',
     // Gesture scrolling already has the browser's native momentum. CSS smooth
     // scrolling only stretches programmatic jumps (focus, back, scroll-to-top)
     // and makes them feel as though the interface is catching up.
@@ -221,6 +235,11 @@ export function ScreenContainer({
   const screenNavigation = useContext(NavigationContext);
   const containerNavigation = useContext(NavigationContainerRefContext);
   const navigated = screenNavigation !== undefined || containerNavigation !== undefined;
+  // **A screen of a navigator, not just inside the container.** The two
+  // children below read the route, which only a screen has; the error screen
+  // and sign-in sit inside the container without one.
+  const isScreen = screenNavigation !== undefined;
+  const scrollRef = useRef<ScrollView | null>(null);
 
   const handleScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -272,6 +291,9 @@ export function ScreenContainer({
 
   const scrollArea = scrollable ? (
     <Scroll
+      // Either kind of scroll view: both have `scrollTo`, which is all the
+      // ref is for, but their ref types do not unify.
+      ref={scrollRef as never}
       style={[styles.flex, WEB_SCROLL_STYLE, bleed ? WEB_NO_GUTTER : null]}
       directionalLockEnabled
       decelerationRate="normal"
@@ -339,6 +361,15 @@ export function ScreenContainer({
     // below owns the bottom inset; claiming it here too would double it.
     <SafeAreaView style={styles.safeArea} edges={underStatusBar ? [] : ['top']}>
       {navigated ? <OnFocus effect={onFocus} /> : null}
+      {/*
+        Tapping the tab you are on goes back to the top of its list, which is
+        what a thumb tries on a long shelf. It did nothing: no screen asked
+        for it (2026-11-12).
+      */}
+      {isScreen && hasTabBar && scrollable ? <ScrollToTopOnTabPress target={scrollRef} /> : null}
+      {isScreen && onRefresh && Platform.OS === 'web' ? (
+        <RefreshOnReturn onRefresh={handleRefresh} />
+      ) : null}
       {scrollArea}
 
       {footer ? (
@@ -362,6 +393,43 @@ export function ScreenContainer({
 /** `useFocusEffect` as a component, so it can be left out where it would throw. */
 function OnFocus({ effect }: { effect: () => () => void }) {
   useFocusEffect(effect);
+  return null;
+}
+
+/** `useScrollToTop` as a component, for the same reason as `OnFocus`. */
+function ScrollToTopOnTabPress({ target }: { target: RefObject<ScrollView | null> }) {
+  useScrollToTop(target as RefObject<ScrollView>);
+  return null;
+}
+
+/**
+ * The web build's stand-in for pull-to-refresh, which it does not have: the
+ * screen in front refreshes once when the app comes back after a long time
+ * away (`lib/returnRefresh.ts` has the rule and why it is not React Query's
+ * focus refetch).
+ */
+function RefreshOnReturn({ onRefresh }: { onRefresh: () => Promise<void> }) {
+  const focused = useIsFocused();
+  const latest = useRef(onRefresh);
+  latest.current = onRefresh;
+  useEffect(() => {
+    if (!focused || typeof document === 'undefined') {
+      return undefined;
+    }
+    let hiddenAt: number | null = document.visibilityState === 'hidden' ? Date.now() : null;
+    function onVisibility() {
+      if (document.visibilityState === 'hidden') {
+        hiddenAt = Date.now();
+        return;
+      }
+      if (shouldRefreshOnReturn(hiddenAt, Date.now())) {
+        void latest.current();
+      }
+      hiddenAt = null;
+    }
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [focused]);
   return null;
 }
 

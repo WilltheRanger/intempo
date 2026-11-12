@@ -4,6 +4,7 @@ import { Platform, StyleSheet, View, type ViewStyle } from 'react-native';
 
 import { motion } from '../design';
 import { useReducedMotion } from '../lib/useReducedMotion';
+import { stackChangeAnimatedByBrowser } from './browserBack';
 import { sceneDirection, sceneOffset, type SceneDirection } from './sceneMotion';
 
 /**
@@ -68,7 +69,11 @@ export function StackScene({ children }: { children: ReactNode }) {
     // Render-phase, deliberately: this has to be the state the browser paints
     // first, and an effect is a frame too late. React re-renders immediately
     // and discards the output above, so nothing is committed twice.
-    const next = still ? 'none' : sceneDirection(seen, index);
+    // A swipe back in Safari has already been animated by the browser, from
+    // its own snapshot; a second entrance over it read as a flicker and a
+    // replay (`browserBack.ts`).
+    const next =
+      still || stackChangeAnimatedByBrowser() ? 'none' : sceneDirection(seen, index);
     setSeen(index);
     setDirection(next);
     // `none` is the app's own first screen and a state change that was not a

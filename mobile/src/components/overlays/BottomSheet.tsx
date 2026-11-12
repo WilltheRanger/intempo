@@ -7,6 +7,7 @@ import {
   StyleSheet,
   View,
   type LayoutChangeEvent,
+  type ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { X } from '../icons';
@@ -69,6 +70,16 @@ const ESTIMATED_HEIGHT = 320;
  * slide moves the backdrop with the sheet, so the dimming would fly in from
  * below instead of fading in place. Reduced motion collapses both to instant.
  */
+/**
+ * The grab area owns its touches on the web. Without it a drag that began on
+ * the handle could also scroll or bounce the page behind the sheet, which is
+ * the browser and the sheet both answering one finger (2026-11-12).
+ */
+const GRAB_AREA_WEB = Platform.select({
+  web: { touchAction: 'none' } as unknown as ViewStyle,
+  default: undefined,
+});
+
 export function BottomSheet({
   visible,
   onClose,
@@ -213,13 +224,19 @@ export function BottomSheet({
               // nothing visible, where clamping makes a fast flick decelerate
               // into the edge it is supposed to be flying through.
               overshootClamping: false,
-            }).start(({ finished }) => {
-              // A spring that was interrupted — by the sheet being closed
-              // another way, or unmounted — must not also fire `onClose`.
-              if (finished) {
-                onClose();
-              }
-            });
+            }).start();
+            /*
+              **Closed on release, not when the spring settles.** `onClose`
+              waited for this spring's `finished`, and a spring's long settle
+              is most of a second after the sheet has left the screen: the
+              app root stayed `inert` until 1,341ms after a swipe, against
+              195ms for ✕, so the next tap on the page did nothing (measured,
+              2026-11-12). The sheet is gone as far as a thumb can tell the
+              moment it is let go. The spring carries on as the exit, and
+              `useInertAppRoot` still holds the root until the presence's own
+              exit ends, exactly as it does for ✕.
+            */
+            onClose();
             return;
           }
           Animated.spring(drag, {
@@ -297,7 +314,7 @@ export function BottomSheet({
             The grab area: the handle and the title row together, so the target
             is a comfortable strip rather than a 4pt bar.
           */}
-          <View {...pan.panHandlers}>
+          <View {...pan.panHandlers} style={GRAB_AREA_WEB}>
             <View style={styles.handle} />
 
             {title || showClose ? (

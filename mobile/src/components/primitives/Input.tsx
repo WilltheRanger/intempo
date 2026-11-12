@@ -86,6 +86,11 @@ export interface InputProps {
   keyboardType?: TextInputProps['keyboardType'];
   autoCapitalize?: TextInputProps['autoCapitalize'];
   autoComplete?: TextInputProps['autoComplete'];
+  /**
+   * Off for proper names. The keyboard's autocorrect rewrote names such as
+   * Wohlfahrt while the app's own completion was showing beside them.
+   */
+  autoCorrect?: TextInputProps['autoCorrect'];
   textContentType?: TextInputProps['textContentType'];
   returnKeyType?: TextInputProps['returnKeyType'];
   onSubmitEditing?: TextInputProps['onSubmitEditing'];
@@ -150,6 +155,7 @@ export function Input({
   keyboardType,
   autoCapitalize,
   autoComplete,
+  autoCorrect,
   textContentType,
   returnKeyType,
   onSubmitEditing,
@@ -244,6 +250,7 @@ export function Input({
           keyboardType={keyboardType}
           autoCapitalize={autoCapitalize}
           autoComplete={autoComplete}
+          autoCorrect={autoCorrect}
           textContentType={textContentType}
           returnKeyType={returnKeyType}
           maxLength={maxLength}
