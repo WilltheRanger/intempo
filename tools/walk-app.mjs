@@ -901,7 +901,9 @@ else pass('a bar that adds up opens on "4 of 4 beats", asking for nothing');
 // Lengthening the selected note. **Both halves asserted**: a count that moves
 // while the screen still asks for nothing is the same
 // screen-contradicts-itself fault the agreement checks above exist for.
-await page.getByRole('button', { name: 'Half', exact: true }).first().click();
+// A radio named for the value since the picker became note symbols
+// (2026-11-12); it was a button labelled "Half".
+await page.getByRole('radio', { name: 'Half note', exact: true }).first().click();
 await waitFor('the beat count to follow the edit', async () =>
   (await leaves()).some((l) => /^5 of 4 beats$/.test(l)),
 );

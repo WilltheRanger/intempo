@@ -9,9 +9,12 @@ import {
   LoadingState,
   BackLink,
   PrimaryButton,
+  SCREEN_GUTTER,
   ScreenContainer,
   Text,
 } from '../../components/primitives';
+import { NoteValueGlyph } from '../../components/notation/NoteValueGlyph';
+import { ScoreBand } from '../../components/score/ScoreBand';
 import { BottomSheet } from '../../components/overlays/BottomSheet';
 import { useCorrectScore, usePiece } from '../../data/hooks/usePieces';
 import type { Clef, ScoreJson, ScoreNote, ScoreTempoChange } from '../../data/types';
@@ -19,6 +22,7 @@ import { Minus, Plus } from '../../components/icons';
 import {
   BORDER_WIDTH,
   colors,
+  disabledOpacity,
   fontFamily,
   pressedOpacity,
   radii,
@@ -28,8 +32,15 @@ import {
 } from '../../design';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import {
+  NOTE_VALUES,
+  NOTE_VALUE_NAMES,
+  canApply,
+  partsOf,
+  toggled,
+  withValue,
+} from '../../lib/notation/durationPicker';
+import {
   DURATION_LABELS,
-  EDITABLE_DURATIONS,
   cycleAccidental,
   describeBeats,
   stepPitch,
@@ -55,6 +66,7 @@ import {
   describeClef,
 } from './clefEdit';
 import { timeSignaturesByMeasure } from '../../lib/notation/meter';
+import { barPreviewScore } from './barPreview';
 import {
   TEMPO_MARK_CHOICES,
   applyTempoMarkEdit,
@@ -332,6 +344,21 @@ export function MeasureEditScreen() {
   }
 
   const current = working[selected];
+  const currentParts = current ? partsOf(current.duration) : null;
+
+  // The bar as it now stands, unsaved changes included, in the key, clef and
+  // metre it is read in (`barPreview.ts`). Recomputed on every render: it is
+  // one bar, and every control on this screen changes it.
+  const preview = barPreviewScore(
+    piece.score,
+    original,
+    {
+      key: isFirstBar ? workingKey : workingKey ?? keyBefore,
+      clef: workingClef ?? (isFirstBar ? null : clefBefore),
+      meter: meterHere,
+    },
+    { notes: working, marks: workingMarks ?? { slurs: [], tuplets: [] } },
+  );
 
   return (
     /*
@@ -393,6 +420,17 @@ export function MeasureEditScreen() {
         </View>
       </View>
       {/*
+        **The bar, engraved, and redrawn with every change.** This screen
+        listed a bar's notes as text tiles and asked a musician to correct
+        notation they could not see (the reviews of 2026-11-12). A change to a
+        duration, a pitch, the clef or the key shows here before it is saved,
+        which is the check the eye makes against the printed page.
+      */}
+      <View style={styles.preview}>
+        <ScoreBand score={preview} scale={1.1} fullBleed />
+      </View>
+
+      {/*
         Only when there is something to do. A bar that adds up, or a pickup,
         says so in the beat count above; a sentence repeating it was noise.
       */}
@@ -402,91 +440,6 @@ export function MeasureEditScreen() {
         </Text>
       ) : null}
 
-
-      {/*
-        A key signature is bar-level music, not a property of one note.
-
-        The first bar edits the page header. On every later bar, null means the
-        previous signature continues; choosing C major / A minor is different
-        because it prints cancellation naturals when something else was in
-        force. A text input would make those two cases easy to confuse and
-        invite spellings the engraver cannot read, so this opens the complete
-        set of fifteen printed signatures.
-      */}
-      <Text variant="caption" color="textTertiary" style={styles.keyLabel}>
-        {isFirstBar ? 'Opening key' : 'Key'}
-      </Text>
-      <Pressable
-        onPress={() => setPickingKey(true)}
-        accessibilityRole="button"
-        accessibilityLabel={`Change key signature. ${keyDescription}`}
-        style={({ pressed }) => [styles.keySetting, pressed && styles.pressed]}
-      >
-        <View style={styles.keyCopy}>
-          <Text variant="body" style={styles.settingValue}>{keyDescription}</Text>
-        </View>
-        <Text variant="metadata" color="accentText" style={styles.change}>
-          Change
-        </Text>
-      </Pressable>
-
-      {/*
-        And the clef, which is bar-level music for the same reason.
-
-        A cello or bass part climbing into tenor for a high passage is ordinary
-        writing, and a reader that misses the change places every note after it
-        a sixth off — so a misread one had to be correctable without
-        re-scanning the page.
-      */}
-      <Text variant="caption" color="textTertiary" style={styles.keyLabel}>
-        {isFirstBar ? 'Opening clef' : 'Clef'}
-      </Text>
-      <Pressable
-        onPress={() => setPickingClef(true)}
-        accessibilityRole="button"
-        accessibilityLabel={`Change clef. ${clefDescription}`}
-        style={({ pressed }) => [styles.keySetting, pressed && styles.pressed]}
-      >
-        <View style={styles.keyCopy}>
-          <Text variant="body" style={styles.settingValue}>{clefDescription}</Text>
-          {!isFirstBar && workingClef === null ? (
-            <Text variant="metadataSmall" color="textTertiary">
-              Choose a clef only if a new one is printed at this bar.
-            </Text>
-          ) : null}
-        </View>
-        <Text variant="metadata" color="accentText" style={styles.change}>
-          Change
-        </Text>
-      </Pressable>
-
-      {/*
-        A tempo change printed at this bar — "poco rit.", "a tempo", "meno
-        mosso". The page's reader sees notes, not words (the owner, 2026-09-25:
-        "how am I supposed to account for tempo variations or where it says
-        poco"), so a musician marks it here, where the key and clef are.
-      */}
-      <Text variant="caption" color="textTertiary" style={styles.keyLabel}>
-        Tempo
-      </Text>
-      <Pressable
-        onPress={openTempo}
-        accessibilityRole="button"
-        accessibilityLabel={`Change the tempo marking. ${tempoDescription}`}
-        style={({ pressed }) => [styles.keySetting, pressed && styles.pressed]}
-      >
-        <View style={styles.keyCopy}>
-          <Text variant="body" style={styles.settingValue}>{tempoDescription}</Text>
-          {workingTempo === null ? (
-            <Text variant="metadataSmall" color="textTertiary">
-              Mark one where the page prints it.
-            </Text>
-          ) : null}
-        </View>
-        <Text variant="metadata" color="accentText" style={styles.change}>
-          Change
-        </Text>
-      </Pressable>
 
       {/*
         The bar, in reading order. Horizontal because that is how the music is
@@ -514,7 +467,7 @@ export function MeasureEditScreen() {
             }`}
             style={({ pressed }) => [styles.note, i === selected && styles.noteSelected, pressed && styles.pressed]}
           >
-            <Text variant="metadata">{DURATION_LABELS[note.duration] ?? note.duration}</Text>
+            <TileValue duration={note.duration} />
             <Text variant="metadataSmall" color="textTertiary">
               {note.pitch === 'rest' ? 'rest' : printedPitch(note.pitch)}
             </Text>
@@ -531,24 +484,37 @@ export function MeasureEditScreen() {
         Note {selected + 1} of {working.length}
       </Text>
 
-      <View style={styles.durations}>
-        {EDITABLE_DURATIONS.map((duration) => (
-          <Pressable
-            key={duration}
-            onPress={() => change({ duration })}
-            accessibilityRole="button"
-            accessibilityState={{ selected: current?.duration === duration }}
-            aria-pressed={current?.duration === duration}
-            style={({ pressed }) => [styles.chip, current?.duration === duration && styles.chipOn, pressed && styles.pressed]}
-          >
-            <Text
-              variant="metadataSmall"
-              color={current?.duration === duration ? 'actionText' : 'textPrimary'}
+      {/*
+        **Note values as symbols** (`lib/notation/durationPicker.ts`): five
+        values, longest first, with the dot and the triplet as toggles in the
+        row below. It was ten chips of words ("Half ·", "Quarter ³"), a
+        shorthand a musician had to decode, where MuseScore and Dorico show the
+        notes themselves.
+      */}
+      <View style={styles.durations} accessibilityRole="radiogroup" accessibilityLabel="Note value">
+        {NOTE_VALUES.map((value) => {
+          const chosen = currentParts?.value === value;
+          return (
+            <Pressable
+              key={value}
+              onPress={() => {
+                if (current) change({ duration: withValue(current.duration, value) });
+              }}
+              accessibilityRole="radio"
+              accessibilityLabel={NOTE_VALUE_NAMES[value]}
+              accessibilityState={{ checked: chosen }}
+              aria-checked={chosen}
+              style={({ pressed }) => [
+                styles.chip,
+                styles.valueChip,
+                chosen && styles.chipOn,
+                pressed && styles.pressed,
+              ]}
             >
-              {DURATION_LABELS[duration]}
-            </Text>
-          </Pressable>
-        ))}
+              <NoteValueGlyph value={value} color={chosen ? colors.actionText : colors.textPrimary} />
+            </Pressable>
+          );
+        })}
       </View>
 
       {/*
@@ -562,6 +528,40 @@ export function MeasureEditScreen() {
         marks that change the timeline rather than the note's length.
       */}
       <View style={styles.markRow}>
+        {/*
+          The dot and the triplet, greyed where the value cannot carry them
+          (no dotted whole, no triplet half): what the editor does not offer is
+          shown as unavailable rather than hidden, so the row does not move.
+        */}
+        {(['dotted', 'triplet'] as const).map((modifier) => {
+          const on = currentParts?.modifier === modifier;
+          const available = current ? canApply(current.duration, modifier) : false;
+          const name = modifier === 'dotted' ? 'Dotted' : 'Triplet';
+          return (
+            <Pressable
+              key={modifier}
+              onPress={() => {
+                const next = current ? toggled(current.duration, modifier) : null;
+                if (next) change({ duration: next });
+              }}
+              disabled={!available}
+              accessibilityRole="switch"
+              accessibilityLabel={name}
+              accessibilityState={{ checked: on, disabled: !available }}
+              aria-checked={on}
+              style={({ pressed }) => [
+                styles.chip,
+                on && styles.chipOn,
+                !available && styles.unavailable,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text variant="metadataSmall" color={on ? 'actionText' : 'textPrimary'}>
+                {name}
+              </Text>
+            </Pressable>
+          );
+        })}
         <Pressable
           onPress={() =>
             change(
@@ -707,12 +707,107 @@ export function MeasureEditScreen() {
         >
           <Text
             variant="body"
-            color={working.length <= 1 ? 'borderStrong' : 'textTertiary'}
-            style={styles.noteActionText}
+            color="textTertiary"
+            // Faded, not drawn in a border colour: `borderStrong` as text was
+            // 1.3:1 and read as missing rather than unavailable (2026-11-12).
+            style={[styles.noteActionText, working.length <= 1 && styles.unavailable]}
           >
             Delete note
           </Text>
         </Pressable>
+      </View>
+
+      {/*
+        **The bar's settings, after its notes.** Key, clef and tempo were the
+        first three things on this screen and the rarest change made on it; the
+        notes are what a misreading usually gets wrong (the file's own note:
+        durations and rests lead). They follow the notes now, a scroll away.
+      */}
+      <View style={styles.barSettings}>
+      {/*
+        A key signature is bar-level music, not a property of one note.
+
+        The first bar edits the page header. On every later bar, null means the
+        previous signature continues; choosing C major / A minor is different
+        because it prints cancellation naturals when something else was in
+        force. A text input would make those two cases easy to confuse and
+        invite spellings the engraver cannot read, so this opens the complete
+        set of fifteen printed signatures.
+      */}
+      <Text variant="caption" color="textTertiary" style={styles.keyLabel}>
+        {isFirstBar ? 'Opening key' : 'Key'}
+      </Text>
+      <Pressable
+        onPress={() => setPickingKey(true)}
+        accessibilityRole="button"
+        accessibilityLabel={`Change key signature. ${keyDescription}`}
+        style={({ pressed }) => [styles.keySetting, pressed && styles.pressed]}
+      >
+        <View style={styles.keyCopy}>
+          <Text variant="body" style={styles.settingValue}>{keyDescription}</Text>
+        </View>
+        <Text variant="metadata" color="accentText" style={styles.change}>
+          Change
+        </Text>
+      </Pressable>
+
+      {/*
+        And the clef, which is bar-level music for the same reason.
+
+        A cello or bass part climbing into tenor for a high passage is ordinary
+        writing, and a reader that misses the change places every note after it
+        a sixth off — so a misread one had to be correctable without
+        re-scanning the page.
+      */}
+      <Text variant="caption" color="textTertiary" style={styles.keyLabel}>
+        {isFirstBar ? 'Opening clef' : 'Clef'}
+      </Text>
+      <Pressable
+        onPress={() => setPickingClef(true)}
+        accessibilityRole="button"
+        accessibilityLabel={`Change clef. ${clefDescription}`}
+        style={({ pressed }) => [styles.keySetting, pressed && styles.pressed]}
+      >
+        <View style={styles.keyCopy}>
+          <Text variant="body" style={styles.settingValue}>{clefDescription}</Text>
+          {!isFirstBar && workingClef === null ? (
+            <Text variant="metadataSmall" color="textTertiary">
+              Choose a clef only if a new one is printed at this bar.
+            </Text>
+          ) : null}
+        </View>
+        <Text variant="metadata" color="accentText" style={styles.change}>
+          Change
+        </Text>
+      </Pressable>
+
+      {/*
+        A tempo change printed at this bar — "poco rit.", "a tempo", "meno
+        mosso". The page's reader sees notes, not words (the owner, 2026-09-25:
+        "how am I supposed to account for tempo variations or where it says
+        poco"), so a musician marks it here, where the key and clef are.
+      */}
+      <Text variant="caption" color="textTertiary" style={styles.keyLabel}>
+        Tempo
+      </Text>
+      <Pressable
+        onPress={openTempo}
+        accessibilityRole="button"
+        accessibilityLabel={`Change the tempo marking. ${tempoDescription}`}
+        style={({ pressed }) => [styles.keySetting, pressed && styles.pressed]}
+      >
+        <View style={styles.keyCopy}>
+          <Text variant="body" style={styles.settingValue}>{tempoDescription}</Text>
+          {workingTempo === null ? (
+            <Text variant="metadataSmall" color="textTertiary">
+              Mark one where the page prints it.
+            </Text>
+          ) : null}
+        </View>
+        <Text variant="metadata" color="accentText" style={styles.change}>
+          Change
+        </Text>
+      </Pressable>
       </View>
 
       <BottomSheet
@@ -904,7 +999,50 @@ export function MeasureEditScreen() {
   );
 }
 
+/**
+ * A note's value in the strip: the symbol where the picker has one, the
+ * value's name where it does not (a double dot, a quintuplet, a thirty-second).
+ */
+function TileValue({ duration }: { duration: ScoreNote['duration'] }) {
+  const parts = partsOf(duration);
+  if (!parts.value) {
+    return <Text variant="metadata">{DURATION_LABELS[duration] ?? duration}</Text>;
+  }
+  return (
+    <View style={styles.tileValue}>
+      <NoteValueGlyph
+        value={parts.value}
+        dotted={parts.modifier === 'dotted'}
+        color={colors.textPrimary}
+        lineGap={4}
+      />
+      {parts.modifier === 'triplet' ? <Text variant="metadataSmall">3</Text> : null}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  preview: {
+    marginHorizontal: -SCREEN_GUTTER,
+    alignSelf: 'stretch',
+    marginBottom: spacing.lg,
+  },
+  barSettings: {
+    marginTop: spacing['3xl'],
+  },
+  valueChip: {
+    minWidth: 52,
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+  },
+  unavailable: {
+    opacity: disabledOpacity,
+  },
+  tileValue: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: spacing.xs,
+  },
   tempoPrinted: {
     marginTop: spacing.xl,
   },

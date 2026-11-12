@@ -12,6 +12,7 @@ import {
   Text,
 } from '../../components/primitives';
 import { ROW_PADDING_VERTICAL, rowDivided } from '../../components/rowMetrics';
+import { ScoreBand } from '../../components/score/ScoreBand';
 import { useCorrectScore, usePiece } from '../../data/hooks/usePieces';
 import { usePreferences } from '../../data/preferences';
 import { BORDER_WIDTH, colors, radii, spacing } from '../../design';
@@ -21,6 +22,8 @@ import {
   type Proposal,
 } from '../../lib/notation/proposals';
 import type { RootStackParamList } from '../../navigation/types';
+import type { ScoreJson } from '../../data/types';
+import { barPreviewScore, contextAt } from '../measureEdit/barPreview';
 
 /**
  * Checking a reading against what the app thinks is wrong with it.
@@ -167,6 +170,7 @@ export function ProofReadScreen() {
         <ProposalRow
           key={proposal.id}
           proposal={proposal}
+          score={piece.score ?? null}
           choice={taken[proposal.id]}
           divided={rowDivided(index)}
           onAnswer={answer}
@@ -195,20 +199,58 @@ export function ProofReadScreen() {
  */
 function ProposalRow({
   proposal,
+  score,
   choice,
   divided,
   onAnswer,
 }: {
   proposal: Proposal;
+  score: ScoreJson | null;
   choice: 'keep' | 'fix' | undefined;
   divided: boolean;
   onAnswer: (id: string, choice: 'keep' | 'fix') => void;
 }) {
+  /*
+    **The bar as read, and as it would be.** This asked "C3 or C4?" with
+    neither the bar nor its photograph on screen, so a musician judged a pair
+    of note names from memory of the page (the reviews of 2026-11-12). Both
+    versions are engraved side by side; the names stay underneath as what the
+    change is called, and as what a screen reader says.
+  */
+  const bars = useMemo(() => {
+    if (!score) return null;
+    const read = score.measures.find((m) => m.measure_number === proposal.measureNumber);
+    const fixed = proposal.apply(score);
+    const proposed = fixed.measures.find((m) => m.measure_number === proposal.measureNumber);
+    if (!read || !proposed) return null;
+    return {
+      read: barPreviewScore(score, read, contextAt(score, read)),
+      proposed: barPreviewScore(fixed, proposed, contextAt(fixed, proposed)),
+    };
+  }, [score, proposal]);
+
   return (
     <View style={[styles.row, divided && styles.ruled]}>
       <Text variant="metadataSmall" color="textTertiary">
         {proposal.where}
       </Text>
+
+      {bars ? (
+        <View style={styles.bars} aria-hidden>
+          <View style={styles.bar}>
+            <Text variant="caption" color="textTertiary">
+              As read
+            </Text>
+            <ScoreBand score={bars.read} scale={0.8} plain />
+          </View>
+          <View style={styles.bar}>
+            <Text variant="caption" color="textTertiary">
+              Proposed
+            </Text>
+            <ScoreBand score={bars.proposed} scale={0.8} plain />
+          </View>
+        </View>
+      ) : null}
 
       <View style={styles.change}>
         {/*
@@ -291,6 +333,16 @@ const styles = StyleSheet.create({
   ruled: {
     borderTopWidth: BORDER_WIDTH,
     borderTopColor: colors.border,
+  },
+  bars: {
+    flexDirection: 'row',
+    gap: spacing.lg,
+    marginTop: spacing.sm,
+  },
+  bar: {
+    flex: 1,
+    minWidth: 0,
+    gap: spacing.xs,
   },
   change: {
     flexDirection: 'row',
