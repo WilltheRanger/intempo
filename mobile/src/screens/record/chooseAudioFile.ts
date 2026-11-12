@@ -9,7 +9,8 @@ import { describePickedTake } from '../../lib/record/pickedTake';
  *
  * One place for it, because two screens open it: Record's ⋮ menu, which must
  * call it straight from the tap (a browser refuses a file picker that was not
- * opened by one), and the Upload screen's "Choose a different file".
+ * opened by one), and the Upload screen's file row and its "Choose a recording"
+ * button.
  *
  * `describePickedTake` is the rule — which formats, how large — and is tested;
  * this is only the picker's plumbing around it.

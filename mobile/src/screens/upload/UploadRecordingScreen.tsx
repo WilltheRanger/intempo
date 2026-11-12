@@ -30,6 +30,7 @@ import {
   colors,
   fontFamily,
   ICON_STROKE_WIDTH,
+  MIN_TOUCH_TARGET,
   radii,
   spacing,
   ICON_SIZE,
@@ -186,10 +187,17 @@ export function UploadRecordingScreen() {
     <ScreenContainer
       footer={
         <View>
+          {/*
+            **The next step, whichever it is.** Until there is a recording the
+            only thing this screen can do is choose one, and that was a 13pt
+            gold link in the corner of the panel while a disabled "Send for
+            analysis" was the strongest shape on the screen (three reviews,
+            2026-11-12). The footer now offers the step in front of you.
+          */}
           <PrimaryButton
-            label="Send for analysis"
-            onPress={send}
-            disabled={!file || limit !== null}
+            label={file ? 'Send for analysis' : 'Choose a recording'}
+            onPress={file ? send : () => void choose()}
+            disabled={file ? limit !== null : false}
           />
           {limit ?? cost ? (
             <Text variant="metadataSmall" color="textTertiary" style={styles.cost}>
@@ -206,9 +214,21 @@ export function UploadRecordingScreen() {
         </Text>
       </View>
 
-      {/* The file, on a white band the width of the screen. */}
+      {/*
+        The file, on a white band the width of the screen.
+
+        **The file's row is the control that chooses it**, with the chevron a
+        row that opens something carries. The panel looked tappable and was
+        not; the link that did the work was a separate line under the
+        waveform.
+      */}
       <View style={styles.band}>
-        <View style={styles.fileRow}>
+        <Pressable
+          onPress={() => void choose()}
+          accessibilityRole="button"
+          accessibilityLabel={file ? `Choose a different recording. ${file.name}` : 'Choose a recording'}
+          style={({ pressed }) => [styles.fileRow, pressed && styles.pressed]}
+        >
           <View style={styles.fileIcon} aria-hidden>
             <FileMusic size={ICON_SIZE.md} strokeWidth={ICON_STROKE_WIDTH} color={colors.textSecondary} />
           </View>
@@ -220,7 +240,8 @@ export function UploadRecordingScreen() {
               {meta || 'WAV, MP3, M4A, FLAC or OGG'}
             </Text>
           </View>
-        </View>
+          <TrailingChevron />
+        </Pressable>
 
         <View
           style={styles.wave}
@@ -243,16 +264,8 @@ export function UploadRecordingScreen() {
           ))}
         </View>
 
+        {/* Holds its height with nothing in it, so choosing a file moves nothing. */}
         <View style={styles.fileActions}>
-          <Pressable
-            onPress={() => void choose()}
-            accessibilityRole="button"
-            style={({ pressed }) => [styles.action, pressed && styles.pressed]}
-          >
-            <Text variant="metadataSmall" color="accentText" style={styles.medium}>
-              {file ? 'Choose a different file' : 'Choose a file'}
-            </Text>
-          </Pressable>
           {file && playback.available ? (
             <Pressable
               onPress={() => void playback.toggle()}
@@ -412,8 +425,9 @@ const styles = StyleSheet.create({
   fileActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 10,
+    justifyContent: 'flex-end',
+    minHeight: MIN_TOUCH_TARGET,
+    marginTop: spacing.sm,
   },
   action: {
     minHeight: 44,
@@ -426,9 +440,6 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.55,
-  },
-  medium: {
-    fontFamily: fontFamily.sansMedium,
   },
   problem: {
     marginTop: spacing.md,

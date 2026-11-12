@@ -493,7 +493,26 @@ export function PieceScoreScreen() {
   const continuesList = listening && !noteBetween;
 
   return (
-    <ScreenContainer key={showing}>
+    <ScreenContainer
+      key={showing}
+      /*
+        **Practice, pinned, once there is music to practise.** A new piece
+        comes here straight from naming it and setting its tempo, and this
+        screen had no way on to Record: its one ink button was "Looks right",
+        which deletes the photograph, and after it the screen ended in rows. A
+        musician who had just added a piece was one screen short of playing it
+        (the UI/UX review, 2026-11-12). The accept stays, below, as the
+        secondary decision it is.
+      */
+      footer={
+        hasNotation ? (
+          <PrimaryButton
+            label="Practice"
+            onPress={() => navigation.navigate('Record', { pieceId: piece.id })}
+          />
+        ) : undefined
+      }
+    >
       {/*
         The redesign's head (`redesign/PieceScore.dc.html`), the same as the
         piece's own: a way back in words, then the title. The composer is on
@@ -946,10 +965,15 @@ export function PieceScoreScreen() {
       */}
       {hasNotation && !piece.transcriptionAccepted ? (
         <View style={styles.accept}>
-          <PrimaryButton
-            label="Looks right"
+          {/*
+            Outlined, because Practice is the screen's one ink button now:
+            two filled buttons a scroll apart are two focal points (§3 law 4).
+          */}
+          <SecondaryButton
+            // The outlined button has no spinner, so the label carries the
+            // wait, as "Reading again…" does on the failed branch above.
+            label={accept.isPending ? 'Deleting the photo…' : 'Looks right'}
             onPress={() => setConfirmingAccept(true)}
-            loading={accept.isPending}
             disabled={accept.isPending}
           />
           <Text variant="metadataSmall" color="textTertiary" style={styles.acceptNote}>

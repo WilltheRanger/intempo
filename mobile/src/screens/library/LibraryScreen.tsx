@@ -15,6 +15,7 @@ import {
 import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
 import { SECTION_HEADING } from '../../components/primitives/sectionHeading';
 import { Text } from '../../components/primitives/Text';
+import { arrival, useArrival } from '../../data/arrival';
 import { describeLoadError } from '../../data/describeLoadError';
 import { useInsights } from '../../data/hooks/useInsights';
 import { useRecentTakes } from '../../data/hooks/useLatestTake';
@@ -270,6 +271,24 @@ export function LibraryScreen() {
     );
   }, [drawn, navigation]);
 
+  /*
+    **"Add your first piece" opens the add sheet.** The welcome that ends
+    onboarding offers exactly that (`OnboardingDone`), and this is where it is
+    kept: once the shelf has loaded, an empty one opens the sheet, and either
+    way the arrival is answered so it happens once. A shelf that turns out to
+    hold pieces — onboarded on another device, say — is simply shown.
+  */
+  const arrived = useArrival();
+  useEffect(() => {
+    if (arrived !== 'firstPiece' || load !== 'ready') {
+      return;
+    }
+    if (pieces.length === 0) {
+      setAddSheetVisible(true);
+    }
+    arrival.settled();
+  }, [arrived, load, pieces.length]);
+
   // Whether the top of the screen is the Continue band. Decided by the piece,
   // not by the search: the band stays while searching, as the header's ground.
   const banded = current !== null;
@@ -320,8 +339,15 @@ export function LibraryScreen() {
         header
       )}
 
-      {/* The band runs edge to edge; everything under it keeps the gutter. */}
-      <View style={banded ? styles.gutter : undefined}>
+      {/*
+        The band runs edge to edge; everything under it keeps the gutter.
+
+        **And it grows**, banded or not. It was a bare `View` without the band,
+        so the empty shelf's `EmptyState fill` had no height to centre in and
+        its only action sat at y 175 of 844, in the top quarter, while the same
+        state on Insights sat in the middle (measured, 2026-11-12).
+      */}
+      <View style={[styles.body, banded && styles.gutter]}>
 
         {/*
           The only thing on this screen that can fail without a screen of its
@@ -499,6 +525,9 @@ function LibraryContent({
         icon={Library}
         title="No pieces yet"
         actionLabel="Add your first piece"
+        // The one thing this screen can do, so it is the one ink button on it
+        // (`EmptyState.actionTone`, which names this screen as the case).
+        actionTone="primary"
         onActionPress={onAddPiece}
       />
     );
@@ -643,6 +672,9 @@ function GroupHeading({ label, count }: { label: string; count: number }) {
 const SHELF_GUTTER = spacing.md;
 
 const styles = StyleSheet.create({
+  body: {
+    flexGrow: 1,
+  },
   gutter: {
     paddingHorizontal: SCREEN_GUTTER,
   },

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 
 import { PressableScale } from '../../components/motion';
+import { PieceHeading } from '../../components/pieces/PieceHeading';
 import { Text } from '../../components/primitives/Text';
 import { ScoreBand } from '../../components/score/ScoreBand';
 import type { Piece, PieceInsight, TakeResult } from '../../data/types';
@@ -180,10 +181,23 @@ export function PieceTile({
         The serif, like every other title in the app, and two lines because a
         tile is narrow — which is the shelf's own finding: a long repertoire
         title gets two narrow lines here rather than one wide one.
+
+        **The name, broken before its key** (`PieceHeading`): the whole title
+        set as plain text broke "Caprice No. 24 in A / minor, Op. 1". The
+        catalogue number goes, as it does on the Continue band: on a shelf the
+        engraving and the name tell pieces apart, and the piece's own screen
+        prints the number under its title.
       */}
-      <Text variant="pieceTitle" numberOfLines={2} style={styles.title}>
-        {piece.title}
-      </Text>
+      <PieceHeading
+        title={piece.title}
+        variant="pieceTitle"
+        numberOfLines={2}
+        catalogue="hidden"
+        // Its size here, not the token's: the line breaks are worked out
+        // from the size the name is actually set at.
+        style={styles.title}
+        containerStyle={styles.titleBox}
+      />
       {/*
         **How it last went, in the result screen's words** (the owner,
         2026-09-29, "words only"): "Rushed in the middle", where there is a
@@ -299,8 +313,10 @@ const styles = StyleSheet.create({
   },
   // The shelf's serif, a size under `pieceTitle`: a tile is half a screen
   // wide and a repertoire title gets two narrow lines here.
-  title: {
+  titleBox: {
     marginTop: 11,
+  },
+  title: {
     fontSize: 17,
     lineHeight: 21,
   },

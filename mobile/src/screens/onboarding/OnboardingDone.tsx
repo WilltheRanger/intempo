@@ -15,8 +15,13 @@ import { StaffIllustration } from './StaffIllustration';
  *
  * Shown once, by `RootNavigator`, while `useArrival()` says `welcome` — so it
  * is not a route anybody can come back to, and it never appears for an
- * account that was onboarded before this launch. "Start practicing" hands
- * over to Today, which fades in the once.
+ * account that was onboarded before this launch. "Add your first piece" hands
+ * over to the Library, which opens its add sheet the once (`data/arrival.ts`).
+ *
+ * **The button says where it goes.** It said "Start practicing" and landed on
+ * an empty shelf, where nothing could be practised: the one promise on the
+ * screen was the one thing the next screen could not do. A piece is the first
+ * thing a new account needs, so that is what the button offers.
  *
  * The three-foot test: the bar first, the welcome second, the button third.
  * The three arrive in that order too, each a little later than the last.
@@ -26,7 +31,7 @@ export function OnboardingDone() {
     <CentredScreen
       footer={
         <Arrive over={1260} style={styles.button}>
-          <PrimaryButton label="Start practicing" onPress={() => arrival.started()} />
+          <PrimaryButton label="Add your first piece" onPress={() => arrival.started()} />
         </Arrive>
       }
     >

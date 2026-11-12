@@ -19,6 +19,7 @@ import { PieceHeading } from '../../components/pieces/PieceHeading';
 import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
 import { SheetOptionRow } from '../../components/overlays/SheetOptionRow';
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
+import { PressableScale } from '../../components/motion';
 import { ScoreBand } from '../../components/score/ScoreBand';
 import { PieceLinkRow } from './PieceLinkRow';
 import { PhotoBand, type PhotoBandScrim } from '../../components/pieces/PhotoBand';
@@ -40,12 +41,13 @@ import {
 import {
   useDeletePiece,
   usePiece,
+  useRetranscribe,
   useUpdatePiece,
 } from '../../data/hooks/usePieces';
 import type { Piece } from '../../data/types';
 import { BORDER_WIDTH, colors, spacing } from '../../design';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
-import { historyCount } from '../../lib/insights/pieceHistory';
+import { lastTakeLine } from '../../lib/insights/pieceHistory';
 import { loadStateFor } from '../../lib/loadState';
 import { FIELD_LIMITS } from '../../lib/fieldLimits';
 import { usePageCamera } from '../../navigation/usePageCamera';
@@ -131,6 +133,9 @@ export function PieceDetailScreen() {
   const field = useFieldOrder(3, () => void saveEdit());
 
   const updatePiece = useUpdatePiece(params.pieceId);
+  // A failed reading's footer: read the same page again, as its shelf tile
+  // and its score screen both lead with (`lib/library/tileState`).
+  const reread = useRetranscribe();
   const deletePiece = useDeletePiece();
 
   function startEditing(current: Piece) {
@@ -217,9 +222,10 @@ export function PieceDetailScreen() {
   // "neither" is not known to be true (`knowsItsMusic`).
   const musicKnown = knowsItsMusic(piece, isPlaceholderData);
   const needsNotation = musicKnown && !hasNotation && !hasPages && !stillReading;
-  // "7 since Sep 11", or null for a piece nobody has recorded — which then has
-  // no row, rather than a row that opens an empty page.
-  const takesCount = history.data ? historyCount(history.data) : null;
+  // "Rushed in the middle · 3 days ago", or null for a piece nobody has
+  // recorded — which then has no row, rather than a row that opens an empty
+  // page (`lastTakeLine`).
+  const takesLine = history.data ? lastTakeLine(history.data) : null;
 
   return (
     /*
@@ -237,6 +243,26 @@ export function PieceDetailScreen() {
           <PrimaryButton
             label="Practice"
             onPress={() => navigation.navigate('Record', { pieceId: piece.id })}
+          />
+        ) : readingFailed ? (
+          /*
+            **A failed reading keeps an action in reach.** The footer was only
+            for practice, so a page that could not be read left this screen
+            with nothing under the thumb: the way on was a row's second line,
+            which opens the score rather than doing anything. Read it again is
+            the cheap recovery and the one the shelf and the score screen lead
+            with; retaking photographs stays on the score screen, one row up.
+          */
+          <PrimaryButton
+            label={reread.isPending ? 'Reading again…' : 'Try again'}
+            disabled={reread.isPending}
+            onPress={() => {
+              setError(null);
+              reread.mutate(piece.id, {
+                onError: (cause) =>
+                  setError(cause instanceof Error ? cause.message : 'Couldn’t start. Try again.'),
+              });
+            }}
           />
         ) : undefined
       }
@@ -365,10 +391,23 @@ export function PieceDetailScreen() {
         question is "did it read this right".
       */}
       {hasNotation && piece.score ? (
-        <View style={styles.engravedBand}>
+        /*
+          **The music opens the music.** The engraving is the most tappable
+          thing on the screen and it did nothing, so the first thing a thumb
+          tried taught it that the picture is decoration (§3: every drawn
+          affordance is real). It opens the score, where the same music is
+          read in full.
+        */
+        <PressableScale
+          onPress={() => navigation.navigate('PieceScore', { pieceId: piece.id, view: 'notation' })}
+          accessibilityRole="button"
+          accessibilityLabel="Open the score"
+          activeScale={0.99}
+          style={styles.engravedBand}
+        >
           {/* The opening two systems, where the prototype draws two lines. */}
           <ScoreBand score={piece.score} viewport={OPENING_HEIGHT} fullBleed />
-        </View>
+        </PressableScale>
       ) : hasPages ? (
         // Nothing has been read yet — a scan still in the worker, or a reading
         // that failed. The photograph is what the app has of this piece, so it
@@ -445,11 +484,11 @@ export function PieceDetailScreen() {
           (`PieceTakesScreen`). First, because it is the row opened most: what
           happened last time is why a musician comes back to a piece.
         */}
-        {takesCount ? (
+        {takesLine ? (
           <PieceLinkRow
             icon={Mic}
             label="Your takes"
-            description={takesCount}
+            description={takesLine}
             onPress={() => navigation.navigate('PieceTakes', { pieceId: piece.id })}
           />
         ) : null}
