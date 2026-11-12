@@ -96,10 +96,12 @@ export type RootStackParamList = {
   Help: undefined;
   Acknowledgements: undefined;
   /**
-   * `startAt` opens the take at a bar rather than at the top — Insights'
-   * "Practice bars 21–24" is the caller. The musician can still move it.
+   * `startAt` opens the take at a bar rather than at the top; `endAt` is the
+   * last bar of the passage a Practice button named ("Practice bars 5–8"),
+   * which Record shows while the musician keeps that start. Both come from
+   * `practicePassage`. The musician can still move the start.
    */
-  Record: { pieceId: string; startAt?: number };
+  Record: { pieceId: string; startAt?: number; endAt?: number };
   /** The practice tempo for a piece, chosen on its own screen from Record. */
   Tempo: { pieceId: string };
   /**

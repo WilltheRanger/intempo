@@ -77,7 +77,10 @@ export const screenConfig: LinkingOptions<RootStackParamList>['config'] = {
       // and arrives as text, like `measureNumber` above.
       Record: {
         path: 'pieces/:pieceId/record',
-        parse: { startAt: (value: string) => Number(value) },
+        parse: {
+          startAt: (value: string) => Number(value),
+          endAt: (value: string) => Number(value),
+        },
       },
       Tempo: 'pieces/:pieceId/tempo',
       SetTempo: 'pieces/:pieceId/set-tempo',

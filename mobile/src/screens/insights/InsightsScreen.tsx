@@ -20,7 +20,8 @@ import { describeLoadError } from '../../data/describeLoadError';
 import { colors, fontFamily, spacing, ICON_SIZE, ICON_STROKE_WIDTH } from '../../design';
 import { readTendency } from '../../lib/insights/tendency';
 import { axisLabels, sessionTrendData, sessionTrendFrom } from '../../lib/insights/sessionTrend';
-import { barsLabel, worthALook } from '../../lib/insights/passageTempo';
+import { worthALook } from '../../lib/insights/passageTempo';
+import { practiceLabel, practicePassage, type Passage } from '../../lib/verdict/passage';
 import type { TabScreenNavigation } from '../../navigation/types';
 import { TrendPlot } from '../../components/charts/TrendPlot';
 import { PieceHeading } from '../../components/pieces/PieceHeading';
@@ -190,8 +191,15 @@ export function InsightsScreen() {
   const lastLine = lastTake
     ? tempoTrend(lastTake.measures, lastTake.targetBpm, lastTake.tempoBeatUnit, lastTake.tolerance)
     : null;
+  /*
+    **The result screen's passage, from the take this chart draws.** Insights
+    worked out a passage of its own, averaged over five takes, and offered
+    "Practice bars 5–6" under a chart captioned "Your last take" whose verdict
+    had said bars 5–8 (the reviews of 2026-11-12). Its own reading stays, for a
+    last take that named no bars.
+  */
+  const practice: Passage | null = practicePassage(lastTake) ?? passages?.practice ?? null;
   const practiceSpan = (() => {
-    const practice = passages?.practice;
     if (!lastTake || !practice) return null;
     const bars = lastTake.measures.map((m) => m.measure);
     const along = (bar: number) => {
@@ -203,8 +211,11 @@ export function InsightsScreen() {
     return from === null || to === null ? null : { from, to };
   })();
 
-  function practise(pieceId: string, startAt?: number) {
-    navigation.navigate('Record', startAt === undefined ? { pieceId } : { pieceId, startAt });
+  function practise(pieceId: string, passage?: Passage | null) {
+    navigation.navigate(
+      'Record',
+      passage ? { pieceId, startAt: passage.from, endAt: passage.to } : { pieceId },
+    );
   }
 
   return (
@@ -343,18 +354,16 @@ export function InsightsScreen() {
                   </View>
                 ) : null}
                 {/* The button names the bars; the sentence is said only when it would not. */}
-                {passages.practice ? null : (
+                {practice ? null : (
                   <Text variant="metadata" color="textSecondary" style={styles.sentence}>
                     {passages.sentence}
                   </Text>
                 )}
                 <SecondaryButton
                   label={
-                    passages.practice
-                      ? `Practice ${barsLabel(passages.practice).toLowerCase()}`
-                      : 'Practice it again'
+                    practice ? practiceLabel(practice) : 'Practice it again'
                   }
-                  onPress={() => practise(focus.pieceId, passages.practice?.from)}
+                  onPress={() => practise(focus.pieceId, practice)}
                   style={styles.worthAction}
                 />
               </>

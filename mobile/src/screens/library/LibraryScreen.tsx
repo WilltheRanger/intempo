@@ -16,6 +16,7 @@ import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
 import { SECTION_HEADING } from '../../components/primitives/sectionHeading';
 import { Text } from '../../components/primitives/Text';
 import { arrival, useArrival } from '../../data/arrival';
+import { practicePassage, type Passage } from '../../lib/verdict/passage';
 import { describeLoadError } from '../../data/describeLoadError';
 import { useInsights } from '../../data/hooks/useInsights';
 import { useRecentTakes } from '../../data/hooks/useLatestTake';
@@ -173,12 +174,17 @@ export function LibraryScreen() {
   // Straight to a take: "continue" means recording one. A piece with no bars
   // has nothing to record against, so it opens the piece instead — and the
   // button says so (`continueLine.actionLabel`).
-  function openPractice(target: Piece) {
+  function openPractice(target: Piece, passage: Passage | null) {
     if (!hasNotation(target)) {
       navigation.navigate('PieceDetail', { pieceId: target.id });
       return;
     }
-    navigation.navigate('Record', { pieceId: target.id });
+    // The bars the last take found, where it found some (`practicePassage`):
+    // the band's button names them, so the take starts there.
+    navigation.navigate(
+      'Record',
+      passage ? { pieceId: target.id, startAt: passage.from, endAt: passage.to } : { pieceId: target.id },
+    );
   }
 
   /*
@@ -230,6 +236,7 @@ export function LibraryScreen() {
   const searching = Boolean(query.trim());
   const current = load === 'ready' && pieces.length > 0 ? currentPiece.data ?? null : null;
   const continueLine = continueLineFor({
+    passage: current ? practicePassage(lastTakes.get(current.id)) : null,
     piece: current,
     status: current
       ? pieceStatus({
@@ -332,7 +339,7 @@ export function LibraryScreen() {
           header={header}
           line={continueLine}
           onOpen={() => navigation.navigate('PieceDetail', { pieceId: current.id })}
-          onAction={() => openPractice(current)}
+          onAction={() => openPractice(current, continueLine?.passage ?? null)}
           scrollY={scrollY}
         />
       ) : (

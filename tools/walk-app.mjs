@@ -280,9 +280,12 @@ else fail(`a take on the piece → ${await path()}, expected an analysis`);
   does not reach the recorder, the app's front door does nothing. Its words
   are a second target and open the piece, which the Library row check above
   already covers.
+
+  It names the passage the last take found ("Practice bars 5–8",
+  `practicePassage`) where there is one, and is plain "Practice" otherwise.
 */
 await tab('Library');
-await tapTo('Library continue', /^Practice$/, /\/record$/);
+await tapTo('Library continue', /^Practice(?: bars? \d+(?:–\d+)?)?$/, /\/record$/);
 
 // The Library's old address still lands on it (`linking.ts`, `alias`).
 await open('library');

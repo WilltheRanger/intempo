@@ -25,7 +25,7 @@ import { takePitchTrend, tempoTrend } from '../../lib/verdict/trend';
 import { pitchWord } from '../../lib/verdict/intonation';
 import { namedMarks, noteDetail, notesLine, takeNoteMarks } from '../../lib/verdict/pitchByNote';
 import { NoteRow } from '../../components/charts/NoteRow';
-import { headlinePassage, practiceLabel } from '../../lib/verdict/passage';
+import { practiceLabel, practicePassage } from '../../lib/verdict/passage';
 import { mistakeBars, mistakesInPassage } from '../../lib/verdict/mistakes';
 import {
   barsLabel,
@@ -306,7 +306,8 @@ export function VerdictScreen() {
   const tappedNote = noteMarks.find((m) => m.midi === note) ?? null;
   const marked = tappedNote ? new Set(tappedNote.bars) : mistakes;
   // The bars the verdict is about, which the main button practises.
-  const passage = take.lowConfidence ? null : headlinePassage(take.headline);
+  // The same rule every Practice button reads (`practicePassage`).
+  const passage = practicePassage(take);
   const recordAgain = () => navigation.replace('Record', { pieceId: take.pieceId });
   // The passage around the bar the musician tapped, in whichever reading the
   // chart is showing; nothing until they tap (`lib/verdict/barPassage.ts`).
@@ -371,7 +372,11 @@ export function VerdictScreen() {
             <PrimaryButton
               label={practiceLabel(passage)}
               onPress={() =>
-                navigation.replace('Record', { pieceId: take.pieceId, startAt: passage.from })
+                navigation.replace('Record', {
+                  pieceId: take.pieceId,
+                  startAt: passage.from,
+                  endAt: passage.to,
+                })
               }
             />
             <Pressable

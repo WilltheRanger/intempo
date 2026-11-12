@@ -4,6 +4,7 @@ import {
   useRoute,
   type RouteProp,
 } from '@react-navigation/native';
+import { practicingLine } from '../../lib/verdict/passage';
 import { useQueryClient } from '@tanstack/react-query';
 import { Mic, MoreVertical, Square } from '../../components/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -901,6 +902,9 @@ export function RecordScreen() {
   // back to the top — see `startBarFor`.
   const startFrom = startBarFor(chosenStartFrom, startable);
   const setStartFrom = setChosenStartFrom;
+  // "Practicing bars 5–8", while the take starts where a Practice button sent
+  // it (`practicingLine`).
+  const practicing = practicingLine(params, startFrom);
 
   /**
    * The "Start from" sheet's named places — the top, where the last take
@@ -1428,6 +1432,11 @@ export function RecordScreen() {
             <View style={styles.more} />
           )}
         </View>
+        {practicing ? (
+          <Text variant="metadata" color="accentText" style={styles.practicing}>
+            {practicing}
+          </Text>
+        ) : null}
       </View>
 
       {heard ? (
@@ -1963,6 +1972,9 @@ const styles = StyleSheet.create({
     paddingTop: 14,
     paddingHorizontal: spacing['2xl'],
     paddingBottom: spacing.md,
+  },
+  practicing: {
+    marginTop: spacing.xs,
   },
   titleRow: {
     flexDirection: 'row',

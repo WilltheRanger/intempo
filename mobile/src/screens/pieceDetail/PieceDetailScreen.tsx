@@ -10,7 +10,7 @@ import {
   Trash2,
 } from '../../components/icons';
 import { useRef, useState } from 'react';
-import { Animated, StyleSheet, View } from 'react-native';
+import { Animated, Pressable, StyleSheet, View } from 'react-native';
 import { ComposerField } from '../../components/pieces/ComposerField';
 import { useFieldOrder } from '../../components/primitives/useFieldOrder';
 
@@ -45,9 +45,10 @@ import {
   useUpdatePiece,
 } from '../../data/hooks/usePieces';
 import type { Piece } from '../../data/types';
-import { BORDER_WIDTH, colors, spacing } from '../../design';
+import { BORDER_WIDTH, MIN_TOUCH_TARGET, colors, spacing } from '../../design';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
 import { lastTakeLine } from '../../lib/insights/pieceHistory';
+import { practiceLabel, practicePassage } from '../../lib/verdict/passage';
 import { loadStateFor } from '../../lib/loadState';
 import { FIELD_LIMITS } from '../../lib/fieldLimits';
 import { usePageCamera } from '../../navigation/usePageCamera';
@@ -226,6 +227,9 @@ export function PieceDetailScreen() {
   // recorded — which then has no row, rather than a row that opens an empty
   // page (`lastTakeLine`).
   const takesLine = history.data ? lastTakeLine(history.data) : null;
+  // The bars the last judged take found (`practicePassage`): what this
+  // screen's button practises, so it says what the result screen said.
+  const passage = practicePassage(history.data?.recent.find((take) => take.failure === null));
 
   return (
     /*
@@ -240,10 +244,40 @@ export function PieceDetailScreen() {
       scrollOffset={scrollY}
       footer={
         canPractice ? (
-          <PrimaryButton
-            label="Practice"
-            onPress={() => navigation.navigate('Record', { pieceId: piece.id })}
-          />
+          passage ? (
+            /*
+              **The passage first, the whole piece under it**, as the result
+              screen sets them (the owner's call there, 2026-09-29). This
+              button opened Record at bar 1 while the takes row above it said
+              the middle was rushed.
+            */
+            <View>
+              <PrimaryButton
+                label={practiceLabel(passage)}
+                onPress={() =>
+                  navigation.navigate('Record', {
+                    pieceId: piece.id,
+                    startAt: passage.from,
+                    endAt: passage.to,
+                  })
+                }
+              />
+              <Pressable
+                onPress={() => navigation.navigate('Record', { pieceId: piece.id })}
+                accessibilityRole="button"
+                style={({ pressed }) => [styles.quiet, pressed && styles.quietPressed]}
+              >
+                <Text variant="metadata" color="textTertiary">
+                  From the start
+                </Text>
+              </Pressable>
+            </View>
+          ) : (
+            <PrimaryButton
+              label="Practice"
+              onPress={() => navigation.navigate('Record', { pieceId: piece.id })}
+            />
+          )
         ) : readingFailed ? (
           /*
             **A failed reading keeps an action in reach.** The footer was only
@@ -586,6 +620,17 @@ export function PieceDetailScreen() {
 }
 
 const styles = StyleSheet.create({
+  /** "From the start", under the passage's button: the result screen's quiet line. */
+  quiet: {
+    alignSelf: 'center',
+    justifyContent: 'center',
+    minHeight: MIN_TOUCH_TARGET,
+    paddingHorizontal: spacing.lg,
+    marginTop: spacing.xs,
+  },
+  quietPressed: {
+    opacity: 0.55,
+  },
   editCard: {
     marginTop: spacing.lg,
   },
