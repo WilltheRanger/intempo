@@ -25,6 +25,7 @@ export {
   type SegmentedControlOption,
 } from './SegmentedControl';
 export { ToggleRow, type ToggleRowProps } from './ToggleRow';
+export { choiceTile } from './choiceTile';
 export { EmptyState, type EmptyStateProps } from './EmptyState';
 export * from './GlassSurface';
 export { LoadingState, type LoadingStateProps } from './LoadingState';

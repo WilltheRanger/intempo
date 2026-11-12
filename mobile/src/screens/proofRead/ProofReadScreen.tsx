@@ -10,6 +10,7 @@ import {
   PrimaryButton,
   ScreenContainer,
   Text,
+  choiceTile,
 } from '../../components/primitives';
 import { ROW_PADDING_VERTICAL, rowDivided } from '../../components/rowMetrics';
 import { ScoreBand } from '../../components/score/ScoreBand';
@@ -317,9 +318,14 @@ function Answer({
       accessibilityLabel={label}
       accessibilityState={{ checked: on }}
       aria-checked={on}
-      style={({ pressed }) => [styles.answer, on && styles.answerOn, pressed && styles.pressed]}
+      style={({ pressed }) => [
+        choiceTile.surface,
+        styles.answer,
+        on && choiceTile.chosen,
+        pressed && choiceTile.pressed,
+      ]}
     >
-      <Text variant="metadata" color={on ? 'actionText' : 'textPrimary'}>
+      <Text variant="metadata" color="textPrimary" style={on && choiceTile.chosenLabel}>
         {label}
       </Text>
     </Pressable>
@@ -373,15 +379,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: radii.md,
-    borderWidth: BORDER_WIDTH,
-    borderColor: colors.borderStrong,
-  },
-  answerOn: {
-    backgroundColor: colors.actionBg,
-    borderColor: colors.actionBg,
-  },
-  pressed: {
-    opacity: 0.7,
   },
   scope: {
     marginTop: spacing.xl,

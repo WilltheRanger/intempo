@@ -9,6 +9,7 @@ import {
   PrimaryButton,
   ScreenContainer,
   Text,
+  choiceTile,
 } from '../../components/primitives';
 import { ListenButton } from '../../components/score/ListenButton';
 import { ScoreBand } from '../../components/score/ScoreBand';
@@ -214,16 +215,16 @@ export function TempoScreen() {
             onPress={tap}
             accessibilityRole="button"
             accessibilityLabel={`${tapLabel(taps.length)}. Tap the beat to set the tempo`}
+            // While tapping it is the chosen way of setting the tempo, so it
+            // wears the chosen edge (`choiceTile`) — never Done's ink fill.
             style={({ pressed }) => [
+              choiceTile.surface,
               styles.tap,
-              tapping && styles.tapOn,
-              pressed && !tapping && styles.tapPressed,
+              tapping && choiceTile.chosen,
+              pressed && choiceTile.pressed,
             ]}
           >
-            <Text
-              variant="metadata"
-              style={[styles.tapLabel, tapping && styles.onLabel]}
-            >
+            <Text variant="metadata" style={styles.tapLabel}>
               {tapLabel(taps.length)}
             </Text>
           </Pressable>
@@ -251,15 +252,16 @@ export function TempoScreen() {
                 aria-checked={on}
                 accessibilityLabel={`${pick.label} ${unitLabel}`}
                 style={({ pressed }) => [
+                  choiceTile.surface,
                   styles.pick,
-                  on && styles.pickOn,
-                  pressed && !on && styles.pickPressed,
+                  on && choiceTile.chosen,
+                  pressed && choiceTile.pressed,
                 ]}
               >
                 <Text
                   variant="metadataSmall"
                   numberOfLines={1}
-                  style={[styles.pickLabel, on && styles.onLabel]}
+                  style={[styles.pickLabel, on && choiceTile.chosenLabel]}
                 >
                   {pick.label}
                 </Text>
@@ -336,23 +338,11 @@ const styles = StyleSheet.create({
     height: 48,
     paddingHorizontal: 26,
     borderRadius: 24,
-    borderWidth: BORDER_WIDTH,
-    borderColor: colors.borderStrong,
     justifyContent: 'center',
-  },
-  tapPressed: {
-    backgroundColor: colors.surfacePressed,
-  },
-  tapOn: {
-    backgroundColor: colors.actionBg,
-    borderColor: colors.actionBg,
   },
   tapLabel: {
     fontFamily: fontFamily.sansMedium,
     fontSize: 15,
-  },
-  onLabel: {
-    color: colors.actionText,
   },
   picks: {
     flexDirection: 'row',
@@ -363,17 +353,8 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 44,
     borderRadius: radii.md,
-    borderWidth: BORDER_WIDTH,
-    borderColor: colors.borderStrong,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  pickOn: {
-    backgroundColor: colors.actionBg,
-    borderColor: colors.actionBg,
-  },
-  pickPressed: {
-    backgroundColor: colors.surfacePressed,
   },
   pickLabel: {
     fontVariant: ['tabular-nums'],

@@ -12,13 +12,14 @@ import {
   SCREEN_GUTTER,
   ScreenContainer,
   Text,
+  choiceTile,
 } from '../../components/primitives';
 import { NoteValueGlyph } from '../../components/notation/NoteValueGlyph';
 import { ScoreBand } from '../../components/score/ScoreBand';
 import { BottomSheet } from '../../components/overlays/BottomSheet';
 import { useCorrectScore, usePiece } from '../../data/hooks/usePieces';
 import type { Clef, ScoreJson, ScoreNote, ScoreTempoChange } from '../../data/types';
-import { Minus, Plus } from '../../components/icons';
+import { Check, Minus, Plus } from '../../components/icons';
 import {
   BORDER_WIDTH,
   colors,
@@ -505,13 +506,14 @@ export function MeasureEditScreen() {
               accessibilityState={{ checked: chosen }}
               aria-checked={chosen}
               style={({ pressed }) => [
+                choiceTile.surface,
                 styles.chip,
                 styles.valueChip,
-                chosen && styles.chipOn,
-                pressed && styles.pressed,
+                chosen && choiceTile.chosen,
+                pressed && choiceTile.pressed,
               ]}
             >
-              <NoteValueGlyph value={value} color={chosen ? colors.actionText : colors.textPrimary} />
+              <NoteValueGlyph value={value} color={colors.textPrimary} />
             </Pressable>
           );
         })}
@@ -550,13 +552,14 @@ export function MeasureEditScreen() {
               accessibilityState={{ checked: on, disabled: !available }}
               aria-checked={on}
               style={({ pressed }) => [
+                choiceTile.surface,
                 styles.chip,
-                on && styles.chipOn,
+                on && choiceTile.chosen,
                 !available && styles.unavailable,
-                pressed && styles.pressed,
+                pressed && choiceTile.pressed,
               ]}
             >
-              <Text variant="metadataSmall" color={on ? 'actionText' : 'textPrimary'}>
+              <Text variant="metadataSmall" color="textPrimary" style={on && choiceTile.chosenLabel}>
                 {name}
               </Text>
             </Pressable>
@@ -582,15 +585,17 @@ export function MeasureEditScreen() {
           accessibilityState={{ checked: current?.pitch === 'rest' }}
           aria-checked={current?.pitch === 'rest'}
           style={({ pressed }) => [
+            choiceTile.surface,
             styles.chip,
             styles.restToggle,
-            current?.pitch === 'rest' && styles.chipOn,
-            pressed && styles.pressed,
+            current?.pitch === 'rest' && choiceTile.chosen,
+            pressed && choiceTile.pressed,
           ]}
         >
           <Text
             variant="metadataSmall"
-            color={current?.pitch === 'rest' ? 'actionText' : 'textPrimary'}
+            color="textPrimary"
+            style={current?.pitch === 'rest' && choiceTile.chosenLabel}
           >
             Rest
           </Text>
@@ -623,15 +628,17 @@ export function MeasureEditScreen() {
             accessibilityState={{ checked: current.tied_to_next === true }}
             aria-checked={current.tied_to_next === true}
             style={({ pressed }) => [
+              choiceTile.surface,
               styles.chip,
               styles.restToggle,
-              current.tied_to_next && styles.chipOn,
-              pressed && styles.pressed,
+              current.tied_to_next && choiceTile.chosen,
+              pressed && choiceTile.pressed,
             ]}
           >
             <Text
               variant="metadataSmall"
-              color={current.tied_to_next ? 'actionText' : 'textPrimary'}
+              color="textPrimary"
+              style={current.tied_to_next && choiceTile.chosenLabel}
             >
               Tie to next
             </Text>
@@ -825,44 +832,27 @@ export function MeasureEditScreen() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.keyChoices}
         >
-          <Pressable
+          <SheetChoice
+            label={isFirstBar ? 'Key signature unknown' : 'No new signature at this bar'}
+            detail={isFirstBar ? null : `${describeKeySignature(keyBefore)} continues`}
+            chosen={workingKey === null}
             onPress={() => {
               setKeyEdit({ value: null });
               setPickingKey(false);
             }}
-            accessibilityRole="button"
-            accessibilityState={{ selected: workingKey === null }}
-            aria-pressed={workingKey === null}
-            style={({ pressed }) => [styles.keyChoice, workingKey === null && styles.keyChoiceOn, pressed && styles.pressed]}
-          >
-            <Text variant="metadata">
-              {isFirstBar ? 'Key signature unknown' : 'No new signature at this bar'}
-            </Text>
-            {!isFirstBar ? (
-              <Text variant="metadataSmall" color="textTertiary">
-                {describeKeySignature(keyBefore)} continues
-              </Text>
-            ) : null}
-          </Pressable>
+          />
 
-          {KEY_SIGNATURE_CHOICES.map((choice) => {
-            const selectedChoice = sameEditableSignature(workingKey, choice.value);
-            return (
-              <Pressable
-                key={choice.value}
-                onPress={() => {
-                  setKeyEdit({ value: choice.value });
-                  setPickingKey(false);
-                }}
-                accessibilityRole="button"
-                accessibilityState={{ selected: selectedChoice }}
-                aria-pressed={selectedChoice}
-                style={({ pressed }) => [styles.keyChoice, selectedChoice && styles.keyChoiceOn, pressed && styles.pressed]}
-              >
-                <Text variant="metadata">{choice.label}</Text>
-              </Pressable>
-            );
-          })}
+          {KEY_SIGNATURE_CHOICES.map((choice) => (
+            <SheetChoice
+              key={choice.value}
+              label={choice.label}
+              chosen={sameEditableSignature(workingKey, choice.value)}
+              onPress={() => {
+                setKeyEdit({ value: choice.value });
+                setPickingKey(false);
+              }}
+            />
+          ))}
         </ScrollView>
       </BottomSheet>
 
@@ -881,44 +871,27 @@ export function MeasureEditScreen() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.keyChoices}
         >
-          <Pressable
+          <SheetChoice
+            label={isFirstBar ? 'Clef not read' : 'No new clef at this bar'}
+            detail={isFirstBar ? null : `${describeClef(clefBefore)} continues`}
+            chosen={workingClef === null}
             onPress={() => {
               setClefEdit({ value: null });
               setPickingClef(false);
             }}
-            accessibilityRole="button"
-            accessibilityState={{ selected: workingClef === null }}
-            aria-pressed={workingClef === null}
-            style={({ pressed }) => [styles.keyChoice, workingClef === null && styles.keyChoiceOn, pressed && styles.pressed]}
-          >
-            <Text variant="metadata">
-              {isFirstBar ? 'Clef not read' : 'No new clef at this bar'}
-            </Text>
-            {!isFirstBar ? (
-              <Text variant="metadataSmall" color="textTertiary">
-                {describeClef(clefBefore)} continues
-              </Text>
-            ) : null}
-          </Pressable>
+          />
 
-          {CLEF_CHOICES.map((choice) => {
-            const selectedChoice = workingClef === choice.value;
-            return (
-              <Pressable
-                key={choice.value}
-                onPress={() => {
-                  setClefEdit({ value: choice.value });
-                  setPickingClef(false);
-                }}
-                accessibilityRole="button"
-                accessibilityState={{ selected: selectedChoice }}
-                aria-pressed={selectedChoice}
-                style={({ pressed }) => [styles.keyChoice, selectedChoice && styles.keyChoiceOn, pressed && styles.pressed]}
-              >
-                <Text variant="metadata">{choice.label}</Text>
-              </Pressable>
-            );
-          })}
+          {CLEF_CHOICES.map((choice) => (
+            <SheetChoice
+              key={choice.value}
+              label={choice.label}
+              chosen={workingClef === choice.value}
+              onPress={() => {
+                setClefEdit({ value: choice.value });
+                setPickingClef(false);
+              }}
+            />
+          ))}
         </ScrollView>
       </BottomSheet>
 
@@ -933,21 +906,14 @@ export function MeasureEditScreen() {
           contentContainerStyle={styles.keyChoices}
           keyboardShouldPersistTaps="handled"
         >
-          {[{ value: null, label: 'No change at this bar' }, ...TEMPO_MARK_CHOICES].map((choice) => {
-            const chosen = sheetChoice === choice.value;
-            return (
-              <Pressable
-                key={choice.value ?? 'none'}
-                onPress={() => chooseTempo(choice.value)}
-                accessibilityRole="button"
-                accessibilityState={{ selected: chosen }}
-                aria-pressed={chosen}
-                style={({ pressed }) => [styles.keyChoice, chosen && styles.keyChoiceOn, pressed && styles.pressed]}
-              >
-                <Text variant="metadata">{choice.label}</Text>
-              </Pressable>
-            );
-          })}
+          {[{ value: null, label: 'No change at this bar' }, ...TEMPO_MARK_CHOICES].map((choice) => (
+            <SheetChoice
+              key={choice.value ?? 'none'}
+              label={choice.label}
+              chosen={sheetChoice === choice.value}
+              onPress={() => chooseTempo(choice.value)}
+            />
+          ))}
 
           {sheetChoice === 'new_tempo' ? (
             // Through the marks on a metronome, which is how a page states one.
@@ -996,6 +962,48 @@ export function MeasureEditScreen() {
       </BottomSheet>
 
     </ScreenContainer>
+  );
+}
+
+/**
+ * One row of the key, clef and tempo sheets.
+ *
+ * **The chosen row carries a check**, the mark every other list in the app
+ * uses for its choice (`InstrumentSheet`, `StartFromSheet`, the metronome).
+ * It was a grey fill and an ochre underline the app drew nowhere else
+ * (the UI review, 2026-11-12: one visual grammar). Choosing closes the sheet,
+ * so the check is what a musician sees on opening it again: where they are.
+ */
+function SheetChoice({
+  label,
+  detail = null,
+  chosen,
+  onPress,
+}: {
+  label: string;
+  /** What carries on from the bar before, on the "no change" row. */
+  detail?: string | null;
+  chosen: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected: chosen }}
+      aria-pressed={chosen}
+      style={({ pressed }) => [styles.keyChoice, pressed && styles.pressed]}
+    >
+      <View style={styles.keyChoiceText}>
+        <Text variant="metadata">{label}</Text>
+        {detail ? (
+          <Text variant="metadataSmall" color="textTertiary">
+            {detail}
+          </Text>
+        ) : null}
+      </View>
+      {chosen ? <Check size={ICON_SIZE.md} strokeWidth={2} color={colors.accent} /> : null}
+    </Pressable>
   );
 }
 
@@ -1115,16 +1123,17 @@ const styles = StyleSheet.create({
     paddingBottom: spacing['3xl'],
   },
   keyChoice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
     minHeight: 52,
-    justifyContent: 'center',
-    paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderBottomWidth: BORDER_WIDTH,
     borderBottomColor: colors.border,
   },
-  keyChoiceOn: {
-    backgroundColor: colors.surfacePressed,
-    borderBottomColor: colors.accent,
+  keyChoiceText: {
+    flex: 1,
+    minWidth: 0,
   },
   barScroll: {
     // Grouped with the controls below rather than floated under the status
@@ -1166,12 +1175,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: spacing.lg,
     borderRadius: radii.md,
-    borderWidth: BORDER_WIDTH,
-    borderColor: colors.border,
-  },
-  chipOn: {
-    backgroundColor: colors.actionBg,
-    borderColor: colors.actionBg,
   },
   restToggle: {
     alignSelf: 'flex-start',

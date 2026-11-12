@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { Input, Text } from '../../components/primitives';
+import { Input, Text, choiceTile } from '../../components/primitives';
 import { InstrumentChoice } from '../../components/profile/InstrumentChoice';
 import { preferences, usePreferences } from '../../data/preferences';
 import type { Instrument } from '../../data/types';
-import { BORDER_WIDTH, colors, spacing } from '../../design';
+import { spacing } from '../../design';
 import type { PickedPhoto } from '../../lib/onboarding';
 import {
   canContinue,
@@ -203,12 +203,13 @@ export function OnboardingFlow({
                   accessibilityState={{ selected }}
                   accessibilityLabel={choice.title}
                   style={({ pressed }) => [
+                    choiceTile.surface,
                     styles.roleChoice,
-                    selected && styles.chosen,
-                    pressed && !selected && styles.choicePressed,
+                    selected && choiceTile.chosen,
+                    pressed && choiceTile.pressed,
                   ]}
                 >
-                  <Text variant="pieceTitle" color={selected ? 'actionText' : 'textPrimary'}>
+                  <Text variant="pieceTitle" color="textPrimary">
                     {choice.title}
                   </Text>
                 </Pressable>
@@ -228,15 +229,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     marginBottom: 10,
     borderRadius: CHOICE_RADIUS,
-    borderWidth: BORDER_WIDTH,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  chosen: {
-    backgroundColor: colors.actionBg,
-    borderColor: colors.actionBg,
-  },
-  choicePressed: {
-    backgroundColor: colors.surfacePressed,
   },
 });
