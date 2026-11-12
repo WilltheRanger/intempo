@@ -1,27 +1,21 @@
-import * as ImagePicker from 'expo-image-picker';
 import { useEffect, useState } from 'react';
-import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
-import { Camera, FileMusic, Images, Mic, Settings } from '../../components/icons';
-import { Avatar, Input, Text } from '../../components/primitives';
+import { Input, Text } from '../../components/primitives';
 import { InstrumentChoice } from '../../components/profile/InstrumentChoice';
 import { preferences, usePreferences } from '../../data/preferences';
 import type { Instrument } from '../../data/types';
-import { BORDER_WIDTH, colors, fontFamily, MIN_TOUCH_TARGET, spacing, ICON_SIZE, ICON_STROKE_WIDTH } from '../../design';
-import { requestMicrophoneAccess } from '../../lib/audioRecorder';
+import { BORDER_WIDTH, colors, spacing } from '../../design';
 import type { PickedPhoto } from '../../lib/onboarding';
 import {
   canContinue,
-  FOUND_VIA_CHOICES,
   nextStep,
   previousStep,
   ROLE_CHOICES,
-  type FoundVia,
   type OnboardingStep,
   type PracticeRole,
 } from '../../lib/onboardingSteps';
 import type { SceneDirection } from '../../navigation/sceneMotion';
-import { ListeningIllustration } from './ListeningIllustration';
 import { OnboardingHowItWorks } from './OnboardingHowItWorks';
 import { OnboardingWelcome } from './OnboardingWelcome';
 import { StepFrame, type StepAction } from './StepFrame';
@@ -40,8 +34,6 @@ export interface OnboardingAnswers {
 export interface OnboardingFlowProps {
   /** What to open with: whatever the account already has. */
   initial: OnboardingAnswers;
-  /** A photograph already on the account, shown when nothing is chosen. */
-  storedPhotoUrl?: string | null;
   busy?: boolean;
   /** Why finishing did not go through, shown on the last step. */
   error?: string | null;
@@ -77,7 +69,6 @@ type Place = 'about' | 'welcome' | OnboardingStep;
  */
 export function OnboardingFlow({
   initial,
-  storedPhotoUrl = null,
   busy = false,
   error = null,
   onFinish,
@@ -91,9 +82,8 @@ export function OnboardingFlow({
   // "learning" from the start, so a teacher tapping Next through the flow was
   // filed as a student without being asked.
   const [role, setRole] = useState<PracticeRole | null>(saved.practiceRole);
-  const [source, setSource] = useState<FoundVia | null>(saved.foundVia);
-  const [photo, setPhoto] = useState(initial.photo);
-  const [asking, setAsking] = useState(false);
+  // No photo step any more; an account's own photograph passes through.
+  const photo = initial.photo;
 
   // A new step is a new screen to someone who cannot see it slide in: focus
   // goes to its title, as it does when a screen is pushed (`screenStep.ts`).
@@ -103,7 +93,7 @@ export function OnboardingFlow({
     if (direction !== 'none') announceScreenStep(place);
   }, [place, direction]);
 
-  const answers = { name, instrument, role, source };
+  const answers = { name, instrument, role };
   const current = (): OnboardingAnswers => ({ name, instrument, photo });
 
   function go(next: Place, way: SceneDirection) {
@@ -122,24 +112,6 @@ export function OnboardingFlow({
 
   function back(step: OnboardingStep) {
     go(previousStep(step) ?? 'welcome', 'back');
-  }
-
-  async function pickPhoto() {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      // Square, because it is shown in a circle everywhere it appears, and
-      // cropping here lets the musician choose what is inside the circle.
-      allowsEditing: true,
-      aspect: [1, 1],
-      // Not 1: a quality forces a re-encode to JPEG, and an iPhone shoots HEIC,
-      // which the server refuses for an avatar and most browsers cannot show.
-      quality: 0.8,
-    });
-    if (result.canceled || !result.assets?.length) {
-      return;
-    }
-    const asset = result.assets[0];
-    setPhoto({ uri: asset.uri, mimeType: asset.mimeType ?? 'image/jpeg' });
   }
 
   if (place === 'about') {
@@ -205,13 +177,19 @@ export function OnboardingFlow({
         <StepFrame
           {...frame}
           title="Learning or teaching?"
+          // **The last step** since 2026-11-12, when the microphone, "how did
+          // you find us" and the photo left onboarding (the owner's call): it
+          // finishes, so it carries the save's wait and its error.
           primary={{
             ...next,
+            label: 'Finish',
+            loading: busy,
             onPress: () => {
               if (role) preferences.setPracticeRole(role);
               forward('role');
             },
           }}
+          error={error}
         >
           <View accessibilityRole="radiogroup" accessibilityLabel="Learning or teaching?">
             {ROLE_CHOICES.map((choice) => {
@@ -239,168 +217,9 @@ export function OnboardingFlow({
           </View>
         </StepFrame>
       );
-
-    case 'microphone':
-      return (
-        <StepFrame
-          {...frame}
-          title="InTempo listens while you play"
-          primary={{
-            label: 'Allow microphone',
-            loading: asking,
-            onPress: () => {
-              setAsking(true);
-              // Whatever the answer, the flow goes on: a refusal is an answer,
-              // and the first take explains how to change it.
-              void requestMicrophoneAccess().finally(() => {
-                setAsking(false);
-                forward('microphone');
-              });
-            },
-          }}
-          secondary={{ label: 'Not now', onPress: () => forward('microphone'), disabled: asking }}
-        >
-          <ListeningIllustration />
-          <View style={styles.facts}>
-            <Fact icon={Mic} text="Only while you record" />
-            <Fact icon={FileMusic} text="Saved with the piece" />
-            <Fact
-              icon={Settings}
-              text={Platform.OS === 'web' ? 'Turn it off in your browser' : 'Turn it off in Settings'}
-            />
-          </View>
-        </StepFrame>
-      );
-
-    case 'source':
-      return (
-        <StepFrame
-          {...frame}
-          title="How did you find us?"
-          // Next is the way on, held until something is chosen; skipping is
-          // the quiet line under it, as "Not now" is a step earlier. "Skip" as
-          // the big black button read as the thing to do.
-          primary={{
-            ...next,
-            disabled: source === null,
-            onPress: () => {
-              preferences.setFoundVia(source);
-              forward('source');
-            },
-          }}
-          secondary={{
-            label: 'Skip',
-            onPress: () => {
-              preferences.setFoundVia(null);
-              forward('source');
-            },
-          }}
-        >
-          <View style={styles.chips} accessibilityRole="radiogroup" accessibilityLabel="How did you find us?">
-            {FOUND_VIA_CHOICES.map((choice) => {
-              const selected = source === choice.value;
-              return (
-                <Pressable
-                  key={choice.value}
-                  // Tapping the chosen one again un-chooses it: "or skip it"
-                  // has to stay possible after a stray tap.
-                  onPress={() => setSource(selected ? null : choice.value)}
-                  accessibilityRole="radio"
-                  aria-checked={selected}
-                  accessibilityState={{ selected }}
-                  style={({ pressed }) => [
-                    styles.chip,
-                    selected && styles.chosen,
-                    pressed && !selected && styles.choicePressed,
-                  ]}
-                >
-                  <Text variant="metadata" color={selected ? 'actionText' : 'textPrimary'}>
-                    {choice.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </StepFrame>
-      );
-
-    case 'photo': {
-      const shown = photo?.uri ?? storedPhotoUrl;
-      return (
-        <StepFrame
-          {...frame}
-          // "A photo" in an app whose main act is photographing music read as
-          // "photograph your music". And with none chosen, Finish and "Do this
-          // later" did the same thing: the button now chooses one, and the
-          // quiet line finishes without (2026-09-29).
-          title="Add a profile photo"
-          primary={
-            shown
-              ? { label: 'Finish', onPress: () => onFinish(current()), loading: busy }
-              : { label: 'Choose a photo', onPress: () => void pickPhoto(), disabled: busy }
-          }
-          secondary={
-            shown
-              ? undefined
-              : { label: 'Do this later', onPress: () => onFinish(current()), disabled: busy }
-          }
-          error={error}
-        >
-          <View style={styles.photo}>
-            {/*
-              A big target for a thumb, and only that: the button below says
-              the same thing — "Choose a photo" at the bottom, "Change" once
-              there is one — so to a screen reader or a keyboard this circle
-              was the same control announced twice.
-            */}
-            <Pressable
-              onPress={() => void pickPhoto()}
-              aria-hidden
-              // Not `focusable={false}`: Pressable on the web replaces it with
-              // a tab index of its own, which left this a hidden Tab stop.
-              tabIndex={-1}
-              style={({ pressed }) => [styles.photoSlot, pressed && styles.choicePressed]}
-            >
-              {shown ? (
-                <Avatar source={shown} size={PHOTO} />
-              ) : (
-                <Camera size={ICON_SIZE.xl} strokeWidth={ICON_STROKE_WIDTH} color={colors.textTertiary} />
-              )}
-            </Pressable>
-            {/* Only once there is a photo to change: before that, the button
-                at the bottom is the one way to choose. */}
-            {shown ? (
-              <Pressable
-                onPress={() => void pickPhoto()}
-                accessibilityRole="button"
-                style={({ pressed }) => [styles.photoButton, pressed && styles.choicePressed]}
-              >
-                <Images size={ICON_SIZE.md} strokeWidth={ICON_STROKE_WIDTH} color={colors.textPrimary} />
-                <Text variant="metadata" style={styles.photoButtonLabel}>
-                  Change
-                </Text>
-              </Pressable>
-            ) : null}
-          </View>
-        </StepFrame>
-      );
-    }
   }
 }
 
-/** One line of what the microphone does and does not do. */
-function Fact({ icon: Icon, text }: { icon: typeof Mic; text: string }) {
-  return (
-    <View style={styles.fact}>
-      <Icon size={ICON_SIZE.md} strokeWidth={ICON_STROKE_WIDTH} color={colors.textTertiary} />
-      <Text variant="metadata" color="textSecondary" style={styles.factText}>
-        {text}
-      </Text>
-    </View>
-  );
-}
-
-const PHOTO = 116;
 const CHOICE_RADIUS = 14;
 
 const styles = StyleSheet.create({
@@ -419,63 +238,5 @@ const styles = StyleSheet.create({
   },
   choicePressed: {
     backgroundColor: colors.surfacePressed,
-  },
-  facts: {
-    marginTop: 34,
-    borderTopWidth: BORDER_WIDTH,
-    borderTopColor: colors.border,
-  },
-  fact: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 13,
-    minHeight: 50,
-    borderBottomWidth: BORDER_WIDTH,
-    borderBottomColor: colors.border,
-  },
-  factText: {
-    flex: 1,
-  },
-  chips: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  chip: {
-    minHeight: MIN_TOUCH_TARGET,
-    paddingHorizontal: spacing.lg,
-    justifyContent: 'center',
-    borderRadius: MIN_TOUCH_TARGET / 2,
-    borderWidth: BORDER_WIDTH,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  photo: {
-    alignItems: 'center',
-  },
-  photoSlot: {
-    width: PHOTO,
-    height: PHOTO,
-    borderRadius: PHOTO / 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: BORDER_WIDTH,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    overflow: 'hidden',
-  },
-  photoButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    minHeight: MIN_TOUCH_TARGET,
-    paddingHorizontal: 18,
-    marginTop: 18,
-    borderRadius: MIN_TOUCH_TARGET / 2,
-    borderWidth: BORDER_WIDTH,
-    borderColor: colors.borderStrong,
-  },
-  photoButtonLabel: {
-    fontFamily: fontFamily.sansMedium,
   },
 });

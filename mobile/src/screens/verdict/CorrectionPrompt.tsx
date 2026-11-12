@@ -18,6 +18,7 @@ import {
   CORRECTION_CHOICES,
   correctionAcknowledgement,
   correctionWord,
+  heardLine,
 } from '../../lib/verdict/correction';
 
 /** Where the exchange has got to, for one measure. */
@@ -28,7 +29,7 @@ export type CorrectionState =
   | { kind: 'failed'; message: string };
 
 export interface CorrectionPromptProps {
-  /** What the app said, pre-selected so a musician changes an answer. */
+  /** What the app heard, said above the answers (`heardLine`). */
   appVerdict: UserVerdict;
   state: CorrectionState;
   onChoose: (choice: UserVerdict) => void;
@@ -122,13 +123,19 @@ export function CorrectionPrompt({
         in the row below already says what the app read, and names it for a
         screen reader ("Rushing, what this app read").
       */}
+      {/*
+        **The reading in words, then the question** (the owner, 2026-11-12,
+        reversing the line above's day-old note): with no tile raised, the
+        app's reading is said once here, and every answer below is equal.
+      */}
       <Text variant="metadataSmall" color="textTertiary" style={styles.question}>
-        {question}
+        {[heardLine(appVerdict), question].filter(Boolean).join(' ')}
       </Text>
 
       <View style={styles.choices}>
         {[...CORRECTION_CHOICES, 'unsure' as const].map((choice) => {
           const isApps = choice === appVerdict;
+          // Raised only once pressed: nothing starts chosen (`heardLine`).
           const chosen = busy && state.choice === choice;
           return (
             <Pressable
@@ -142,11 +149,11 @@ export function CorrectionPrompt({
                 onChoose(choice);
               }}
               accessibilityRole="button"
-              accessibilityState={{ disabled: busy, selected: isApps }}
-              // The app's own reading is the control's current value until the
-              // musician picks another, so it is genuinely the pressed one.
+              accessibilityState={{ disabled: busy, selected: chosen }}
+              // Pressed only once the musician has pressed it: the app's
+              // reading is said in words above, not pre-selected here.
               // `ariaState.test.ts` requires the web mirror of `selected`.
-              aria-pressed={isApps}
+              aria-pressed={chosen}
               accessibilityLabel={
                 isApps
                   ? `${correctionWord(choice)}, what this app read`
@@ -154,19 +161,17 @@ export function CorrectionPrompt({
               }
               style={({ pressed }) => [
                 styles.choice,
-                (chosen || isApps) && styles.choiceApps,
-                pressed && !busy && (chosen || isApps ? styles.raisedPressed : styles.choicePressed),
+                chosen && styles.choiceApps,
+                pressed && !busy && (chosen ? styles.raisedPressed : styles.choicePressed),
               ]}
             >
               <Text
                 variant="metadata"
                 numberOfLines={1}
-                color={
-                  chosen || isApps ? 'textPrimary' : busy ? 'textTertiary' : 'textSecondary'
-                }
+                color={chosen ? 'textPrimary' : busy ? 'textTertiary' : 'textPrimary'}
                 // Raised and weighted, as `SegmentedControl` marks its current
                 // option: the tile and the weight say which, not colour alone.
-                style={[styles.choiceLabel, (chosen || isApps) && styles.appsChoice]}
+                style={[styles.choiceLabel, chosen && styles.appsChoice]}
               >
                 {correctionWord(choice)}
               </Text>

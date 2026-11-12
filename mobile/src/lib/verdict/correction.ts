@@ -34,10 +34,41 @@ import { readMeasure } from './measureReading';
  * someone who guessed.
  */
 export const CORRECTION_CHOICES: readonly UserVerdict[] = [
+  'dragging',
   'on_tempo',
   'rushing',
-  'dragging',
 ] as const;
+
+/**
+ * **Slower to faster, as the chart above them runs** (the owner, 2026-11-12).
+ * They were "on tempo" first, ordered as answers rather than as a scale; with
+ * nothing pre-selected any more, the order is what a musician scans, and
+ * dragging, on tempo, rushing reads the way the tempo chart's slower and
+ * faster read.
+ */
+
+/**
+ * What the app heard, said in words above the answers: "We heard rushing."
+ *
+ * **Said, because it is no longer pre-selected** (the owner, 2026-11-12,
+ * reversing 2026-09-29). The app's reading was the raised tile, so the
+ * question looked answered before it was asked and the agreeing tap it was
+ * there to collect seldom came (three of the five reviews). Saying the reading
+ * keeps the information and leaves every answer, agreement included, a choice
+ * the musician makes.
+ */
+export function heardLine(reading: UserVerdict): string | null {
+  switch (reading) {
+    case 'rushing':
+      return 'We heard rushing.';
+    case 'dragging':
+      return 'We heard dragging.';
+    case 'on_tempo':
+      return 'We heard it on tempo.';
+    default:
+      return null;
+  }
+}
 
 /** The word each choice shows. Sentence case, matching the verdict column. */
 const CHOICE_WORDS: Record<UserVerdict, string> = {

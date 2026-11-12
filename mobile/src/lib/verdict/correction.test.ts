@@ -6,6 +6,7 @@ import {
   canCorrect,
   correctionAcknowledgement,
   CORRECTION_CHOICES,
+  heardLine,
   correctionWord,
 } from './correction';
 
@@ -101,12 +102,18 @@ describe('what the app said, in the musician’s words', () => {
 });
 
 describe('the words offered', () => {
-  it('offers the three real answers, on tempo first', () => {
-    // Ordered as the verdict column reads them, and matching the deviation
-    // bar's own left-to-right sense would put dragging first — but the row
-    // above says "Behind ← Target → Ahead" about *distance*, and these are
-    // answers to a question, not positions on a scale.
-    expect(CORRECTION_CHOICES).toEqual(['on_tempo', 'rushing', 'dragging']);
+  it('offers the three real answers slower to faster, as the chart runs', () => {
+    // On tempo first until 2026-11-12, as answers rather than a scale. With
+    // nothing pre-selected, the order is what is scanned, and it now reads the
+    // way the tempo chart's slower and faster read.
+    expect(CORRECTION_CHOICES).toEqual(['dragging', 'on_tempo', 'rushing']);
+  });
+
+  it('says what the app heard, in words, since nothing is pre-selected', () => {
+    expect(heardLine('rushing')).toBe('We heard rushing.');
+    expect(heardLine('dragging')).toBe('We heard dragging.');
+    expect(heardLine('on_tempo')).toBe('We heard it on tempo.');
+    expect(heardLine('unsure')).toBeNull();
   });
 
   it('has a word for every answer the API accepts, including unsure', () => {

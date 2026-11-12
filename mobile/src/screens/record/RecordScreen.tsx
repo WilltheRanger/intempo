@@ -73,11 +73,10 @@ import {
   takeWasAccepted,
 } from '../../lib/sync/queuedTakes';
 import { holdTake } from '../../lib/sync/heldTakes';
-import { startRecording } from '../../lib/audioRecorder';
+import { microphoneAllowed, startRecording } from '../../lib/audioRecorder';
 import {
   BORDER_WIDTH,
   colors,
-  disabledOpacity,
   fontFamily,
   ICON_SIZE,
   ICON_STROKE_WIDTH,
@@ -112,6 +111,7 @@ import {
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
 import { BeatIndicator } from './BeatIndicator';
 import { PracticeSetup } from './PracticeSetup';
+import { MicrophoneIntro } from '../../components/practice/MicrophoneIntro';
 import { takeStatus } from '../../lib/record/takeStatus';
 import {
   HEADPHONES_WARNING,
@@ -176,7 +176,7 @@ export function RecordScreen() {
   // musician plays it rather than after the WAV has already been uploaded.
   const { data: musician } = useMe();
   const limitMessage = describeReachedAnalysisLimit(musician?.usage);
-  const { instrument, metronomeMode, practiceSetupSeen, lastTakeHadSound } =
+  const { instrument, metronomeMode, practiceSetupSeen, lastTakeHadSound, microphoneExplained } =
     usePreferences();
 
   // Read through the store so the piece's own marking seeds it and yesterday's
@@ -223,6 +223,23 @@ export function RecordScreen() {
    * exist at the first `useState`. `hasWarning` is the rule and it is tested.
    */
   const [showSetup, setShowSetup] = useState(false);
+  /**
+   * The one-time explanation before the microphone is first asked for
+   * (`MicrophoneIntro`, moved here from onboarding on 2026-11-12).
+   */
+  const [showMicIntro, setShowMicIntro] = useState(false);
+  // Someone who has already said yes (the old onboarding step, or a take on
+  // another day) does not need it: settle it from what the platform reports.
+  useEffect(() => {
+    if (microphoneExplained) return undefined;
+    let live = true;
+    void microphoneAllowed().then((allowed) => {
+      if (live && allowed) preferences.setMicrophoneExplained(true);
+    });
+    return () => {
+      live = false;
+    };
+  }, [microphoneExplained]);
   /** The two doors that did not fit in the settings column. See the row. */
   const [showMore, setShowMore] = useState(false);
   /** The open metronome picker — how all four modes became reachable here. */
@@ -490,18 +507,26 @@ export function RecordScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
 
-  async function start() {
+  /**
+   * `afterIntro` is `MicrophoneIntro`'s Continue: the preference it has just
+   * set has not reached this render, and the press that opened the intro was
+   * a press of Start recording, so Continue carries on with it.
+   */
+  async function start(afterIntro = false) {
     // `startRecording` awaits a permission prompt, which is long enough for a
     // second tap to open a second microphone nobody would ever close.
     if (starting.current || recorder.current) {
       return;
     }
-    if (limitMessage) {
-      // The disabled control prevents ordinary taps; this guard protects a
-      // stale queued press and future callers from opening the microphone.
-      setProblem(limitMessage);
+    // The first take on a device explains the microphone before anything asks
+    // for it (`MicrophoneIntro`); its Continue is what opens the prompt.
+    if (!microphoneExplained && !afterIntro) {
+      setShowMicIntro(true);
       return;
     }
+    // **No limit check here any more** (the owner, 2026-11-12): a take with no
+    // free analysis left can still be recorded and heard back. Analyse is the
+    // only thing that spends, and it is the control that waits.
     starting.current = true;
     setIsStarting(true);
     impact(ImpactFeedbackStyle.Medium);
@@ -1202,6 +1227,22 @@ export function RecordScreen() {
     );
   }
 
+  if (showMicIntro) {
+    return (
+      <MicrophoneIntro
+        onBack={() => setShowMicIntro(false)}
+        onContinue={() => {
+          preferences.setMicrophoneExplained(true);
+          setShowMicIntro(false);
+          // Straight into the take that was asked for. Its own request is the
+          // system's question, and a refusal is explained where the take is
+          // (`microphoneBlocked`), which is where changing it is any use.
+          void start(true);
+        }}
+      />
+    );
+  }
+
   if (showSetup) {
     return (
       <PracticeSetup
@@ -1715,7 +1756,6 @@ export function RecordScreen() {
             active={recording}
             countingIn={false}
             busy={isStarting}
-            disabled={!recording && Boolean(limitMessage)}
             onPress={() => void (recording ? stop() : start())}
           />
         )}
@@ -1902,17 +1942,17 @@ function RecordButton({
   active,
   countingIn,
   busy = false,
-  disabled = false,
   onPress,
 }: {
   active: boolean;
   countingIn: boolean;
   busy?: boolean;
-  disabled?: boolean;
   onPress: () => void;
 }) {
-  const label = busy ? 'Starting microphone…' : disabled
-    ? 'Monthly analysis limit reached'
+  // No "limit reached" state: recording never locks for the allowance
+  // (`describeReachedAnalysisLimit`, 2026-11-12). Only Analyse does.
+  const label = busy
+    ? 'Starting microphone…'
     : countingIn
       ? 'Cancel count-in'
       : active
@@ -1921,11 +1961,11 @@ function RecordButton({
   return (
     <PressableScale
       onPress={onPress}
-      disabled={disabled || busy}
+      disabled={busy}
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityState={{ disabled: disabled || busy, busy }}
-      style={[styles.control, disabled && styles.controlDisabled]}
+      accessibilityState={{ disabled: busy, busy }}
+      style={styles.control}
       // More give than the default: this is the one control a musician reaches
       // for without looking, and it has to answer the finger.
       activeScale={0.94}
@@ -2243,9 +2283,6 @@ const styles = StyleSheet.create({
   control: {
     alignItems: 'center',
     gap: 7,
-  },
-  controlDisabled: {
-    opacity: disabledOpacity,
   },
   record: {
     width: RECORD_SIZE,

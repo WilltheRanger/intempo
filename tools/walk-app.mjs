@@ -995,21 +995,45 @@ console.log('\n## Telling the app it got a bar wrong');
     }
     return false;
   };
+  // It opens on the passage the verdict names, so its first bar is already
+  // the one under the cursor (2026-11-12, reversing "nothing is picked").
+  await chart.waitFor({ timeout: 15000 });
+  const opensOn = await chart.getAttribute('aria-valuenow');
+  if (opensOn === '5') pass('the result opens on its passage, bar 5 under the cursor');
+  else fail(`the result opened with ${opensOn === null ? 'nothing' : `bar ${opensOn}`} under the cursor, not bar 5`);
+  await selectMeasure(1);
   if (await selectMeasure(5)) pass('the take graph steps to measure 5 from the keyboard');
   else fail('the take graph could not be stepped to measure 5');
 
   // The question is about the passage the verdict names, not the bar under
   // the cursor (2026-09-29): one answer, sent for each judged bar in it.
-  const question = (await leaves()).find((l) => /^How did (bars? [\d–-]+|that) sound\?$/.test(l));
+  const question = (await leaves()).find((l) =>
+    /^(?:We heard [^.]+\. )?How did (bars? [\d–-]+|that) sound\?$/.test(l),
+  );
   if (question) pass(`the result asks about its passage: "${question}"`);
   else fail('the result does not ask how the passage sounded');
 
+  // Slower to faster, the way the chart reads, and nothing chosen for the
+  // musician: the app's own reading is said in words, not pre-raised
+  // (2026-11-12), because a raised tile made the question look answered.
   const offered = await leaves();
-  const words = ['On tempo', 'Rushing', 'Dragging', 'Not sure'].filter((w) =>
-    offered.includes(w),
-  );
-  if (words.length === 4) pass(`all four answers offered: ${words.join(' · ')}`);
-  else fail(`only ${words.length} of four answers offered`);
+  const answers = ['Dragging', 'On tempo', 'Rushing', 'Not sure'];
+  const at = answers.map((w) => offered.indexOf(w));
+  if (at.some((i) => i < 0)) fail(`only ${at.filter((i) => i >= 0).length} of four answers offered`);
+  else if (at.some((i, n) => n > 0 && i < at[n - 1]))
+    fail(`the answers are out of order: ${answers.slice().sort((a, b) => offered.indexOf(a) - offered.indexOf(b)).join(' · ')}`);
+  else pass(`all four answers offered, slower to faster: ${answers.join(' · ')}`);
+  const preChosen = [];
+  for (const w of answers) {
+    const pressed = await page
+      .getByRole('button', { name: w, exact: true })
+      .first()
+      .getAttribute('aria-pressed')
+      .catch(() => null);
+    if (pressed === 'true') preChosen.push(w);
+  }
+  if (preChosen.length) fail(`an answer is chosen before the musician answers: ${preChosen.join(', ')}`);
+  else pass('no answer is chosen for the musician');
 
   // A bar under a written change was never judged, so the graph must say so
   // rather than read a tempo into it.
@@ -1341,6 +1365,27 @@ else fail(`closing the reopened checks left for ${await path()}`);
   await bleeding.close();
 }
 
+/**
+ * **Start a take the way the first one on a device starts.** Every page below
+ * is a fresh browser profile, so each meets `MicrophoneIntro` — the one-time
+ * explanation shown before anything asks for the microphone (2026-11-12) —
+ * and its Continue is what starts the take and opens the browser's question.
+ * Resolves whether the explanation came first.
+ */
+async function startFirstTake(p) {
+  await p.getByRole('button', { name: /Start recording/i }).first().click({ timeout: 15000 });
+  const explained = await p
+    .getByText('InTempo listens while you play', { exact: true })
+    .first()
+    .waitFor({ timeout: 10000 })
+    .then(() => true)
+    .catch(() => false);
+  if (explained) {
+    await p.getByRole('button', { name: 'Continue', exact: true }).first().click({ timeout: 10000 });
+  }
+  return explained;
+}
+
 console.log('\n## A refused microphone');
 
 /*
@@ -1377,7 +1422,11 @@ console.log('\n## A refused microphone');
     .first()
     .click({ timeout: 15000 })
     .catch(() => {});
-  await denied.getByRole('button', { name: /Start recording/i }).first().click({ timeout: 15000 });
+  // The first take on a device explains the microphone before the browser
+  // asks, and Continue goes straight on to that question rather than back to
+  // a second press of Start recording.
+  if (await startFirstTake(denied)) pass('the first take explains the microphone before asking for it');
+  else fail('the first take asked for the microphone without explaining it');
 
   const said = await (async () => {
     const deadline = Date.now() + 15000;
@@ -1439,7 +1488,7 @@ console.log('\n## A microphone that is on and silent');
     .first()
     .click({ timeout: 15000 })
     .catch(() => {});
-  await quiet.getByRole('button', { name: /Start recording/i }).first().click({ timeout: 15000 });
+  await startFirstTake(quiet);
 
   // Long enough that the worklet has certainly posted, so "nothing arrived" is
   // ruled out and the take really is samples that are all zero.
@@ -1515,7 +1564,7 @@ console.log('\n## A take that records');
     .first()
     .click({ timeout: 15000 })
     .catch(() => {});
-  await loud.getByRole('button', { name: /Start recording/i }).first().click({ timeout: 15000 });
+  await startFirstTake(loud);
 
   const lines = async () =>
     loud.evaluate(() =>
@@ -1589,7 +1638,8 @@ console.log('\n## A take that records');
     // stopped drawing on 2026-09-29; the bar card's question and the
     // passage button are the verdict's alone.
     const verdict = await awaitLine(
-      (l) => /^How did (bars? [\d–-]+|that) sound\?$|^Practice bars? \d/i.test(l),
+      (l) =>
+        /^(?:We heard [^.]+\. )?How did (bars? [\d–-]+|that) sound\?$|^Practice bars? \d/i.test(l),
       20000,
     );
     if (verdict) pass('a real take is accepted and comes back with a reading');

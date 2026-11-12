@@ -81,6 +81,11 @@ export function describeLastFreeAnalysis(
  * the server already knows it will refuse. This copy is deliberately about
  * what remains usable too: score playback, the metronome and the rest cues are
  * practice tools even when another analysis is not available yet.
+ *
+ * **Recording stays open at the limit** (the owner, 2026-11-12). Only Analyse
+ * spends anything, and the record button used to lock with it, so a musician
+ * out of free analyses could not even record a take to hear back. It is the
+ * analysis that waits for the new month, and this says so.
  */
 export function describeReachedAnalysisLimit(
   usage: UsageResponse | null | undefined,
@@ -90,7 +95,7 @@ export function describeReachedAnalysisLimit(
   }
   const allowance =
     usage.limit === 1 ? 'your free analysis' : `all ${usage.limit} free analyses`;
-  return `You've used ${allowance} this month. Recording returns ${whenAnalysisAllowanceResets(usage.resets_at)}. You can still listen to the score and practise with the metronome.`;
+  return `You've used ${allowance} this month. You can still record, listen to the score and practise with the metronome; analysis comes back ${whenAnalysisAllowanceResets(usage.resets_at)}.`;
 }
 
 /**

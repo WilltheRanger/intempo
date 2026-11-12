@@ -108,7 +108,6 @@ export function OnboardingScreen() {
         instrument: me?.instrument ?? null,
         photo: null,
       }}
-      storedPhotoUrl={me?.avatarUrl ?? null}
       busy={save.isPending || upload.isPending}
       error={error}
       onFinish={(answers) => void finish(answers)}

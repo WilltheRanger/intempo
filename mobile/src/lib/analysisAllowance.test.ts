@@ -114,8 +114,14 @@ describe('describeReachedAnalysisLimit', () => {
 
   it('names what still works, since the app is not only the analysis', () => {
     expect(describeReachedAnalysisLimit(usage({ used: 3, remaining: 0 }))).toContain(
-      'listen to the score and practise with the metronome',
+      'You can still record, listen to the score and practise with the metronome',
     );
+  });
+
+  it('says it is the analysis that waits, not recording (the owner, 2026-11-12)', () => {
+    const line = describeReachedAnalysisLimit(usage({ used: 3, remaining: 0 })) ?? '';
+    expect(line).toContain('analysis comes back');
+    expect(line).not.toMatch(/Recording returns/);
   });
 
   it('says nothing while there is allowance left', () => {

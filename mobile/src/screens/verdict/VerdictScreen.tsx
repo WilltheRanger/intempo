@@ -308,12 +308,21 @@ export function VerdictScreen() {
   // The bars the verdict is about, which the main button practises.
   // The same rule every Practice button reads (`practicePassage`).
   const passage = practicePassage(take);
+  /*
+    **The chart opens on the verdict's own passage** (the owner, 2026-11-12,
+    reversing 2026-09-29's "nothing is picked at first"). The most specific
+    thing the app knew ("Bars 5–8 were fast · Bar 6: E instead of E♭") was
+    behind an unmarked tap on the curve, and three of the five reviews found it
+    only by accident. A tap still picks any other bar; with none picked, the
+    passage is what is shown.
+  */
+  const shown = selected ?? (showingPitch ? null : passage?.from ?? null);
   const recordAgain = () => navigation.replace('Record', { pieceId: take.pieceId });
   // The passage around the bar the musician tapped, in whichever reading the
   // chart is showing; nothing until they tap (`lib/verdict/barPassage.ts`).
   const tempoSpan =
-    selected !== null && !showingPitch
-      ? tempoPassageAt(take.measures, selected, take.targetBpm, take.tempoBeatUnit, take.tolerance)
+    shown !== null && !showingPitch
+      ? tempoPassageAt(take.measures, shown, take.targetBpm, take.tempoBeatUnit, take.tolerance)
       : null;
   const pitchSpan =
     selected !== null && showingPitch && take.intonation
@@ -482,7 +491,7 @@ export function VerdictScreen() {
             key="tempo"
             data={tempoLine}
             measures={take.measures}
-            selected={selected}
+            selected={shown}
             onSelect={setSelected}
             span={shaded}
             marked={marked}
@@ -496,7 +505,7 @@ export function VerdictScreen() {
         ) : (
           <MeasureBars
             measures={take.measures}
-            selected={selected}
+            selected={shown}
             onSelect={setSelected}
             span={span}
             targetBpm={take.targetBpm}

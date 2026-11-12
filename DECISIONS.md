@@ -1,5 +1,72 @@
 # InTempo Decisions
 
+## 2026-11-12 — Three reversals from the UI review: the result opens on its passage, recording stays open at the free limit, onboarding is three questions
+
+**Context:** A review of the whole app through five lenses (impeccable, taste,
+UI/UX, stop-slop, mobile-native) found three things that contradict decisions
+recorded here. They were put to the owner as rulings rather than fixed, and
+the owner approved all three. They are recorded here so that the next session
+does not undo them back, which is how 2026-09-29's own reversals were kept.
+
+**Decisions.**
+- **The result opens on the passage its verdict names** (reverses 2026-09-29,
+  "nothing is picked at first"). The chart's selection defaults to the
+  passage's first bar, so "Bars 5–8 were fast · Bar 6: E instead of E♭" is on
+  screen without a tap; a tap still picks any other bar. Three of the five
+  reviews found the most specific thing the app knew only by tapping the curve
+  by accident. `VerdictScreen` (`shown`).
+- **The answers to "How did bars 5–8 sound?" start with nothing chosen**
+  (reverses the same entry's "the app's reading as the raised tile"). The
+  raised tile made the question look answered, so the agreeing tap it existed
+  to collect seldom came. The reading is said in words instead ("We heard
+  rushing.", `heardLine`), the four answers stay on one line as the owner
+  asked then, and they run slower to faster (Dragging · On tempo · Rushing),
+  the way the chart above them reads.
+- **Recording stays open at the free limit.** Only Analyse spends an analysis,
+  and the record button locked with it, so a musician out of free analyses
+  could not record a take to hear back. Analyse is now the control that waits,
+  and the limit line says "You can still record…; analysis comes back on …"
+  (`describeReachedAnalysisLimit`, `tierLimit.test.ts`).
+- **Onboarding is three questions: name, instrument, learning or teaching**
+  (reverses 2026-09-23's six). "How did you find us?" and the profile photo
+  went: nothing in the app read either. The microphone moved to the first
+  take (`MicrophoneIntro`), shown once per device when Start recording is
+  first pressed, with one Continue that starts the take and so opens the
+  system's question. Onboarding asked for it before there was
+  anything to record and offered "Not now" beside "Allow microphone", which is
+  the pattern Apple's privacy guidance draws as the thing not to do before a
+  system prompt, and so a review risk for the native build. Where the platform
+  already reports the microphone allowed, the explanation is skipped.
+
+**Alternatives considered:**
+- *A tap prompt on the chart* instead of a default selection. It still hides
+  the finding behind a gesture.
+- *Keep the reading raised but make the tiles bordered chips.* The question
+  would still read as already answered.
+- *Lock recording at the limit and say why more clearly.* The lock was the
+  problem, not its wording: recording costs nothing.
+- *Keep the microphone step in onboarding with one Continue.* It would still
+  ask before anything can be recorded, which is the moment with no reason in
+  it.
+
+**Trade-offs accepted:**
+- **The result screen shows more before any interaction.** The 2026-09-29 cut
+  to "one line, one chart" kept the screen quiet; the passage line and its
+  wrong notes are now there from the start.
+- **Agreement is a deliberate tap now**, so the correction data may hold fewer
+  agreements than it did when agreeing was tapping the highlighted answer.
+  Those agreements were rare anyway, which is the finding that started this.
+- **Free accounts can record without limit.** Uploads still happen only on
+  Analyse, so this costs storage only for takes that are analysed.
+- **"How did you find us" answers stop being collected.** An answer already
+  stored on a device is kept and still read by `preferences`.
+
+**Three-foot test:** result, the title, then the chart with its passage
+named, then "Practice bars 5–8"; Record at the limit, the record button live,
+Analyse waiting; onboarding, three questions and a Finish.
+
+---
+
 ## 2026-10-24 — The browser revalidates the Library listing; the API confirms it without the notation
 
 **Context:** The Library refetches `GET /v1/scores` on every launch, and that
