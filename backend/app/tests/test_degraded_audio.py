@@ -150,6 +150,15 @@ def test_the_lag_grows_with_degradation_but_the_jitter_does_not(clean_take):
     a baseline near zero measures nothing, so the claim is held in the units a
     tolerance band is written in: a few milliseconds, far inside the 5% of a
     beat — 33 ms here — that the inner band allows.
+
+    **Re-based again 2026-11-13, when the fine spectrum's floor came up to
+    50 dB under its peak** (`audio._REFINE_TOP_DB`). The room still delays
+    the attack — 55.8 ms degraded — but the clean take now lands at 50.7 ms
+    where it landed at 43.5, because a note rising out of silence is no longer
+    placed early on its climb from 80 dB down. This asserted at least 10 ms
+    between the two: the shape it described was the placement's sensitivity
+    to where an attack starts from, which is the thing that changed. Jitter,
+    the number that survives the fit, is unchanged at 0.97 and 2.52 ms.
     """
     y, truth = clean_take
     worst = apply_clipping(
@@ -159,7 +168,7 @@ def test_the_lag_grows_with_degradation_but_the_jitter_does_not(clean_take):
     clean, degraded = _scores(y, truth), _scores(worst, truth)
 
     assert degraded["recall"] == 1.0
-    assert degraded["mean_error_ms"] > clean["mean_error_ms"] + 10, "expected more lag"
+    assert degraded["mean_error_ms"] > clean["mean_error_ms"], "expected more lag"
     # The number that survives the fit.
     assert clean["jitter_ms"] < 2.0
     assert degraded["jitter_ms"] < 4.0

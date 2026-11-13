@@ -432,6 +432,24 @@ _REFINE_SEARCH_S = 0.045
 _REFINE_RISE_S = 0.2
 #: The share of the peak flux that marks the rise.
 _REFINE_RISE_SHARE = 0.5
+#: How far under the segment's loudest moment the fine spectrum is floored.
+#:
+#: **Where on the attack an onset landed depended on what came before it**
+#: (2026-11-13). Floored 80 dB down, a note rising out of silence climbs
+#: from the floor and its half-peak comes early in the attack; a note rising
+#: out of the last one's release — 5 to 15 ms of bow change in a run of
+#: sixteenths — climbs from a level the 46 ms window still holds, and comes
+#: later. Measured on bowed notes after gaps of 5 ms to 300 ms, with 25–50 ms
+#: rises: placed 58.5 ms late after 5 ms, 42.2 ms after 50 ms or more. That
+#: is a run of sixteenths read as dragging against the quarters beside it.
+#:
+#: 50 dB brings the two together — 58.3 ms against 51–52 ms — at the cost of
+#: some of what the half-peak bought against the stroke itself: a 120 ms
+#: attack lands 16.9 ms after a 5 ms one, where it landed 12.6 ms after, and
+#: `test_onset_placement.py` holds that under 20. 45 dB crossed it; 30 dB
+#: made the gap irrelevant (1.3 ms) and the stroke matter 33 ms. Accuracy
+#: benchmark 95.44% → 96.16%; TUNING_LOG.md, 2026-11-13.
+_REFINE_TOP_DB = 50.0
 
 
 def refine_onset_times(y: np.ndarray, sr: int, times: np.ndarray) -> np.ndarray:
@@ -468,7 +486,7 @@ def refine_onset_times(y: np.ndarray, sr: int, times: np.ndarray) -> np.ndarray:
         peak = float(mel.max())
         if peak <= 0:
             continue
-        db = librosa.power_to_db(mel, ref=peak, top_db=_TOP_DB)
+        db = librosa.power_to_db(mel, ref=peak, top_db=_REFINE_TOP_DB)
         flux = librosa.onset.onset_strength(
             S=db, sr=sr, hop_length=_REFINE_HOP, lag=lag
         )

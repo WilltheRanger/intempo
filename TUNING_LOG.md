@@ -6,6 +6,65 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-13 (later) — Onset placement: the fine spectrum floored 50 dB down, not 80
+
+**Old value:** `audio._REFINE_TOP_DB` did not exist; `refine_onset_times`
+floored its 1024-point spectrum at `_TOP_DB`, 80 dB under the segment's
+loudest moment. **New value:** 50 dB. A module constant beside the other
+four `_REFINE_*` values rather than a `config.toml` key, as they are:
+`refine_onset_times` takes no config, and splitting one of five placement
+constants into the file would leave the other four looking like the
+untunable ones.
+
+**Why.** With the envelope no longer hearing notes that were not there (the
+entry below), the largest share of what the accuracy benchmark still got
+wrong was notes placed 13–30 ms from where the truth put them: 181 of 670
+wrong items. The detection was right; *where on the attack* it was placed
+depended on what came before the note. Floored 80 dB down, a note rising out
+of silence climbs from the floor and reaches half its flux peak early in the
+attack; a note rising out of the last one's release — a run of sixteenths,
+5–15 ms of bow change between strokes — climbs from a level the 46 ms window
+still holds, and is placed later. Bowed notes after gaps of 5 ms to 300 ms,
+25–50 ms rises, three of each:
+
+| floor | 5 ms | 14 ms | 30 ms | 50 ms | 100 ms | 300 ms | 5 vs 120 ms attack |
+|---|---|---|---|---|---|---|---|
+| 80 dB | 58.5 | 55.5 | 48.4 | 42.2 | 42.3 | 42.2 | 12.6 ms apart |
+| 60 dB | 58.5 | 55.0 | 48.7 | 47.4 | 46.9 | 47.0 | 13.1 |
+| **50 dB** | **58.3** | **55.4** | **52.1** | **51.1** | **51.9** | **52.0** | **16.9** |
+| 45 dB | 59.3 | 56.3 | 53.2 | 53.4 | 53.5 | 53.3 | 20.1 |
+| 40 dB | 59.3 | 56.3 | 55.3 | 55.0 | 54.9 | 55.1 | 24.9 |
+| 30 dB | 60.1 | 59.2 | 59.2 | 59.2 | 58.8 | 59.1 | 33.4 |
+
+Milliseconds late, mean of each column. A 16 ms spread with the gap is a run
+of sixteenths read as dragging against the quarters beside it — on every
+take, from the detector rather than the player. The shallower the floor, the
+less the gap matters and the more the stroke does, because the half-peak was
+what made a 120 ms bow start and a 5 ms one land close together
+(`test_onset_placement.py` holds them under 20 ms). 50 dB is the floor that
+halves the first (16 → 7 ms) and keeps the second inside its limit; 45 dB
+crossed it.
+
+Accuracy benchmark, quick set: 95.44% → 96.16% (notes within 12 ms
+93.12 → 94.43%, bars 92.01 → 93.40%; p95 timing error 13.8 → 11.6 ms).
+30 dB scored 96.68% and is rejected for the stroke.
+
+### Regression across the six fixtures
+
+Readings unchanged — status, quality, attacks, missed, extra and verdict on
+all six — and the mean timed deviation moves by at most 0.6 ms
+(`01_detache_clean` −0.4 → −1.0 ms, `04_slurred` +0.5 → −0.1, `06_pizzicato`
+−0.5 → −1.0; the rushing and dragging clips by 0.1).
+
+### One test re-based
+
+`test_degraded_audio.py`'s lag-and-jitter test asserted the degraded take
+lags the clean one by at least 10 ms. It now lags by 5.1 (55.8 against 50.7;
+was 43.5 clean): the clean take's notes, rising from silence, are no longer
+placed early on their climb. The room still delays the attack, which is
+asserted; the jitter that survives the offset fit is unchanged at 0.97 and
+2.52 ms.
+
 ## 2026-11-13 — The onset envelope: new `[onset.envelope]`, and `[onset.recovery] max_fall_db = 12.0`
 
 **Old values:** none. Every frame of the onset envelope was compared band by
