@@ -17,17 +17,17 @@ import { useReducedMotion } from '../../lib/useReducedMotion';
 import { NAV_BAR_HEIGHT, type BarAppearance } from '../../navigation/navigationBar';
 import type { BackButton } from '../../navigation/useGoBack';
 import { ChevronLeft, type LucideIcon } from '../icons';
+import { MenuButton, type MenuItem } from '../overlays/Menu';
 import { IconButton } from './IconButton';
 import { Text } from './Text';
 
-/** A glyph on the bar's trailing side. */
-export interface BarAction {
+/** A glyph on the bar's trailing side: a press, or a menu of choices (the •••). */
+export type BarAction = {
   icon: LucideIcon;
   /** Required: a glyph alone tells a screen reader nothing. */
   label: string;
-  onPress: () => void;
   disabled?: boolean;
-}
+} & ({ onPress: () => void; menu?: never } | { menu: readonly MenuItem[]; onPress?: never });
 
 /** What a screen puts in its navigation bar (`ScreenContainer.navigationBar`). */
 export interface NavigationBarConfig {
@@ -163,17 +163,27 @@ export function NavigationBar({
         </Animated.View>
 
         <View style={styles.trailing} onLayout={(e) => setTrailing(e.nativeEvent.layout.width)}>
-          {actions.map((action) => (
-            <IconButton
-              key={action.label}
-              icon={action.icon}
-              label={action.label}
-              onPress={action.onPress}
-              disabled={action.disabled}
-              variant="bare"
-              tone={tone}
-            />
-          ))}
+          {actions.map((action) =>
+            action.menu ? (
+              <MenuButton
+                key={action.label}
+                icon={action.icon}
+                label={action.label}
+                items={action.menu}
+                tone={tone}
+              />
+            ) : (
+              <IconButton
+                key={action.label}
+                icon={action.icon}
+                label={action.label}
+                onPress={action.onPress}
+                disabled={action.disabled}
+                variant="bare"
+                tone={tone}
+              />
+            ),
+          )}
         </View>
       </View>
 

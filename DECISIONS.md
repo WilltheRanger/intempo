@@ -1,5 +1,60 @@
 # InTempo Decisions
 
+## 2026-11-13 — A control's few choices open as a menu beside it; long sheets have two heights; tall sheets push the screen back
+
+**Context.** The owner asked, as part of "more like a mobile app":
+- "••• opens a small iOS menu next to the button instead of a sheet";
+- "long-pressing a Library tile lifts it and opens the same menu";
+- "tall sheets push the screen behind them back into a card, like iOS sheets
+  do, and long ones open at half height".
+
+**Decisions.**
+- **`Menu` (components/overlays).** A pull-down menu, opened from the
+  control's own rectangle. Placement is in `menuPlacement.ts`, with tests:
+  UIKit's 250pt width, under the control or over it when it does not fit,
+  and the corner it grows from.
+  - It is drawn in the app's own materials: card white, a hairline, the
+    `md` radius. It grows on the app's spring and dims nothing.
+  - It is a modal for focus, like the sheets.
+- **The bar's actions can carry a menu.** The piece's options and Record's
+  More use one: two and three choices that each rose as a sheet titled with
+  the piece.
+- **A held Library tile** lifts to 1.03 after UIKit's 400ms and opens the
+  piece's own options. Rename opens the piece with its editor up (a new
+  `edit` param, cleared once used). Delete asks the piece screen's question
+  word for word.
+- **Two heights for `expand` sheets** (`sheetDetents.ts`, Vaul's
+  thresholds). They open at half the window. The grab bar drags or taps them
+  to the full height. At medium the body ends where the sheet does on
+  screen, so a list's last rows can still be scrolled to.
+- **`RecedingSurface`.** The app is drawn on a surface that a sheet drives
+  with its own animated values: Vaul's 13pt inset, 14pt drop and 10pt
+  corner, over the app's warm ink. Two cases recede:
+  - a long sheet, in proportion as it rises from medium to full;
+  - a content-sized sheet taller than 60% of the window, with its rise and
+    drag.
+  - A short list leaves the screen alone, as UIKit does under a medium
+    sheet.
+
+**Alternatives considered.**
+- *zeego, Radix menus, Vaul or `@expo/ui`'s sheet.* zeego's native peers
+  are pinned to React Native versions this app is past and need a dev
+  client. Radix and Vaul are DOM components with their own focus handling,
+  beside a modal stack (`modalAccessibility`) that already holds focus the
+  way the audit checks. Their numbers are what was taken.
+- *Keeping the sheets for the options.* A whole surface across the bottom
+  of the screen for two choices, opened from a glyph at the top of it.
+
+**Trade-offs accepted.**
+- A phone's native driver cannot animate a corner radius. There, the
+  receded screen's 10pt corner is set while a tall sheet is up, rather than
+  grown.
+- A destructive choice is ink, not UIKit's red. The app has no destructive
+  colour (the verdict reds are reserved for takes), and the confirmation
+  that follows says what will be deleted.
+- A long sheet's list does not expand the sheet when it is scrolled at the
+  top, as UIKit's does. The grab bar is the way to the full height.
+
 ## 2026-11-13 — The web build's push is the iOS slide, by presenting every route as `containedTransparentModal` there
 
 **Context.** The owner asked that "tapping into a screen slides it in from the

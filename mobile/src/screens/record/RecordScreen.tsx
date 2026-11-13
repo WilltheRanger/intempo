@@ -6,7 +6,7 @@ import {
 } from '@react-navigation/native';
 import { practicingLine } from '../../lib/verdict/passage';
 import { useQueryClient } from '@tanstack/react-query';
-import { Mic, MoreVertical, Square } from '../../components/icons';
+import { Mic, Ellipsis, Square } from '../../components/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -242,7 +242,6 @@ export function RecordScreen() {
     };
   }, [microphoneExplained]);
   /** The two doors that did not fit in the settings column. See the row. */
-  const [showMore, setShowMore] = useState(false);
   /** The open metronome picker — how all four modes became reachable here. */
   const [pickingMetronome, setPickingMetronome] = useState(false);
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -1444,7 +1443,24 @@ export function RecordScreen() {
         */
         actions:
           !capturing && !reviewing
-            ? [{ icon: MoreVertical, label: 'More', onPress: () => setShowMore(true) }]
+            ? [
+                {
+                  icon: Ellipsis,
+                  label: 'More',
+                  menu: [
+                    {
+                      label: 'Upload a recording',
+                      detail: ACCEPTED_LABEL,
+                      onPress: () => void openUpload(),
+                    },
+                    {
+                      label: 'Before you record',
+                      detail: 'Checks for this take',
+                      onPress: () => setShowSetup(true),
+                    },
+                  ],
+                },
+              ]
             : [],
       }}
       scrollable={false}
@@ -1762,29 +1778,6 @@ export function RecordScreen() {
         The two doors that do not fit in the column, in the row grammar of the
         ones that do.
       */}
-      <BottomSheet
-        visible={showMore}
-        onClose={() => setShowMore(false)}
-        title="More"
-      >
-        <LinkRow
-          label="Upload a recording"
-          divided={false}
-          onPress={() => {
-            setShowMore(false);
-            void openUpload();
-          }}
-          hint={ACCEPTED_LABEL}
-        />
-        <LinkRow
-          label="Before you record"
-          onPress={() => {
-            setShowMore(false);
-            setShowSetup(true);
-          }}
-          hint="Checks for this take"
-        />
-      </BottomSheet>
 
       {/*
         Every way to mark the beat, on the screen that needs it. Before this

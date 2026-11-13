@@ -56,7 +56,11 @@ export type RootStackParamList = {
   CapturedPages: undefined;
   Transcribe: undefined;
   TranscriptionReview: undefined;
-  PieceDetail: { pieceId: string };
+  /**
+   * `edit` opens the piece's rename as it arrives: "Rename" in the menu a long
+   * press on its tile opens in the Library (2026-11-13).
+   */
+  PieceDetail: { pieceId: string; edit?: boolean };
   /** Every take of one piece, behind the piece screen's "Your takes" row. */
   PieceTakes: { pieceId: string };
   /**

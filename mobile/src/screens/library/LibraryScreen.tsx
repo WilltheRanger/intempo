@@ -1,6 +1,6 @@
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { useQueryClient } from '@tanstack/react-query';
-import { Library, Plus, Search } from '../../components/icons';
+import { Library, PencilLine, Plus, Search, Trash2 } from '../../components/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Platform, StyleSheet, View } from 'react-native';
 
@@ -12,6 +12,9 @@ import {
   SearchHeader,
 } from '../../components/primitives';
 import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
+import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
+import { Menu } from '../../components/overlays/Menu';
+import type { Rect } from '../../components/overlays/menuPlacement';
 import type { BarAction } from '../../components/primitives/NavigationBar';
 import { SECTION_HEADING } from '../../components/primitives/sectionHeading';
 import { Text } from '../../components/primitives/Text';
@@ -197,6 +200,14 @@ export function LibraryScreen() {
   const readAgain = useRetranscribe();
   const discard = useDeletePiece();
   const [discarding, setDiscarding] = useState<Piece | null>(null);
+  /*
+    **A piece held down on the shelf**, and its menu: the piece screen's own
+    options — Rename, Delete piece — from where the finger is (2026-11-13).
+    Kept after the menu closes so it can leave from where it opened.
+  */
+  const [held, setHeld] = useState<{ piece: Piece; anchor: Rect } | null>(null);
+  const [heldOpen, setHeldOpen] = useState(false);
+  const [deleting, setDeleting] = useState<Piece | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   // Whichever piece has something running. Read off the mutations rather than
@@ -435,6 +446,12 @@ export function LibraryScreen() {
             setActionError(null);
             setDiscarding(piece);
           }}
+          onHoldPiece={(piece, anchor) => {
+            impact(ImpactFeedbackStyle.Medium);
+            setHeld({ piece, anchor });
+            setHeldOpen(true);
+          }}
+          heldPieceId={heldOpen ? held?.piece.id ?? null : null}
         />
 
         <AddPieceSheet
@@ -469,6 +486,59 @@ export function LibraryScreen() {
           }}
           onCancel={() => setDiscarding(null)}
         />
+
+        <Menu
+          visible={heldOpen}
+          anchor={held?.anchor ?? null}
+          label={held ? `${held.piece.title} options` : 'Piece options'}
+          onClose={() => setHeldOpen(false)}
+          items={
+            held
+              ? [
+                  {
+                    label: 'Rename',
+                    icon: PencilLine,
+                    // The rename lives on the piece, so it opens there
+                    // with its editor already up.
+                    onPress: () =>
+                      navigation.navigate('PieceDetail', { pieceId: held.piece.id, edit: true }),
+                  },
+                  {
+                    label: 'Delete piece',
+                    icon: Trash2,
+                    onPress: () => {
+                      setActionError(null);
+                      setDeleting(held.piece);
+                    },
+                  },
+                ]
+              : []
+          }
+        />
+
+        {/* The piece screen's question, word for word, asked from the shelf. */}
+        <ConfirmDialog
+          visible={deleting !== null}
+          title="Delete this piece?"
+          message={
+            deleting
+              ? deleting.lastPracticedAt
+                ? `${deleting.title} and all its takes will be deleted.`
+                : `${deleting.title} will be deleted.`
+              : ''
+          }
+          confirmLabel="Delete piece"
+          onConfirm={() => {
+            const piece = deleting;
+            setDeleting(null);
+            if (piece) {
+              discard.mutate(piece.id, {
+                onError: (cause) => setActionError(describe(cause)),
+              });
+            }
+          }}
+          onCancel={() => setDeleting(null)}
+        />
       </View>
     </ScreenContainer>
   );
@@ -492,6 +562,10 @@ interface LibraryContentProps {
   onReadAgain: (piece: Piece) => void;
   /** Ask before throwing that scan away. */
   onDiscard: (piece: Piece) => void;
+  /** A tile held down: its menu, from where it is. */
+  onHoldPiece: (piece: Piece, anchor: Rect) => void;
+  /** The piece whose menu is open, standing proud of the shelf. */
+  heldPieceId: string | null;
   /** The one piece with something running, if any. */
   busyPieceId: string | null;
   insightByPiece: ReadonlyMap<string, PieceInsight>;
@@ -512,6 +586,8 @@ function LibraryContent({
   retrying,
   onReadAgain,
   onDiscard,
+  onHoldPiece,
+  heldPieceId,
   busyPieceId,
   insightByPiece,
   lastTakes,
@@ -654,6 +730,8 @@ function LibraryContent({
                   onPressIn={() => onTouchPiece(piece)}
                   onReadAgain={() => onReadAgain(piece)}
                   onDiscard={() => onDiscard(piece)}
+                  onLongPress={(anchor) => onHoldPiece(piece, anchor)}
+                  lifted={heldPieceId === piece.id}
                   busy={busyPieceId === piece.id}
                 />
               </FadeIn>

@@ -5,19 +5,17 @@ import {
   Images,
   Layers,
   Mic,
-  MoreVertical,
+  Ellipsis,
   PencilLine,
   Trash2,
 } from '../../components/icons';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Animated, StyleSheet, View } from 'react-native';
 import { ComposerField } from '../../components/pieces/ComposerField';
 import { useFieldOrder } from '../../components/primitives/useFieldOrder';
 
-import { BottomSheet } from '../../components/overlays/BottomSheet';
 import { PieceHeading } from '../../components/pieces/PieceHeading';
 import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
-import { SheetOptionRow } from '../../components/overlays/SheetOptionRow';
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
 import { PressableScale } from '../../components/motion';
 import { ScoreBand } from '../../components/score/ScoreBand';
@@ -123,7 +121,6 @@ export function PieceDetailScreen() {
   const history = usePieceHistory(params.pieceId);
   const load = loadStateFor({ isError, hasData: piece !== undefined });
 
-  const [menuVisible, setMenuVisible] = useState(false);
   // The page's scroll offset, for the key band's photograph.
   const scrollY = useRef(new Animated.Value(0)).current;
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -183,6 +180,22 @@ export function PieceDetailScreen() {
       );
     }
   }
+
+  /*
+    **Rename, asked for from the Library** — the menu a long press on the
+    piece's tile opens. The editor opens as the piece arrives, once, and the
+    request is cleared so coming back to this screen does not open it again.
+  */
+  useEffect(() => {
+    if (!params.edit || !piece) {
+      return;
+    }
+    startEditing(piece);
+    navigation.setParams({ edit: undefined });
+    // `startEditing` is a plain function of this render; the request is the
+    // only thing this answers to.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.edit, piece?.id]);
 
   // **While a delete is in flight, too.** The delete removes the piece from
   // every cache before the server answers (`useDeletePiece`), so `piece` is
@@ -247,7 +260,21 @@ export function PieceDetailScreen() {
       navigationBar={{
         back,
         actions: [
-          { icon: MoreVertical, label: 'Piece options', onPress: () => setMenuVisible(true) },
+          {
+            icon: Ellipsis,
+            label: 'Piece options',
+            menu: [
+              { label: 'Rename', icon: PencilLine, onPress: () => startEditing(piece) },
+              {
+                label: 'Delete piece',
+                icon: Trash2,
+                onPress: () => {
+                  setError(null);
+                  setConfirmingDelete(true);
+                },
+              },
+            ],
+          },
         ],
       }}
       footer={
@@ -571,31 +598,6 @@ export function PieceDetailScreen() {
         ) : null}
       </View>
 
-      <BottomSheet
-        visible={menuVisible}
-        onClose={() => setMenuVisible(false)}
-        title={piece.title}
-      >
-        <SheetOptionRow
-          icon={PencilLine}
-          divided={false}
-          label="Rename"
-          onPress={() => {
-            setMenuVisible(false);
-            startEditing(piece);
-          }}
-        />
-        <SheetOptionRow
-          icon={Trash2}
-          label="Delete piece"
-          description={piece.lastPracticedAt ? 'And all its takes' : undefined}
-          onPress={() => {
-            setMenuVisible(false);
-            setError(null);
-            setConfirmingDelete(true);
-          }}
-        />
-      </BottomSheet>
 
       <ConfirmDialog
         visible={confirmingDelete}

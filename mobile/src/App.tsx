@@ -15,6 +15,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as Linking from 'expo-linking';
 
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { RecedingSurface } from './components/overlays/RecedingSurface';
 import { screenConfig } from './navigation/linking';
 import { warmApi } from './data/api/client';
 import { describeFixtureReason, IS_LIVE_BACKEND } from './data/environment';
@@ -225,6 +226,12 @@ export default function App() {
         */}
         <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
         {typographyReady ? (
+          /*
+            The surface a tall sheet pushes back into a card
+            (`RecedingSurface`, 2026-11-13). Sheets are drawn in a `Modal`,
+            outside it, so only the screen moves.
+          */
+          <RecedingSurface>
           <NavigationContainer
             ref={navigationRef}
             onReady={() => {
@@ -252,6 +259,7 @@ export default function App() {
               <RootNavigator />
             </ChromeToneProvider>
           </NavigationContainer>
+          </RecedingSurface>
         ) : (
           // Holds the page colour so the first frame doesn't flash white.
           // Only ever on screen for the moment the fonts take to load — never

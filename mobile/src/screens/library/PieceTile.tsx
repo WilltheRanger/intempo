@@ -1,13 +1,14 @@
-import { useState } from 'react';
-import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import { useRef, useState } from 'react';
+import { Platform, StyleSheet, View, type LayoutChangeEvent, type ViewStyle } from 'react-native';
 
 import { PressableScale } from '../../components/motion';
+import type { Rect } from '../../components/overlays/menuPlacement';
 import { PieceHeading } from '../../components/pieces/PieceHeading';
 import { Text } from '../../components/primitives/Text';
 import { TextAction } from '../../components/primitives/TextAction';
 import { ScoreBand } from '../../components/score/ScoreBand';
 import type { Piece, PieceInsight, TakeResult } from '../../data/types';
-import { BORDER_WIDTH, colors, radii, spacing } from '../../design';
+import { BORDER_WIDTH, colors, motion, radii, spacing, SPRING_CSS } from '../../design';
 import { formatLastPracticedShort, joinMetadata } from '../../lib/format';
 import { pieceStatus } from '../../lib/library/pieceStatus';
 import {
@@ -47,6 +48,13 @@ export interface PieceTileProps {
   onPress: () => void;
   /** The finger landing, before the tap: where the piece starts loading. */
   onPressIn?: () => void;
+  /**
+   * A long press, with where the tile is on the screen: the piece's menu
+   * opens from it (`Menu`), as a context menu opens from what was held.
+   */
+  onLongPress?: (anchor: Rect) => void;
+  /** Its menu is open: the tile stands a little proud of the shelf. */
+  lifted?: boolean;
   /**
    * Read the page again. Absent where the shelf cannot act — a search result
    * list, a build with no backend — and the tile then says what is wrong
@@ -93,10 +101,13 @@ export function PieceTile({
   lastTake = null,
   onPress,
   onPressIn,
+  onLongPress,
+  lifted = false,
   onReadAgain,
   onDiscard,
   busy = false,
 }: PieceTileProps) {
+  const ref = useRef<View>(null);
   // How much page there is to fill. Measured rather than derived from the
   // aspect ratio, because the tile's width is whatever the shelf's column gap
   // leaves it and a second copy of that arithmetic would drift from the first.
@@ -122,9 +133,30 @@ export function PieceTile({
   const status = unreadable ? null : pieceStatus({ lastTake, insight });
 
   return (
+    /*
+      **Held, it lifts and opens its menu** (2026-11-13): Rename and Delete
+      piece, the piece screen's own options, from where the finger is. UIKit's
+      press-and-hold is 400ms, a tenth of a second sooner than a plain
+      `Pressable`'s default, and the tile stands a little proud of the shelf
+      while its menu is open.
+    */
+    <View
+      ref={ref}
+      collapsable={false}
+      style={[lifted ? styles.lifted : null, LIFT_MOTION]}
+    >
     <PressableScale
       onPress={onPress}
       onPressIn={onPressIn}
+      onLongPress={
+        onLongPress
+          ? () =>
+              ref.current?.measureInWindow((x, y, width, height) =>
+                onLongPress({ x, y, width, height }),
+              )
+          : undefined
+      }
+      delayLongPress={LONG_PRESS_MS}
       accessibilityRole="button"
       // The composer and the date are no longer drawn — the redesign's tile is
       // the page, the title and the rail — but they are still worth hearing.
@@ -253,10 +285,30 @@ export function PieceTile({
         </View>
       ) : null}
     </PressableScale>
+    </View>
   );
 }
 
+/** UIKit's press-and-hold for a context menu. */
+const LONG_PRESS_MS = 400;
+
+/** How far a held tile stands proud of the shelf. */
+const LIFT_SCALE = 1.03;
+
+/** The lift on the web, on the app's spring; a phone sets it outright. */
+const LIFT_MOTION = Platform.select({
+  web: {
+    transitionProperty: 'transform',
+    transitionDuration: `${motion.spring}ms`,
+    transitionTimingFunction: SPRING_CSS,
+  } as unknown as ViewStyle,
+  default: undefined,
+});
+
 const styles = StyleSheet.create({
+  lifted: {
+    transform: [{ scale: LIFT_SCALE }],
+  },
   tile: {
     flex: 1,
     minWidth: 0,

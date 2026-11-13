@@ -1288,13 +1288,14 @@ await page.waitForTimeout(400);
  */
 await open('pieces/fixture-bach-bwv1001/record');
 /*
- * **Behind ⋮ ("More").** This and "Upload a recording" are the two things
+ * **Behind ••• ("More").** This and "Upload a recording" are the two things
  * nobody passes through on the way to playing, so the redesign keeps them off
  * the panel.
  */
 await page.getByRole('button', { name: 'More' }).first().click({ timeout: 15000 });
 await page.waitForTimeout(400);
-await page.getByRole('button', { name: PRACTICE_SETUP_REOPEN }).first().click();
+// A menu by the bar's ••• since 2026-11-13, not a sheet: its rows are menu items.
+await page.getByRole('menuitem', { name: PRACTICE_SETUP_REOPEN }).first().click();
 await waitForText('the pre-flight to reopen', (l) => l.includes(PRACTICE_SETUP_HEADING));
 // The bar's back button (2026-11-13): "Back", out of the checks to the
 // controls they were reopened from.
