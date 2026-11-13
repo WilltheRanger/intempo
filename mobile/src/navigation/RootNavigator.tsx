@@ -308,7 +308,19 @@ function SignedInApp() {
         Navigation's own default is the route's code name. A screen whose
         title is data replaces its own once it is drawn (`ScreenContainer`).
       */
-      screenOptions={({ route }) => ({ headerShown: false, title: ROUTE_TITLES[route.name] })}
+      screenOptions={({ route }) => ({
+        headerShown: false,
+        title: ROUTE_TITLES[route.name],
+        /*
+          **On the web, so the screen being left stays drawn.** The web
+          navigator hides every screen but the focused one, except under a
+          screen presented this way — so the iOS slide has a screen to cross
+          and one to reveal (`sceneMotion.ts`). It changes nothing else there;
+          `StackScene` hides what is not being seen. A phone keeps the
+          platform's own push.
+        */
+        presentation: Platform.OS === 'web' ? 'containedTransparentModal' : 'card',
+      })}
       /*
         **Every pushed screen arrives, on the build that draws no transition
         of its own.** `native-stack` is the platform's own navigation

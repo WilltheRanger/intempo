@@ -4,6 +4,7 @@ import { useContext } from 'react';
 
 import { BACK, backAccessibilityLabel, backLabel } from './navigationBar';
 import { destinationTitle } from './routeTitles';
+import { useSceneExit } from './sceneExit';
 import type { RootNavigation, RootStackParamList } from './types';
 
 /**
@@ -42,10 +43,14 @@ export type BackTarget =
  */
 export function useGoBack(fallback: BackTarget): () => void {
   const navigation = useNavigation<RootNavigation>();
+  const exit = useSceneExit();
 
   return () => {
     if (navigation.canGoBack()) {
-      navigation.goBack();
+      // The screen slides out and the one under it comes back before the pop,
+      // as iOS's back does (`sceneExit.ts`) — only here, where the screen
+      // underneath is the one back goes to.
+      exit(() => navigation.goBack());
       return;
     }
     /*

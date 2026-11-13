@@ -1,5 +1,57 @@
 # InTempo Decisions
 
+## 2026-11-13 — The web build's push is the iOS slide, by presenting every route as `containedTransparentModal` there
+
+**Context.** The owner asked that "tapping into a screen slides it in from the
+right edge while the one you leave drifts a third left and dims; back
+reverses it". The web build had a 32pt slide-and-fade (2026-09-06). That
+entry recorded the full slide as "not possible without fighting the
+navigator": the web `NativeStackView` gives every screen but the focused one
+`display: none`, so the screen being left is gone on the first frame.
+
+**What that missed.** The same view keeps the screen under a focused route
+drawn when the focused route is *presented* as `transparentModal` or
+`containedTransparentModal`. On the web `presentation` changes nothing else
+(`NativeStackView.js`, line 94). So `RootNavigator` presents every route that
+way on the web and as `card` on a phone. `StackScene` then decides what is
+drawn:
+- the scene in front is drawn;
+- the one it covered is drawn while it drifts under, then hidden;
+- everything further down is hidden.
+
+**Decision.**
+- **Motion:** full-width slide, iOS's curve (`SLIDE_EASE`, 460ms). The
+  covered screen drifts 30% under and dims to 0.1 ink. Rules are in
+  `sceneMotion.ts` with tests.
+- **In-app back** slides the screen out and brings the one under it back
+  *before* popping (`sceneExit.ts`). The navigator removes a popped screen in
+  the same commit, so after the pop there is nothing left to slide.
+- **A refused pop** (Record's guard before discarding a take) slides the
+  screen back in front.
+- **Back any other way** — the browser's button, a `popTo` after a save —
+  brings the screen back from under. Safari's own swipe has already drawn its
+  change and is left alone, as before.
+- **A `replace`** fades in, because nothing was left behind for it to slide
+  across. The stack's first build (a cold start or a reload) does not move.
+
+**Alternatives considered.**
+- *`@react-navigation/stack` on the web.* It draws both screens and the
+  parallax itself. But its own docs say "Gestures are not supported on Web",
+  and it means a second navigator with its own behaviour on one platform.
+- *Patching `NativeStackView` with patch-package.* It would break on every
+  upgrade of a file nobody here owns.
+- *A JS edge-swipe back.* iOS Home Screen web apps have had the system's own
+  edge swipe since 12.2. The two would fire together.
+
+**Trade-offs accepted.**
+- Every route is drawn with a transparent container on the web, so each
+  scene paints its own opaque card (`StackScene`'s `backgroundColor`).
+- A back that skips a screen (`popTo`) does not draw an exit. Its destination
+  is not the screen underneath, so it comes back from under once the pop has
+  landed.
+- The slide runs on CSS transitions on the compositor. It cannot be
+  interrupted midway like UIKit's; a second back during it is ignored.
+
 ## 2026-11-13 — The app draws its own navigation bar, inside `ScreenContainer`, over the navigator's header
 
 **Context.** The owner asked for the app to feel "more like a mobile app".

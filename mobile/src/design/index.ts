@@ -23,6 +23,7 @@ export {
   pressedOpacity,
   disabledOpacity,
   EASE_OUT,
+  SLIDE_EASE_CSS,
   SPRING,
   SPRING_CSS,
   STAGGER_MS,
