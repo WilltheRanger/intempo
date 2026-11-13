@@ -86,6 +86,12 @@ class OnsetConfig:
     recovery_search_share: float = 0.25
     recovery_floor_ratio: float = 0.015
     recovery_min_level_db: float = 10.0
+    recovery_max_fall_db: float = 12.0
+    #: See `[onset.envelope]` in config.toml. Defaulted for the same reason.
+    envelope_floor_percentile: float = 10.0
+    envelope_floor_margin_db: float = 6.0
+    envelope_vibrato_from_hz: float = 600.0
+    envelope_vibrato_bands: int = 3
 
 
 @dataclass(frozen=True)
@@ -206,6 +212,7 @@ def _parse(raw: dict) -> AudioConfig:
     onset = raw["onset"]
     dbl = onset.get("double_bass", {})
     rec = onset.get("recovery", {})
+    env = onset.get("envelope", {})
     tol = raw["tolerance"]
     trend = raw["trend"]
     align = raw["alignment"]
@@ -231,6 +238,11 @@ def _parse(raw: dict) -> AudioConfig:
             recovery_search_share=float(rec.get("search_share", 0.25)),
             recovery_floor_ratio=float(rec.get("floor_ratio", 0.015)),
             recovery_min_level_db=float(rec.get("min_level_db", 10.0)),
+            recovery_max_fall_db=float(rec.get("max_fall_db", 12.0)),
+            envelope_floor_percentile=float(env.get("floor_percentile", 10.0)),
+            envelope_floor_margin_db=float(env.get("floor_margin_db", 6.0)),
+            envelope_vibrato_from_hz=float(env.get("vibrato_from_hz", 600.0)),
+            envelope_vibrato_bands=int(env.get("vibrato_bands", 3)),
         ),
         tolerance=ToleranceConfig(
             rushing_inner_pct=float(tol["rushing_inner_pct"]),

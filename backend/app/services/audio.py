@@ -12,15 +12,18 @@ clarity), §4 calibration-clip flow.
 from __future__ import annotations
 
 import tempfile
+from dataclasses import replace
 from pathlib import Path
 
 import librosa
 import numpy as np
+from scipy.ndimage import maximum_filter1d
 from scipy.signal import butter, sosfiltfilt
 
 from app.services.audio_config import (
     AudioConfig,
     InstrumentOnset,
+    OnsetConfig,
     load_audio_config,
 )
 
@@ -230,27 +233,112 @@ _ENVELOPE_OVERLAP_FRAMES = 64
 _TOP_DB = 80.0
 
 
-def onset_envelope(y: np.ndarray, sr: int) -> np.ndarray:
+def _band_floor(levels: np.ndarray, peak: float, onset: OnsetConfig) -> np.ndarray:
+    """Where each mel band stops counting, in dB against `peak`.
+
+    **A band that only ever holds the room still made flux.** Log-spectral flux
+    is level-blind by design — a quiet band and a loud one rise by the same
+    number of decibels when a note starts — and that is also its weakness: the
+    room's noise flickers by a few decibels in every band, every frame, and a
+    band the instrument never reaches contributes that flicker and nothing
+    else. Measured on a double bass take at 20 dB SNR, every band above 2 kHz
+    flickered as much between the notes as at them, half the mel bands were
+    pure noise, and the detector reported 101 onsets for 32 notes.
+
+    So each band is held at its own quiet level plus a margin: the
+    `envelope_floor_percentile`-th percentile of the band across the take —
+    the room, in any take with a pause in it — and `envelope_floor_margin_db`
+    above that. A band of room tone is flat under it and adds nothing; a band a
+    note reaches rises from the floor exactly as before, less the margin.
+
+    The percentile is of the whole take, every frame once, so it is the same
+    number however the take was blocked.
+    """
+    floor = np.array(
+        [np.percentile(row, onset.envelope_floor_percentile) for row in levels],
+        dtype=np.float64,
+    )
+    floor_db = librosa.power_to_db(floor, ref=peak, top_db=None)
+    return (np.maximum(floor_db, -_TOP_DB) + onset.envelope_floor_margin_db).astype(
+        np.float32
+    )
+
+
+def _vibrato_bands(n_mels: int, sr: int, onset: OnsetConfig) -> np.ndarray:
+    """The mel bands whose reference is widened to hold a vibrato.
+
+    **Vibrato made notes inside notes.** A held note's every partial swings a
+    quarter of a semitone either way five or six times a second, so its energy
+    moves back and forth between neighbouring bands and each swing is a rise
+    somewhere — a new onset to plain spectral flux. On a violin take with
+    10–24 cents of vibrato in a 20 dB room, the detector heard 62 attacks for
+    35 notes.
+
+    The reference a frame is compared with is therefore the loudest of three
+    neighbouring bands in the frame before (Böck & Widmer's SuperFlux, 2013):
+    a partial that only moved to the next band has not risen. **Only above
+    `envelope_vibrato_from_hz`**, because the mel scale is linear below 1 kHz
+    with bands 26 Hz apart: at 300 Hz that is more than a semitone, and three
+    of them hide a step to the next note. Applied to every band, a bass note
+    played over a sounding one went unheard (`test_varied_rhythm`).
+
+    **What it still costs** is a quiet note under a loud one's tail on a low
+    instrument, which looks to it like the loud note's partials moving — the
+    reason `analysis.analyze` reads a refused take once more without it.
+    """
+    centres = librosa.mel_frequencies(n_mels=n_mels + 2, fmin=0.0, fmax=sr / 2.0)[1:-1]
+    return centres >= onset.envelope_vibrato_from_hz
+
+
+def without_vibrato_filter(config: AudioConfig) -> AudioConfig | None:
+    """`config` with `_vibrato_bands` widening nothing, or None if it already
+    widens nothing. For `analysis.analyze`'s second reading of a refused take."""
+    onset = config.onset
+    if onset.envelope_vibrato_bands <= 1 or onset.envelope_vibrato_from_hz >= onset.sr / 2:
+        return None
+    return replace(config, onset=replace(onset, envelope_vibrato_from_hz=float("inf")))
+
+
+def _flux_reference(db: np.ndarray, widened: np.ndarray, size: int) -> np.ndarray:
+    """`db`, with each widened band replaced by the loudest of its neighbours."""
+    if size <= 1 or not widened.any():
+        return db
+    ref = db.copy()
+    ref[widened] = maximum_filter1d(db, size, axis=0)[widened]
+    return ref
+
+
+def onset_envelope(
+    y: np.ndarray, sr: int, *, config: AudioConfig | None = None
+) -> np.ndarray:
     """Spectral flux per frame, computed a block at a time.
 
-    Identical to `librosa.onset.onset_strength(y=...)` — verified against all
-    six corpus clips, agreeing to float32 rounding (1e-6) and producing exactly
-    the same detected onsets even with pathologically small blocks — and it
-    holds a fortieth of the memory.
+    Log-mel spectral flux, as `librosa.onset.onset_strength(y=...)` computes
+    it, with two changes to what a frame is compared with: each band is held at
+    its own noise floor (`_band_floor`), and above `envelope_vibrato_from_hz`
+    the reference is the loudest of three neighbouring bands (`_vibrato_bands`).
+    With both turned off — a 0th-percentile floor with no margin, and a
+    starting frequency above Nyquist — it is librosa's envelope to float32
+    rounding, which is what the blocking below was verified against: all six
+    corpus clips, exactly the same detected onsets even with pathologically
+    small blocks, in a fortieth of the memory.
 
     **Two references have to be global, and both are easy to miss.** The naive
     block-wise version differs from the whole-signal one by 0.13 on an envelope
     whose maximum is 14, because `power_to_db` defaults to `ref=np.max` *and*
     then clips to `top_db` below the maximum of whatever it was handed. Both
     are the maximum of the block rather than of the recording, so every block
-    ends up on its own scale. So the peak is found in a first pass that keeps
-    nothing, and the floor is applied by hand against it.
+    ends up on its own scale. So the peak is found in a first pass, and the
+    floor is applied by hand against it. The band floors are a third, and the
+    first pass collects them too: one float per band per frame, 128 rows
+    against the STFT's 1025 complex ones.
 
     One path, not two. A short signal takes a single block and goes through the
     same code — this project has been bitten four times by a second
     implementation that drifted, and a `len(y) < threshold` branch here would be
     a fifth.
     """
+    onset = (config or load_audio_config()).onset
     hop, n_fft = _HOP_LENGTH, _N_FFT
     total = 1 + y.size // hop
     spans = []
@@ -268,18 +356,32 @@ def onset_envelope(y: np.ndarray, sr: int) -> np.ndarray:
         )
 
     peak = 0.0
-    for lo, _, end in spans:
+    levels: np.ndarray | None = None
+    for lo, begin, end in spans:
         mel = _mel(lo, end)
         peak = max(peak, float(mel.max()))
-        del mel
+        if levels is None:
+            levels = np.empty((mel.shape[0], total), dtype=np.float32)
+        own = mel[:, begin - lo : begin - lo + (end - begin)]
+        levels[:, begin : begin + own.shape[1]] = own
+        del mel, own
     peak = peak or 1e-10
+    assert levels is not None
+    floor = _band_floor(levels, peak, onset)
+    widened = _vibrato_bands(levels.shape[0], sr, onset)
+    del levels
 
     out = np.zeros(total, dtype=np.float32)
     for lo, begin, end in spans:
         mel = _mel(lo, end)
         db = librosa.power_to_db(mel, ref=peak, top_db=None)
-        np.maximum(db, -_TOP_DB, out=db)
-        piece = librosa.onset.onset_strength(S=db, sr=sr, hop_length=hop)
+        np.maximum(db, floor[:, None], out=db)
+        piece = librosa.onset.onset_strength(
+            S=db,
+            ref=_flux_reference(db, widened, onset.envelope_vibrato_bands),
+            sr=sr,
+            hop_length=hop,
+        )
         take = piece[begin - lo : begin - lo + (end - begin)]
         out[begin : begin + take.size] = take[: out.size - begin]
         del mel, db, piece
@@ -405,21 +507,12 @@ def refine_onset_times(y: np.ndarray, sr: int, times: np.ndarray) -> np.ndarray:
 _FLOOR_PERCENTILE = 5.0
 
 
-def level_above_floor_db(y: np.ndarray, sr: int, times: np.ndarray) -> np.ndarray:
-    """How far above the take's own noise floor the recording sounds at each time.
+def _rms_db(y: np.ndarray) -> np.ndarray:
+    """RMS per hop in dB, computed a block at a time.
 
-    **Relative to the take, so it stays as level-invariant as the detector.** A
-    take recorded ten decibels quieter has a floor ten decibels lower, and
-    every answer here is the same.
-
-    RMS per hop, computed a block at a time for the reason `onset_envelope`
-    gives: framing a long take whole allocates a window per frame. Each time is
-    read as the loudest frame within one hop of it, so an attack that lands
-    between two frames is not judged by the quieter of them.
+    Blocked for the reason `onset_envelope` gives: framing a long take whole
+    allocates a window per frame.
     """
-    times = np.asarray(times, dtype=float)
-    if times.size == 0 or y.size == 0:
-        return np.zeros(times.size, dtype=float)
     hop = _HOP_LENGTH
     block = _ENVELOPE_BLOCK_FRAMES * hop
     levels: list[np.ndarray] = []
@@ -431,13 +524,60 @@ def level_above_floor_db(y: np.ndarray, sr: int, times: np.ndarray) -> np.ndarra
             y=piece, frame_length=_N_FFT, hop_length=hop, center=True
         )[0]
         levels.append(rms[: int(np.ceil(piece.size / hop))])
-    db = 20.0 * np.log10(np.maximum(np.concatenate(levels), 1e-10))
+    return 20.0 * np.log10(np.maximum(np.concatenate(levels), 1e-10))
+
+
+def _frames_of(times: np.ndarray, sr: int, n: int) -> np.ndarray:
+    return np.clip(np.round(times * sr / _HOP_LENGTH).astype(int), 0, n - 1)
+
+
+def level_above_floor_db(y: np.ndarray, sr: int, times: np.ndarray) -> np.ndarray:
+    """How far above the take's own noise floor the recording sounds at each time.
+
+    **Relative to the take, so it stays as level-invariant as the detector.** A
+    take recorded ten decibels quieter has a floor ten decibels lower, and
+    every answer here is the same.
+
+    Each time is read as the loudest frame within one hop of it, so an attack
+    that lands between two frames is not judged by the quieter of them.
+    """
+    times = np.asarray(times, dtype=float)
+    if times.size == 0 or y.size == 0:
+        return np.zeros(times.size, dtype=float)
+    db = _rms_db(y)
     floor = float(np.percentile(db, _FLOOR_PERCENTILE))
-    frames = np.clip(np.round(times * sr / hop).astype(int), 0, db.size - 1)
+    frames = _frames_of(times, sr, db.size)
     near = np.maximum.reduce(
         [db[np.clip(frames + k, 0, db.size - 1)] for k in (-1, 0, 1)]
     )
     return near - floor
+
+
+#: Frames either side of a time that `level_change_db` compares: 70 ms.
+_CHANGE_FRAMES = 3
+
+
+def level_change_db(y: np.ndarray, sr: int, times: np.ndarray) -> np.ndarray:
+    """How much louder the recording is just after each time than just before.
+
+    The loudest of the `_CHANGE_FRAMES` frames after, against the loudest of
+    those before. A note starting is a rise, or at least not a fall — even
+    under the tail of a louder one, which it adds to. A note *ending* is a
+    fall of tens of decibels, and the release is exactly where a cleaner
+    envelope leaves a small, isolated peak for the second look to find.
+    """
+    times = np.asarray(times, dtype=float)
+    if times.size == 0 or y.size == 0:
+        return np.zeros(times.size, dtype=float)
+    db = _rms_db(y)
+    frames = _frames_of(times, sr, db.size)
+    after = np.maximum.reduce(
+        [db[np.clip(frames + k, 0, db.size - 1)] for k in range(1, _CHANGE_FRAMES + 1)]
+    )
+    before = np.maximum.reduce(
+        [db[np.clip(frames - k, 0, db.size - 1)] for k in range(1, _CHANGE_FRAMES + 1)]
+    )
+    return after - before
 
 
 def onset_settings_for(config: AudioConfig, instrument: str | None) -> InstrumentOnset:
@@ -518,7 +658,7 @@ def detect_onsets(
     n_fft = _N_FFT
     wait_frames = max(1, int(round((onset.wait_ms / 1000.0) * sr / hop_length)))
 
-    strength = onset_envelope(y, sr)
+    strength = onset_envelope(y, sr, config=cfg)
 
     # The first frames are silenced because their input is not audio.
     #

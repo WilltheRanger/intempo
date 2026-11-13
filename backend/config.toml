@@ -148,6 +148,38 @@ floor_ratio = 0.015
 # at the floor, and a quiet note lost in a live room is still 30+ dB above it.
 # Ten is a margin in that gap, not a tuned point. See TUNING_LOG.md, 2026-09-22.
 min_level_db = 10.0
+# How far the level may fall across a recovered note, in dB: the loudest 70 ms
+# after it against the loudest 70 ms before. A note's release falls by tens of
+# decibels; an attack, even a quiet one under a louder note's tail, mostly
+# adds to the level. Measured: the two releases this rejects fell 29 and 30 dB;
+# the notes the pass recovers on the room takes of `test_degraded_audio.py`
+# sit between −8.6 and +2.5 dB, the falling ones where a tail decays under a
+# note 20 dB quieter. Twelve is a margin in that gap, not a tuned point. See
+# TUNING_LOG.md, 2026-11-13.
+max_fall_db = 12.0
+
+[onset.envelope]
+# What each frame of the onset envelope is compared with. See
+# `audio._band_floor` and `audio._vibrato_bands`, and TUNING_LOG.md,
+# 2026-11-13, for every number below.
+#
+# Each mel band is held at its own quiet level: this percentile of the band
+# across the take, plus the margin. A band that only ever holds the room is
+# then flat and adds no flux; a band a note reaches still rises from it.
+# Swept on the accuracy benchmark (`tools/eval/accuracy_bench.py`): 5th, 10th
+# and 20th percentiles land within 0.2 points of each other; a 3 dB margin
+# lets the flicker through (94.3%), 6 and 10 dB do not (95.4, 95.5%).
+floor_percentile = 10.0
+floor_margin_db = 6.0
+# Above this, a band is compared with the loudest of `vibrato_bands`
+# neighbouring bands a frame earlier, so a partial that only moved over is not
+# a rise. Below it the mel bands are 26 Hz apart, more than a semitone under
+# 450 Hz, and widening them hides the step to the next note: applied to every
+# band, a note played over a sounding one went unheard. From 400 Hz it still
+# was; from 500 Hz it was heard. 600 is the margin over that edge, and within
+# 0.2 points of 500 on the accuracy benchmark.
+vibrato_from_hz = 600.0
+vibrato_bands = 3
 
 [intake]
 # What an uploaded file has to be before the pipeline decodes it.

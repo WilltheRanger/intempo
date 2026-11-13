@@ -996,7 +996,7 @@ def _recover_missed_onsets(
         return np.array([], dtype=float)
 
     emphasised = audio_svc.pre_emphasis(heard.y, config=config)
-    strength = audio_svc.onset_envelope(emphasised, heard.sr)
+    strength = audio_svc.onset_envelope(emphasised, heard.sr, config=config)
     search = (min_gap_s or 0.0) * config.onset.recovery_search_share
     if search <= 0:
         return np.array([], dtype=float)
@@ -1030,6 +1030,20 @@ def _recover_missed_onsets(
             >= config.onset.recovery_min_level_db
         )
         found = found[loud_enough]
+    # **And not where the sound is ending.** Each band of the envelope is held
+    # at its own noise floor (`audio._band_floor`), so between notes it is
+    # flat, and the little spray of a note's release is left standing alone as
+    # an interior maximum: a page whose bars 1–4 were played twice had a note
+    # "recovered" off the end of its last note, 1.6% of the envelope peak and
+    # 42 dB above the room, as the level there fell by 29 dB. An attack is
+    # never that — under a louder note's tail it adds to the level. See
+    # `[onset.recovery]` in config.toml.
+    if found.size:
+        not_ending = (
+            audio_svc.level_change_db(heard.y, heard.sr, found)
+            >= -config.onset.recovery_max_fall_db
+        )
+        found = found[not_ending]
     # Placed on the same fine grid as everything the first pass reported, so a
     # recovered note is not the one note in the take still sitting on a frame.
     return audio_svc.refine_onset_times(emphasised, heard.sr, found)
@@ -2152,8 +2166,69 @@ def analyze(
         An `AnalysisResult`. It never raises on untrustworthy input: it
         returns a status of `no_onsets`, `alignment_failed` or `not_played`,
         which the app turns into a clear message for the musician.
+
+    **A take refused with the vibrato filter is read once more without it.**
+    The filter (`audio._vibrato_bands`) is what keeps a held note's vibrato
+    from being heard as new notes, and it has one cost: a quiet note that
+    starts under the tail of a loud one on a low instrument looks to it like
+    the loud note's partials moving. Measured on a double bass page with every
+    other note 20 dB down, in a 0.9-second room, the take was refused outright
+    with the filter and read at quality 0.97 without it; at 16 dB and below
+    the two read identically. So a refusal is not the last word until the
+    take has been heard the more sensitive way, and only a reading that is
+    not itself refused replaces it — the first refusal, and its sentence,
+    stand otherwise.
     """
     cfg = config or load_audio_config()
+    if not isinstance(audio, tuple):
+        audio = audio_svc.load_audio(audio, sr=cfg.onset.sr)
+    first = _analyze_take(
+        audio,
+        score,
+        target_bpm,
+        instrument=instrument,
+        double_bass=double_bass,
+        config=cfg,
+        trace=trace,
+    )
+    unfiltered = audio_svc.without_vibrato_filter(cfg)
+    if first.status != "alignment_failed" or unfiltered is None:
+        return first
+    retried: dict[str, Any] | None = {} if trace is not None else None
+    second = _analyze_take(
+        audio,
+        score,
+        target_bpm,
+        instrument=instrument,
+        double_bass=double_bass,
+        config=unfiltered,
+        trace=retried,
+    )
+    if second.status == "alignment_failed":
+        return first
+    log.info(
+        "analysis: refused with the vibrato filter, read without it at quality %.3f",
+        second.quality,
+    )
+    if trace is not None and retried is not None:
+        trace.clear()
+        trace.update(retried)
+        _traced(trace, vibrato_filter="off: refused with it")
+    return second
+
+
+def _analyze_take(
+    audio: tuple[np.ndarray, int],
+    score: ScoreJson,
+    target_bpm: float,
+    *,
+    instrument: str | None,
+    double_bass: bool,
+    config: AudioConfig,
+    trace: dict[str, Any] | None,
+) -> AnalysisResult:
+    """`analyze`, with one setting of the detector. See `analyze`."""
+    cfg = config
 
     # Step 1: decode the audio and find every note attack.
     heard = prepare_for_alignment(
