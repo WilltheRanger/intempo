@@ -13,9 +13,11 @@ import { pieceStatus } from '../../lib/library/pieceStatus';
 import {
   DISCARD_LABEL,
   READ_AGAIN_LABEL,
+  readingLine,
   tileMessage,
   tileState,
 } from '../../lib/library/tileState';
+import { ReadingPage } from './ReadingPage';
 
 /** Small enough that a tile is a spine, large enough that the notes are notes. */
 const TILE_SCALE = 0.62;
@@ -116,6 +118,7 @@ export function PieceTile({
   const state = tileState(piece);
   const message = tileMessage(state);
   const unreadable = state.kind === 'unreadable';
+  const reading = state.kind === 'reading' ? readingLine(piece) : null;
   const status = unreadable ? null : pieceStatus({ lastTake, insight });
 
   return (
@@ -125,7 +128,10 @@ export function PieceTile({
       accessibilityRole="button"
       // The composer and the date are no longer drawn — the redesign's tile is
       // the page, the title and the rail — but they are still worth hearing.
-      accessibilityLabel={[piece.title, meta, status]
+      // What the page says is part of it too: the reading's step, or that it
+      // could not be read. The label replaces the tile's own text, so a line
+      // drawn on the page and left out of here was a line nobody heard.
+      accessibilityLabel={[piece.title, meta, message ?? reading ?? status]
         .filter(Boolean)
         .join(', ')}
       activeScale={0.98}
@@ -154,6 +160,8 @@ export function PieceTile({
             />
           </View>
         ) : null}
+        {/* A page being read: its staves, waiting for their notes. */}
+        {reading !== null ? <ReadingPage line={reading} /> : null}
         {/*
           On the page rather than under the title, because it is a statement
           about the page: this is what would have been engraved here. Set in
