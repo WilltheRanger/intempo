@@ -119,7 +119,8 @@ export function HelpScreen() {
       <View>
         <Text variant="pieceTitle">{status.title}</Text>
         {status.detail ? (
-          <Text variant="body" color="textSecondary" style={styles.detail}>
+          // What the connection check found, worth copying into a report.
+          <Text variant="body" color="textSecondary" selectable style={styles.detail}>
             {status.detail}
           </Text>
         ) : null}

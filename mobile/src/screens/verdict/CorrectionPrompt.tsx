@@ -21,6 +21,7 @@ import {
   correctionWord,
   heardLine,
 } from '../../lib/verdict/correction';
+import { HapticTap } from '../../components/motion/HapticTap';
 
 /** Where the exchange has got to, for one measure. */
 export type CorrectionState =
@@ -172,6 +173,7 @@ export function CorrectionPrompt({
               >
                 {correctionWord(choice)}
               </Text>
+              <HapticTap />
             </Pressable>
           );
         })}

@@ -6,6 +6,7 @@ import { Text } from '../../components/primitives';
 import { BORDER_WIDTH, colors, ICON_SIZE, spacing } from '../../design';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import type { StartOption } from '../../lib/record/startOptions';
+import { HapticTap } from '../../components/motion/HapticTap';
 
 /**
  * "Start from": the named places a take can begin, then the way to pick any
@@ -65,6 +66,7 @@ export function StartFromSheet({
                 </Text>
               </View>
               {on ? <Check size={ICON_SIZE.md} strokeWidth={2} color={colors.accent} /> : null}
+              <HapticTap />
             </Pressable>
           );
         })}

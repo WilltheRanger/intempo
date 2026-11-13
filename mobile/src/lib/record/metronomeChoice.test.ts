@@ -4,6 +4,7 @@ import type { MetronomeMode } from '../../data/types';
 import {
   HEADPHONES_WARNING,
   METRONOME_ORDER,
+  hapticMetronomeProblem,
   metronomeChoices,
   metronomeValueLabel,
 } from './metronomeChoice';
@@ -65,5 +66,36 @@ describe('metronomeChoices', () => {
       expect(metronomeValueLabel(choice.mode)).toBe(choice.label);
       expect(metronomeValueLabel(choice.mode)).not.toMatch(/metronome/i);
     }
+  });
+});
+
+describe('the haptic metronome where a device cannot tap on a beat', () => {
+  it('is not offered', () => {
+    const offered = metronomeChoices({ canTapOnBeat: false }).map((choice) => choice.mode);
+    expect(offered).not.toContain('haptic');
+    expect(offered).toEqual(['off', 'visual', 'audio_with_headphones']);
+  });
+
+  it('stays on the list when it is the mode already chosen, so the control shows it', () => {
+    const offered = metronomeChoices({ canTapOnBeat: false, current: 'haptic' }).map(
+      (choice) => choice.mode,
+    );
+    expect(offered).toContain('haptic');
+  });
+
+  it('is offered where it can', () => {
+    expect(metronomeChoices({ canTapOnBeat: true }).map((choice) => choice.mode)).toContain('haptic');
+  });
+});
+
+describe('why a haptic metronome is quiet', () => {
+  it('names the device before the setting, since turning haptics on would not help', () => {
+    expect(hapticMetronomeProblem({ canTapOnBeat: false, hapticsOn: true })).toBe('device');
+    expect(hapticMetronomeProblem({ canTapOnBeat: false, hapticsOn: false })).toBe('device');
+  });
+
+  it('names the setting where the device could tap', () => {
+    expect(hapticMetronomeProblem({ canTapOnBeat: true, hapticsOn: false })).toBe('haptics-off');
+    expect(hapticMetronomeProblem({ canTapOnBeat: true, hapticsOn: true })).toBeNull();
   });
 });

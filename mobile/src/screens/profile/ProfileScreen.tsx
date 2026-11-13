@@ -25,7 +25,12 @@ import { preferences, usePreferences } from '../../data/preferences';
 import { describeFreeTakesLeft } from '../../lib/analysisAllowance';
 import type { Instrument, MetronomeMode } from '../../data/types';
 import { describeLoadError } from '../../data/describeLoadError';
-import { HEADPHONES_WARNING, metronomeChoices } from '../../lib/record/metronomeChoice';
+import { DEVICE_TAPS_ON_BEAT } from '../../lib/hapticsSupport';
+import {
+  DEVICE_CANNOT_TAP,
+  HEADPHONES_WARNING,
+  metronomeChoices,
+} from '../../lib/record/metronomeChoice';
 import {
   ProfilePhotoSaveError,
   saveProfilePhoto,
@@ -344,13 +349,18 @@ export function ProfileScreen() {
         <SegmentedControl
           label="Metronome"
           kind="setting"
-          options={METRONOME_OPTIONS}
+          options={metronomeOptions(settings.metronomeMode)}
           value={settings.metronomeMode}
           onChange={(mode: MetronomeMode) => preferences.setMetronomeMode(mode)}
         />
         {settings.metronomeMode === 'audio_with_headphones' ? (
           <Text variant="metadataSmall" color="textTertiary" style={styles.settingCaveat}>
             {HEADPHONES_WARNING}
+          </Text>
+        ) : null}
+        {settings.metronomeMode === 'haptic' && !DEVICE_TAPS_ON_BEAT ? (
+          <Text variant="metadataSmall" color="textTertiary" style={styles.settingCaveat}>
+            {DEVICE_CANNOT_TAP}
           </Text>
         ) : null}
       </View>
@@ -479,10 +489,11 @@ const BADGE_SIZE = 26;
  * the drift the segmented control cannot show you: it would simply be missing
  * an option, on the screen a musician was sent to to find it.
  */
-const METRONOME_OPTIONS = metronomeChoices().map(({ mode, label }) => ({
-  value: mode,
-  label,
-}));
+function metronomeOptions(current: MetronomeMode) {
+  return metronomeChoices({ canTapOnBeat: DEVICE_TAPS_ON_BEAT, current }).map(
+    ({ mode, label }) => ({ value: mode, label }),
+  );
+}
 
 const styles = StyleSheet.create({
   pressed: {

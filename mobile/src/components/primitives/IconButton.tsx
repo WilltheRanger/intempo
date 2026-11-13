@@ -12,6 +12,7 @@ import {
 } from '../../design';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import { PressableScale } from '../motion/PressableScale';
+import { HapticTap } from '../motion/HapticTap';
 
 export interface IconButtonProps {
   icon: LucideIcon;
@@ -118,6 +119,8 @@ export function IconButton({
           color={glyph}
         />
       </View>
+      {/* The finger's own haptic on an iPhone (`HapticTap`). */}
+      {!disabled ? <HapticTap /> : null}
     </PressableScale>
   );
 }

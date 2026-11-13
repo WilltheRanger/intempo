@@ -1,5 +1,65 @@
 # InTempo Decisions
 
+## 2026-11-13 — iPhone haptics ride on a hidden switch under the finger; pull to refresh reads Safari's rubber band
+
+**Context.** These are the "touch details" the owner approved. Each is a
+place where the web build on an iPhone behaved like a web page.
+- Its 29 haptic calls went through `expo-haptics`, which on the web clicks a
+  hidden switch from code. Current WebKit plays a switch's haptic only for a
+  trusted click during a user's gesture. The `ios-haptics` library moved to a
+  real tap in its v3, noting Apple closed the old way in iOS 26.5. So those
+  calls were most likely silent.
+- react-native-web's `RefreshControl` discards `onRefresh`.
+- Its `Switch` is a 40×20 Material toggle.
+- A long press selected words or offered to save a photograph.
+
+**Decisions.**
+- **`HapticTap`.** Shared controls that ask for a haptic carry it: the
+  buttons, rows and sheet options, setting rows, the tab bar, Record's record
+  button and its metronome rows, the answers and the tempo picks.
+  - On a touch screen whose browser has `<input type=checkbox switch>` and no
+    `navigator.vibrate` (Safari on an iPhone), it lays a transparent label
+    over the control, wired to a hidden switch. The finger's own tap is the
+    trusted click Safari plays its haptic for.
+  - The label's click bubbles to the control, which is pressed once.
+    react-native-web presses on `click`, so the switch's own follow-on click is
+    stopped where it starts, or the control would be pressed twice.
+  - `lib/haptics.web.ts` stays silent there, so an older iOS does not tap
+    twice. Rules are in `hapticsSupport.ts`, with tests.
+- **The haptic metronome is offered only where a device can tap on a beat**
+  (`metronomeChoices({ canTapOnBeat })`). A browser on an iPhone cannot be
+  made to tap by a timer at all. A mode already chosen there stays visible
+  and says why it is quiet.
+- **Pull to refresh on the web.** On iOS, `scrollTop` goes below zero while a
+  scroller is rubber-banded (Ionic's iOS refresher reads the same). The pull
+  draws UIActivityIndicatorView's eight ticks as it lengthens, fires at 100pt
+  mid-pull as UIRefreshControl does, and holds the page 56pt down for at
+  least 600ms. The quiet refresh after a long absence shares the handler but
+  not the spinner. Rules are in `pullToRefresh.ts`.
+- **A drawn switch on the web, `SwitchGlyph.web.tsx`.** UISwitch's 51×31 with
+  a 27pt thumb, gold when on. The phone keeps the platform's own.
+- **The page is not selectable** (`index.html`), except fields and text drawn
+  `selectable`: the legal documents and the connection check's finding.
+  Images do not offer Safari's save menu.
+
+**Alternatives considered.**
+- *Using the real `<input switch>` as the setting rows' visible switch.* It
+  is exact on an iPhone, but it is a checkbox everywhere the tests run, and
+  the rows already carry the control's semantics.
+- *A global listener that makes every tap a haptic.* Safari's haptic needs
+  the trusted click on the switch itself, which cannot be redirected from
+  code.
+- *`react-native-web-refresh-control`.* Last published January 2024. It
+  drags the page with `PanResponder` and competes with the browser's own
+  bounce.
+
+**Trade-offs accepted.**
+- Haptics a press does not cause stay silent on an iPhone browser: a
+  refresh, a timer, a drag. No way exists there.
+- None of this can be exercised by the walk. Chromium has no rubber band and
+  a vibration API, so the overlay is never drawn there. The pull was checked
+  by faking `scrollTop`; the haptic needs a real iPhone.
+
 ## 2026-11-13 — A control's few choices open as a menu beside it; long sheets have two heights; tall sheets push the screen back
 
 **Context.** The owner asked, as part of "more like a mobile app":

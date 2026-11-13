@@ -1,21 +1,12 @@
-import { Platform, Pressable, StyleSheet, Switch, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { BORDER_WIDTH, colors, disabledOpacity, spacing } from '../../design';
 import { ROW_PADDING_VERTICAL } from '../rowMetrics';
 import { Text } from './Text';
+import { HapticTap } from '../motion/HapticTap';
 import { Inert } from './Inert';
+import { SwitchGlyph } from './SwitchGlyph';
 
-/**
- * react-native-web reads `activeThumbColor` for the "on" thumb and leaves
- * `thumbColor` to the "off" one, so without this the switch turns Material
- * teal the moment it's enabled — a colour from nowhere in this palette. The
- * prop isn't in React Native's own Switch types. Same shape as the focus-ring
- * shim in `Input`; a no-op on device, where `thumbColor` covers both states.
- */
-const WEB_THUMB = Platform.select({
-  web: { activeThumbColor: colors.surface },
-  default: {},
-}) as object;
 
 export interface ToggleRowProps {
   label: string;
@@ -118,17 +109,11 @@ export function ToggleRow({
       */}
       <View pointerEvents="none" aria-hidden>
         <Inert inert>
-          <Switch
-            value={value}
-            disabled={disabled}
-            accessible={false}
-            trackColor={{ false: colors.borderStrong, true: colors.accent }}
-            thumbColor={colors.surface}
-            ios_backgroundColor={colors.borderStrong}
-            {...WEB_THUMB}
-          />
+          <SwitchGlyph value={value} disabled={disabled} />
         </Inert>
       </View>
+      {/* The finger's own haptic on an iPhone, as UISwitch gives (`HapticTap`). */}
+      {!disabled ? <HapticTap /> : null}
     </Pressable>
   );
 }

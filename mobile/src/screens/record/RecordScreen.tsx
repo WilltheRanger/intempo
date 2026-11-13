@@ -39,6 +39,8 @@ import { practiceTempo, usePracticeTempos } from '../../data/practiceTempo';
 import { bpmForMarking } from '../../lib/tempoMarking';
 import { preferences, usePreferences } from '../../data/preferences';
 import { PressableScale } from '../../components/motion';
+import { HapticTap } from '../../components/motion/HapticTap';
+import { DEVICE_TAPS_ON_BEAT } from '../../lib/hapticsSupport';
 import { takeSubmissionSource } from '../../data/sources';
 import { getActiveAccountId } from '../../data/auth/session';
 import {
@@ -115,6 +117,7 @@ import { PracticeSetup } from './PracticeSetup';
 import { MicrophoneIntro } from '../../components/practice/MicrophoneIntro';
 import { takeStatus } from '../../lib/record/takeStatus';
 import {
+  DEVICE_CANNOT_TAP,
   HEADPHONES_WARNING,
   metronomeChoices,
   metronomeValueLabel,
@@ -1321,7 +1324,9 @@ export function RecordScreen() {
           </Text>
           {metronome.silent ? (
             <Text variant="metadataSmall" color="textTertiary" style={styles.countInCopy}>
-              Haptics are off. Watch the count.
+              {DEVICE_TAPS_ON_BEAT
+                ? 'Haptics are off. Watch the count.'
+                : 'This browser can’t tap the beat. Watch the count.'}
             </Text>
           ) : null}
         </View>
@@ -1563,7 +1568,9 @@ export function RecordScreen() {
             */}
             {metronome.silent ? (
               <Text variant="caption" color="textTertiary" style={styles.note}>
-                Haptics are off in Profile, so nothing marks the beat.
+                {DEVICE_TAPS_ON_BEAT
+                  ? 'Haptics are off in Profile, so nothing marks the beat.'
+                  : DEVICE_CANNOT_TAP}
               </Text>
             ) : null}
             {/*
@@ -1795,7 +1802,7 @@ export function RecordScreen() {
           between four ways. A choice that looks identical during the press
           reads as dead (§3, "a tap gets an immediate response").
         */}
-        {metronomeChoices().map((choice) => (
+        {metronomeChoices({ canTapOnBeat: DEVICE_TAPS_ON_BEAT, current: metronomeMode }).map((choice) => (
           <PressableScale
             key={choice.mode}
             activeScale={0.99}
@@ -1819,6 +1826,7 @@ export function RecordScreen() {
             >
               {choice.label}
             </Text>
+            <HapticTap />
           </PressableScale>
         ))}
       </BottomSheet>
@@ -1959,6 +1967,8 @@ function RecordButton({
           <Text variant="metadata" color="textSecondary">
             {label}
           </Text>
+          {/* Start and stop answer the finger on an iPhone too (`HapticTap`). */}
+          {!busy ? <HapticTap /> : null}
         </>
       )}
     </PressableScale>

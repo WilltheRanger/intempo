@@ -31,8 +31,17 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { BORDER_WIDTH, colors, spacing } from '../../design';
+import { BORDER_WIDTH, colors, motion, spacing } from '../../design';
+import {
+  MIN_REFRESH_MS,
+  REFRESH_HOLD,
+  pullDistance,
+  pullProgress,
+  startsRefresh,
+  ticksShown,
+} from '../../lib/motion/pullToRefresh';
 import { shouldRefreshOnReturn } from '../../lib/returnRefresh';
+import { ACTIVITY_SPINNER_SIZE, ActivitySpinner } from '../motion/ActivitySpinner';
 import { useChromeToneReporter } from '../../navigation/ChromeToneContext';
 import { chromeToneFor } from '../../navigation/chromeTone';
 import {
@@ -196,15 +205,51 @@ export function ScreenContainer({
   navigationBar,
 }: ScreenContainerProps) {
   const [refreshing, setRefreshing] = useState(false);
+  /*
+    **Pull to refresh on the web build** (`lib/motion/pullToRefresh.ts`):
+    react-native-web's `RefreshControl` throws `onRefresh` away, so Safari's
+    own rubber band is read instead — its offset goes below zero while the
+    page is pulled past its top. Only where there is something to refresh.
+  */
+  const webPull = Platform.OS === 'web' && onRefresh !== undefined;
+  const [pull, setPull] = useState(0);
+  const pullArmed = useRef(true);
+  /*
+    The pull's own refresh, apart from `refreshing`: the quiet refresh when the
+    app comes back after a long time away (`RefreshOnReturn`) shares the
+    handler, and must not open a spinner and push the page down by itself.
+  */
+  const [pulled, setPulled] = useState(false);
+  const pulledRef = useRef(false);
+  function refreshFromPull() {
+    pulledRef.current = true;
+    setPulled(true);
+    void Promise.all([
+      handleRefreshRef.current(),
+      new Promise((resolve) => setTimeout(resolve, MIN_REFRESH_MS)),
+    ]).finally(() => {
+      pulledRef.current = false;
+      setPulled(false);
+    });
+  }
+  const refreshFromPullRef = useRef(refreshFromPull);
+  refreshFromPullRef.current = refreshFromPull;
 
   async function handleRefresh() {
     setRefreshing(true);
+    refreshingRef.current = true;
     try {
       await onRefresh?.();
     } finally {
       setRefreshing(false);
+      refreshingRef.current = false;
     }
   }
+  // The scroll handler is memoised; these let it start the refresh the
+  // screen has now, and see whether one is already running.
+  const refreshingRef = useRef(false);
+  const handleRefreshRef = useRef(handleRefresh);
+  handleRefreshRef.current = handleRefresh;
   // The context tells us *whether* a tab bar is below us — it's absent on
   // screens pushed above the tabs, like Practice. It does not tell us how
   // tall ours is: with a custom `tabBar` React Navigation publishes its own
@@ -364,8 +409,18 @@ export function ScreenContainer({
         reportTone(toneFor(scrollY.current));
       }
       updateAppearance();
+      if (webPull) {
+        const distance = Math.round(pullDistance(scrollY.current));
+        setPull((current) => (current === distance ? current : distance));
+        if (distance === 0) {
+          pullArmed.current = true;
+        } else if (startsRefresh(distance, pullArmed.current, pulledRef.current || refreshingRef.current)) {
+          pullArmed.current = false;
+          refreshFromPullRef.current();
+        }
+      }
     },
-    [darkGround, reportTone, toneFor, updateAppearance],
+    [darkGround, reportTone, toneFor, updateAppearance, webPull],
   );
 
   function measureOverflow() {
@@ -450,6 +505,11 @@ export function ScreenContainer({
         measureOverflow();
       }}
     >
+      {/*
+        The page held a spinner's height down while it refreshes, as
+        UIRefreshControl holds it, and let back up when it is done.
+      */}
+      {webPull ? <View style={[{ height: pulled ? REFRESH_HOLD : 0 }, HOLD_MOTION]} /> : null}
       {children}
     </Scroll>
   ) : (
@@ -508,6 +568,32 @@ export function ScreenContainer({
             />
           ) : null}
           {scrollArea}
+          {/*
+            The spinner in the gap the pull opens: its ticks arrive as the pull
+            lengthens, and it turns while the refresh runs. Ivory over the
+            band's colour, the accent over the page.
+          */}
+          {webPull && (pull > 0 || pulled) ? (
+            <View
+              pointerEvents="none"
+              style={[
+                styles.spinner,
+                {
+                  top:
+                    overlap +
+                    (pulled
+                      ? (REFRESH_HOLD - ACTIVITY_SPINNER_SIZE) / 2
+                      : Math.max(0, (pull - ACTIVITY_SPINNER_SIZE) / 2)),
+                },
+              ]}
+            >
+              <ActivitySpinner
+                color={appearance.tone === 'onDark' ? colors.onDark : colors.accent}
+                shown={pulled ? undefined : ticksShown(pullProgress(pull))}
+                spinning={pulled}
+              />
+            </View>
+          ) : null}
         </View>
       </ScreenChromeContext.Provider>
 
@@ -590,7 +676,25 @@ export const SCREEN_GUTTER = spacing['2xl'];
  */
 export const CONTENT_MAX_WIDTH = 560;
 
+/** The held room opening and closing, on the app's ease. */
+const HOLD_MOTION = Platform.select({
+  web: {
+    transitionProperty: 'height',
+    transitionDuration: `${motion.base}ms`,
+    // `EASE_OUT`, as CSS.
+    transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
+  } as unknown as ViewStyle,
+  default: undefined,
+});
+
 const styles = StyleSheet.create({
+  spinner: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 1,
+  },
   safeArea: {
     flex: 1,
     backgroundColor: colors.bg,

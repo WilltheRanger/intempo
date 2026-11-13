@@ -1164,6 +1164,42 @@ After: the settled Library's main thread is busy 5 ms a second rather than
 the reset moved it 16. Under Reduce Motion the band is pixel-identical to
 before.
 
+### What the browser does not give the web build on an iPhone (2026-11-13)
+
+Four things that work in the phone app and silently did nothing, or the wrong
+thing, in Safari. Each looked fine in Chromium, where every check here runs.
+
+**Haptics need the finger.** `expo-haptics` on the web clicks a hidden
+`<input type="checkbox" switch>` from code. Current WebKit plays the switch's
+haptic only for a trusted click during a user's gesture, so all 29 of the
+app's haptic calls were most likely silent on a current iPhone. A label laid
+over the control, wired to a hidden switch, gets the finger's own trusted tap
+(`HapticTap`).
+
+The trap is the second click. A label's activation clicks its control, and
+that click bubbles too. react-native-web fires `onPress` on `click`, not on
+pointer-up, so unstopped it presses the control **twice**. `HapticTap` stops
+the switch's click at the switch. Nothing that is not a tap can make an
+iPhone browser tap the finger: not a timer (so no haptic metronome there),
+not a refresh, not a drag.
+
+**`RefreshControl` is a plain view.** react-native-web keeps the prop and
+throws `onRefresh` away. The pull is read from the scroller instead: on iOS
+its `scrollTop` goes below zero while it is rubber-banded, as long as
+`overscroll-behavior` is not `none` (it is `contain` here). Chromium never
+reports a negative offset, so the walk cannot pull. Check it by redefining
+the scroller's `scrollTop` and dispatching `scroll`, or on a phone.
+
+**The screen under a pushed one is hidden.** The web `NativeStackView` gives
+every unfocused route `display: none`, except the one under a route presented
+as `transparentModal` or `containedTransparentModal`. That exception is what
+the iOS slide is built on (`sceneMotion.ts`, `DECISIONS.md` 2026-11-13).
+
+**A long press is a web page's.** It selects words and offers to save a
+photograph unless the page says otherwise. `index.html` makes the page
+unselectable and turns the image callout off. A field, or text drawn
+`selectable`, opts back in.
+
 ## `npm audit fix --force` would take this app back to SDK 46 (2026-09-09)
 
 `npm audit --omit=dev` reports **24 advisories, 7 of them high**, and closes

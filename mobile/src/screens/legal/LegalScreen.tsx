@@ -54,6 +54,9 @@ export function LegalDocumentView({ documentId, back }: LegalDocumentViewProps) 
               key={paragraph.slice(0, 32)}
               variant="body"
               color="textSecondary"
+              // A document someone may quote from: the one place in the app
+              // whose words a long press selects (`index.html`, 2026-11-13).
+              selectable
               style={styles.paragraph}
             >
               {paragraph}
@@ -68,7 +71,7 @@ export function LegalDocumentView({ documentId, back }: LegalDocumentViewProps) 
         </Text>
       ) : null}
       {OWNER.contact ? (
-        <Text variant="metadataSmall" color="textTertiary" style={styles.ownerLine}>
+        <Text variant="metadataSmall" color="textTertiary" selectable style={styles.ownerLine}>
           {`Questions about your data: ${OWNER.contact}`}
         </Text>
       ) : null}

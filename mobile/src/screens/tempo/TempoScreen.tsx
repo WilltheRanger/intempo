@@ -38,6 +38,7 @@ import { useReducedMotion } from '../../lib/useReducedMotion';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
 import { useBackButton } from '../../navigation/useGoBack';
 import { TempoSlider } from './TempoSlider';
+import { HapticTap } from '../../components/motion/HapticTap';
 
 /**
  * Tempo, on its own screen (`redesign/Tempo.dc.html`, 2026-09-23).
@@ -268,6 +269,7 @@ export function TempoScreen() {
                 >
                   {pick.label}
                 </Text>
+                <HapticTap />
               </Pressable>
             );
           })}

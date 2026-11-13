@@ -11,6 +11,7 @@ import {
 } from '../../design';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import { ROW_PADDING_VERTICAL } from '../rowMetrics';
+import { HapticTap } from '../motion/HapticTap';
 import { TrailingChevron } from './TrailingChevron';
 
 export interface LinkRowProps {
@@ -111,6 +112,8 @@ export function LinkRow({
         ) : null}
         <TrailingChevron />
       </View>
+      {/* The finger's own haptic on an iPhone (`HapticTap`). */}
+      {!disabled ? <HapticTap /> : null}
     </PressableScale>
   );
 }
