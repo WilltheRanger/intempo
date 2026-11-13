@@ -15,7 +15,7 @@ import {
   Text,
 } from '../../components/primitives';
 import { TextAction } from '../../components/primitives/TextAction';
-import { colors, EASE_OUT, motion, spacing } from '../../design';
+import { colors, EASE_OUT, MIN_TOUCH_TARGET, motion, spacing } from '../../design';
 import { ONBOARDING_STEPS, stepNumber, type OnboardingStep } from '../../lib/onboardingSteps';
 import { progressValue } from '../../lib/progressValue';
 import { useReducedMotion } from '../../lib/useReducedMotion';
@@ -215,14 +215,14 @@ const styles = StyleSheet.create({
   back: {
     // The chevron's ink on the margin, under the title's first letter, as the
     // prototype has it — the 44pt target reaching out into the gutter rather
-    // than pushing the glyph in.
-    marginLeft: -22,
+    // than pushing the glyph in. Half of it, which is what lands the ink there.
+    marginLeft: -MIN_TOUCH_TARGET / 2,
     flexShrink: 0,
   },
   progress: {
     flex: 1,
     flexDirection: 'row',
-    gap: 5,
+    gap: spacing.xs,
   },
   segment: {
     flex: 1,
@@ -234,13 +234,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
   },
   title: {
-    marginTop: 26,
+    marginTop: spacing['2xl'],
   },
   lede: {
-    marginTop: 10,
+    marginTop: spacing.sm,
   },
   answer: {
-    marginTop: 30,
+    marginTop: spacing['3xl'],
   },
   error: {
     marginTop: spacing.lg,

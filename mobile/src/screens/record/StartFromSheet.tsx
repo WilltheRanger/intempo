@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { Check } from '../../components/icons';
 import { BottomSheet } from '../../components/overlays/BottomSheet';
 import { Text } from '../../components/primitives';
-import { BORDER_WIDTH, colors, ICON_SIZE } from '../../design';
+import { BORDER_WIDTH, colors, ICON_SIZE, spacing } from '../../design';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import type { StartOption } from '../../lib/record/startOptions';
 
@@ -113,7 +113,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   sub: {
-    marginTop: 2,
+    marginTop: spacing['2xs'],
     fontSize: 12,
     lineHeight: 16,
     fontVariant: ['tabular-nums'],

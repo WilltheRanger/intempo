@@ -4,6 +4,7 @@ import { Animated, Pressable, StyleSheet, View } from 'react-native';
 
 import {
   EASE_OUT,
+  ICON_SIZE,
   MIN_TOUCH_TARGET,
   motion,
   pressedOpacity,
@@ -237,8 +238,9 @@ const styles = StyleSheet.create({
   actions: {
     flexDirection: 'row',
     // Bare glyphs in 44pt squares, side by side: the squares are the spacing
-    // (`redesign/Library.dc.html`), and the last glyph sits on the gutter.
-    marginRight: -10,
+    // (`redesign/Library.dc.html`), and the last glyph sits on the gutter:
+    // its square's slack around the glyph, given back.
+    marginRight: -(MIN_TOUCH_TARGET - ICON_SIZE.lg) / 2,
   },
   searchLayer: {
     position: 'absolute',

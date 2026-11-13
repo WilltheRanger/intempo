@@ -150,6 +150,7 @@ DATABASE = Prereq(
 FAST: list[tuple[str, list[str], Path, tuple[Prereq, ...]]] = [
     ("brand assets", ["python3", "tools/check-brand-assets.py"], ROOT, ()),
     ("dead exports", ["python3", "tools/check-dead-exports.py"], ROOT, ()),
+    ("spacing scale", ["python3", "tools/check-spacing.py"], ROOT, ()),
     ("dependencies", ["python3", "tools/check-dependencies.py"], ROOT, ()),
     ("outbound fetch", ["python3", "tools/check-outbound-fetch.py"], ROOT, ()),
     (

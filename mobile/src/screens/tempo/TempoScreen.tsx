@@ -307,15 +307,17 @@ const styles = StyleSheet.create({
     paddingTop: spacing.md,
   },
   title: {
-    marginTop: 6,
+    marginTop: spacing.sm,
   },
   readout: {
     flexDirection: 'row',
     alignItems: 'baseline',
     justifyContent: 'center',
-    gap: 10,
-    marginTop: 64,
-    marginBottom: 44,
+    gap: spacing.sm,
+    // The screen's one big number gets the most air on it: two of the largest
+    // steps above, one below, so it sits nearer the controls it reports.
+    marginTop: spacing['4xl'] + spacing['2xl'],
+    marginBottom: spacing['4xl'],
   },
   // The largest number in the app, and the only thing on the screen that
   // size: it is what the screen is for (§3 law 4).
@@ -335,12 +337,12 @@ const styles = StyleSheet.create({
   },
   tapRow: {
     alignItems: 'center',
-    marginTop: 28,
+    marginTop: spacing['3xl'],
   },
   // An action, so a capsule (`radii.ts`).
   tap: {
     height: 48,
-    paddingHorizontal: 26,
+    paddingHorizontal: spacing['2xl'],
     borderRadius: radii.pill,
     justifyContent: 'center',
   },
@@ -351,7 +353,7 @@ const styles = StyleSheet.create({
   picks: {
     flexDirection: 'row',
     gap: spacing.sm,
-    marginTop: 36,
+    marginTop: spacing['3xl'],
   },
   pick: {
     flex: 1,
@@ -376,6 +378,6 @@ const styles = StyleSheet.create({
   },
   listen: {
     alignItems: 'center',
-    marginTop: 36,
+    marginTop: spacing['3xl'],
   },
 });

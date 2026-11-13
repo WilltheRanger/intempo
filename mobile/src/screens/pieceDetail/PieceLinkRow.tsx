@@ -67,7 +67,7 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   description: {
-    marginTop: 2,
+    marginTop: spacing['2xs'],
     fontSize: 12,
     lineHeight: 17,
   },

@@ -99,7 +99,7 @@ function Arrive({
 
 const styles = StyleSheet.create({
   titleBlock: {
-    marginTop: 30,
+    marginTop: spacing['3xl'],
   },
   title: {
     fontSize: 40,
@@ -107,7 +107,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   lede: {
-    marginTop: 14,
+    marginTop: spacing.md,
     maxWidth: 280,
     textAlign: 'center',
   },

@@ -207,7 +207,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: radii.md,
     padding: TRACK_INSET,
-    gap: 2,
+    gap: spacing['2xs'],
   },
   choice: {
     flex: 1,
@@ -253,7 +253,7 @@ const styles = StyleSheet.create({
   answerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    columnGap: 18,
+    columnGap: spacing.lg,
     marginLeft: ICON_SIZE.md + CHECK_GAP,
   },
   change: {

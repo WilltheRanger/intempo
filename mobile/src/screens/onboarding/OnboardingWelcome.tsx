@@ -47,7 +47,7 @@ export function OnboardingWelcome({ onNext }: OnboardingWelcomeProps) {
 
 const styles = StyleSheet.create({
   title: {
-    marginTop: 48,
+    marginTop: spacing['4xl'],
     fontSize: 40,
     lineHeight: 46,
     textAlign: 'center',

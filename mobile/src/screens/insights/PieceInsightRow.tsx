@@ -3,7 +3,7 @@ import { StyleSheet } from 'react-native';
 import { PressableScale } from '../../components/motion';
 import { Text } from '../../components/primitives/Text';
 import type { PieceInsight } from '../../data/types';
-import { BORDER_WIDTH, colors, MIN_TOUCH_TARGET } from '../../design';
+import { BORDER_WIDTH, colors, MIN_TOUCH_TARGET, spacing } from '../../design';
 import { readPieceWord } from '../../lib/insights/tendency';
 import { sessionLabel } from '../../lib/format';
 
@@ -51,7 +51,7 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: spacing.md,
     minHeight: MIN_TOUCH_TARGET,
   },
   divided: {

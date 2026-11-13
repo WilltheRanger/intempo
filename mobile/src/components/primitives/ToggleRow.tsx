@@ -155,7 +155,7 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   description: {
-    marginTop: 2,
+    marginTop: spacing['2xs'],
     fontSize: 12,
     lineHeight: 17,
   },

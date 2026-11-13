@@ -688,7 +688,7 @@ const styles = StyleSheet.create({
   heading: {
     flexDirection: 'row',
     alignItems: 'baseline',
-    gap: 10,
+    gap: spacing.md,
     paddingBottom: spacing.sm,
     borderBottomWidth: BORDER_WIDTH,
     borderBottomColor: colors.border,
@@ -704,12 +704,12 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   section: {
-    marginTop: 26,
+    marginTop: spacing['2xl'],
   },
   group: {
     // The gap between groups is what a heading needs to belong to the rows
     // below it rather than float between two blocks.
-    marginBottom: 28,
+    marginBottom: spacing['3xl'],
   },
   shelf: {
     flexDirection: 'row',
@@ -718,7 +718,7 @@ const styles = StyleSheet.create({
     // Row gap larger than column gap: two tiles side by side are one shelf and
     // the rows above and below are different ones, so the vertical rhythm has
     // to be the louder of the two.
-    rowGap: 22,
+    rowGap: spacing['2xl'],
     // The column gap is half on each side of every slot, with the shelf pulled
     // out by the same half so the outer edges still sit on the page margin.
     marginHorizontal: -SHELF_GUTTER / 2,

@@ -11,6 +11,7 @@ import {
 import { TrailingChevron } from '../../components/primitives/TrailingChevron';
 import { usePieceHistory } from '../../data/hooks/useLatestTake';
 import { BORDER_WIDTH, colors, MIN_TOUCH_TARGET, spacing } from '../../design';
+import { ROW_PADDING_VERTICAL } from '../../components/rowMetrics';
 import { TrendPlot } from '../../components/charts/TrendPlot';
 import { historyCount } from '../../lib/insights/pieceHistory';
 import {
@@ -189,7 +190,7 @@ const styles = StyleSheet.create({
   axis: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 6,
+    marginTop: spacing.xs,
   },
   finding: {
     marginTop: spacing.md,
@@ -207,7 +208,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.md,
     minHeight: MIN_TOUCH_TARGET,
-    paddingVertical: 14,
+    paddingVertical: ROW_PADDING_VERTICAL,
     borderTopWidth: BORDER_WIDTH,
     borderTopColor: colors.border,
   },

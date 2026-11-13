@@ -699,7 +699,7 @@ const styles = StyleSheet.create({
   head: {
     paddingTop: spacing.md,
     // The band's own breathing room under the title, before the music.
-    paddingBottom: 18,
+    paddingBottom: spacing.lg,
   },
   titleRow: {
     flexDirection: 'row',

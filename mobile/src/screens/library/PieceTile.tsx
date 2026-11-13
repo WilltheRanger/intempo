@@ -270,7 +270,7 @@ const styles = StyleSheet.create({
   },
   music: {
     paddingVertical: MUSIC_PADDING,
-    paddingHorizontal: 11,
+    paddingHorizontal: spacing.md,
   },
   message: {
     // The whole page, so the line sits where the music would have been rather
@@ -298,7 +298,7 @@ const styles = StyleSheet.create({
   // The shelf's serif, a size under `pieceTitle`: a tile is half a screen
   // wide and a repertoire title gets two narrow lines here.
   titleBox: {
-    marginTop: 11,
+    marginTop: spacing.md,
   },
   title: {
     fontSize: 17,

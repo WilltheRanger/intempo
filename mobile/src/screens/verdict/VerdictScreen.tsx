@@ -579,7 +579,7 @@ const styles = StyleSheet.create({
     letterSpacing: -0.5,
   },
   headline: {
-    marginTop: 10,
+    marginTop: spacing.sm,
   },
   playback: {
     marginTop: spacing.xl,

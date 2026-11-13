@@ -151,6 +151,9 @@ export function TempoSlider({
   );
 }
 
+/** Room for "marked 96", centred on its tick. */
+const MARKED_WIDTH = 80;
+
 const styles = StyleSheet.create({
   strip: {
     height: HEIGHT,
@@ -189,8 +192,8 @@ const styles = StyleSheet.create({
   markedAt: {
     position: 'absolute',
     bottom: HEIGHT - 15,
-    width: 80,
-    marginLeft: -40,
+    width: MARKED_WIDTH,
+    marginLeft: -MARKED_WIDTH / 2,
     alignItems: 'center',
   },
   markedLabel: {

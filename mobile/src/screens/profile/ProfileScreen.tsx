@@ -38,6 +38,7 @@ import {
   ICON_STROKE_WIDTH,
   spacing,
 } from '../../design';
+import { ROW_PADDING_VERTICAL } from '../../components/rowMetrics';
 import { formatTier } from '../../lib/format';
 import type { RootNavigation } from '../../navigation/types';
 import { AccountRow } from './AccountRow';
@@ -497,14 +498,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.lg,
-    marginTop: 22,
+    marginTop: spacing['2xl'],
   },
   identityText: {
     flex: 1,
     minWidth: 0,
   },
   emailUnderName: {
-    marginTop: 3,
+    marginTop: spacing['2xs'],
   },
   identityEmail: {
     flexShrink: 1,
@@ -534,7 +535,7 @@ const styles = StyleSheet.create({
    * of related facts; a lone control with a note above it does not.
    */
   setting: {
-    paddingVertical: 14,
+    paddingVertical: ROW_PADDING_VERTICAL,
     borderTopWidth: BORDER_WIDTH,
     borderTopColor: colors.border,
   },
@@ -543,7 +544,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 0,
   },
   settingTitle: {
-    marginBottom: 10,
+    marginBottom: spacing.sm,
   },
   /**
    * The camera badge on the avatar.

@@ -225,8 +225,8 @@ export function OnboardingFlow({
 const styles = StyleSheet.create({
   roleChoice: {
     paddingVertical: spacing.lg,
-    paddingHorizontal: 18,
-    marginBottom: 10,
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.md,
     // A choice, so `md` — never the button's capsule (`radii.ts`).
     borderRadius: radii.md,
   },

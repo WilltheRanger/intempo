@@ -1116,7 +1116,7 @@ const styles = StyleSheet.create({
   settingCopy: {
     flex: 1,
     minWidth: 0,
-    gap: 2,
+    gap: spacing['2xs'],
   },
   keyHelp: {
     marginTop: spacing.sm,

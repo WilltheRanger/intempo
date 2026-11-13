@@ -117,7 +117,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     // The gap is the only separation. Borders on adjacent cells would double
     // up into a two-pixel rule between them.
-    gap: 10,
+    gap: spacing.md,
   },
   cell: {
     // Two per row, minus half the gap each. Not a fixed width: the same

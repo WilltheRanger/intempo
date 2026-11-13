@@ -167,8 +167,8 @@ jobs:
           echo "mobile=${MOBILE}"  >> "$GITHUB_OUTPUT"
           echo "-> backend=${BACKEND} mobile=${MOBILE}"
 
-  # Two checks that need nothing but Python and a checkout, so they share the
-  # cheapest job in the file.
+  # Checks that need nothing but Python and a checkout (and Pillow, for the
+  # brand art), so they share the cheapest job in the file.
   #
   # This job used to be `log-entry`, which enforced that every change carried an
   # `EDIT_LOG.md` entry. That log was removed on 2026-09-10: measured, every
@@ -214,6 +214,13 @@ jobs:
       # defect, and it compiles and tests clean every time.
       - name: Every export has a caller
         run: python3 tools/check-dead-exports.py
+
+      # Added 2026-11-12, after the UI review counted 89 margins, paddings and
+      # gaps typed off the scale `mobile/src/design/spacing.ts` has always said
+      # they resolve to. Reads the steps from that file, so the scale is the
+      # only place to widen it. Needs nothing installed.
+      - name: Spacing is on the scale
+        run: python3 tools/check-spacing.py
 
   backend-test:
     name: Backend tests (pytest)

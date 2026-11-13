@@ -370,13 +370,13 @@ export function UploadRecordingScreen() {
 const styles = StyleSheet.create({
   head: {
     paddingTop: spacing.xs,
-    paddingBottom: 34,
+    paddingBottom: spacing['3xl'],
   },
   // Full width: the band cancels the screen's gutter and puts it back inside.
   band: {
     marginHorizontal: -SCREEN_GUTTER,
     paddingHorizontal: SCREEN_GUTTER,
-    paddingVertical: 18,
+    paddingVertical: spacing.lg,
     backgroundColor: colors.surface,
     borderTopWidth: BORDER_WIDTH,
     borderBottomWidth: BORDER_WIDTH,
@@ -385,7 +385,7 @@ const styles = StyleSheet.create({
   fileRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 14,
+    gap: spacing.md,
   },
   fileIcon: {
     width: 44,
@@ -406,7 +406,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   fileMeta: {
-    marginTop: 3,
+    marginTop: spacing['2xs'],
     fontSize: 12,
     lineHeight: 16,
     fontVariant: ['tabular-nums'],
@@ -436,7 +436,7 @@ const styles = StyleSheet.create({
   play: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
+    gap: spacing.sm,
   },
   pressed: {
     opacity: 0.55,
@@ -445,7 +445,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   rows: {
-    marginTop: 18,
+    marginTop: spacing.xl,
   },
   row: {
     flexDirection: 'row',

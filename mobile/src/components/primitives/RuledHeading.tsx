@@ -1,6 +1,6 @@
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
-import { BORDER_WIDTH, colors } from '../../design';
+import { BORDER_WIDTH, colors, spacing } from '../../design';
 import { SECTION_HEADING } from './sectionHeading';
 import { Text } from './Text';
 
@@ -39,7 +39,7 @@ export function RuledHeading({ label, rule = 'border', style }: RuledHeadingProp
 
 const styles = StyleSheet.create({
   ruled: {
-    paddingTop: 14,
+    paddingTop: spacing.md,
     borderTopWidth: BORDER_WIDTH,
   },
 });

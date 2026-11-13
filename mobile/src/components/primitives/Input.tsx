@@ -370,7 +370,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 7,
+    marginBottom: spacing.sm,
   },
   // Regular and quieter, so it reads as a note on the name, not part of it.
   optional: {

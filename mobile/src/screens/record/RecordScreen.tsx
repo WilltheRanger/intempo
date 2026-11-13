@@ -83,6 +83,7 @@ import {
   ICON_STROKE_WIDTH,
   MIN_TOUCH_TARGET,
   spacing,
+  typography,
 } from '../../design';
 import { isTakingLong, progressFor } from '../../lib/analysis/waitProgress';
 import { progressValue } from '../../lib/progressValue';
@@ -2001,7 +2002,7 @@ const styles = StyleSheet.create({
     paddingBottom: 0,
   },
   header: {
-    paddingTop: 14,
+    paddingTop: spacing.md,
     paddingHorizontal: spacing['2xl'],
     paddingBottom: spacing.md,
   },
@@ -2024,8 +2025,10 @@ const styles = StyleSheet.create({
     height: MIN_TOUCH_TARGET,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: -10,
-    marginTop: -6,
+    // The glyph on the gutter, and centred on the title's first line: the
+    // target's slack around each, given back.
+    marginRight: -(MIN_TOUCH_TARGET - ICON_SIZE.lg) / 2,
+    marginTop: -(MIN_TOUCH_TARGET - typography.heroTitle.lineHeight) / 2,
   },
   morePressed: {
     opacity: 0.55,
@@ -2073,7 +2076,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 26,
+    gap: spacing['2xl'],
     paddingHorizontal: spacing['2xl'],
   },
   countInLabel: {
@@ -2097,7 +2100,7 @@ const styles = StyleSheet.create({
   },
   countInCancel: {
     height: MIN_TOUCH_TARGET,
-    paddingHorizontal: 18,
+    paddingHorizontal: spacing.xl,
     borderRadius: MIN_TOUCH_TARGET / 2,
     borderWidth: BORDER_WIDTH,
     borderColor: colors.borderStrong,
@@ -2264,7 +2267,7 @@ const styles = StyleSheet.create({
    */
   control: {
     alignItems: 'center',
-    gap: 7,
+    gap: spacing.sm,
   },
   record: {
     width: RECORD_SIZE,

@@ -370,7 +370,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
     borderTopLeftRadius: radii.sheet,
     borderTopRightRadius: radii.sheet,
-    paddingTop: 10,
+    paddingTop: spacing.sm,
     paddingHorizontal: spacing['2xl'],
   },
   expanded: {

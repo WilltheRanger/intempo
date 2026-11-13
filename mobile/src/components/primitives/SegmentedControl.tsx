@@ -6,6 +6,7 @@ import {
   fontFamily,
   MIN_TOUCH_TARGET,
   radii,
+  spacing,
 } from '../../design';
 import { Text } from './Text';
 
@@ -107,7 +108,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: radii.md,
     padding: TRACK_INSET,
-    gap: 2,
+    gap: spacing['2xs'],
   },
   segment: {
     flex: 1,

@@ -455,19 +455,19 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   chart: {
-    marginTop: 22,
+    marginTop: spacing['2xl'],
   },
   worth: {
     marginTop: spacing['2xl'],
   },
   worthTitle: {
-    marginTop: 7,
+    marginTop: spacing.sm,
   },
   passages: {
     marginTop: spacing.lg,
   },
   lastTake: {
-    marginTop: 2,
+    marginTop: spacing['2xs'],
   },
   sentence: {
     marginTop: spacing.md,
@@ -479,9 +479,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    gap: 6,
+    gap: spacing.xs,
     minHeight: 44,
-    marginTop: 10,
+    marginTop: spacing.sm,
   },
   togglePressed: {
     opacity: 0.55,
@@ -490,19 +490,19 @@ const styles = StyleSheet.create({
     transform: [{ rotate: '180deg' }],
   },
   list: {
-    marginTop: 14,
+    marginTop: spacing.md,
   },
   pitch: {
     marginTop: spacing['2xl'],
   },
   pitchSentence: {
-    marginTop: 6,
+    marginTop: spacing.sm,
   },
   pitchChart: {
     marginTop: spacing.md,
   },
   rows: {
-    marginTop: 7,
+    marginTop: spacing.sm,
   },
   retry: {
     marginTop: spacing.md,

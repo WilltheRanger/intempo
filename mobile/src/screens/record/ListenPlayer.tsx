@@ -14,7 +14,7 @@ import { Pause, Play } from '../../components/icons';
 import { Text } from '../../components/primitives';
 import { usePreferences } from '../../data/preferences';
 import type { ScoreJson } from '../../data/types';
-import { colors, ICON_STROKE_WIDTH, MIN_TOUCH_TARGET, radii, ICON_SIZE } from '../../design';
+import { colors, ICON_STROKE_WIDTH, MIN_TOUCH_TARGET, radii, ICON_SIZE, spacing } from '../../design';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import {
   scheduleScore,
@@ -310,7 +310,7 @@ const styles = StyleSheet.create({
   player: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
+    gap: spacing.md,
   },
   button: {
     width: BUTTON,
@@ -366,7 +366,7 @@ const styles = StyleSheet.create({
   caption: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 1,
+    marginTop: spacing['2xs'],
   },
   clock: {
     fontVariant: ['tabular-nums'],

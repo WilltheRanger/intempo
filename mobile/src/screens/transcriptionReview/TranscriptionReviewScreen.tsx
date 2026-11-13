@@ -291,7 +291,7 @@ const styles = StyleSheet.create({
     marginTop: spacing['2xl'],
   },
   field: {
-    marginTop: 18,
+    marginTop: spacing.lg,
   },
   pageNav: {
     flexDirection: 'row',

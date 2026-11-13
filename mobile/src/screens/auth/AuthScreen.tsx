@@ -589,6 +589,9 @@ function SwitchLine({ action, onPress }: { action: string; onPress: () => void }
 
 const SIGN_IN_PHOTO = require('../../../assets/hero/signin-hero.jpg');
 
+/** The sign-up sentence's line, which its inline links reach above and below. */
+const LEGAL_LINE_HEIGHT = 17;
+
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
@@ -617,7 +620,7 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   panel: {
-    marginTop: 26,
+    marginTop: spacing['2xl'],
   },
   /**
    * Padded to a real touch target, not `hitSlop`-ed to one.
@@ -634,8 +637,8 @@ const styles = StyleSheet.create({
   },
   inlineTarget: {
     minHeight: MIN_TOUCH_TARGET,
-    // The target's extra height, taken back out of the line: 44 − 17, split.
-    marginVertical: -13.5,
+    // The target's extra height, taken back out of the line it sits in.
+    marginVertical: -(MIN_TOUCH_TARGET - LEGAL_LINE_HEIGHT) / 2,
     justifyContent: 'center',
   },
   pressed: {
@@ -648,7 +651,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.xl,
   },
   firstFieldNoLede: {
-    marginTop: 26,
+    marginTop: spacing['2xl'],
   },
   field: {
     marginTop: spacing.lg,
@@ -663,7 +666,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     alignItems: 'center',
-    marginTop: 14,
+    marginTop: spacing.md,
   },
   legalPiece: {
     flexDirection: 'row',
@@ -671,7 +674,7 @@ const styles = StyleSheet.create({
   },
   legalText: {
     fontSize: 12,
-    lineHeight: 17,
+    lineHeight: LEGAL_LINE_HEIGHT,
   },
   note: {
     marginTop: spacing.lg,

@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet } from 'react-native';
 
-import { colors, ICON_STROKE_WIDTH, MIN_TOUCH_TARGET, ICON_SIZE } from '../../design';
+import { colors, ICON_STROKE_WIDTH, MIN_TOUCH_TARGET, ICON_SIZE, spacing } from '../../design';
 import { ChevronLeft } from '../icons';
 import { Text } from './Text';
 
@@ -45,14 +45,17 @@ export function BackLink({
 }
 
 const styles = StyleSheet.create({
+  // The chevron's ink on the margin: Lucide draws it 7.5pt in from the edge of
+  // its 20pt box, so the box hangs a step into the gutter. The same step is
+  // added on the right, so the target ends past the label's last letter.
   link: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    gap: 6,
+    gap: spacing.xs,
     height: MIN_TOUCH_TARGET,
-    marginLeft: -6,
-    paddingRight: 6,
+    marginLeft: -spacing.sm,
+    paddingRight: spacing.sm,
   },
   // Small target: a pressed opacity, per CLAUDE.md §3 — a control that looks
   // the same during the press reads as dead.
