@@ -50,14 +50,17 @@ CONFIG_PATH = Path(__file__).resolve().parents[2] / "config.toml"
 
 @dataclass(frozen=True)
 class InstrumentOnset:
-    """The two onset settings that depend on which instrument was played.
+    """The onset settings that depend on which instrument was played.
 
     `highpass_hz` of 0 means no filter, which is what the three treble
-    instruments get today.
+    instruments get today. `vibrato_bands` of 0 means the envelope's own
+    `envelope_vibrato_bands`, which is what every instrument but the double
+    bass gets.
     """
 
     delta: float
     highpass_hz: float
+    vibrato_bands: int = 0
 
 
 @dataclass(frozen=True)
@@ -231,6 +234,7 @@ def _parse(raw: dict) -> AudioConfig:
                 name: InstrumentOnset(
                     delta=float(row.get("delta", onset["delta"])),
                     highpass_hz=float(row.get("highpass_hz", 0.0)),
+                    vibrato_bands=int(row.get("vibrato_bands", 0)),
                 )
                 for name, row in (onset.get("instrument") or {}).items()
                 if isinstance(row, dict)

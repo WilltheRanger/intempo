@@ -6,6 +6,43 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-13 (after the pulse) — The double bass's vibrato filter: new `[onset.instrument.double_bass] vibrato_bands = 5`
+
+**Old value:** every instrument compared each band above 600 Hz with the
+loudest of 3 neighbours (`[onset.envelope] vibrato_bands = 3`). **New value:**
+the double bass with 5; every other instrument unchanged. `InstrumentOnset`
+gains `vibrato_bands`, 0 meaning the envelope's own, and
+`audio.envelope_config` resolves it for both the first pass and the second
+look (`Heard` now carries the instrument it was heard as).
+
+**Why.** Bowed bass was the weakest instrument on the accuracy benchmark
+(92.1%) and carried 60 of its 69 attacks at no note, almost all vibrato in
+noise. How many neighbours a vibrato needs depends on how close an
+instrument's partials are: a violin's are hundreds of hertz apart and three
+bands hold each one's swing, a bass's are 41–150 Hz apart and above 600 Hz its
+swing reaches further.
+
+| `vibrato_bands` | bass bowed | bass plucked | overall | attacks at no note |
+|---|---|---|---|---|
+| 3 everywhere (before) | 92.12% | 98.17% | 97.06% | 69 |
+| 5 everywhere | 92.87% | 98.17% | 96.72% | 53 |
+| 7 everywhere | 92.70% | 98.17% | 96.62% | 49 |
+| **5 for the bass only** | **92.87%** | **98.17%** | **97.18%** | **55** |
+
+Plucked bass has no vibrato and reads the same at every width. Given to every
+instrument, 5 bands cost violin bowed 98.43 → 97.51%, cello 95.68 → 94.70%,
+viola 98.65 → 98.31% and violin plucked 99.20 → 98.64%: the wider maximum
+starts to hide their steps to the next note. Verdicts now read 100% (180 of
+180).
+
+### Regression across the six fixtures
+
+All six are bass takes, and all six are identical with and without it —
+status, quality, missed, extra, verdict and every per-note deviation. The
+bass tests that pinned what a wider filter costs (`test_varied_rhythm`'s note
+played over a sounding one, `test_degraded_audio`'s rooms and quiet notes,
+`test_bass_onsets`) pass unchanged.
+
 ## 2026-11-13 (last) — The pulse re-anchors only where the player moved. No thresholds changed.
 
 `alignment.pulse_anchors` re-anchors after a run of disturbed intervals so

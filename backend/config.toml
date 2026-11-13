@@ -99,6 +99,15 @@ highpass_hz = 0.0
 [onset.instrument.double_bass]
 delta = 0.05
 highpass_hz = 80.0
+# How many neighbouring bands the vibrato filter compares a bass's with, where
+# `[onset.envelope] vibrato_bands` is the rest's. A bass's partials sit 41–150
+# Hz apart, so above 600 Hz a vibrato swing reaches across more bands than a
+# violin's does. On the accuracy benchmark's 30 bowed bass takes: 92.1% →
+# 92.9%, attacks at no note 60 → 46; plucked, with no vibrato, unchanged.
+# Given to every instrument instead, violin, viola and cello all read worse
+# (96.72% overall against 97.06%); 7 read the bass no better. TUNING_LOG.md,
+# 2026-11-13.
+vibrato_bands = 5
 
 # The saxophones start where the treble strings did, and for the same reason:
 # it is the path an unknown instrument already took, so adding them changed no

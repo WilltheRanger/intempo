@@ -858,6 +858,9 @@ class Heard:
     #: The waveform before any high-pass, for reading pitch: a bass's filter
     #: removes its bottom octave's fundamentals. None where nothing kept it.
     unfiltered: np.ndarray | None = None
+    #: Which instrument it was heard as (`onset_settings_for`), so the second
+    #: look listens the way the first did.
+    instrument: str | None = None
 
 
 def prepare_for_alignment(
@@ -947,6 +950,7 @@ def prepare_for_alignment(
         grace=grace,
         onsets=onsets,
         unfiltered=unfiltered,
+        instrument=named,
     )
 
 
@@ -996,7 +1000,9 @@ def _recover_missed_onsets(
         return np.array([], dtype=float)
 
     emphasised = audio_svc.pre_emphasis(heard.y, config=config)
-    strength = audio_svc.onset_envelope(emphasised, heard.sr, config=config)
+    strength = audio_svc.onset_envelope(
+        emphasised, heard.sr, config=audio_svc.envelope_config(config, heard.instrument)
+    )
     search = (min_gap_s or 0.0) * config.onset.recovery_search_share
     if search <= 0:
         return np.array([], dtype=float)

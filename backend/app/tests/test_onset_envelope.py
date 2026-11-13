@@ -214,3 +214,16 @@ def test_a_release_is_a_fall_and_an_attack_is_not() -> None:
     start, end = audio_svc.level_change_db(y, SR, np.array([1.0, 1.62]))
     assert start > 10.0
     assert end < -CFG.onset.recovery_max_fall_db - 10.0
+
+
+def test_the_bass_is_filtered_wider_and_nothing_else_is() -> None:
+    """`[onset.instrument.double_bass] vibrato_bands`: a bass's partials are
+    close enough that its vibrato reaches across more bands than three."""
+    bass = audio_svc.envelope_config(CFG, "double_bass")
+    assert bass.onset.envelope_vibrato_bands == 5
+    for other in ("violin", "viola", "cello", None, "a name this build does not know"):
+        assert audio_svc.envelope_config(CFG, other) is CFG
+    # Turned off for the second reading of a refused take, whatever its width.
+    unfiltered = audio_svc.without_vibrato_filter(bass)
+    assert unfiltered is not None
+    assert not audio_svc._vibrato_bands(128, SR, unfiltered.onset).any()

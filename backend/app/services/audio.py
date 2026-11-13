@@ -635,6 +635,25 @@ def onset_settings_for(config: AudioConfig, instrument: str | None) -> Instrumen
     return InstrumentOnset(delta=onset.delta, highpass_hz=0.0)
 
 
+def envelope_config(config: AudioConfig, instrument: str | None) -> AudioConfig:
+    """`config`, with the vibrato filter as wide as this instrument needs.
+
+    **One width does not fit a double bass.** The filter compares each band
+    with the loudest of its neighbours, and how many neighbours a vibrato
+    needs depends on how close an instrument's partials sit: a violin's are
+    hundreds of hertz apart, so three bands hold each one's swing and a step
+    to the next note still shows; a bass's are 41–150 Hz apart, so above
+    600 Hz its swing reaches across several, and three bands left it heard
+    as 60 attacks at no note in 30 benchmark takes. See
+    `[onset.instrument.double_bass] vibrato_bands` and TUNING_LOG.md,
+    2026-11-13.
+    """
+    bands = onset_settings_for(config, instrument).vibrato_bands
+    if not bands or bands == config.onset.envelope_vibrato_bands:
+        return config
+    return replace(config, onset=replace(config.onset, envelope_vibrato_bands=bands))
+
+
 def detect_onsets(
     y: np.ndarray,
     sr: int,
@@ -676,7 +695,7 @@ def detect_onsets(
     n_fft = _N_FFT
     wait_frames = max(1, int(round((onset.wait_ms / 1000.0) * sr / hop_length)))
 
-    strength = onset_envelope(y, sr, config=cfg)
+    strength = onset_envelope(y, sr, config=envelope_config(cfg, named))
 
     # The first frames are silenced because their input is not audio.
     #
