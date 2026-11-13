@@ -167,6 +167,26 @@ class TakeScore:
     counts: dict = field(default_factory=dict)
     errors_ms: list = field(default_factory=list)
     problems: list = field(default_factory=list)
+    #: Diagnostic, not scored: played notes with an attack heard near them,
+    #: played notes, and attacks near no played note. Separates a note the
+    #: detector never heard from one it heard and the pairing misplaced.
+    attacks: dict = field(default_factory=dict)
+
+
+#: Where an attack counts as one note's, from that note's true start. The
+#: detector places attacks a few tens of milliseconds late — the flux peaks as
+#: the note speaks — so the window leans that way.
+HEARD_WINDOW_S = (-0.03, 0.11)
+
+
+def attacks_against(notes: list[TruthNote], detected: np.ndarray) -> dict:
+    """How many played notes have an attack in their window, and how many
+    attacks fall in no played note's window."""
+    played = np.array([n.onset_s for n in notes if n.played], dtype=float)
+    lo, hi = HEARD_WINDOW_S
+    heard = sum(bool(np.any((detected >= t + lo) & (detected <= t + hi))) for t in played)
+    extra = sum(not bool(np.any((t >= played + lo) & (t <= played + hi))) for t in detected)
+    return {"heard": int(heard), "played": int(played.size), "extra": int(extra)}
 
 
 def _name(m: int) -> str:
@@ -462,11 +482,13 @@ def run_one(sc: Scenario) -> TakeScore:
     end_s = place_notes(notes, sc, rng)
     y = render(notes, sc, end_s, rng)
     truth = oracle(score, notes, sc.bpm)
+    trace: dict = {}
     result = analyze(
-        (y, SR), score, float(sc.bpm), instrument=sc.instrument, config=config()
+        (y, SR), score, float(sc.bpm), instrument=sc.instrument, trace=trace, config=config()
     )
 
     out = TakeScore(scenario=sc.name, status=result.status)
+    out.attacks = attacks_against(notes, np.asarray(trace.get("detected_s") or [], dtype=float))
     counts: dict[str, list[int]] = defaultdict(lambda: [0, 0])
 
     def tally(metric: str, ok: bool, problem: str = "") -> None:
@@ -638,7 +660,9 @@ def summarise(results: list[TakeScore]) -> dict:
         if results
         else np.array([0.0])
     )
+    attacks = {k: sum(r.attacks.get(k, 0) for r in results) for k in ("heard", "played", "extra")}
     return {
+        "attacks": attacks,
         "totals": {
             k: {"ok": v[0], "n": v[1], "pct": 100.0 * v[0] / max(1, v[1])}
             for k, v in totals.items()
@@ -720,7 +744,12 @@ def main() -> int:
     print(f"{'overall':<30}{summary['overall_pct']:>10.2f}%")
     te = summary["timing_error_ms"]
     print(
-        f"\ntiming error against the oracle: median {te['median']:.1f} ms, p95 {te['p95']:.1f} ms, max {te['max']:.0f} ms\n"
+        f"\ntiming error against the oracle: median {te['median']:.1f} ms, p95 {te['p95']:.1f} ms, max {te['max']:.0f} ms"
+    )
+    at = summary["attacks"]
+    print(
+        f"first pass, not scored: {at['heard']} of {at['played']} played notes heard "
+        f"({100.0 * at['heard'] / max(1, at['played']):.2f}%), {at['extra']} attacks at no note\n"
     )
     print("by dimension (overall, and its weakest metric)")
     for dim in sorted(summary["by_dimension"]):
