@@ -6,6 +6,37 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-13 (last) — The pulse re-anchors only where the player moved. No thresholds changed.
+
+`alignment.pulse_anchors` re-anchors after a run of disturbed intervals so
+that a hesitation is named where it happened and not blamed on every bar
+after it. **A sound paired with the wrong note is a run too** — out and back
+— and re-anchoring after it reset the drift the take was measuring: on the
+accuracy benchmark's worst take, a bowed bass played a steady 10% fast, a
+sixteenth the detector did not hear restarted the ramp twice, and from each
+restart to the end every note read hundreds of milliseconds off what it had
+been played at (44 wrong readings in one take).
+
+**The rule now** (`alignment._level_moved`): the line the stretch was on —
+level and Theil–Sen pace, from up to `PACE_NOTES` usable notes before the run
+— is carried across it, and the first `LEVEL_NOTES` notes after it are
+compared with where that line puts them. Within `limit`, the disturbance's own
+threshold, the reference stays; past it, it re-anchors exactly as before.
+Fewer than `MIN_LEVEL_NOTES` on either side and it re-anchors as before. The
+`limit` is the existing `[tolerance.pulse]` one; nothing new is tuned.
+
+Accuracy benchmark, quick set: 96.80% → 97.06%; notes within 12 ms
+95.01 → 95.50%, bars 94.31 → 94.86%; rushed takes 96.87 → 97.37%, takes with
+notes left out 93.74 → 94.73%, steady 99.37 → 99.50%; nothing worse. On the
+worst take it removes the second reset and not the first: there the pairing
+around the unheard note genuinely shifts the notes after it, which is a
+pairing fault and still open.
+
+### Regression across the six fixtures
+
+Identical — status, quality, missed, extra, verdict and every per-note
+deviation — on all six: none has a run that leaves the line.
+
 ## 2026-11-13 (later still) — Pairing: an interval may be read across one note left out, `alignment.DROPPED_NOTE_CAPS = 3.0`
 
 **Old value:** none. `align_dtw`'s cost compared the interval into each

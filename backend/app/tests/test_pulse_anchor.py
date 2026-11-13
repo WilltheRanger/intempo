@@ -102,6 +102,37 @@ def test_rushing_resumes_from_where_the_musician_actually_is() -> None:
     )
 
 
+def test_a_sound_paired_with_the_wrong_note_does_not_reset_the_ramp() -> None:
+    """**A glitch is a run too, out and back, and it is not a hesitation.**
+
+    A take played a steady 5% fast with one note's sound taken from the wrong
+    place — a sixteenth the detector did not hear, the pairing filling the
+    hole with its neighbour. The two intervals around it depart the take's
+    habit and the reference used to re-anchor after them, so every later note
+    was measured from where the glitch left off: the ramp the take is about
+    restarted from zero half-way through. The notes after it are back on the
+    line the notes before it were on, so nothing moved (`_level_moved`).
+    """
+    offsets = [-0.05 * k for k in range(30)]
+    offsets[12] += 0.4
+    deltas = _deltas(offsets)
+
+    assert deltas[12] == pytest.approx(-200.0), "the glitch itself still reads"
+    assert list(deltas[13:]) == pytest.approx([-50.0 * k for k in range(13, 30)]), (
+        "the ramp restarted after the glitch"
+    )
+
+
+def test_a_pause_inside_a_ramp_still_re_anchors() -> None:
+    """The other side of the check: the notes after a real pause sit off the
+    line, by the pause, and start again from where the player is."""
+    offsets = [-0.05 * k for k in range(12)] + [-0.05 * k + 0.4 for k in range(12, 30)]
+    deltas = _deltas(offsets)
+
+    assert deltas[12] == pytest.approx(-200.0), "the pause itself"
+    assert deltas[13] == pytest.approx(-50.0), "the notes after it start again"
+
+
 def test_a_take_that_accelerates_is_not_mistaken_for_a_sequence_of_steps() -> None:
     """Getting faster and faster is a curve, and every point of it is real."""
     offsets = list(np.cumsum([0.0] + [-0.005 * i for i in range(1, 20)]))

@@ -873,14 +873,7 @@ def _settled_level(
         return float(offsets[start])
     at = np.asarray(positions[stretch], dtype=float)
     level = np.asarray(offsets[stretch], dtype=float)
-    first, second = np.triu_indices(at.size, k=1)
-    spans = at[second] - at[first]
-    ok = spans > 0
-    rate = (
-        float(np.median((level[second] - level[first])[ok] / spans[ok]))
-        if ok.any()
-        else 0.0
-    )
+    rate = _pace(at, level)
     near = slice(0, LEVEL_NOTES)
     projected = level[near] - rate * (at[near] - float(positions[start]))
     return float(np.median(projected))
@@ -916,6 +909,11 @@ def pulse_anchors(
     A run, not a single interval, because a bar played 25% slow is four
     stretched intervals in a row, not one. Absorbing them individually would
     report the bar as clean, which is the opposite mistake.
+
+    **And only if the player has moved.** A sound paired with the wrong note
+    is a run too, out and back, and re-anchoring after it reset a steady ramp
+    for the rest of the take; a run that leaves the notes after it on the line
+    the notes before it were on re-anchors nothing (`_level_moved`).
 
     The two thresholds live in `[tolerance.pulse]`. They are far apart from
     what they have to separate — the rushing fixture drifts 8 ms a beat, note
@@ -958,13 +956,86 @@ def pulse_anchors(
         return offsets.size
 
     anchor = _settled_level(offsets, positions, usable, 0, next_break(0))
+    stretch_start = 0
+    run_start: int | None = None
     for i in range(offsets.size):
         anchors[i] = anchor
+        if disturbed[i] and run_start is None:
+            run_start = i
         # Re-anchor once the run ends, so the last note of the disturbance
-        # still carries it and the next note starts from where the player is.
+        # still carries it and the next note starts from where the player is
+        # — **if the player has moved.** See `_level_moved`.
         if disturbed[i] and (i + 1 >= offsets.size or not disturbed[i + 1]):
-            anchor = _settled_level(offsets, positions, usable, i, next_break(i))
+            assert run_start is not None
+            resume = min(i + 1, offsets.size)
+            if _level_moved(
+                offsets,
+                positions,
+                usable,
+                stretch_start,
+                run_start,
+                resume,
+                next_break(i + 1) if resume < offsets.size else offsets.size,
+                limit,
+            ):
+                anchor = _settled_level(offsets, positions, usable, i, next_break(i))
+                stretch_start = i
+            run_start = None
     return anchors
+
+
+def _level_moved(
+    offsets: np.ndarray,
+    positions: np.ndarray,
+    usable: np.ndarray,
+    start: int,
+    run_start: int,
+    resume: int,
+    stop: int,
+    limit: float,
+) -> bool:
+    """Whether the notes after a disturbance sit off the line the notes before
+    it were on — a hesitation, which re-anchors — or back on it — a glitch,
+    which must not.
+
+    **A re-anchor resets the drift, and a glitch was resetting it.** A
+    disturbance is any run of intervals that departs from the take's habit,
+    and a hesitation is one; so is a sound paired with the wrong note, which
+    departs one way going in and the other coming out. Re-anchored after it,
+    every later note was measured from where the glitch left off: on a take
+    played a steady 10% fast, one sixteenth the detector did not hear reset
+    the ramp the whole take is about, and from there to the end each note read
+    half a second off what it had been played at.
+
+    So the line the stretch was on — its level and its pace, a Theil–Sen
+    slope as `_settled_level` reads one — is carried across the disturbance,
+    and the first notes after it are compared with where that line puts them.
+    Within `limit`, the disturbance's own threshold, the player is where they
+    were and the reference stays. Too few notes on either side to read a line
+    from, and it re-anchors as it always did.
+    """
+    before = [j for j in range(start, run_start) if usable[j]][-PACE_NOTES:]
+    after = [j for j in range(resume, stop) if usable[j]][:LEVEL_NOTES]
+    if len(before) < MIN_LEVEL_NOTES or len(after) < MIN_LEVEL_NOTES:
+        return True
+    at = np.asarray(positions[before], dtype=float)
+    level = np.asarray(offsets[before], dtype=float)
+    rate = _pace(at, level)
+    intercept = float(np.median(level - rate * at))
+    predicted = intercept + rate * np.asarray(positions[after], dtype=float)
+    shift = float(np.median(np.asarray(offsets[after], dtype=float) - predicted))
+    return abs(shift) >= limit
+
+
+def _pace(at: np.ndarray, level: np.ndarray) -> float:
+    """Seconds of drift per second of page: the median slope between every
+    pair of notes (Theil–Sen), so a few bad notes cannot tilt it."""
+    first, second = np.triu_indices(at.size, k=1)
+    spans = at[second] - at[first]
+    ok = spans > 0
+    if not ok.any():
+        return 0.0
+    return float(np.median((level[second] - level[first])[ok] / spans[ok]))
 
 
 def _residuals(
