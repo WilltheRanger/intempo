@@ -71,3 +71,21 @@ ground_truth = build_ground_truth(Path("fixtures/scores/01_simple.json"), cfg)
 - Feeding the Telemann/Paganini MusicXML once the Scout task produces it —
   today this only consumes the `score` JSON shape, so that piece needs the
   same OCR-shaped conversion every other fixture went through first.
+
+## `accuracy_bench.py`: the same question, end to end, today
+
+    tools/eval/accuracy_bench.py              # 180 takes, about a minute
+    tools/eval/accuracy_bench.py --full       # every tempo for every combination
+    tools/eval/accuracy_bench.py --set onset.delta=0.06 --only double_bass/
+
+Where `synthetic_takes.py` is the plumbing a soundfont render will plug into,
+this needs no toolchain: it synthesises each take with the repository's own
+string models (`backend/app/tests/audio_helpers.py`'s, with vibrato and a
+plucked string added), puts it through a room — noise, reverb, a phone's
+clipping, uneven dynamics — runs `analyze()` on it, and scores the reading
+against the app's own rules applied to the truth. So it answers *does the app
+hear the take it was given*, not *are the app's rules about rushing right*.
+Its docstring says what each metric means and what synthesis cannot tell you;
+`TUNING_LOG.md` (2026-11-13) has the first numbers. Nothing is written to
+disk unless `--json` is given.
+
