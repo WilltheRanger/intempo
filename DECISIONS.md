@@ -1,5 +1,59 @@
 # InTempo Decisions
 
+## 2026-11-13 — The app draws its own navigation bar, inside `ScreenContainer`, over the navigator's header
+
+**Context.** The owner asked for the app to feel "more like a mobile app".
+The largest tell was the way back: every pushed screen drew "‹ Back to
+library" as a line of text above its title, inside the scroll view, so it
+scrolled away with the page. A long screen had no way back and no name once
+scrolled. An iPhone app pins both in a bar, and moves the screen's title into
+the bar once its large title has scrolled under it.
+
+**Decision.** A `NavigationBar`, drawn by `ScreenContainer` from a
+`navigationBar` prop, on every screen of the navigator. The rules are in
+`navigation/navigationBar.ts`, with tests. A screen's large title and a
+photograph at the top of its content report where they end through
+`ScreenChrome` (`LargeTitle`, `useDarkGround`), and the container compares
+those lines with its own scroll position. The bar is clear at rest. It draws
+the page's paper and a hairline once content is under it, and stays clear in
+ivory over the Library's and the piece screen's photographs until they have
+gone under it.
+
+**Alternatives considered.**
+- *native-stack's own header, with `headerLargeTitle`.* On a phone this is
+  the real UINavigationBar, the best possible answer there. But large titles
+  are "only supported on iOS", and the web build is the one the owner uses
+  every day. Using it on native only would mean two bars that behave
+  differently.
+- *A custom header through the navigator's `header` option.* It renders
+  outside the screen's tree, so it cannot see the screen's scroll position
+  without a store shared between the navigator and every screen. The bar
+  needs the scroll position to know when to collapse.
+- *Keeping the back link and pinning the header.* That fixes the scrolling
+  but not the collapse, and leaves the back word somewhere a thumb does not
+  look for it.
+
+**The back button says the previous screen's title**, as iOS does: "‹
+Library", "‹ Your takes". It says "Back" when that title is longer than 12
+characters (the owner's pick, 2026-11-13). This reverses 2026-09-29's "Back to
+the piece" wording on every screen. The title comes from the navigator
+(`HeaderBackContext`): `ROUTE_TITLES` gives every route one from the first
+frame, and a screen whose large title is data publishes it with
+`setOptions`. On a screen opened directly, the word is the title of
+`useGoBack`'s fallback, so it still names where the press goes.
+`@react-navigation/elements` became a direct dependency for the context, at
+the version already installed.
+
+**Trade-offs accepted.**
+- The appearance is computed in JavaScript on every scroll event, and stored
+  only when it changes. On the web there is no native driver anyway.
+- The bar is laid over the scroll view only on the two photograph screens.
+  Everywhere else it takes its own 44 points above the scroll view. Because
+  the bar's ground is opaque, content passing behind it would show nothing,
+  and this leaves every screen's own top padding as it was.
+- The tab screens' titles now sit 44 points lower, under an empty bar, which
+  is where iOS puts a large title.
+
 ## 2026-11-12 — Three reversals from the UI review: the result opens on its passage, recording stays open at the free limit, onboarding is three questions
 
 **Context:** A review of the whole app through five lenses (impeccable, taste,

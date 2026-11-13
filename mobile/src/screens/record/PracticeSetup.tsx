@@ -9,11 +9,13 @@ import {
 import { ROW_PADDING_VERTICAL, rowDivided } from '../../components/rowMetrics';
 import { BORDER_WIDTH, colors, spacing } from '../../design';
 import type { PreflightCheck } from '../../lib/record/preflight';
+import type { BackButton } from '../../navigation/useGoBack';
 
 interface PracticeSetupProps {
   /** What the app can actually tell about this take, warnings first. */
   checks: PreflightCheck[];
-  onBack: () => void;
+  /** The bar's back button: the piece, or Record's own controls once these checks were seen. */
+  back: BackButton;
   onContinue: () => void;
   /** Resolve a check from here — the entry bar, or the metronome mode. */
   onResolve: (to: 'startBar' | 'metronome') => void;
@@ -44,12 +46,13 @@ interface PracticeSetupProps {
  */
 export function PracticeSetup({
   checks,
-  onBack,
+  back,
   onContinue,
   onResolve,
 }: PracticeSetupProps) {
   return (
     <ScreenContainer
+      navigationBar={{ back }}
       footer={
         <View>
           <PrimaryButton label="Set tempo & record" onPress={onContinue} />
@@ -62,11 +65,7 @@ export function PracticeSetup({
         — and then the piece as a grey line over the title, which the owner
         cut with every other one (2026-09-23). The back link names it.
       */}
-      <PageHeader
-        title="Ready when you are"
-        onBack={onBack}
-        backLabel="Back to the piece"
-      />
+      <PageHeader title="Ready when you are" />
 
       <View style={styles.checks}>
         {checks.map((check, index) => (

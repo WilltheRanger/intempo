@@ -26,10 +26,9 @@ import { PhotoBand, type PhotoBandScrim } from '../../components/pieces/PhotoBan
 import { usePieceHistory } from '../../data/hooks/useLatestTake';
 import { knowsItsMusic } from '../../data/hooks/knownPiece';
 import {
-  BackLink,
+  LargeTitle,
   Card,
   EmptyState,
-  IconButton,
   Input,
   LoadingState,
   PrimaryButton,
@@ -48,6 +47,7 @@ import {
 import type { Piece } from '../../data/types';
 import { BORDER_WIDTH, colors, spacing } from '../../design';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
+import { backTo } from '../../navigation/useGoBack';
 import { lastTakeLine } from '../../lib/insights/pieceHistory';
 import { practiceLabel, practicePassage } from '../../lib/verdict/passage';
 import { loadStateFor } from '../../lib/loadState';
@@ -114,6 +114,7 @@ export function PieceDetailScreen() {
    * with them when it is the only one (a reload on the web).
    */
   const goBack = () => navigation.popTo('Tabs', { screen: 'Library' } as never);
+  const back = backTo('Library', goBack);
   const { params } = useRoute<RouteProp<RootStackParamList, 'PieceDetail'>>();
   const { data: piece, isError, isPlaceholderData } = usePiece(params.pieceId);
   // **Not part of `load`.** A piece whose history fails to arrive is still a
@@ -190,7 +191,7 @@ export function PieceDetailScreen() {
   // piece back and the screen with it.
   if (load === 'loading' || (deletePiece.isPending && !piece)) {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ back }}>
         <LoadingState />
       </ScreenContainer>
     );
@@ -198,7 +199,7 @@ export function PieceDetailScreen() {
 
   if (load === 'unavailable' || !piece) {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ back }}>
         <EmptyState
           fill
           title="Couldn't open this piece"
@@ -243,6 +244,12 @@ export function PieceDetailScreen() {
     <ScreenContainer
       underStatusBar
       scrollOffset={scrollY}
+      navigationBar={{
+        back,
+        actions: [
+          { icon: MoreVertical, label: 'Piece options', onPress: () => setMenuVisible(true) },
+        ],
+      }}
       footer={
         canPractice ? (
           passage ? (
@@ -317,25 +324,15 @@ export function PieceDetailScreen() {
           scrollY={scrollY}
         >
           <View style={[styles.head, styles.bandGutter]}>
-            <BackLink label="Back to library" onPress={goBack} tone="onDark" />
-            <View style={styles.titleRow}>
+            <LargeTitle text={piece.title}>
               <PieceHeading
                 title={piece.title}
                 variant="heroTitle"
                 color="onDark"
                 catalogueColor="onDarkSecondary"
                 header
-                containerStyle={styles.title}
               />
-              <IconButton
-                icon={MoreVertical}
-                label="Piece options"
-                variant="bare"
-                tone="onDark"
-                onPress={() => setMenuVisible(true)}
-                style={styles.options}
-              />
-            </View>
+            </LargeTitle>
           </View>
         </PhotoBand>
       </View>
@@ -697,23 +694,8 @@ const styles = StyleSheet.create({
     marginTop: spacing.xl,
   },
   head: {
-    paddingTop: spacing.md,
+    paddingTop: spacing.sm,
     // The band's own breathing room under the title, before the music.
     paddingBottom: spacing.lg,
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-    marginTop: spacing.xs,
-  },
-  title: {
-    flex: 1,
-  },
-  // A 44pt target whatever the title does. Not pulled out to the gutter line
-  // as the prototype draws it: this screen's column clips at the gutter on
-  // the web, and a pulled glyph lost ten points of its target to the clip.
-  options: {
-    flexShrink: 0,
   },
 });

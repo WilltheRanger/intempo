@@ -1,6 +1,7 @@
 import { Platform, StyleSheet, View } from 'react-native';
 
 import { FileMusic, Mic, Settings, type LucideIcon } from '../icons';
+import type { BackButton } from '../../navigation/useGoBack';
 import { PageHeader, PrimaryButton, ScreenContainer, Text } from '../primitives';
 import { BORDER_WIDTH, ICON_SIZE, ICON_STROKE_WIDTH, colors, spacing } from '../../design';
 import { ListeningIllustration } from './ListeningIllustration';
@@ -23,15 +24,19 @@ import { ListeningIllustration } from './ListeningIllustration';
  */
 export function MicrophoneIntro({
   onContinue,
-  onBack,
+  back,
 }: {
   /** Starts the take, whose own request is the system's question. */
   onContinue: () => void;
-  onBack: () => void;
+  /** The bar's back button: out of the explanation, back to the take it was about to start. */
+  back: BackButton;
 }) {
   return (
-    <ScreenContainer footer={<PrimaryButton label="Continue" onPress={onContinue} />}>
-      <PageHeader title="InTempo listens while you play" onBack={onBack} backLabel="Back to the piece" />
+    <ScreenContainer
+      navigationBar={{ back }}
+      footer={<PrimaryButton label="Continue" onPress={onContinue} />}
+    >
+      <PageHeader title="InTempo listens while you play" />
       <ListeningIllustration />
       <View style={styles.facts}>
         <Fact icon={Mic} text="Only while you record" />

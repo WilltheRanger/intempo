@@ -172,7 +172,7 @@ export function ProfileScreen() {
 
   if (load === 'loading') {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{}}>
         <PageHeader title="Profile" />
         <LoadingState />
       </ScreenContainer>
@@ -183,7 +183,7 @@ export function ProfileScreen() {
 
   if (load === 'unavailable' || !musician) {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{}}>
         <PageHeader title="Profile" />
         <EmptyState
           fill
@@ -198,7 +198,7 @@ export function ProfileScreen() {
   }
 
   return (
-    <ScreenContainer>
+    <ScreenContainer navigationBar={{}}>
       <PageHeader title="Profile" />
 
       {/*

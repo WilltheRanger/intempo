@@ -1,6 +1,6 @@
 import { useNavigation } from '@react-navigation/native';
 import { ChevronLeft, ChevronRight } from '../../components/icons';
-import { useGoBack } from '../../navigation/useGoBack';
+import { useBackButton } from '../../navigation/useGoBack';
 import { ComposerField } from '../../components/pieces/ComposerField';
 import { useFieldOrder } from '../../components/primitives/useFieldOrder';
 import { TitleField } from '../../components/pieces/TitleField';
@@ -9,7 +9,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
 import {
-  BackLink,
+  LargeTitle,
   EmptyState,
   IconButton,
   Input,
@@ -51,7 +51,8 @@ const PAGE_HEIGHT = 300;
  */
 export function TranscriptionReviewScreen() {
   const navigation = useNavigation<RootNavigation>();
-  const goBack = useGoBack({ tab: 'Library' });
+  const back = useBackButton({ tab: 'Library' });
+  const goBack = back.onPress;
   const pages = useCapturedPages();
   const transcribe = useTranscribePage();
   const attachmentPieceId = captureSession.attachmentPieceId();
@@ -137,7 +138,7 @@ export function TranscriptionReviewScreen() {
 
   if (pages.length === 0) {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ back }}>
         <EmptyState
           fill
           title="Nothing to review"
@@ -158,7 +159,7 @@ export function TranscriptionReviewScreen() {
       : `Save and read ${pages.length} pages`;
 
   return (
-    <ScreenContainer
+    <ScreenContainer navigationBar={{ back }}
       footer={
         /*
           No longer the ten-to-sixty-second wait it used to be. The request
@@ -191,10 +192,11 @@ export function TranscriptionReviewScreen() {
     >
       {/* The redesign's head (`redesign/NamePiece.dc.html`). */}
       <View style={styles.head}>
-        <BackLink label="Back to the pages" onPress={goBack} />
-        <Text variant="screenTitle" accessibilityRole="header">
-          {attachmentPieceId ? 'Attach sheet music' : 'Name this piece'}
-        </Text>
+        <LargeTitle text={attachmentPieceId ? 'Attach sheet music' : 'Name this piece'}>
+          <Text variant="screenTitle" accessibilityRole="header">
+            {attachmentPieceId ? 'Attach sheet music' : 'Name this piece'}
+          </Text>
+        </LargeTitle>
       </View>
 
       {/*
@@ -281,7 +283,7 @@ export function TranscriptionReviewScreen() {
 
 const styles = StyleSheet.create({
   head: {
-    paddingTop: spacing.md,
+    paddingTop: spacing.sm,
     marginBottom: spacing.sm,
   },
   lede: {

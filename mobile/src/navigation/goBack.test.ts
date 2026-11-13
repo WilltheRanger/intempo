@@ -31,8 +31,10 @@ const offenders = Object.entries(screens)
   .map(([file, raw]) => [file, withoutComments(raw)] as const)
   .filter(([, source]) => source.includes('navigation.goBack()'));
 
+// `useBackButton` is `useGoBack` with the navigation bar's word attached
+// (2026-11-13); either keeps the fallback.
 const usingHook = Object.entries(screens).filter(([, raw]) =>
-  withoutComments(raw).includes('useGoBack('),
+  /\buse(GoBack|BackButton)\(/.test(withoutComments(raw)),
 );
 
 describe('going back', () => {

@@ -1,13 +1,12 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
-import { useGoBack } from '../../navigation/useGoBack';
+import { useBackButton } from '../../navigation/useGoBack';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import {
-  BackLink,
+  LargeTitle,
   EmptyState,
-  PageHeader,
   PrimaryButton,
   ScreenContainer,
   SegmentedControl,
@@ -135,13 +134,14 @@ export function VerdictScreen() {
    * the success path below navigates to the piece by name, which is what a
    * verdict's back control should do when there is a piece to name.
    */
-  const goBack = useGoBack(
+  const back = useBackButton(
     take ? { route: 'PieceDetail', params: { pieceId: take.pieceId } } : { tab: 'Library' },
   );
+  const goBack = back.onPress;
 
   if (load === 'loading') {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ back }}>
         <VerdictSkeleton />
       </ScreenContainer>
     );
@@ -149,7 +149,7 @@ export function VerdictScreen() {
 
   if (load === 'unavailable' || !take) {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ back }}>
         <EmptyState
           fill
           title="Couldn't load this take"
@@ -183,7 +183,7 @@ export function VerdictScreen() {
     const refused = intakeRefusal(take.failure.reason);
 
     return (
-      <ScreenContainer
+      <ScreenContainer navigationBar={{ back }}
         footer={
           <PrimaryButton
             // A refused file is not something to play again: the record
@@ -215,10 +215,6 @@ export function VerdictScreen() {
           focal point (§3 law 4), and it should be the outcome rather than the
           title of the piece.
         */}
-        <PageHeader
-          onBack={goBack}
-          backLabel="Back to the piece"
-        />
         <EmptyState
           fill
           // **The finding, not the app's process.** The heading is the one
@@ -256,7 +252,7 @@ export function VerdictScreen() {
   // with a sentence attached, not a failure to report as one.
   if (take.status !== 'ok') {
     return (
-      <ScreenContainer
+      <ScreenContainer navigationBar={{ back }}
         footer={
           <PrimaryButton
             label="Record again"
@@ -267,10 +263,6 @@ export function VerdictScreen() {
         }
       >
         {/* Centred for the same reason as the branch above. */}
-        <PageHeader
-          onBack={goBack}
-          backLabel="Back to the piece"
-        />
         {/* The pipeline's own sentence, shown verbatim. */}
         {/*
           **Three outcomes shared this heading.** A completely silent take, one
@@ -364,12 +356,31 @@ export function VerdictScreen() {
     bar chosen, and a tap or a drag opens one (#173); it used to open on the
     measure most worth practising, which the button below now names instead.
 
-    One control at the top the prototype does not draw: "‹ Back to the piece".
-    A verdict opened from a piece's history in the home-screen app has no
-    browser Back and no tab bar, and "Record again" is not the way out of it.
+    One control at the top the prototype does not draw: the navigation bar's
+    back. A verdict opened from a piece's history in the home-screen app has no
+    tab bar, and "Record again" is not the way out of it.
   */
+  /*
+    **Back to the piece or its takes, past Record.** A result reached from a
+    take goes back to where the take was started from, never to the recording
+    screen it came through. The word is the navigator's — Record's title is
+    the piece's, and the takes list's is "Your takes" — so only the press
+    changes.
+  */
+  const verdictTitle = take.lowConfidence
+    ? LOW_CONFIDENCE_TITLE
+    : formatTakeVerdict(take.measures, take.direction);
+  const resultBack = {
+    ...back,
+    onPress: () =>
+      fromTakes
+        ? navigation.popTo('PieceTakes', { pieceId: take.pieceId })
+        : navigation.popTo('PieceDetail', { pieceId: take.pieceId }),
+  };
+
   return (
     <ScreenContainer
+      navigationBar={{ back: resultBack }}
       footer={
         /*
           **The passage the verdict found, not the whole piece again** (the
@@ -397,17 +408,11 @@ export function VerdictScreen() {
         )
       }
     >
-      <BackLink
-        label={fromTakes ? 'Back to your takes' : 'Back to the piece'}
-        onPress={() =>
-          fromTakes
-            ? navigation.popTo('PieceTakes', { pieceId: take.pieceId })
-            : navigation.popTo('PieceDetail', { pieceId: take.pieceId })
-        }
-      />
-      <Text variant="screenTitle" accessibilityRole="header" style={styles.title}>
-        {take.lowConfidence ? LOW_CONFIDENCE_TITLE : formatTakeVerdict(take.measures, take.direction)}
-      </Text>
+      <LargeTitle text={verdictTitle} style={styles.head}>
+        <Text variant="screenTitle" accessibilityRole="header" style={styles.title}>
+          {verdictTitle}
+        </Text>
+      </LargeTitle>
       {/*
         **Nothing under the title but the chart** (the owner, 2026-09-29,
         circling the two lines that were here on a phone). "Bars 5–8 at 104,
@@ -569,6 +574,9 @@ export function VerdictScreen() {
 }
 
 const styles = StyleSheet.create({
+  head: {
+    paddingTop: spacing.sm,
+  },
   /**
    * 31pt rather than the screen title's 36, so every verdict fits one line on
    * a phone with "You" in it (the owner, 2026-09-29): "You dragged in the

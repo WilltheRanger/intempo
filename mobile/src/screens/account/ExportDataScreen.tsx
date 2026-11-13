@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { StyleSheet } from 'react-native';
-import { useGoBack } from '../../navigation/useGoBack';
+import { useBackButton } from '../../navigation/useGoBack';
 
 import {
   PageHeader,
@@ -15,7 +15,7 @@ import {
 import { spacing } from '../../design';
 
 export function ExportDataScreen() {
-  const goBack = useGoBack({ tab: 'Profile' });
+  const back = useBackButton({ tab: 'Profile' });
   const [preparing, setPreparing] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -43,11 +43,9 @@ export function ExportDataScreen() {
   }
 
   return (
-    <ScreenContainer>
+    <ScreenContainer navigationBar={{ back }}>
       <PageHeader
         title="Download your data"
-        onBack={goBack}
-        backLabel="Back to profile"
       />
 
       {/* Two lines where there was a line, a boxed list and a footnote (the

@@ -2,7 +2,7 @@ import { useNavigation } from '@react-navigation/native';
 import * as DocumentPicker from 'expo-document-picker';
 import { File as FSFile } from 'expo-file-system';
 import { FileMusic } from '../../components/icons';
-import { useGoBack } from '../../navigation/useGoBack';
+import { useBackButton } from '../../navigation/useGoBack';
 import { ComposerField } from '../../components/pieces/ComposerField';
 import { TitleField } from '../../components/pieces/TitleField';
 import { useRef, useState } from 'react';
@@ -86,7 +86,7 @@ interface Chosen {
 export function ImportFileScreen() {
   const navigation = useNavigation<RootNavigation>();
   const photograph = usePageCamera();
-  const goBack = useGoBack({ tab: 'Library' });
+  const back = useBackButton({ tab: 'Library' });
   const importPiece = useImportPiece();
 
   const [busy, setBusy] = useState(false);
@@ -195,11 +195,9 @@ export function ImportFileScreen() {
   const chosenPart = chosen?.parts.find((entry) => entry.id === part) ?? null;
 
   return (
-    <ScreenContainer>
+    <ScreenContainer navigationBar={{ back }}>
       <PageHeader
         title="Open a score file"
-        onBack={goBack}
-        backLabel="Back"
       />
 
       {chosen === null ? (

@@ -1,5 +1,5 @@
 import { useRoute, type RouteProp } from '@react-navigation/native';
-import { useGoBack } from '../../navigation/useGoBack';
+import { useBackButton } from '../../navigation/useGoBack';
 import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
@@ -58,7 +58,8 @@ export function ProofReadScreen() {
   const [failed, setFailed] = useState<string | null>(null);
   // Back is the reading this is about, however the screen was reached — a deep
   // link to `/pieces/x/check` has nothing underneath it.
-  const goBack = useGoBack({ route: 'PieceScore', params: { pieceId: params.pieceId } });
+  const back = useBackButton({ route: 'PieceScore', params: { pieceId: params.pieceId } });
+  const goBack = back.onPress;
 
   const proposals = useMemo(
     () => proposalsFor(piece?.score, instrument),
@@ -92,7 +93,7 @@ export function ProofReadScreen() {
 
   if (isPending) {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ back }}>
         <LoadingState />
       </ScreenContainer>
     );
@@ -100,7 +101,7 @@ export function ProofReadScreen() {
 
   if (!piece) {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ back }}>
         <EmptyState
           fill
           title="That piece isn't here"
@@ -114,8 +115,7 @@ export function ProofReadScreen() {
 
   if (proposals.length === 0) {
     return (
-      <ScreenContainer>
-        <PageHeader onBack={goBack} backLabel="Back to the score" />
+      <ScreenContainer navigationBar={{ back }}>
         {/*
           **This is the common case and it has to read as a result**, not as an
           empty list. A musician came here to be told whether the reading is
@@ -136,7 +136,7 @@ export function ProofReadScreen() {
   const fixing = proposals.filter((proposal) => taken[proposal.id] === 'fix').length;
 
   return (
-    <ScreenContainer
+    <ScreenContainer navigationBar={{ back }}
       footer={
         <View>
           <PrimaryButton
@@ -160,8 +160,6 @@ export function ProofReadScreen() {
     >
       <PageHeader
         title="Check the reading"
-        onBack={goBack}
-        backLabel="Back to the score"
       />
 
       {/* The count is said once, at the foot, where it goes down as you

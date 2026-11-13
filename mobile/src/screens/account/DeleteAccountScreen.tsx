@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { StyleSheet } from 'react-native';
-import { useGoBack } from '../../navigation/useGoBack';
+import { useBackButton } from '../../navigation/useGoBack';
 
 import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
 import {
@@ -19,7 +19,7 @@ import { spacing } from '../../design';
  * to be read before the destructive control is reached.
  */
 export function DeleteAccountScreen() {
-  const goBack = useGoBack({ tab: 'Profile' });
+  const back = useBackButton({ tab: 'Profile' });
   const queryClient = useQueryClient();
   const [confirmation, setConfirmation] = useState('');
   const [confirming, setConfirming] = useState(false);
@@ -49,11 +49,9 @@ export function DeleteAccountScreen() {
   }
 
   return (
-    <ScreenContainer>
+    <ScreenContainer navigationBar={{ back }}>
       <PageHeader
         title="Delete account"
-        onBack={goBack}
-        backLabel="Back to profile"
       />
 
       {/* One line where there was a line, a boxed list and the same warning

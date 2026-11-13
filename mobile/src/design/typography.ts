@@ -136,6 +136,22 @@ export const typography = {
     letterSpacing: -0.2,
   },
   /** Composer names. */
+  /**
+   * A screen's title in its navigation bar, once the large title has scrolled
+   * under the bar (`navigation/navigationBar.ts`).
+   *
+   * **The serif, because it stands in for a serif.** iOS sets the inline title
+   * in the same family as the large one it replaces, and here the large title
+   * is Newsreader; a sans title arriving in the bar would read as a different
+   * screen's name. Medium and 18pt so one short line holds its own between the
+   * back button and the actions without competing with either.
+   */
+  barTitle: {
+    fontFamily: fontFamily.serifMedium,
+    fontSize: 18,
+    lineHeight: 22,
+    letterSpacing: -0.2,
+  },
   composer: {
     fontFamily: fontFamily.sansRegular,
     fontSize: 16,

@@ -1,5 +1,5 @@
 import { useRoute, type RouteProp } from '@react-navigation/native';
-import { useGoBack } from '../../navigation/useGoBack';
+import { useBackButton } from '../../navigation/useGoBack';
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
@@ -7,7 +7,7 @@ import {
   EmptyState,
   Input,
   LoadingState,
-  BackLink,
+  LargeTitle,
   PrimaryButton,
   SCREEN_GUTTER,
   ScreenContainer,
@@ -114,10 +114,11 @@ import { printedPitch } from '../../lib/notation/printedPitch';
  */
 export function MeasureEditScreen() {
   const { params } = useRoute<RouteProp<RootStackParamList, 'MeasureEdit'>>();
-  const goBack = useGoBack({
+  const back = useBackButton({
     route: 'PieceScore',
     params: { pieceId: params.pieceId },
   });
+  const goBack = back.onPress;
   const { data: piece, isPending } = usePiece(params.pieceId);
   const correct = useCorrectScore(params.pieceId);
 
@@ -157,7 +158,7 @@ export function MeasureEditScreen() {
 
   if (isPending) {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ back }}>
         <LoadingState />
       </ScreenContainer>
     );
@@ -165,7 +166,7 @@ export function MeasureEditScreen() {
 
   if (!piece?.score || !original || !working) {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ back }}>
         <EmptyState
           fill
           // "Bar", the word the rest of the app uses (the UI review,
@@ -386,7 +387,7 @@ export function MeasureEditScreen() {
       the footer with the button it belongs to: a save that failed must not
       report it above the fold.
     */
-    <ScreenContainer
+    <ScreenContainer navigationBar={{ back }}
       footer={
         <View>
           {error ? (
@@ -416,8 +417,7 @@ export function MeasureEditScreen() {
         quarantines that trio to surfaces reporting how a *take* went, and a
         bar whose durations do not sum is arithmetic about a photograph.
       */}
-      <View style={styles.head}>
-        <BackLink label="Back to the score" onPress={goBack} />
+      <LargeTitle text={`Bar ${params.measureNumber}`} style={styles.head}>
         <View style={styles.barLine} accessibilityRole="header">
           <Text style={styles.barName}>Bar {params.measureNumber}</Text>
           <Text color="textTertiary" style={styles.barName}>
@@ -425,7 +425,7 @@ export function MeasureEditScreen() {
           </Text>
           <Text style={[styles.barName, !beats.balanced && styles.beatsOff]}>{beats.text}</Text>
         </View>
-      </View>
+      </LargeTitle>
       {/*
         **The bar, engraved, and redrawn with every change.** This screen
         listed a bar's notes as text tiles and asked a musician to correct
@@ -1091,7 +1091,7 @@ const styles = StyleSheet.create({
     opacity: pressedOpacity,
   },
   head: {
-    paddingTop: spacing.md,
+    paddingTop: spacing.sm,
   },
   barLine: {
     flexDirection: 'row',

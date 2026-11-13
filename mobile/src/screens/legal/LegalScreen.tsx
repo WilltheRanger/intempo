@@ -1,6 +1,6 @@
 import { useRoute, type RouteProp } from '@react-navigation/native';
 import { StyleSheet, View } from 'react-native';
-import { useGoBack } from '../../navigation/useGoBack';
+import { useBackButton, type BackButton } from '../../navigation/useGoBack';
 
 import { PageHeader, ScreenContainer, Text } from '../../components/primitives';
 import { spacing } from '../../design';
@@ -9,8 +9,8 @@ import type { RootStackParamList } from '../../navigation/types';
 
 interface LegalDocumentViewProps {
   documentId: LegalDocument['id'];
-  onBack: () => void;
-  backLabel?: string;
+  /** The navigation bar's back button: Profile's, or the sign-up screen's own. */
+  back: BackButton;
 }
 
 /**
@@ -22,17 +22,13 @@ interface LegalDocumentViewProps {
  * one renderer and one document source prevents the pre-account copy from
  * drifting away from what Profile shows later.
  */
-export function LegalDocumentView({
-  documentId,
-  onBack,
-  backLabel = 'Back',
-}: LegalDocumentViewProps) {
+export function LegalDocumentView({ documentId, back }: LegalDocumentViewProps) {
   const document = DOCUMENTS[documentId] ?? null;
 
   if (!document) {
     return (
-      <ScreenContainer>
-        <PageHeader title="Not found" onBack={onBack} backLabel={backLabel} />
+      <ScreenContainer navigationBar={{ back }}>
+        <PageHeader title="Not found" />
         <Text variant="body" color="textSecondary" style={styles.updated}>
           There is no document at this address.
         </Text>
@@ -41,12 +37,8 @@ export function LegalDocumentView({
   }
 
   return (
-    <ScreenContainer>
-      <PageHeader
-        title={document.title}
-        onBack={onBack}
-        backLabel={backLabel}
-      />
+    <ScreenContainer navigationBar={{ back }}>
+      <PageHeader title={document.title} />
 
       <Text variant="metadataSmall" color="textTertiary" style={styles.updated}>
         {`Last updated ${document.updated}`}
@@ -97,16 +89,10 @@ export function LegalDocumentView({
  * requires handing over an email address first.
  */
 export function LegalScreen() {
-  const goBack = useGoBack({ tab: 'Profile' });
+  const back = useBackButton({ tab: 'Profile' });
   const { params } = useRoute<RouteProp<RootStackParamList, 'Legal'>>();
 
-  return (
-    <LegalDocumentView
-      documentId={params.document}
-      onBack={goBack}
-      backLabel="Back"
-    />
-  );
+  return <LegalDocumentView documentId={params.document} back={back} />;
 }
 
 const styles = StyleSheet.create({

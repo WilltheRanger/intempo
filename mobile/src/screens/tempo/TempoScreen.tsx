@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Animated, Pressable, StyleSheet, View } from 'react-native';
 
 import {
-  BackLink,
+  LargeTitle,
   EmptyState,
   LoadingState,
   PrimaryButton,
@@ -36,7 +36,7 @@ import {
 import { bpmForMarking } from '../../lib/tempoMarking';
 import { useReducedMotion } from '../../lib/useReducedMotion';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
-import { useGoBack } from '../../navigation/useGoBack';
+import { useBackButton } from '../../navigation/useGoBack';
 import { TempoSlider } from './TempoSlider';
 
 /**
@@ -64,7 +64,11 @@ export function TempoScreen() {
   // named, before its score opens for the first time.
   const setup = route.name === 'SetTempo';
   const navigation = useNavigation<RootNavigation>();
-  const goBack = useGoBack({ route: 'Record', params: { pieceId: params.pieceId } });
+  const back = useBackButton({ route: 'Record', params: { pieceId: params.pieceId } });
+  // Step 3 of adding a piece has no way back: the piece is saved, and back is
+  // the naming step it has already left (`RootNavigator`, `gestureEnabled`).
+  const navigationBar = setup ? {} : { back };
+  const goBack = back.onPress;
   const { data: piece, isError } = usePiece(params.pieceId);
   usePracticeTempos();
   const reduceMotion = useReducedMotion();
@@ -81,14 +85,14 @@ export function TempoScreen() {
 
   if (loadStateFor({ isError, hasData: piece !== undefined }) === 'loading') {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={navigationBar}>
         <LoadingState />
       </ScreenContainer>
     );
   }
   if (!piece) {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={navigationBar}>
         <EmptyState
           title="Couldn't open this piece"
           actionLabel="Back"
@@ -150,7 +154,7 @@ export function TempoScreen() {
   // horizontal drags (`TempoSlider`), so nothing here needed the page to hold
   // still.
   return (
-    <ScreenContainer
+    <ScreenContainer navigationBar={navigationBar}
       footer={
         setup ? (
           // The score is where a new piece goes next: its reading is checked
@@ -165,18 +169,17 @@ export function TempoScreen() {
       }
     >
       {setup ? (
-        <View style={styles.head}>
-          <Text variant="screenTitle" accessibilityRole="header" style={styles.title}>
+        <LargeTitle text="Set your tempo" style={styles.head}>
+          <Text variant="screenTitle" accessibilityRole="header">
             Set your tempo
           </Text>
-        </View>
+        </LargeTitle>
       ) : (
-        <View style={styles.head}>
-          <BackLink label="Back" onPress={goBack} />
-          <Text variant="screenTitle" accessibilityRole="header" style={styles.title}>
+        <LargeTitle text="Tempo" style={styles.head}>
+          <Text variant="screenTitle" accessibilityRole="header">
             Tempo
           </Text>
-        </View>
+        </LargeTitle>
       )}
 
       {/*
@@ -304,10 +307,7 @@ export function TempoScreen() {
 
 const styles = StyleSheet.create({
   head: {
-    paddingTop: spacing.md,
-  },
-  title: {
-    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
   },
   readout: {
     flexDirection: 'row',

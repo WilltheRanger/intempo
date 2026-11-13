@@ -18,7 +18,7 @@ import {
 } from 'react-native';
 
 import {
-  BackLink,
+  LargeTitle,
   Card,
   EmptyState,
   LinkRow,
@@ -83,7 +83,6 @@ import {
   ICON_STROKE_WIDTH,
   MIN_TOUCH_TARGET,
   spacing,
-  typography,
 } from '../../design';
 import { isTakingLong, progressFor } from '../../lib/analysis/waitProgress';
 import { progressValue } from '../../lib/progressValue';
@@ -135,7 +134,7 @@ import {
   shouldGuardBrowserExit,
   type RecordPhase,
 } from '../../lib/record/leaving';
-import { useGoBack } from '../../navigation/useGoBack';
+import { plainBack, useBackButton } from '../../navigation/useGoBack';
 import { loadStateFor } from '../../lib/loadState';
 
 /**
@@ -170,7 +169,8 @@ export function RecordScreen() {
   const navigation = useNavigation<RootNavigation>();
   const queryClient = useQueryClient();
   const { params } = useRoute<RouteProp<RootStackParamList, 'Record'>>();
-  const goBack = useGoBack({ route: 'PieceDetail', params: { pieceId: params.pieceId } });
+  const back = useBackButton({ route: 'PieceDetail', params: { pieceId: params.pieceId } });
+  const goBack = back.onPress;
   const { data: piece, isError } = usePiece(params.pieceId);
   // This is the same cached account read held by the signed-in gate, not a
   // second request. It lets the screen refuse an impossible take before the
@@ -1193,7 +1193,7 @@ export function RecordScreen() {
 
   if (loadStateFor({ isError, hasData: piece !== undefined }) === 'loading') {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ back }}>
         <LoadingState />
       </ScreenContainer>
     );
@@ -1201,7 +1201,7 @@ export function RecordScreen() {
 
   if (!piece) {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ back }}>
         <EmptyState
           title="Couldn't open this piece"
           actionLabel="Back"
@@ -1216,7 +1216,7 @@ export function RecordScreen() {
       piece.transcriptionStatus === 'queued' ||
       piece.transcriptionStatus === 'reading';
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ back }}>
         <EmptyState
           title={reading ? 'Still reading the music' : 'Add the sheet music first'}
           actionLabel="Open piece"
@@ -1231,7 +1231,7 @@ export function RecordScreen() {
   if (showMicIntro) {
     return (
       <MicrophoneIntro
-        onBack={() => setShowMicIntro(false)}
+        back={plainBack(() => setShowMicIntro(false))}
         onContinue={() => {
           preferences.setMicrophoneExplained(true);
           setShowMicIntro(false);
@@ -1261,13 +1261,7 @@ export function RecordScreen() {
           preferences.setPracticeSetupSeen(true);
           setShowSetup(false);
         }}
-        onBack={() => {
-          if (practiceSetupSeen) {
-            setShowSetup(false);
-          } else {
-            goBack();
-          }
-        }}
+        back={practiceSetupSeen ? plainBack(() => setShowSetup(false)) : back}
         onContinue={() => {
           preferences.setPracticeSetupSeen(true);
           setShowSetup(false);
@@ -1294,7 +1288,7 @@ export function RecordScreen() {
      */
     const counted = Math.min(countInBeats, (metronome.beat?.index ?? 0) + 1);
     return (
-      <ScreenContainer
+      <ScreenContainer navigationBar={{ back }}
         scrollable={false}
         bleed
         contentStyle={styles.countInScreen}
@@ -1376,7 +1370,7 @@ export function RecordScreen() {
     */
     const { label, through } = progressFor(analysisStage);
     return (
-      <ScreenContainer scrollable={false} contentStyle={styles.centred}>
+      <ScreenContainer navigationBar={{ back }} scrollable={false} contentStyle={styles.centred}>
         <View>
           <Text variant="heroTitle" accessibilityRole="header">Analysing</Text>
           {through === null ? (
@@ -1438,37 +1432,29 @@ export function RecordScreen() {
    * where it was, because it is reached for without looking (§3 law 7).
    */
   return (
-    <ScreenContainer scrollable={false} bleed contentStyle={styles.stage}>
+    <ScreenContainer
+      navigationBar={{
+        back,
+        /*
+          The two doors that are not settings — upload a take you already
+          have, and the pre-flight checks — in the bar now, where they stay in
+          reach. Gone during a take, like every other control that cannot
+          change it; the title no longer shares their row, so nothing re-wraps
+          when they go.
+        */
+        actions:
+          !capturing && !reviewing
+            ? [{ icon: MoreVertical, label: 'More', onPress: () => setShowMore(true) }]
+            : [],
+      }}
+      scrollable={false}
+      bleed
+      contentStyle={styles.stage}
+    >
       <View style={styles.header}>
-        <BackLink label="Back to the piece" onPress={goBack} />
-        <View style={styles.titleRow}>
-          <PieceHeading
-            title={piece.title}
-            variant="heroTitle"
-            numberOfLines={2}
-            header
-            containerStyle={styles.title}
-          />
-          {/*
-            The two doors that are not settings — upload a take you already
-            have, and the pre-flight checks. Gone during a take, like every
-            other control that cannot change it.
-          */}
-          {!capturing && !reviewing ? (
-            <Pressable
-              onPress={() => setShowMore(true)}
-              accessibilityRole="button"
-              accessibilityLabel="More"
-              style={({ pressed }) => [styles.more, pressed && styles.morePressed]}
-            >
-              <MoreVertical size={ICON_SIZE.lg} strokeWidth={ICON_STROKE_WIDTH} color={colors.textSecondary} />
-            </Pressable>
-          ) : (
-            // The slot stays, empty, so the title does not re-wrap — and move
-            // the music under it — the moment a take begins.
-            <View style={styles.more} />
-          )}
-        </View>
+        <LargeTitle text={piece.title}>
+          <PieceHeading title={piece.title} variant="heroTitle" numberOfLines={2} header />
+        </LargeTitle>
         {practicing ? (
           <Text variant="metadata" color="accentText" style={styles.practicing}>
             {practicing}
@@ -2002,36 +1988,12 @@ const styles = StyleSheet.create({
     paddingBottom: 0,
   },
   header: {
-    paddingTop: spacing.md,
+    paddingTop: spacing.sm,
     paddingHorizontal: spacing['2xl'],
     paddingBottom: spacing.md,
   },
   practicing: {
     marginTop: spacing.xs,
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-  },
-  title: {
-    flex: 1,
-    minWidth: 0,
-  },
-  // A bare glyph, not a ringed button: it is secondary to the title beside
-  // it. Flush with the margin, so its 44pt target reaches past it.
-  more: {
-    width: MIN_TOUCH_TARGET,
-    height: MIN_TOUCH_TARGET,
-    alignItems: 'center',
-    justifyContent: 'center',
-    // The glyph on the gutter, and centred on the title's first line: the
-    // target's slack around each, given back.
-    marginRight: -(MIN_TOUCH_TARGET - ICON_SIZE.lg) / 2,
-    marginTop: -(MIN_TOUCH_TARGET - typography.heroTitle.lineHeight) / 2,
-  },
-  morePressed: {
-    opacity: 0.55,
   },
   /**
    * The panel under the music: `panel`, a step warmer than a card, with a

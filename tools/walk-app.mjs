@@ -356,29 +356,25 @@ await waitFor('the title error', async () => (await leaves()).some((line) => lin
 
 // A deep link has no history behind it; back must still reach the parent.
 await open('pieces/fixture-clef-change-study/bars/3');
-// A link since the redesign (`BackLink`, "‹ Back to the score"): it only goes
-// somewhere. Either role is accepted, so a screen still on the round back
-// button walks the same way.
-await page
-  .getByRole('link', { name: /back/i })
-  .or(page.getByRole('button', { name: /back/i }))
-  .first()
-  .click({ timeout: 10000 });
+// The navigation bar's back button (2026-11-13): first in the page, named
+// "Back to Score" — where back goes from a bar opened with nothing behind it.
+await page.getByRole('button', { name: /^Back/ }).first().click({ timeout: 10000 });
 await waitFor('back out of the bar editor', async () => (await path()).endsWith('/score'));
 if ((await path()).endsWith('/score')) pass('deep-linked bar editor → back to the score');
 else fail(`deep-linked bar editor → back went to ${await path()}`);
 
 /*
-  **Enter follows a link.** react-native-web leaves Enter on `role="link"` to
-  the browser, which follows an <a href> and does nothing for a <div>, so every
+  **Enter goes back.** react-native-web leaves Enter on `role="link"` to the
+  browser, which follows an <a href> and does nothing for a <div>, so every
   back link in the app ignored the key until 2026-10-05
-  (`lib/keyActivation.ts`). By keyboard, because a click never failed.
+  (`lib/keyActivation.ts`). The way back is the navigation bar's button now
+  (2026-11-13); by keyboard still, because a click never failed.
 */
 await open('pieces/fixture-bach-bwv1001/tempo');
-await page.getByRole('link', { name: /back/i }).first().focus();
+await page.getByRole('button', { name: /^Back/ }).first().focus();
 await page.keyboard.press('Enter');
-if (await waitFor('Enter on the back link to go back', async () => (await path()).endsWith('/record'), 8000))
-  pass('Enter on a back link goes back');
+if (await waitFor('Enter on the back button to go back', async () => (await path()).endsWith('/record'), 8000))
+  pass('Enter on the back button goes back');
 
 /*
   **A new screen takes focus to its title, and Back gives it back.** Until
@@ -397,7 +393,7 @@ await open('');
   await page.keyboard.press('Enter');
   if (await waitFor('focus on the piece title', async () => (await focused()).tag === 'H1', 5000))
     pass('opening a piece puts focus on its title');
-  await page.getByRole('link', { name: /Back to library/ }).first().focus();
+  await page.getByRole('button', { name: 'Back to Library' }).first().focus();
   await page.keyboard.press('Enter');
   if (await waitFor('focus back on the row', async () => (await focused()).name.startsWith('Study in B♭'), 5000))
     pass('Back returns focus to the row that opened the piece');
@@ -1300,12 +1296,9 @@ await page.getByRole('button', { name: 'More' }).first().click({ timeout: 15000 
 await page.waitForTimeout(400);
 await page.getByRole('button', { name: PRACTICE_SETUP_REOPEN }).first().click();
 await waitForText('the pre-flight to reopen', (l) => l.includes(PRACTICE_SETUP_HEADING));
-// A link since PageHeader took `BackLink` (2026-09-29); either role walks.
-await page
-  .getByRole('link', { name: /Back to the piece/i })
-  .or(page.getByRole('button', { name: /Back to the piece/i }))
-  .first()
-  .click();
+// The bar's back button (2026-11-13): "Back", out of the checks to the
+// controls they were reopened from.
+await page.getByRole('button', { name: /^Back/ }).first().click();
 await tempoRow().waitFor({ timeout: 15000 });
 if ((await path()).endsWith('/record'))
   pass('reopening the checks comes back to the controls, not out of the flow');

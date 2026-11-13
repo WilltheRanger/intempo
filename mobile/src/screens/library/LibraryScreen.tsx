@@ -8,11 +8,11 @@ import { FadeIn } from '../../components/motion';
 import { PieceListSkeleton } from '../../components/skeletons';
 import {
   EmptyState,
-  IconButton,
   ScreenContainer,
   SearchHeader,
 } from '../../components/primitives';
 import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
+import type { BarAction } from '../../components/primitives/NavigationBar';
 import { SECTION_HEADING } from '../../components/primitives/sectionHeading';
 import { Text } from '../../components/primitives/Text';
 import { arrival, useArrival } from '../../data/arrival';
@@ -89,6 +89,7 @@ export function LibraryScreen() {
     await Promise.all([library.refetch(), currentPiece.refetch()]);
   }
   const [query, setQuery] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
   // The page's scroll offset, for the band's photograph (`ContinueBand`).
   const scrollY = useRef(new Animated.Value(0)).current;
 
@@ -313,19 +314,38 @@ export function LibraryScreen() {
       query={query}
       onQueryChange={setQuery}
       placeholder="Search your library"
-      searchable={pieces.length > 0}
+      open={searchOpen}
+      onClose={() => {
+        setQuery('');
+        setSearchOpen(false);
+      }}
       tone={tone}
-      action={
-        <IconButton
-          icon={Plus}
-          label="Add piece"
-          variant="bare"
-          tone={tone}
-          onPress={() => setAddSheetVisible(true)}
-        />
-      }
     />
   );
+
+  /*
+    **Search and add are the bar's, not the title's.** They sat beside the
+    large title and scrolled away with it, so from halfway down the shelf the
+    way to add a piece was a scroll back up. In the bar they stay in reach, as
+    an iPhone app's do. Hidden while searching: the field's own Cancel is the
+    one control that means anything then.
+  */
+  const barActions: BarAction[] = searchOpen
+    ? []
+    : [
+        ...(pieces.length > 0
+          ? [
+              {
+                icon: Search,
+                // **"Search", not the placeholder**: one name for one control
+                // whether or not the field is open (`SearchHeader`).
+                label: 'Search',
+                onPress: () => setSearchOpen(true),
+              },
+            ]
+          : []),
+        { icon: Plus, label: 'Add piece', onPress: () => setAddSheetVisible(true) },
+      ];
 
   return (
     <ScreenContainer
@@ -333,6 +353,7 @@ export function LibraryScreen() {
       bleed={banded}
       underStatusBar={banded}
       scrollOffset={scrollY}
+      navigationBar={{ actions: barActions }}
     >
       {banded ? (
         <ContinueBand

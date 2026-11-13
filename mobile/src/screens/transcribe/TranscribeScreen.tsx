@@ -1,5 +1,5 @@
 import { useNavigation } from '@react-navigation/native';
-import { useGoBack } from '../../navigation/useGoBack';
+import { useBackButton } from '../../navigation/useGoBack';
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
@@ -36,7 +36,8 @@ import type { RootNavigation } from '../../navigation/types';
  */
 export function TranscribeScreen() {
   const navigation = useNavigation<RootNavigation>();
-  const goBack = useGoBack({ tab: 'Library' });
+  const back = useBackButton({ tab: 'Library' });
+  const goBack = back.onPress;
   const pages = useCapturedPages();
   const total = pages.length;
   const [error, setError] = useState<string | null>(null);
@@ -120,7 +121,7 @@ export function TranscribeScreen() {
 
   if (total === 0) {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ back }}>
         <EmptyState
           fill
           title="Nothing to transcribe"
@@ -134,7 +135,7 @@ export function TranscribeScreen() {
 
   if (unavailable) {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ back }}>
         <EmptyState
           fill
           title="Can’t read photos in sample mode"
@@ -148,7 +149,7 @@ export function TranscribeScreen() {
 
   if (error) {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ back }}>
         <EmptyState
           fill
           title={total === 1 ? "The page didn't upload" : "The pages didn't upload"}
@@ -161,7 +162,7 @@ export function TranscribeScreen() {
   }
 
   return (
-    <ScreenContainer scrollable={false} contentStyle={styles.centered}>
+    <ScreenContainer navigationBar={{ back }} scrollable={false} contentStyle={styles.centered}>
       <View>
         <Text variant="heroTitle" accessibilityRole="header">
           {total === 1 ? 'Sending your page' : `Sending ${total} pages`}

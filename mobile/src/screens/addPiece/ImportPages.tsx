@@ -1,7 +1,7 @@
 import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { Images } from '../../components/icons';
-import { useGoBack } from '../../navigation/useGoBack';
+import { useBackButton, useGoBack } from '../../navigation/useGoBack';
 import { useState } from 'react';
 import { Platform, StyleSheet } from 'react-native';
 
@@ -61,7 +61,7 @@ export function ImportPagesScreen({
 }) {
   const navigation = useNavigation<RootNavigation>();
   const photograph = usePageCamera();
-  const goBack = useGoBack({ tab: 'Library' });
+  const back = useBackButton({ tab: 'Library' });
   /**
    * Where "Add page" returns to, once the images are in the session.
    *
@@ -157,7 +157,7 @@ export function ImportPagesScreen({
       camera instead" stranded mid-page as the only control up there, which is
       the problem rather than half of the fix.
     */
-    <ScreenContainer
+    <ScreenContainer navigationBar={{ back }}
       footer={
         <>
           <PrimaryButton
@@ -192,8 +192,6 @@ export function ImportPagesScreen({
     >
       <PageHeader
         title="Import score"
-        onBack={goBack}
-        backLabel="Back"
       />
 
       <Text variant="body" color="textSecondary" style={styles.lede}>

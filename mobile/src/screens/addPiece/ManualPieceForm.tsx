@@ -1,7 +1,7 @@
 import { useNavigation } from '@react-navigation/native';
 import { useRef, useState } from 'react';
 import { StyleSheet } from 'react-native';
-import { useGoBack } from '../../navigation/useGoBack';
+import { useBackButton } from '../../navigation/useGoBack';
 
 import {
   Input,
@@ -58,7 +58,7 @@ const MAX_BPM = 300;
  */
 export function ManualPieceForm() {
   const navigation = useNavigation<RootNavigation>();
-  const goBack = useGoBack({ tab: 'Library' });
+  const back = useBackButton({ tab: 'Library' });
   const { instrument } = usePreferences();
   const createPiece = useCreatePiece();
 
@@ -136,11 +136,9 @@ export function ManualPieceForm() {
   }
 
   return (
-    <ScreenContainer>
+    <ScreenContainer navigationBar={{ back }}>
       <PageHeader
         title="Add manually"
-        onBack={goBack}
-        backLabel="Back"
       />
 
       <TitleField

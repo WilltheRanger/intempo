@@ -35,7 +35,15 @@ import { BORDER_WIDTH, colors, spacing } from '../../design';
 import { shouldRefreshOnReturn } from '../../lib/returnRefresh';
 import { useChromeToneReporter } from '../../navigation/ChromeToneContext';
 import { chromeToneFor } from '../../navigation/chromeTone';
+import {
+  NAV_BAR_HEIGHT,
+  barAppearance,
+  sameAppearance,
+  type BarAppearance,
+} from '../../navigation/navigationBar';
 import { useTabBarHeight, useTabBarMidline } from '../../navigation/tabBarMetrics';
+import { NavigationBar, type NavigationBarConfig } from './NavigationBar';
+import { ScreenChromeContext, type ScreenChrome } from './ScreenChrome';
 
 const WEB_SCROLL_STYLE = Platform.select({
   web: {
@@ -152,7 +160,17 @@ export interface ScreenContainerProps {
    * life of the screen: it decides which scroll view is mounted.
    */
   scrollOffset?: Animated.Value;
+  /**
+   * The navigation bar: back, actions, and the screen's title once its large
+   * title has scrolled up under the bar (`NavigationBar`). Every screen of the
+   * app's navigator has one — a tab's own screen with no back — and the screens
+   * held outside it (signing in, onboarding, the account loading) do not.
+   */
+  navigationBar?: NavigationBarConfig;
 }
+
+/** The bar at rest: clear, no title, on the page. */
+const AT_REST: BarAppearance = { solid: false, showTitle: false, tone: 'auto' };
 
 /** The web has no native driver, and asking for one there only warns. */
 const NATIVE_DRIVER = Platform.OS !== 'web';
@@ -175,6 +193,7 @@ export function ScreenContainer({
   darkGround,
   underStatusBar = false,
   scrollOffset,
+  navigationBar,
 }: ScreenContainerProps) {
   const [refreshing, setRefreshing] = useState(false);
 
@@ -241,14 +260,112 @@ export function ScreenContainer({
   const isScreen = screenNavigation !== undefined;
   const scrollRef = useRef<ScrollView | null>(null);
 
+  /*
+    **The navigation bar's two lines, and the scroll position they are read
+    against** (`navigation/navigationBar.ts`). The large title and a photograph
+    at the top of the content report where they end (`ScreenChrome`); the
+    appearance is recomputed on every scroll event and stored only when it
+    changes, so a scroll costs a comparison and not a render.
+
+    The bar is laid over the scroll view only on a screen whose photograph
+    runs up under it; everywhere else it sits above the scroll view, which
+    starts at the bar's bottom edge, so the lines are compared to the top of
+    the scroll view itself.
+  */
+  const hasBar = navigationBar !== undefined;
+  const overlap = hasBar && underStatusBar ? insets.top + NAV_BAR_HEIGHT : 0;
+  const viewportRef = useRef<View>(null);
+  const titles = useRef(new Map<string, { text: string; bottom: number | null }>());
+  const darkGrounds = useRef(new Map<string, number>());
+  const lines = useRef<{ titleBottom: number | null; darkBottom: number | null }>({
+    titleBottom: null,
+    darkBottom: null,
+  });
+  const [largeTitle, setLargeTitle] = useState<string | null>(null);
+  const [appearance, setAppearance] = useState<BarAppearance>(AT_REST);
+
+  const updateAppearance = useCallback(() => {
+    if (!hasBar) {
+      return;
+    }
+    const next = barAppearance({ scrollY: scrollY.current, overlap, ...lines.current });
+    setAppearance((current) => (sameAppearance(current, next) ? current : next));
+  }, [hasBar, overlap]);
+
+  const chrome = useMemo<ScreenChrome>(
+    () => ({
+      barHeight: hasBar ? NAV_BAR_HEIGHT : 0,
+      reportTitle(id, title) {
+        if (title) {
+          titles.current.set(id, title);
+        } else {
+          titles.current.delete(id);
+        }
+        // The most recent heading wins: a screen shows one at a time, and a
+        // state that replaces another mounts its heading after the old one's.
+        const latest = [...titles.current.values()].pop() ?? null;
+        lines.current.titleBottom = latest?.bottom ?? null;
+        setLargeTitle(latest?.text ?? null);
+        updateAppearance();
+      },
+      reportDarkGround(id, bottom) {
+        if (bottom === null) {
+          darkGrounds.current.delete(id);
+        } else {
+          darkGrounds.current.set(id, bottom);
+        }
+        const bottoms = [...darkGrounds.current.values()];
+        lines.current.darkBottom = bottoms.length > 0 ? Math.max(...bottoms) : null;
+        updateAppearance();
+      },
+      measureBottom(node, done) {
+        const viewport = viewportRef.current;
+        if (!viewport) {
+          return;
+        }
+        // Both in the window, so whatever moves the whole screen — a push
+        // arriving, a tab settling — cancels out; the scroll offset puts the
+        // line back into the content's own coordinates. The viewport is the
+        // scroll view's own box, so its top is the content's top at rest.
+        node.measureInWindow((_x, y, _width, height) => {
+          viewport.measureInWindow((_vx, viewportY) => {
+            done(y + height - viewportY + scrollY.current);
+          });
+        });
+      },
+      scrollToTop() {
+        scrollRef.current?.scrollTo({ y: 0, animated: true });
+      },
+    }),
+    [hasBar, updateAppearance],
+  );
+
+  /*
+    **The screen's title, published to the navigator**, so the screen pushed
+    above this one can say "‹ Your takes" (`useBackButton`). Only a stack's
+    screen: a tab's title is its tab's name, which `RootNavigator` gives the
+    tabs as a whole.
+  */
+  const barTitle = navigationBar?.title ?? largeTitle;
+  useEffect(() => {
+    if (!hasBar || !barTitle || !screenNavigation) {
+      return;
+    }
+    if (screenNavigation.getState().type !== 'stack') {
+      return;
+    }
+    screenNavigation.setOptions({ title: barTitle });
+  }, [barTitle, hasBar, screenNavigation]);
+
   const handleScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       scrollY.current = event.nativeEvent.contentOffset.y;
       if (darkGround !== undefined) {
         reportTone(toneFor(scrollY.current));
       }
+      updateAppearance();
     },
-    [darkGround, reportTone, toneFor],
+    [darkGround, reportTone, toneFor, updateAppearance],
   );
 
   function measureOverflow() {
@@ -370,7 +487,29 @@ export function ScreenContainer({
       {isScreen && onRefresh && Platform.OS === 'web' ? (
         <RefreshOnReturn onRefresh={handleRefresh} />
       ) : null}
-      {scrollArea}
+      <ScreenChromeContext.Provider value={chrome}>
+        {navigationBar && !underStatusBar ? (
+          <NavigationBar
+            config={navigationBar}
+            title={barTitle}
+            appearance={appearance}
+            insetTop={0}
+            overlay={false}
+          />
+        ) : null}
+        <View ref={viewportRef} style={styles.flex} collapsable={false}>
+          {navigationBar && underStatusBar ? (
+            <NavigationBar
+              config={navigationBar}
+              title={barTitle}
+              appearance={appearance}
+              insetTop={insets.top}
+              overlay
+            />
+          ) : null}
+          {scrollArea}
+        </View>
+      </ScreenChromeContext.Provider>
 
       {footer ? (
         // Same construction as the tab bar: page background behind a hairline

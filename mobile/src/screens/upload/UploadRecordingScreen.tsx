@@ -5,7 +5,7 @@ import { Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-nativ
 import { FileMusic, Pause, Play } from '../../components/icons';
 import { BottomSheet } from '../../components/overlays/BottomSheet';
 import {
-  BackLink,
+  LargeTitle,
   EmptyState,
   LoadingState,
   PrimaryButton,
@@ -49,7 +49,7 @@ import { clockLabel } from '../../lib/score/listenPosition';
 import { displayTempoBpm, tempoUnitLabel } from '../../lib/tempo';
 import { bpmForMarking } from '../../lib/tempoMarking';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
-import { useGoBack } from '../../navigation/useGoBack';
+import { useBackButton, useGoBack } from '../../navigation/useGoBack';
 import { chooseAudioFile } from '../record/chooseAudioFile';
 import { StartFromSheet } from '../record/StartFromSheet';
 import { usePreviewPlayback } from './usePreviewPlayback';
@@ -79,6 +79,7 @@ export function UploadRecordingScreen() {
   const navigation = useNavigation<RootNavigation>();
   const { params } = useRoute<RouteProp<RootStackParamList, 'UploadRecording'>>();
   const backToRecord = useGoBack({ route: 'Record', params: { pieceId: params.pieceId } });
+  const backButton = useBackButton({ route: 'Record', params: { pieceId: params.pieceId } });
   const { data: piece, isError } = usePiece(params.pieceId);
   const { data: musician } = useMe();
   const { data: history } = usePieceHistory(params.pieceId);
@@ -123,14 +124,14 @@ export function UploadRecordingScreen() {
 
   if (loadStateFor({ isError, hasData: piece !== undefined }) === 'loading') {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ back: backButton }}>
         <LoadingState />
       </ScreenContainer>
     );
   }
   if (!piece) {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ back: backButton }}>
         <EmptyState
           title="Couldn't open this piece"
           actionLabel="Back"
@@ -185,6 +186,9 @@ export function UploadRecordingScreen() {
 
   return (
     <ScreenContainer
+      // Leaving drops the file that was picked, so the bar's back goes the
+      // way "Back to recording" always went: through `leave`.
+      navigationBar={{ back: { ...backButton, onPress: leave } }}
       footer={
         <View>
           {/*
@@ -208,10 +212,11 @@ export function UploadRecordingScreen() {
       }
     >
       <View style={styles.head}>
-        <BackLink label="Back to recording" onPress={leave} />
-        <Text variant="heroTitle" accessibilityRole="header">
-          Upload a recording
-        </Text>
+        <LargeTitle text="Upload a recording">
+          <Text variant="heroTitle" accessibilityRole="header">
+            Upload a recording
+          </Text>
+        </LargeTitle>
       </View>
 
       {/*

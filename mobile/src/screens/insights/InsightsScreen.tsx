@@ -84,7 +84,7 @@ export function InsightsScreen() {
 
   if (load === 'loading') {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ title: 'Insights' }}>
         <PageHeader title="Insights" />
         <InsightsSkeleton />
       </ScreenContainer>
@@ -93,7 +93,7 @@ export function InsightsScreen() {
 
   if (load === 'unavailable') {
     return (
-      <ScreenContainer onRefresh={refresh}>
+      <ScreenContainer navigationBar={{ title: 'Insights' }} onRefresh={refresh}>
         <PageHeader title="Insights" />
         <EmptyState
           fill
@@ -111,7 +111,7 @@ export function InsightsScreen() {
     // Which way out this offers depends on the library — see `firstStep`.
     const step = firstStep(library.data?.length ?? 0);
     return (
-      <ScreenContainer onRefresh={refresh}>
+      <ScreenContainer navigationBar={{ title: 'Insights' }} onRefresh={refresh}>
         <PageHeader title="Insights" />
         <EmptyState
           fill
@@ -141,7 +141,7 @@ export function InsightsScreen() {
   const progress = insightsProgress(recentTakes.data, insights.sessions);
   if (!progress.ready) {
     return (
-      <ScreenContainer onRefresh={refresh}>
+      <ScreenContainer navigationBar={{ title: 'Insights' }} onRefresh={refresh}>
         <PageHeader title="Insights" />
         <EmptyState
           fill
@@ -220,7 +220,7 @@ export function InsightsScreen() {
   }
 
   return (
-    <ScreenContainer onRefresh={refresh}>
+    <ScreenContainer navigationBar={{ title: 'Insights' }} onRefresh={refresh}>
       {/*
         The redesign's composition (`redesign/Insights.dc.html`): how many takes
         this is about, then what they say, then the takes themselves. No screen

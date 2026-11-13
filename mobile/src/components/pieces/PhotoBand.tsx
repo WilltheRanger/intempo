@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { colors } from '../../design';
+import { useDarkGround, useScreenChrome } from '../primitives/ScreenChrome';
 import { SINE_IN_OUT_CSS, SWING_PAUSED, swingStyle } from '../../lib/motion/loops';
 import { useReducedMotion } from '../../lib/useReducedMotion';
 
@@ -95,6 +96,15 @@ export interface PhotoBandProps {
 export function PhotoBand({ photo, scrim, scrollY, children }: PhotoBandProps) {
   const insets = useSafeAreaInsets();
   const band = colors.band;
+  /*
+    **Under the navigation bar too**, not only the status bar. The bar is laid
+    over the band, clear and in ivory, until the band has scrolled up under it
+    (`navigation/navigationBar.ts`), so the band tells the bar where it ends
+    and starts its own words below the bar.
+  */
+  const chrome = useScreenChrome();
+  const ground = useDarkGround();
+  const barHeight = chrome?.barHeight ?? 0;
   const photoMotion = usePhotoMotion(scrollY);
   // **One id per band, not one name for all of them.** On the web an SVG
   // gradient is found by id across the whole document, and the Library stays
@@ -103,7 +113,12 @@ export function PhotoBand({ photo, scrim, scrollY, children }: PhotoBandProps) {
   const scrimId = `photoBandScrim${useId().replace(/[^A-Za-z0-9_-]/g, '')}`;
 
   return (
-    <View style={[styles.band, { backgroundColor: band, paddingTop: insets.top }]}>
+    <View
+      ref={ground.ref}
+      onLayout={ground.onLayout}
+      collapsable={false}
+      style={[styles.band, { backgroundColor: band, paddingTop: insets.top + barHeight }]}
+    >
       {/*
         The colour carried up past the top edge, so pulling the page down on
         iOS shows more band rather than a stripe of ivory above it.
@@ -138,7 +153,8 @@ export function PhotoBand({ photo, scrim, scrollY, children }: PhotoBandProps) {
         </Svg>
       </View>
 
-      <LightStatusBarWhileFocused />
+      {/* With a bar, the bar sets the status bar by what is under it. */}
+      {barHeight === 0 ? <LightStatusBarWhileFocused /> : null}
 
       {children}
     </View>

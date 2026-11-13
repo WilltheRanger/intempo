@@ -1,7 +1,7 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { PieceHeading } from '../../components/pieces/PieceHeading';
 import { Camera, Images } from '../../components/icons';
-import { useGoBack } from '../../navigation/useGoBack';
+import { useBackButton } from '../../navigation/useGoBack';
 import { useMemo, useState } from 'react';
 import {
   Pressable,
@@ -22,7 +22,7 @@ import { TranscribingPanel } from '../../components/score/TranscribingPanel';
 import {
   EmptyState,
   LoadingState,
-  BackLink,
+  LargeTitle,
   ScreenContainer,
   SecondaryButton,
   SegmentedControl,
@@ -182,10 +182,11 @@ export function PieceScoreScreen() {
   const navigation = useNavigation<RootNavigation>();
   const photograph = usePageCamera();
   const { params } = useRoute<RouteProp<RootStackParamList, 'PieceScore'>>();
-  const goBack = useGoBack({
+  const back = useBackButton({
     route: 'PieceDetail',
     params: { pieceId: params.pieceId },
   });
+  const goBack = back.onPress;
   const { data: piece, isError, error } = usePiece(params.pieceId);
   const { instrument } = usePreferences();
   const load = loadStateFor({ isError, hasData: piece !== undefined });
@@ -370,7 +371,7 @@ export function PieceScoreScreen() {
 
   if (load === 'loading') {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ back }}>
         <LoadingState />
       </ScreenContainer>
     );
@@ -378,7 +379,7 @@ export function PieceScoreScreen() {
 
   if (load === 'unavailable' || !piece) {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ back }}>
         <EmptyState
           fill
           title="Couldn't open this score"
@@ -428,8 +429,8 @@ export function PieceScoreScreen() {
 
   if (stillReading) {
     return (
-      <ScreenContainer>
-        <ScoreHead title={piece.title} onBack={goBack} />
+      <ScreenContainer navigationBar={{ back }}>
+        <ScoreHead title={piece.title} />
         <TranscribingPanel piece={piece} />
         {hasPages ? (
           <ScoreThumbnail source={piece.thumbnail} style={styles.pageWhileReading} />
@@ -440,8 +441,8 @@ export function PieceScoreScreen() {
 
   if (piece.transcriptionStatus === 'failed') {
     return (
-      <ScreenContainer>
-        <ScoreHead title={piece.title} onBack={goBack} />
+      <ScreenContainer navigationBar={{ back }}>
+        <ScoreHead title={piece.title} />
         {/*
           The backend's sentence, not a generic one. It knows which half failed
           — a page that could not be fetched and a page that could not be read
@@ -567,7 +568,7 @@ export function PieceScoreScreen() {
   const continuesList = listening && !noteBetween;
 
   return (
-    <ScreenContainer
+    <ScreenContainer navigationBar={{ back }}
       key={showing}
       /*
         **Practice, pinned, once there is music to practise.** A new piece
@@ -592,7 +593,7 @@ export function PieceScoreScreen() {
         piece's own: a way back in words, then the title. The composer is on
         the piece, one step back.
       */}
-      <ScoreHead title={piece.title} onBack={goBack} />
+      <ScoreHead title={piece.title} />
 
       {showToggle ? (
         <SegmentedControl
@@ -1228,29 +1229,25 @@ function ScoreAction({
 }
 
 /**
- * The way back and the piece's name, the same in every state of this screen.
+ * The piece's name, the same in every state of this screen.
  *
- * The reading and failed states had their own header, which said "Back to
- * piece" and set the whole title on one line, so "Concerto in A minor, Op. 3
- * No. 6" broke with the "6" alone underneath. The catalogue goes on its own
- * line here, as it does on the piece itself.
+ * The reading and failed states had their own header, which set the whole
+ * title on one line, so "Concerto in A minor, Op. 3 No. 6" broke with the "6"
+ * alone underneath. The catalogue goes on its own line here, as it does on the
+ * piece itself. The way back is the navigation bar's (2026-11-13).
  */
-function ScoreHead({ title, onBack }: { title: string; onBack: () => void }) {
+function ScoreHead({ title }: { title: string }) {
   return (
-    <View style={styles.head}>
-      <BackLink label="Back to the piece" onPress={onBack} />
-      <PieceHeading title={title} variant="heroTitle" header containerStyle={styles.title} />
-    </View>
+    <LargeTitle text={title} style={styles.head}>
+      <PieceHeading title={title} variant="heroTitle" header />
+    </LargeTitle>
   );
 }
 
 const styles = StyleSheet.create({
   head: {
-    paddingTop: spacing.md,
+    paddingTop: spacing.sm,
     marginBottom: spacing.lg,
-  },
-  title: {
-    marginTop: spacing.xs,
   },
   /*
     Every tappable thing on this screen acknowledges the touch. These were bare

@@ -234,8 +234,11 @@ export function AuthScreen() {
     return (
       <LegalDocumentView
         documentId={legalDocument}
-        onBack={() => setLegalDocument(null)}
-        backLabel="Back to create account"
+        back={{
+          label: 'Back',
+          accessibilityLabel: 'Back to create account',
+          onPress: () => setLegalDocument(null),
+        }}
       />
     );
   }

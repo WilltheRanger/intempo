@@ -1,20 +1,11 @@
-import { Search } from '../icons';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef } from 'react';
 import { Animated, Pressable, StyleSheet, View } from 'react-native';
 
-import {
-  EASE_OUT,
-  ICON_SIZE,
-  MIN_TOUCH_TARGET,
-  motion,
-  pressedOpacity,
-  spacing,
-} from '../../design';
-import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
+import { EASE_OUT, MIN_TOUCH_TARGET, motion, pressedOpacity, spacing } from '../../design';
 import { useReducedMotion } from '../../lib/useReducedMotion';
-import { IconButton } from './IconButton';
 import { Inert } from './Inert';
 import { PageHeader } from './PageHeader';
+import { useScreenChrome } from './ScreenChrome';
 import { SearchField } from './SearchField';
 import { Text } from './Text';
 
@@ -28,19 +19,21 @@ export interface SearchHeaderProps {
   onQueryChange: (query: string) => void;
   placeholder: string;
   /**
-   * Whether there is anything to search.
-   *
-   * Nothing to search through until there is a repertoire, and a magnifier
-   * over an empty library is a control that can only disappoint.
+   * Whether the field is showing. The screen holds it, because the magnifier
+   * that opens it is in the navigation bar (2026-11-13), not beside the title.
    */
-  searchable?: boolean;
-  /** The screen's other action, beside the magnifier. Hidden while searching. */
-  action?: ReactNode;
+  open: boolean;
+  /**
+   * "Cancel". The screen clears the query as well as closing: leaving a
+   * filter applied behind a control you just dismissed is how a library looks
+   * empty for no visible reason.
+   */
+  onClose: () => void;
   /**
    * `onDark` when the header sits on a dark band, as the Library's does over
-   * its Continue band: the title, the magnifier and "Cancel" in ivory. The
-   * field itself is unchanged — a solid card-white field is the control §3
-   * law 6 allows over colour or a photograph, and it keeps its ink.
+   * its Continue band: the title and "Cancel" in ivory. The field itself is
+   * unchanged — a solid card-white field is the control §3 law 6 allows over
+   * colour or a photograph, and it keeps its ink.
    */
   tone?: 'auto' | 'onDark';
 }
@@ -71,11 +64,11 @@ export function SearchHeader({
   query,
   onQueryChange,
   placeholder,
-  searchable = true,
-  action,
+  open,
+  onClose,
   tone = 'auto',
 }: SearchHeaderProps) {
-  const [open, setOpen] = useState(false);
+  const chrome = useScreenChrome();
   const reduceMotion = useReducedMotion();
 
   /**
@@ -103,12 +96,14 @@ export function SearchHeader({
     }).start();
   }, [open, progress, reduceMotion]);
 
-  function close() {
-    // Closing clears the query: leaving a filter applied behind a control you
-    // just dismissed is how a library looks empty for no visible reason.
-    onQueryChange('');
-    setOpen(false);
-  }
+  // **Back to the top as it opens.** The magnifier is in the bar, which stays
+  // put, so it can be pressed from halfway down the shelf — where the field it
+  // opens, at the top of the content, is out of sight.
+  useEffect(() => {
+    if (open) {
+      chrome?.scrollToTop();
+    }
+  }, [chrome, open]);
 
   const titleLayer = {
     opacity: progress.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
@@ -150,38 +145,7 @@ export function SearchHeader({
       >
         {/* The two props above are native-only; this is the web's (`Inert`). */}
         <Inert inert={open}>
-          <PageHeader
-            tone={tone}
-            // **No count.** A number the content already shows is furniture
-            // (§3 law 10), and the one case where it said something — how many a
-            // search matched — is answered by the results themselves.
-            title={title}
-            action={
-              <View style={styles.actions}>
-                {searchable ? (
-                  /*
-                    **"Search", not the placeholder.** The magnifier used to
-                    carry the field's own name and swap to "Close search" when
-                    open, which made two different controls answer to one name
-                    for half the time they were both on screen — a screen reader
-                    landing on either heard the same words, and so did anything
-                    else looking a control up by name.
-                  */
-                  <IconButton
-                    icon={Search}
-                    variant="bare"
-                    tone={tone}
-                    label="Search"
-                    onPress={() => {
-                      impact(ImpactFeedbackStyle.Light);
-                      setOpen(true);
-                    }}
-                  />
-                ) : null}
-                {action}
-              </View>
-            }
-          />
+          <PageHeader tone={tone} title={title} />
         </Inert>
       </Animated.View>
 
@@ -214,7 +178,7 @@ export function SearchHeader({
             I have typed" — which is what the X inside the field already means.
           */}
           <Pressable
-            onPress={close}
+            onPress={onClose}
             accessibilityRole="button"
             accessibilityLabel="Cancel search"
             style={({ pressed }) => [styles.cancel, pressed && styles.cancelPressed]}
@@ -235,13 +199,6 @@ const styles = StyleSheet.create({
     // over it. Nothing below this moves when search opens.
     position: 'relative',
   },
-  actions: {
-    flexDirection: 'row',
-    // Bare glyphs in 44pt squares, side by side: the squares are the spacing
-    // (`redesign/Library.dc.html`), and the last glyph sits on the gutter:
-    // its square's slack around the glyph, given back.
-    marginRight: -(MIN_TOUCH_TARGET - ICON_SIZE.lg) / 2,
-  },
   searchLayer: {
     position: 'absolute',
     left: 0,
@@ -261,8 +218,6 @@ const styles = StyleSheet.create({
   cancel: {
     minHeight: MIN_TOUCH_TARGET,
     justifyContent: 'center',
-    // Out to the gutter on the right, so the word lines up with where the
-    // magnifier's glyph was rather than sitting indented by its own padding.
     paddingHorizontal: spacing.xs,
   },
   cancelPressed: {
