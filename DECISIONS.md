@@ -25,8 +25,11 @@ does not undo them back, which is how 2026-09-29's own reversals were kept.
 - **Recording stays open at the free limit.** Only Analyse spends an analysis,
   and the record button locked with it, so a musician out of free analyses
   could not record a take to hear back. Analyse is now the control that waits,
-  and the limit line says "You can still record…; analysis comes back on …"
-  (`describeReachedAnalysisLimit`, `tierLimit.test.ts`).
+  and the limit line says "You can still record and listen back. Your next
+  free take is on …" (`describeReachedAnalysisLimit`, `tierLimit.test.ts`).
+  The allowance has one name everywhere, "free takes", the owner's pick in
+  the same review: it was "Analyses" on Profile and "free analyses" on Upload
+  and at the limit.
 - **Onboarding is three questions: name, instrument, learning or teaching**
   (reverses 2026-09-23's six). "How did you find us?" and the profile photo
   went: nothing in the app read either. The microphone moved to the first

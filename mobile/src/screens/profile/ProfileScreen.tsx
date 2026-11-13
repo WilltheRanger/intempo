@@ -21,8 +21,8 @@ import {
 import { signOut } from '../../data/auth/session';
 import { useMe } from '../../data/hooks/useMe';
 import { useUpdateProfile, useUploadAvatar } from '../../data/hooks/useProfile';
-import type { Musician } from '../../data/types';
 import { preferences, usePreferences } from '../../data/preferences';
+import { describeFreeTakesLeft } from '../../lib/analysisAllowance';
 import type { Instrument, MetronomeMode } from '../../data/types';
 import { describeLoadError } from '../../data/describeLoadError';
 import { HEADPHONES_WARNING, metronomeChoices } from '../../lib/record/metronomeChoice';
@@ -106,7 +106,7 @@ export function ProfileScreen() {
       setPhotoError(
         cause instanceof Error
           ? cause.message
-          : 'That profile picture could not be saved. Try again.',
+          : 'Couldn’t save your profile picture. Try again.',
       );
     }
   }
@@ -148,7 +148,7 @@ export function ProfileScreen() {
       setConsentError(
         cause instanceof Error
           ? cause.message
-          : 'That privacy setting could not be saved. Try again.',
+          : 'Couldn’t save that setting. Try again.',
       );
     }
   }
@@ -179,7 +179,7 @@ export function ProfileScreen() {
     );
   }
 
-  const usage = describeUsage(musician?.usage ?? null);
+  const usage = describeFreeTakesLeft(musician?.usage ?? null);
 
   if (load === 'unavailable' || !musician) {
     return (
@@ -314,7 +314,7 @@ export function ProfileScreen() {
           by it right after playing something. Absent for unlimited tiers and
           when the server did not report it — "unknown" is not "unlimited".
         */}
-        {usage ? <AccountRow label="Analyses" value={usage} /> : null}
+        {usage ? <AccountRow label="Free takes" value={usage} /> : null}
         {/*
           The studio's name is not on `/v1/me`, only its id, which means
           nothing to the person reading it. The membership, and nothing for
@@ -596,18 +596,3 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
 });
-
-/**
- * "2 of 3 this month", or null when there is nothing true to say.
- *
- * Null for an unlimited tier — a row reading "unlimited" on an account that
- * simply has no quota is noise — and null when the server didn't report usage
- * at all, since that means the count is unknown and printing anything would
- * invent it.
- */
-function describeUsage(usage: Musician['usage']): string | null {
-  if (!usage || usage.limit === null) {
-    return null;
-  }
-  return `${usage.used} of ${usage.limit} this month`;
-}

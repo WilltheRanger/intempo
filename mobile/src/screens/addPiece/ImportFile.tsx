@@ -151,7 +151,7 @@ export function ImportFileScreen() {
           ? cause.message
           : cause instanceof Error
             ? cause.message
-            : "That file couldn't be opened.",
+            : 'Couldn’t open that file.',
       );
     } finally {
       setBusy(false);

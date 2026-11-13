@@ -127,8 +127,8 @@ export function TranscriptionReviewScreen() {
         cause instanceof Error
           ? cause.message
           : attachmentPieceId
-            ? 'The sheet music could not be attached. Try again.'
-            : 'The score could not be saved. Try again.',
+            ? 'Couldn’t attach the sheet music. Try again.'
+            : 'Couldn’t save the score. Try again.',
       );
     } finally {
       saving.current = false;
@@ -191,7 +191,7 @@ export function TranscriptionReviewScreen() {
     >
       {/* The redesign's head (`redesign/NamePiece.dc.html`). */}
       <View style={styles.head}>
-        <BackLink label="Back to pages" onPress={goBack} />
+        <BackLink label="Back to the pages" onPress={goBack} />
         <Text variant="screenTitle" accessibilityRole="header">
           {attachmentPieceId ? 'Attach sheet music' : 'Name this piece'}
         </Text>
@@ -231,7 +231,7 @@ export function TranscriptionReviewScreen() {
             optional
             value={movement}
             onChangeText={setMovement}
-            placeholder="I. Adagio"
+            placeholder="e.g. I. Adagio"
             autoCapitalize="words"
             style={styles.field}
           />

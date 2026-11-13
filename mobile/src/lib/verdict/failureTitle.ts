@@ -49,9 +49,11 @@ const FOR_STATUS: Record<Exclude<ResultStatus, 'ok'>, string> = {
  * musician wants to know is whether their playing was the problem.
  */
 export function failureTitle(failure: TakeFailure): string {
-  return failure.recoverable
-    ? 'Something went wrong on our end'
-    : 'This recording couldn’t be processed';
+  // **Saying what failed, in the active voice** (the UI review, 2026-11-12,
+  // stop-slop). "Something went wrong on our end" was the stock phrase for
+  // any service, and "This recording couldn't be processed" hid who could not
+  // do what. Both name the analysis now, and whose it is.
+  return failure.recoverable ? 'Our analysis failed' : 'We can’t analyse this recording';
 }
 
 /** The heading for a run that finished and found nothing it could use. */
@@ -115,7 +117,7 @@ const INTAKE: Record<string, { title: string; description: string }> = {
     description: 'Check it plays, then try again.',
   },
   audio_unreadable: {
-    title: 'That file could not be read',
+    title: 'We couldn’t read that file',
     description: 'Pick another file.',
   },
 };

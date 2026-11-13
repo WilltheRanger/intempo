@@ -139,7 +139,7 @@ export function TranscribeScreen() {
           fill
           title="Can’t read photos in sample mode"
           description="Add a piece by hand instead."
-          actionLabel="Back to pages"
+          actionLabel="Back to the pages"
           onActionPress={goBack}
         />
       </ScreenContainer>
@@ -153,7 +153,7 @@ export function TranscribeScreen() {
           fill
           title={total === 1 ? "The page didn't upload" : "The pages didn't upload"}
           description={error}
-          actionLabel="Back to pages"
+          actionLabel="Back to the pages"
           onActionPress={goBack}
         />
       </ScreenContainer>

@@ -49,6 +49,7 @@ import { MeasureBars } from './MeasureBars';
 import { TrendChart } from './TrendChart';
 import { TakePlayback } from './TakePlayback';
 import { loadStateFor } from '../../lib/loadState';
+import { LOW_CONFIDENCE_TITLE } from '../../lib/insights/takeRows';
 
 /**
  * What one take came back as.
@@ -405,7 +406,7 @@ export function VerdictScreen() {
         }
       />
       <Text variant="screenTitle" accessibilityRole="header" style={styles.title}>
-        {take.lowConfidence ? 'Timing is uncertain' : formatTakeVerdict(take.measures, take.direction)}
+        {take.lowConfidence ? LOW_CONFIDENCE_TITLE : formatTakeVerdict(take.measures, take.direction)}
       </Text>
       {/*
         **Nothing under the title but the chart** (the owner, 2026-09-29,
@@ -420,7 +421,7 @@ export function VerdictScreen() {
       */}
       {take.lowConfidence ? (
         <Text variant="body" color="textSecondary" style={styles.headline}>
-          Hard to hear. Try a quieter room, closer to the mic.
+          Try a quieter room, closer to the mic.
         </Text>
       ) : null}
 

@@ -23,7 +23,7 @@ export type BackTarget =
  * `/add/manual`, `/help`, `/warmup` and `/pieces/:id/bars/3` all stayed exactly
  * where they were when their back control was pressed.
  *
- * Worse than a dead button, because those labels are specific. "Back to score",
+ * Worse than a dead button, because those labels are specific. "Back to the score",
  * "Back to profile" and "Back to today" each name a destination and went
  * nowhere — the label was already the right answer and nothing acted on it.
  *
@@ -32,7 +32,7 @@ export type BackTarget =
  *
  * ```tsx
  * const goBack = useGoBack({ route: 'PieceScore', params: { pieceId } });
- * <PageHeader onBack={goBack} backLabel="Back to score" />
+ * <PageHeader onBack={goBack} backLabel="Back to the score" />
  * ```
  */
 export function useGoBack(fallback: BackTarget): () => void {

@@ -316,11 +316,12 @@ export function UploadRecordingScreen() {
         <Pressable
           onPress={() => navigation.navigate('Tempo', { pieceId: params.pieceId })}
           accessibilityRole="button"
-          accessibilityLabel={`Target tempo ${displayTempoBpm(targetBpm, unit)} ${tempoUnitLabel(unit)}. Change it`}
+          accessibilityLabel={`Tempo ${displayTempoBpm(targetBpm, unit)} ${tempoUnitLabel(unit)}. Change it`}
           style={({ pressed }) => [styles.row, styles.lastRow, pressed && styles.rowPressed]}
         >
+          {/* "Tempo", as Record and the score call it (2026-11-12): one name. */}
           <Text variant="rowLabel" style={styles.rowLabel}>
-            Target tempo
+            Tempo
           </Text>
           <Text variant="rowLabel" color="textSecondary" style={styles.rowValue}>
             {displayTempoBpm(targetBpm, unit)} {tempoUnitLabel(unit)}

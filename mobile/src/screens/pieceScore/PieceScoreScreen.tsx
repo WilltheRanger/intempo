@@ -82,6 +82,8 @@ import { proposalsFor, proposalsRowLabel } from '../../lib/notation/proposals';
 import { usePreferences } from '../../data/preferences';
 import { TrailingChevron } from '../../components/primitives/TrailingChevron';
 import { usePageCamera } from '../../navigation/usePageCamera';
+import { useMe } from '../../data/hooks/useMe';
+import { acceptCopy } from '../../lib/notation/acceptReading';
 
 /** Read from a stand, not glanced at — the same size the warmup page uses. */
 const STAVE_SCALE = 1.25;
@@ -192,6 +194,22 @@ export function PieceScoreScreen() {
   const reread = useRetranscribe();
   const setClef = useSetClef(params.pieceId);
   const [confirmingAccept, setConfirmingAccept] = useState(false);
+  // Whether accepting keeps the photographs, which decides what "Looks right"
+  // says and whether it asks first (`acceptCopy`). Unknown while the account
+  // loads, and answered as a deletion until it is known.
+  const { data: musician } = useMe();
+  const accepting = acceptCopy(musician ? musician.trainingConsent : null);
+
+  /** Accept the reading: with the dialog's yes, or straight away where nothing is lost. */
+  function acceptReading() {
+    setAcceptError(null);
+    accept.mutate(undefined, {
+      onError: (cause) =>
+        setAcceptError(
+          cause instanceof Error ? cause.message : 'Couldn’t confirm the reading. Try again.',
+        ),
+    });
+  }
   const [pickingMeasure, setPickingMeasure] = useState(false);
   const [pickingClef, setPickingClef] = useState(false);
   const [acceptError, setAcceptError] = useState<string | null>(null);
@@ -1020,12 +1038,12 @@ export function PieceScoreScreen() {
           <SecondaryButton
             // The outlined button has no spinner, so the label carries the
             // wait, as "Reading again…" does on the failed branch above.
-            label={accept.isPending ? 'Deleting the photo…' : 'Looks right'}
-            onPress={() => setConfirmingAccept(true)}
+            label={accept.isPending ? accepting.pending : 'Looks right'}
+            onPress={() => (accepting.confirm ? setConfirmingAccept(true) : acceptReading())}
             disabled={accept.isPending}
           />
           <Text variant="metadataSmall" color="textTertiary" style={styles.acceptNote}>
-            Deletes the photo to save space.
+            {accepting.note}
           </Text>
           {acceptError ? (
             <Text variant="metadataSmall" color="textSecondary" style={styles.caveat}>
@@ -1153,28 +1171,19 @@ export function PieceScoreScreen() {
         </View>
       </BottomSheet>
 
-      <ConfirmDialog
-        visible={confirmingAccept}
-        title="Delete the photo?"
-        // The consequence, not the verb. Naming what survives matters as much
-        // as naming what goes: someone who thinks they are deleting the piece
-        // will cancel a thing they actually wanted.
-        message="The notes stay. The photo can’t be recovered."
-        confirmLabel="Delete photo"
-        onConfirm={() => {
-          setConfirmingAccept(false);
-          setAcceptError(null);
-          accept.mutate(undefined, {
-            onError: (cause) =>
-              setAcceptError(
-                cause instanceof Error
-                  ? cause.message
-                  : 'That could not be saved. Try again.',
-              ),
-          });
-        }}
-        onCancel={() => setConfirmingAccept(false)}
-      />
+      {accepting.confirm ? (
+        <ConfirmDialog
+          visible={confirmingAccept}
+          title={accepting.confirm.title}
+          message={accepting.confirm.message}
+          confirmLabel={accepting.confirm.confirmLabel}
+          onConfirm={() => {
+            setConfirmingAccept(false);
+            acceptReading();
+          }}
+          onCancel={() => setConfirmingAccept(false)}
+        />
+      ) : null}
     </ScreenContainer>
   );
 }

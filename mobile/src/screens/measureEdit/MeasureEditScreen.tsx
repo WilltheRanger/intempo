@@ -168,9 +168,12 @@ export function MeasureEditScreen() {
       <ScreenContainer>
         <EmptyState
           fill
-          title="That measure isn't there"
-          description="It may have been corrected already, or the piece re-read."
-          actionLabel="Back"
+          // "Bar", the word the rest of the app uses (the UI review,
+          // 2026-11-12), and no guess at why in the title: the line under it
+          // offers the two likely reasons.
+          title="That bar isn’t there any more"
+          description="It may have been corrected already, or the piece read again."
+          actionLabel="Back to the score"
           onActionPress={goBack}
         />
       </ScreenContainer>
@@ -342,7 +345,7 @@ export function MeasureEditScreen() {
       goBack();
     } catch (cause) {
       setError(
-        cause instanceof Error ? cause.message : 'That could not be saved. Try again.',
+        cause instanceof Error ? cause.message : 'Couldn’t save this bar. Try again.',
       );
     }
   }
@@ -414,7 +417,7 @@ export function MeasureEditScreen() {
         bar whose durations do not sum is arithmetic about a photograph.
       */}
       <View style={styles.head}>
-        <BackLink label="Back to score" onPress={goBack} />
+        <BackLink label="Back to the score" onPress={goBack} />
         <View style={styles.barLine} accessibilityRole="header">
           <Text style={styles.barName}>Bar {params.measureNumber}</Text>
           <Text color="textTertiary" style={styles.barName}>

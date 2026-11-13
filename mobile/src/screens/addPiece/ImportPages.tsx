@@ -137,7 +137,7 @@ export function ImportPagesScreen({
       setError(
         cause instanceof Error
           ? cause.message
-          : 'Those images could not be opened.',
+          : 'Couldn’t open those images.',
       );
     } finally {
       setBusy(false);

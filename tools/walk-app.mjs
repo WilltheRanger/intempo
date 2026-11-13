@@ -356,7 +356,7 @@ await waitFor('the title error', async () => (await leaves()).some((line) => lin
 
 // A deep link has no history behind it; back must still reach the parent.
 await open('pieces/fixture-clef-change-study/bars/3');
-// A link since the redesign (`BackLink`, "‹ Back to score"): it only goes
+// A link since the redesign (`BackLink`, "‹ Back to the score"): it only goes
 // somewhere. Either role is accepted, so a screen still on the round back
 // button walks the same way.
 await page
@@ -769,7 +769,7 @@ console.log('\n## Photographing a piece');
       if (!said) fail('sending pages without a backend said nothing');
       else if (!sending.some((l) => /manual|by hand/i.test(l)))
         fail(`the refusal names no route that exists: "${said.slice(0, 60)}"`);
-      else if (!sending.some((l) => /Back to pages/i.test(l)))
+      else if (!sending.some((l) => /Back to the pages/i.test(l)))
         fail('the refusal offers no way back to the pages just photographed');
       else pass(`sending without a backend is refused, with a way on: "${said.slice(0, 58)}…"`);
     }

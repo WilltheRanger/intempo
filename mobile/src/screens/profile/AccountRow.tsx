@@ -7,7 +7,7 @@ import { TrailingChevron } from '../../components/primitives/TrailingChevron';
 
 export interface AccountRowProps {
   label: string;
-  /** What the row says on its right: "Free", "2 of 3 this month". */
+  /** What the row says on its right: "Free", "1 left this month". */
   value?: string | null;
   /** Makes the row a link: a chevron on the right, and the whole row pressable. */
   onPress?: () => void;

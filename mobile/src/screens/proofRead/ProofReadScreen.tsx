@@ -115,7 +115,7 @@ export function ProofReadScreen() {
   if (proposals.length === 0) {
     return (
       <ScreenContainer>
-        <PageHeader onBack={goBack} backLabel="Back to score" />
+        <PageHeader onBack={goBack} backLabel="Back to the score" />
         {/*
           **This is the common case and it has to read as a result**, not as an
           empty list. A musician came here to be told whether the reading is
@@ -124,7 +124,7 @@ export function ProofReadScreen() {
         <EmptyState
           fill
           title="Nothing looks off"
-          actionLabel="Back to score"
+          actionLabel="Back to the score"
           actionTone="primary"
           onActionPress={goBack}
         />
@@ -161,7 +161,7 @@ export function ProofReadScreen() {
       <PageHeader
         title="Check the reading"
         onBack={goBack}
-        backLabel="Back to score"
+        backLabel="Back to the score"
       />
 
       {/* The count is said once, at the foot, where it goes down as you

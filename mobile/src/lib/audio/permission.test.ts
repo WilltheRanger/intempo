@@ -19,7 +19,7 @@ describe('microphone permission recovery', () => {
 
     expect(recovery.canOpenSettings).toBe(true);
     expect(recovery.message).toMatch(/open settings/i);
-    expect(recovery.message).toMatch(/press start again/i);
+    expect(recovery.message).toMatch(/tap Start recording/i);
   });
 
   it('wires the native recovery to the operating-system settings screen', () => {

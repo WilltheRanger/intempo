@@ -544,10 +544,10 @@ function LibraryContent({
     return (
       <EmptyState
         icon={Search}
-        title="No matches"
-        // No button: the field's own ✕ and Cancel already clear it, and a
-        // third way to do the same thing was one too many (2026-09-29).
-        description={`Nothing matches “${query.trim()}”.`}
+        // One line: it was "No matches" over "Nothing matches 'x'.", the
+        // heading said twice (the UI review, 2026-11-12). No button: the
+        // field's own ✕ and Cancel already clear it (2026-09-29).
+        title={`Nothing matches “${query.trim()}”`}
       />
     );
   }

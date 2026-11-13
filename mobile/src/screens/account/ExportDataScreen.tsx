@@ -35,7 +35,7 @@ export function ExportDataScreen() {
       setError(
         cause instanceof Error
           ? cause.message
-          : 'Your data could not be prepared. Try again.',
+          : 'Couldn’t prepare your data. Try again.',
       );
     } finally {
       setPreparing(false);

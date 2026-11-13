@@ -41,7 +41,7 @@ export function DeleteAccountScreen() {
       setError(
         cause instanceof Error
           ? cause.message
-          : 'Your account could not be deleted. Try again.',
+          : 'Couldn’t delete your account. Try again.',
       );
     } finally {
       setDeleting(false);

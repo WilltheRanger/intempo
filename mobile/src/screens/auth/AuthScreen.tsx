@@ -60,7 +60,11 @@ type Sent = 'confirmation' | 'reset' | 'maybeExisting' | 'magicLink';
  */
 const COPY: Record<AuthMode, { title: string; lede: string | null; submit: string }> = {
   signIn: {
-    title: 'Welcome back',
+    // "Sign in", not "Welcome back": the account comes before onboarding now,
+    // so most people on this form have never been here (the UI review,
+    // 2026-11-12). The title and the button saying the same verb is fine —
+    // the verb is the screen.
+    title: 'Sign in',
     lede: null,
     submit: 'Sign in',
   },

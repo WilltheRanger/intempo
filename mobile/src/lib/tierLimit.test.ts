@@ -60,14 +60,12 @@ describe('checking the analysis allowance before a take', () => {
       remaining: 0,
       resets_at: RESET,
     });
-    expect(message).toContain('all 3 free analyses');
+    expect(message).toContain('all 3 of your free takes');
     // Recording stays open at the limit (the owner, 2026-11-12): it is the
-    // analysis that comes back with the new month.
-    expect(message).toContain('You can still record');
-    expect(message).toContain('analysis comes back');
+    // next free take that comes with the new month.
+    expect(message).toContain('You can still record and listen back');
+    expect(message).toContain('Your next free take is');
     expect(message).not.toContain('Recording returns');
-    expect(message).toContain('listen to the score');
-    expect(message).toContain('practise with the metronome');
   });
 
   it('says nothing while recording remains available', () => {

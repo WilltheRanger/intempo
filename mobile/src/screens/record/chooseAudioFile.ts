@@ -35,7 +35,7 @@ export async function chooseAudioFile(): Promise<ChosenFile> {
     }
     asset = result.assets?.[0];
   } catch {
-    return { kind: 'failed', message: 'That file could not be opened. Try choosing it again.' };
+    return { kind: 'failed', message: 'Couldn’t open that file. Try choosing it again.' };
   }
   if (!asset) {
     return { kind: 'failed', message: 'Nothing was selected.' };
@@ -53,7 +53,7 @@ export async function chooseAudioFile(): Promise<ChosenFile> {
     // a URI, and `expo-file-system`'s `File` is what `fetch` can upload.
     audio = asset.file ?? (new FSFile(asset.uri) as unknown as Blob);
   } catch {
-    return { kind: 'failed', message: 'That file could not be read. Try choosing it again.' };
+    return { kind: 'failed', message: 'Couldn’t read that file. Try choosing it again.' };
   }
 
   return {

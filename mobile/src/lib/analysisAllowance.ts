@@ -1,6 +1,15 @@
 import type { UsageResponse } from '../data/types';
 import { longDate } from './calendarDate';
 
+/**
+ * **One name for the allowance: free takes** (the UI review, 2026-11-12, the
+ * owner's pick). It was "Analyses · 2 of 3" on Profile, "1 free take left" on
+ * Record and "free analyses" on Upload and at the limit — one thing under
+ * three names, counted used on one screen and left on another. A take is what
+ * a musician holds; the free ones are the ones the app analyses at no cost.
+ * Every sentence here counts what is left and says when the next one comes.
+ */
+
 /** When the server says the calendar-month allowance returns. */
 export function whenAnalysisAllowanceResets(
   resetsAt: string | null | undefined,
@@ -22,8 +31,32 @@ export function whenAnalysisAllowanceResets(
  * were used. That second form said "1 analyses" (2026-10-06).
  */
 export function usedThisMonth(used: number, limit: number | null): string {
-  if (limit !== null) return `all ${limit} of your free analyses`;
-  return used === 1 ? '1 analysis' : `${used} analyses`;
+  if (limit !== null) return limit === 1 ? 'your free take' : `all ${limit} of your free takes`;
+  return used === 1 ? '1 free take' : `${used} free takes`;
+}
+
+/** "Your next free take is on November 1." The reset, said as what it gives back. */
+export function nextFreeTake(resetsAt: string | null | undefined): string {
+  return `Your next free take is ${whenAnalysisAllowanceResets(resetsAt)}.`;
+}
+
+/**
+ * Profile's row: the free takes left this month, or null with nothing true to
+ * say — an unlimited plan, or no usage reported, which is an unknown count
+ * rather than none.
+ *
+ * Counted as what is left, as Record counts it ("1 free take left this
+ * month"). Profile said "2 of 3 this month", the same allowance counted the
+ * other way under another name.
+ */
+export function describeFreeTakesLeft(
+  usage: UsageResponse | null | undefined,
+): string | null {
+  if (!usage || usage.limit === null) {
+    return null;
+  }
+  const left = usage.remaining ?? Math.max(0, usage.limit - usage.used);
+  return left === 0 ? 'None left this month' : `${left} left this month`;
 }
 
 /** Whether beginning another take can only end in the server refusing it. */
@@ -93,18 +126,18 @@ export function describeReachedAnalysisLimit(
   if (!analysisLimitReached(usage) || usage?.limit === null || !usage) {
     return null;
   }
-  const allowance =
-    usage.limit === 1 ? 'your free analysis' : `all ${usage.limit} free analyses`;
-  return `You've used ${allowance} this month. You can still record, listen to the score and practise with the metronome; analysis comes back ${whenAnalysisAllowanceResets(usage.resets_at)}.`;
+  // What still works, then when the next one comes: the button under this
+  // line is Analyse, waiting, so the sentence does not need to name it.
+  return `You've used ${usedThisMonth(usage.used, usage.limit)} this month. You can still record and listen back. ${nextFreeTake(usage.resets_at)}`;
 }
 
 /**
  * The line under "Send for analysis" on the Upload screen: what sending costs.
  *
  * From the redesign (`redesign/UploadRecording.dc.html`): "This uses one of
- * your 3 free analyses this month." Said before the press, because an upload
- * is a choice made at a desk rather than mid-practice, and a musician choosing
- * which file to spend a free analysis on deserves to know that is the choice.
+ * your 3 free takes this month." Said before the press, because an upload is
+ * a choice made at a desk rather than mid-practice, and a musician choosing
+ * which file to spend a free take on deserves to know that is the choice.
  *
  * The last one says so, in the same words Record uses; a spent allowance is
  * `describeReachedAnalysisLimit`'s to say; an unlimited plan costs nothing
@@ -120,6 +153,6 @@ export function describeAnalysisCost(
     return describeLastFreeAnalysis(usage);
   }
   return usage.limit === 1
-    ? 'This uses your free analysis this month.'
-    : `This uses one of your ${usage.limit} free analyses this month.`;
+    ? 'This uses your free take this month.'
+    : `This uses one of your ${usage.limit} free takes this month.`;
 }

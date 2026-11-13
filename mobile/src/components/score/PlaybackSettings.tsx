@@ -242,8 +242,7 @@ export function PlaybackSettings({
               Record screen opens at. Said here because a listener who slows a
               passage down would be surprised to find the take slowed too. */}
           <Text variant="metadataSmall" color="textTertiary" style={styles.tempoNote}>
-            This is the working tempo for the piece — the Record screen opens
-            at it too.
+            You’ll record at this tempo too.
           </Text>
         </View>
       </BottomSheet>

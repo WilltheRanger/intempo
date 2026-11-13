@@ -69,7 +69,7 @@ export function OnboardingScreen() {
         setError(
           cause instanceof Error
             ? `${cause.message} Try Finish again.`
-            : 'That profile picture could not be sent. Try Finish again.',
+            : 'Couldn’t send your profile picture. Tap Finish again.',
         );
         return;
       }
@@ -96,7 +96,7 @@ export function OnboardingScreen() {
       setError(
         cause instanceof Error
           ? cause.message
-          : 'That could not be saved. Try again.',
+          : 'Couldn’t save your answers. Try again.',
       );
     }
   }

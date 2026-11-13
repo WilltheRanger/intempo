@@ -39,7 +39,7 @@ export function OnboardingWelcome({ onNext }: OnboardingWelcomeProps) {
         Let’s get you set up
       </Text>
       <Text variant="body" color="textSecondary" style={styles.lede}>
-        {count} quick questions, then your first piece.
+        {count} questions, then your first piece.
       </Text>
     </CentredScreen>
   );

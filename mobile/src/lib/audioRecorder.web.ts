@@ -227,7 +227,7 @@ export async function startRecording(): Promise<Recorder> {
     // recording, and leave the next attempt a busy device.
     releaseMicrophone();
     throw new MicrophoneUnavailableError(
-      'Audio could not start. Close other audio apps, return here, and try Record again.',
+      'Couldn’t start audio. Close other audio apps, come back, and tap Start recording again.',
     );
   }
   // Ask early so the context has the whole of the graph build to come back,
@@ -364,7 +364,7 @@ export async function startRecording(): Promise<Recorder> {
     // `audio/running.ts`.
     if (!(await resumeToRunning(context))) {
       throw new MicrophoneUnavailableError(
-        'Audio could not start. Close other audio apps, then try Record again.',
+        'Couldn’t start audio. Close other audio apps, then tap Start recording again.',
       );
     }
 

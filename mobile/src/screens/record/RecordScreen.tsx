@@ -1903,7 +1903,7 @@ function RestCue({ state }: { state: RestCueState }) {
       </View>
       <Text variant="body" color="textSecondary" style={styles.restEntry}>
         {bars > 1 ? `${bars} bars · ` : ''}
-        come in at measure {state.cue.resumeMeasure}
+        come in at bar {state.cue.resumeMeasure}
       </Text>
     </Card>
   );
