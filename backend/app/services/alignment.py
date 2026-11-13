@@ -777,6 +777,28 @@ POSITION_CAP_GAPS = 0.15
 #: that flat region, not a tuned point. See `TUNING_LOG.md`, 2026-09-22.
 STEP_PENALTY_CAPS = 3.0
 
+#: What reading an interval across one written note costs, beyond its
+#: mismatch, in the same units — see `_cost_matrix`'s note on notes left out.
+#:
+#: **The price of a step off the diagonal, and no cheaper.** Swept on the
+#: accuracy benchmark (`tools/eval/accuracy_bench.py`): from 0.5 to 2 caps a
+#: rushed cello take with one false attack mid-note paired four notes one
+#: place along — the false attack taken for a note, a real one dropped later
+#: to catch up, because a cheap dropped interval made that slide cheap — and
+#: 36 of its readings went wrong where one had. From 3 caps it paired every
+#: note, and the takes with notes left out read 89.9% → 93.7%; at 4 they read
+#: 93.5%. On one bass page with every pair of its notes left out in turn
+#: (276 takes, timing only), 3 caps refused none where the old pairing
+#: refused 11, and attributed 313 sounds to the wrong note where it had 467.
+#: What is left is mostly one note beside a hole: see
+#: `test_notes_left_out.py`.
+#:
+#: **Not for the other side.** Reading an interval across one *detection*,
+#: for an attack that was no note, was tried beside it: no gain on the
+#: benchmark, and on those 276 takes it refused 39. See `TUNING_LOG.md`,
+#: 2026-11-13.
+DROPPED_NOTE_CAPS = 3.0
+
 
 def _clamp_ratio(ratio: float) -> float:
     """Hold a tempo rescale inside what a musician plausibly did."""
@@ -1823,6 +1845,22 @@ def align_dtw(
                 step[back:] = skippable[:-back]
                 reach &= step
                 back += 1
+        # **A note left out ends no interval either** — the same repair as the
+        # optional notes above, for any note. After a written note the musician
+        # did not play, the interval into the next one spans two written gaps,
+        # and compared with the single gap the correct pairing paid a whole
+        # interval's mismatch at the note after the hole, so sliding every
+        # later note one place along was the cheaper answer: a steady plucked
+        # bass take with two notes left out a beat apart was paired one note
+        # off for five notes and refused at quality 0.000. So each interval may
+        # also be read across one written note, at `DROPPED_NOTE_CAPS`.
+        across = np.full(written.size, np.inf)
+        across[2:] = written[2:] - written[:-2]
+        interval = np.minimum(
+            interval,
+            np.abs(played_gaps[:, None] - across[None, :])
+            + DROPPED_NOTE_CAPS * POSITION_WEIGHT * POSITION_CAP_GAPS * gap,
+        )
         return interval + (
             POSITION_WEIGHT * np.minimum(position, POSITION_CAP_GAPS * gap)
         )

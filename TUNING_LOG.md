@@ -6,6 +6,62 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-13 (later still) — Pairing: an interval may be read across one note left out, `alignment.DROPPED_NOTE_CAPS = 3.0`
+
+**Old value:** none. `align_dtw`'s cost compared the interval into each
+detection with the written interval into one note, except across optional
+notes (ornaments, unheard slurred notes). **New value:** any interval may also
+be compared with the two written gaps across one note, at 3 position caps more
+— the price of a step off the diagonal (`STEP_PENALTY_CAPS`). A module
+constant beside `POSITION_CAP_GAPS` and `STEP_PENALTY_CAPS`, as they are.
+
+**Why.** With detection hearing 99.8% of played notes, the worst way of
+playing on the accuracy benchmark was leaving notes out (89.9%), and the worst
+single take was a steady plucked bass page with two notes left out a beat
+apart, every note heard, refused at quality 0.000. After a note not played, the
+true interval spans two written gaps; compared with one, the correct pairing
+paid a whole interval at the note after the hole, so sliding every later note
+one place along was cheaper — five notes paired one off, and the take refused.
+
+| `DROPPED_NOTE_CAPS` | overall | notes left out | rushed | analysed |
+|---|---|---|---|---|
+| none (before) | 96.16% | 89.91% | 96.87% | 99.44% |
+| 0.5 | 96.61% | 94.03% | 95.43% | 100% |
+| 1, 2 | 96.57%, 96.56% | 93.78%, 93.74% | 95.43% | 100% |
+| **3** | **96.80%** | **93.74%** | **96.87%** | **100%** |
+| 4 | 96.76% | 93.53% | 96.87% | 100% |
+
+Below 3 a rushed cello take with one false attack mid-note paired four notes
+one place along — the false attack taken for a note and a real one dropped
+later to catch up, because a cheap dropped interval made that slide cheap —
+and 36 of its readings went wrong where one had.
+
+**Timing alone, on one page.** The refused take's page with every pair of its
+inner notes left out in turn, 276 takes, onsets exact but for 3 ms of jitter
+(`test_notes_left_out.py`): the old pairing refused 11 and attributed 467
+sounds to the wrong note; 3 caps refuse none and attribute 313.
+
+**Two neighbours measured and rejected.**
+
+- *An interval read across one detection*, for an attack that was no note, at
+  0.5 caps: no gain on the benchmark beside the dropped interval (96.78%), and
+  on the 276 takes it refused 39 — it lets any short interval explain itself
+  as a long one interrupted.
+- *A skipped note's cell charged nothing* (`weights_mul` 0 on the vertical
+  step). DTW pays for skipping a note the cell it skips with, which is the
+  previous detection's interval against the skipped note's — a number that
+  says nothing — and that cell is why the note after a hole is sometimes given
+  the hole's place. Free, it read every such case right (169 wrong on the 276,
+  96.95% on the benchmark) and broke seven tests, among them the one telling
+  détaché against written slurs from a wrong piece and a hurried bar's
+  attribution. Kept as a strict xfail in `test_notes_left_out.py` instead.
+
+### Regression across the six fixtures
+
+Identical, clip by clip — status, quality, attacks, missed, extra, verdict, and
+the mean and spread of the timed deviations: none of the six has a note left
+out.
+
 ## 2026-11-13 (later) — Onset placement: the fine spectrum floored 50 dB down, not 80
 
 **Old value:** `audio._REFINE_TOP_DB` did not exist; `refine_onset_times`
