@@ -6,6 +6,53 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (the scorer, inside a run of one pitch) — `tools/eval/real_takes.py`: the labels in a run of one written pitch go to the notes their rhythm fits (`respace_runs`). The measuring stick, not the app.
+
+**The case.** Spring's cello part writes an E3 eighth and then eight
+quarters, all E3. Its labels have one E3 fewer than the page. The app heard
+an attack at every note, and their gaps keep the written rhythm exactly
+(0.334 s for the eighth, then 0.604, 0.586, 0.598 … for the quarters at
+0.632). The scorer left out the eighth and gave its label to the first
+quarter. So that label's next one came half a beat after it where the page
+has a whole beat, and every later label sat one note off. The app's pairing
+then read as 300–660 ms late on eight notes, and on fifteen more in a later
+run of sixteen E3 eighths. There the gap from the B2 before the run is one
+eighth and to the B2 after it two, so it is the last E3 that has no label,
+not the first.
+
+**Why the scorer's tie-break could not see it.** `pair_by_pitch_and_time`
+reads each note's place from its paired neighbours. Inside a run of one
+pitch those neighbours are the run's own pairings, and where the first pass
+left out the wrong note, every place it reads is off by the same note and
+confirms it. That is the same flaw found in the app's chain the same day
+(`(bow changes)`, Rejouissance's trill).
+
+**New:** in a run of three or more notes of one written pitch with one or
+two fewer labels than notes, each choice of the notes left out is tried, and
+the one whose labels keep the written rhythm best is kept: the sum of
+|log(labelled gap / written gap)| between the paired notes either side, at
+their pace. A tie keeps the pairing as it was. Of 547 notes the app placed
+more than 100 ms from their labels, 82 were in a run of one pitch at a
+neighbour's label.
+
+| real, 72 takes | before | after |
+|---|---|---|
+| heard | 14,790 / 15,035 | 14,793 / 15,035 (98.39%) |
+| placed (50 ms) | 12,366 / 14,790 | 12,414 / 14,793 (83.92%) |
+| paired (100 ms) | 14,243 (96.30%) | 14,300 (**96.67%**) |
+| colour | 12,397 (83.82%) | 12,612 (**85.26%**) |
+| bar tempo | 2,928 / 4,016 | 2,932 / 4,017 |
+| verdict true | 71 of 72 | 71 of 72 |
+
+Strings: paired 97.30%, colour 88.30%. Ten takes change. Spring's cello
+colours 263 of 265 notes as the labels do (was 122). Jerusalem's second
+violin, in both its copies, colours 176 of 179 (was 146). Pirates' first
+violin and viola, in both copies, gain 6–9 paired notes. One goes the other
+way by a note: K515's second violin, where a run of three C5 sixteenths has
+one label, 54 ms after the D5 before it. A sixteenth there is 80 ms, so the
+label is the first C5's, and the app gave that attack to the second. The app
+did not change, so the synthetic set and the six clips are untouched.
+
 ## 2026-11-14 (how far the labels can be agreed with) — Measured. No code or threshold changes.
 
 **The question.** Real colour agreement (each note's band by the app against

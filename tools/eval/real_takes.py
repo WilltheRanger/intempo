@@ -46,6 +46,7 @@ import json
 import os
 import re
 import sys
+from itertools import combinations
 
 for _var in (
     "OMP_NUM_THREADS",
@@ -260,6 +261,96 @@ def tracks(data: Path) -> list[tuple[str, Path, Path, Path, str]]:
     return out
 
 
+#: The most written notes of a run of one pitch the labels may leave without a
+#: label for `respace_runs` to choose among: each choice is tried in turn.
+RUN_MAX_LEFT_OUT = 2
+
+
+def _rhythm_cost(beats: list[float], times: list[float], pace: float) -> float:
+    """How far a sequence of labelled times strays from its written rhythm
+    at `pace` seconds a beat: the sum of |log(played gap / written gap)|."""
+    cost = 0.0
+    for k in range(1, len(beats)):
+        written_gap = (beats[k] - beats[k - 1]) * pace
+        played_gap = times[k] - times[k - 1]
+        if written_gap <= 0 or played_gap <= 0:
+            return float("inf")
+        cost += abs(np.log(played_gap / written_gap))
+    return cost
+
+
+def respace_runs(
+    written: list[float | None],
+    beats: np.ndarray,
+    times: np.ndarray,
+    pairs: list[tuple[int, int]],
+) -> list[tuple[int, int]]:
+    """Within a run of one written pitch, the labels go to the notes their own
+    rhythm fits.
+
+    **Inside a run, pitch says nothing and the tie-break agrees with itself.**
+    `pair_by_pitch_and_time` reads each note's place from its paired
+    neighbours, and in a run of one pitch those neighbours are the run's own
+    pairings: where the first pass left out the wrong note, every place it
+    reads is off by the same note, and confirms it. Spring's cello part
+    (2026-11-14) writes an E3 eighth and eight quarters, and its labels have
+    one E3 fewer. The pairing left out the eighth and gave its label to the
+    first quarter, so the next label came half a beat after it where the page
+    has a whole beat, and every later one sat one note off.
+
+    So in a run of three or more notes of one pitch with up to
+    `RUN_MAX_LEFT_OUT` fewer labels than notes, each choice of the notes left
+    out is tried, and the one whose labels keep the written rhythm best
+    (`_rhythm_cost`, between the paired notes either side of the run at their
+    pace) is kept. A tie keeps the pairing as it was.
+    """
+    by_written = dict(pairs)
+    out = dict(by_written)
+    n = len(written)
+    i = 0
+    while i < n:
+        j = i
+        if written[i] is not None:
+            while j + 1 < n and written[j + 1] is not None and abs(written[j + 1] - written[i]) < 0.5:
+                j += 1
+        run = list(range(i, j + 1))
+        i = j + 1
+        labels = sorted(by_written[k] for k in run if k in by_written)
+        missing = len(run) - len(labels)
+        if len(run) < 3 or not labels or not 0 < missing <= RUN_MAX_LEFT_OUT:
+            continue
+        before = max((k for k in by_written if k < run[0]), default=None)
+        after = min((k for k in by_written if k > run[-1]), default=None)
+        if before is None or after is None or beats[after] <= beats[before]:
+            continue
+        pace = (times[by_written[after]] - times[by_written[before]]) / (beats[after] - beats[before])
+        if pace <= 0:
+            continue
+
+        def cost(kept: tuple[int, ...]) -> float:
+            seq_b = [float(beats[before])] + [float(beats[k]) for k in kept] + [float(beats[after])]
+            seq_t = (
+                [float(times[by_written[before]])]
+                + [float(times[label]) for label in labels]
+                + [float(times[by_written[after]])]
+            )
+            return _rhythm_cost(seq_b, seq_t, pace)
+
+        current = tuple(k for k in run if k in by_written)
+        best, best_cost = current, cost(current)
+        for left_out in combinations(run, missing):
+            kept = tuple(k for k in run if k not in left_out)
+            c = cost(kept)
+            if c < best_cost - 1e-9:
+                best, best_cost = kept, c
+        if best != current:
+            for k in run:
+                out.pop(k, None)
+            for k, label in zip(best, labels, strict=True):
+                out[k] = label
+    return sorted(out.items())
+
+
 def build_truth(track):
     """The take, its page, and what the labels say: which written note each
     labelled onset is, when it started, and at what pitch."""
@@ -277,8 +368,13 @@ def build_truth(track):
         raise NotScored(f"{len(written)} pitches for {len(timeline.notes)} notes")
     shift = SOUNDING.get(instrument, 0)
     sounding = [None if w is None else w + shift for w in written]
-    pairs = pair_by_pitch_and_time(
-        sounding, list(heard), np.asarray(timeline.onsets, dtype=float), onsets
+    pairs = respace_runs(
+        sounding,
+        np.asarray(timeline.onsets, dtype=float),
+        onsets,
+        pair_by_pitch_and_time(
+            sounding, list(heard), np.asarray(timeline.onsets, dtype=float), onsets
+        ),
     )
     if len(pairs) < MIN_PAIRED_SHARE * len(written):
         raise NotScored(f"only {len(pairs)} of {len(written)} written notes in the labels")
