@@ -96,6 +96,24 @@ restored it, and that is now a test.
 
 All six are identical to the committed code, every note's deviation included.
 
+### Measured after, and not kept: the release guard on the first pass
+
+In "Jerusalem" the end of the saxophone's last note was taken as an attack.
+The second look already refuses a sound that falls by more than
+`recovery_max_fall_db` (12 dB) across it. The same guard was tried on the
+first pass:
+
+| real, 72 tracks | without | with |
+|---|---|---|
+| first-pass attacks at a labelled note | 12,954 | 12,728 |
+| first-pass attacks at no note | 2,670 | 2,572 |
+| paired ≤ 100 ms | 95.10% | 94.67% |
+| verdict true | 50 | 49 |
+
+It drops 226 real attacks to remove 98 false ones. A note starting just as
+a louder one ends also reads as a fall. The synthetic benchmark was
+unchanged.
+
 ## 2026-11-14 (verdicts) — The verdict scored by its bars, and by whether it is true. No thresholds changed.
 
 **Every verdict figure since the benchmark was built scored the direction
