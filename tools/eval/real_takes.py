@@ -29,11 +29,19 @@ reading is scored twice:
 - against the labels themselves (`scorecard`): was each played note heard,
   where was it put, and is its colour the oracle's.
 
+**A note played at another pitch than the page's.** The players sometimes
+played something else than this score has — a passage an octave down, a G
+where it writes an E — and the labels have what they played. A label further
+than `SUBSTITUTE_ST` from the written pitch is that written note only where
+it sits in the note's own place, one for one (`played_otherwise`); the same
+letter an octave away is then the note played right, and anything else is a
+wrong note, as the app's own rule has it.
+
 **What the labels cannot say, and is not scored.** A labelled pitch between
-0.6 and 1.4 semitones off the written one is neither in tune nor certainly
-another note, so its bar is not scored for wrong notes; a written note the
-labels have no note for (a double stop, an ornament, a note the annotator
-left out) is not scored as played or missed. A hand label is itself good to a
+0.6 and 1.4 semitones off the written one (or off an octave of it) is neither
+in tune nor certainly another note, so its bar is not scored for wrong notes;
+a written note the labels have no note for (a double stop, an ornament, a note
+the annotator left out) is not scored as played or missed. A hand label is itself good to a
 few tens of milliseconds on a bowed attack, so the oracle comparison's 12 ms
 note tolerance mostly measures the labels here; the scorecard's 50 ms is the
 tolerance onset studies use.
@@ -91,8 +99,12 @@ SOUNDING = {"double_bass": -12, "alto_sax": -9}
 SAME_ST = 0.6
 OTHER_ST = 1.4
 #: Past this a labelled note is not the written one played wrong but another
-#: event (an ornament, a note the score does not have).
+#: event (an ornament, a note the score does not have) — unless it sits in the
+#: written note's own place, one for one (`played_otherwise`).
 SUBSTITUTE_ST = 2.6
+#: How far from where its paired neighbours put a written note a label further
+#: than `SUBSTITUTE_ST` from it may sit and still be that note: a quarter beat.
+IN_PLACE_BEATS = 0.25
 #: Fewer of the written notes than this found in the labels, and the part is
 #: not the one that was recorded.
 MIN_PAIRED_SHARE = 0.8
@@ -245,6 +257,61 @@ def pair_by_pitch_and_time(
     return pairs[::-1]
 
 
+def played_otherwise(
+    written: list[float | None],
+    beats: np.ndarray,
+    times: np.ndarray,
+    pairs: list[tuple[int, int]],
+) -> list[tuple[int, int]]:
+    """The labels further than `SUBSTITUTE_ST` from their written note that
+    are that note, played at another pitch.
+
+    **The players did not always play this score.** K515's second viola plays
+    D4 twice where this score writes B3, and A3 twice where it writes C4;
+    the Fugue's second violin plays G4 G4 where it writes E4 E4. Each label
+    sits where the page puts its note, and each time the app named the note
+    wrong — and was scored wrong for it, because a label three semitones away
+    was not paired, its written note had no label, and a note with no label
+    was taken to have been played right. An octave is the commonest case:
+    passages K515's second violin plays an octave from this score.
+
+    **Not as the alignment set them.** To the edit distance every label more
+    than a semitone from its note costs the same, so through a passage played
+    an octave off it can set them one note along: K515's bar 144 had D5 C5 B4
+    C5 against D6 C6 B5 C6 with the D left over and every other label on the
+    note after its own. So between two `pairs` next to each other, where as
+    many labels as written notes are unpaired, the player played that many
+    notes there, and these are them, in order. Each is kept where its label
+    sits within `IN_PLACE_BEATS` of where the two pairs put the note, and
+    nearer that place than the places of the written notes either side of it.
+    Anything else is another event, as `SUBSTITUTE_ST` says.
+    """
+    out: list[tuple[int, int]] = []
+    ordered = sorted(pairs)
+    for (before, label_before), (after, label_after) in zip(ordered, ordered[1:], strict=False):
+        notes = list(range(before + 1, after))
+        labels = list(range(label_before + 1, label_after))
+        if not notes or len(notes) != len(labels) or beats[after] <= beats[before]:
+            continue
+        pace = (times[label_after] - times[label_before]) / (beats[after] - beats[before])
+        if pace <= 0:
+            continue
+        for i, j in zip(notes, labels, strict=True):
+            if written[i] is None:
+                continue
+            place = times[label_before] + pace * (beats[i] - beats[before])
+            # Nearer its own note's place than either written neighbour's: in
+            # sixteenths, one note along is a quarter beat away.
+            reach = min(
+                IN_PLACE_BEATS,
+                0.5 * (beats[i] - beats[i - 1]),
+                0.5 * (beats[i + 1] - beats[i]),
+            )
+            if abs(times[j] - place) <= reach * pace:
+                out.append((i, j))
+    return out
+
+
 def tracks(data: Path) -> list[tuple[str, Path, Path, Path, str]]:
     """(name, audio, labels, score, instrument) for every string track."""
     out = []
@@ -368,14 +435,11 @@ def build_truth(track):
         raise NotScored(f"{len(written)} pitches for {len(timeline.notes)} notes")
     shift = SOUNDING.get(instrument, 0)
     sounding = [None if w is None else w + shift for w in written]
+    at_beats = np.asarray(timeline.onsets, dtype=float)
     pairs = respace_runs(
-        sounding,
-        np.asarray(timeline.onsets, dtype=float),
-        onsets,
-        pair_by_pitch_and_time(
-            sounding, list(heard), np.asarray(timeline.onsets, dtype=float), onsets
-        ),
+        sounding, at_beats, onsets, pair_by_pitch_and_time(sounding, list(heard), at_beats, onsets)
     )
+    pairs = sorted(pairs + played_otherwise(sounding, at_beats, onsets, pairs))
     if len(pairs) < MIN_PAIRED_SHARE * len(written):
         raise NotScored(f"only {len(pairs)} of {len(written)} written notes in the labels")
     beats = np.array([timeline.onsets[i] for i, _ in pairs])
@@ -389,7 +453,10 @@ def build_truth(track):
         if j is None:
             unsure_notes.add(note.global_index)
         elif sounding[i] is not None:
-            off = abs(heard[j] - sounding[i])
+            # Off the written pitch, or off the octave of it the label is in:
+            # the same letter an octave away is the note, as the app has it.
+            away = heard[j] - sounding[i]
+            off = abs(away - 12.0 * round(away / 12.0))
             if off >= OTHER_ST:
                 played_midi = round(heard[j]) - shift
             elif off >= SAME_ST:

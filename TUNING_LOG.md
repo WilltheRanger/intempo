@@ -6,6 +6,55 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (the scorer, a note played at another pitch) — `tools/eval/real_takes.py`: between two notes paired by pitch, as many labels as written notes are those notes in order, at whatever pitch (`played_otherwise`); the same letter an octave away is the note. The measuring stick, not the app.
+
+**The case.** Of the 17 real notes the app named wrong that the scorer
+called right, 7 were the app being right. The labels have, at the written
+note's place, exactly what the app heard: the Fugue's second violin plays G4
+G4 where this score writes E4 E4 (bar 35) and A4 G4 for F4 E4 (bar 69);
+Rondeau's first violin, in both copies, A4 for E5 (bar 60); K515's second
+viola D4 for B3 (bars 164 and 207); Spring's first violin E7 for C♯7 (bar
+43). The pairing drops a label more than `SUBSTITUTE_ST` (2.6 semitones)
+from its note, so the written note had no label, a note with no label is
+not wrong, and the app's naming it was scored a false alarm.
+
+**Not as the alignment set them.** Its edit distance sets 109 labels
+against written notes further than that: 92 an octave away (56 of them where
+K515's second violin plays passages an octave from this score) and 17 other
+notes. Every such label costs it the same, so through a passage played an
+octave off it can set them one note along: K515's bar 144 had D5 C5 B4 C5
+against D6 C6 B5 C6, with the D left over and every other label on the note
+after its own. A first version that kept the alignment's pairs scored that
+bar a wrong note.
+
+**New:** between two notes paired by pitch, where as many labels as written
+notes are unpaired, they are those notes, in order. Each is kept where its
+label sits within `IN_PLACE_BEATS` (0.25) of where the two pairs put the
+note, and nearer that place than either written neighbour's (in sixteenths,
+an eighth of a beat). Its pitch is then read against the nearest octave of
+the written one, as the app reads it: an octave away is the note played
+right, 1.4 semitones or more from every octave a wrong note. 59 labels are
+kept, 44 octaves and 15 other notes; bar 144 is left unscored.
+
+| real, 72 takes | before | after |
+|---|---|---|
+| notes scored | 15,035 | 15,094 |
+| heard | 14,793 (98.39%) | 14,850 (98.38%) |
+| placed (50 ms) | 12,414 (83.92%) | 12,461 (83.91%) |
+| paired (100 ms) | 14,300 (96.67%) | 14,355 (96.67%) |
+| colour | 12,612 (85.26%) | 12,672 (85.33%) |
+| bar tempo | 2,932 / 4,017 | 2,950 / 4,033 (73.15%) |
+| verdict true | 71 of 72 | 71 of 72 |
+| wrong notes (oracle) | 8 / 36 | 15 / 41 |
+
+The 7 above now count as named right, and 5 notes newly known to be played
+as another note are not named (Fugue bar 37, Jerusalem's bass bar 31, K515's
+second viola bars 174, 217 and 220). Jerusalem's bass is likely the labels'
+own error: its label is E2 where the page has A1, the note's own partials
+over its whole length are A1's (0.46 of the strongest against 0.03), and E2
+is A1's third partial. The app did not change, so the synthetic set and the
+six clips are untouched.
+
 ## 2026-11-14 (the first attack, on a saxophone) — Measured, not kept. No code or threshold changes.
 
 **The case.** Entertainer's second saxophone had 37 notes paired 100–176 ms
