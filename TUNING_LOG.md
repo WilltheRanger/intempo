@@ -6,6 +6,36 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (quoted tempo) — A stretch of bars is named only when the tempo it is quoted at is off. No thresholds changed.
+
+**Old behaviour:** the verdict named the longest run of bars each banded off
+the target the same way (`_longest_bar_run`), and quoted the tempo of the run
+taken together (`BarTempi.across`). **New:** a run is named only if that quoted
+tempo is itself past the inner band, on the same side (`_off_as_quoted`).
+Otherwise the next run is tried, and then the note rule. A run with no tempo of
+its own to quote is judged by its bars, as before.
+
+**Why.** A bar's tempo is read downbeat to downbeat. A player who hurries
+inside each bar and takes the time back at the bar line reads fast in every
+bar, while the stretch as a whole keeps the tempo. The sentence then quoted
+the stretch, for example "Bars 10–20 went at 207." against 206, under a title
+saying the take rushed. Six real sentences quoted a tempo inside the ±5%
+inner band, and the labels held none of them.
+
+| real, 72 tracks | before | after |
+|---|---|---|
+| verdict true | 52 | 53 |
+
+| take | before | after | labels |
+|---|---|---|---|
+| `30_Fugue/4_sax` | "Bars 41–43 went at 116." | "Bar 47 went at 97." | true |
+| `10_March/2_sax` | "Bars 22–23 went at 164." | "Bars 4–5 went at 140." | the labels' run is bars 4–6; still false |
+| `24`/`25_Pirates/3_va` | "Bars 16–17 went at 208." | "Bars 33–34 went at 214." | still false |
+
+No true sentence became false. The other measures do not move, because the
+rule changes only the sentence. The synthetic benchmark is unchanged
+(97.24%, no take differs), and so are the six fixtures.
+
 ## 2026-11-14 (octaves) — A pitch read an octave off is put back by its partials: new `[onset.instrument.*] octave_below_ratio` and `octave_above_ratio`
 
 **Old behaviour:** each attack's pitch was the YIN track's median over the

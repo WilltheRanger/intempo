@@ -641,11 +641,42 @@ def _longest_bar_run(
         worth = notes >= MIN_VERDICT_RUN and (
             len(run) >= 2 or run[0][2] in _CLEAR_BANDS
         )
+        if worth and not _off_as_quoted(run[0][0], run[-1][0], sign, tempi, target_bpm, config):
+            worth = False
         if worth and (len(run), notes) > best_key:
             best_key = (len(run), notes)
             best = _BarRun(first=run[0][0], last=run[-1][0], rushing=sign < 0)
         i = j + 1
     return best, frozenset(spared)
+
+
+def _off_as_quoted(
+    first: int,
+    last: int,
+    sign: int,
+    tempi: BarTempi,
+    target_bpm: float,
+    config: AudioConfig,
+) -> bool:
+    """Whether bars `first` to `last`, taken together, went off the target the
+    way each of them did: the tempo the sentence would quote for them
+    (`BarTempi.across`) is past the inner band, on the same side.
+
+    **Each bar off, and the run not.** A bar's tempo is read downbeat to
+    downbeat, and a player who hurries inside each bar and takes the time back
+    at the bar line reads fast in every bar while the stretch as a whole keeps
+    the tempo. The sentence then quoted the stretch: "Bars 10–20 went at 207."
+    against 206, under a title saying the take rushed. On URMP's 72 real takes
+    (2026-11-14) six sentences quoted a tempo inside the inner band, and the
+    labels held none of them. Where the stretch has no tempo of its own to
+    quote, its bars decide, as before.
+    """
+    played = tempi.across(first, last)
+    if played is None or played <= 0:
+        return True
+    pct = (1.0 - played / tempi.target(first, target_bpm)) * 100.0
+    band = classify_band(pct, config=config)
+    return band is not Band.on and (1 if pct > 0 else -1) == sign
 
 
 #: How many notes after the opening the take's settled level is read from.

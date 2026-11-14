@@ -403,6 +403,25 @@ def test_a_bar_under_a_written_change_is_left_out() -> None:
     assert verdict.text == "Bars 2–4 went at 90."
 
 
+def test_bars_each_off_are_not_named_when_together_they_kept_the_tempo() -> None:
+    """**Each bar off, and the stretch not.** A bar's tempo is read downbeat
+    to downbeat, so a player who hurries inside each bar and takes the time
+    back at the bar line reads fast in every bar while the stretch keeps the
+    tempo. The sentence quoted the stretch, "Bars 10–20 went at 207." against
+    206, under a title saying the take rushed; on URMP's real takes
+    (2026-11-14) six sentences quoted a tempo inside the inner band, and the
+    labels held none of them. The bars are not named; the rest of the rule
+    speaks."""
+    deltas = [_delta(0.0, measure=1 + i // 4, idx=i) for i in range(16)]
+    by_bar = {1: 104.0, 2: 111.0, 3: 111.0, 4: 104.0}  # 6.7% over, each
+
+    quoted_on = generate_verdict(deltas, 104.0, tempi=_tempi(by_bar, across=106.0))
+    quoted_off = generate_verdict(deltas, 104.0, tempi=_tempi(by_bar, across=111.0))
+
+    assert quoted_on.direction is Direction.on
+    assert quoted_off.text == "Bars 2–3 went at 111."
+
+
 def test_no_figure_when_the_run_has_no_tempo_of_its_own() -> None:
     deltas = _behind_from_the_start(4)
     by_bar = {1: 90.0, 2: 90.0, 3: 90.0, 4: 90.0}
