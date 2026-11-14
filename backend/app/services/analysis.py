@@ -2065,6 +2065,16 @@ def _by_chain(
 #: pairing leaves nothing to doubt (`_nothing_to_doubt`).
 CHAIN_GAIN_NOTES = 2
 
+#: How much higher than timing's own pairing `alignment._scored_mapping` must
+#: score the chain's for `_timing_prefers_the_chain`. The score is one minus
+#: the average misfit over half a beat, so 0.01 is a hundredth of a beat of
+#: misfit on every note: about a fifth of a beat on one note of a 40-note page.
+#: Under it the score cannot tell two pairings apart. A 96-note bass take with
+#: an extra note (`test_varied_rhythm.py`) scored the chain's pairing 0.002
+#: higher with one note on the extra note's attack, 384 ms away; the takes the
+#: rule is for led by 0.023 to 0.121 (`TUNING_LOG.md`, 2026-11-14).
+CHAIN_PREFERRED_BY = 0.01
+
 
 def _nothing_to_doubt(candidate: _Chained, timing_quality: float) -> bool:
     """Whether the chain's pairing needs only one note more than timing's.
@@ -2092,6 +2102,52 @@ def _nothing_to_doubt(candidate: _Chained, timing_quality: float) -> bool:
         confirmed.paired > 0
         and confirmed.notes == confirmed.paired
         and candidate.anchored.alignment.quality > timing_quality
+    )
+
+
+def _timing_prefers_the_chain(
+    candidate: _Chained, timed: _Confirmed, timing_quality: float
+) -> bool:
+    """Whether the chain re-pairs a whole page with no note at pitch to spare.
+
+    **Where the chain's pairing is as good as timing's on every count pitch
+    can make, and better by timing's own.** The chain replaces a pairing
+    timing reads well only on pitch — `CHAIN_GAIN_NOTES` more notes heard at
+    their written pitch — because that is evidence timing does not have. But
+    where the chain pairs at least as many notes as timing does, hears at
+    least as many of them at their written pitch, and `alignment.
+    _scored_mapping` scores its pairing higher, timing has no case left: pitch
+    does not prefer timing's pairing, and by timing's own measure the take's
+    rhythm reads better the chain's way — by `CHAIN_PREFERRED_BY` or more,
+    since under it the score cannot tell two pairings apart.
+
+    Two kinds of take need it. Where a note is left out of a run of one
+    pitch, pitch hears both pairings alike: a viola with one of two repeated
+    notes left out (`viola/bowed/132/missed/noise/1087`) was paired a note
+    late across the hole, the chain right at 0.922 against 0.892 with 39 at
+    pitch each. And where pitch is barely heard at all: a bass plucked in the
+    benchmark's phone room has half its notes read at another pitch, both
+    ways, and timing slid six notes along across two left-out notes
+    (`double_bass/pizz/60/missed/phone/1180`, 0.814), where the chain paired
+    every note right (0.935) with 18 at pitch to timing's 17.
+
+    **As many notes paired, not fewer.** A bowed bass through the phone room
+    (`1140`) is paired 0.019 better by the chain, with as many at pitch, but
+    one note fewer; its result was 20 notes and 5 bars worse.
+
+    Measured on the synthetic set (2026-11-14), every take the chain was
+    refused on while scoring higher: in 13 of 14 its pairing was the righter
+    or as right; the fourteenth, a fast cello figure with a note left out
+    (`1119`), both pairings get wrong, the chain by one note more. On the 72
+    real takes the chain pairs 71 already, and the one it does not, it scores
+    lower.
+    """
+    confirmed = candidate.confirmed
+    return (
+        confirmed.paired > 0
+        and confirmed.paired >= timed.paired
+        and confirmed.notes >= timed.notes
+        and candidate.anchored.alignment.quality >= timing_quality + CHAIN_PREFERRED_BY
     )
 
 
@@ -2383,7 +2439,9 @@ def _audited_by_chain(
     **For a take timing accepts**, the chain may re-pair it where it is placed
     by pitch (`_placed_by_pitch`) and claims no more notes played-and-unheard
     than timing did (`_claimed_unheard`). It hears `CHAIN_GAIN_NOTES` more
-    notes at pitch where timing read the take well, any more where it did not.
+    notes at pitch where timing read the take well, any more where it did not
+    — or, for a whole page, as many where timing's own score prefers it
+    (`_timing_prefers_the_chain`).
 
     Either way, a passage played again is looked for (`_replayed_by_pitch`),
     and a take timing found to be a stretch of the page is chained as one.
@@ -2419,16 +2477,25 @@ def _audited_by_chain(
     # A refusal is only ever overridden by a whole page heard at pitch.
     if accepted or replayed.trusted:
         candidate = replayed
-    if not (
-        candidate.trusted
-        or (accepted and _placed_by_pitch(candidate.confirmed, config))
-    ):
-        return None
     timed = _confirmed(
         anchored, reading, pitch, float(onsets[anchored.trimmed_lead]), config
     )
+    # Where pitch cannot choose between the two, timing's own score may: for
+    # a whole page timing has accepted, never for which stretch a take was,
+    # which is what `_placed_by_pitch` guards.
+    preferred = accepted and not passage and _timing_prefers_the_chain(candidate, timed, quality)
+    if not (
+        candidate.trusted
+        or (accepted and _placed_by_pitch(candidate.confirmed, config))
+        or preferred
+    ):
+        return None
     needed = timed.notes + (
-        CHAIN_GAIN_NOTES if readable and not _nothing_to_doubt(candidate, quality) else 1
+        0
+        if preferred
+        else CHAIN_GAIN_NOTES
+        if readable and not _nothing_to_doubt(candidate, quality)
+        else 1
     )
     if _trusted_by_pitch(timed, config) and candidate.confirmed.notes < needed:
         return None

@@ -6,6 +6,73 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (where pitch cannot choose) — The chain re-pairs a whole page where it pairs as many notes as timing, hears as many at pitch, and timing's own score prefers it: new `analysis._timing_prefers_the_chain`. No thresholds changed.
+
+**The case.** The chain replaces a pairing timing reads well only on
+`CHAIN_GAIN_NOTES` more notes heard at pitch (or one, `_nothing_to_doubt`),
+and only where `_placed_by_pitch` holds (70% of its notes at pitch). Two
+kinds of take pitch cannot settle. `viola/bowed/132/missed/noise/1087`
+leaves out two of eight D5's in a row: both pairings hear all 39 notes at
+pitch, timing paired a note late across the second hole and reported the
+wrong D missing, and the chain paired it right at 0.922 against timing's
+0.892. `double_bass/pizz/60/missed/phone/1180` has half its notes read at
+another pitch both ways (the room's 58 Hz mode): timing slid six notes along
+across two left-out notes (0.814), the chain paired all 35 right (0.935),
+and with 18 at pitch to timing's 17 it failed `_placed_by_pitch`.
+
+**Measured first:** every audit of the chain on both sets, with each
+pairing's notes within 30 ms of the truth (synthetic) or 100 ms of the label
+(real). On the 72 real takes the chain already pairs 71, and the 72nd it
+scores lower than timing. On the synthetic set, the 14 takes where it was
+refused while scoring higher:
+
+| take | timing → chain score | at pitch (timing / chain) | right (timing / chain) |
+|---|---|---|---|
+| 1180 bass pizz phone | 0.814 → 0.935 | 17/35, 18/35 | 29, **35** |
+| 1057 violin pizz noise | 0.827 → 0.931 | 36/37, 37/37 | 35, **37** |
+| 1149 bass bowed dynamics | 0.828 → 0.932 | 31/33, 32/33 | 32, **33** |
+| 1056 violin pizz clean | 0.840 → 0.932 | 34/37, 35/37 | 36, **37** |
+| 1090 viola bowed phone | 0.842 → 0.922 | 38/40, 39/40 | 39, **40** |
+| 1119 cello bowed dynamics | 0.823 → 0.892 | 30/35, 31/35 | **34**, 33 |
+| 1034 violin pizz dynamics | 0.916 → 0.957 | 34/36, 34/36 | 34, **36** |
+| 1147 bass bowed noise | 0.890 → 0.925 | 29/38, 30/39 | 37, **39** |
+| 1087 viola bowed noise | 0.892 → 0.922 | 39/39, 39/39 | 38, **39** |
+| 1109 cello bowed dynamics | 0.921 → 0.947 | 32/32, 32/32 | 30, **32** |
+| 1178 bass pizz reverb | 0.917 → 0.942 | 14/38, 14/38 | 35, **38** |
+| 1175 bass pizz phone | 0.931 → 0.954 | 14/40, 15/41 | 40, **41** |
+| 1140 bass bowed phone | 0.913 → 0.932 | 27/39, 27/38 | 37, 37 |
+| 1116 cello bowed clean | 0.869 → 0.886 | 30/31, 31/31 | 29, **31** |
+
+(1057 and 1116 are the one-note rule's.) **A score alone is not enough:**
+taken on the score and pitch alone, 1140 went 20 notes and 5 bars worse; its
+chain pairs one note fewer than timing, the only one that does. And a lead
+the score cannot resolve is no lead: `test_varied_rhythm.py`'s 96-note bass
+take with one extra note scored the chain's pairing 0.002 higher, with one
+note on the extra note's attack 384 ms away. So the chain must pair at least
+as many notes as timing, hear at least as many at their written pitch, and
+score at least `CHAIN_PREFERRED_BY` (0.01) higher by
+`alignment._scored_mapping`, whose score is one minus the average misfit
+over half a beat: 0.01 is a hundredth of a beat on every note, about a fifth
+of a beat on one note of a 40-note page. The takes above lead by 0.023 to
+0.121. And only for a whole page timing accepted, never a stretch, which is
+what `_placed_by_pitch` guards. The one-note rule stays as it was.
+
+| synthetic, 180 takes | before | after |
+|---|---|---|
+| notes | 6,174 (96.56%) | 6,188 (96.78%) |
+| missed | 6,432 (99.66%) | 6,439 (99.77%) |
+| bars | 1,397 (97.01%) | 1,402 (97.36%) |
+| verdict | 178 | 178 |
+| wrong notes | 40 / 57 | 40 / 57 |
+| **overall** | **97.93%** | **98.11%** |
+| over what the truth decides | 98.51% | 98.69% |
+
+Seven takes change: 1180 (+4 missed, +3 notes, +2 bars), 1087 (+2, +1, +1),
+1178 (+2, +2), 1034 (+1, +3), 1147 (+1, +1), 1109 (−1 missed, +4 notes, +1
+bar) and 1119 (−2 missed, +1 bar), whose fast figure both pairings get
+wrong, the chain by one note more. The 72 real takes are identical on every
+card, and the six clips identical.
+
 ## 2026-11-14 (a wrong note's own partials) — `player_mistakes.wrong_notes`: a note heard as another is not named where the written note's own partials carry it: new `pitch_evidence.own_partials` and `note_window`, `[mistakes] written_partials_floor = 0.05` (new)
 
 **The case.** Of the 10 real notes still named wrong that the labels say

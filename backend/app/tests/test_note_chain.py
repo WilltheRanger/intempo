@@ -528,7 +528,106 @@ def test_two_notes_left_out_of_a_run_of_one_pitch_are_the_ones_reported(monkeypa
 
     assert missing() == left_out
     monkeypatch.setattr(analysis, "_nothing_to_doubt", lambda candidate, quality: False)
-    assert missing() == {17, 18}, "without the rule, timing's pairing stands"
+    assert missing() == left_out, "timing's own score prefers the chain's pairing as well"
+    monkeypatch.setattr(
+        analysis, "_timing_prefers_the_chain", lambda candidate, timed, quality: False
+    )
+    assert missing() == {17, 18}, "without either rule, timing's pairing stands"
+
+
+# ---- where pitch cannot choose -----------------------------------------------------
+
+
+def test_the_chain_re_pairs_where_it_dominates_on_every_count() -> None:
+    """At least as many notes paired and heard at pitch, and scored higher by
+    timing's own measure. The numbers are the synthetic takes'."""
+    prefers = analysis._timing_prefers_the_chain
+    assert prefers(_candidate(39, 39, 0.922), _Confirmed(notes=39, paired=39), 0.892), "1087"
+    assert prefers(_candidate(18, 35, 0.935), _Confirmed(notes=17, paired=35), 0.814), "1180"
+    assert not prefers(
+        _candidate(27, 38, 0.932), _Confirmed(notes=27, paired=39), 0.913
+    ), "1140: one note fewer paired"
+    assert not prefers(_candidate(30, 36, 0.95), _Confirmed(notes=31, paired=36), 0.90), (
+        "a note fewer at pitch"
+    )
+    assert not prefers(_candidate(39, 39, 0.892), _Confirmed(notes=39, paired=39), 0.892), (
+        "timing scores it as well"
+    )
+    assert not prefers(_candidate(96, 96, 0.979), _Confirmed(notes=96, paired=96), 0.977), (
+        "a lead the score cannot tell from a tie"
+    )
+    assert not prefers(_candidate(0, 0, 0.9), _Confirmed(notes=0, paired=0), 0.8), "nothing"
+
+
+#: Eight bars of a bowed viola part, the synthetic take that found this
+#: (`accuracy_bench.py`, `viola/bowed/132/missed/noise/1087`): bar 6 ends and
+#: bar 7 begins on eight D5's in a row, and the second and the seventh are
+#: left out.
+_D_RUN_BARS = [
+    ["F#4 q", "E4 q", "C4 q", "D4 q"],
+    ["C4 e", "A3 e", "B3 e", "C4 e", "F#4 q", "B4 q"],
+    ["C5 q", "D5 e", "D5 e", "D5 q", "D5 q"],
+    ["D5 q", "A4 e", "C5 e", "B4 q", "C5 q"],
+    ["B4 q", "A4 q", "D5 q", "A4 q"],
+    ["C5 q", "B4 e", "D5 e", "D5 q", "D5 q"],
+    ["D5 e", "D5 e", "D5 e", "D5 e", "D5 q", "C5 q"],
+    ["D5 e", "A4 e", "G4 e", "D4 e", "B3 q", "A3 q"],
+]
+_D_RUN_AT = [
+    0.4, 0.856, 1.289, 1.766, 2.215, 2.429, 2.678, 2.901, 3.136, 3.581, 4.032, 4.486, 4.717,
+    4.954, 5.395, 5.837, 6.303, 6.536, 6.773, 7.227, 7.672, 8.133, 8.586, 9.048, 9.49, 9.928,
+    10.16, 10.4, 10.85, 11.322, 11.536, 11.779, 11.988, 12.217, 12.667, 13.119, 13.343,
+    13.592, 13.81, 14.038, 14.487,
+]
+
+
+def test_notes_left_out_of_a_run_of_one_pitch_are_reported_where_pitch_cannot_tell(
+    monkeypatch,
+) -> None:
+    """Two of eight D5's left out, at 132 BPM: the chain and timing hear every
+    note they pair at its pitch, so pitch cannot choose between them, and
+    timing paired a note late across the second hole. Timing's own score
+    prefers the chain's pairing (`analysis._timing_prefers_the_chain`)."""
+    lengths = {"q": "quarter", "e": "eighth"}
+    page = ScoreJson.model_validate(
+        {
+            "time_signature": "4/4",
+            "clef": "treble",
+            "repeats": [],
+            "ocr_confidence": 1.0,
+            "measures": [
+                {
+                    "measure_number": k + 1,
+                    "notes": [
+                        {"pitch": p, "duration": lengths[d]}
+                        for p, d in (note.split() for note in bar)
+                    ],
+                    "slurs": [],
+                }
+                for k, bar in enumerate(_D_RUN_BARS)
+            ],
+        }
+    )
+    pitches = [midi(note.split()[0]) for bar in _D_RUN_BARS for note in bar]
+    left_out = {26, 32}
+    played = [i for i in range(len(_D_RUN_AT)) if i not in left_out]
+    y = synth_bowed_take(
+        [_D_RUN_AT[i] for i in played],
+        freqs_hz=[_hz(pitches[i]) for i in played],
+        sr=SR,
+        note_dur_s=0.2,
+    )
+
+    def untimed() -> set[int]:
+        result = analyze((y, SR), page, 132.0, instrument="viola")
+        assert result.status == "ok"
+        return set(range(len(_D_RUN_AT))) - {p.global_index for p in result.per_note if p.timed}
+
+    assert untimed() == left_out
+    monkeypatch.setattr(
+        analysis, "_timing_prefers_the_chain", lambda candidate, timed, quality: False
+    )
+    assert untimed() != left_out, "without the rule, timing's pairing stands"
 
 
 # ---- the octave ------------------------------------------------------------------

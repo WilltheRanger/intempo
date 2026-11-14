@@ -206,10 +206,14 @@ def _take(left_out: tuple[int, ...]) -> tuple[list[int], int]:
 
 
 def _without_the_chains_one_note_rule(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Since 2026-11-14 the chain re-pairs the first of these takes on its own
-    (`analysis._nothing_to_doubt`). Without that, the take still reaches this
-    rule the way it did before, so this rule is tested on its own."""
+    """Since 2026-11-14 the chain re-pairs the first of these takes on its own,
+    two ways (`analysis._nothing_to_doubt`, `analysis._timing_prefers_the_chain`).
+    Without them, the take still reaches this rule the way it did before, so
+    this rule is tested on its own."""
     monkeypatch.setattr(analysis, "_nothing_to_doubt", lambda candidate, quality: False)
+    monkeypatch.setattr(
+        analysis, "_timing_prefers_the_chain", lambda candidate, timed, quality: False
+    )
 
 
 @pytest.mark.parametrize("left_out", [(4, 5), (9, 10)])
