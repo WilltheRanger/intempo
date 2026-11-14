@@ -6,6 +6,35 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (moving beat, third) — The moving local beat, measured on `1740049`: not switched. No thresholds changed.
+
+Measured a third time, on the head that reads a stretch's level from all six of
+its notes (`e26640d`) and gives an attack beside a hole to its note
+(`1740049`). Neither of those depends on the re-anchor. The level is not read
+at all under a moving beat, and the hole repair works on the pairing either
+way. So this asks whether, with them, the moving beat now clears 99% on
+synthesis without the cost on real playing:
+
+| | re-anchored pulse (`1740049`) | moving local beat |
+|---|---|---|
+| synthetic, overall | 97.71% | 98.96% |
+| synthetic, notes | 96.28% | 98.80% |
+| synthetic, bars | 96.39% | 98.19% |
+| synthetic, verdict | 178 of 180 | 175 of 180 |
+| real, colour agreement | 75.48% | 68.25% |
+| real, verdict true | 66 of 72 | 54 of 72 |
+
+It does neither. Synthesis stops just short of 99%. On real playing,
+true sentences fall from 66 to 54 of 72 and colour agreement by 7 points, as
+before. By instrument the saxophone falls 8 → 3 of 11, violin 32 → 26 of 34
+and cello 11 → 9 of 11, while the viola rises 12 → 13 of 13. The re-anchored
+pulse stays, and the question stays the owner's.
+
+On synthesis, most of what is left under the re-anchored pulse is the
+re-anchor's cliff (`(the level)` below): 8 of the 9 takes it touches sit at
+the limit's floor in both readings, where one interval a few tenths of a
+millisecond either side decides a whole stretch.
+
 ## 2026-11-14 (holes) — An attack beside a note reported missing is given to it by its pitch and its place: new `analysis._beside_a_hole`, `HOLE_MIN_GAP_S = 0.1`
 
 **Old behaviour:** the final pairing was timing's (or the chain's) as it came.
