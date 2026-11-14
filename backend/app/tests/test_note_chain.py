@@ -114,6 +114,27 @@ def test_an_extra_attack_is_left_out_of_the_chain() -> None:
     )
 
 
+def test_a_held_note_bowed_again_is_paired_at_its_first_attack() -> None:
+    """**A note begins once.** A cellist holding a note swells it or changes
+    bow inside it, and each is an attack at the note's own pitch. Pitch alone
+    cannot say which of them is the note, and the chain took the last. On
+    URMP's Jupiter cello part (2026-11-13) that was 126 attacks for 54 notes:
+    every note was paired near its end, and 49 of the 54 sat more than 100 ms
+    from their label. A note begins at its first attack at that pitch; the
+    rest are the note going on (`alignment._first_attacks`)."""
+    written = ["D3", "E3", "C#3", "D3"]
+    heard = ["D3", "D3", "D3", "E3", "E3", "C#3", "C#3", "D3"]
+    detected = np.array([0.0, 0.35, 0.7, 1.0, 1.4, 2.0, 2.5, 3.0])
+    anchored = align_chain(
+        detected,
+        np.arange(len(written), dtype=float),
+        _same_pitch(heard, written),
+        target_bpm=60.0,
+        config=CFG,
+    )
+    assert anchored.alignment.mapping == [(0, 0), (3, 1), (5, 2), (7, 3)]
+
+
 def test_a_note_not_played_is_skipped() -> None:
     assert _chain(["C", "D", "F"], ["C", "D", "E", "F"]) == [(0, 0), (1, 1), (2, 3)]
 

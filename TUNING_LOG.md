@@ -6,6 +6,73 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 — The note chain pairs a held note at its first attack: new `alignment.HELD_NOTE_SPAN = 1.25`
+
+**Old behaviour:** `alignment.align_chain` kept the pairing `_chain_path` chose.
+Where several attacks matched a note's pitch, each choice cost the same, and
+the walk back from the end paired the *last* of them. **New:**
+`_first_attacks` moves each pairing back along the unbroken run of attacks
+before it that are heard at the note's pitch, and stops at the first of them.
+It goes no further than the previous pairing and no further than
+`HELD_NOTE_SPAN` of the note's written length at the take's pace. It does not
+move where the note before has the same pitch. It runs after both of the
+chain's passes, so the second pass reads the take's pace from where the notes
+began.
+
+**Why.** On the real URMP takes the cello was the weakest instrument by far,
+and four cello parts held most of the gross errors. Jupiter's cello had 49 of
+54 notes paired more than 100 ms from their label, and the app reported the
+take as read. The player holds each note and swells it or changes bow inside
+it, so each note carries two to four attacks at its own pitch: 126 attacks
+for 54 notes. A note begins at its first attack at its pitch.
+
+**Two narrower versions were measured first.**
+- *Breaking `_chain_path`'s tie toward the earlier attack.* It gained nearly
+  as much, but it also took a passage played again at its first playing,
+  which hides the replay that `analysis._replay_break` looks for.
+  `test_the_last_bars_played_again_are_read_as_played_again` failed.
+- *Moving back without the repeated-pitch condition.* That cost the violin
+  parts more than it gained: 89.68 → 89.45% placed. On a repeated pitch, the
+  earlier attack is often the note before, bowed again.
+
+### Real takes (all 61 tracks, against the labels)
+
+| | before | after |
+|---|---|---|
+| placed ≤ 50 ms | 10,647 (85.51%) | 10,770 (86.51%) |
+| paired ≤ 100 ms | 11,598 (93.15%) | 11,747 (94.35%) |
+| bar tempo | 2,116 (64.41%) | 2,181 (66.39%) |
+| colour as the oracle's | 9,317 (74.83%) | 9,244 (74.25%) |
+| oracle: notes, 12 ms / bars / verdict | 1,998 / 452 / 49 | 2,033 / 462 / 51 |
+
+| | placed | paired | bar tempo |
+|---|---|---|---|
+| violin | 89.68 → 90.09% | 95.34 → 95.79% | 70.11 → 71.72% |
+| viola | 84.64 → 84.90% | 95.09 → 95.53% | 67.09 → 67.56% |
+| cello | 70.67 → 75.13% | 81.29 → 86.69% | 38.26 → 43.96% |
+| double bass | unchanged | unchanged | unchanged |
+
+- Jupiter's cello part now places 33 of 54 notes within 50 ms (was 4), and
+  colours 52 as the oracle does (was 41).
+- Three takes place fewer notes, by one to three each.
+- Two verdicts went from wrong to right, both K515 parts.
+
+**Colour fell while placement rose.** It fell by 34 on `32_Fugue/4_vc`, whose
+placement went 108 → 125, and by 20 on `36_Rondeau/4_vc`, whose placement
+went 79 → 95. A take paired differently re-anchors its pulse at different
+notes, and every later note's colour moves with each re-anchor. That is the
+open re-anchor question below, not this change.
+
+### Synthetic benchmark (180 takes)
+
+97.18% → 97.20%. `double_bass/bowed/84/drag/noise/1132` gained two notes and a
+bar. Two other bass takes changed only in how far off notes that were already
+wrong are.
+
+### Regression across the six fixtures
+
+All six are identical to the committed code.
+
 ## 2026-11-13 (real recordings) — Slurred notes found by their pitch: new `[onset.recovery] pitch_hold_ms = 45.0`, `pitch_tolerance_st = 0.6`, `pitch_lag_ms = 16.0`
 
 **The first measurement against real recordings.** Every number above this

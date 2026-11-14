@@ -2283,6 +2283,73 @@ def _where_the_chain_puts(
     return pace * expected + np.interp(expected, written, level)
 
 
+#: How far before the attack the chain paired a note with an earlier one at
+#: the note's own pitch may lie and still be where that note began: this many
+#: of the note's written lengths, at the take's pace.
+HELD_NOTE_SPAN = 1.25
+
+
+def _first_attacks(
+    path: list[tuple[int, int]],
+    detected: np.ndarray,
+    expected: np.ndarray,
+    pitch: np.ndarray,
+    heard_at: float,
+) -> list[tuple[int, int]]:
+    """Each pairing moved back to the first attack of its own note.
+
+    **A note begins once.** A cellist holding a note swells it or changes bow
+    inside it, and each is an attack at the note's own pitch. Pitch cannot say
+    which of them is the note, they all cost the chain the same, and
+    `_chain_path` walks back from the end, so it paired the last: on URMP's
+    Jupiter cello part (2026-11-13), 126 attacks for 54 notes, every note was
+    paired near its end and 49 of the 54 sat more than 100 ms from their label.
+
+    So a pairing heard at its pitch (`heard_at`) moves back along the unbroken
+    run of attacks before it that are heard at the same pitch, as far as
+    `HELD_NOTE_SPAN` of the note's written length at the take's pace, and no
+    further than the previous pairing. That is inside the note. Where the page
+    repeats a pitch it does not move: an earlier attack at that pitch may be
+    the note before, bowed again — measured, sliding there cost the violin
+    parts more placements than it gained. A passage played again begins a
+    whole passage earlier, so its pairing stays where the chain put it, and
+    `analysis._replay_break` finds it there.
+    """
+    if len(path) < 2:
+        return path
+    played = np.diff([float(detected[d]) for d, _ in path])
+    written = np.diff([float(expected[e]) for _, e in path])
+    usable = written > 0
+    pace = float(np.median(played[usable] / written[usable])) if usable.any() else 1.0
+    if not np.isfinite(pace) or pace <= 0:
+        pace = 1.0
+    out: list[tuple[int, int]] = []
+    previous = -1
+    for d, e in path:
+        first = d
+        if pitch[d, e] <= heard_at:
+            if e + 1 < expected.size:
+                length = float(expected[e + 1] - expected[e])
+            else:
+                length = float(expected[e] - expected[e - 1]) if e > 0 else 0.0
+            reach = HELD_NOTE_SPAN * pace * max(length, 0.0)
+            c = d - 1
+            while (
+                c > previous
+                and pitch[c, e] <= heard_at
+                # Not an attack the note before could have made: where the
+                # page repeats a pitch, an earlier attack at it may be that
+                # note bowed again rather than this one beginning.
+                and (e == 0 or pitch[c, e - 1] > heard_at)
+                and float(detected[d] - detected[c]) <= reach
+            ):
+                first = c
+                c -= 1
+        out.append((first, e))
+        previous = d
+    return out
+
+
 def align_chain(
     detected: np.ndarray,
     expected: np.ndarray,
@@ -2344,7 +2411,13 @@ def align_chain(
     skip_note = np.where(skippable, CHAIN_SKIP_OPTIONAL, CHAIN_SKIP) - (
         CHAIN_LATE_SKIP_DISCOUNT * np.arange(expected.size) / max(expected.size - 1, 1)
     )
-    path = _chain_path(pitch, CHAIN_SKIP, skip_note, passage=passage)
+    path = _first_attacks(
+        _chain_path(pitch, CHAIN_SKIP, skip_note, passage=passage),
+        detected,
+        expected,
+        pitch,
+        cfg.pitch.confirm_mismatch,
+    )
 
     heard = [(d, e) for d, e in path if pitch[d, e] <= cfg.pitch.confirm_mismatch]
     if len(heard) >= 2:
@@ -2356,11 +2429,17 @@ def align_chain(
         played_gap = typical_gap(np.diff(np.array([detected[d] for d, _ in heard])))
         if played_gap > 0:
             away = np.abs(detected[:, None] - placed[None, :]) / played_gap
-            path = _chain_path(
-                pitch + CHAIN_TIME_WEIGHT * np.minimum(away, 1.0),
-                CHAIN_SKIP,
-                skip_note,
-                passage=passage,
+            path = _first_attacks(
+                _chain_path(
+                    pitch + CHAIN_TIME_WEIGHT * np.minimum(away, 1.0),
+                    CHAIN_SKIP,
+                    skip_note,
+                    passage=passage,
+                ),
+                detected,
+                expected,
+                pitch,
+                cfg.pitch.confirm_mismatch,
             )
     if not path:
         return empty

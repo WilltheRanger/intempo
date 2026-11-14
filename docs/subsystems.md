@@ -2140,7 +2140,7 @@ nothing else covers `backend/`. Named here rather than left to be found.
 
 `tools/eval/real_takes.py` reads URMP's 61 string tracks. Each part was
 recorded alone by a student player, with its score and a hand-checked onset
-and pitch for every note. Five things it taught, each of which cost a wrong
+and pitch for every note. Six things it taught, each of which cost a wrong
 number first:
 
 - **A dataset's truth needs the same scrutiny as the pipeline's output.**
@@ -2163,6 +2163,12 @@ number first:
   where a left-out note belongs, the search finds a vibrato peak there. The
   single line's inaccuracy had been protecting against that by accident.
   `TUNING_LOG.md` has both measurements.
+- **A held note is not one attack.** A cellist swells a long note or
+  changes bow inside it, which gives two to four attacks at its pitch. The
+  pitch chain took the last of them, and one cello part had 49 of 54 notes
+  paired near their ends. `alignment._first_attacks` moves each pairing back
+  to the first. It does not touch a repeated pitch or a passage played
+  again, because there an earlier attack can belong to something else.
 - **The pulse re-anchor is the least stable rule on real playing.** On a take
   with rubato the app and the oracle re-anchor at different notes, and every
   later note's colour moves with each one. Colours agree 91% where neither
