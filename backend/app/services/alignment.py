@@ -2178,10 +2178,23 @@ CHAIN_SKIP = 0.6
 #: under one bow. Skipping one says nothing about the take.
 CHAIN_SKIP_OPTIONAL = 0.05
 
-#: What an attack a whole played gap from where the chain puts its note costs,
-#: on top of its pitch; saturated there. Only breaks ties the pitch cannot — a
-#: run of one repeated pitch with a note missed or doubled in it — so it is a
-#: fraction of `CHAIN_SKIP`: the right pitch in the wrong place still pairs.
+#: What an attack costs, on top of its pitch, for each played gap it sits from
+#: where the chain puts its note. Within a gap or so it only breaks ties the
+#: pitch cannot — a run of one repeated pitch with a note missed or doubled in
+#: it — so it is a fraction of `CHAIN_SKIP`, and the right pitch a little out
+#: of place still pairs.
+#:
+#: **Not saturated** (2026-11-14). It was held at one gap's worth, so an
+#: attack four gaps away cost no more than one a gap away, and the right pitch
+#: anywhere paired. Unsaturated, an attack four gaps away costs what leaving it
+#: and the note both unpaired does (2 × `CHAIN_SKIP`), and further away it is
+#: worse. On the 72 real takes, paired went 95.27 → 95.57%, placed
+#: 82.83 → 83.11% and band 74.89 → 75.54%. Most of the gain was in K515's cello
+#: part, 276 → 297 notes paired within 100 ms of their labels, and Maria's,
+#: 325 → 332. The synthetic set and the six fixtures did not move. A cap at
+#: two gaps gave half that, and a cap at five gave the same. A breath 3.8 s
+#: after Jerusalem's last B4, about three gaps from where that note belongs,
+#: is still paired as it.
 CHAIN_TIME_WEIGHT = 0.3
 
 #: How much less leaving out the last written note costs than the first,
@@ -2686,7 +2699,7 @@ def align_chain(
             path = _runs_by_spacing(
                 _first_attacks(
                     _chain_path(
-                        pitch + CHAIN_TIME_WEIGHT * np.minimum(away, 1.0),
+                        pitch + CHAIN_TIME_WEIGHT * away,
                         CHAIN_SKIP,
                         skip_note,
                         passage=passage,

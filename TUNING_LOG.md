@@ -6,6 +6,44 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (the chain's time cost) — No longer saturated at one played gap: `alignment.CHAIN_TIME_WEIGHT × min(away, 1)` → `CHAIN_TIME_WEIGHT × away`
+
+**Old behaviour:** in the chain's second pass, an attack cost
+`CHAIN_TIME_WEIGHT` (0.3) per played gap it sat from where the chain puts its
+note, on top of its pitch, saturated at one gap. An attack four gaps out
+cost no more than one a gap out, so the right pitch anywhere paired. **New:**
+not saturated. At four gaps an attack costs what leaving it and the note both
+unpaired does (2 × `CHAIN_SKIP` = 1.2), and further away it costs more. Where
+the chain puts a note is read from the take's pace and a running median of
+the paired notes' offsets (`_where_the_chain_puts`), so one far pairing
+cannot move it.
+
+**Swept on the 72 real takes** (scored with the timing-aware label pairing),
+by where the cost stops growing:
+
+| saturated at | heard | placed (50 ms) | paired (100 ms) | band | bar tempo | verdict true |
+|---|---|---|---|---|---|---|
+| 1 gap (before) | 97.84% | 82.83% | 95.27% | 74.89% | 71.39% | 66 |
+| 2 gaps | 97.90% | 82.95% | 95.38% | 75.18% | 71.91% | 66 |
+| 3 gaps | 97.90% | 83.10% | 95.56% | 75.50% | 71.89% | 66 |
+| 5 gaps | 97.92% | 83.11% | 95.57% | 75.54% | 71.94% | 66 |
+| never (kept) | 97.92% | 83.11% | 95.57% | 75.54% | 71.94% | 66 |
+
+The gain is smooth in the cap and stops by five gaps, so it is not one lucky
+value. Most of it is in K515's cello part, 276 → 297 notes paired within
+100 ms of their labels and 6 more heard, and Maria's cello, 325 → 332. A few
+takes give a note back where the right pitch really was played far from its
+place, such as Rejouissance's saxophone, 3 fewer paired. Every verdict is
+the same; three sentences are reworded and still true.
+
+It does not fix Jerusalem's saxophone. The breath paired as its last B4 is
+about three gaps from where that note belongs, under the four at which
+leaving both out becomes cheaper.
+
+The synthetic benchmark (97.31%) and the six fixtures are unchanged at every
+cap. `test_the_right_pitch_far_from_its_place_is_not_its_note`
+(`test_note_chain.py`) fails on the saturated cost.
+
 ## 2026-11-14 (the labels' pairing) — The real-take scorer breaks a tie between equal pitches by timing. The app is unchanged.
 
 **What changed is the measuring stick, not the app.** `real_takes.py` pairs

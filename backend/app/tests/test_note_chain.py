@@ -135,6 +135,30 @@ def test_a_held_note_bowed_again_is_paired_at_its_first_attack() -> None:
     assert anchored.alignment.mapping == [(0, 0), (3, 1), (5, 2), (7, 3)]
 
 
+def test_the_right_pitch_far_from_its_place_is_not_its_note() -> None:
+    """**An attack more than four played gaps from where its note belongs is
+    something else** (`CHAIN_TIME_WEIGHT`, unsaturated 2026-11-14). The page
+    ends on two B4s, the player holds them as one, and a sound 5 s after the
+    last attack still reads B4. With the time cost saturated at one gap, it
+    cost the chain no more than an attack slightly late, and it was paired as
+    the last note. Unsaturated, it is left out. On URMP's real takes that
+    added up to 21 more notes paired within 100 ms of their labels in K515's
+    cello part alone."""
+    written = ["C4", "D4", "E4", "F4", "G4", "A4", "B4", "B4"]
+    heard = ["C4", "D4", "E4", "F4", "G4", "A4", "B4", "B4"]
+    detected = np.array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 12.0])
+    anchored = align_chain(
+        detected,
+        np.arange(len(written), dtype=float),
+        _same_pitch(heard, written),
+        target_bpm=60.0,
+        config=CFG,
+    )
+    mapping = anchored.alignment.mapping
+    assert all(detected[d + anchored.trimmed_lead] < 7.0 for d, _ in mapping), mapping
+    assert [e for _, e in mapping][:6] == [0, 1, 2, 3, 4, 5]
+
+
 def test_a_note_not_played_is_skipped() -> None:
     assert _chain(["C", "D", "F"], ["C", "D", "E", "F"]) == [(0, 0), (1, 1), (2, 3)]
 
