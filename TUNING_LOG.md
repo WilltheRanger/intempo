@@ -6,6 +6,34 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (moving beat, again) — The moving local beat, measured on the current code: not switched. No thresholds changed.
+
+The moving local beat measures each note against the median of the offsets
+within ±2 beats, in place of the re-anchored pulse, for the app and the
+perfect reading alike (`scratchpad` prototype, as before). It was measured
+once early on 2026-11-14 and left as the owner's question. Since then the
+pairing, the trust rule and the verdict rules have all changed, so it was
+measured again on this branch's head:
+
+| | re-anchored pulse (today) | moving local beat |
+|---|---|---|
+| synthetic, overall | 97.31% | 98.82% |
+| synthetic, notes | 95.67% | 98.70% |
+| synthetic, bars | 95.62% | 97.92% |
+| synthetic, verdict | 178 of 180 | 174 of 180 |
+| real, band | 73.46% | 67.98% |
+| real, verdict true | 65 of 72 | 54 of 72 |
+
+On synthesis it nearly closes the gap to 99%, because most of what is left
+there is the re-anchor flipping on a hesitation at its threshold. On real
+playing it is worse on both of the measures a player reads. Measured against
+a beat that follows them, a rubato player's notes all sit near zero, and so
+near the inner band's edge, where a few milliseconds change a note's colour
+and the note rule's run with it. Eleven true sentences become false. The
+re-anchored pulse stays. What a note's colour should mean for a player who
+shapes every phrase is still the owner's question; these are the numbers
+for it.
+
 ## 2026-11-14 (the end of a take) — The room after the last note, paired as it: measured, not kept. No thresholds changed.
 
 **The case.** Jerusalem's saxophone ends on two written B4s, played as one.
