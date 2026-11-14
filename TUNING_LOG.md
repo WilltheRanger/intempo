@@ -6,6 +6,30 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (last) — The re-anchor floor, measured for the owner. No thresholds changed.
+
+The pulse re-anchors after a run of intervals that departs from the take's
+habit by more than `[tolerance.pulse] disturbance_floor_beats` (or six robust
+deviations, whichever is larger). On real playing with rubato that threshold
+is where the app and the oracle most often part company. Measured with
+`--set tolerance.disturbance_floor_beats=…`, nothing else changed:
+
+| floor | real: colour as the oracle's | real: verdicts | synthetic overall | synthetic verdicts |
+|---|---|---|---|---|
+| **0.1667 (now)** | **73.97%** | **50 of 61** | **97.20%** | **180 of 180** |
+| 0.25 | 74.97% | 50 of 61 | 97.27% | 176 of 180 |
+| 0.5 | 80.87% | 50 of 61 | 97.51% | 175 of 180 |
+
+At half a beat, the colours on real takes agree with a perfect reading's
+seven points more often, and per-note timing on synthesis improves. But a
+hesitation under half a beat no longer resets the beat, so the notes after it
+read as late, and five synthetic verdicts go wrong.
+
+That is the trade the 2026-09 rule was written to settle ("hesitating is a
+*step*… reporting it as 'every bar after this one dragged' is false"), and
+real phrasing sits close to its line. Which way to move it is the owner's
+call. The numbers above are for that decision; nothing is changed here.
+
 ## 2026-11-14 (later) — The legato look's own level floor: new `[onset.recovery] pitch_min_level_db = 3.0`
 
 **Old value:** a note found by its pitch had to sound `min_level_db` (10 dB)
