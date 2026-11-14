@@ -21,11 +21,16 @@ import {
 import { signOut } from '../../data/auth/session';
 import { useMe } from '../../data/hooks/useMe';
 import { useUpdateProfile, useUploadAvatar } from '../../data/hooks/useProfile';
-import type { Musician } from '../../data/types';
 import { preferences, usePreferences } from '../../data/preferences';
+import { describeFreeTakesLeft } from '../../lib/analysisAllowance';
 import type { Instrument, MetronomeMode } from '../../data/types';
 import { describeLoadError } from '../../data/describeLoadError';
-import { HEADPHONES_WARNING, metronomeChoices } from '../../lib/record/metronomeChoice';
+import { DEVICE_TAPS_ON_BEAT } from '../../lib/hapticsSupport';
+import {
+  DEVICE_CANNOT_TAP,
+  HEADPHONES_WARNING,
+  metronomeChoices,
+} from '../../lib/record/metronomeChoice';
 import {
   ProfilePhotoSaveError,
   saveProfilePhoto,
@@ -38,6 +43,7 @@ import {
   ICON_STROKE_WIDTH,
   spacing,
 } from '../../design';
+import { ROW_PADDING_VERTICAL } from '../../components/rowMetrics';
 import { formatTier } from '../../lib/format';
 import type { RootNavigation } from '../../navigation/types';
 import { AccountRow } from './AccountRow';
@@ -105,7 +111,7 @@ export function ProfileScreen() {
       setPhotoError(
         cause instanceof Error
           ? cause.message
-          : 'That profile picture could not be saved. Try again.',
+          : 'Couldn’t save your profile picture. Try again.',
       );
     }
   }
@@ -147,7 +153,7 @@ export function ProfileScreen() {
       setConsentError(
         cause instanceof Error
           ? cause.message
-          : 'That privacy setting could not be saved. Try again.',
+          : 'Couldn’t save that setting. Try again.',
       );
     }
   }
@@ -171,18 +177,18 @@ export function ProfileScreen() {
 
   if (load === 'loading') {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{}}>
         <PageHeader title="Profile" />
         <LoadingState />
       </ScreenContainer>
     );
   }
 
-  const usage = describeUsage(musician?.usage ?? null);
+  const usage = describeFreeTakesLeft(musician?.usage ?? null);
 
   if (load === 'unavailable' || !musician) {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{}}>
         <PageHeader title="Profile" />
         <EmptyState
           fill
@@ -197,7 +203,7 @@ export function ProfileScreen() {
   }
 
   return (
-    <ScreenContainer>
+    <ScreenContainer navigationBar={{}}>
       <PageHeader title="Profile" />
 
       {/*
@@ -313,7 +319,7 @@ export function ProfileScreen() {
           by it right after playing something. Absent for unlimited tiers and
           when the server did not report it — "unknown" is not "unlimited".
         */}
-        {usage ? <AccountRow label="Analyses" value={usage} /> : null}
+        {usage ? <AccountRow label="Free takes" value={usage} /> : null}
         {/*
           The studio's name is not on `/v1/me`, only its id, which means
           nothing to the person reading it. The membership, and nothing for
@@ -343,13 +349,18 @@ export function ProfileScreen() {
         <SegmentedControl
           label="Metronome"
           kind="setting"
-          options={METRONOME_OPTIONS}
+          options={metronomeOptions(settings.metronomeMode)}
           value={settings.metronomeMode}
           onChange={(mode: MetronomeMode) => preferences.setMetronomeMode(mode)}
         />
         {settings.metronomeMode === 'audio_with_headphones' ? (
           <Text variant="metadataSmall" color="textTertiary" style={styles.settingCaveat}>
             {HEADPHONES_WARNING}
+          </Text>
+        ) : null}
+        {settings.metronomeMode === 'haptic' && !DEVICE_TAPS_ON_BEAT ? (
+          <Text variant="metadataSmall" color="textTertiary" style={styles.settingCaveat}>
+            {DEVICE_CANNOT_TAP}
           </Text>
         ) : null}
       </View>
@@ -478,10 +489,11 @@ const BADGE_SIZE = 26;
  * the drift the segmented control cannot show you: it would simply be missing
  * an option, on the screen a musician was sent to to find it.
  */
-const METRONOME_OPTIONS = metronomeChoices().map(({ mode, label }) => ({
-  value: mode,
-  label,
-}));
+function metronomeOptions(current: MetronomeMode) {
+  return metronomeChoices({ canTapOnBeat: DEVICE_TAPS_ON_BEAT, current }).map(
+    ({ mode, label }) => ({ value: mode, label }),
+  );
+}
 
 const styles = StyleSheet.create({
   pressed: {
@@ -497,14 +509,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.lg,
-    marginTop: 22,
+    marginTop: spacing['2xl'],
   },
   identityText: {
     flex: 1,
     minWidth: 0,
   },
   emailUnderName: {
-    marginTop: 3,
+    marginTop: spacing['2xs'],
   },
   identityEmail: {
     flexShrink: 1,
@@ -534,7 +546,7 @@ const styles = StyleSheet.create({
    * of related facts; a lone control with a note above it does not.
    */
   setting: {
-    paddingVertical: 14,
+    paddingVertical: ROW_PADDING_VERTICAL,
     borderTopWidth: BORDER_WIDTH,
     borderTopColor: colors.border,
   },
@@ -543,7 +555,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 0,
   },
   settingTitle: {
-    marginBottom: 10,
+    marginBottom: spacing.sm,
   },
   /**
    * The camera badge on the avatar.
@@ -595,18 +607,3 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
 });
-
-/**
- * "2 of 3 this month", or null when there is nothing true to say.
- *
- * Null for an unlimited tier — a row reading "unlimited" on an account that
- * simply has no quota is noise — and null when the server didn't report usage
- * at all, since that means the count is unknown and printing anything would
- * invent it.
- */
-function describeUsage(usage: Musician['usage']): string | null {
-  if (!usage || usage.limit === null) {
-    return null;
-  }
-  return `${usage.used} of ${usage.limit} this month`;
-}

@@ -9,7 +9,8 @@ import { describePickedTake } from '../../lib/record/pickedTake';
  *
  * One place for it, because two screens open it: Record's ⋮ menu, which must
  * call it straight from the tap (a browser refuses a file picker that was not
- * opened by one), and the Upload screen's "Choose a different file".
+ * opened by one), and the Upload screen's file row and its "Choose a recording"
+ * button.
  *
  * `describePickedTake` is the rule — which formats, how large — and is tested;
  * this is only the picker's plumbing around it.
@@ -34,7 +35,7 @@ export async function chooseAudioFile(): Promise<ChosenFile> {
     }
     asset = result.assets?.[0];
   } catch {
-    return { kind: 'failed', message: 'That file could not be opened. Try choosing it again.' };
+    return { kind: 'failed', message: 'Couldn’t open that file. Try choosing it again.' };
   }
   if (!asset) {
     return { kind: 'failed', message: 'Nothing was selected.' };
@@ -52,7 +53,7 @@ export async function chooseAudioFile(): Promise<ChosenFile> {
     // a URI, and `expo-file-system`'s `File` is what `fetch` can upload.
     audio = asset.file ?? (new FSFile(asset.uri) as unknown as Blob);
   } catch {
-    return { kind: 'failed', message: 'That file could not be read. Try choosing it again.' };
+    return { kind: 'failed', message: 'Couldn’t read that file. Try choosing it again.' };
   }
 
   return {

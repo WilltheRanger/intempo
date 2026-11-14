@@ -46,6 +46,15 @@ export function takeRowIsVerdict(take: TakeResult): boolean {
 }
 
 /**
+ * The title of a take too hard to hear to time, on its result and its row.
+ *
+ * It was "Timing is uncertain" over "Hard to hear. Try a quieter room…": the
+ * heading and the line under it each gave the cause, in different words (the
+ * UI review, 2026-11-12). The title says what happened and the line what to do.
+ */
+export const LOW_CONFIDENCE_TITLE = 'Hard to hear this take';
+
+/**
  * A row's title: the take's own result title as a label ("Rushed in the
  * middle", "Held the tempo") — the words its result opens with — or the
  * heading of a take that gave no reading. Replaced the sentence under the
@@ -54,7 +63,7 @@ export function takeRowIsVerdict(take: TakeResult): boolean {
  */
 export function takeRowTitle(take: TakeResult): string {
   if (!takeRowIsVerdict(take)) return takeRowWords(take);
-  if (take.lowConfidence) return 'Timing is uncertain';
+  if (take.lowConfidence) return LOW_CONFIDENCE_TITLE;
   return asLabel(formatTakeVerdict(take.measures, take.direction));
 }
 

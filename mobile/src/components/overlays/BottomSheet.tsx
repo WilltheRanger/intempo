@@ -4,14 +4,17 @@ import {
   Modal,
   PanResponder,
   Platform,
+  Pressable,
   StyleSheet,
   View,
+  useWindowDimensions,
   type LayoutChangeEvent,
+  type ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { X } from '../icons';
 
-import { colors, EASE_OUT, motion, radii, spacing, SPRING } from '../../design';
+import { colors, EASE_OUT, MIN_TOUCH_TARGET, motion, radii, spacing, SPRING } from '../../design';
 import {
   dragOffset,
   isDragGesture,
@@ -20,12 +23,20 @@ import {
   velocityFrom,
   type DragSample,
 } from '../../lib/motion/sheetDrag';
+import { recedesBehind } from '../../lib/motion/recede';
+import {
+  detentDragOffset,
+  mediumOffset,
+  settleDetent,
+  type Detent,
+} from '../../lib/motion/sheetDetents';
 import { settleVelocity } from '../../lib/motion/springHandoff';
 import { useReducedMotion } from '../../lib/useReducedMotion';
 import { IconButton } from '../primitives/IconButton';
 import { Text } from '../primitives/Text';
 import { DismissArea } from './DismissArea';
 import { useInertAppRoot, useReturnFocus } from './modalAccessibility';
+import { useRecede } from './RecedingSurface';
 import { useOverlayPresence } from './useOverlayPresence';
 
 export interface BottomSheetProps {
@@ -69,6 +80,16 @@ const ESTIMATED_HEIGHT = 320;
  * slide moves the backdrop with the sheet, so the dimming would fly in from
  * below instead of fading in place. Reduced motion collapses both to instant.
  */
+/**
+ * The grab area owns its touches on the web. Without it a drag that began on
+ * the handle could also scroll or bounce the page behind the sheet, which is
+ * the browser and the sheet both answering one finger (2026-11-12).
+ */
+const GRAB_AREA_WEB = Platform.select({
+  web: { touchAction: 'none' } as unknown as ViewStyle,
+  default: undefined,
+});
+
 export function BottomSheet({
   visible,
   onClose,
@@ -98,6 +119,22 @@ export function BottomSheet({
    * the threshold lives in a module with tests. See `sheetDrag.velocityFrom`.
    */
   const samplesRef = useRef<DragSample[]>([]);
+
+  /*
+    **A long sheet's two heights** (`lib/motion/sheetDetents.ts`, the owner,
+    2026-11-13). An `expand` sheet opens at half the window and the grab bar
+    takes it to the full height; `detent` is where it rests above that — the
+    medium offset, or nothing — and the finger's `drag` is on top of it. A
+    ref beside each, because the responder is created once and reads them.
+  */
+  const window = useWindowDimensions();
+  const detent = useRef(new Animated.Value(0)).current;
+  const detentRef = useRef(0);
+  const [at, setAt] = useState<Detent>('medium');
+  const atRef = useRef<Detent>('medium');
+  const offsetRef = useRef(0);
+  const offset = expand && sheetHeight > 0 ? mediumOffset(sheetHeight, window.height) : 0;
+  offsetRef.current = offset;
 
   const { mounted, progress } = useOverlayPresence(visible, reduceMotion, (value) => {
     // From nothing each time, or a sheet dismissed by a swipe reopens already
@@ -144,6 +181,32 @@ export function BottomSheet({
     }
     heightRef.current = next;
     setSheetHeight(next);
+    // A long sheet arrives at its medium height, every time it opens.
+    const rest = expand ? mediumOffset(next, window.height) : 0;
+    detent.setValue(rest);
+    detentRef.current = rest;
+    atRef.current = 'medium';
+    setAt('medium');
+  }
+
+  /** Settle a long sheet at one of its heights, from wherever it is now. */
+  function settleAt(target: Detent, from: number, vy = 0) {
+    const to = target === 'large' ? 0 : offsetRef.current;
+    detent.setValue(from);
+    drag.setValue(0);
+    detentRef.current = to;
+    atRef.current = target;
+    setAt(target);
+    if (reduceMotion) {
+      detent.setValue(to);
+      return;
+    }
+    Animated.spring(detent, {
+      toValue: to,
+      useNativeDriver: Platform.OS !== 'web',
+      ...SPRING,
+      velocity: settleVelocity(vy, { from, to }),
+    }).start();
   }
 
   useEffect(() => {
@@ -180,14 +243,38 @@ export function BottomSheet({
             [...samplesRef.current, { dy: gesture.dy, t: now }],
             now,
           );
-          drag.setValue(dragOffset(gesture.dy));
+          drag.setValue(
+            offsetRef.current > 0
+              ? detentDragOffset(gesture.dy, atRef.current, offsetRef.current)
+              : dragOffset(gesture.dy),
+          );
         },
         onPanResponderRelease: (_event, gesture) => {
           const height = heightRef.current;
           const vy = velocityFrom(samplesRef.current);
           samplesRef.current = [];
           const from = dragOffset(gesture.dy);
-          if (shouldDismiss({ dy: gesture.dy, vy, height })) {
+          // A long sheet settles at a height unless the drag closes it.
+          const detented =
+            offsetRef.current > 0
+              ? settleDetent({
+                  at: atRef.current,
+                  dy: gesture.dy,
+                  vy,
+                  offset: offsetRef.current,
+                  height,
+                })
+              : null;
+          if (detented === 'large' || detented === 'medium') {
+            settleAt(
+              detented,
+              detentRef.current +
+                detentDragOffset(gesture.dy, atRef.current, offsetRef.current),
+              vy,
+            );
+            return;
+          }
+          if (detented === 'dismiss' || shouldDismiss({ dy: gesture.dy, vy, height })) {
             const to = height || ESTIMATED_HEIGHT;
             // Carry the sheet the rest of the way, then hand over. Snapping
             // back to closed would throw away the continuity the drag just
@@ -213,13 +300,19 @@ export function BottomSheet({
               // nothing visible, where clamping makes a fast flick decelerate
               // into the edge it is supposed to be flying through.
               overshootClamping: false,
-            }).start(({ finished }) => {
-              // A spring that was interrupted — by the sheet being closed
-              // another way, or unmounted — must not also fire `onClose`.
-              if (finished) {
-                onClose();
-              }
-            });
+            }).start();
+            /*
+              **Closed on release, not when the spring settles.** `onClose`
+              waited for this spring's `finished`, and a spring's long settle
+              is most of a second after the sheet has left the screen: the
+              app root stayed `inert` until 1,341ms after a swipe, against
+              195ms for ✕, so the next tap on the page did nothing (measured,
+              2026-11-12). The sheet is gone as far as a thumb can tell the
+              moment it is let go. The spring carries on as the exit, and
+              `useInertAppRoot` still holds the root until the presence's own
+              exit ends, exactly as it does for ✕.
+            */
+            onClose();
             return;
           }
           Animated.spring(drag, {
@@ -240,7 +333,42 @@ export function BottomSheet({
           }).start();
         },
       }),
+    // `settleAt` reads only refs and stable values, so the responder made once
+    // stays right.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [drag, onClose, reduceMotion],
+  );
+
+  /*
+    **The screen behind, pushed back into a card** (`lib/motion/recede.ts`).
+    A long sheet does it as it rises from medium to the full height — none at
+    medium, all of it at the top, following the finger between — which is
+    UIKit's page sheet. A content-sized sheet does it only when it is tall,
+    with its rise and its drag, as the scrim fades.
+  */
+  const recedeDriver = useMemo(() => {
+    if (offset > 0) {
+      return Animated.multiply(
+        progress,
+        Animated.add(detent, drag).interpolate({
+          inputRange: [0, offset],
+          outputRange: [1, 0],
+          extrapolate: 'clamp',
+        }),
+      );
+    }
+    return Animated.multiply(
+      progress,
+      drag.interpolate({
+        inputRange: [0, sheetHeight || ESTIMATED_HEIGHT],
+        outputRange: [1, 0],
+        extrapolate: 'clamp',
+      }),
+    );
+  }, [detent, drag, offset, progress, sheetHeight]);
+  useRecede(
+    recedeDriver,
+    mounted && sheetHeight > 0 && (offset > 0 || recedesBehind(sheetHeight, window.height)),
   );
 
   if (!mounted) {
@@ -289,7 +417,7 @@ export function BottomSheet({
               // Nothing to see until it is known where the sheet is — see
               // `handleLayout`. One frame, and never more than a few.
               opacity: sheetHeight > 0 ? 1 : 0,
-              transform: [{ translateY: Animated.add(enterOffset, drag) }],
+              transform: [{ translateY: Animated.add(Animated.add(enterOffset, drag), detent) }],
             },
           ]}
         >
@@ -297,8 +425,23 @@ export function BottomSheet({
             The grab area: the handle and the title row together, so the target
             is a comfortable strip rather than a 4pt bar.
           */}
-          <View {...pan.panHandlers}>
-            <View style={styles.handle} />
+          <View {...pan.panHandlers} style={GRAB_AREA_WEB}>
+            {offset > 0 ? (
+              /*
+                **The grab bar of a long sheet also answers a tap**, as UIKit's
+                does: it takes the sheet to its other height.
+              */
+              <Pressable
+                onPress={() => settleAt(at === 'medium' ? 'large' : 'medium', detentRef.current)}
+                accessibilityRole="button"
+                accessibilityLabel={at === 'medium' ? 'Show more' : 'Show less'}
+                style={styles.handleTarget}
+              >
+                <View style={styles.handle} />
+              </Pressable>
+            ) : (
+              <View style={styles.handle} />
+            )}
 
             {title || showClose ? (
               <View style={styles.header}>
@@ -321,7 +464,11 @@ export function BottomSheet({
             Short sheets have nothing to scroll, so all of them drags.
           */}
           {expand ? (
-            <View style={styles.body}>{children}</View>
+            // At medium, the list ends where the sheet does on screen rather
+            // than under the bottom edge, so its last rows can be scrolled to.
+            <View style={[styles.body, { paddingBottom: at === 'medium' ? offset : 0 }]}>
+              {children}
+            </View>
           ) : (
             <View {...pan.panHandlers}>{children}</View>
           )}
@@ -353,7 +500,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
     borderTopLeftRadius: radii.sheet,
     borderTopRightRadius: radii.sheet,
-    paddingTop: 10,
+    paddingTop: spacing.sm,
     paddingHorizontal: spacing['2xl'],
   },
   expanded: {
@@ -364,6 +511,16 @@ const styles = StyleSheet.create({
   },
   body: {
     flex: 1,
+  },
+  // A touch target round the bar, at the floor's height, in the strip that
+  // already took the drag.
+  handleTarget: {
+    alignSelf: 'center',
+    minHeight: MIN_TOUCH_TARGET,
+    minWidth: MIN_TOUCH_TARGET * 2,
+    marginVertical: -(MIN_TOUCH_TARGET - spacing.xs) / 2,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   handle: {
     alignSelf: 'center',

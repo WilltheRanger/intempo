@@ -1,10 +1,10 @@
-import { useGoBack } from '../../navigation/useGoBack';
+import { useBackButton } from '../../navigation/useGoBack';
 import { useState } from 'react';
 import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 
 import { Stave } from '../../components/notation/Stave';
 import { TempoStepper } from '../../components/practice/TempoStepper';
-import { BackLink, ScreenContainer, Text } from '../../components/primitives';
+import { LargeTitle, ScreenContainer, Text } from '../../components/primitives';
 import { SCREEN_GUTTER } from '../../components/primitives/ScreenContainer';
 import {
   clampBpm,
@@ -33,7 +33,7 @@ import { ListenButton } from '../../components/score/ListenButton';
  * feature, not a placeholder for a Record button.
  */
 export function WarmupScreen() {
-  const goBack = useGoBack({ tab: 'Profile' });
+  const back = useBackButton({ tab: 'Profile' });
   const { instrument } = usePreferences();
 
   // The remembered tempo is keyed by piece id everywhere else; a warmup's id
@@ -55,7 +55,7 @@ export function WarmupScreen() {
   }
 
   return (
-    <ScreenContainer
+    <ScreenContainer navigationBar={{ back }}
       // The plate takes whatever height is left, so a short warmup fills the
       // screen with paper instead of leaving a band of ivory above the
       // controls. A long one scrolls, which is what `flexGrow` buys over a
@@ -79,18 +79,18 @@ export function WarmupScreen() {
         a chevron in a white disc, announced as "Back to today", a tab that no
         longer exists; no other pushed screen draws its way back as a disc.
 
-        "Warmup" is the eyebrow over the exercise, as Insights' count is over
-        its finding: the screen is the warmup, and which one changes daily.
+        "Warmup" is the kicker over the exercise, as Insights' count is over
+        its finding: the screen is the warmup, and which one changes daily. In
+        the app's one label register, sentence case (2026-11-12).
       */}
-      <View style={styles.nav}>
-        <BackLink label="Back to profile" onPress={goBack} />
-      </View>
-      <Text variant="eyebrow" color="textTertiary" style={styles.eyebrow}>
+      <Text variant="sectionLabel" color="textTertiary" style={styles.kicker}>
         Warmup
       </Text>
-      <Text variant="heroTitle" accessibilityRole="header">
-        {warmup.name}
-      </Text>
+      <LargeTitle text={warmup.name}>
+        <Text variant="heroTitle" accessibilityRole="header">
+          {warmup.name}
+        </Text>
+      </LargeTitle>
       <Text variant="metadataSmall" color="textSecondary" style={styles.focus}>
         {warmup.focus}
       </Text>
@@ -159,13 +159,9 @@ const styles = StyleSheet.create({
     // which is exactly the gap this layout exists to close.
     paddingBottom: 0,
   },
-  nav: {
-    paddingTop: spacing.md,
-  },
-  eyebrow: {
-    textTransform: 'uppercase',
-    marginTop: spacing.lg,
-    marginBottom: 6,
+  kicker: {
+    marginTop: spacing.sm,
+    marginBottom: spacing.xs,
   },
   focus: {
     marginTop: spacing.xs,

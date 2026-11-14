@@ -1,16 +1,15 @@
 import { useNavigation } from '@react-navigation/native';
 import { Camera, Images, Layers, Plus } from '../../components/icons';
-import { useGoBack } from '../../navigation/useGoBack';
+import { useBackButton } from '../../navigation/useGoBack';
 import { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet } from 'react-native';
 
 import { BottomSheet } from '../../components/overlays/BottomSheet';
 import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
 import { SheetOptionRow } from '../../components/overlays/SheetOptionRow';
 import {
   EmptyState,
-  BackLink,
-  PageHeader,
+  LargeTitle,
   PrimaryButton,
   ScreenContainer,
   SecondaryButton,
@@ -39,7 +38,7 @@ import { doubtfulCount, queueSummary } from '../../lib/scan/pageQueue';
  */
 export function CapturedPagesScreen() {
   const navigation = useNavigation<RootNavigation>();
-  const goBack = useGoBack({ tab: 'Library' });
+  const back = useBackButton({ tab: 'Library' });
   const photograph = usePageCamera();
   const pages = useCapturedPages();
   // A captured page can't be recovered — the photo is gone with it — and the
@@ -119,16 +118,14 @@ export function CapturedPagesScreen() {
   if (pages.length === 0) {
     const everHeld = captureSession.hasHeldPages();
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ back }}>
         {/*
           **No heading here, and one on the populated screen.** "Review pages"
           in full serif above "No pages yet" in serif is two headings, and the
           larger of them is about something that is not on the screen — two
           competing focal points, which §3 law 4 calls a hierarchy that is
           wrong. The empty state is the whole screen, so it is the title too.
-          The back row stays, for the touch-target reason `PageHeader` gives.
         */}
-        <PageHeader onBack={goBack} backLabel="Back" />
         {/*
           **Two empty states, because empty means two things.** A scan whose
           pages were all removed, and one that never had any — which is what a
@@ -193,7 +190,7 @@ export function CapturedPagesScreen() {
     // parked under the last row. Add page stays with the list: it belongs to
     // the pages, and it's the one action that shouldn't be easier to hit than
     // scrolling through what you've already captured.
-    <ScreenContainer
+    <ScreenContainer navigationBar={{ back }}
       footer={
         <PrimaryButton
           label={pages.length === 1 ? "Continue with 1 page" : `Continue with ${pages.length} pages`}
@@ -206,12 +203,11 @@ export function CapturedPagesScreen() {
         words and the title. The count is on the button at the bottom, which is
         where it is a promise ("Continue with 4 pages") rather than a caption.
       */}
-      <View style={styles.head}>
-        <BackLink label="Back" onPress={goBack} />
-        <Text variant="screenTitle" accessibilityRole="header" style={styles.title}>
+      <LargeTitle text="Review pages" style={styles.head}>
+        <Text variant="screenTitle" accessibilityRole="header">
           Review pages
         </Text>
-      </View>
+      </LargeTitle>
 
       {/*
         The caveat, only when there is one: a page worth another look before
@@ -300,11 +296,8 @@ export function CapturedPagesScreen() {
 
 const styles = StyleSheet.create({
   head: {
-    paddingTop: spacing.md,
+    paddingTop: spacing.sm,
     marginBottom: spacing['2xl'],
-  },
-  title: {
-    marginTop: spacing.xs,
   },
   hint: {
     marginTop: -spacing.md,

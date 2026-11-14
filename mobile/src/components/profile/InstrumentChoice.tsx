@@ -1,10 +1,11 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { BORDER_WIDTH, colors, spacing } from '../../design';
+import { radii, spacing } from '../../design';
 import type { Instrument } from '../../data/types';
 import { INSTRUMENT_GROUPS } from '../../lib/instrumentGroups';
 import { INSTRUMENT_LABELS } from '../../lib/warmup';
 import { Text } from '../primitives/Text';
+import { choiceTile } from '../primitives/choiceTile';
 
 /**
  * Choosing the instrument the app listens for, during onboarding.
@@ -16,10 +17,11 @@ import { Text } from '../primitives/Text';
  * each target a comfortable tap rather than a slice of a track — which is also
  * why Profile stopped using a switch for this (`InstrumentSheet`).
  *
- * Structure comes from hairline borders and the selected cell's ink, not from
- * elevation or fill — §3 law 6. Ochre would be the obvious choice for the
- * selection and is wrong here: it is an accent for progress and favourites,
- * never a surface (§3 law 5).
+ * Structure comes from hairline borders and the chosen cell's ink edge, not
+ * from elevation or fill — §3 law 6, and `choiceTile`, which is why the edge and
+ * not a fill of ink: the fill is Continue's. Ochre would be the obvious choice
+ * for the selection and is wrong here: it is an accent for progress and
+ * favourites, never a surface (§3 law 5).
  *
  * **The unselected cells sit on `surface`, not on the page.** A first pass
  * left them on the ivory ground with only a hairline, and the three-foot test
@@ -88,15 +90,13 @@ function Cell({
       accessibilityState={{ selected }}
       accessibilityLabel={name}
       style={({ pressed }) => [
+        choiceTile.surface,
         styles.cell,
-        selected && styles.selected,
-        pressed && !selected && styles.pressed,
+        selected && choiceTile.chosen,
+        pressed && choiceTile.pressed,
       ]}
     >
-      <Text
-        variant="pieceTitle"
-        color={selected ? 'actionText' : 'textPrimary'}
-      >
+      <Text variant="pieceTitle" color="textPrimary">
         {name}
       </Text>
     </Pressable>
@@ -104,7 +104,6 @@ function Cell({
 }
 
 const CELL_HEIGHT = 80;
-const CELL_RADIUS = 14;
 
 const styles = StyleSheet.create({
   laterGroup: {
@@ -118,7 +117,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     // The gap is the only separation. Borders on adjacent cells would double
     // up into a two-pixel rule between them.
-    gap: 10,
+    gap: spacing.md,
   },
   cell: {
     // Two per row, minus half the gap each. Not a fixed width: the same
@@ -133,16 +132,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.surface,
-    borderWidth: BORDER_WIDTH,
-    borderColor: colors.border,
-    borderRadius: CELL_RADIUS,
-  },
-  selected: {
-    backgroundColor: colors.actionBg,
-    borderColor: colors.actionBg,
-  },
-  pressed: {
-    backgroundColor: colors.surfacePressed,
+    // A choice, so `md` — never the button's capsule (`radii.ts`).
+    borderRadius: radii.md,
   },
 });

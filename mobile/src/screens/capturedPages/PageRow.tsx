@@ -256,7 +256,7 @@ const styles = StyleSheet.create({
     marginLeft: spacing.xs,
   },
   note: {
-    marginTop: 2,
+    marginTop: spacing['2xs'],
   },
   action: {
     width: MIN_TOUCH_TARGET,

@@ -65,10 +65,12 @@ They were not rewritten, for the reason §5 gives about pointers.
 The trade this accepts: nothing now enforces that a change is described. The
 commit message is the only record, so write it as one.
 
-Five Python checks run on every push, and a change that trips one is not
+Six Python checks run on every push, and a change that trips one is not
 merged: `check-brand-assets.py` (a new asset shipping as the Expo
 starter's, or a listed one drawn and its line now a false claim),
 `check-dead-exports.py` (a named export nothing else in the corpus references),
+`check-spacing.py` (a margin, padding or gap typed off the spacing scale, added
+2026-11-12),
 `check-dependencies.py` (npm and `pip-audit` advisories, added to CI
 2026-09-09), `check-migrations.py` (all migrations applied in order to an empty
 database) and `check-outbound-fetch.py` (an inventory of every place the backend
@@ -236,7 +238,8 @@ the user's rules, not suggestions to weigh against convenience.
 4. **One dominant focal point per screen.** Secondary information must visually
    recede. Two competing focal points means the hierarchy is wrong.
 5. **Consistent horizontal margins and a deliberate vertical spacing system.**
-   Spacing is a system, not a per-component guess.
+   Spacing is a system, not a per-component guess — `mobile/src/design/spacing.ts`,
+   held by `tools/check-spacing.py`.
 6. **Rounded containers, pills, gradients, shadows, borders and floating
    elements are exceptions, not the default styling language.** Reach for
    typography and spacing first. **The bottom navigation bar is the one

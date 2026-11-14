@@ -84,21 +84,46 @@ highpass_hz = 80.0
 # sound in the bottom two or three of 128 mel bands barely moves their mean.
 # It filters the waveform the tuning dashboard draws. See `audio.high_pass`.
 
+# `octave_below_ratio` and `octave_above_ratio`: when the pitch read after an
+# attack is moved an octave by its partials (`pitch_evidence.octave_checked`).
+# Below, where the odd partials of half the pitch reach this share of the
+# pitch's own; above, where the pitch's odd partials fall under this share of
+# its even ones. 0 is off. Swept at URMP's 15,212 labelled notes (2026-11-14,
+# TUNING_LOG.md): the viola read an octave high at 7.0% of them, and 0.2/0.15
+# put 133 right for 11 it put wrong. The cello's partials need the stricter
+# 0.5/0.25: at 0.2/0.15 it put 98 wrong for 19 right.
 [onset.instrument.violin]
 delta = 0.07
 highpass_hz = 0.0
+octave_below_ratio = 0.2
+octave_above_ratio = 0.15
 
 [onset.instrument.viola]
 delta = 0.07
 highpass_hz = 0.0
+octave_below_ratio = 0.2
+octave_above_ratio = 0.15
 
 [onset.instrument.cello]
 delta = 0.07
 highpass_hz = 0.0
+octave_below_ratio = 0.5
+octave_above_ratio = 0.25
 
 [onset.instrument.double_bass]
 delta = 0.05
 highpass_hz = 80.0
+# How many neighbouring bands the vibrato filter compares a bass's with, where
+# `[onset.envelope] vibrato_bands` is the rest's. A bass's partials sit 41–150
+# Hz apart, so above 600 Hz a vibrato swing reaches across more bands than a
+# violin's does. On the accuracy benchmark's 30 bowed bass takes: 92.1% →
+# 92.9%, attacks at no note 60 → 46; plucked, with no vibrato, unchanged.
+# Given to every instrument instead, violin, viola and cello all read worse
+# (96.72% overall against 97.06%); 7 read the bass no better. TUNING_LOG.md,
+# 2026-11-13.
+vibrato_bands = 5
+octave_below_ratio = 0.5
+octave_above_ratio = 0.25
 
 # The saxophones start where the treble strings did, and for the same reason:
 # it is the path an unknown instrument already took, so adding them changed no
@@ -109,6 +134,8 @@ highpass_hz = 80.0
 [onset.instrument.alto_sax]
 delta = 0.07
 highpass_hz = 0.0
+octave_below_ratio = 0.2
+octave_above_ratio = 0.15
 
 [onset.instrument.tenor_sax]
 delta = 0.07
@@ -148,6 +175,68 @@ floor_ratio = 0.015
 # at the floor, and a quiet note lost in a live room is still 30+ dB above it.
 # Ten is a margin in that gap, not a tuned point. See TUNING_LOG.md, 2026-09-22.
 min_level_db = 10.0
+# How far the level may fall across a recovered note, in dB: the loudest 70 ms
+# after it against the loudest 70 ms before. A note's release falls by tens of
+# decibels; an attack, even a quiet one under a louder note's tail, mostly
+# adds to the level. Measured: the two releases this rejects fell 29 and 30 dB;
+# the notes the pass recovers on the room takes of `test_degraded_audio.py`
+# sit between −8.6 and +2.5 dB, the falling ones where a tail decays under a
+# note 20 dB quieter. Twelve is a margin in that gap, not a tuned point. See
+# TUNING_LOG.md, 2026-11-13.
+max_fall_db = 12.0
+# The legato look: a note no attack marks, found where its written pitch takes
+# over in the pitch track (`onset_recovery.recover_by_pitch`). Under one bow a
+# player changes notes with the fingers alone, and on URMP's 61 real string
+# tracks 5.3% of the notes played were reported missing — three in four with
+# no attack within 110 ms, five in six a new pitch. See TUNING_LOG.md,
+# 2026-11-13, for every number below.
+#
+# How long the written pitch must hold, in ms. Four pitch frames. Swept on the
+# URMP labels: 35 ms finds 96.3% of the notes and finds a pitch that was never
+# played, between two that were, 1.8% of the time; 46 ms 95.4% and 1.2%;
+# 70 ms 93.5% and 0.6%.
+pitch_hold_ms = 45.0
+# How near the written pitch counts as it, in semitones: `pitch_evidence`'s
+# own "this is that note, played in or out of tune".
+pitch_tolerance_st = 0.6
+# How far after the pitch takes over an attack is placed, in ms, so a note
+# found this way sits on the same clock as every note found by its attack.
+# Measured against the URMP labels: attacks land a median 16.5 ms after the
+# labelled onset, pitch takeovers 0.3 ms after it (violin 14, viola and cello
+# 21, bass 28 ms apart).
+pitch_lag_ms = 16.0
+# How far above the take's own floor a note found by its pitch must sound, in
+# dB. Lower than the attack look's `min_level_db`, because a pitch held at the
+# written note for 45 ms is already the evidence of playing that the level
+# stands in for there; the floor is only to keep out the room. And the floor
+# is the take's quietest 5%, which in a piece played without rests lies inside
+# the music. Measured on the URMP candidates: 3–10 dB above it, 86–95% are at
+# a labelled onset, like those above 10 dB; below 3 dB, 2 of 10. See
+# TUNING_LOG.md, 2026-11-14.
+pitch_min_level_db = 3.0
+
+[onset.envelope]
+# What each frame of the onset envelope is compared with. See
+# `audio._band_floor` and `audio._vibrato_bands`, and TUNING_LOG.md,
+# 2026-11-13, for every number below.
+#
+# Each mel band is held at its own quiet level: this percentile of the band
+# across the take, plus the margin. A band that only ever holds the room is
+# then flat and adds no flux; a band a note reaches still rises from it.
+# Swept on the accuracy benchmark (`tools/eval/accuracy_bench.py`): 5th, 10th
+# and 20th percentiles land within 0.2 points of each other; a 3 dB margin
+# lets the flicker through (94.3%), 6 and 10 dB do not (95.4, 95.5%).
+floor_percentile = 10.0
+floor_margin_db = 6.0
+# Above this, a band is compared with the loudest of `vibrato_bands`
+# neighbouring bands a frame earlier, so a partial that only moved over is not
+# a rise. Below it the mel bands are 26 Hz apart, more than a semitone under
+# 450 Hz, and widening them hides the step to the next note: applied to every
+# band, a note played over a sounding one went unheard. From 400 Hz it still
+# was; from 500 Hz it was heard. 600 is the margin over that edge, and within
+# 0.2 points of 500 on the accuracy benchmark.
+vibrato_from_hz = 600.0
+vibrato_bands = 3
 
 [intake]
 # What an uploaded file has to be before the pipeline decodes it.
@@ -180,15 +269,52 @@ dragging_outer_pct = 20.0
 # the last notes. Longer than this, or half the take or more, and it is named
 # whole. The chart still draws every bar as played.
 settling_bars = 2
+# The least a run's tempo must differ from the target, in %, for the verdict
+# to quote it ("Bars 1–6 went at 100."). Nearer than this, a run that got
+# ahead of the beat or behind it is told so ("Bars 10–20 ran ahead."), as
+# one at exactly the tempo always was. The note rule exists for a take a few
+# percent off that the bars call on tempo, and its figures there are worth
+# saying: 3.8% under in `test_classification.py`, 3% over in
+# `test_readings.py`. Under 2% they are not. URMP's "Spring" violin (2026-11-14)
+# ran ahead of the beat through bars 4–25 at the tempo, and the sentence said
+# "Bars 10–20 went at 207." against 206. That is a difference the take's own
+# placement cannot resolve, and a quoted figure claims it can. 0 restores the
+# old rule, which quoted any difference that survived rounding to a whole BPM.
+quoted_min_pct = 2.0
+# In a take with at least `long_take_bars` bars with a tempo, a run of bars is
+# named only when it covers `long_take_min_bars` of them, or every bar of it
+# is severely out (past the outer band, the chart's red). A shorter take
+# keeps the old rule: a single bar named only when clearly out, two or more
+# whenever they are off. The run named is the longest over every bar of the
+# take, so the more bars there are, the more chances one or two have to land
+# past the band by their tempo's own error. On URMP's 72 real takes
+# (2026-11-14, 12 to 215 bars) the sentence about a run of one or two bars
+# was true 4 times in 16, and about three or more, 45 in 48. 0 turns it off.
+long_take_bars = 16
+long_take_min_bars = 3
 
 [tolerance.pulse]
 # When a musician breaks their pulse rather than drifting off it. Below these
 # the drift accumulates from the start of the take, so steady rushing shows as
 # a growing delta (which is the whole product); above them the reference
 # re-anchors, so a hesitation is named where it happened instead of blaming
-# every bar after it. Starting values — needs real recordings and an ear.
-disturbance_deviations = 6.0   # robust deviations of the take's own interval errors
-disturbance_floor_beats = 0.1667  # floor under that, as a fraction of one beat
+# every bar after it.
+#
+# The deviations were a starting value of 6 until 2026-11-14, when the real
+# recordings this asked for were here: URMP's 72 takes against their hand
+# labels, with the same rule read on both. Too few, and a rubato player's
+# own unevenness, or one attack the app placed wrong, re-anchors the take
+# where the labels' reading does not, and every later note is measured from
+# another level. Swept (real colour agreement, real sentences true,
+# synthetic overall, synthetic sentences): 5 → 73.96%, 69; 6 → 78.27%, 69,
+# 97.78%, 178; 8 → 83.80%, 70, 97.85%, 178; 10 → 97.40%, 177; 11 → 86.42%,
+# 70, 97.67%, 177; 15 → 87.67%, 69. 8 is the one that moves both the right
+# way. Past it the synthetic rushes and drags re-anchor at other notes than
+# a perfect reading's (a cello rushing at 60 loses 27 notes at 10), and at 15
+# a real saxophone's hesitation reads as every bar after it falling behind.
+# TUNING_LOG.md has the table.
+disturbance_deviations = 8.0   # robust deviations of the take's own interval errors
+disturbance_floor_beats = 0.1667  # floor under that, as a fraction of one beat (a starting value; the owner's question)
 
 [trend]
 window = 8                 # rolling-average window in notes (§4)
@@ -293,6 +419,27 @@ confirm_mismatch = 0.25
 # median 0.90–0.94, trusted 59 times in 60. The owner's real take: 0.85
 # (timing's own pairing of it: 0.33). See TUNING_LOG.md 2026-09-25.
 confirmed_share = 0.7
+# ...or this share, on a page asking for at least `confirmed_long_notes`, as
+# a last resort: timing has refused the take and no other reading of it
+# follows, so the alternative is telling the player they played the wrong
+# piece. It lets the chain pair the take, so the second look can search where
+# the page's notes belong, and the take is reported only if it is then heard
+# at `confirmed_share`. A part that doubles the page passes 0.65 too, and the
+# second look finds nothing it lacks: Jerusalem's double bass on the cello's
+# page stayed at 0.67, where K515's cello on its own page rose to 0.81.
+# Chance falls as a page grows, and 0.7 was set where it is highest.
+# Measured 2026-11-14 on the chain itself, a different tune in the same key
+# against a page: best share median 0.38, at most 0.50 of 64 notes (10
+# seeds); 0.38 and 0.42 of 128 (10); 0.36 and 0.45 of 256 (8); none trusted.
+# 0.65 clears it by 0.15. The page's own notes reversed reach 0.59 of 64 and
+# 0.56 of 128: a margin of 0.06, where 0.7 keeps 0.01 over a 32-note page
+# shuffled (2026-09-25). URMP's K515 cello part, 360 notes
+# played for 3.6 minutes with rubato, was refused as "same notes, different
+# times" at 0.67. Not on a first reading a second follows: rescued there,
+# "He's a Pirate"'s viola was never read without the vibrato filter, which
+# pairs it better (TUNING_LOG.md, 2026-11-14).
+confirmed_share_long = 0.65
+confirmed_long_notes = 64
 # ...there are at least this many of them,
 confirmed_min_notes = 8
 # ...on at least this many different written pitches — a page of one or two

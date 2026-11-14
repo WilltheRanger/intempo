@@ -42,6 +42,8 @@ single-file HTML tools below.
 | `musicxml-bench.py` | What the importer and beat checks make of the MusicXML corpus; runs without homr |
 | `notation-coverage.py` | Which notation the importer can represent |
 | `novelty-bakeoff.py` | Whether a different onset detector beats spectral flux on the tuning corpus |
+| `eval/accuracy_bench.py` | How often the analysis hears a synthesised take right and says the right thing about it, against the truth it was made from; `--set section.field=value` tries a setting without editing `config.toml` |
+| `eval/real_takes.py` | The same scoring on real recordings — URMP's 72 string and saxophone tracks, each with its score and hand-labelled note onsets — plus how each played note was heard, placed and coloured against the labels; the data is downloaded, never committed (`eval/urmp_scores.py` converts its scores, with music21) |
 | `check-store-readiness.py` | What a person still has to supply before an App Store submission |
 | `backend/scripts/check_env.py` | Whether `backend/.env` is complete and its keys work, without printing a secret |
 | `backend/scripts/concurrency_probe.py` | Whether the API serves requests in parallel |

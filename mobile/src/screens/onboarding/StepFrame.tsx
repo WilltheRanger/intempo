@@ -3,7 +3,6 @@ import {
   Animated,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   StyleSheet,
   View,
 } from 'react-native';
@@ -15,6 +14,7 @@ import {
   ScreenContainer,
   Text,
 } from '../../components/primitives';
+import { TextAction } from '../../components/primitives/TextAction';
 import { colors, EASE_OUT, MIN_TOUCH_TARGET, motion, spacing } from '../../design';
 import { ONBOARDING_STEPS, stepNumber, type OnboardingStep } from '../../lib/onboardingSteps';
 import { progressValue } from '../../lib/progressValue';
@@ -197,19 +197,7 @@ function StepEntrance({
  * do.
  */
 function QuietAction({ label, onPress, disabled = false }: StepAction) {
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      accessibilityRole="button"
-      accessibilityState={{ disabled }}
-      style={({ pressed }) => [styles.quiet, pressed && styles.quietPressed]}
-    >
-      <Text variant="metadata" color="textTertiary">
-        {label}
-      </Text>
-    </Pressable>
-  );
+  return <TextAction label={label} onPress={onPress} disabled={disabled} style={styles.quiet} />;
 }
 
 const styles = StyleSheet.create({
@@ -227,14 +215,14 @@ const styles = StyleSheet.create({
   back: {
     // The chevron's ink on the margin, under the title's first letter, as the
     // prototype has it — the 44pt target reaching out into the gutter rather
-    // than pushing the glyph in.
-    marginLeft: -22,
+    // than pushing the glyph in. Half of it, which is what lands the ink there.
+    marginLeft: -MIN_TOUCH_TARGET / 2,
     flexShrink: 0,
   },
   progress: {
     flex: 1,
     flexDirection: 'row',
-    gap: 5,
+    gap: spacing.xs,
   },
   segment: {
     flex: 1,
@@ -246,24 +234,18 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
   },
   title: {
-    marginTop: 26,
+    marginTop: spacing['2xl'],
   },
   lede: {
-    marginTop: 10,
+    marginTop: spacing.sm,
   },
   answer: {
-    marginTop: 30,
+    marginTop: spacing['3xl'],
   },
   error: {
     marginTop: spacing.lg,
   },
   quiet: {
-    minHeight: MIN_TOUCH_TARGET,
     marginTop: spacing.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  quietPressed: {
-    opacity: 0.55,
   },
 });

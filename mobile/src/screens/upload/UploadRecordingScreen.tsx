@@ -5,7 +5,7 @@ import { Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-nativ
 import { FileMusic, Pause, Play } from '../../components/icons';
 import { BottomSheet } from '../../components/overlays/BottomSheet';
 import {
-  BackLink,
+  LargeTitle,
   EmptyState,
   LoadingState,
   PrimaryButton,
@@ -30,6 +30,7 @@ import {
   colors,
   fontFamily,
   ICON_STROKE_WIDTH,
+  MIN_TOUCH_TARGET,
   radii,
   spacing,
   ICON_SIZE,
@@ -48,7 +49,7 @@ import { clockLabel } from '../../lib/score/listenPosition';
 import { displayTempoBpm, tempoUnitLabel } from '../../lib/tempo';
 import { bpmForMarking } from '../../lib/tempoMarking';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
-import { useGoBack } from '../../navigation/useGoBack';
+import { useBackButton, useGoBack } from '../../navigation/useGoBack';
 import { chooseAudioFile } from '../record/chooseAudioFile';
 import { StartFromSheet } from '../record/StartFromSheet';
 import { usePreviewPlayback } from './usePreviewPlayback';
@@ -78,6 +79,7 @@ export function UploadRecordingScreen() {
   const navigation = useNavigation<RootNavigation>();
   const { params } = useRoute<RouteProp<RootStackParamList, 'UploadRecording'>>();
   const backToRecord = useGoBack({ route: 'Record', params: { pieceId: params.pieceId } });
+  const backButton = useBackButton({ route: 'Record', params: { pieceId: params.pieceId } });
   const { data: piece, isError } = usePiece(params.pieceId);
   const { data: musician } = useMe();
   const { data: history } = usePieceHistory(params.pieceId);
@@ -122,14 +124,14 @@ export function UploadRecordingScreen() {
 
   if (loadStateFor({ isError, hasData: piece !== undefined }) === 'loading') {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ back: backButton }}>
         <LoadingState />
       </ScreenContainer>
     );
   }
   if (!piece) {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ back: backButton }}>
         <EmptyState
           title="Couldn't open this piece"
           actionLabel="Back"
@@ -184,12 +186,22 @@ export function UploadRecordingScreen() {
 
   return (
     <ScreenContainer
+      // Leaving drops the file that was picked, so the bar's back goes the
+      // way "Back to recording" always went: through `leave`.
+      navigationBar={{ back: { ...backButton, onPress: leave } }}
       footer={
         <View>
+          {/*
+            **The next step, whichever it is.** Until there is a recording the
+            only thing this screen can do is choose one, and that was a 13pt
+            gold link in the corner of the panel while a disabled "Send for
+            analysis" was the strongest shape on the screen (three reviews,
+            2026-11-12). The footer now offers the step in front of you.
+          */}
           <PrimaryButton
-            label="Send for analysis"
-            onPress={send}
-            disabled={!file || limit !== null}
+            label={file ? 'Send for analysis' : 'Choose a recording'}
+            onPress={file ? send : () => void choose()}
+            disabled={file ? limit !== null : false}
           />
           {limit ?? cost ? (
             <Text variant="metadataSmall" color="textTertiary" style={styles.cost}>
@@ -200,15 +212,28 @@ export function UploadRecordingScreen() {
       }
     >
       <View style={styles.head}>
-        <BackLink label="Back to recording" onPress={leave} />
-        <Text variant="heroTitle" accessibilityRole="header">
-          Upload a recording
-        </Text>
+        <LargeTitle text="Upload a recording">
+          <Text variant="heroTitle" accessibilityRole="header">
+            Upload a recording
+          </Text>
+        </LargeTitle>
       </View>
 
-      {/* The file, on a white band the width of the screen. */}
+      {/*
+        The file, on a white band the width of the screen.
+
+        **The file's row is the control that chooses it**, with the chevron a
+        row that opens something carries. The panel looked tappable and was
+        not; the link that did the work was a separate line under the
+        waveform.
+      */}
       <View style={styles.band}>
-        <View style={styles.fileRow}>
+        <Pressable
+          onPress={() => void choose()}
+          accessibilityRole="button"
+          accessibilityLabel={file ? `Choose a different recording. ${file.name}` : 'Choose a recording'}
+          style={({ pressed }) => [styles.fileRow, pressed && styles.pressed]}
+        >
           <View style={styles.fileIcon} aria-hidden>
             <FileMusic size={ICON_SIZE.md} strokeWidth={ICON_STROKE_WIDTH} color={colors.textSecondary} />
           </View>
@@ -220,7 +245,8 @@ export function UploadRecordingScreen() {
               {meta || 'WAV, MP3, M4A, FLAC or OGG'}
             </Text>
           </View>
-        </View>
+          <TrailingChevron />
+        </Pressable>
 
         <View
           style={styles.wave}
@@ -243,16 +269,8 @@ export function UploadRecordingScreen() {
           ))}
         </View>
 
+        {/* Holds its height with nothing in it, so choosing a file moves nothing. */}
         <View style={styles.fileActions}>
-          <Pressable
-            onPress={() => void choose()}
-            accessibilityRole="button"
-            style={({ pressed }) => [styles.action, pressed && styles.pressed]}
-          >
-            <Text variant="metadataSmall" color="accentText" style={styles.medium}>
-              {file ? 'Choose a different file' : 'Choose a file'}
-            </Text>
-          </Pressable>
           {file && playback.available ? (
             <Pressable
               onPress={() => void playback.toggle()}
@@ -303,11 +321,12 @@ export function UploadRecordingScreen() {
         <Pressable
           onPress={() => navigation.navigate('Tempo', { pieceId: params.pieceId })}
           accessibilityRole="button"
-          accessibilityLabel={`Target tempo ${displayTempoBpm(targetBpm, unit)} ${tempoUnitLabel(unit)}. Change it`}
+          accessibilityLabel={`Tempo ${displayTempoBpm(targetBpm, unit)} ${tempoUnitLabel(unit)}. Change it`}
           style={({ pressed }) => [styles.row, styles.lastRow, pressed && styles.rowPressed]}
         >
+          {/* "Tempo", as Record and the score call it (2026-11-12): one name. */}
           <Text variant="rowLabel" style={styles.rowLabel}>
-            Target tempo
+            Tempo
           </Text>
           <Text variant="rowLabel" color="textSecondary" style={styles.rowValue}>
             {displayTempoBpm(targetBpm, unit)} {tempoUnitLabel(unit)}
@@ -357,13 +376,13 @@ export function UploadRecordingScreen() {
 const styles = StyleSheet.create({
   head: {
     paddingTop: spacing.xs,
-    paddingBottom: 34,
+    paddingBottom: spacing['3xl'],
   },
   // Full width: the band cancels the screen's gutter and puts it back inside.
   band: {
     marginHorizontal: -SCREEN_GUTTER,
     paddingHorizontal: SCREEN_GUTTER,
-    paddingVertical: 18,
+    paddingVertical: spacing.lg,
     backgroundColor: colors.surface,
     borderTopWidth: BORDER_WIDTH,
     borderBottomWidth: BORDER_WIDTH,
@@ -372,7 +391,7 @@ const styles = StyleSheet.create({
   fileRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 14,
+    gap: spacing.md,
   },
   fileIcon: {
     width: 44,
@@ -393,7 +412,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   fileMeta: {
-    marginTop: 3,
+    marginTop: spacing['2xs'],
     fontSize: 12,
     lineHeight: 16,
     fontVariant: ['tabular-nums'],
@@ -412,8 +431,9 @@ const styles = StyleSheet.create({
   fileActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 10,
+    justifyContent: 'flex-end',
+    minHeight: MIN_TOUCH_TARGET,
+    marginTop: spacing.sm,
   },
   action: {
     minHeight: 44,
@@ -422,19 +442,16 @@ const styles = StyleSheet.create({
   play: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
+    gap: spacing.sm,
   },
   pressed: {
     opacity: 0.55,
-  },
-  medium: {
-    fontFamily: fontFamily.sansMedium,
   },
   problem: {
     marginTop: spacing.md,
   },
   rows: {
-    marginTop: 18,
+    marginTop: spacing.xl,
   },
   row: {
     flexDirection: 'row',

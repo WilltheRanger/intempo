@@ -71,6 +71,8 @@ export function TitleField({
       autoCapitalize="words"
       // Off, so a browser's own list of past entries does not open over ours.
       autoComplete="off"
+      // A proper name: the keyboard's corrections fight the completion above.
+      autoCorrect={false}
       ref={ref}
       returnKeyType={returnKeyType}
       onSubmitEditing={onSubmitEditing}

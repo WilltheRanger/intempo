@@ -3,8 +3,19 @@ import {
   NavigationContainerRefContext,
   NavigationContext,
   useFocusEffect,
+  useIsFocused,
+  useScrollToTop,
 } from '@react-navigation/native';
-import { useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import {
   Animated,
   Platform,
@@ -20,17 +31,37 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { BORDER_WIDTH, colors, spacing } from '../../design';
+import { BORDER_WIDTH, colors, motion, spacing } from '../../design';
+import {
+  MIN_REFRESH_MS,
+  REFRESH_HOLD,
+  pullDistance,
+  pullProgress,
+  startsRefresh,
+  ticksShown,
+} from '../../lib/motion/pullToRefresh';
+import { shouldRefreshOnReturn } from '../../lib/returnRefresh';
+import { ACTIVITY_SPINNER_SIZE, ActivitySpinner } from '../motion/ActivitySpinner';
 import { useChromeToneReporter } from '../../navigation/ChromeToneContext';
 import { chromeToneFor } from '../../navigation/chromeTone';
+import {
+  NAV_BAR_HEIGHT,
+  barAppearance,
+  sameAppearance,
+  type BarAppearance,
+} from '../../navigation/navigationBar';
 import { useTabBarHeight, useTabBarMidline } from '../../navigation/tabBarMetrics';
+import { NavigationBar, type NavigationBarConfig } from './NavigationBar';
+import { ScreenChromeContext, type ScreenChrome } from './ScreenChrome';
 
 const WEB_SCROLL_STYLE = Platform.select({
   web: {
     // Keep wheel, trackpad, and touch scrolling inside the app's own viewport
     // and let the browser compositor carry momentum independently of React.
     overscrollBehaviorY: 'contain',
-    overscrollBehaviorX: 'hidden',
+    // `none`, not `hidden`, which is not a value of this property: it
+    // computed to `auto` and let a sideways drag bounce the page (2026-11-12).
+    overscrollBehaviorX: 'none',
     // Gesture scrolling already has the browser's native momentum. CSS smooth
     // scrolling only stretches programmatic jumps (focus, back, scroll-to-top)
     // and makes them feel as though the interface is catching up.
@@ -138,7 +169,17 @@ export interface ScreenContainerProps {
    * life of the screen: it decides which scroll view is mounted.
    */
   scrollOffset?: Animated.Value;
+  /**
+   * The navigation bar: back, actions, and the screen's title once its large
+   * title has scrolled up under the bar (`NavigationBar`). Every screen of the
+   * app's navigator has one — a tab's own screen with no back — and the screens
+   * held outside it (signing in, onboarding, the account loading) do not.
+   */
+  navigationBar?: NavigationBarConfig;
 }
+
+/** The bar at rest: clear, no title, on the page. */
+const AT_REST: BarAppearance = { solid: false, showTitle: false, tone: 'auto' };
 
 /** The web has no native driver, and asking for one there only warns. */
 const NATIVE_DRIVER = Platform.OS !== 'web';
@@ -161,17 +202,54 @@ export function ScreenContainer({
   darkGround,
   underStatusBar = false,
   scrollOffset,
+  navigationBar,
 }: ScreenContainerProps) {
   const [refreshing, setRefreshing] = useState(false);
+  /*
+    **Pull to refresh on the web build** (`lib/motion/pullToRefresh.ts`):
+    react-native-web's `RefreshControl` throws `onRefresh` away, so Safari's
+    own rubber band is read instead — its offset goes below zero while the
+    page is pulled past its top. Only where there is something to refresh.
+  */
+  const webPull = Platform.OS === 'web' && onRefresh !== undefined;
+  const [pull, setPull] = useState(0);
+  const pullArmed = useRef(true);
+  /*
+    The pull's own refresh, apart from `refreshing`: the quiet refresh when the
+    app comes back after a long time away (`RefreshOnReturn`) shares the
+    handler, and must not open a spinner and push the page down by itself.
+  */
+  const [pulled, setPulled] = useState(false);
+  const pulledRef = useRef(false);
+  function refreshFromPull() {
+    pulledRef.current = true;
+    setPulled(true);
+    void Promise.all([
+      handleRefreshRef.current(),
+      new Promise((resolve) => setTimeout(resolve, MIN_REFRESH_MS)),
+    ]).finally(() => {
+      pulledRef.current = false;
+      setPulled(false);
+    });
+  }
+  const refreshFromPullRef = useRef(refreshFromPull);
+  refreshFromPullRef.current = refreshFromPull;
 
   async function handleRefresh() {
     setRefreshing(true);
+    refreshingRef.current = true;
     try {
       await onRefresh?.();
     } finally {
       setRefreshing(false);
+      refreshingRef.current = false;
     }
   }
+  // The scroll handler is memoised; these let it start the refresh the
+  // screen has now, and see whether one is already running.
+  const refreshingRef = useRef(false);
+  const handleRefreshRef = useRef(handleRefresh);
+  handleRefreshRef.current = handleRefresh;
   // The context tells us *whether* a tab bar is below us — it's absent on
   // screens pushed above the tabs, like Practice. It does not tell us how
   // tall ours is: with a custom `tabBar` React Navigation publishes its own
@@ -221,6 +299,108 @@ export function ScreenContainer({
   const screenNavigation = useContext(NavigationContext);
   const containerNavigation = useContext(NavigationContainerRefContext);
   const navigated = screenNavigation !== undefined || containerNavigation !== undefined;
+  // **A screen of a navigator, not just inside the container.** The two
+  // children below read the route, which only a screen has; the error screen
+  // and sign-in sit inside the container without one.
+  const isScreen = screenNavigation !== undefined;
+  const scrollRef = useRef<ScrollView | null>(null);
+
+  /*
+    **The navigation bar's two lines, and the scroll position they are read
+    against** (`navigation/navigationBar.ts`). The large title and a photograph
+    at the top of the content report where they end (`ScreenChrome`); the
+    appearance is recomputed on every scroll event and stored only when it
+    changes, so a scroll costs a comparison and not a render.
+
+    The bar is laid over the scroll view only on a screen whose photograph
+    runs up under it; everywhere else it sits above the scroll view, which
+    starts at the bar's bottom edge, so the lines are compared to the top of
+    the scroll view itself.
+  */
+  const hasBar = navigationBar !== undefined;
+  const overlap = hasBar && underStatusBar ? insets.top + NAV_BAR_HEIGHT : 0;
+  const viewportRef = useRef<View>(null);
+  const titles = useRef(new Map<string, { text: string; bottom: number | null }>());
+  const darkGrounds = useRef(new Map<string, number>());
+  const lines = useRef<{ titleBottom: number | null; darkBottom: number | null }>({
+    titleBottom: null,
+    darkBottom: null,
+  });
+  const [largeTitle, setLargeTitle] = useState<string | null>(null);
+  const [appearance, setAppearance] = useState<BarAppearance>(AT_REST);
+
+  const updateAppearance = useCallback(() => {
+    if (!hasBar) {
+      return;
+    }
+    const next = barAppearance({ scrollY: scrollY.current, overlap, ...lines.current });
+    setAppearance((current) => (sameAppearance(current, next) ? current : next));
+  }, [hasBar, overlap]);
+
+  const chrome = useMemo<ScreenChrome>(
+    () => ({
+      barHeight: hasBar ? NAV_BAR_HEIGHT : 0,
+      reportTitle(id, title) {
+        if (title) {
+          titles.current.set(id, title);
+        } else {
+          titles.current.delete(id);
+        }
+        // The most recent heading wins: a screen shows one at a time, and a
+        // state that replaces another mounts its heading after the old one's.
+        const latest = [...titles.current.values()].pop() ?? null;
+        lines.current.titleBottom = latest?.bottom ?? null;
+        setLargeTitle(latest?.text ?? null);
+        updateAppearance();
+      },
+      reportDarkGround(id, bottom) {
+        if (bottom === null) {
+          darkGrounds.current.delete(id);
+        } else {
+          darkGrounds.current.set(id, bottom);
+        }
+        const bottoms = [...darkGrounds.current.values()];
+        lines.current.darkBottom = bottoms.length > 0 ? Math.max(...bottoms) : null;
+        updateAppearance();
+      },
+      measureBottom(node, done) {
+        const viewport = viewportRef.current;
+        if (!viewport) {
+          return;
+        }
+        // Both in the window, so whatever moves the whole screen — a push
+        // arriving, a tab settling — cancels out; the scroll offset puts the
+        // line back into the content's own coordinates. The viewport is the
+        // scroll view's own box, so its top is the content's top at rest.
+        node.measureInWindow((_x, y, _width, height) => {
+          viewport.measureInWindow((_vx, viewportY) => {
+            done(y + height - viewportY + scrollY.current);
+          });
+        });
+      },
+      scrollToTop() {
+        scrollRef.current?.scrollTo({ y: 0, animated: true });
+      },
+    }),
+    [hasBar, updateAppearance],
+  );
+
+  /*
+    **The screen's title, published to the navigator**, so the screen pushed
+    above this one can say "‹ Your takes" (`useBackButton`). Only a stack's
+    screen: a tab's title is its tab's name, which `RootNavigator` gives the
+    tabs as a whole.
+  */
+  const barTitle = navigationBar?.title ?? largeTitle;
+  useEffect(() => {
+    if (!hasBar || !barTitle || !screenNavigation) {
+      return;
+    }
+    if (screenNavigation.getState().type !== 'stack') {
+      return;
+    }
+    screenNavigation.setOptions({ title: barTitle });
+  }, [barTitle, hasBar, screenNavigation]);
 
   const handleScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -228,8 +408,19 @@ export function ScreenContainer({
       if (darkGround !== undefined) {
         reportTone(toneFor(scrollY.current));
       }
+      updateAppearance();
+      if (webPull) {
+        const distance = Math.round(pullDistance(scrollY.current));
+        setPull((current) => (current === distance ? current : distance));
+        if (distance === 0) {
+          pullArmed.current = true;
+        } else if (startsRefresh(distance, pullArmed.current, pulledRef.current || refreshingRef.current)) {
+          pullArmed.current = false;
+          refreshFromPullRef.current();
+        }
+      }
     },
-    [darkGround, reportTone, toneFor],
+    [darkGround, reportTone, toneFor, updateAppearance, webPull],
   );
 
   function measureOverflow() {
@@ -272,6 +463,9 @@ export function ScreenContainer({
 
   const scrollArea = scrollable ? (
     <Scroll
+      // Either kind of scroll view: both have `scrollTo`, which is all the
+      // ref is for, but their ref types do not unify.
+      ref={scrollRef as never}
       style={[styles.flex, WEB_SCROLL_STYLE, bleed ? WEB_NO_GUTTER : null]}
       directionalLockEnabled
       decelerationRate="normal"
@@ -311,6 +505,11 @@ export function ScreenContainer({
         measureOverflow();
       }}
     >
+      {/*
+        The page held a spinner's height down while it refreshes, as
+        UIRefreshControl holds it, and let back up when it is done.
+      */}
+      {webPull ? <View style={[{ height: pulled ? REFRESH_HOLD : 0 }, HOLD_MOTION]} /> : null}
       {children}
     </Scroll>
   ) : (
@@ -339,7 +538,64 @@ export function ScreenContainer({
     // below owns the bottom inset; claiming it here too would double it.
     <SafeAreaView style={styles.safeArea} edges={underStatusBar ? [] : ['top']}>
       {navigated ? <OnFocus effect={onFocus} /> : null}
-      {scrollArea}
+      {/*
+        Tapping the tab you are on goes back to the top of its list, which is
+        what a thumb tries on a long shelf. It did nothing: no screen asked
+        for it (2026-11-12).
+      */}
+      {isScreen && hasTabBar && scrollable ? <ScrollToTopOnTabPress target={scrollRef} /> : null}
+      {isScreen && onRefresh && Platform.OS === 'web' ? (
+        <RefreshOnReturn onRefresh={handleRefresh} />
+      ) : null}
+      <ScreenChromeContext.Provider value={chrome}>
+        {navigationBar && !underStatusBar ? (
+          <NavigationBar
+            config={navigationBar}
+            title={barTitle}
+            appearance={appearance}
+            insetTop={0}
+            overlay={false}
+          />
+        ) : null}
+        <View ref={viewportRef} style={styles.flex} collapsable={false}>
+          {navigationBar && underStatusBar ? (
+            <NavigationBar
+              config={navigationBar}
+              title={barTitle}
+              appearance={appearance}
+              insetTop={insets.top}
+              overlay
+            />
+          ) : null}
+          {scrollArea}
+          {/*
+            The spinner in the gap the pull opens: its ticks arrive as the pull
+            lengthens, and it turns while the refresh runs. Ivory over the
+            band's colour, the accent over the page.
+          */}
+          {webPull && (pull > 0 || pulled) ? (
+            <View
+              pointerEvents="none"
+              style={[
+                styles.spinner,
+                {
+                  top:
+                    overlap +
+                    (pulled
+                      ? (REFRESH_HOLD - ACTIVITY_SPINNER_SIZE) / 2
+                      : Math.max(0, (pull - ACTIVITY_SPINNER_SIZE) / 2)),
+                },
+              ]}
+            >
+              <ActivitySpinner
+                color={appearance.tone === 'onDark' ? colors.onDark : colors.accent}
+                shown={pulled ? undefined : ticksShown(pullProgress(pull))}
+                spinning={pulled}
+              />
+            </View>
+          ) : null}
+        </View>
+      </ScreenChromeContext.Provider>
 
       {footer ? (
         // Same construction as the tab bar: page background behind a hairline
@@ -365,6 +621,43 @@ function OnFocus({ effect }: { effect: () => () => void }) {
   return null;
 }
 
+/** `useScrollToTop` as a component, for the same reason as `OnFocus`. */
+function ScrollToTopOnTabPress({ target }: { target: RefObject<ScrollView | null> }) {
+  useScrollToTop(target as RefObject<ScrollView>);
+  return null;
+}
+
+/**
+ * The web build's stand-in for pull-to-refresh, which it does not have: the
+ * screen in front refreshes once when the app comes back after a long time
+ * away (`lib/returnRefresh.ts` has the rule and why it is not React Query's
+ * focus refetch).
+ */
+function RefreshOnReturn({ onRefresh }: { onRefresh: () => Promise<void> }) {
+  const focused = useIsFocused();
+  const latest = useRef(onRefresh);
+  latest.current = onRefresh;
+  useEffect(() => {
+    if (!focused || typeof document === 'undefined') {
+      return undefined;
+    }
+    let hiddenAt: number | null = document.visibilityState === 'hidden' ? Date.now() : null;
+    function onVisibility() {
+      if (document.visibilityState === 'hidden') {
+        hiddenAt = Date.now();
+        return;
+      }
+      if (shouldRefreshOnReturn(hiddenAt, Date.now())) {
+        void latest.current();
+      }
+      hiddenAt = null;
+    }
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [focused]);
+  return null;
+}
+
 /**
  * The horizontal gutter, exported so full-bleed sections can cancel it out.
  *
@@ -383,7 +676,25 @@ export const SCREEN_GUTTER = spacing['2xl'];
  */
 export const CONTENT_MAX_WIDTH = 560;
 
+/** The held room opening and closing, on the app's ease. */
+const HOLD_MOTION = Platform.select({
+  web: {
+    transitionProperty: 'height',
+    transitionDuration: `${motion.base}ms`,
+    // `EASE_OUT`, as CSS.
+    transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
+  } as unknown as ViewStyle,
+  default: undefined,
+});
+
 const styles = StyleSheet.create({
+  spinner: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 1,
+  },
   safeArea: {
     flex: 1,
     backgroundColor: colors.bg,

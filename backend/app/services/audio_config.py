@@ -50,14 +50,22 @@ CONFIG_PATH = Path(__file__).resolve().parents[2] / "config.toml"
 
 @dataclass(frozen=True)
 class InstrumentOnset:
-    """The two onset settings that depend on which instrument was played.
+    """The onset settings that depend on which instrument was played.
 
     `highpass_hz` of 0 means no filter, which is what the three treble
-    instruments get today.
+    instruments get today. `vibrato_bands` of 0 means the envelope's own
+    `envelope_vibrato_bands`, which is what every instrument but the double
+    bass gets.
     """
 
     delta: float
     highpass_hz: float
+    vibrato_bands: int = 0
+    #: See `[onset.instrument]` in config.toml and
+    #: `pitch_evidence.octave_checked`. 0 means the pitch read after an attack
+    #: is never moved an octave, which is what an instrument not listed gets.
+    octave_below_ratio: float = 0.0
+    octave_above_ratio: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -86,6 +94,16 @@ class OnsetConfig:
     recovery_search_share: float = 0.25
     recovery_floor_ratio: float = 0.015
     recovery_min_level_db: float = 10.0
+    recovery_max_fall_db: float = 12.0
+    recovery_pitch_hold_ms: float = 45.0
+    recovery_pitch_tolerance_st: float = 0.6
+    recovery_pitch_lag_ms: float = 16.0
+    recovery_pitch_min_level_db: float = 3.0
+    #: See `[onset.envelope]` in config.toml. Defaulted for the same reason.
+    envelope_floor_percentile: float = 10.0
+    envelope_floor_margin_db: float = 6.0
+    envelope_vibrato_from_hz: float = 600.0
+    envelope_vibrato_bands: int = 3
 
 
 @dataclass(frozen=True)
@@ -101,6 +119,13 @@ class ToleranceConfig:
     disturbance_floor_beats: float = 0.1667
     #: See `settling_bars` in `[tolerance]`.
     settling_bars: int = 2
+    #: See `quoted_min_pct` in `[tolerance]`. 0, the old rule, for a
+    #: remote-config row written before it.
+    quoted_min_pct: float = 0.0
+    #: See `long_take_bars` in `[tolerance]`. 0 turns the rule off, which is
+    #: what a remote-config row written before it gets.
+    long_take_bars: int = 0
+    long_take_min_bars: int = 3
 
 
 @dataclass(frozen=True)
@@ -130,6 +155,10 @@ class PitchConfig:
     confirmed_share: float = 0.7
     confirmed_min_notes: int = 8
     confirmed_min_pitches: int = 3
+    #: See `confirmed_share_long` in config.toml. The default is the short
+    #: share, so a remote-config row written before it keeps its old trust.
+    confirmed_share_long: float = 0.7
+    confirmed_long_notes: int = 64
 
 
 @dataclass(frozen=True)
@@ -206,6 +235,7 @@ def _parse(raw: dict) -> AudioConfig:
     onset = raw["onset"]
     dbl = onset.get("double_bass", {})
     rec = onset.get("recovery", {})
+    env = onset.get("envelope", {})
     tol = raw["tolerance"]
     trend = raw["trend"]
     align = raw["alignment"]
@@ -224,6 +254,9 @@ def _parse(raw: dict) -> AudioConfig:
                 name: InstrumentOnset(
                     delta=float(row.get("delta", onset["delta"])),
                     highpass_hz=float(row.get("highpass_hz", 0.0)),
+                    vibrato_bands=int(row.get("vibrato_bands", 0)),
+                    octave_below_ratio=float(row.get("octave_below_ratio", 0.0)),
+                    octave_above_ratio=float(row.get("octave_above_ratio", 0.0)),
                 )
                 for name, row in (onset.get("instrument") or {}).items()
                 if isinstance(row, dict)
@@ -231,6 +264,15 @@ def _parse(raw: dict) -> AudioConfig:
             recovery_search_share=float(rec.get("search_share", 0.25)),
             recovery_floor_ratio=float(rec.get("floor_ratio", 0.015)),
             recovery_min_level_db=float(rec.get("min_level_db", 10.0)),
+            recovery_max_fall_db=float(rec.get("max_fall_db", 12.0)),
+            recovery_pitch_hold_ms=float(rec.get("pitch_hold_ms", 45.0)),
+            recovery_pitch_tolerance_st=float(rec.get("pitch_tolerance_st", 0.6)),
+            recovery_pitch_lag_ms=float(rec.get("pitch_lag_ms", 16.0)),
+            recovery_pitch_min_level_db=float(rec.get("pitch_min_level_db", 3.0)),
+            envelope_floor_percentile=float(env.get("floor_percentile", 10.0)),
+            envelope_floor_margin_db=float(env.get("floor_margin_db", 6.0)),
+            envelope_vibrato_from_hz=float(env.get("vibrato_from_hz", 600.0)),
+            envelope_vibrato_bands=int(env.get("vibrato_bands", 3)),
         ),
         tolerance=ToleranceConfig(
             rushing_inner_pct=float(tol["rushing_inner_pct"]),
@@ -246,6 +288,9 @@ def _parse(raw: dict) -> AudioConfig:
                 tol.get("pulse", {}).get("disturbance_floor_beats", 0.1667)
             ),
             settling_bars=int(tol.get("settling_bars", 2)),
+            quoted_min_pct=float(tol.get("quoted_min_pct", 0.0)),
+            long_take_bars=int(tol.get("long_take_bars", 0)),
+            long_take_min_bars=int(tol.get("long_take_min_bars", 3)),
         ),
         trend=TrendConfig(window=int(trend["window"])),
         alignment=AlignmentConfig(
@@ -328,6 +373,10 @@ def _pitch(row: dict) -> PitchConfig:
         low_instruments=tuple(row.get("low_instruments", default.low_instruments)),
         confirm_mismatch=float(row.get("confirm_mismatch", default.confirm_mismatch)),
         confirmed_share=float(row.get("confirmed_share", default.confirmed_share)),
+        confirmed_share_long=float(
+            row.get("confirmed_share_long", row.get("confirmed_share", default.confirmed_share_long))
+        ),
+        confirmed_long_notes=int(row.get("confirmed_long_notes", default.confirmed_long_notes)),
         confirmed_min_notes=int(row.get("confirmed_min_notes", default.confirmed_min_notes)),
         confirmed_min_pitches=int(
             row.get("confirmed_min_pitches", default.confirmed_min_pitches)

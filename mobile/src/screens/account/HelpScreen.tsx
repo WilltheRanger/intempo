@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { useGoBack } from '../../navigation/useGoBack';
+import { useBackButton } from '../../navigation/useGoBack';
 
 import {
   PageHeader,
@@ -80,7 +80,7 @@ function copyFor(report: ConnectionReport | null, checking: boolean): Copy {
  * that materially change recording and transcription quality.
  */
 export function HelpScreen() {
-  const goBack = useGoBack({ tab: 'Profile' });
+  const back = useBackButton({ tab: 'Profile' });
   const [report, setReport] = useState<ConnectionReport | null>(null);
   const [checking, setChecking] = useState(false);
 
@@ -105,11 +105,9 @@ export function HelpScreen() {
   const status = copyFor(report, checking);
 
   return (
-    <ScreenContainer>
+    <ScreenContainer navigationBar={{ back }}>
       <PageHeader
         title="Help & connection"
-        onBack={goBack}
-        backLabel="Back to profile"
       />
 
       {/*
@@ -121,7 +119,8 @@ export function HelpScreen() {
       <View>
         <Text variant="pieceTitle">{status.title}</Text>
         {status.detail ? (
-          <Text variant="body" color="textSecondary" style={styles.detail}>
+          // What the connection check found, worth copying into a report.
+          <Text variant="body" color="textSecondary" selectable style={styles.detail}>
             {status.detail}
           </Text>
         ) : null}

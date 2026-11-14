@@ -43,6 +43,14 @@ export interface Preferences {
    */
   practiceSetupSeen: boolean;
   /**
+   * Whether this device has been told what the microphone is for, once, just
+   * before the first take asks for it (`MicrophoneIntro`). The explanation was
+   * onboarding's fourth step until 2026-11-12; it moved to where the
+   * microphone is actually used (the owner's call). Device-local, like the
+   * permission it explains.
+   */
+  microphoneExplained: boolean;
+  /**
    * Whether the last take recorded on this device had any sound in it.
    *
    * `null` until one has been recorded, which is not the same as `false`: the
@@ -67,6 +75,7 @@ const DEFAULTS: Preferences = {
   haptics: true,
   reduceMotion: false,
   practiceSetupSeen: false,
+  microphoneExplained: false,
   lastTakeHadSound: null,
   practiceRole: null,
   foundVia: null,
@@ -154,6 +163,10 @@ export async function hydratePreferences(): Promise<void> {
         typeof saved.practiceSetupSeen === 'boolean'
           ? saved.practiceSetupSeen
           : DEFAULTS.practiceSetupSeen,
+      microphoneExplained:
+        typeof saved.microphoneExplained === 'boolean'
+          ? saved.microphoneExplained
+          : DEFAULTS.microphoneExplained,
       lastTakeHadSound:
         typeof saved.lastTakeHadSound === 'boolean'
           ? saved.lastTakeHadSound
@@ -243,6 +256,9 @@ export const preferences = {
 
   setLastTakeHadSound(lastTakeHadSound: boolean): void {
     commit({ ...current, lastTakeHadSound });
+  },
+  setMicrophoneExplained(microphoneExplained: boolean): void {
+    commit({ ...current, microphoneExplained });
   },
   setPracticeSetupSeen(practiceSetupSeen: boolean): void {
     commit({ ...current, practiceSetupSeen });

@@ -82,8 +82,9 @@ describe('what a failed screen says', () => {
     expect(describeLoadError(new ApiError(401, '/x', 'x'))).toMatch(/session has ended/i);
     expect(describeLoadError(new ApiError(403, '/x', 'x'))).toMatch(/isn't yours/i);
     expect(describeLoadError(new ApiError(404, '/x', 'x'))).toMatch(/isn't there/i);
-    expect(describeLoadError(new ApiError(500, '/x', 'x'))).toMatch(/not something you did/i);
-    expect(describeLoadError(new ApiError(503, '/x', 'x'))).toMatch(/not something you did/i);
+    // Whose problem it is, said by the subject rather than by a reassurance.
+    expect(describeLoadError(new ApiError(500, '/x', 'x'))).toMatch(/^Our server had a problem/);
+    expect(describeLoadError(new ApiError(503, '/x', 'x'))).toMatch(/^Our server had a problem/);
   });
 
   it('does not repeat what the server said for a status it does not know', () => {

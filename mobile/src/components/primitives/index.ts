@@ -6,7 +6,7 @@ export {
   type ScreenContainerProps,
 } from './ScreenContainer';
 export { PageHeader, type PageHeaderProps } from './PageHeader';
-export { BackLink } from './BackLink';
+export { LargeTitle } from './ScreenChrome';
 export { RuledHeading, type RuledHeadingProps } from './RuledHeading';
 export { SECTION_HEADING } from './sectionHeading';
 export { Card, type CardProps } from './Card';
@@ -25,6 +25,8 @@ export {
   type SegmentedControlOption,
 } from './SegmentedControl';
 export { ToggleRow, type ToggleRowProps } from './ToggleRow';
+export { choiceTile } from './choiceTile';
+export { TextAction, type TextActionProps } from './TextAction';
 export { EmptyState, type EmptyStateProps } from './EmptyState';
 export * from './GlassSurface';
 export { LoadingState, type LoadingStateProps } from './LoadingState';

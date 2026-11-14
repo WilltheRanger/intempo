@@ -30,6 +30,10 @@ export { default as Check } from 'lucide-react-native/icons/check';
 export { default as ChevronDown } from 'lucide-react-native/icons/chevron-down';
 export { default as ChevronLeft } from 'lucide-react-native/icons/chevron-left';
 export { default as ChevronRight } from 'lucide-react-native/icons/chevron-right';
+// iOS's "more": three dots in a row, which open a menu by the button
+// (`Menu`). It replaced Android's column of three, `MoreVertical`, on
+// 2026-11-13, when the sheets it opened became menus.
+export { default as Ellipsis } from 'lucide-react-native/icons/ellipsis';
 export { default as FileMusic } from 'lucide-react-native/icons/file-music';
 export { default as GripVertical } from 'lucide-react-native/icons/grip-vertical';
 export { default as House } from 'lucide-react-native/icons/house';
@@ -38,10 +42,6 @@ export { default as Layers } from 'lucide-react-native/icons/layers';
 export { default as Library } from 'lucide-react-native/icons/library';
 export { default as Mic } from 'lucide-react-native/icons/mic';
 export { default as Minus } from 'lucide-react-native/icons/minus';
-// `MoreVertical` is lucide's deprecated alias for `EllipsisVertical`; the file
-// is named for the new one. Kept under the old name so the call sites read as
-// they did.
-export { default as MoreVertical } from 'lucide-react-native/icons/ellipsis-vertical';
 export { default as Pause } from 'lucide-react-native/icons/pause';
 export { default as PencilLine } from 'lucide-react-native/icons/pencil-line';
 export { default as Play } from 'lucide-react-native/icons/play';

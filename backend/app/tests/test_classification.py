@@ -377,6 +377,35 @@ def test_one_bar_is_named_only_when_it_is_clearly_out() -> None:
     assert verdict.text == "Bar 2 went at 85."
 
 
+def test_in_a_long_take_one_or_two_bars_off_are_named_only_when_severe() -> None:
+    """**A run of one or two bars is chance in a long take**
+    (`[tolerance] long_take_bars`). The run named is the longest over every
+    bar of the take, and the more bars there are, the more chances one or
+    two have to read past the band by their own tempo's error. On URMP's 72
+    real takes (2026-11-14, 12 to 215 bars) the sentence about one or two bars
+    was true 4 times in 16, and about three or more 45 times in 48. A short
+    take, a passage practised, keeps the rule it had: there, two bars are a
+    large part of what was played. Two bars severely out are named in a take
+    of any length — the owner's slowing to 80, in `_played` below."""
+    on_the_beat = [_delta(0.0, measure=1 + i // 4, idx=i) for i in range(80)]
+    steady = {m: 104.0 for m in range(1, 21)}
+    two = steady | {12: 97.0, 13: 97.0}  # 6.7% under
+    three = two | {14: 97.0}
+    severe = steady | {12: 80.0, 13: 80.0}  # 23% under
+
+    blip = generate_verdict(on_the_beat, 104.0, tempi=_tempi(two, across=97.0))
+    stretch = generate_verdict(on_the_beat, 104.0, tempi=_tempi(three, across=97.0))
+    slowing = generate_verdict(on_the_beat, 104.0, tempi=_tempi(severe, across=80.0))
+
+    assert blip.direction is Direction.on
+    assert stretch.text == "Bars 12–14 went at 97."
+    assert slowing.text == "Bars 12–13 went at 80."
+
+    short = {m: 104.0 for m in range(1, 11)} | {5: 97.0, 6: 97.0}
+    passage = generate_verdict(on_the_beat[:40], 104.0, tempi=_tempi(short, across=97.0))
+    assert passage.text == "Bars 5–6 went at 97."
+
+
 def test_a_bar_with_too_few_timed_notes_is_not_a_run() -> None:
     """One note is one note's timing, however far out its bar reads."""
     deltas = [_delta(0.0, measure=1 + i // 4, idx=i) for i in range(8)]
@@ -401,6 +430,25 @@ def test_a_bar_under_a_written_change_is_left_out() -> None:
 
     assert (verdict.start_measure, verdict.end_measure) == (2, 4)
     assert verdict.text == "Bars 2–4 went at 90."
+
+
+def test_bars_each_off_are_not_named_when_together_they_kept_the_tempo() -> None:
+    """**Each bar off, and the stretch not.** A bar's tempo is read downbeat
+    to downbeat, so a player who hurries inside each bar and takes the time
+    back at the bar line reads fast in every bar while the stretch keeps the
+    tempo. The sentence quoted the stretch, "Bars 10–20 went at 207." against
+    206, under a title saying the take rushed; on URMP's real takes
+    (2026-11-14) six sentences quoted a tempo inside the inner band, and the
+    labels held none of them. The bars are not named; the rest of the rule
+    speaks."""
+    deltas = [_delta(0.0, measure=1 + i // 4, idx=i) for i in range(16)]
+    by_bar = {1: 104.0, 2: 111.0, 3: 111.0, 4: 104.0}  # 6.7% over, each
+
+    quoted_on = generate_verdict(deltas, 104.0, tempi=_tempi(by_bar, across=106.0))
+    quoted_off = generate_verdict(deltas, 104.0, tempi=_tempi(by_bar, across=111.0))
+
+    assert quoted_on.direction is Direction.on
+    assert quoted_off.text == "Bars 2–3 went at 111."
 
 
 def test_no_figure_when_the_run_has_no_tempo_of_its_own() -> None:
@@ -449,6 +497,24 @@ def test_end_to_end_the_sentence_follows_the_bars() -> None:
 
     assert (verdict.start_measure, verdict.end_measure) == (7, 8)
     assert verdict.text == "Bars 7–8 went at 80."
+
+
+def test_a_run_ahead_of_the_beat_at_the_tempo_is_not_quoted_a_tempo() -> None:
+    """**A figure the take cannot resolve is not quoted**
+    (`[tolerance] quoted_min_pct`). Sixteen bars at 105 against 104: each bar
+    is on tempo, and every note sits a little further ahead of the beat than
+    the last. The note rule names the run, and it quoted the run's pace:
+    "Bars 2–16 went at 105.", 1% over. URMP's "Spring" violin (2026-11-14) ran
+    ahead of the beat at the tempo and was told "Bars 10–20 went at 207."
+    against 206. That is said as a side now. At 107, 2.9% over, the pace is a
+    tempo of its own and is quoted, as it always was."""
+    ahead = _played(16, lambda bar: 105.0)
+    faster = _played(16, lambda bar: 107.0)
+
+    assert ahead.direction is Direction.rush
+    assert ahead.text == "Bars 2–16 ran ahead."
+    assert ahead.avg_bpm_delta is None
+    assert faster.text == "Bars 1–16 went at 107."
 
 
 # ---------------------------------------------------------------------------

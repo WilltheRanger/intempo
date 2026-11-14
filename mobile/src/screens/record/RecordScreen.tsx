@@ -4,8 +4,9 @@ import {
   useRoute,
   type RouteProp,
 } from '@react-navigation/native';
+import { practicingLine } from '../../lib/verdict/passage';
 import { useQueryClient } from '@tanstack/react-query';
-import { Mic, MoreVertical, Square } from '../../components/icons';
+import { Mic, Ellipsis, Square } from '../../components/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -17,7 +18,7 @@ import {
 } from 'react-native';
 
 import {
-  BackLink,
+  LargeTitle,
   Card,
   EmptyState,
   LinkRow,
@@ -28,6 +29,7 @@ import {
   Text,
   ToggleRow,
 } from '../../components/primitives';
+import { TextAction } from '../../components/primitives/TextAction';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePiece } from '../../data/hooks/usePieces';
 import { usePieceHistory } from '../../data/hooks/useLatestTake';
@@ -37,6 +39,8 @@ import { practiceTempo, usePracticeTempos } from '../../data/practiceTempo';
 import { bpmForMarking } from '../../lib/tempoMarking';
 import { preferences, usePreferences } from '../../data/preferences';
 import { PressableScale } from '../../components/motion';
+import { HapticTap } from '../../components/motion/HapticTap';
+import { DEVICE_TAPS_ON_BEAT } from '../../lib/hapticsSupport';
 import { takeSubmissionSource } from '../../data/sources';
 import { getActiveAccountId } from '../../data/auth/session';
 import {
@@ -72,11 +76,10 @@ import {
   takeWasAccepted,
 } from '../../lib/sync/queuedTakes';
 import { holdTake } from '../../lib/sync/heldTakes';
-import { startRecording } from '../../lib/audioRecorder';
+import { microphoneAllowed, startRecording } from '../../lib/audioRecorder';
 import {
   BORDER_WIDTH,
   colors,
-  disabledOpacity,
   fontFamily,
   ICON_SIZE,
   ICON_STROKE_WIDTH,
@@ -111,8 +114,10 @@ import {
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
 import { BeatIndicator } from './BeatIndicator';
 import { PracticeSetup } from './PracticeSetup';
+import { MicrophoneIntro } from '../../components/practice/MicrophoneIntro';
 import { takeStatus } from '../../lib/record/takeStatus';
 import {
+  DEVICE_CANNOT_TAP,
   HEADPHONES_WARNING,
   metronomeChoices,
   metronomeValueLabel,
@@ -121,7 +126,6 @@ import { ScoreScroll } from '../../components/score/ScoreScroll';
 import { startBarFor, startOptions } from '../../lib/record/startOptions';
 import { entryAccessibilityLabel, entryRowLabel } from '../../lib/score/entryCopy';
 import { ListenPlayer } from './ListenPlayer';
-import { PillRow } from './PillRow';
 import { StartFromSheet } from './StartFromSheet';
 import { scheduleScore, startableMeasures } from '../../lib/score';
 import { startFromMeasure } from '../../lib/score/startFrom';
@@ -133,7 +137,7 @@ import {
   shouldGuardBrowserExit,
   type RecordPhase,
 } from '../../lib/record/leaving';
-import { useGoBack } from '../../navigation/useGoBack';
+import { plainBack, useBackButton } from '../../navigation/useGoBack';
 import { loadStateFor } from '../../lib/loadState';
 
 /**
@@ -168,14 +172,15 @@ export function RecordScreen() {
   const navigation = useNavigation<RootNavigation>();
   const queryClient = useQueryClient();
   const { params } = useRoute<RouteProp<RootStackParamList, 'Record'>>();
-  const goBack = useGoBack({ route: 'PieceDetail', params: { pieceId: params.pieceId } });
+  const back = useBackButton({ route: 'PieceDetail', params: { pieceId: params.pieceId } });
+  const goBack = back.onPress;
   const { data: piece, isError } = usePiece(params.pieceId);
   // This is the same cached account read held by the signed-in gate, not a
   // second request. It lets the screen refuse an impossible take before the
   // musician plays it rather than after the WAV has already been uploaded.
   const { data: musician } = useMe();
   const limitMessage = describeReachedAnalysisLimit(musician?.usage);
-  const { instrument, metronomeMode, practiceSetupSeen, lastTakeHadSound } =
+  const { instrument, metronomeMode, practiceSetupSeen, lastTakeHadSound, microphoneExplained } =
     usePreferences();
 
   // Read through the store so the piece's own marking seeds it and yesterday's
@@ -222,8 +227,24 @@ export function RecordScreen() {
    * exist at the first `useState`. `hasWarning` is the rule and it is tested.
    */
   const [showSetup, setShowSetup] = useState(false);
+  /**
+   * The one-time explanation before the microphone is first asked for
+   * (`MicrophoneIntro`, moved here from onboarding on 2026-11-12).
+   */
+  const [showMicIntro, setShowMicIntro] = useState(false);
+  // Someone who has already said yes (the old onboarding step, or a take on
+  // another day) does not need it: settle it from what the platform reports.
+  useEffect(() => {
+    if (microphoneExplained) return undefined;
+    let live = true;
+    void microphoneAllowed().then((allowed) => {
+      if (live && allowed) preferences.setMicrophoneExplained(true);
+    });
+    return () => {
+      live = false;
+    };
+  }, [microphoneExplained]);
   /** The two doors that did not fit in the settings column. See the row. */
-  const [showMore, setShowMore] = useState(false);
   /** The open metronome picker — how all four modes became reachable here. */
   const [pickingMetronome, setPickingMetronome] = useState(false);
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -489,18 +510,26 @@ export function RecordScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
 
-  async function start() {
+  /**
+   * `afterIntro` is `MicrophoneIntro`'s Continue: the preference it has just
+   * set has not reached this render, and the press that opened the intro was
+   * a press of Start recording, so Continue carries on with it.
+   */
+  async function start(afterIntro = false) {
     // `startRecording` awaits a permission prompt, which is long enough for a
     // second tap to open a second microphone nobody would ever close.
     if (starting.current || recorder.current) {
       return;
     }
-    if (limitMessage) {
-      // The disabled control prevents ordinary taps; this guard protects a
-      // stale queued press and future callers from opening the microphone.
-      setProblem(limitMessage);
+    // The first take on a device explains the microphone before anything asks
+    // for it (`MicrophoneIntro`); its Continue is what opens the prompt.
+    if (!microphoneExplained && !afterIntro) {
+      setShowMicIntro(true);
       return;
     }
+    // **No limit check here any more** (the owner, 2026-11-12): a take with no
+    // free analysis left can still be recorded and heard back. Analyse is the
+    // only thing that spends, and it is the control that waits.
     starting.current = true;
     setIsStarting(true);
     impact(ImpactFeedbackStyle.Medium);
@@ -901,6 +930,9 @@ export function RecordScreen() {
   // back to the top — see `startBarFor`.
   const startFrom = startBarFor(chosenStartFrom, startable);
   const setStartFrom = setChosenStartFrom;
+  // "Practicing bars 5–8", while the take starts where a Practice button sent
+  // it (`practicingLine`).
+  const practicing = practicingLine(params, startFrom);
 
   /**
    * The "Start from" sheet's named places — the top, where the last take
@@ -1163,7 +1195,7 @@ export function RecordScreen() {
 
   if (loadStateFor({ isError, hasData: piece !== undefined }) === 'loading') {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ back }}>
         <LoadingState />
       </ScreenContainer>
     );
@@ -1171,7 +1203,7 @@ export function RecordScreen() {
 
   if (!piece) {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ back }}>
         <EmptyState
           title="Couldn't open this piece"
           actionLabel="Back"
@@ -1186,7 +1218,7 @@ export function RecordScreen() {
       piece.transcriptionStatus === 'queued' ||
       piece.transcriptionStatus === 'reading';
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ back }}>
         <EmptyState
           title={reading ? 'Still reading the music' : 'Add the sheet music first'}
           actionLabel="Open piece"
@@ -1195,6 +1227,22 @@ export function RecordScreen() {
           }
         />
       </ScreenContainer>
+    );
+  }
+
+  if (showMicIntro) {
+    return (
+      <MicrophoneIntro
+        back={plainBack(() => setShowMicIntro(false))}
+        onContinue={() => {
+          preferences.setMicrophoneExplained(true);
+          setShowMicIntro(false);
+          // Straight into the take that was asked for. Its own request is the
+          // system's question, and a refusal is explained where the take is
+          // (`microphoneBlocked`), which is where changing it is any use.
+          void start(true);
+        }}
+      />
     );
   }
 
@@ -1215,13 +1263,7 @@ export function RecordScreen() {
           preferences.setPracticeSetupSeen(true);
           setShowSetup(false);
         }}
-        onBack={() => {
-          if (practiceSetupSeen) {
-            setShowSetup(false);
-          } else {
-            goBack();
-          }
-        }}
+        back={practiceSetupSeen ? plainBack(() => setShowSetup(false)) : back}
         onContinue={() => {
           preferences.setPracticeSetupSeen(true);
           setShowSetup(false);
@@ -1248,7 +1290,7 @@ export function RecordScreen() {
      */
     const counted = Math.min(countInBeats, (metronome.beat?.index ?? 0) + 1);
     return (
-      <ScreenContainer
+      <ScreenContainer navigationBar={{ back }}
         scrollable={false}
         bleed
         contentStyle={styles.countInScreen}
@@ -1282,7 +1324,9 @@ export function RecordScreen() {
           </Text>
           {metronome.silent ? (
             <Text variant="metadataSmall" color="textTertiary" style={styles.countInCopy}>
-              Haptics are off. Watch the count.
+              {DEVICE_TAPS_ON_BEAT
+                ? 'Haptics are off. Watch the count.'
+                : 'This browser can’t tap the beat. Watch the count.'}
             </Text>
           ) : null}
         </View>
@@ -1330,7 +1374,7 @@ export function RecordScreen() {
     */
     const { label, through } = progressFor(analysisStage);
     return (
-      <ScreenContainer scrollable={false} contentStyle={styles.centred}>
+      <ScreenContainer navigationBar={{ back }} scrollable={false} contentStyle={styles.centred}>
         <View>
           <Text variant="heroTitle" accessibilityRole="header">Analysing</Text>
           {through === null ? (
@@ -1364,20 +1408,11 @@ export function RecordScreen() {
           </Text>
         </View>
         {canLeave ? (
-          <Pressable
+          <TextAction
+            label="Leave while it works"
             onPress={() => navigation.popTo('Tabs', { screen: 'Library' } as never)}
-            accessibilityRole="button"
-            style={({ pressed }) => [
-              styles.quiet,
-              styles.leave,
-              { bottom: spacing['3xl'] + insets.bottom },
-              pressed && styles.quietPressed,
-            ]}
-          >
-            <Text variant="metadata" color="textSecondary">
-              Leave while it works
-            </Text>
-          </Pressable>
+            style={[styles.leave, { bottom: spacing['3xl'] + insets.bottom }]}
+          />
         ) : null}
       </ScreenContainer>
     );
@@ -1401,37 +1436,51 @@ export function RecordScreen() {
    * where it was, because it is reached for without looking (§3 law 7).
    */
   return (
-    <ScreenContainer scrollable={false} bleed contentStyle={styles.stage}>
+    <ScreenContainer
+      navigationBar={{
+        back,
+        /*
+          The two doors that are not settings — upload a take you already
+          have, and the pre-flight checks — in the bar now, where they stay in
+          reach. Gone during a take, like every other control that cannot
+          change it; the title no longer shares their row, so nothing re-wraps
+          when they go.
+        */
+        actions:
+          !capturing && !reviewing
+            ? [
+                {
+                  icon: Ellipsis,
+                  label: 'More',
+                  menu: [
+                    {
+                      label: 'Upload a recording',
+                      detail: ACCEPTED_LABEL,
+                      onPress: () => void openUpload(),
+                    },
+                    {
+                      label: 'Before you record',
+                      detail: 'Checks for this take',
+                      onPress: () => setShowSetup(true),
+                    },
+                  ],
+                },
+              ]
+            : [],
+      }}
+      scrollable={false}
+      bleed
+      contentStyle={styles.stage}
+    >
       <View style={styles.header}>
-        <BackLink label="Back to the piece" onPress={goBack} />
-        <View style={styles.titleRow}>
-          <PieceHeading
-            title={piece.title}
-            variant="heroTitle"
-            numberOfLines={2}
-            header
-            containerStyle={styles.title}
-          />
-          {/*
-            The two doors that are not settings — upload a take you already
-            have, and the pre-flight checks. Gone during a take, like every
-            other control that cannot change it.
-          */}
-          {!capturing && !reviewing ? (
-            <Pressable
-              onPress={() => setShowMore(true)}
-              accessibilityRole="button"
-              accessibilityLabel="More"
-              style={({ pressed }) => [styles.more, pressed && styles.morePressed]}
-            >
-              <MoreVertical size={ICON_SIZE.lg} strokeWidth={ICON_STROKE_WIDTH} color={colors.textSecondary} />
-            </Pressable>
-          ) : (
-            // The slot stays, empty, so the title does not re-wrap — and move
-            // the music under it — the moment a take begins.
-            <View style={styles.more} />
-          )}
-        </View>
+        <LargeTitle text={piece.title}>
+          <PieceHeading title={piece.title} variant="heroTitle" numberOfLines={2} header />
+        </LargeTitle>
+        {practicing ? (
+          <Text variant="metadata" color="accentText" style={styles.practicing}>
+            {practicing}
+          </Text>
+        ) : null}
       </View>
 
       {heard ? (
@@ -1465,51 +1514,52 @@ export function RecordScreen() {
               shared state both read, so coming back shows the new number with
               no hand-off.
             */}
-            <PillRow
-              label="Tempo"
-              value={`${displayedBpm} ${tempoUnitLabel(tempoBeatUnit)}`}
-              chevron="right"
-              onPress={() => navigation.navigate('Tempo', { pieceId: params.pieceId })}
-              accessibilityLabel={`Tempo ${displayedBpm} ${tempoUnitLabel(tempoBeatUnit)}. Change it`}
-            />
             {/*
-              **One bar for both**, which is what makes it safe to say so. The
-              take carries this bar to the server, which trims the score before
-              building its timeline — so hearing the passage and recording it
-              start in the same place, and the analysis is told which.
+              The app's settings row (`LinkRow`), as on Upload and the score:
+              these were the same rows with each value in a bordered pill.
+              Closed by a rule under the last one, whichever that is.
             */}
-            <PillRow
-              // The words say the bar governs the take — `entryCopy`.
-              label={entryRowLabel('take')}
-              value={`Bar ${startFrom}`}
-              chevron="down"
-              onPress={() => setPickingStart(true)}
-              accessibilityLabel={entryAccessibilityLabel('take', startFrom)}
-            />
-            <PillRow
-              label="Metronome"
-              value={metronomeValueLabel(metronomeMode)}
-              chevron="down"
-              onPress={() => setPickingMetronome(true)}
-              accessibilityLabel={`Metronome ${metronomeValueLabel(metronomeMode)}. Choose how the beat is marked`}
-              last={skippable === 0}
-            />
-            {/*
-              Only where there is something to skip — a control that is always
-              there and does nothing on most pieces teaches a musician to stop
-              reading the controls. The redesign does not draw it because its
-              sample piece has no long rests; a piece that does needs it, or the
-              take is judged against rests it skipped.
-            */}
-            {skippable > 0 ? (
-              <View style={styles.lastRow}>
+            <View style={styles.settings}>
+              <LinkRow
+                label="Tempo"
+                value={`${displayedBpm} ${tempoUnitLabel(tempoBeatUnit)}`}
+                onPress={() => navigation.navigate('Tempo', { pieceId: params.pieceId })}
+                accessibilityLabel={`Tempo ${displayedBpm} ${tempoUnitLabel(tempoBeatUnit)}. Change it`}
+              />
+              {/*
+                **One bar for both**, which is what makes it safe to say so. The
+                take carries this bar to the server, which trims the score before
+                building its timeline — so hearing the passage and recording it
+                start in the same place, and the analysis is told which.
+              */}
+              <LinkRow
+                // The words say the bar governs the take — `entryCopy`.
+                label={entryRowLabel('take')}
+                value={`Bar ${startFrom}`}
+                onPress={() => setPickingStart(true)}
+                accessibilityLabel={entryAccessibilityLabel('take', startFrom)}
+              />
+              <LinkRow
+                label="Metronome"
+                value={metronomeValueLabel(metronomeMode)}
+                onPress={() => setPickingMetronome(true)}
+                accessibilityLabel={`Metronome ${metronomeValueLabel(metronomeMode)}. Choose how the beat is marked`}
+              />
+              {/*
+                Only where there is something to skip — a control that is always
+                there and does nothing on most pieces teaches a musician to stop
+                reading the controls. The redesign does not draw it because its
+                sample piece has no long rests; a piece that does needs it, or the
+                take is judged against rests it skipped.
+              */}
+              {skippable > 0 ? (
                 <ToggleRow
                   label={`Skip ${skippable} ${skippable === 1 ? 'bar' : 'bars'} of rest`}
                   value={skipRests}
                   onChange={setSkipRests}
                 />
-              </View>
-            ) : null}
+              ) : null}
+            </View>
 
             {/*
               **A feature named in the settings and connected to nothing was
@@ -1518,7 +1568,9 @@ export function RecordScreen() {
             */}
             {metronome.silent ? (
               <Text variant="caption" color="textTertiary" style={styles.note}>
-                Haptics are off in Profile, so nothing marks the beat.
+                {DEVICE_TAPS_ON_BEAT
+                  ? 'Haptics are off in Profile, so nothing marks the beat.'
+                  : DEVICE_CANNOT_TAP}
               </Text>
             ) : null}
             {/*
@@ -1690,23 +1742,18 @@ export function RecordScreen() {
               disabled={!takeReady || Boolean(limitMessage)}
               loading={!takeReady}
             />
-            <Pressable
+            <TextAction
+              label="Record again"
               onPress={discardReview}
               disabled={!takeReady}
-              accessibilityRole="button"
-              style={({ pressed }) => [styles.quiet, pressed && styles.quietPressed]}
-            >
-              <Text variant="metadata" color="textSecondary">
-                Record again
-              </Text>
-            </Pressable>
+              style={styles.quiet}
+            />
           </>
         ) : (
           <RecordButton
             active={recording}
             countingIn={false}
             busy={isStarting}
-            disabled={!recording && Boolean(limitMessage)}
             onPress={() => void (recording ? stop() : start())}
           />
         )}
@@ -1738,29 +1785,6 @@ export function RecordScreen() {
         The two doors that do not fit in the column, in the row grammar of the
         ones that do.
       */}
-      <BottomSheet
-        visible={showMore}
-        onClose={() => setShowMore(false)}
-        title="More"
-      >
-        <LinkRow
-          label="Upload a recording"
-          divided={false}
-          onPress={() => {
-            setShowMore(false);
-            void openUpload();
-          }}
-          hint={ACCEPTED_LABEL}
-        />
-        <LinkRow
-          label="Before you record"
-          onPress={() => {
-            setShowMore(false);
-            setShowSetup(true);
-          }}
-          hint="Checks for this take"
-        />
-      </BottomSheet>
 
       {/*
         Every way to mark the beat, on the screen that needs it. Before this
@@ -1778,7 +1802,7 @@ export function RecordScreen() {
           between four ways. A choice that looks identical during the press
           reads as dead (§3, "a tap gets an immediate response").
         */}
-        {metronomeChoices().map((choice) => (
+        {metronomeChoices({ canTapOnBeat: DEVICE_TAPS_ON_BEAT, current: metronomeMode }).map((choice) => (
           <PressableScale
             key={choice.mode}
             activeScale={0.99}
@@ -1802,6 +1826,7 @@ export function RecordScreen() {
             >
               {choice.label}
             </Text>
+            <HapticTap />
           </PressableScale>
         ))}
       </BottomSheet>
@@ -1865,7 +1890,7 @@ function RestCue({ state }: { state: RestCueState }) {
       </View>
       <Text variant="body" color="textSecondary" style={styles.restEntry}>
         {bars > 1 ? `${bars} bars · ` : ''}
-        come in at measure {state.cue.resumeMeasure}
+        come in at bar {state.cue.resumeMeasure}
       </Text>
     </Card>
   );
@@ -1893,17 +1918,17 @@ function RecordButton({
   active,
   countingIn,
   busy = false,
-  disabled = false,
   onPress,
 }: {
   active: boolean;
   countingIn: boolean;
   busy?: boolean;
-  disabled?: boolean;
   onPress: () => void;
 }) {
-  const label = busy ? 'Starting microphone…' : disabled
-    ? 'Monthly analysis limit reached'
+  // No "limit reached" state: recording never locks for the allowance
+  // (`describeReachedAnalysisLimit`, 2026-11-12). Only Analyse does.
+  const label = busy
+    ? 'Starting microphone…'
     : countingIn
       ? 'Cancel count-in'
       : active
@@ -1912,11 +1937,11 @@ function RecordButton({
   return (
     <PressableScale
       onPress={onPress}
-      disabled={disabled || busy}
+      disabled={busy}
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityState={{ disabled: disabled || busy, busy }}
-      style={[styles.control, disabled && styles.controlDisabled]}
+      accessibilityState={{ disabled: busy, busy }}
+      style={styles.control}
       // More give than the default: this is the one control a musician reaches
       // for without looking, and it has to answer the finger.
       activeScale={0.94}
@@ -1942,6 +1967,8 @@ function RecordButton({
           <Text variant="metadata" color="textSecondary">
             {label}
           </Text>
+          {/* Start and stop answer the finger on an iPhone too (`HapticTap`). */}
+          {!busy ? <HapticTap /> : null}
         </>
       )}
     </PressableScale>
@@ -1964,31 +1991,12 @@ const styles = StyleSheet.create({
     paddingBottom: 0,
   },
   header: {
-    paddingTop: 14,
+    paddingTop: spacing.sm,
     paddingHorizontal: spacing['2xl'],
     paddingBottom: spacing.md,
   },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-  },
-  title: {
-    flex: 1,
-    minWidth: 0,
-  },
-  // A bare glyph, not a ringed button: it is secondary to the title beside
-  // it. Flush with the margin, so its 44pt target reaches past it.
-  more: {
-    width: MIN_TOUCH_TARGET,
-    height: MIN_TOUCH_TARGET,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: -10,
-    marginTop: -6,
-  },
-  morePressed: {
-    opacity: 0.55,
+  practicing: {
+    marginTop: spacing.xs,
   },
   /**
    * The panel under the music: `panel`, a step warmer than a card, with a
@@ -2005,7 +2013,7 @@ const styles = StyleSheet.create({
   playerGap: {
     height: 14,
   },
-  lastRow: {
+  settings: {
     borderBottomWidth: BORDER_WIDTH,
     borderBottomColor: colors.border,
   },
@@ -2033,7 +2041,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 26,
+    gap: spacing['2xl'],
     paddingHorizontal: spacing['2xl'],
   },
   countInLabel: {
@@ -2057,7 +2065,7 @@ const styles = StyleSheet.create({
   },
   countInCancel: {
     height: MIN_TOUCH_TARGET,
-    paddingHorizontal: 18,
+    paddingHorizontal: spacing.xl,
     borderRadius: MIN_TOUCH_TARGET / 2,
     borderWidth: BORDER_WIDTH,
     borderColor: colors.borderStrong,
@@ -2147,13 +2155,7 @@ const styles = StyleSheet.create({
    * wait. No fill and no border (§3 law 6), 44pt tall, dimmed while pressed.
    */
   quiet: {
-    minHeight: MIN_TOUCH_TARGET,
-    alignItems: 'center',
-    justifyContent: 'center',
     marginTop: spacing.sm,
-  },
-  quietPressed: {
-    opacity: 0.55,
   },
   leave: {
     position: 'absolute',
@@ -2230,10 +2232,7 @@ const styles = StyleSheet.create({
    */
   control: {
     alignItems: 'center',
-    gap: 7,
-  },
-  controlDisabled: {
-    opacity: disabledOpacity,
+    gap: spacing.sm,
   },
   record: {
     width: RECORD_SIZE,

@@ -1,5 +1,5 @@
 import { ApiError } from '../data/api/client';
-import { usedThisMonth, whenAnalysisAllowanceResets } from './analysisAllowance';
+import { nextFreeTake, usedThisMonth } from './analysisAllowance';
 
 /**
  * The free-tier refusal, recognised and said out loud.
@@ -69,5 +69,5 @@ export function describeTierLimit(error: unknown): string | null {
     return null;
   }
   const count = usedThisMonth(limit.used, limit.limit);
-  return `That take wasn't analysed. You've used ${count} this month. The count resets ${whenAnalysisAllowanceResets(limit.resetsAt)}.`;
+  return `That take wasn't analysed. You've used ${count} this month. ${nextFreeTake(limit.resetsAt)}`;
 }

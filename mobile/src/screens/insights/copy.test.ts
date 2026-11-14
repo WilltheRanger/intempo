@@ -11,14 +11,14 @@ import { firstStep, focusReason, windowLabel } from './copy';
  */
 
 describe('windowLabel', () => {
-  it('follows the eyebrow in lower case', () => {
-    // It renders as "Insights · last 30 days", so a capital would be a second
-    // sentence starting mid-line.
-    expect(windowLabel(30)).toBe('last 30 days');
+  it('is a sentence-case kicker, standing on its own over the finding', () => {
+    // Set in sentence case since the caps eyebrow went (2026-11-12), so the
+    // capital is the string's, not a style's.
+    expect(windowLabel(30)).toBe('Last 30 days');
   });
 
   it('says day, singular, for one', () => {
-    expect(windowLabel(1)).toBe('last day');
+    expect(windowLabel(1)).toBe('Last day');
   });
 });
 

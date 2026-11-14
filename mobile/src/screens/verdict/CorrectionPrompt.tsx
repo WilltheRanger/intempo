@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { Check } from '../../components/icons';
 import { FadeIn, PopIn } from '../../components/motion';
 import { Text } from '../../components/primitives/Text';
+import { TextAction } from '../../components/primitives/TextAction';
 import type { UserVerdict } from '../../data/types';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import {
@@ -18,7 +19,9 @@ import {
   CORRECTION_CHOICES,
   correctionAcknowledgement,
   correctionWord,
+  heardLine,
 } from '../../lib/verdict/correction';
+import { HapticTap } from '../../components/motion/HapticTap';
 
 /** Where the exchange has got to, for one measure. */
 export type CorrectionState =
@@ -28,7 +31,7 @@ export type CorrectionState =
   | { kind: 'failed'; message: string };
 
 export interface CorrectionPromptProps {
-  /** What the app said, pre-selected so a musician changes an answer. */
+  /** What the app heard, said above the answers (`heardLine`). */
   appVerdict: UserVerdict;
   state: CorrectionState;
   onChoose: (choice: UserVerdict) => void;
@@ -97,16 +100,12 @@ export function CorrectionPrompt({
           <Text variant="metadataSmall" color="textSecondary">
             {thanks.answer}
           </Text>
-          <Pressable
-            onPress={onChange}
-            accessibilityRole="button"
+          <TextAction
+            label="Change"
+            size="small"
             accessibilityLabel="Change your answer"
-            style={({ pressed }) => [styles.change, pressed && styles.changePressed]}
-          >
-            <Text variant="metadataSmall" color="accentText" style={styles.appsChoice}>
-              Change
-            </Text>
-          </Pressable>
+            onPress={onChange}
+          />
         </View>
       </FadeIn>
     );
@@ -122,13 +121,19 @@ export function CorrectionPrompt({
         in the row below already says what the app read, and names it for a
         screen reader ("Rushing, what this app read").
       */}
+      {/*
+        **The reading in words, then the question** (the owner, 2026-11-12,
+        reversing the line above's day-old note): with no tile raised, the
+        app's reading is said once here, and every answer below is equal.
+      */}
       <Text variant="metadataSmall" color="textTertiary" style={styles.question}>
-        {question}
+        {[heardLine(appVerdict), question].filter(Boolean).join(' ')}
       </Text>
 
       <View style={styles.choices}>
         {[...CORRECTION_CHOICES, 'unsure' as const].map((choice) => {
           const isApps = choice === appVerdict;
+          // Raised only once pressed: nothing starts chosen (`heardLine`).
           const chosen = busy && state.choice === choice;
           return (
             <Pressable
@@ -142,11 +147,11 @@ export function CorrectionPrompt({
                 onChoose(choice);
               }}
               accessibilityRole="button"
-              accessibilityState={{ disabled: busy, selected: isApps }}
-              // The app's own reading is the control's current value until the
-              // musician picks another, so it is genuinely the pressed one.
+              accessibilityState={{ disabled: busy, selected: chosen }}
+              // Pressed only once the musician has pressed it: the app's
+              // reading is said in words above, not pre-selected here.
               // `ariaState.test.ts` requires the web mirror of `selected`.
-              aria-pressed={isApps}
+              aria-pressed={chosen}
               accessibilityLabel={
                 isApps
                   ? `${correctionWord(choice)}, what this app read`
@@ -154,22 +159,21 @@ export function CorrectionPrompt({
               }
               style={({ pressed }) => [
                 styles.choice,
-                (chosen || isApps) && styles.choiceApps,
-                pressed && !busy && (chosen || isApps ? styles.raisedPressed : styles.choicePressed),
+                chosen && styles.choiceApps,
+                pressed && !busy && (chosen ? styles.raisedPressed : styles.choicePressed),
               ]}
             >
               <Text
                 variant="metadata"
                 numberOfLines={1}
-                color={
-                  chosen || isApps ? 'textPrimary' : busy ? 'textTertiary' : 'textSecondary'
-                }
+                color={chosen ? 'textPrimary' : busy ? 'textTertiary' : 'textPrimary'}
                 // Raised and weighted, as `SegmentedControl` marks its current
                 // option: the tile and the weight say which, not colour alone.
-                style={[styles.choiceLabel, (chosen || isApps) && styles.appsChoice]}
+                style={[styles.choiceLabel, chosen && styles.appsChoice]}
               >
                 {correctionWord(choice)}
               </Text>
+              <HapticTap />
             </Pressable>
           );
         })}
@@ -187,6 +191,9 @@ export function CorrectionPrompt({
   );
 }
 
+/** The well's padding around its answers, as `SegmentedControl` draws it. */
+const TRACK_INSET = 3;
+
 const styles = StyleSheet.create({
   block: {
     paddingBottom: spacing.md,
@@ -201,15 +208,16 @@ const styles = StyleSheet.create({
     borderWidth: BORDER_WIDTH,
     borderColor: colors.border,
     borderRadius: radii.md,
-    padding: 3,
-    gap: 2,
+    padding: TRACK_INSET,
+    gap: spacing['2xs'],
   },
   choice: {
     flex: 1,
     minHeight: MIN_TOUCH_TARGET,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 9,
+    // Concentric with the well (`radii.ts`).
+    borderRadius: radii.md - TRACK_INSET,
   },
   choiceApps: {
     backgroundColor: colors.surface,
@@ -247,7 +255,7 @@ const styles = StyleSheet.create({
   answerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    columnGap: 18,
+    columnGap: spacing.lg,
     marginLeft: ICON_SIZE.md + CHECK_GAP,
   },
   change: {

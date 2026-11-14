@@ -1,22 +1,22 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
-import { useGoBack } from '../../navigation/useGoBack';
+import { useBackButton } from '../../navigation/useGoBack';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import {
-  BackLink,
+  LargeTitle,
   EmptyState,
-  PageHeader,
   PrimaryButton,
   ScreenContainer,
   SegmentedControl,
   Text,
 } from '../../components/primitives';
+import { TextAction } from '../../components/primitives/TextAction';
 import { VerdictSkeleton } from '../../components/skeletons';
 import { takeSource } from '../../data/sources';
 import type { MeasureVerdict, TakeResult, UserVerdict } from '../../data/types';
-import { MIN_TOUCH_TARGET, spacing } from '../../design';
+import { spacing } from '../../design';
 import { formatTakeVerdict } from '../../lib/tempo';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
 import { appVerdictForBar, barTempo } from '../../lib/verdict/barTempo';
@@ -25,7 +25,7 @@ import { takePitchTrend, tempoTrend } from '../../lib/verdict/trend';
 import { pitchWord } from '../../lib/verdict/intonation';
 import { namedMarks, noteDetail, notesLine, takeNoteMarks } from '../../lib/verdict/pitchByNote';
 import { NoteRow } from '../../components/charts/NoteRow';
-import { headlinePassage, practiceLabel } from '../../lib/verdict/passage';
+import { practiceLabel, practicePassage } from '../../lib/verdict/passage';
 import { mistakeBars, mistakesInPassage } from '../../lib/verdict/mistakes';
 import {
   barsLabel,
@@ -48,6 +48,7 @@ import { MeasureBars } from './MeasureBars';
 import { TrendChart } from './TrendChart';
 import { TakePlayback } from './TakePlayback';
 import { loadStateFor } from '../../lib/loadState';
+import { LOW_CONFIDENCE_TITLE } from '../../lib/insights/takeRows';
 
 /**
  * What one take came back as.
@@ -133,13 +134,14 @@ export function VerdictScreen() {
    * the success path below navigates to the piece by name, which is what a
    * verdict's back control should do when there is a piece to name.
    */
-  const goBack = useGoBack(
+  const back = useBackButton(
     take ? { route: 'PieceDetail', params: { pieceId: take.pieceId } } : { tab: 'Library' },
   );
+  const goBack = back.onPress;
 
   if (load === 'loading') {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ back }}>
         <VerdictSkeleton />
       </ScreenContainer>
     );
@@ -147,7 +149,7 @@ export function VerdictScreen() {
 
   if (load === 'unavailable' || !take) {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ back }}>
         <EmptyState
           fill
           title="Couldn't load this take"
@@ -181,7 +183,7 @@ export function VerdictScreen() {
     const refused = intakeRefusal(take.failure.reason);
 
     return (
-      <ScreenContainer
+      <ScreenContainer navigationBar={{ back }}
         footer={
           <PrimaryButton
             // A refused file is not something to play again: the record
@@ -213,10 +215,6 @@ export function VerdictScreen() {
           focal point (§3 law 4), and it should be the outcome rather than the
           title of the piece.
         */}
-        <PageHeader
-          onBack={goBack}
-          backLabel="Back to the piece"
-        />
         <EmptyState
           fill
           // **The finding, not the app's process.** The heading is the one
@@ -254,7 +252,7 @@ export function VerdictScreen() {
   // with a sentence attached, not a failure to report as one.
   if (take.status !== 'ok') {
     return (
-      <ScreenContainer
+      <ScreenContainer navigationBar={{ back }}
         footer={
           <PrimaryButton
             label="Record again"
@@ -265,10 +263,6 @@ export function VerdictScreen() {
         }
       >
         {/* Centred for the same reason as the branch above. */}
-        <PageHeader
-          onBack={goBack}
-          backLabel="Back to the piece"
-        />
         {/* The pipeline's own sentence, shown verbatim. */}
         {/*
           **Three outcomes shared this heading.** A completely silent take, one
@@ -306,13 +300,23 @@ export function VerdictScreen() {
   const tappedNote = noteMarks.find((m) => m.midi === note) ?? null;
   const marked = tappedNote ? new Set(tappedNote.bars) : mistakes;
   // The bars the verdict is about, which the main button practises.
-  const passage = take.lowConfidence ? null : headlinePassage(take.headline);
+  // The same rule every Practice button reads (`practicePassage`).
+  const passage = practicePassage(take);
+  /*
+    **The chart opens on the verdict's own passage** (the owner, 2026-11-12,
+    reversing 2026-09-29's "nothing is picked at first"). The most specific
+    thing the app knew ("Bars 5–8 were fast · Bar 6: E instead of E♭") was
+    behind an unmarked tap on the curve, and three of the five reviews found it
+    only by accident. A tap still picks any other bar; with none picked, the
+    passage is what is shown.
+  */
+  const shown = selected ?? (showingPitch ? null : passage?.from ?? null);
   const recordAgain = () => navigation.replace('Record', { pieceId: take.pieceId });
   // The passage around the bar the musician tapped, in whichever reading the
   // chart is showing; nothing until they tap (`lib/verdict/barPassage.ts`).
   const tempoSpan =
-    selected !== null && !showingPitch
-      ? tempoPassageAt(take.measures, selected, take.targetBpm, take.tempoBeatUnit, take.tolerance)
+    shown !== null && !showingPitch
+      ? tempoPassageAt(take.measures, shown, take.targetBpm, take.tempoBeatUnit, take.tolerance)
       : null;
   const pitchSpan =
     selected !== null && showingPitch && take.intonation
@@ -352,12 +356,31 @@ export function VerdictScreen() {
     bar chosen, and a tap or a drag opens one (#173); it used to open on the
     measure most worth practising, which the button below now names instead.
 
-    One control at the top the prototype does not draw: "‹ Back to the piece".
-    A verdict opened from a piece's history in the home-screen app has no
-    browser Back and no tab bar, and "Record again" is not the way out of it.
+    One control at the top the prototype does not draw: the navigation bar's
+    back. A verdict opened from a piece's history in the home-screen app has no
+    tab bar, and "Record again" is not the way out of it.
   */
+  /*
+    **Back to the piece or its takes, past Record.** A result reached from a
+    take goes back to where the take was started from, never to the recording
+    screen it came through. The word is the navigator's — Record's title is
+    the piece's, and the takes list's is "Your takes" — so only the press
+    changes.
+  */
+  const verdictTitle = take.lowConfidence
+    ? LOW_CONFIDENCE_TITLE
+    : formatTakeVerdict(take.measures, take.direction);
+  const resultBack = {
+    ...back,
+    onPress: () =>
+      fromTakes
+        ? navigation.popTo('PieceTakes', { pieceId: take.pieceId })
+        : navigation.popTo('PieceDetail', { pieceId: take.pieceId }),
+  };
+
   return (
     <ScreenContainer
+      navigationBar={{ back: resultBack }}
       footer={
         /*
           **The passage the verdict found, not the whole piece again** (the
@@ -371,35 +394,25 @@ export function VerdictScreen() {
             <PrimaryButton
               label={practiceLabel(passage)}
               onPress={() =>
-                navigation.replace('Record', { pieceId: take.pieceId, startAt: passage.from })
+                navigation.replace('Record', {
+                  pieceId: take.pieceId,
+                  startAt: passage.from,
+                  endAt: passage.to,
+                })
               }
             />
-            <Pressable
-              onPress={recordAgain}
-              accessibilityRole="button"
-              style={({ pressed }) => [styles.quiet, pressed && styles.quietPressed]}
-            >
-              <Text variant="metadata" color="textTertiary">
-                Record again
-              </Text>
-            </Pressable>
+            <TextAction label="Record again" onPress={recordAgain} style={styles.quiet} />
           </View>
         ) : (
           <PrimaryButton label="Record again" onPress={recordAgain} />
         )
       }
     >
-      <BackLink
-        label={fromTakes ? 'Back to your takes' : 'Back to the piece'}
-        onPress={() =>
-          fromTakes
-            ? navigation.popTo('PieceTakes', { pieceId: take.pieceId })
-            : navigation.popTo('PieceDetail', { pieceId: take.pieceId })
-        }
-      />
-      <Text variant="screenTitle" accessibilityRole="header" style={styles.title}>
-        {take.lowConfidence ? 'Timing is uncertain' : formatTakeVerdict(take.measures, take.direction)}
-      </Text>
+      <LargeTitle text={verdictTitle} style={styles.head}>
+        <Text variant="screenTitle" accessibilityRole="header" style={styles.title}>
+          {verdictTitle}
+        </Text>
+      </LargeTitle>
       {/*
         **Nothing under the title but the chart** (the owner, 2026-09-29,
         circling the two lines that were here on a phone). "Bars 5–8 at 104,
@@ -413,7 +426,7 @@ export function VerdictScreen() {
       */}
       {take.lowConfidence ? (
         <Text variant="body" color="textSecondary" style={styles.headline}>
-          Hard to hear. Try a quieter room, closer to the mic.
+          Try a quieter room, closer to the mic.
         </Text>
       ) : null}
 
@@ -477,7 +490,7 @@ export function VerdictScreen() {
             key="tempo"
             data={tempoLine}
             measures={take.measures}
-            selected={selected}
+            selected={shown}
             onSelect={setSelected}
             span={shaded}
             marked={marked}
@@ -491,7 +504,7 @@ export function VerdictScreen() {
         ) : (
           <MeasureBars
             measures={take.measures}
-            selected={selected}
+            selected={shown}
             onSelect={setSelected}
             span={span}
             targetBpm={take.targetBpm}
@@ -561,6 +574,9 @@ export function VerdictScreen() {
 }
 
 const styles = StyleSheet.create({
+  head: {
+    paddingTop: spacing.sm,
+  },
   /**
    * 31pt rather than the screen title's 36, so every verdict fits one line on
    * a phone with "You" in it (the owner, 2026-09-29): "You dragged in the
@@ -572,7 +588,7 @@ const styles = StyleSheet.create({
     letterSpacing: -0.5,
   },
   headline: {
-    marginTop: 10,
+    marginTop: spacing.sm,
   },
   playback: {
     marginTop: spacing.xl,
@@ -603,13 +619,6 @@ const styles = StyleSheet.create({
   },
   /** "Record again" under the passage: quiet, and still a 44pt target. */
   quiet: {
-    alignSelf: 'center',
-    justifyContent: 'center',
-    minHeight: MIN_TOUCH_TARGET,
-    paddingHorizontal: spacing.lg,
     marginTop: spacing.xs,
-  },
-  quietPressed: {
-    opacity: 0.55,
   },
 });

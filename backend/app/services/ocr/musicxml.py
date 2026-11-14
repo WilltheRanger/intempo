@@ -1816,7 +1816,15 @@ def score_json_from_musicxml(
             words = _text(direction.find("direction-type/words"))
             # A tempo is already established when this direction is read: a
             # metronome mark after that is a change, before it the piece's own.
-            tempo_before = bpm_hint
+            # **Not within the first bar.** A file converted from MIDI states
+            # each tempo event at the downbeat, and URMP's state two there:
+            # ♩=100 then ♩=200 heading "He's a Pirate", 100 then 120, 100
+            # then 96. The second was read as a change at bar 1, so the page
+            # asked for twice the tempo the player set, from the first note to
+            # the last, and every take of it was told it dragged. Two marks
+            # heading a piece restate its tempo, and the later is the one in
+            # force.
+            tempo_before = bpm_hint if index > 1 else None
             # "cresc." is often the first word a part prints, and it is not a
             # tempo; it became this piece's tempo marking until it was read as
             # the hairpin it is, in the loop over the bar's notes below.
@@ -1828,20 +1836,24 @@ def score_json_from_musicxml(
                 tempo_marks.append((len(measures), *marked))
             if printed_tempo is not None and tempo_beat_unit is None:
                 tempo_beat_unit = printed_tempo[1]
-            sound = direction.find("sound")
-            if sound is not None and bpm_hint is None:
-                raw_tempo = sound.get("tempo")
-                if raw_tempo:
-                    try:
-                        candidate = int(round(float(raw_tempo)))
-                    except ValueError:
-                        candidate = 0
-                    if 20 <= candidate <= 300:
-                        bpm_hint = candidate
             # `<sound>` is quarter-note BPM by definition and outranks the
             # converted mark. The mark's unit is still kept for display.
-            if bpm_hint is None and printed_tempo is not None:
-                bpm_hint = printed_tempo[0]
+            stated: int | None = None
+            sound = direction.find("sound")
+            raw_tempo = sound.get("tempo") if sound is not None else None
+            if raw_tempo:
+                try:
+                    candidate = int(round(float(raw_tempo)))
+                except ValueError:
+                    candidate = 0
+                if 20 <= candidate <= 300:
+                    stated = candidate
+            if stated is None and printed_tempo is not None:
+                stated = printed_tempo[0]
+            # The first tempo stated is the piece's, and within the first bar
+            # the last one is (see `tempo_before` above).
+            if stated is not None and (bpm_hint is None or index == 1):
+                bpm_hint = stated
 
         notes: list[Note] = []
         #: Every note the measure holds, before the voice filter — the fallback

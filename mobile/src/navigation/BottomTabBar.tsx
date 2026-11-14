@@ -29,6 +29,7 @@ import {
   tabBarFloatBottom,
 } from './tabBarMetrics';
 import { useChromeTone } from './ChromeToneContext';
+import { HapticTap } from '../components/motion/HapticTap';
 import { impact, ImpactFeedbackStyle } from '../lib/haptics';
 import { useReducedMotion } from '../lib/useReducedMotion';
 import type { TabParamList } from './types';
@@ -241,6 +242,8 @@ export function BottomTabBar({
                 {label}
               </Text>
             </TabSelectionMotion>
+            {/* A tab change taps the finger on an iPhone too (`HapticTap`). */}
+            <HapticTap />
           </Pressable>
         );
       })}

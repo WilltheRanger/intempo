@@ -1,6 +1,6 @@
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { useQueryClient } from '@tanstack/react-query';
-import { Library, Plus, Search } from '../../components/icons';
+import { Library, PencilLine, Plus, Search, Trash2 } from '../../components/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Platform, StyleSheet, View } from 'react-native';
 
@@ -8,13 +8,18 @@ import { FadeIn } from '../../components/motion';
 import { PieceListSkeleton } from '../../components/skeletons';
 import {
   EmptyState,
-  IconButton,
   ScreenContainer,
   SearchHeader,
 } from '../../components/primitives';
 import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
+import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
+import { Menu } from '../../components/overlays/Menu';
+import type { Rect } from '../../components/overlays/menuPlacement';
+import type { BarAction } from '../../components/primitives/NavigationBar';
 import { SECTION_HEADING } from '../../components/primitives/sectionHeading';
 import { Text } from '../../components/primitives/Text';
+import { arrival, useArrival } from '../../data/arrival';
+import { practicePassage, type Passage } from '../../lib/verdict/passage';
 import { describeLoadError } from '../../data/describeLoadError';
 import { useInsights } from '../../data/hooks/useInsights';
 import { useRecentTakes } from '../../data/hooks/useLatestTake';
@@ -87,6 +92,7 @@ export function LibraryScreen() {
     await Promise.all([library.refetch(), currentPiece.refetch()]);
   }
   const [query, setQuery] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
   // The page's scroll offset, for the band's photograph (`ContinueBand`).
   const scrollY = useRef(new Animated.Value(0)).current;
 
@@ -172,12 +178,17 @@ export function LibraryScreen() {
   // Straight to a take: "continue" means recording one. A piece with no bars
   // has nothing to record against, so it opens the piece instead — and the
   // button says so (`continueLine.actionLabel`).
-  function openPractice(target: Piece) {
+  function openPractice(target: Piece, passage: Passage | null) {
     if (!hasNotation(target)) {
       navigation.navigate('PieceDetail', { pieceId: target.id });
       return;
     }
-    navigation.navigate('Record', { pieceId: target.id });
+    // The bars the last take found, where it found some (`practicePassage`):
+    // the band's button names them, so the take starts there.
+    navigation.navigate(
+      'Record',
+      passage ? { pieceId: target.id, startAt: passage.from, endAt: passage.to } : { pieceId: target.id },
+    );
   }
 
   /*
@@ -189,6 +200,14 @@ export function LibraryScreen() {
   const readAgain = useRetranscribe();
   const discard = useDeletePiece();
   const [discarding, setDiscarding] = useState<Piece | null>(null);
+  /*
+    **A piece held down on the shelf**, and its menu: the piece screen's own
+    options — Rename, Delete piece — from where the finger is (2026-11-13).
+    Kept after the menu closes so it can leave from where it opened.
+  */
+  const [held, setHeld] = useState<{ piece: Piece; anchor: Rect } | null>(null);
+  const [heldOpen, setHeldOpen] = useState(false);
+  const [deleting, setDeleting] = useState<Piece | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   // Whichever piece has something running. Read off the mutations rather than
@@ -229,6 +248,7 @@ export function LibraryScreen() {
   const searching = Boolean(query.trim());
   const current = load === 'ready' && pieces.length > 0 ? currentPiece.data ?? null : null;
   const continueLine = continueLineFor({
+    passage: current ? practicePassage(lastTakes.get(current.id)) : null,
     piece: current,
     status: current
       ? pieceStatus({
@@ -270,6 +290,24 @@ export function LibraryScreen() {
     );
   }, [drawn, navigation]);
 
+  /*
+    **"Add your first piece" opens the add sheet.** The welcome that ends
+    onboarding offers exactly that (`OnboardingDone`), and this is where it is
+    kept: once the shelf has loaded, an empty one opens the sheet, and either
+    way the arrival is answered so it happens once. A shelf that turns out to
+    hold pieces — onboarded on another device, say — is simply shown.
+  */
+  const arrived = useArrival();
+  useEffect(() => {
+    if (arrived !== 'firstPiece' || load !== 'ready') {
+      return;
+    }
+    if (pieces.length === 0) {
+      setAddSheetVisible(true);
+    }
+    arrival.settled();
+  }, [arrived, load, pieces.length]);
+
   // Whether the top of the screen is the Continue band. Decided by the piece,
   // not by the search: the band stays while searching, as the header's ground.
   const banded = current !== null;
@@ -287,19 +325,38 @@ export function LibraryScreen() {
       query={query}
       onQueryChange={setQuery}
       placeholder="Search your library"
-      searchable={pieces.length > 0}
+      open={searchOpen}
+      onClose={() => {
+        setQuery('');
+        setSearchOpen(false);
+      }}
       tone={tone}
-      action={
-        <IconButton
-          icon={Plus}
-          label="Add piece"
-          variant="bare"
-          tone={tone}
-          onPress={() => setAddSheetVisible(true)}
-        />
-      }
     />
   );
+
+  /*
+    **Search and add are the bar's, not the title's.** They sat beside the
+    large title and scrolled away with it, so from halfway down the shelf the
+    way to add a piece was a scroll back up. In the bar they stay in reach, as
+    an iPhone app's do. Hidden while searching: the field's own Cancel is the
+    one control that means anything then.
+  */
+  const barActions: BarAction[] = searchOpen
+    ? []
+    : [
+        ...(pieces.length > 0
+          ? [
+              {
+                icon: Search,
+                // **"Search", not the placeholder**: one name for one control
+                // whether or not the field is open (`SearchHeader`).
+                label: 'Search',
+                onPress: () => setSearchOpen(true),
+              },
+            ]
+          : []),
+        { icon: Plus, label: 'Add piece', onPress: () => setAddSheetVisible(true) },
+      ];
 
   return (
     <ScreenContainer
@@ -307,21 +364,29 @@ export function LibraryScreen() {
       bleed={banded}
       underStatusBar={banded}
       scrollOffset={scrollY}
+      navigationBar={{ actions: barActions }}
     >
       {banded ? (
         <ContinueBand
           header={header}
           line={continueLine}
           onOpen={() => navigation.navigate('PieceDetail', { pieceId: current.id })}
-          onAction={() => openPractice(current)}
+          onAction={() => openPractice(current, continueLine?.passage ?? null)}
           scrollY={scrollY}
         />
       ) : (
         header
       )}
 
-      {/* The band runs edge to edge; everything under it keeps the gutter. */}
-      <View style={banded ? styles.gutter : undefined}>
+      {/*
+        The band runs edge to edge; everything under it keeps the gutter.
+
+        **And it grows**, banded or not. It was a bare `View` without the band,
+        so the empty shelf's `EmptyState fill` had no height to centre in and
+        its only action sat at y 175 of 844, in the top quarter, while the same
+        state on Insights sat in the middle (measured, 2026-11-12).
+      */}
+      <View style={[styles.body, banded && styles.gutter]}>
 
         {/*
           The only thing on this screen that can fail without a screen of its
@@ -381,6 +446,12 @@ export function LibraryScreen() {
             setActionError(null);
             setDiscarding(piece);
           }}
+          onHoldPiece={(piece, anchor) => {
+            impact(ImpactFeedbackStyle.Medium);
+            setHeld({ piece, anchor });
+            setHeldOpen(true);
+          }}
+          heldPieceId={heldOpen ? held?.piece.id ?? null : null}
         />
 
         <AddPieceSheet
@@ -415,6 +486,59 @@ export function LibraryScreen() {
           }}
           onCancel={() => setDiscarding(null)}
         />
+
+        <Menu
+          visible={heldOpen}
+          anchor={held?.anchor ?? null}
+          label={held ? `${held.piece.title} options` : 'Piece options'}
+          onClose={() => setHeldOpen(false)}
+          items={
+            held
+              ? [
+                  {
+                    label: 'Rename',
+                    icon: PencilLine,
+                    // The rename lives on the piece, so it opens there
+                    // with its editor already up.
+                    onPress: () =>
+                      navigation.navigate('PieceDetail', { pieceId: held.piece.id, edit: true }),
+                  },
+                  {
+                    label: 'Delete piece',
+                    icon: Trash2,
+                    onPress: () => {
+                      setActionError(null);
+                      setDeleting(held.piece);
+                    },
+                  },
+                ]
+              : []
+          }
+        />
+
+        {/* The piece screen's question, word for word, asked from the shelf. */}
+        <ConfirmDialog
+          visible={deleting !== null}
+          title="Delete this piece?"
+          message={
+            deleting
+              ? deleting.lastPracticedAt
+                ? `${deleting.title} and all its takes will be deleted.`
+                : `${deleting.title} will be deleted.`
+              : ''
+          }
+          confirmLabel="Delete piece"
+          onConfirm={() => {
+            const piece = deleting;
+            setDeleting(null);
+            if (piece) {
+              discard.mutate(piece.id, {
+                onError: (cause) => setActionError(describe(cause)),
+              });
+            }
+          }}
+          onCancel={() => setDeleting(null)}
+        />
       </View>
     </ScreenContainer>
   );
@@ -438,6 +562,10 @@ interface LibraryContentProps {
   onReadAgain: (piece: Piece) => void;
   /** Ask before throwing that scan away. */
   onDiscard: (piece: Piece) => void;
+  /** A tile held down: its menu, from where it is. */
+  onHoldPiece: (piece: Piece, anchor: Rect) => void;
+  /** The piece whose menu is open, standing proud of the shelf. */
+  heldPieceId: string | null;
   /** The one piece with something running, if any. */
   busyPieceId: string | null;
   insightByPiece: ReadonlyMap<string, PieceInsight>;
@@ -458,6 +586,8 @@ function LibraryContent({
   retrying,
   onReadAgain,
   onDiscard,
+  onHoldPiece,
+  heldPieceId,
   busyPieceId,
   insightByPiece,
   lastTakes,
@@ -499,6 +629,9 @@ function LibraryContent({
         icon={Library}
         title="No pieces yet"
         actionLabel="Add your first piece"
+        // The one thing this screen can do, so it is the one ink button on it
+        // (`EmptyState.actionTone`, which names this screen as the case).
+        actionTone="primary"
         onActionPress={onAddPiece}
       />
     );
@@ -508,10 +641,10 @@ function LibraryContent({
     return (
       <EmptyState
         icon={Search}
-        title="No matches"
-        // No button: the field's own ✕ and Cancel already clear it, and a
-        // third way to do the same thing was one too many (2026-09-29).
-        description={`Nothing matches “${query.trim()}”.`}
+        // One line: it was "No matches" over "Nothing matches 'x'.", the
+        // heading said twice (the UI review, 2026-11-12). No button: the
+        // field's own ✕ and Cancel already clear it (2026-09-29).
+        title={`Nothing matches “${query.trim()}”`}
       />
     );
   }
@@ -597,6 +730,8 @@ function LibraryContent({
                   onPressIn={() => onTouchPiece(piece)}
                   onReadAgain={() => onReadAgain(piece)}
                   onDiscard={() => onDiscard(piece)}
+                  onLongPress={(anchor) => onHoldPiece(piece, anchor)}
+                  lifted={heldPieceId === piece.id}
                   busy={busyPieceId === piece.id}
                 />
               </FadeIn>
@@ -643,13 +778,16 @@ function GroupHeading({ label, count }: { label: string; count: number }) {
 const SHELF_GUTTER = spacing.md;
 
 const styles = StyleSheet.create({
+  body: {
+    flexGrow: 1,
+  },
   gutter: {
     paddingHorizontal: SCREEN_GUTTER,
   },
   heading: {
     flexDirection: 'row',
     alignItems: 'baseline',
-    gap: 10,
+    gap: spacing.md,
     paddingBottom: spacing.sm,
     borderBottomWidth: BORDER_WIDTH,
     borderBottomColor: colors.border,
@@ -665,12 +803,12 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   section: {
-    marginTop: 26,
+    marginTop: spacing['2xl'],
   },
   group: {
     // The gap between groups is what a heading needs to belong to the rows
     // below it rather than float between two blocks.
-    marginBottom: 28,
+    marginBottom: spacing['3xl'],
   },
   shelf: {
     flexDirection: 'row',
@@ -679,7 +817,7 @@ const styles = StyleSheet.create({
     // Row gap larger than column gap: two tiles side by side are one shelf and
     // the rows above and below are different ones, so the vertical rhythm has
     // to be the louder of the two.
-    rowGap: 22,
+    rowGap: spacing['2xl'],
     // The column gap is half on each side of every slot, with the shelf pulled
     // out by the same half so the outer edges still sit on the page margin.
     marginHorizontal: -SHELF_GUTTER / 2,

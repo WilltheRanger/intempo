@@ -39,8 +39,11 @@ export type TileState =
   /** No notation and nothing pending: typed in, or imported without notes. */
   | { kind: 'bare' };
 
-/** On the page, where the music would be. Two words, not a paragraph. */
+/** Under the staves of a page being read, before the worker has named a step. */
 export const READING_MESSAGE = 'Reading the page…';
+/** The same, for a page waiting for another to finish first. */
+export const QUEUED_MESSAGE = 'Waiting to be read';
+/** On the page, where the music would be. Two words, not a paragraph. */
 export const UNREADABLE_MESSAGE = 'Couldn’t be read';
 
 export const READ_AGAIN_LABEL = 'Try again';
@@ -70,14 +73,33 @@ export function tileState(piece: TilePiece): TileState {
   return { kind: 'bare' };
 }
 
-/** The line drawn on the page itself, or null when the music is drawn instead. */
+/**
+ * The line drawn on the page itself, or null when the page draws something
+ * else: the music, or the staves of a page being read (`readingLine`).
+ */
 export function tileMessage(state: TileState): string | null {
   switch (state.kind) {
-    case 'reading':
-      return READING_MESSAGE;
     case 'unreadable':
       return UNREADABLE_MESSAGE;
     default:
       return null;
   }
+}
+
+/**
+ * The line under a page being read (`ReadingPage`).
+ *
+ * **The worker's own step, where it has said one** — "Reading stave 3 of 7",
+ * "Finding the staves", "Reading page 2 of 4" — which the piece's own screen
+ * has always shown (`TranscribingPanel`) and the shelf did not: a tile said
+ * "Reading the page…" for the whole minute, beside a screen one tap away that
+ * knew how far it had got (the UI review, 2026-11-12). Before a step, what it
+ * is waiting for: its turn, or the reading to begin.
+ */
+export function readingLine(
+  piece: Pick<Piece, 'transcriptionStage' | 'transcriptionStatus'>,
+): string {
+  const stage = piece.transcriptionStage?.trim();
+  if (stage) return stage;
+  return piece.transcriptionStatus === 'queued' ? QUEUED_MESSAGE : READING_MESSAGE;
 }

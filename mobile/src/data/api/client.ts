@@ -19,8 +19,7 @@ const SESSION_ENDED = 'Your session has ended. Sign in again.';
  * to live: `describeError.ts` already imports from here, so the arrow only
  * goes one way.
  */
-export const SERVER_FAULT =
-  'The server had a problem. This is not something you did. Try again in a minute.';
+export const SERVER_FAULT = 'Our server had a problem. Try again in a minute.';
 
 /**
  * The last resort, when the server said nothing a person could read.
@@ -37,8 +36,7 @@ export const SERVER_FAULT =
  * The status and the path are not lost: both are fields on `ApiError`, which
  * is where a developer should be reading them from anyway.
  */
-export const REQUEST_FAILED =
-  'Something went wrong at our end. Try again. If it keeps happening, it is not you.';
+export const REQUEST_FAILED = 'That didn’t go through. Try again in a minute.';
 
 /**
  * Base URL for the FastAPI backend. Override per environment with
@@ -494,8 +492,10 @@ async function readError(
   response: Response,
 ): Promise<{ message: string; detail: unknown }> {
   // 5xx is the one case this can name with confidence, and naming it is worth
-  // doing: "not something you did" is the difference between a musician
-  // retrying and a musician assuming they broke their library.
+  // doing: "Our server" is the difference between a musician retrying and a
+  // musician assuming they broke their library. It used to add "This is not
+  // something you did", a reassurance that raised the doubt it answered (the
+  // UI review, 2026-11-12, stop-slop).
   const fallback = response.status >= 500 ? SERVER_FAULT : REQUEST_FAILED;
   try {
     const payload = (await response.json()) as { detail?: unknown };

@@ -3,6 +3,7 @@ import { PanResponder, Platform, StyleSheet, View, type LayoutChangeEvent } from
 
 import { TrendPlot } from '../../components/charts/TrendPlot';
 import { Text } from '../../components/primitives';
+import { spacing } from '../../design';
 import type { MeasureVerdict } from '../../data/types';
 import { moveIndex, sliderMove, type SliderMove } from '../../lib/sliderKeys';
 import { barAtAlong, type TrendData, type TrendPoint } from '../../lib/verdict/trend';
@@ -185,7 +186,7 @@ const styles = StyleSheet.create({
   axis: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 2,
+    marginTop: spacing['2xs'],
   },
   number: {
     fontSize: 12,

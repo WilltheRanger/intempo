@@ -8,19 +8,25 @@ import {
 } from 'react-native';
 
 import { Text } from '../../components/primitives';
-import { BORDER_WIDTH, colors, radii } from '../../design';
+import { BORDER_WIDTH, MIN_TOUCH_TARGET, colors, radii } from '../../design';
 import { fractionOf, tempoAtFraction } from '../../lib/record/tapTempo';
 import { sliderMove } from '../../lib/sliderKeys';
 
 const THUMB = 24;
-const HEIGHT = 34;
+/**
+ * The strip a finger has to find, at the app's touch floor. It was 34, which
+ * the audit never measured because it did not count sliders as controls
+ * (2026-11-12); `audit-a11y.mjs` does now.
+ */
+const HEIGHT = MIN_TOUCH_TARGET;
+const RAIL = 4;
 
 /**
  * The redesign's tempo bar: a rail with a gold fill and a white thumb, the ends
  * labelled underneath (`redesign/Tempo.dc.html`).
  *
  * **Grab anywhere on it**, not only the thumb, as the prototype does: a press
- * lands the tempo where the finger is and a drag carries it. The 34pt strip is
+ * lands the tempo where the finger is and a drag carries it. The 44pt strip is
  * the target; the 4pt rail is only what is drawn.
  *
  * A real slider to assistive tech: `role="slider"` with its value range, and
@@ -145,6 +151,9 @@ export function TempoSlider({
   );
 }
 
+/** Room for "marked 96", centred on its tick. */
+const MARKED_WIDTH = 80;
+
 const styles = StyleSheet.create({
   strip: {
     height: HEIGHT,
@@ -154,16 +163,16 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    top: 15,
-    height: 4,
+    top: (HEIGHT - RAIL) / 2,
+    height: RAIL,
     borderRadius: radii.pill,
     backgroundColor: colors.border,
   },
   fill: {
     position: 'absolute',
     left: 0,
-    top: 15,
-    height: 4,
+    top: (HEIGHT - RAIL) / 2,
+    height: RAIL,
     borderRadius: radii.pill,
     backgroundColor: colors.accent,
   },
@@ -183,8 +192,8 @@ const styles = StyleSheet.create({
   markedAt: {
     position: 'absolute',
     bottom: HEIGHT - 15,
-    width: 80,
-    marginLeft: -40,
+    width: MARKED_WIDTH,
+    marginLeft: -MARKED_WIDTH / 2,
     alignItems: 'center',
   },
   markedLabel: {

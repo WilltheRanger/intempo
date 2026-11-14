@@ -1,5 +1,339 @@
 # InTempo Decisions
 
+## 2026-11-13 — A missed note is also looked for in the pitch track, where its written pitch takes over
+
+**Context.** The first real recordings the pipeline has been measured on
+(URMP's 61 string tracks, `tools/eval/real_takes.py`) reported 5.3% of the
+notes played as missing. Three in four had no attack within 110 ms of their
+label, and five in six were a new pitch: notes changed under one bow, which a
+player does whether or not the page marks a slur. The second look
+(`analysis._recover_missed_onsets`) searched only the onset envelope, where a
+finger change makes no rise to find.
+
+**Decision.** After the attack look, a *legato look*
+(`onset_recovery.recover_by_pitch`, `analysis._recover_legato`) asks the
+pitch track the chain already computes. A missed note whose pitch differs from
+both written neighbours is found at the first stretch, inside its window,
+where its written pitch takes over and holds for 45 ms. That time is moved
+onto the attack's clock. The attack look is unchanged. `TUNING_LOG.md` has the
+numbers, and two changes to the attack look that were measured and withdrawn
+the same day.
+
+**Alternatives considered.**
+- *A more sensitive envelope.* Tried for quiet notes on 2026-09-19, when a
+  local threshold broke thirteen tests. The vibrato filter
+  (`[onset.envelope]`) exists to suppress flux from a partial that only moved
+  over, which is what a legato change is, so loosening it brings vibrato back
+  as attacks.
+- *A pitch-change detector in the first pass, for every note.* It would move
+  notes found today in every take, the six fixtures and calibration included.
+  It would also add attacks wherever a pitch moves without a written note: a
+  vibrato's swing, an ornament, a shift. In the second look it runs only where
+  the page writes a note and none was heard, which is the property that pass
+  was built around.
+- *Reading unmarked pitch changes as optional,* as a slur's interior notes
+  are. That hides notes genuinely left out, because an optional note unheard
+  is not reported missing.
+
+**Trade-offs accepted.**
+- A repeated pitch is not asked about, because a pitch the note before or
+  after also has would be found whether or not this note sounded. About a
+  third of the notes still missed are such repeats.
+- One lag (16 ms) serves every instrument. The measured offsets are 7–28 ms.
+- A note left out whose pitch the player passes through slowly can be found:
+  1.2% of such in-between pitches on the URMP sweep.
+
+## 2026-11-13 — iPhone haptics ride on a hidden switch under the finger; pull to refresh reads Safari's rubber band
+
+**Context.** These are the "touch details" the owner approved. Each is a
+place where the web build on an iPhone behaved like a web page.
+- Its 29 haptic calls went through `expo-haptics`, which on the web clicks a
+  hidden switch from code. Current WebKit plays a switch's haptic only for a
+  trusted click during a user's gesture. The `ios-haptics` library moved to a
+  real tap in its v3, noting Apple closed the old way in iOS 26.5. So those
+  calls were most likely silent.
+- react-native-web's `RefreshControl` discards `onRefresh`.
+- Its `Switch` is a 40×20 Material toggle.
+- A long press selected words or offered to save a photograph.
+
+**Decisions.**
+- **`HapticTap`.** Shared controls that ask for a haptic carry it: the
+  buttons, rows and sheet options, setting rows, the tab bar, Record's record
+  button and its metronome rows, the answers and the tempo picks.
+  - On a touch screen whose browser has `<input type=checkbox switch>` and no
+    `navigator.vibrate` (Safari on an iPhone), it lays a transparent label
+    over the control, wired to a hidden switch. The finger's own tap is the
+    trusted click Safari plays its haptic for.
+  - The label's click bubbles to the control, which is pressed once.
+    react-native-web presses on `click`, so the switch's own follow-on click is
+    stopped where it starts, or the control would be pressed twice.
+  - `lib/haptics.web.ts` stays silent there, so an older iOS does not tap
+    twice. Rules are in `hapticsSupport.ts`, with tests.
+- **The haptic metronome is offered only where a device can tap on a beat**
+  (`metronomeChoices({ canTapOnBeat })`). A browser on an iPhone cannot be
+  made to tap by a timer at all. A mode already chosen there stays visible
+  and says why it is quiet.
+- **Pull to refresh on the web.** On iOS, `scrollTop` goes below zero while a
+  scroller is rubber-banded (Ionic's iOS refresher reads the same). The pull
+  draws UIActivityIndicatorView's eight ticks as it lengthens, fires at 100pt
+  mid-pull as UIRefreshControl does, and holds the page 56pt down for at
+  least 600ms. The quiet refresh after a long absence shares the handler but
+  not the spinner. Rules are in `pullToRefresh.ts`.
+- **A drawn switch on the web, `SwitchGlyph.web.tsx`.** UISwitch's 51×31 with
+  a 27pt thumb, gold when on. The phone keeps the platform's own.
+- **The page is not selectable** (`index.html`), except fields and text drawn
+  `selectable`: the legal documents and the connection check's finding.
+  Images do not offer Safari's save menu.
+
+**Alternatives considered.**
+- *Using the real `<input switch>` as the setting rows' visible switch.* It
+  is exact on an iPhone, but it is a checkbox everywhere the tests run, and
+  the rows already carry the control's semantics.
+- *A global listener that makes every tap a haptic.* Safari's haptic needs
+  the trusted click on the switch itself, which cannot be redirected from
+  code.
+- *`react-native-web-refresh-control`.* Last published January 2024. It
+  drags the page with `PanResponder` and competes with the browser's own
+  bounce.
+
+**Trade-offs accepted.**
+- Haptics a press does not cause stay silent on an iPhone browser: a
+  refresh, a timer, a drag. No way exists there.
+- None of this can be exercised by the walk. Chromium has no rubber band and
+  a vibration API, so the overlay is never drawn there. The pull was checked
+  by faking `scrollTop`; the haptic needs a real iPhone.
+
+## 2026-11-13 — A control's few choices open as a menu beside it; long sheets have two heights; tall sheets push the screen back
+
+**Context.** The owner asked, as part of "more like a mobile app":
+- "••• opens a small iOS menu next to the button instead of a sheet";
+- "long-pressing a Library tile lifts it and opens the same menu";
+- "tall sheets push the screen behind them back into a card, like iOS sheets
+  do, and long ones open at half height".
+
+**Decisions.**
+- **`Menu` (components/overlays).** A pull-down menu, opened from the
+  control's own rectangle. Placement is in `menuPlacement.ts`, with tests:
+  UIKit's 250pt width, under the control or over it when it does not fit,
+  and the corner it grows from.
+  - It is drawn in the app's own materials: card white, a hairline, the
+    `md` radius. It grows on the app's spring and dims nothing.
+  - It is a modal for focus, like the sheets.
+- **The bar's actions can carry a menu.** The piece's options and Record's
+  More use one: two and three choices that each rose as a sheet titled with
+  the piece.
+- **A held Library tile** lifts to 1.03 after UIKit's 400ms and opens the
+  piece's own options. Rename opens the piece with its editor up (a new
+  `edit` param, cleared once used). Delete asks the piece screen's question
+  word for word.
+- **Two heights for `expand` sheets** (`sheetDetents.ts`, Vaul's
+  thresholds). They open at half the window. The grab bar drags or taps them
+  to the full height. At medium the body ends where the sheet does on
+  screen, so a list's last rows can still be scrolled to.
+- **`RecedingSurface`.** The app is drawn on a surface that a sheet drives
+  with its own animated values: Vaul's 13pt inset, 14pt drop and 10pt
+  corner, over the app's warm ink. Two cases recede:
+  - a long sheet, in proportion as it rises from medium to full;
+  - a content-sized sheet taller than 60% of the window, with its rise and
+    drag.
+  - A short list leaves the screen alone, as UIKit does under a medium
+    sheet.
+
+**Alternatives considered.**
+- *zeego, Radix menus, Vaul or `@expo/ui`'s sheet.* zeego's native peers
+  are pinned to React Native versions this app is past and need a dev
+  client. Radix and Vaul are DOM components with their own focus handling,
+  beside a modal stack (`modalAccessibility`) that already holds focus the
+  way the audit checks. Their numbers are what was taken.
+- *Keeping the sheets for the options.* A whole surface across the bottom
+  of the screen for two choices, opened from a glyph at the top of it.
+
+**Trade-offs accepted.**
+- A phone's native driver cannot animate a corner radius. There, the
+  receded screen's 10pt corner is set while a tall sheet is up, rather than
+  grown.
+- A destructive choice is ink, not UIKit's red. The app has no destructive
+  colour (the verdict reds are reserved for takes), and the confirmation
+  that follows says what will be deleted.
+- A long sheet's list does not expand the sheet when it is scrolled at the
+  top, as UIKit's does. The grab bar is the way to the full height.
+
+## 2026-11-13 — The web build's push is the iOS slide, by presenting every route as `containedTransparentModal` there
+
+**Context.** The owner asked that "tapping into a screen slides it in from the
+right edge while the one you leave drifts a third left and dims; back
+reverses it". The web build had a 32pt slide-and-fade (2026-09-06). That
+entry recorded the full slide as "not possible without fighting the
+navigator": the web `NativeStackView` gives every screen but the focused one
+`display: none`, so the screen being left is gone on the first frame.
+
+**What that missed.** The same view keeps the screen under a focused route
+drawn when the focused route is *presented* as `transparentModal` or
+`containedTransparentModal`. On the web `presentation` changes nothing else
+(`NativeStackView.js`, line 94). So `RootNavigator` presents every route that
+way on the web and as `card` on a phone. `StackScene` then decides what is
+drawn:
+- the scene in front is drawn;
+- the one it covered is drawn while it drifts under, then hidden;
+- everything further down is hidden.
+
+**Decision.**
+- **Motion:** full-width slide, iOS's curve (`SLIDE_EASE`, 460ms). The
+  covered screen drifts 30% under and dims to 0.1 ink. Rules are in
+  `sceneMotion.ts` with tests.
+- **In-app back** slides the screen out and brings the one under it back
+  *before* popping (`sceneExit.ts`). The navigator removes a popped screen in
+  the same commit, so after the pop there is nothing left to slide.
+- **A refused pop** (Record's guard before discarding a take) slides the
+  screen back in front.
+- **Back any other way** — the browser's button, a `popTo` after a save —
+  brings the screen back from under. Safari's own swipe has already drawn its
+  change and is left alone, as before.
+- **A `replace`** fades in, because nothing was left behind for it to slide
+  across. The stack's first build (a cold start or a reload) does not move.
+
+**Alternatives considered.**
+- *`@react-navigation/stack` on the web.* It draws both screens and the
+  parallax itself. But its own docs say "Gestures are not supported on Web",
+  and it means a second navigator with its own behaviour on one platform.
+- *Patching `NativeStackView` with patch-package.* It would break on every
+  upgrade of a file nobody here owns.
+- *A JS edge-swipe back.* iOS Home Screen web apps have had the system's own
+  edge swipe since 12.2. The two would fire together.
+
+**Trade-offs accepted.**
+- Every route is drawn with a transparent container on the web, so each
+  scene paints its own opaque card (`StackScene`'s `backgroundColor`).
+- A back that skips a screen (`popTo`) does not draw an exit. Its destination
+  is not the screen underneath, so it comes back from under once the pop has
+  landed.
+- The slide runs on CSS transitions on the compositor. It cannot be
+  interrupted midway like UIKit's; a second back during it is ignored.
+
+## 2026-11-13 — The app draws its own navigation bar, inside `ScreenContainer`, over the navigator's header
+
+**Context.** The owner asked for the app to feel "more like a mobile app".
+The largest tell was the way back: every pushed screen drew "‹ Back to
+library" as a line of text above its title, inside the scroll view, so it
+scrolled away with the page. A long screen had no way back and no name once
+scrolled. An iPhone app pins both in a bar, and moves the screen's title into
+the bar once its large title has scrolled under it.
+
+**Decision.** A `NavigationBar`, drawn by `ScreenContainer` from a
+`navigationBar` prop, on every screen of the navigator. The rules are in
+`navigation/navigationBar.ts`, with tests. A screen's large title and a
+photograph at the top of its content report where they end through
+`ScreenChrome` (`LargeTitle`, `useDarkGround`), and the container compares
+those lines with its own scroll position. The bar is clear at rest. It draws
+the page's paper and a hairline once content is under it, and stays clear in
+ivory over the Library's and the piece screen's photographs until they have
+gone under it.
+
+**Alternatives considered.**
+- *native-stack's own header, with `headerLargeTitle`.* On a phone this is
+  the real UINavigationBar, the best possible answer there. But large titles
+  are "only supported on iOS", and the web build is the one the owner uses
+  every day. Using it on native only would mean two bars that behave
+  differently.
+- *A custom header through the navigator's `header` option.* It renders
+  outside the screen's tree, so it cannot see the screen's scroll position
+  without a store shared between the navigator and every screen. The bar
+  needs the scroll position to know when to collapse.
+- *Keeping the back link and pinning the header.* That fixes the scrolling
+  but not the collapse, and leaves the back word somewhere a thumb does not
+  look for it.
+
+**The back button says the previous screen's title**, as iOS does: "‹
+Library", "‹ Your takes". It says "Back" when that title is longer than 12
+characters (the owner's pick, 2026-11-13). This reverses 2026-09-29's "Back to
+the piece" wording on every screen. The title comes from the navigator
+(`HeaderBackContext`): `ROUTE_TITLES` gives every route one from the first
+frame, and a screen whose large title is data publishes it with
+`setOptions`. On a screen opened directly, the word is the title of
+`useGoBack`'s fallback, so it still names where the press goes.
+`@react-navigation/elements` became a direct dependency for the context, at
+the version already installed.
+
+**Trade-offs accepted.**
+- The appearance is computed in JavaScript on every scroll event, and stored
+  only when it changes. On the web there is no native driver anyway.
+- The bar is laid over the scroll view only on the two photograph screens.
+  Everywhere else it takes its own 44 points above the scroll view. Because
+  the bar's ground is opaque, content passing behind it would show nothing,
+  and this leaves every screen's own top padding as it was.
+- The tab screens' titles now sit 44 points lower, under an empty bar, which
+  is where iOS puts a large title.
+
+## 2026-11-12 — Three reversals from the UI review: the result opens on its passage, recording stays open at the free limit, onboarding is three questions
+
+**Context:** A review of the whole app through five lenses (impeccable, taste,
+UI/UX, stop-slop, mobile-native) found three things that contradict decisions
+recorded here. They were put to the owner as rulings rather than fixed, and
+the owner approved all three. They are recorded here so that the next session
+does not undo them back, which is how 2026-09-29's own reversals were kept.
+
+**Decisions.**
+- **The result opens on the passage its verdict names** (reverses 2026-09-29,
+  "nothing is picked at first"). The chart's selection defaults to the
+  passage's first bar, so "Bars 5–8 were fast · Bar 6: E instead of E♭" is on
+  screen without a tap; a tap still picks any other bar. Three of the five
+  reviews found the most specific thing the app knew only by tapping the curve
+  by accident. `VerdictScreen` (`shown`).
+- **The answers to "How did bars 5–8 sound?" start with nothing chosen**
+  (reverses the same entry's "the app's reading as the raised tile"). The
+  raised tile made the question look answered, so the agreeing tap it existed
+  to collect seldom came. The reading is said in words instead ("We heard
+  rushing.", `heardLine`), the four answers stay on one line as the owner
+  asked then, and they run slower to faster (Dragging · On tempo · Rushing),
+  the way the chart above them reads.
+- **Recording stays open at the free limit.** Only Analyse spends an analysis,
+  and the record button locked with it, so a musician out of free analyses
+  could not record a take to hear back. Analyse is now the control that waits,
+  and the limit line says "You can still record and listen back. Your next
+  free take is on …" (`describeReachedAnalysisLimit`, `tierLimit.test.ts`).
+  The allowance has one name everywhere, "free takes", the owner's pick in
+  the same review: it was "Analyses" on Profile and "free analyses" on Upload
+  and at the limit.
+- **Onboarding is three questions: name, instrument, learning or teaching**
+  (reverses 2026-09-23's six). "How did you find us?" and the profile photo
+  went: nothing in the app read either. The microphone moved to the first
+  take (`MicrophoneIntro`), shown once per device when Start recording is
+  first pressed, with one Continue that starts the take and so opens the
+  system's question. Onboarding asked for it before there was
+  anything to record and offered "Not now" beside "Allow microphone", which is
+  the pattern Apple's privacy guidance draws as the thing not to do before a
+  system prompt, and so a review risk for the native build. Where the platform
+  already reports the microphone allowed, the explanation is skipped.
+
+**Alternatives considered:**
+- *A tap prompt on the chart* instead of a default selection. It still hides
+  the finding behind a gesture.
+- *Keep the reading raised but make the tiles bordered chips.* The question
+  would still read as already answered.
+- *Lock recording at the limit and say why more clearly.* The lock was the
+  problem, not its wording: recording costs nothing.
+- *Keep the microphone step in onboarding with one Continue.* It would still
+  ask before anything can be recorded, which is the moment with no reason in
+  it.
+
+**Trade-offs accepted:**
+- **The result screen shows more before any interaction.** The 2026-09-29 cut
+  to "one line, one chart" kept the screen quiet; the passage line and its
+  wrong notes are now there from the start.
+- **Agreement is a deliberate tap now**, so the correction data may hold fewer
+  agreements than it did when agreeing was tapping the highlighted answer.
+  Those agreements were rare anyway, which is the finding that started this.
+- **Free accounts can record without limit.** Uploads still happen only on
+  Analyse, so this costs storage only for takes that are analysed.
+- **"How did you find us" answers stop being collected.** An answer already
+  stored on a device is kept and still read by `preferences`.
+
+**Three-foot test:** result, the title, then the chart with its passage
+named, then "Practice bars 5–8"; Record at the limit, the record button live,
+Analyse waiting; onboarding, three questions and a Finish.
+
+---
+
 ## 2026-10-24 — The browser revalidates the Library listing; the API confirms it without the notation
 
 **Context:** The Library refetches `GET /v1/scores` on every launch, and that

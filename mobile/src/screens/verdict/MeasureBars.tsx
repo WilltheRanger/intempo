@@ -10,7 +10,7 @@ import {
 import { useDrawIn } from '../../components/charts/useDrawIn';
 import { Text } from '../../components/primitives';
 import type { MeasureVerdict, TempoBeatUnit, Tolerance } from '../../data/types';
-import { BORDER_WIDTH, colors } from '../../design';
+import { BORDER_WIDTH, colors, spacing } from '../../design';
 import { chartBarWidth } from '../../lib/chartBars';
 import { moveIndex, sliderMove, type SliderMove } from '../../lib/sliderKeys';
 import { barTempo, tempoChartBars } from '../../lib/verdict/barTempo';
@@ -313,7 +313,7 @@ const styles = StyleSheet.create({
   },
   marks: {
     height: MARK,
-    marginTop: 6,
+    marginTop: spacing.xs,
   },
   mark: {
     position: 'absolute',
@@ -326,7 +326,7 @@ const styles = StyleSheet.create({
   ends: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 6,
+    marginTop: spacing.xs,
   },
   endsShort: {
     marginRight: DIRECTION_GUTTER,

@@ -1,5 +1,5 @@
 import { useRoute, type RouteProp } from '@react-navigation/native';
-import { useGoBack } from '../../navigation/useGoBack';
+import { useBackButton } from '../../navigation/useGoBack';
 import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
@@ -10,8 +10,10 @@ import {
   PrimaryButton,
   ScreenContainer,
   Text,
+  choiceTile,
 } from '../../components/primitives';
 import { ROW_PADDING_VERTICAL, rowDivided } from '../../components/rowMetrics';
+import { ScoreBand } from '../../components/score/ScoreBand';
 import { useCorrectScore, usePiece } from '../../data/hooks/usePieces';
 import { usePreferences } from '../../data/preferences';
 import { BORDER_WIDTH, colors, radii, spacing } from '../../design';
@@ -21,6 +23,8 @@ import {
   type Proposal,
 } from '../../lib/notation/proposals';
 import type { RootStackParamList } from '../../navigation/types';
+import type { ScoreJson } from '../../data/types';
+import { barPreviewScore, contextAt } from '../measureEdit/barPreview';
 
 /**
  * Checking a reading against what the app thinks is wrong with it.
@@ -54,7 +58,8 @@ export function ProofReadScreen() {
   const [failed, setFailed] = useState<string | null>(null);
   // Back is the reading this is about, however the screen was reached — a deep
   // link to `/pieces/x/check` has nothing underneath it.
-  const goBack = useGoBack({ route: 'PieceScore', params: { pieceId: params.pieceId } });
+  const back = useBackButton({ route: 'PieceScore', params: { pieceId: params.pieceId } });
+  const goBack = back.onPress;
 
   const proposals = useMemo(
     () => proposalsFor(piece?.score, instrument),
@@ -88,7 +93,7 @@ export function ProofReadScreen() {
 
   if (isPending) {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ back }}>
         <LoadingState />
       </ScreenContainer>
     );
@@ -96,7 +101,7 @@ export function ProofReadScreen() {
 
   if (!piece) {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ back }}>
         <EmptyState
           fill
           title="That piece isn't here"
@@ -110,8 +115,7 @@ export function ProofReadScreen() {
 
   if (proposals.length === 0) {
     return (
-      <ScreenContainer>
-        <PageHeader onBack={goBack} backLabel="Back to score" />
+      <ScreenContainer navigationBar={{ back }}>
         {/*
           **This is the common case and it has to read as a result**, not as an
           empty list. A musician came here to be told whether the reading is
@@ -120,7 +124,7 @@ export function ProofReadScreen() {
         <EmptyState
           fill
           title="Nothing looks off"
-          actionLabel="Back to score"
+          actionLabel="Back to the score"
           actionTone="primary"
           onActionPress={goBack}
         />
@@ -132,7 +136,7 @@ export function ProofReadScreen() {
   const fixing = proposals.filter((proposal) => taken[proposal.id] === 'fix').length;
 
   return (
-    <ScreenContainer
+    <ScreenContainer navigationBar={{ back }}
       footer={
         <View>
           <PrimaryButton
@@ -156,8 +160,6 @@ export function ProofReadScreen() {
     >
       <PageHeader
         title="Check the reading"
-        onBack={goBack}
-        backLabel="Back to score"
       />
 
       {/* The count is said once, at the foot, where it goes down as you
@@ -167,6 +169,7 @@ export function ProofReadScreen() {
         <ProposalRow
           key={proposal.id}
           proposal={proposal}
+          score={piece.score ?? null}
           choice={taken[proposal.id]}
           divided={rowDivided(index)}
           onAnswer={answer}
@@ -195,20 +198,58 @@ export function ProofReadScreen() {
  */
 function ProposalRow({
   proposal,
+  score,
   choice,
   divided,
   onAnswer,
 }: {
   proposal: Proposal;
+  score: ScoreJson | null;
   choice: 'keep' | 'fix' | undefined;
   divided: boolean;
   onAnswer: (id: string, choice: 'keep' | 'fix') => void;
 }) {
+  /*
+    **The bar as read, and as it would be.** This asked "C3 or C4?" with
+    neither the bar nor its photograph on screen, so a musician judged a pair
+    of note names from memory of the page (the reviews of 2026-11-12). Both
+    versions are engraved side by side; the names stay underneath as what the
+    change is called, and as what a screen reader says.
+  */
+  const bars = useMemo(() => {
+    if (!score) return null;
+    const read = score.measures.find((m) => m.measure_number === proposal.measureNumber);
+    const fixed = proposal.apply(score);
+    const proposed = fixed.measures.find((m) => m.measure_number === proposal.measureNumber);
+    if (!read || !proposed) return null;
+    return {
+      read: barPreviewScore(score, read, contextAt(score, read)),
+      proposed: barPreviewScore(fixed, proposed, contextAt(fixed, proposed)),
+    };
+  }, [score, proposal]);
+
   return (
     <View style={[styles.row, divided && styles.ruled]}>
       <Text variant="metadataSmall" color="textTertiary">
         {proposal.where}
       </Text>
+
+      {bars ? (
+        <View style={styles.bars} aria-hidden>
+          <View style={styles.bar}>
+            <Text variant="caption" color="textTertiary">
+              As read
+            </Text>
+            <ScoreBand score={bars.read} scale={0.8} plain />
+          </View>
+          <View style={styles.bar}>
+            <Text variant="caption" color="textTertiary">
+              Proposed
+            </Text>
+            <ScoreBand score={bars.proposed} scale={0.8} plain />
+          </View>
+        </View>
+      ) : null}
 
       <View style={styles.change}>
         {/*
@@ -275,9 +316,14 @@ function Answer({
       accessibilityLabel={label}
       accessibilityState={{ checked: on }}
       aria-checked={on}
-      style={({ pressed }) => [styles.answer, on && styles.answerOn, pressed && styles.pressed]}
+      style={({ pressed }) => [
+        choiceTile.surface,
+        styles.answer,
+        on && choiceTile.chosen,
+        pressed && choiceTile.pressed,
+      ]}
     >
-      <Text variant="metadata" color={on ? 'actionText' : 'textPrimary'}>
+      <Text variant="metadata" color="textPrimary" style={on && choiceTile.chosenLabel}>
         {label}
       </Text>
     </Pressable>
@@ -291,6 +337,16 @@ const styles = StyleSheet.create({
   ruled: {
     borderTopWidth: BORDER_WIDTH,
     borderTopColor: colors.border,
+  },
+  bars: {
+    flexDirection: 'row',
+    gap: spacing.lg,
+    marginTop: spacing.sm,
+  },
+  bar: {
+    flex: 1,
+    minWidth: 0,
+    gap: spacing.xs,
   },
   change: {
     flexDirection: 'row',
@@ -321,15 +377,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: radii.md,
-    borderWidth: BORDER_WIDTH,
-    borderColor: colors.borderStrong,
-  },
-  answerOn: {
-    backgroundColor: colors.actionBg,
-    borderColor: colors.actionBg,
-  },
-  pressed: {
-    opacity: 0.7,
   },
   scope: {
     marginTop: spacing.xl,

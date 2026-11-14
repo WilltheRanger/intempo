@@ -82,6 +82,22 @@ describe('the Continue row', () => {
     );
   });
 
+  it('names the passage the last take found, as the result screen does', () => {
+    const line = continueLineFor({
+      piece: piece(),
+      status: 'Rushed in the middle',
+      searching: false,
+      passage: { from: 5, to: 8 },
+    });
+    expect(line?.actionLabel).toBe('Practice bars 5–8');
+    expect(line?.passage).toEqual({ from: 5, to: 8 });
+    // A piece with no bars to record still only opens.
+    expect(
+      continueLineFor({ piece: piece({ score: SCORE(0) }), status: null, searching: false, passage: { from: 5, to: 8 } })
+        ?.passage,
+    ).toBeNull();
+  });
+
   it('is not there for an empty library, whose empty state already asks', () => {
     expect(continueLineFor({ piece: null, status: null, searching: false })).toBeNull();
   });

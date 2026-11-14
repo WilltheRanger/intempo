@@ -11,6 +11,7 @@ import {
 import { TrailingChevron } from '../../components/primitives/TrailingChevron';
 import { usePieceHistory } from '../../data/hooks/useLatestTake';
 import { BORDER_WIDTH, colors, MIN_TOUCH_TARGET, spacing } from '../../design';
+import { ROW_PADDING_VERTICAL } from '../../components/rowMetrics';
 import { TrendPlot } from '../../components/charts/TrendPlot';
 import { historyCount } from '../../lib/insights/pieceHistory';
 import {
@@ -22,7 +23,7 @@ import {
 import { rowTempo, takesTrend } from '../../lib/insights/takesTrend';
 import { loadStateFor } from '../../lib/loadState';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
-import { useGoBack } from '../../navigation/useGoBack';
+import { useBackButton } from '../../navigation/useGoBack';
 
 /**
  * Every take of one piece, newest first: when, and what its verdict said.
@@ -51,17 +52,18 @@ import { useGoBack } from '../../navigation/useGoBack';
 export function PieceTakesScreen() {
   const navigation = useNavigation<RootNavigation>();
   const { params } = useRoute<RouteProp<RootStackParamList, 'PieceTakes'>>();
-  const goBack = useGoBack({ route: 'PieceDetail', params: { pieceId: params.pieceId } });
+  const back = useBackButton({ route: 'PieceDetail', params: { pieceId: params.pieceId } });
+  const goBack = back.onPress;
   const history = usePieceHistory(params.pieceId);
   const load = loadStateFor({ isError: history.isError, hasData: history.data !== undefined });
 
   const header = (
-    <PageHeader title="Your takes" onBack={goBack} backLabel="Back to the piece" />
+    <PageHeader title="Your takes" />
   );
 
   if (load === 'loading') {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ back }}>
         {header}
         <LoadingState />
       </ScreenContainer>
@@ -70,7 +72,7 @@ export function PieceTakesScreen() {
 
   if (load === 'unavailable' || !history.data) {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ back }}>
         {header}
         <EmptyState fill title="Couldn't load your takes" actionLabel="Back" onActionPress={goBack} />
       </ScreenContainer>
@@ -82,7 +84,7 @@ export function PieceTakesScreen() {
 
   if (!count || takes.length === 0) {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ back }}>
         {header}
         <EmptyState fill title="No takes yet" />
       </ScreenContainer>
@@ -93,7 +95,7 @@ export function PieceTakesScreen() {
   const trend = takesTrend(takes);
 
   return (
-    <ScreenContainer>
+    <ScreenContainer navigationBar={{ back }}>
       {header}
       <Text variant="metadata" color="textTertiary" style={styles.count}>
         {count}
@@ -189,7 +191,7 @@ const styles = StyleSheet.create({
   axis: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 6,
+    marginTop: spacing.xs,
   },
   finding: {
     marginTop: spacing.md,
@@ -207,7 +209,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.md,
     minHeight: MIN_TOUCH_TARGET,
-    paddingVertical: 14,
+    paddingVertical: ROW_PADDING_VERTICAL,
     borderTopWidth: BORDER_WIDTH,
     borderTopColor: colors.border,
   },

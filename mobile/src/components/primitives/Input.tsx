@@ -16,6 +16,7 @@ import {
 import {
   BORDER_WIDTH,
   colors,
+  fontFamily,
   radii,
   spacing,
   typography,
@@ -86,6 +87,11 @@ export interface InputProps {
   keyboardType?: TextInputProps['keyboardType'];
   autoCapitalize?: TextInputProps['autoCapitalize'];
   autoComplete?: TextInputProps['autoComplete'];
+  /**
+   * Off for proper names. The keyboard's autocorrect rewrote names such as
+   * Wohlfahrt while the app's own completion was showing beside them.
+   */
+  autoCorrect?: TextInputProps['autoCorrect'];
   textContentType?: TextInputProps['textContentType'];
   returnKeyType?: TextInputProps['returnKeyType'];
   onSubmitEditing?: TextInputProps['onSubmitEditing'];
@@ -150,6 +156,7 @@ export function Input({
   keyboardType,
   autoCapitalize,
   autoComplete,
+  autoCorrect,
   textContentType,
   returnKeyType,
   onSubmitEditing,
@@ -201,14 +208,16 @@ export function Input({
     <View style={style}>
       <View style={styles.labelRow}>
         {/*
-          The redesign's field label (`redesign/NamePiece.dc.html`,
-          `SignIn.dc.html`): small, uppercase, tertiary — a name for the box
-          rather than a heading over it, so the eye goes to what is typed.
+          A name for the box rather than a heading over it, so the eye goes to
+          what is typed. **Sentence case, in the app's one label register**
+          (`sectionLabel`, as `RuledHeading` sets it): this was small caps,
+          letterspaced, with "(optional)" in lower case beside it, the third
+          label style on screens that already had two (the UI review,
+          2026-11-12).
         */}
-        <Text variant="caption" color="textTertiary" style={styles.label}>
+        <Text variant="sectionLabel" color="textSecondary">
           {label}
-          {/* Lower case, so it reads as a note on the name rather than part of it. */}
-          {/* A plain nested text, so it inherits the label's size and colour. */}
+          {/* A plain nested text, so it keeps the label's size and line. */}
           {optional ? <NativeText style={styles.optional}> (optional)</NativeText> : null}
         </Text>
         {actionInside ? null : action}
@@ -244,6 +253,7 @@ export function Input({
           keyboardType={keyboardType}
           autoCapitalize={autoCapitalize}
           autoComplete={autoComplete}
+          autoCorrect={autoCorrect}
           textContentType={textContentType}
           returnKeyType={returnKeyType}
           maxLength={maxLength}
@@ -360,17 +370,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 7,
+    marginBottom: spacing.sm,
   },
-  label: {
-    fontSize: 12,
-    lineHeight: 16,
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
-  },
+  // Regular and quieter, so it reads as a note on the name, not part of it.
   optional: {
-    textTransform: 'none',
-    letterSpacing: 0,
+    fontFamily: fontFamily.sansRegular,
+    color: colors.textTertiary,
   },
   field: {
     minHeight: 48,
@@ -393,7 +398,6 @@ const styles = StyleSheet.create({
   large: {
     minHeight: 56,
     paddingHorizontal: spacing.lg,
-    borderRadius: 14,
   },
   largeText: {
     fontSize: 21,

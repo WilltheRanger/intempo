@@ -73,7 +73,7 @@ describe('what the app says when the microphone will not start', () => {
   it('says nothing false when what was thrown is not a DOMException at all', () => {
     const message = microphoneFailure(new TypeError('undefined is not an object'), false)
       .message;
-    expect(message).toContain('could not be started');
+    expect(message).toMatch(/^Couldn.t start the microphone/);
     expect(message).not.toContain('No microphone is available');
   });
 });

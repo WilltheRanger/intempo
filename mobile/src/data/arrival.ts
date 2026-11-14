@@ -1,8 +1,8 @@
 import { useSyncExternalStore } from 'react';
 
 /**
- * The first arrival after onboarding: "Welcome to InTempo" once, then Today
- * fading in once (`redesign/OnboardDone.dc.html`, `TodayLight.dc.html`).
+ * The first arrival after onboarding: "Welcome to InTempo" once, then the
+ * Library opening its add sheet once (`redesign/OnboardDone.dc.html`).
  *
  * The prototype carried this in `sessionStorage` (`intempo:from-welcome`),
  * which the handoff lists among the things that exist only so the prototype
@@ -14,9 +14,16 @@ import { useSyncExternalStore } from 'react';
  * - `none` — nothing to show.
  * - `welcome` — the answers have just landed on the account; the done screen
  *   stands in front of the app until it is dismissed.
- * - `riseIn` — dismissed; Today fades in on its first render, then settles.
+ * - `firstPiece` — dismissed with "Add your first piece"; the Library opens
+ *   its add sheet if the shelf is still empty, then settles.
+ *
+ * **`firstPiece` was `riseIn`, and nothing read it for six weeks.** Today
+ * consumed it to fade in once; when the Library replaced Today (2026-09-30)
+ * the state was still set and nothing answered it, so "Start practicing" ended
+ * on an empty shelf with the only action in the top quarter. The button now
+ * says what it does and the Library does it.
  */
-export type Arrival = 'none' | 'welcome' | 'riseIn';
+export type Arrival = 'none' | 'welcome' | 'firstPiece';
 
 export type ArrivalEvent = 'onboarded' | 'started' | 'settled';
 
@@ -24,15 +31,15 @@ export type ArrivalEvent = 'onboarded' | 'started' | 'settled';
  * Only forward, and only one step at a time.
  *
  * `onboarded` from anything but `none` is ignored: a second save — a retried
- * Finish, say — arriving after Today has already been reached must not put the
- * welcome back in front of it.
+ * Finish, say — arriving after the Library has already been reached must not
+ * put the welcome back in front of it.
  */
 export function nextArrival(current: Arrival, event: ArrivalEvent): Arrival {
   if (event === 'onboarded') {
     return current === 'none' ? 'welcome' : current;
   }
   if (event === 'started') {
-    return current === 'welcome' ? 'riseIn' : current;
+    return current === 'welcome' ? 'firstPiece' : current;
   }
   return 'none';
 }
@@ -69,11 +76,11 @@ export const arrival = {
   onboarded(): void {
     dispatch('onboarded');
   },
-  /** "Start practicing". */
+  /** "Add your first piece". */
   started(): void {
     dispatch('started');
   },
-  /** Today has faded in, or somebody signed out. */
+  /** The Library has answered the arrival, or somebody signed out. */
   settled(): void {
     dispatch('settled');
   },

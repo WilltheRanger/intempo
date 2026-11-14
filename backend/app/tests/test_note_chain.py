@@ -114,6 +114,51 @@ def test_an_extra_attack_is_left_out_of_the_chain() -> None:
     )
 
 
+def test_a_held_note_bowed_again_is_paired_at_its_first_attack() -> None:
+    """**A note begins once.** A cellist holding a note swells it or changes
+    bow inside it, and each is an attack at the note's own pitch. Pitch alone
+    cannot say which of them is the note, and the chain took the last. On
+    URMP's Jupiter cello part (2026-11-13) that was 126 attacks for 54 notes:
+    every note was paired near its end, and 49 of the 54 sat more than 100 ms
+    from their label. A note begins at its first attack at that pitch; the
+    rest are the note going on (`alignment._first_attacks`)."""
+    written = ["D3", "E3", "C#3", "D3"]
+    heard = ["D3", "D3", "D3", "E3", "E3", "C#3", "C#3", "D3"]
+    detected = np.array([0.0, 0.35, 0.7, 1.0, 1.4, 2.0, 2.5, 3.0])
+    anchored = align_chain(
+        detected,
+        np.arange(len(written), dtype=float),
+        _same_pitch(heard, written),
+        target_bpm=60.0,
+        config=CFG,
+    )
+    assert anchored.alignment.mapping == [(0, 0), (3, 1), (5, 2), (7, 3)]
+
+
+def test_the_right_pitch_far_from_its_place_is_not_its_note() -> None:
+    """**An attack more than four played gaps from where its note belongs is
+    something else** (`CHAIN_TIME_WEIGHT`, unsaturated 2026-11-14). The page
+    ends on two B4s, the player holds them as one, and a sound 5 s after the
+    last attack still reads B4. With the time cost saturated at one gap, it
+    cost the chain no more than an attack slightly late, and it was paired as
+    the last note. Unsaturated, it is left out. On URMP's real takes that
+    added up to 21 more notes paired within 100 ms of their labels in K515's
+    cello part alone."""
+    written = ["C4", "D4", "E4", "F4", "G4", "A4", "B4", "B4"]
+    heard = ["C4", "D4", "E4", "F4", "G4", "A4", "B4", "B4"]
+    detected = np.array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 12.0])
+    anchored = align_chain(
+        detected,
+        np.arange(len(written), dtype=float),
+        _same_pitch(heard, written),
+        target_bpm=60.0,
+        config=CFG,
+    )
+    mapping = anchored.alignment.mapping
+    assert all(detected[d + anchored.trimmed_lead] < 7.0 for d, _ in mapping), mapping
+    assert [e for _, e in mapping][:6] == [0, 1, 2, 3, 4, 5]
+
+
 def test_a_note_not_played_is_skipped() -> None:
     assert _chain(["C", "D", "F"], ["C", "D", "E", "F"]) == [(0, 0), (1, 1), (2, 3)]
 
@@ -147,6 +192,69 @@ def test_where_one_pitch_repeats_the_attack_on_time_takes_the_note() -> None:
     assert anchored.alignment.mapping == [(0, 0), (1, 1), (3, 2), (4, 3), (5, 4), (6, 5)]
 
 
+def _run_of_e4(detected: np.ndarray, extra: float | None = None) -> dict[int, float]:
+    """Twelve written E4s between C4 D4 and F4 G4, one second apart, paired
+    with `detected` (every attack heard at its own pitch, `extra` at E4 too)."""
+    written = ["C4", "D4", *["E4"] * 12, "F4", "G4"]
+    times = sorted([*detected, *([] if extra is None else [extra])])
+    heard = [
+        "C4" if t < 0.5 else "D4" if t < 1.5 else "F4" if 13.9 < t < 14.5 else "G4" if t > 14.5 else "E4"
+        for t in times
+    ]
+    anchored = align_chain(
+        np.array(times),
+        np.arange(len(written), dtype=float),
+        _same_pitch(heard, written),
+        target_bpm=60.0,
+        config=CFG,
+        heights=[midi(p) for p in written],
+    )
+    lead = anchored.trimmed_lead
+    return {e: times[d + lead] for d, e in anchored.alignment.mapping}
+
+
+def test_an_extra_attack_in_a_run_of_one_pitch_is_left_out_where_it_was() -> None:
+    """**Inside a run of one pitch, pitch cannot say which attack is extra.**
+    Twelve written E4s heard as thirteen attacks at E4, one a re-attack half
+    a second into the last. The chain left out the run's second attack
+    instead and paired every later E4 with the attack after its own. The
+    spacing says where the extra one is: it leaves a gap half the written
+    one (`alignment._runs_by_spacing`)."""
+    paired = _run_of_e4(np.arange(16.0), extra=13.5)
+    assert paired == {e: float(e) for e in range(16)}
+
+
+def test_an_out_of_tune_note_inside_a_run_of_one_pitch_is_still_its_note() -> None:
+    """The owner's rule for the chain holds inside a run too: the note that is
+    out of tune is still that note. The first version of the spacing repair
+    looked only at attacks heard at the run's pitch, and so left out a note
+    the chain had kept: one synthetic bass take in a noisy room lost note 19.
+    """
+    written = ["C4", "D4", *["E4"] * 12, "F4", "G4"]
+    heard = [*written[:7], "X", *written[8:]]
+    detected = np.arange(16.0)
+    anchored = align_chain(
+        detected,
+        np.arange(len(written), dtype=float),
+        _same_pitch(heard, written),
+        target_bpm=60.0,
+        config=CFG,
+        heights=[midi(p) for p in written],
+    )
+    assert sorted(anchored.alignment.mapping) == [(e, e) for e in range(16)]
+
+
+def test_a_missed_attack_in_a_run_of_one_pitch_leaves_out_its_own_note() -> None:
+    """**And the same for an attack the detector did not hear.** On URMP's
+    "In the Hall of the Mountain King" (2026-11-14) the second violin's 64
+    repeated E4s lost one attack, and the 31 E4s after it were each paired
+    with the attack of the note after: a slide of one note, 329 ms, to the
+    end of the run. The missing attack leaves a gap twice the written one,
+    and that is the note left out."""
+    paired = _run_of_e4(np.delete(np.arange(16.0), 7))
+    assert paired == {e: float(e) for e in range(16) if e != 7}
+
+
 def test_an_attack_the_chain_left_out_is_extra() -> None:
     """`align_dtw` gives every attack a note, so the cleanup only ever found
     extras among several attacks on one note. The chain leaves them out."""
@@ -168,6 +276,28 @@ def test_trust_counts_the_notes_the_page_asks_for_not_the_notes_paired() -> None
     different tune in the same key matched every note it paired."""
     assert not _trusted_by_pitch(_Confirmed(notes=12, paired=12, pitches=6, asked=32), CFG)
     assert _trusted_by_pitch(_Confirmed(notes=28, paired=31, pitches=9, asked=32), CFG)
+
+
+def test_a_long_page_needs_less_of_its_chain_heard_as_a_last_resort() -> None:
+    """**Chance falls as a page grows, and the share was set where it is
+    highest.** A different tune in the same key reaches 0.62 of a 16-note page
+    but at most 0.50 of 64 notes and 0.45 of 256 (2026-11-14). URMP's K515
+    cello part, 360 notes with rubato, was refused as "same notes, different
+    times" with 242 of them heard at pitch: 0.67.
+
+    Only as a last resort — timing refused the take and no other reading of
+    it follows. Rescued on the first of its two readings, "He's a Pirate"'s
+    viola was kept from the second, which pairs it better; that half is held
+    by `test_a_take_refused_with_the_vibrato_filter_is_read_without_it`. And
+    only to be paired: a take is reported at the usual share, after the
+    second look (`test_a_long_page_paired_on_the_lower_share_is_reported_only_at_the_usual_one`)."""
+    k515 = _Confirmed(notes=242, paired=283, pitches=24, asked=360)
+    assert _trusted_by_pitch(k515, CFG, last_resort=True)
+    assert not _trusted_by_pitch(k515, CFG)
+    short = _Confirmed(notes=22, paired=24, pitches=8, asked=32)
+    assert not _trusted_by_pitch(short, CFG, last_resort=True)
+    below = _Confirmed(notes=230, paired=283, pitches=24, asked=360)
+    assert not _trusted_by_pitch(below, CFG, last_resort=True)
 
 
 def test_trust_needs_enough_notes_on_enough_pitches() -> None:
@@ -199,9 +329,18 @@ def test_a_few_notes_at_pitch_are_not_somebody_playing() -> None:
 
 def test_the_page_played_with_loose_timing_is_judged_not_refused(monkeypatch) -> None:
     """Every note of the page in order, every gap anywhere between 0.3 and 1.7
-    beats: the timing is the finding, and it is reported."""
+    beats: the timing is the finding, and it is reported.
+
+    **Re-based 2026-11-13 from the gaps of seed 0 to those of seed 1**, when
+    timing alone stopped refusing seed 0: with each mel band held at its own
+    noise floor, the second look recovered none of the three onsets it used
+    to, and timing paired the 26 attacks left as bars 1–3 at 69 BPM — quality
+    0.411, a hair over `broken_quality`. The chain still reads it, as this
+    test's first half says of seed 1, and timing alone still refuses seeds 1–3
+    of tune 101 and all four of tunes 102 and 103.
+    """
     tune = _tune(101)
-    y = _take(tune, _loose(0, len(tune)))
+    y = _take(tune, _loose(1, len(tune)))
 
     status, trace = _traced(y, _page(tune))
     assert status == "ok"
@@ -211,6 +350,56 @@ def test_the_page_played_with_loose_timing_is_judged_not_refused(monkeypatch) ->
     # And timing alone refused it, which is the point.
     monkeypatch.setattr(analysis, "_by_chain", lambda *a, **k: None)
     status, _ = _traced(y, _page(tune))
+    assert status == "alignment_failed"
+
+
+def test_a_long_page_paired_on_the_lower_share_is_reported_only_at_the_usual_one(
+    monkeypatch,
+) -> None:
+    """**The lower share lets the chain pair a long page; the usual share
+    reports it.** As a last resort, a long page timing refused is paired by
+    its chain on 0.65 of it heard at pitch (`_trusted_by_pitch`), so the second
+    look searches where the page's notes belong. The take is reported only if
+    it is then heard at 0.7. The notes a take of the page missed are there to
+    be found, and the notes a different part lacks are not. K515's cello part
+    rose from 0.67 of its page to 0.81. Jerusalem's double bass, read against
+    the cello part it doubles, rose from 0.66 to 0.67, and was given a verdict
+    until the usual share held it (2026-11-14).
+
+    Here 96 notes are played with every fourth a step away, and gaps anywhere
+    within ±70% of a beat. Timing refuses the take. The chain hears 0.69 of
+    the page and pairs it on the lower share, and the second look takes it
+    past 0.7. With nothing for the second look to find, the take is refused.
+    """
+    admitted: list[float] = []
+    trust = analysis._trusted_by_pitch
+
+    def watched(confirmed, config, *, last_resort: bool = False) -> bool:
+        out = trust(confirmed, config, last_resort=last_resort)
+        if last_resort and out and not trust(confirmed, config):
+            admitted.append(confirmed.notes / confirmed.asked)
+        return out
+
+    monkeypatch.setattr(analysis, "_trusted_by_pitch", watched)
+    page = _tune(104, 96)
+    played = [
+        G_MAJOR[min(G_MAJOR.index(m) + 2, len(G_MAJOR) - 1)] if i % 4 == 3 else m
+        for i, m in enumerate(page)
+    ]
+    y = _take(played, _loose(4, len(page)))
+
+    status, trace = _traced(y, _page(page))
+    assert admitted, "the chain was not paired on the lower share: re-base the take"
+    assert status == "ok"
+    assert trace["paired_by"] == "chain"
+    assert trace["confirmed"]["notes"] / trace["confirmed"]["asked"] >= 0.7
+
+    admitted.clear()
+    monkeypatch.setattr(
+        analysis, "_recover_missed_onsets", lambda *a, **k: np.array([], dtype=float)
+    )
+    status, _ = _traced(y, _page(page))
+    assert admitted
     assert status == "alignment_failed"
 
 

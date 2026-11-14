@@ -30,16 +30,16 @@ export const VERDICT_STATES = [
     // Changed again 2026-09-29: the line under the heading went in the owner's
     // sweep (the button says Try again), so the heading is what this state
     // alone says.
-    says: /Something went wrong on our end/i,
-    needle: 'Something went wrong on our end',
+    says: /Our analysis failed/i,
+    needle: 'Our analysis failed',
     offers: /^Try again$/i,
   },
   {
     id: 'fixture-take-unrecoverable',
     what: 'a failure that will not come back',
     label: 'Verdict — failed for good',
-    says: /This recording couldn.t be processed/i,
-    needle: 'couldn’t be processed',
+    says: /We can.t analyse this recording/i,
+    needle: 'analyse this recording',
     offers: /^Record again$/i,
   },
   {

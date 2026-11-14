@@ -60,10 +60,12 @@ describe('checking the analysis allowance before a take', () => {
       remaining: 0,
       resets_at: RESET,
     });
-    expect(message).toContain('all 3 free analyses');
-    expect(message).toContain('Recording returns');
-    expect(message).toContain('listen to the score');
-    expect(message).toContain('practise with the metronome');
+    expect(message).toContain('all 3 of your free takes');
+    // Recording stays open at the limit (the owner, 2026-11-12): it is the
+    // next free take that comes with the new month.
+    expect(message).toContain('You can still record and listen back');
+    expect(message).toContain('Your next free take is');
+    expect(message).not.toContain('Recording returns');
   });
 
   it('says nothing while recording remains available', () => {
@@ -78,22 +80,21 @@ describe('checking the analysis allowance before a take', () => {
   });
 });
 
-describe('the recording screen enforces the pre-flight answer', () => {
+describe('the recording screen at the limit', () => {
   const source = recordScreen;
 
-  it('checks the allowance before opening the microphone', () => {
-    expect(source.indexOf('if (limitMessage)')).toBeGreaterThan(-1);
-    expect(source.indexOf('if (limitMessage)')).toBeLessThan(
-      source.indexOf('const started = await startRecording()'),
-    );
+  /**
+   * **Recording stays open; Analyse is what waits** (the owner, 2026-11-12,
+   * reversing the lock this pinned). Only Analyse spends an analysis, and the
+   * record button used to lock with it, so a musician out of free analyses
+   * could not record a take to hear back.
+   */
+  it('keeps the record control live and locks only Analyse', () => {
+    expect(source).not.toContain('disabled={!recording && Boolean(limitMessage)}');
+    expect(source).toContain('disabled={!takeReady || Boolean(limitMessage)}');
   });
 
-  it('disables the idle record control and refreshes usage after success', () => {
-    expect(source).toContain(
-      'disabled={!recording && Boolean(limitMessage)}',
-    );
-    expect(source).toContain(
-      'invalidateQueries({ queryKey: meKeys.all })',
-    );
+  it('refreshes usage after a take is accepted', () => {
+    expect(source).toContain('invalidateQueries({ queryKey: meKeys.all })');
   });
 });

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Platform, StyleSheet, View } from 'react-native';
 import Svg, { Line, Path } from 'react-native-svg';
 
-import { Mic } from '../../components/icons';
+import { Mic } from '../icons';
 import { colors } from '../../design';
 import { useReducedMotion } from '../../lib/useReducedMotion';
 

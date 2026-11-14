@@ -102,6 +102,62 @@ def test_rushing_resumes_from_where_the_musician_actually_is() -> None:
     )
 
 
+def test_a_sound_paired_with_the_wrong_note_does_not_reset_the_ramp() -> None:
+    """**A glitch is a run too, out and back, and it is not a hesitation.**
+
+    A take played a steady 5% fast with one note's sound taken from the wrong
+    place — a sixteenth the detector did not hear, the pairing filling the
+    hole with its neighbour. The two intervals around it depart the take's
+    habit and the reference used to re-anchor after them, so every later note
+    was measured from where the glitch left off: the ramp the take is about
+    restarted from zero half-way through. The notes after it are back on the
+    line the notes before it were on, so nothing moved (`_level_moved`).
+    """
+    offsets = [-0.05 * k for k in range(30)]
+    offsets[12] += 0.4
+    deltas = _deltas(offsets)
+
+    assert deltas[12] == pytest.approx(-200.0), "the glitch itself still reads"
+    assert list(deltas[13:]) == pytest.approx([-50.0 * k for k in range(13, 30)]), (
+        "the ramp restarted after the glitch"
+    )
+
+
+def test_one_note_out_of_place_where_a_rush_ends_moves_nothing_else() -> None:
+    """**A note out of place on its own is not the pulse moving**, even where
+    the line before it is a ramp that has just ended.
+
+    Six notes on the beat, six rushing 0.1 beat each, then steady where the
+    rush left the player, as `double_bass/bowed/60/rush/noise/1127` is. The
+    first note after the rush is heard 0.3 beat late, the step into it and the
+    step out of it both past the limit. Projected along the rush, the notes
+    after sit off its line, so the glitch read as the player moving and
+    re-anchored the take, and every later note lost the rush it carried. The
+    notes either side of it agree, so it is one note out of place: it reads
+    late, and nothing else changes.
+    """
+    played = list(np.cumsum([0.0] * 6 + [-0.1] * 6 + [0.0] * 10))
+    heard = list(played)
+    heard[12] += 0.3
+    clean, glitched = _deltas(played), _deltas(heard)
+
+    assert glitched[12] == pytest.approx(clean[12] + 300.0), "the note itself reads late"
+    others = [k for k in range(len(played)) if k != 12]
+    assert list(glitched[others]) == pytest.approx(list(clean[others])), (
+        "one note out of place moved the rest of the take"
+    )
+
+
+def test_a_pause_inside_a_ramp_still_re_anchors() -> None:
+    """The other side of the check: the notes after a real pause sit off the
+    line, by the pause, and start again from where the player is."""
+    offsets = [-0.05 * k for k in range(12)] + [-0.05 * k + 0.4 for k in range(12, 30)]
+    deltas = _deltas(offsets)
+
+    assert deltas[12] == pytest.approx(-200.0), "the pause itself"
+    assert deltas[13] == pytest.approx(-50.0), "the notes after it start again"
+
+
 def test_a_take_that_accelerates_is_not_mistaken_for_a_sequence_of_steps() -> None:
     """Getting faster and faster is a curve, and every point of it is real."""
     offsets = list(np.cumsum([0.0] + [-0.005 * i for i in range(1, 20)]))
@@ -164,6 +220,46 @@ def test_the_origin_reads_through_a_varied_rhythm() -> None:
 
     assert deltas[0] == pytest.approx(30.0, abs=1e-6)
     assert deltas[1:] == pytest.approx(-50.0 * written[1:], abs=1e-6)
+
+
+def test_the_level_follows_all_six_notes_not_the_two_in_the_middle() -> None:
+    """**A median of six is two notes, and the detector's jitter on those two
+    was the whole take's.**
+
+    A take played steadily fast, heard by a detector that places every attack
+    50 ms late give or take a few — a bowed bass through a phone, as
+    `accuracy_bench.py`'s `double_bass/bowed/108/fast/phone/1140` is. The two
+    notes in the middle of the six the level is read from are the two it placed
+    earliest, 13 and 20 ms ahead of its usual; across the six it was 2 ms
+    early. Read as their median the take's level was 17 ms off the truth and
+    2 of 20 notes landed within 12 ms of where a perfect hearing puts them;
+    read from all six, 17 do.
+    """
+    human = np.array([0, 14, -21, 7, 18, -12, 5, -4, 9, -6, 3, -8, 11, -2, 6, -10, 4, -5, 8, -3])
+    played = -0.04 * np.arange(20) + human / 1000.0
+    detector = np.array([-13, 8, 2, -20, 6, 5, 3, -2, 4, -1, 2, -4, 1, 3, -3, 2, 0, -2, 4, 1])
+    heard = played + 0.05 + detector / 1000.0
+
+    def deltas(offsets: np.ndarray) -> np.ndarray:
+        return (offsets - _pulse_anchors(offsets, 0.5)) * 1000.0
+
+    truth, reading = deltas(played), deltas(heard)
+    # What is left once each note's own placement error is taken out is the
+    # level's error alone, and it is the same on every note.
+    level_error = reading - truth - detector
+    assert np.all(np.abs(level_error) < 8.0), level_error[:3]
+    assert np.sum(np.abs(reading - truth) <= 12.0) >= 16
+
+
+def test_two_late_notes_among_six_do_not_move_the_level() -> None:
+    """The robustness the median had, kept. Two of the six notes 40 ms late and
+    four on time: the four agree, so the level is theirs. Read from every pair
+    of notes alone it would have been 20 ms, and four notes played on time
+    would have read early."""
+    deltas = _deltas([0.04, 0.04] + [0.0] * 18)
+
+    assert list(deltas[:2]) == pytest.approx([40.0, 40.0])
+    assert np.all(np.abs(deltas[2:]) < 1e-6)
 
 
 def test_an_empty_take_does_not_raise() -> None:

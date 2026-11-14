@@ -208,6 +208,11 @@ def uneven_measures(
     return uneven
 
 
+#: How many paired notes past a skip must arrive where the skip puts them —
+#: early by the notes gone past — for it to be one. See `skipped_ahead`.
+SKIP_CONFIRMED_BY = 3
+
+
 def skipped_ahead(
     matched: list[tuple[int, int]],
     detected: np.ndarray,
@@ -230,6 +235,17 @@ def skipped_ahead(
     as `alignment._residuals` reads it), so practising at half speed does not
     turn every gap into a skip: at a gap, a skip is closer to one played
     interval than to the whole written span.
+
+    **And a skip moves the notes after it too.** A note whose attack was
+    given to the note after it makes the same gap: the note after arrives one
+    interval on, early by exactly the note that was left over. But the notes
+    after *that* are back where the page puts them, and after a real skip
+    they are not. So from the note before the gap to each of the next
+    `SKIP_CONFIRMED_BY` paired notes must read skipped as well. On URMP's 72
+    real takes, every one played through, the app declared 83 skips and the
+    labels none, and each restarted the level the rest of its stretch was
+    measured from. A real skip this misses is not lost: the pulse re-anchors
+    after the one long interval it leaves (`alignment.pulse_anchors`).
     """
     if len(matched) < 3:
         return []
@@ -252,7 +268,19 @@ def skipped_ahead(
         played = float(det[p] - det[p - 1]) / pace
         # Nearer to one interval than to the whole span: the notes between
         # were gone past, not waited through.
-        if played < (written + one) / 2:
+        if played >= (written + one) / 2:
+            continue
+        confirmed = True
+        for q in range(p + 1, min(p + 1 + SKIP_CONFIRMED_BY, len(matched))):
+            e3 = matched[q][1]
+            # From the note before the gap: as written, or with the notes in
+            # the gap gone past in one interval.
+            waited = float(onsets[e3] - onsets[e1])
+            gone_past = one + float(onsets[e3] - onsets[e2])
+            if float(det[q] - det[p - 1]) / pace >= (waited + gone_past) / 2:
+                confirmed = False
+                break
+        if confirmed:
             skips.append(p)
     return skips
 
@@ -619,6 +647,14 @@ def _longest_bar_run(
         sign = 0 if band is Band.on else (1 if pct > 0 else -1)
         bars.append((bar, sign, band, timed[bar]))
 
+    # **In a long take, a run of one or two bars is chance until it is
+    # severe.** The longest run is a maximum over every bar of the take, and
+    # the more bars there are, the more chances a bar's measured tempo has to
+    # land past the band by its own error (`[tolerance] long_take_bars`).
+    tol = config.tolerance
+    long_take = tol.long_take_bars > 0 and len(bars) >= tol.long_take_bars
+    shortest = tol.long_take_min_bars if long_take else 0
+
     best: _BarRun | None = None
     best_key = (0, 0)
     spared: set[int] = set()
@@ -639,13 +675,46 @@ def _longest_bar_run(
             i = j + 1
             continue
         worth = notes >= MIN_VERDICT_RUN and (
-            len(run) >= 2 or run[0][2] in _CLEAR_BANDS
+            all(band is Band.severe for _, _, band, _ in run)
+            if len(run) < shortest
+            else len(run) >= 2 or run[0][2] in _CLEAR_BANDS
         )
+        if worth and not _off_as_quoted(run[0][0], run[-1][0], sign, tempi, target_bpm, config):
+            worth = False
         if worth and (len(run), notes) > best_key:
             best_key = (len(run), notes)
             best = _BarRun(first=run[0][0], last=run[-1][0], rushing=sign < 0)
         i = j + 1
     return best, frozenset(spared)
+
+
+def _off_as_quoted(
+    first: int,
+    last: int,
+    sign: int,
+    tempi: BarTempi,
+    target_bpm: float,
+    config: AudioConfig,
+) -> bool:
+    """Whether bars `first` to `last`, taken together, went off the target the
+    way each of them did: the tempo the sentence would quote for them
+    (`BarTempi.across`) is past the inner band, on the same side.
+
+    **Each bar off, and the run not.** A bar's tempo is read downbeat to
+    downbeat, and a player who hurries inside each bar and takes the time back
+    at the bar line reads fast in every bar while the stretch as a whole keeps
+    the tempo. The sentence then quoted the stretch: "Bars 10–20 went at 207."
+    against 206, under a title saying the take rushed. On URMP's 72 real takes
+    (2026-11-14) six sentences quoted a tempo inside the inner band, and the
+    labels held none of them. Where the stretch has no tempo of its own to
+    quote, its bars decide, as before.
+    """
+    played = tempi.across(first, last)
+    if played is None or played <= 0:
+        return True
+    pct = (1.0 - played / tempi.target(first, target_bpm)) * 100.0
+    band = classify_band(pct, config=config)
+    return band is not Band.on and (1 if pct > 0 else -1) == sign
 
 
 #: How many notes after the opening the take's settled level is read from.
@@ -843,6 +912,7 @@ def generate_verdict(
                 difference=None if played is None else played - meant,
                 target_bpm=meant,
                 lurch=lurch,
+                config=cfg,
             )
 
     # The note rule is geometry over deltas already banded — unless the bar
@@ -908,6 +978,7 @@ def generate_verdict(
         ),
         target_bpm=target_bpm,
         lurch=lurch,
+        config=cfg,
     )
 
 
@@ -919,6 +990,7 @@ def _run_verdict(
     difference: float | None,
     target_bpm: float,
     lurch: str | None,
+    config: AudioConfig,
 ) -> Verdict:
     """The sentence for a run, whichever rule found it.
 
@@ -931,13 +1003,20 @@ def _run_verdict(
     musician has to subtract. "Bars", because every screen of the app says
     bars.
     """
-    # The figure is only said when it agrees with the direction and survives
-    # rounding. A run that got ahead of the beat at its first note and then
-    # held the tempo exactly *was* rushed, and its pace across the run is still
-    # nearer the target than one BPM — a tempo equal to the target says
-    # nothing, and one on the other side of it would contradict the title.
+    # The figure is only said when it agrees with the direction and is far
+    # enough from the target to be a tempo of its own. A run that got ahead of
+    # the beat at its first note and then held the tempo exactly *was* rushed,
+    # and its pace across the run is still near the target — a tempo equal to
+    # the target says nothing, and one on the other side of it would
+    # contradict the title. "Near" was once "nearer than one BPM", and
+    # "Bars 10–20 went at 207." against 206 got through it
+    # (`[tolerance] quoted_min_pct`).
     bpm_delta: int | None = None
-    if difference is not None and (difference > 0) == rushing:
+    if (
+        difference is not None
+        and (difference > 0) == rushing
+        and abs(difference) * 100.0 >= config.tolerance.quoted_min_pct * target_bpm
+    ):
         bpm_delta = round(abs(difference)) or None
 
     where = f"Bar {start_m}" if start_m == end_m else f"Bars {start_m}–{end_m}"

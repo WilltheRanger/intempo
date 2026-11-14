@@ -5,30 +5,28 @@ import {
   Images,
   Layers,
   Mic,
-  MoreVertical,
+  Ellipsis,
   PencilLine,
   Trash2,
 } from '../../components/icons';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Animated, StyleSheet, View } from 'react-native';
 import { ComposerField } from '../../components/pieces/ComposerField';
 import { useFieldOrder } from '../../components/primitives/useFieldOrder';
 
-import { BottomSheet } from '../../components/overlays/BottomSheet';
 import { PieceHeading } from '../../components/pieces/PieceHeading';
 import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
-import { SheetOptionRow } from '../../components/overlays/SheetOptionRow';
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
+import { PressableScale } from '../../components/motion';
 import { ScoreBand } from '../../components/score/ScoreBand';
 import { PieceLinkRow } from './PieceLinkRow';
 import { PhotoBand, type PhotoBandScrim } from '../../components/pieces/PhotoBand';
 import { usePieceHistory } from '../../data/hooks/useLatestTake';
 import { knowsItsMusic } from '../../data/hooks/knownPiece';
 import {
-  BackLink,
+  LargeTitle,
   Card,
   EmptyState,
-  IconButton,
   Input,
   LoadingState,
   PrimaryButton,
@@ -37,15 +35,19 @@ import {
   SecondaryButton,
   Text,
 } from '../../components/primitives';
+import { TextAction } from '../../components/primitives/TextAction';
 import {
   useDeletePiece,
   usePiece,
+  useRetranscribe,
   useUpdatePiece,
 } from '../../data/hooks/usePieces';
 import type { Piece } from '../../data/types';
 import { BORDER_WIDTH, colors, spacing } from '../../design';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
-import { historyCount } from '../../lib/insights/pieceHistory';
+import { backTo } from '../../navigation/useGoBack';
+import { lastTakeLine } from '../../lib/insights/pieceHistory';
+import { practiceLabel, practicePassage } from '../../lib/verdict/passage';
 import { loadStateFor } from '../../lib/loadState';
 import { FIELD_LIMITS } from '../../lib/fieldLimits';
 import { usePageCamera } from '../../navigation/usePageCamera';
@@ -110,6 +112,7 @@ export function PieceDetailScreen() {
    * with them when it is the only one (a reload on the web).
    */
   const goBack = () => navigation.popTo('Tabs', { screen: 'Library' } as never);
+  const back = backTo('Library', goBack);
   const { params } = useRoute<RouteProp<RootStackParamList, 'PieceDetail'>>();
   const { data: piece, isError, isPlaceholderData } = usePiece(params.pieceId);
   // **Not part of `load`.** A piece whose history fails to arrive is still a
@@ -118,7 +121,6 @@ export function PieceDetailScreen() {
   const history = usePieceHistory(params.pieceId);
   const load = loadStateFor({ isError, hasData: piece !== undefined });
 
-  const [menuVisible, setMenuVisible] = useState(false);
   // The page's scroll offset, for the key band's photograph.
   const scrollY = useRef(new Animated.Value(0)).current;
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -131,6 +133,9 @@ export function PieceDetailScreen() {
   const field = useFieldOrder(3, () => void saveEdit());
 
   const updatePiece = useUpdatePiece(params.pieceId);
+  // A failed reading's footer: read the same page again, as its shelf tile
+  // and its score screen both lead with (`lib/library/tileState`).
+  const reread = useRetranscribe();
   const deletePiece = useDeletePiece();
 
   function startEditing(current: Piece) {
@@ -176,6 +181,22 @@ export function PieceDetailScreen() {
     }
   }
 
+  /*
+    **Rename, asked for from the Library** — the menu a long press on the
+    piece's tile opens. The editor opens as the piece arrives, once, and the
+    request is cleared so coming back to this screen does not open it again.
+  */
+  useEffect(() => {
+    if (!params.edit || !piece) {
+      return;
+    }
+    startEditing(piece);
+    navigation.setParams({ edit: undefined });
+    // `startEditing` is a plain function of this render; the request is the
+    // only thing this answers to.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.edit, piece?.id]);
+
   // **While a delete is in flight, too.** The delete removes the piece from
   // every cache before the server answers (`useDeletePiece`), so `piece` is
   // null for the whole round trip, and this screen said "Couldn't open this
@@ -183,7 +204,7 @@ export function PieceDetailScreen() {
   // piece back and the screen with it.
   if (load === 'loading' || (deletePiece.isPending && !piece)) {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ back }}>
         <LoadingState />
       </ScreenContainer>
     );
@@ -191,7 +212,7 @@ export function PieceDetailScreen() {
 
   if (load === 'unavailable' || !piece) {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ back }}>
         <EmptyState
           fill
           title="Couldn't open this piece"
@@ -217,9 +238,13 @@ export function PieceDetailScreen() {
   // "neither" is not known to be true (`knowsItsMusic`).
   const musicKnown = knowsItsMusic(piece, isPlaceholderData);
   const needsNotation = musicKnown && !hasNotation && !hasPages && !stillReading;
-  // "7 since Sep 11", or null for a piece nobody has recorded — which then has
-  // no row, rather than a row that opens an empty page.
-  const takesCount = history.data ? historyCount(history.data) : null;
+  // "Rushed in the middle · 3 days ago", or null for a piece nobody has
+  // recorded — which then has no row, rather than a row that opens an empty
+  // page (`lastTakeLine`).
+  const takesLine = history.data ? lastTakeLine(history.data) : null;
+  // The bars the last judged take found (`practicePassage`): what this
+  // screen's button practises, so it says what the result screen said.
+  const passage = practicePassage(history.data?.recent.find((take) => take.failure === null));
 
   return (
     /*
@@ -232,11 +257,77 @@ export function PieceDetailScreen() {
     <ScreenContainer
       underStatusBar
       scrollOffset={scrollY}
+      navigationBar={{
+        back,
+        actions: [
+          {
+            icon: Ellipsis,
+            label: 'Piece options',
+            menu: [
+              { label: 'Rename', icon: PencilLine, onPress: () => startEditing(piece) },
+              {
+                label: 'Delete piece',
+                icon: Trash2,
+                onPress: () => {
+                  setError(null);
+                  setConfirmingDelete(true);
+                },
+              },
+            ],
+          },
+        ],
+      }}
       footer={
         canPractice ? (
+          passage ? (
+            /*
+              **The passage first, the whole piece under it**, as the result
+              screen sets them (the owner's call there, 2026-09-29). This
+              button opened Record at bar 1 while the takes row above it said
+              the middle was rushed.
+            */
+            <View>
+              <PrimaryButton
+                label={practiceLabel(passage)}
+                onPress={() =>
+                  navigation.navigate('Record', {
+                    pieceId: piece.id,
+                    startAt: passage.from,
+                    endAt: passage.to,
+                  })
+                }
+              />
+              <TextAction
+                label="From the start"
+                onPress={() => navigation.navigate('Record', { pieceId: piece.id })}
+                style={styles.quiet}
+              />
+            </View>
+          ) : (
+            <PrimaryButton
+              label="Practice"
+              onPress={() => navigation.navigate('Record', { pieceId: piece.id })}
+            />
+          )
+        ) : readingFailed ? (
+          /*
+            **A failed reading keeps an action in reach.** The footer was only
+            for practice, so a page that could not be read left this screen
+            with nothing under the thumb: the way on was a row's second line,
+            which opens the score rather than doing anything. Read it again is
+            the cheap recovery and the one the shelf and the score screen lead
+            with; retaking photographs stays on the score screen, one row up.
+          */
           <PrimaryButton
-            label="Practice"
-            onPress={() => navigation.navigate('Record', { pieceId: piece.id })}
+            label={reread.isPending ? 'Reading again…' : 'Try again'}
+            disabled={reread.isPending}
+            onPress={() => {
+              setError(null);
+              reread.mutate(piece.id, {
+                onError: (cause) =>
+                  setError(cause instanceof Error ? cause.message : 'Couldn’t start. Try again.'),
+              });
+            }}
           />
         ) : undefined
       }
@@ -260,25 +351,15 @@ export function PieceDetailScreen() {
           scrollY={scrollY}
         >
           <View style={[styles.head, styles.bandGutter]}>
-            <BackLink label="Back to library" onPress={goBack} tone="onDark" />
-            <View style={styles.titleRow}>
+            <LargeTitle text={piece.title}>
               <PieceHeading
                 title={piece.title}
                 variant="heroTitle"
                 color="onDark"
                 catalogueColor="onDarkSecondary"
                 header
-                containerStyle={styles.title}
               />
-              <IconButton
-                icon={MoreVertical}
-                label="Piece options"
-                variant="bare"
-                tone="onDark"
-                onPress={() => setMenuVisible(true)}
-                style={styles.options}
-              />
-            </View>
+            </LargeTitle>
           </View>
         </PhotoBand>
       </View>
@@ -365,10 +446,23 @@ export function PieceDetailScreen() {
         question is "did it read this right".
       */}
       {hasNotation && piece.score ? (
-        <View style={styles.engravedBand}>
+        /*
+          **The music opens the music.** The engraving is the most tappable
+          thing on the screen and it did nothing, so the first thing a thumb
+          tried taught it that the picture is decoration (§3: every drawn
+          affordance is real). It opens the score, where the same music is
+          read in full.
+        */
+        <PressableScale
+          onPress={() => navigation.navigate('PieceScore', { pieceId: piece.id, view: 'notation' })}
+          accessibilityRole="button"
+          accessibilityLabel="Open the score"
+          activeScale={0.99}
+          style={styles.engravedBand}
+        >
           {/* The opening two systems, where the prototype draws two lines. */}
           <ScoreBand score={piece.score} viewport={OPENING_HEIGHT} fullBleed />
-        </View>
+        </PressableScale>
       ) : hasPages ? (
         // Nothing has been read yet — a scan still in the worker, or a reading
         // that failed. The photograph is what the app has of this piece, so it
@@ -445,11 +539,11 @@ export function PieceDetailScreen() {
           (`PieceTakesScreen`). First, because it is the row opened most: what
           happened last time is why a musician comes back to a piece.
         */}
-        {takesCount ? (
+        {takesLine ? (
           <PieceLinkRow
             icon={Mic}
             label="Your takes"
-            description={takesCount}
+            description={takesLine}
             onPress={() => navigation.navigate('PieceTakes', { pieceId: piece.id })}
           />
         ) : null}
@@ -504,31 +598,6 @@ export function PieceDetailScreen() {
         ) : null}
       </View>
 
-      <BottomSheet
-        visible={menuVisible}
-        onClose={() => setMenuVisible(false)}
-        title={piece.title}
-      >
-        <SheetOptionRow
-          icon={PencilLine}
-          divided={false}
-          label="Rename"
-          onPress={() => {
-            setMenuVisible(false);
-            startEditing(piece);
-          }}
-        />
-        <SheetOptionRow
-          icon={Trash2}
-          label="Delete piece"
-          description={piece.lastPracticedAt ? 'And all its takes' : undefined}
-          onPress={() => {
-            setMenuVisible(false);
-            setError(null);
-            setConfirmingDelete(true);
-          }}
-        />
-      </BottomSheet>
 
       <ConfirmDialog
         visible={confirmingDelete}
@@ -547,6 +616,10 @@ export function PieceDetailScreen() {
 }
 
 const styles = StyleSheet.create({
+  /** "From the start", under the passage's button: the result screen's quiet line. */
+  quiet: {
+    marginTop: spacing.xs,
+  },
   editCard: {
     marginTop: spacing.lg,
   },
@@ -623,23 +696,8 @@ const styles = StyleSheet.create({
     marginTop: spacing.xl,
   },
   head: {
-    paddingTop: spacing.md,
+    paddingTop: spacing.sm,
     // The band's own breathing room under the title, before the music.
-    paddingBottom: 18,
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-    marginTop: spacing.xs,
-  },
-  title: {
-    flex: 1,
-  },
-  // A 44pt target whatever the title does. Not pulled out to the gutter line
-  // as the prototype draws it: this screen's column clips at the gutter on
-  // the web, and a pulled glyph lost ten points of its target to the clip.
-  options: {
-    flexShrink: 0,
+    paddingBottom: spacing.lg,
   },
 });

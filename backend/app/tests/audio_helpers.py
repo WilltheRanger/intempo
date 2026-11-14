@@ -92,6 +92,8 @@ def synth_bowed_note(
     sr: int = 22050,
     rise_s: float = 0.035,
     decay: float = 0.6,
+    vibrato_cents: float = 0.0,
+    vibrato_hz: float = 5.5,
 ) -> np.ndarray:
     """One bowed string: a Helmholtz sawtooth under a slow attack.
 
@@ -106,13 +108,27 @@ def synth_bowed_note(
     **The slow rise**, because a bow does not click. A real détaché attack
     takes tens of milliseconds to reach speed, which is precisely why the spec
     gives the low register its own, lower, detection threshold.
+
+    `vibrato_cents` swings the pitch that far either way at `vibrato_hz`,
+    arriving over the first quarter second as a player's does. It moves every
+    partial, so energy moves between neighbouring bands inside a held note —
+    the flux `audio._vibrato_bands` exists to ignore. Off by default, and off
+    is the exact waveform this helper always made.
     """
     n = int(seconds * sr)
     t = np.arange(n) / sr
     y = np.zeros(n)
+    phase = None
+    if vibrato_cents:
+        grow = np.clip(t / 0.25, 0.0, 1.0)
+        cents = vibrato_cents * grow * np.sin(2 * np.pi * vibrato_hz * t)
+        phase = 2 * np.pi * np.cumsum(freq_hz * 2 ** (cents / 1200)) / sr
     partial = 1
     while freq_hz * partial < 0.45 * sr:
-        y += np.sin(2 * np.pi * freq_hz * partial * t) / partial
+        if phase is None:
+            y += np.sin(2 * np.pi * freq_hz * partial * t) / partial
+        else:
+            y += np.sin(partial * phase) / partial
         partial += 1
 
     envelope = np.exp(-t * decay)
@@ -136,6 +152,7 @@ def synth_bowed_take(
     note_dur_s: float = 0.55,
     room_mode_hz: float = 58.0,
     noise: float = MIC_NOISE_FLOOR,
+    vibrato_cents: float = 0.0,
 ) -> np.ndarray:
     """A bowed passage in a small room, with a floor.
 
@@ -150,7 +167,10 @@ def synth_bowed_take(
     total_s = (max(onset_times_s) if len(onset_times_s) else 0.0) + note_dur_s + 0.5
     y = np.zeros(int(total_s * sr), dtype=np.float32)
     for index, onset in enumerate(onset_times_s):
-        note = synth_bowed_note(pitches[index % len(pitches)], note_dur_s, sr=sr)
+        # Asked for only when wanted, so the call is the one it always was —
+        # `test_bowed_attacks.py` swaps this helper for one with no vibrato.
+        extra = {"vibrato_cents": vibrato_cents} if vibrato_cents else {}
+        note = synth_bowed_note(pitches[index % len(pitches)], note_dur_s, sr=sr, **extra)
         start = int(onset * sr)
         end = min(start + note.size, y.size)
         y[start:end] += note[: end - start]

@@ -1,7 +1,7 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { PieceHeading } from '../../components/pieces/PieceHeading';
 import { Camera, Images } from '../../components/icons';
-import { useGoBack } from '../../navigation/useGoBack';
+import { useBackButton } from '../../navigation/useGoBack';
 import { useMemo, useState } from 'react';
 import {
   Pressable,
@@ -22,7 +22,7 @@ import { TranscribingPanel } from '../../components/score/TranscribingPanel';
 import {
   EmptyState,
   LoadingState,
-  BackLink,
+  LargeTitle,
   ScreenContainer,
   SecondaryButton,
   SegmentedControl,
@@ -82,6 +82,8 @@ import { proposalsFor, proposalsRowLabel } from '../../lib/notation/proposals';
 import { usePreferences } from '../../data/preferences';
 import { TrailingChevron } from '../../components/primitives/TrailingChevron';
 import { usePageCamera } from '../../navigation/usePageCamera';
+import { useMe } from '../../data/hooks/useMe';
+import { acceptCopy } from '../../lib/notation/acceptReading';
 
 /** Read from a stand, not glanced at — the same size the warmup page uses. */
 const STAVE_SCALE = 1.25;
@@ -180,10 +182,11 @@ export function PieceScoreScreen() {
   const navigation = useNavigation<RootNavigation>();
   const photograph = usePageCamera();
   const { params } = useRoute<RouteProp<RootStackParamList, 'PieceScore'>>();
-  const goBack = useGoBack({
+  const back = useBackButton({
     route: 'PieceDetail',
     params: { pieceId: params.pieceId },
   });
+  const goBack = back.onPress;
   const { data: piece, isError, error } = usePiece(params.pieceId);
   const { instrument } = usePreferences();
   const load = loadStateFor({ isError, hasData: piece !== undefined });
@@ -192,6 +195,22 @@ export function PieceScoreScreen() {
   const reread = useRetranscribe();
   const setClef = useSetClef(params.pieceId);
   const [confirmingAccept, setConfirmingAccept] = useState(false);
+  // Whether accepting keeps the photographs, which decides what "Looks right"
+  // says and whether it asks first (`acceptCopy`). Unknown while the account
+  // loads, and answered as a deletion until it is known.
+  const { data: musician } = useMe();
+  const accepting = acceptCopy(musician ? musician.trainingConsent : null);
+
+  /** Accept the reading: with the dialog's yes, or straight away where nothing is lost. */
+  function acceptReading() {
+    setAcceptError(null);
+    accept.mutate(undefined, {
+      onError: (cause) =>
+        setAcceptError(
+          cause instanceof Error ? cause.message : 'Couldn’t confirm the reading. Try again.',
+        ),
+    });
+  }
   const [pickingMeasure, setPickingMeasure] = useState(false);
   const [pickingClef, setPickingClef] = useState(false);
   const [acceptError, setAcceptError] = useState<string | null>(null);
@@ -352,7 +371,7 @@ export function PieceScoreScreen() {
 
   if (load === 'loading') {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ back }}>
         <LoadingState />
       </ScreenContainer>
     );
@@ -360,7 +379,7 @@ export function PieceScoreScreen() {
 
   if (load === 'unavailable' || !piece) {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ back }}>
         <EmptyState
           fill
           title="Couldn't open this score"
@@ -410,8 +429,8 @@ export function PieceScoreScreen() {
 
   if (stillReading) {
     return (
-      <ScreenContainer>
-        <ScoreHead title={piece.title} onBack={goBack} />
+      <ScreenContainer navigationBar={{ back }}>
+        <ScoreHead title={piece.title} />
         <TranscribingPanel piece={piece} />
         {hasPages ? (
           <ScoreThumbnail source={piece.thumbnail} style={styles.pageWhileReading} />
@@ -422,8 +441,8 @@ export function PieceScoreScreen() {
 
   if (piece.transcriptionStatus === 'failed') {
     return (
-      <ScreenContainer>
-        <ScoreHead title={piece.title} onBack={goBack} />
+      <ScreenContainer navigationBar={{ back }}>
+        <ScoreHead title={piece.title} />
         {/*
           The backend's sentence, not a generic one. It knows which half failed
           — a page that could not be fetched and a page that could not be read
@@ -549,13 +568,32 @@ export function PieceScoreScreen() {
   const continuesList = listening && !noteBetween;
 
   return (
-    <ScreenContainer key={showing}>
+    <ScreenContainer navigationBar={{ back }}
+      key={showing}
+      /*
+        **Practice, pinned, once there is music to practise.** A new piece
+        comes here straight from naming it and setting its tempo, and this
+        screen had no way on to Record: its one ink button was "Looks right",
+        which deletes the photograph, and after it the screen ended in rows. A
+        musician who had just added a piece was one screen short of playing it
+        (the UI/UX review, 2026-11-12). The accept stays, below, as the
+        secondary decision it is.
+      */
+      footer={
+        hasNotation ? (
+          <PrimaryButton
+            label="Practice"
+            onPress={() => navigation.navigate('Record', { pieceId: piece.id })}
+          />
+        ) : undefined
+      }
+    >
       {/*
         The redesign's head (`redesign/PieceScore.dc.html`), the same as the
         piece's own: a way back in words, then the title. The composer is on
         the piece, one step back.
       */}
-      <ScoreHead title={piece.title} onBack={goBack} />
+      <ScoreHead title={piece.title} />
 
       {showToggle ? (
         <SegmentedControl
@@ -994,14 +1032,19 @@ export function PieceScoreScreen() {
       */}
       {hasNotation && !piece.transcriptionAccepted ? (
         <View style={styles.accept}>
-          <PrimaryButton
-            label="Looks right"
-            onPress={() => setConfirmingAccept(true)}
-            loading={accept.isPending}
+          {/*
+            Outlined, because Practice is the screen's one ink button now:
+            two filled buttons a scroll apart are two focal points (§3 law 4).
+          */}
+          <SecondaryButton
+            // The outlined button has no spinner, so the label carries the
+            // wait, as "Reading again…" does on the failed branch above.
+            label={accept.isPending ? accepting.pending : 'Looks right'}
+            onPress={() => (accepting.confirm ? setConfirmingAccept(true) : acceptReading())}
             disabled={accept.isPending}
           />
           <Text variant="metadataSmall" color="textTertiary" style={styles.acceptNote}>
-            Deletes the photo to save space.
+            {accepting.note}
           </Text>
           {acceptError ? (
             <Text variant="metadataSmall" color="textSecondary" style={styles.caveat}>
@@ -1129,28 +1172,19 @@ export function PieceScoreScreen() {
         </View>
       </BottomSheet>
 
-      <ConfirmDialog
-        visible={confirmingAccept}
-        title="Delete the photo?"
-        // The consequence, not the verb. Naming what survives matters as much
-        // as naming what goes: someone who thinks they are deleting the piece
-        // will cancel a thing they actually wanted.
-        message="The notes stay. The photo can’t be recovered."
-        confirmLabel="Delete photo"
-        onConfirm={() => {
-          setConfirmingAccept(false);
-          setAcceptError(null);
-          accept.mutate(undefined, {
-            onError: (cause) =>
-              setAcceptError(
-                cause instanceof Error
-                  ? cause.message
-                  : 'That could not be saved. Try again.',
-              ),
-          });
-        }}
-        onCancel={() => setConfirmingAccept(false)}
-      />
+      {accepting.confirm ? (
+        <ConfirmDialog
+          visible={confirmingAccept}
+          title={accepting.confirm.title}
+          message={accepting.confirm.message}
+          confirmLabel={accepting.confirm.confirmLabel}
+          onConfirm={() => {
+            setConfirmingAccept(false);
+            acceptReading();
+          }}
+          onCancel={() => setConfirmingAccept(false)}
+        />
+      ) : null}
     </ScreenContainer>
   );
 }
@@ -1195,29 +1229,25 @@ function ScoreAction({
 }
 
 /**
- * The way back and the piece's name, the same in every state of this screen.
+ * The piece's name, the same in every state of this screen.
  *
- * The reading and failed states had their own header, which said "Back to
- * piece" and set the whole title on one line, so "Concerto in A minor, Op. 3
- * No. 6" broke with the "6" alone underneath. The catalogue goes on its own
- * line here, as it does on the piece itself.
+ * The reading and failed states had their own header, which set the whole
+ * title on one line, so "Concerto in A minor, Op. 3 No. 6" broke with the "6"
+ * alone underneath. The catalogue goes on its own line here, as it does on the
+ * piece itself. The way back is the navigation bar's (2026-11-13).
  */
-function ScoreHead({ title, onBack }: { title: string; onBack: () => void }) {
+function ScoreHead({ title }: { title: string }) {
   return (
-    <View style={styles.head}>
-      <BackLink label="Back to the piece" onPress={onBack} />
-      <PieceHeading title={title} variant="heroTitle" header containerStyle={styles.title} />
-    </View>
+    <LargeTitle text={title} style={styles.head}>
+      <PieceHeading title={title} variant="heroTitle" header />
+    </LargeTitle>
   );
 }
 
 const styles = StyleSheet.create({
   head: {
-    paddingTop: spacing.md,
+    paddingTop: spacing.sm,
     marginBottom: spacing.lg,
-  },
-  title: {
-    marginTop: spacing.xs,
   },
   /*
     Every tappable thing on this screen acknowledges the touch. These were bare
