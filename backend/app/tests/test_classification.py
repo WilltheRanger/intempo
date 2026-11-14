@@ -470,6 +470,24 @@ def test_end_to_end_the_sentence_follows_the_bars() -> None:
     assert verdict.text == "Bars 7–8 went at 80."
 
 
+def test_a_run_ahead_of_the_beat_at_the_tempo_is_not_quoted_a_tempo() -> None:
+    """**A figure the take cannot resolve is not quoted**
+    (`[tolerance] quoted_min_pct`). Sixteen bars at 105 against 104: each bar
+    is on tempo, and every note sits a little further ahead of the beat than
+    the last. The note rule names the run, and it quoted the run's pace:
+    "Bars 2–16 went at 105.", 1% over. URMP's "Spring" violin (2026-11-14) ran
+    ahead of the beat at the tempo and was told "Bars 10–20 went at 207."
+    against 206. That is said as a side now. At 107, 2.9% over, the pace is a
+    tempo of its own and is quoted, as it always was."""
+    ahead = _played(16, lambda bar: 105.0)
+    faster = _played(16, lambda bar: 107.0)
+
+    assert ahead.direction is Direction.rush
+    assert ahead.text == "Bars 2–16 ran ahead."
+    assert ahead.avg_bpm_delta is None
+    assert faster.text == "Bars 1–16 went at 107."
+
+
 # ---------------------------------------------------------------------------
 # Settling in and winding down are not named (the owner, 2026-09-25)
 # ---------------------------------------------------------------------------

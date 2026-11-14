@@ -874,6 +874,7 @@ def generate_verdict(
                 difference=None if played is None else played - meant,
                 target_bpm=meant,
                 lurch=lurch,
+                config=cfg,
             )
 
     # The note rule is geometry over deltas already banded — unless the bar
@@ -939,6 +940,7 @@ def generate_verdict(
         ),
         target_bpm=target_bpm,
         lurch=lurch,
+        config=cfg,
     )
 
 
@@ -950,6 +952,7 @@ def _run_verdict(
     difference: float | None,
     target_bpm: float,
     lurch: str | None,
+    config: AudioConfig,
 ) -> Verdict:
     """The sentence for a run, whichever rule found it.
 
@@ -962,13 +965,20 @@ def _run_verdict(
     musician has to subtract. "Bars", because every screen of the app says
     bars.
     """
-    # The figure is only said when it agrees with the direction and survives
-    # rounding. A run that got ahead of the beat at its first note and then
-    # held the tempo exactly *was* rushed, and its pace across the run is still
-    # nearer the target than one BPM — a tempo equal to the target says
-    # nothing, and one on the other side of it would contradict the title.
+    # The figure is only said when it agrees with the direction and is far
+    # enough from the target to be a tempo of its own. A run that got ahead of
+    # the beat at its first note and then held the tempo exactly *was* rushed,
+    # and its pace across the run is still near the target — a tempo equal to
+    # the target says nothing, and one on the other side of it would
+    # contradict the title. "Near" was once "nearer than one BPM", and
+    # "Bars 10–20 went at 207." against 206 got through it
+    # (`[tolerance] quoted_min_pct`).
     bpm_delta: int | None = None
-    if difference is not None and (difference > 0) == rushing:
+    if (
+        difference is not None
+        and (difference > 0) == rushing
+        and abs(difference) * 100.0 >= config.tolerance.quoted_min_pct * target_bpm
+    ):
         bpm_delta = round(abs(difference)) or None
 
     where = f"Bar {start_m}" if start_m == end_m else f"Bars {start_m}–{end_m}"

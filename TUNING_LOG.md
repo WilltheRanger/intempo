@@ -6,6 +6,39 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (quoted figures) — A run's tempo is quoted only when it is 2% or more off the target: new `[tolerance] quoted_min_pct = 2.0`
+
+**Old behaviour:** `classification._run_verdict` quoted a run's tempo ("Bars
+1–6 went at 100.") whenever it agreed with the direction and differed from the
+target by a whole BPM after rounding. **New:** it must also differ by at least
+`quoted_min_pct` (2%) of the target. Nearer than that, the run is told by its
+side ("Bars 10–20 ran ahead."), as a run at exactly the tempo always was. A
+remote-config row without the key keeps 0, the old rule.
+
+**Why.** URMP's "Spring" violin ran ahead of the beat through bars 4–25, at
+the tempo, and was told "Bars 10–20 went at 207." against 206. That is a
+difference of 0.5%, which the take's own placement cannot resolve, and the
+sentence quoted it as a tempo. The labels' reading of the same take said "Bars
+4–25 ran ahead.", with no figure, because its difference rounded to nothing.
+Rounding was deciding which of the two forms a take got.
+
+The bar rule is not affected: since `7ca736f` it names only stretches whose
+quoted tempo is past the inner band (5%). The note rule exists for takes a few
+percent off that every bar calls on tempo, and its figures there are worth
+saying: 3.8% under in `test_classification.py` ("Bars 1–6 went at 100."
+against 104), and 3% over in `test_readings.py`. Two real sentences quoted a
+figure inside 5% of the target: Spring at +0.5%, and Rejouissance's second
+saxophone at +2.3%. The labels read the saxophone take the other way, so no
+wording rule fixes it.
+
+| real, 72 tracks | before | after |
+|---|---|---|
+| verdict true | 54 | 55 |
+
+`08_Spring/2_vn` went from "Bars 10–20 went at 207." to "Bars 10–20 ran
+ahead.", which the labels hold. Nothing else moves. The synthetic benchmark
+(97.24%, no take differs) and the six fixtures are unchanged.
+
 ## 2026-11-14 (wrong parts) — The long-page share lets the chain pair a take; the usual share reports it. No thresholds changed.
 
 **Old behaviour (the entry below, `28cc9c3`):** as a last resort, a long page

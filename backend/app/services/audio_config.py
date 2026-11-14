@@ -119,6 +119,9 @@ class ToleranceConfig:
     disturbance_floor_beats: float = 0.1667
     #: See `settling_bars` in `[tolerance]`.
     settling_bars: int = 2
+    #: See `quoted_min_pct` in `[tolerance]`. 0, the old rule, for a
+    #: remote-config row written before it.
+    quoted_min_pct: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -281,6 +284,7 @@ def _parse(raw: dict) -> AudioConfig:
                 tol.get("pulse", {}).get("disturbance_floor_beats", 0.1667)
             ),
             settling_bars=int(tol.get("settling_bars", 2)),
+            quoted_min_pct=float(tol.get("quoted_min_pct", 0.0)),
         ),
         trend=TrendConfig(window=int(trend["window"])),
         alignment=AlignmentConfig(

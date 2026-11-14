@@ -269,6 +269,18 @@ dragging_outer_pct = 20.0
 # the last notes. Longer than this, or half the take or more, and it is named
 # whole. The chart still draws every bar as played.
 settling_bars = 2
+# The least a run's tempo must differ from the target, in %, for the verdict
+# to quote it ("Bars 1–6 went at 100."). Nearer than this, a run that got
+# ahead of the beat or behind it is told so ("Bars 10–20 ran ahead."), as
+# one at exactly the tempo always was. The note rule exists for a take a few
+# percent off that the bars call on tempo, and its figures there are worth
+# saying: 3.8% under in `test_classification.py`, 3% over in
+# `test_readings.py`. Under 2% they are not. URMP's "Spring" violin (2026-11-14)
+# ran ahead of the beat through bars 4–25 at the tempo, and the sentence said
+# "Bars 10–20 went at 207." against 206. That is a difference the take's own
+# placement cannot resolve, and a quoted figure claims it can. 0 restores the
+# old rule, which quoted any difference that survived rounding to a whole BPM.
+quoted_min_pct = 2.0
 
 [tolerance.pulse]
 # When a musician breaks their pulse rather than drifting off it. Below these
