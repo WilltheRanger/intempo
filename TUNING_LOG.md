@@ -6,6 +6,100 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (the chain's time weight) — `alignment.CHAIN_TIME_WEIGHT` 0.3 → 0.6 a played gap
+
+**Why.** `b7e3103` took the saturation off the chain's time cost and left
+its weight where it was. Most of what the real takes still colour
+differently from the labels is the app measuring from another level after a
+re-anchor the labels' reading does not make (`(a few notes out of place)`),
+and many of those follow a slide: in a fast figure one attack goes unheard
+and pitch alone lets the chain pair the notes after it a note or two along.
+In Spring's second violin, bar 18 (E5 and F-sharp 5 alternating), notes
+147–153 were paired 230–430 ms early. Each slid note sits a gap or two from
+its place, which cost 0.3–0.6 against the pitch it matches.
+
+**Swept** on the 72 real takes (`f657146`'s head):
+
+| weight | heard | placed (50 ms) | paired (100 ms) | colour | bar tempo | verdict true |
+|---|---|---|---|---|---|---|
+| 0.3 (was) | 14,760 | 12,274 | 14,118 | 11,250 | 2,901 | 67 |
+| 0.45 | 14,745 | 12,295 | 14,140 | 11,323 | 2,912 | 68 |
+| **0.6** | 14,745 | 12,315 | **14,163** | **11,455 (77.69%)** | **2,918** | **68** |
+| 0.75 | 14,736 | 12,312 | 14,158 | 11,356 | 2,910 | 68 |
+| 0.9 | 14,717 | 12,305 | 14,147 | 11,373 | 2,899 | 68 |
+
+The sentence that becomes true at every weight from 0.45 is Hark's viola,
+one of the five false ones: "Bars 13–18 went at 123." becomes "Bars 1–18
+fell behind.", which the labels hold. At 0.6 colour gains most in Maria's
+cello (+128), Rondeau's first violin and cello (+72, +25) and Hark's viola
+(+19), and gives back in K515's cello (−41), the Fugue's second violin (−25)
+and K515's first violin (−22). The 15 notes no longer heard are spread one
+or two a take: an attack far from where its note belongs, which the chain
+now leaves out rather than pairs.
+
+**Synthetic**, at 0.45 identical; at 0.6 one take moves, 97.83 → 97.78%
+(98.43 → 98.37% over what the truth decides).
+`double_bass/bowed/84/drag/noise/1132` pairs its run of six G2s nearer the
+truth (notes 18–20 now 120 ms short of it each, where they were −228 to
++605 ms off), and so no
+longer re-anchors where the drag ends, and its last bars carry the drag's
+730 ms: 7 notes and a bar. That is the re-anchor's edge, not the pairing.
+
+**Regression, all six clips:** identical.
+
+## 2026-11-14 (the second look's window) — Measured, not kept: each missed note searched by its own spacing. No code or threshold changes.
+
+**Where the real takes' notes reported missing come from** (after `f657146`):
+275 of 15,035 labelled notes. 167 have no attack within 50 ms that the
+first pass heard; 65 have a written neighbour under 100 ms away (35 of them
+in K515's first violin); 37 have an attack within 50 ms that went unpaired;
+6 had their attack given to another note.
+
+**The attack look's window** is a quarter of the page's closest written
+gap (`closest_expected_gap`, the number the detector's peak window is sized
+from), and it needs three envelope frames, so a page whose closest gap is
+under 93 ms at its tempo searches nothing for any note. On the real takes
+seven pages are so (K515's two violins and first viola, King's first
+violin in both mixes, Rondeau's first violin in two), holding 16 of the 167. Sized instead
+by each missed note's own nearest written neighbours, never narrower than
+before:
+
+| | before (`f657146`) | per-note window |
+|---|---|---|
+| real, heard | 14,760 / 15,035 | 14,775 (98.27%) |
+| real, paired within 100 ms | 14,118 | 14,131 |
+| real, colour | 11,250 | 11,236 |
+| real, bar tempo | 2,901 | 2,909 |
+| real, verdict true | 67 | 67 (four sentences change, none in truth) |
+| synthetic, notes left out and reported | 6,426 / 6,454 | 6,424 |
+| synthetic, bars | 1,393 | 1,390 |
+| synthetic, overall | 97.83% | 97.80% |
+
+The two synthetic losses are notes the player left out, now "found": the
+note before is held through the gap, its vibrato swells every ~180 ms, and a
+±114 ms window always holds one, where ±28 ms did not. Only the pitch check
+(`_not_the_note_before`) stands between, and it cannot act where the page
+repeats a pitch. Asking for the missed note's own pitch instead would drop
+the quiet notes a live room swallows, which `test_degraded_audio.py`
+holds. Not kept.
+
+**And a rule for the 37 with an unheard attack beside them, which found
+nothing to do.** That count compared the first pass's detections with the
+final pairs' times, which refinement and trimming move by a hair, so most of
+those attacks were paired after all, to another note. At the pairing's own
+stage, Maria's cello and Spring's first violin have no attack left over
+between any missed note's paired neighbours, and K515's first violin one, at
+the wrong pitch. An attack given away is the slide problem of `(a few notes
+out of place)`: in Spring's second violin, bar 18, note 146's own E5 attack
+went to note 148, the next E5, and `_beside_a_hole` only looks at the paired
+note nearest a hole on each side, which there read F-sharp 5 both.
+
+**Also measured: predicting a missed note from the paired notes either side**
+rather than the take's line (`predict_audio_times`). It refuses
+`test_degraded_audio`'s room-swallowed take again, at quality 0.000: there,
+the pairs either side are the unreliable ones, and the take's line is what
+survives them. Not kept.
+
 ## 2026-11-14 (a few notes out of place) — Measured, not kept: a run of up to k notes out of place as no disturbance. No code or threshold changes.
 
 **Why real colour disagrees.** On the captured pulse inputs, of the 2,886

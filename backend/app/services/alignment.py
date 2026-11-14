@@ -2254,7 +2254,23 @@ CHAIN_SKIP_OPTIONAL = 0.05
 #: two gaps gave half that, and a cap at five gave the same. A breath 3.8 s
 #: after Jerusalem's last B4, about three gaps from where that note belongs,
 #: is still paired as it.
-CHAIN_TIME_WEIGHT = 0.3
+#:
+#: **0.6 a gap, not 0.3** (2026-11-14). The weight itself had not been swept.
+#: In a fast figure where one attack goes unheard, pitch alone lets the chain
+#: slide a note or two along (Spring's second violin, bar 18, alternating E5
+#: and F-sharp 5, paired two notes early for seven notes); each slid note sits
+#: a gap or two from its place, which cost 0.3-0.6 and now costs twice that.
+#: On the 72 real takes (heard, paired, colour, bar tempo, verdict true):
+#:
+#:     0.3    14,760  14,118  11,250  2,901  67
+#:     0.45   14,745  14,140  11,323  2,912  68
+#:     0.6    14,745  14,163  11,455  2,918  68
+#:     0.75   14,736  14,158  11,356  2,910  68
+#:     0.9    14,717  14,147  11,373  2,899  68
+#:
+#: The synthetic set moves in one take, a dragging bass whose run of six G2s
+#: now pairs nearer the truth and so no longer re-anchors where the drag ends.
+CHAIN_TIME_WEIGHT = 0.6
 
 #: How much less leaving out the last written note costs than the first,
 #: spread evenly between them — only ever a tie-break.
