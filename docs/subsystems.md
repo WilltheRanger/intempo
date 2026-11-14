@@ -2226,6 +2226,16 @@ it taught, each lesson paid for with a wrong number first:
   cost fell where timing had accepted, was wrong: narrowed to refusals, it
   cost the same five, to the note. `analysis._analyze_take`'s `last_reading`
   holds the rule.
+- **A lower bar is a way in, not a verdict.** The long page's lower share
+  rescued K515's cello, and it also gave a verdict to Jerusalem's double bass
+  read against the cello part it doubles. The chain cannot tell those apart,
+  since both hear about two thirds of the page. The second look can: the
+  notes a take of the page missed are there to be found, and the notes a
+  different part lacks are not. So the lower share only lets the chain pair a
+  take, and the usual share reports it. Reading every recording against the
+  other parts of its piece is what found this. A rule that rescues refusals
+  needs a test of the wrong takes it lets through, not only of the right
+  ones it saves.
 
 ### A take that could not be sent was kept only by the native build (2026-10-06)
 

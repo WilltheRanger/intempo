@@ -1538,10 +1538,15 @@ def _trusted_by_pitch(
     See `[pitch]` `confirmed_*` in config.toml for how far chance reaches.
 
     `last_resort`: timing has refused the take and no other reading of it
-    follows (`analyze`), so the alternative to trusting the pairing is telling
+    follows (`analyze`), so the alternative to the chain's pairing is telling
     the player they played the wrong piece. On a long page that needs less of
     the chain heard (`confirmed_share_long`): chance falls as a page grows,
-    and the usual share was set where it is highest.
+    and the usual share was set where it is highest. **Only to be paired by
+    the chain, not to be reported:** the second look then searches where the
+    page's notes belong, and `_analyze_take` reports the take only if it is
+    heard at the usual share after it. A different part that doubles the
+    page passes the lower share too, and the second look finds nothing it
+    lacks (2026-11-14, Jerusalem's double bass on the cello's page).
 
     Not on a reading another follows: rescued on the lower share, the first
     reading of a take keeps the second, without the vibrato filter, from
@@ -2057,8 +2062,9 @@ def _audited_by_chain(
             config,
             pitch,
             passage=passage,
-            # The lower share a refused long page is held to, only once no
-            # other reading of the take is left (`analyze`).
+            # The lower share a refused long page is paired on, only once no
+            # other reading of the take is left (`analyze`). It is reported
+            # only at the usual share, after the second look (`_analyze_take`).
             last_resort=not accepted and last_reading,
         )
     )
@@ -2479,8 +2485,9 @@ def _analyze_take(
     """`analyze`, with one setting of the detector. See `analyze`.
 
     `last_reading`: no other reading of the take follows this one if it is
-    refused, so a long page timing refuses may be trusted on the lower share
-    (`_trusted_by_pitch`). The first reading is not the last when the second
+    refused, so a long page timing refuses may be paired by its chain on the
+    lower share (`_trusted_by_pitch`), and reported if the second look then
+    hears it at the usual one. The first reading is not the last when the second
     reads without the vibrato filter: rescued early, it kept "He's a Pirate"'s
     viola from the second reading, which pairs it better. Where both are
     refused the first refusal stands, as it always has, without asking the
@@ -2663,9 +2670,15 @@ def _analyze_take(
     # asked about: so it is reported rather than refused. One note out of
     # tune, or one the scan misread, is one unconfirmed note in the chain.
     confirmed = _confirmed(anchored, reading, pitch, origin, cfg)
-    trusted = _trusted_by_pitch(
-        confirmed, cfg, last_resort=not accepted_by_timing and last_reading
-    )
+    # **At the usual share, whatever let the chain's pairing in.** A long page
+    # timing refused may be paired by its chain on less of it heard
+    # (`_audited_by_chain`), so the second look can search where its notes
+    # belong. It is reported only if, after that look, it is heard at the
+    # usual share. The notes a take of the page missed are there to be found,
+    # and the notes a different part lacks are not: K515's cello rose from
+    # 0.67 of its page to 0.81, and Jerusalem's double bass, read against the
+    # cello's page it doubles, from 0.66 to 0.67 (2026-11-14).
+    trusted = _trusted_by_pitch(confirmed, cfg)
     # Heard at the page's pitches across the page, or a take timing accepted
     # and the chain re-paired by pitch: either way not a take to refuse, and
     # not one whose timing is in doubt.

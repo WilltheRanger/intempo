@@ -6,6 +6,52 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (wrong parts) — The long-page share lets the chain pair a take; the usual share reports it. No thresholds changed.
+
+**Old behaviour (the entry below, `28cc9c3`):** as a last resort, a long page
+was trusted on `confirmed_share_long` (0.65) of its chain heard at pitch,
+both to be paired by the chain and to be reported. **New:** 0.65 only lets
+the chain pair the take (`_audited_by_chain`). The take is reported only if,
+after the second look, it is heard at `confirmed_share` (0.7), the September
+rule (`_analyze_take`).
+
+**Why: the wrong part opened.** Every URMP recording was read against the page
+of each other part of the same piece, 168 pairs, because the realistic
+mistake on a long page is opening the wrong part. Under `28cc9c3`, two pairs
+that the old rule refused were given a verdict. Both are "Jerusalem", where
+the double bass doubles the cello an octave down:
+
+| take, on the page of | heard at pitch, chain | after the second look | `28cc9c3` said | now |
+|---|---|---|---|---|
+| double bass, on the cello's | 92 of 139 (0.66) | 93 (0.67) | "Bars 1–4 went at 61." | refused |
+| cello, on the double bass's | 84 of 122 (0.69) | 84 (0.69) | "Bars 34–38 went at 46." | refused |
+| K515's cello, on its own | 242 of 360 (0.67) | 291 (0.81) | "Bars 15–23 went at 200." | the same |
+
+The chain cannot tell a part that doubles the page from a take of the page
+with rubato: both hear about two thirds of it. The second look can. It
+searches where each unheard note belongs. The notes a take of the page
+missed are there to be found, and the notes a different part lacks are not.
+
+Synthesis agrees. A 96-note page played with every fourth note a step away,
+and timing refused, was paired on the lower share at 0.69. The second look
+took it to 0.73, which is the page played with wrong notes, and it is
+reported. With nothing for the second look to find, it is refused.
+`test_a_long_page_paired_on_the_lower_share_is_reported_only_at_the_usual_one`
+holds both halves. With three notes in ten a step away, no seed of eight
+reached the lower share at all (0.55–0.64).
+
+One pair of the 168 is still given a verdict, under either rule: "Hark the
+Herald"'s first violin on the second violin's page, "Bars 12–13 went at
+125.", with 4 of 73 notes at pitch. The two parts move together, so timing
+accepted it at quality 0.47, and the chain played no part. That is older than
+this rule, like the synthetic pages of quarter notes that timing accepts out
+of order (the entry below), and is not changed here.
+
+Everything else is as `28cc9c3` left it, measured again: K515's cello is the
+only real take of 72 that moves from before both changes, with the same
+figures, and the synthetic benchmark (97.24%) and the six fixtures do not
+move.
+
 ## 2026-11-14 (long pages) — As a last resort, a long page needs less of its chain heard at pitch: new `[pitch] confirmed_share_long = 0.65`, `confirmed_long_notes = 64`
 
 **Old behaviour:** a pairing was trusted by pitch (`analysis._trusted_by_pitch`)

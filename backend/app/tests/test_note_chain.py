@@ -264,7 +264,9 @@ def test_a_long_page_needs_less_of_its_chain_heard_as_a_last_resort() -> None:
     Only as a last resort — timing refused the take and no other reading of
     it follows. Rescued on the first of its two readings, "He's a Pirate"'s
     viola was kept from the second, which pairs it better; that half is held
-    by `test_a_take_refused_with_the_vibrato_filter_is_read_without_it`."""
+    by `test_a_take_refused_with_the_vibrato_filter_is_read_without_it`. And
+    only to be paired: a take is reported at the usual share, after the
+    second look (`test_a_long_page_paired_on_the_lower_share_is_reported_only_at_the_usual_one`)."""
     k515 = _Confirmed(notes=242, paired=283, pitches=24, asked=360)
     assert _trusted_by_pitch(k515, CFG, last_resort=True)
     assert not _trusted_by_pitch(k515, CFG)
@@ -324,6 +326,56 @@ def test_the_page_played_with_loose_timing_is_judged_not_refused(monkeypatch) ->
     # And timing alone refused it, which is the point.
     monkeypatch.setattr(analysis, "_by_chain", lambda *a, **k: None)
     status, _ = _traced(y, _page(tune))
+    assert status == "alignment_failed"
+
+
+def test_a_long_page_paired_on_the_lower_share_is_reported_only_at_the_usual_one(
+    monkeypatch,
+) -> None:
+    """**The lower share lets the chain pair a long page; the usual share
+    reports it.** As a last resort, a long page timing refused is paired by
+    its chain on 0.65 of it heard at pitch (`_trusted_by_pitch`), so the second
+    look searches where the page's notes belong. The take is reported only if
+    it is then heard at 0.7. The notes a take of the page missed are there to
+    be found, and the notes a different part lacks are not. K515's cello part
+    rose from 0.67 of its page to 0.81. Jerusalem's double bass, read against
+    the cello part it doubles, rose from 0.66 to 0.67, and was given a verdict
+    until the usual share held it (2026-11-14).
+
+    Here 96 notes are played with every fourth a step away, and gaps anywhere
+    within ±70% of a beat. Timing refuses the take. The chain hears 0.69 of
+    the page and pairs it on the lower share, and the second look takes it
+    past 0.7. With nothing for the second look to find, the take is refused.
+    """
+    admitted: list[float] = []
+    trust = analysis._trusted_by_pitch
+
+    def watched(confirmed, config, *, last_resort: bool = False) -> bool:
+        out = trust(confirmed, config, last_resort=last_resort)
+        if last_resort and out and not trust(confirmed, config):
+            admitted.append(confirmed.notes / confirmed.asked)
+        return out
+
+    monkeypatch.setattr(analysis, "_trusted_by_pitch", watched)
+    page = _tune(104, 96)
+    played = [
+        G_MAJOR[min(G_MAJOR.index(m) + 2, len(G_MAJOR) - 1)] if i % 4 == 3 else m
+        for i, m in enumerate(page)
+    ]
+    y = _take(played, _loose(4, len(page)))
+
+    status, trace = _traced(y, _page(page))
+    assert admitted, "the chain was not paired on the lower share: re-base the take"
+    assert status == "ok"
+    assert trace["paired_by"] == "chain"
+    assert trace["confirmed"]["notes"] / trace["confirmed"]["asked"] >= 0.7
+
+    admitted.clear()
+    monkeypatch.setattr(
+        analysis, "_recover_missed_onsets", lambda *a, **k: np.array([], dtype=float)
+    )
+    status, _ = _traced(y, _page(page))
+    assert admitted
     assert status == "alignment_failed"
 
 

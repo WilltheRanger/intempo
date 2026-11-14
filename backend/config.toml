@@ -385,7 +385,12 @@ confirmed_share = 0.7
 # ...or this share, on a page asking for at least `confirmed_long_notes`, as
 # a last resort: timing has refused the take and no other reading of it
 # follows, so the alternative is telling the player they played the wrong
-# piece. Chance falls as a page grows, and 0.7 was set where it is highest.
+# piece. It lets the chain pair the take, so the second look can search where
+# the page's notes belong, and the take is reported only if it is then heard
+# at `confirmed_share`. A part that doubles the page passes 0.65 too, and the
+# second look finds nothing it lacks: Jerusalem's double bass on the cello's
+# page stayed at 0.67, where K515's cello on its own page rose to 0.81.
+# Chance falls as a page grows, and 0.7 was set where it is highest.
 # Measured 2026-11-14 on the chain itself, a different tune in the same key
 # against a page: best share median 0.38, at most 0.50 of 64 notes (10
 # seeds); 0.38 and 0.42 of 128 (10); 0.36 and 0.45 of 256 (8); none trusted.
