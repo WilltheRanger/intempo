@@ -382,6 +382,22 @@ confirm_mismatch = 0.25
 # median 0.90–0.94, trusted 59 times in 60. The owner's real take: 0.85
 # (timing's own pairing of it: 0.33). See TUNING_LOG.md 2026-09-25.
 confirmed_share = 0.7
+# ...or this share, on a page asking for at least `confirmed_long_notes`, as
+# a last resort: timing has refused the take and no other reading of it
+# follows, so the alternative is telling the player they played the wrong
+# piece. Chance falls as a page grows, and 0.7 was set where it is highest.
+# Measured 2026-11-14 on the chain itself, a different tune in the same key
+# against a page: best share median 0.38, at most 0.50 of 64 notes (10
+# seeds); 0.38 and 0.42 of 128 (10); 0.36 and 0.45 of 256 (8); none trusted.
+# 0.65 clears it by 0.15. The page's own notes reversed reach 0.59 of 64 and
+# 0.56 of 128: a margin of 0.06, where 0.7 keeps 0.01 over a 32-note page
+# shuffled (2026-09-25). URMP's K515 cello part, 360 notes
+# played for 3.6 minutes with rubato, was refused as "same notes, different
+# times" at 0.67. Not on a first reading a second follows: rescued there,
+# "He's a Pirate"'s viola was never read without the vibrato filter, which
+# pairs it better (TUNING_LOG.md, 2026-11-14).
+confirmed_share_long = 0.65
+confirmed_long_notes = 64
 # ...there are at least this many of them,
 confirmed_min_notes = 8
 # ...on at least this many different written pitches — a page of one or two

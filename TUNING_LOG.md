@@ -6,6 +6,96 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (long pages) — As a last resort, a long page needs less of its chain heard at pitch: new `[pitch] confirmed_share_long = 0.65`, `confirmed_long_notes = 64`
+
+**Old behaviour:** a pairing was trusted by pitch (`analysis._trusted_by_pitch`)
+when at least `confirmed_share` (0.7) of the notes the page asks for were heard
+at their written pitch, however long the page. **New:** a page asking for at
+least `confirmed_long_notes` (64) needs `confirmed_share_long` (0.65), but only
+as a last resort: timing has refused the take and no other reading of it
+follows. A take refused with the vibrato filter is read once more without it
+(`analyze`), so the first reading is the last only when there is no filter to
+drop. A remote-config row without the new keys keeps 0.7 everywhere.
+
+**Why.** 0.7 was set where chance is highest. On 2026-09-25 a different tune in
+the same key reached 0.62 of a 16-note page, 0.47 of 32 and 0.42 of 64. URMP's
+K515 cello part plays 360 notes over 3.6 minutes with rubato. Timing refused
+both of its readings, and on the unfiltered one the pitch chain heard 242 of
+the 360 at pitch: 0.67. So it was told "Same notes, different times. Check
+you're on the right piece and the tempo.", and every one of its 353 played
+notes counted as unheard: 353 of the 389 unheard cello notes in the set.
+
+**Chance on long pages, measured on the chain itself.** This is the chain's
+best share for something other than the page, which is the measure the trust
+rule reads. The pages were synthesised the way `test_note_chain.py` builds
+them. Each cell gives the median, then the most:
+
+| page | seeds | a different tune, same key | the page reversed | the page's notes shuffled |
+|---|---|---|---|---|
+| 64 notes | 10 | 0.38, 0.50 | 0.37, 0.59 | 0.38, 0.47 |
+| 128 notes | 10 | 0.38, 0.42 | 0.39, 0.56 | 0.37, 0.46 |
+| 256 notes | 8 | 0.36, 0.45 | 0.40, 0.46 | 0.31, 0.36 |
+
+The different tune was played with every gap within ±30% of a beat, and the
+other two within ±50%, as in the 2026-09-25 table. 0.65 clears the different
+tune by 0.15, and the page reversed by 0.06. That second margin is thin, but
+the 0.7 share has run thinner since September: it clears the page's notes
+shuffled on a 32-note page by 0.01. A short page keeps 0.7, which is what the
+16-note case needs.
+
+Three of these pages were given a verdict, two reversed and one shuffled, all
+of 64 notes. All three were read the same way under the old rule: timing
+accepted them (quality 0.41–0.44), and the chain played no part. On a page of
+quarter notes, timing cannot tell which order the notes came in. That is
+older than this change and is not changed by it.
+
+**Narrowed twice before it was kept.** Lowered wherever a long page's chain is
+asked, it rescued K515's cello and cost five takes that were already read.
+Lowered only where timing refused the take, it cost **the same five, to the
+note**, so the cost was not, as first supposed, where timing accepted a take.
+
+Each of the five is refused by timing with the vibrato filter and read without
+it. Rescued on the lower share, the first reading became final, and the second
+reading, which pairs better, was never made. "He's a Pirate"'s viola heard 95
+of its 136 notes at pitch with the filter, just under 0.7. Rescued there, it
+read at quality 0.32; read without the filter, it reads at 0.57 with 121.
+
+| take, before → rescued on its first reading | heard | paired within 100 ms | sentence |
+|---|---|---|---|
+| `24_Pirates/3_va` | 124 → 108 of 131 | 111 → 87 | "Bars 33–34 went at 214." → "Bars 5–6 went at 169." |
+| `25_Pirates/3_va` | 124 → 110 of 131 | 111 → 99 | the same |
+| `24_Pirates/4_vc` | 178 → 166 of 178 | 178 → 166 | unchanged |
+| `44_K515/3_va` | 446 → 428 of 459 | 436 → 375 | "Bars 118–122 went at 197." → "Bars 118–123 went at 198." |
+| `44_K515/4_va` | 500 → 462 of 508 | 484 → 428 | "Bars 68–71 went at 199." → "Bars 119–121 went at 199." |
+
+Lowered only on the last reading, the rule rescues K515's cello on its
+unfiltered reading and **nothing else moves**. Its filtered reading heard 88
+of 360 at pitch and stays refused. Where both readings are refused, the first
+refusal stands, as it always has. The first reading's chain is not asked again
+on the lower share, because the unfiltered reading hears more of a take (338
+attacks to 261 on that cello, 130 to 104 on the Pirates viola). After this
+change, no take of the 252 measured is refused by both readings.
+
+| real, 72 tracks | before | after |
+|---|---|---|
+| status, against the oracle | 71 | 72 |
+| heard | 95.68% | 97.85% |
+| placed (50 ms) | 82.90% | 82.74% |
+| paired (100 ms) | 95.46% | 95.19% |
+| band | 73.58% | 73.23% |
+| bar tempo | 68.51% | 71.45% |
+| verdict true | 53 | 54 |
+| cello: heard | 83.28% | 97.34% |
+| cello: bar tempo | 47.48% | 66.04% |
+
+K515's cello is the whole of the change. It now says "Bars 15–23 went at 200.",
+which the labels hold. 327 of its 353 played notes are heard: 273 paired
+within 100 ms, 248 within 50 ms, and 188 in their band. Placed, paired and band
+are shares of the notes heard, so they fall a little as 327 notes played with
+rubato join them. Unheard notes across the set fall from 650 to 323. The
+synthetic benchmark is unchanged (97.24%, no take differs), and so are the six
+fixtures.
+
 ## 2026-11-14 (quoted tempo) — A stretch of bars is named only when the tempo it is quoted at is off. No thresholds changed.
 
 **Old behaviour:** the verdict named the longest run of bars each banded off

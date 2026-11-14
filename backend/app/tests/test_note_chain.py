@@ -254,6 +254,26 @@ def test_trust_counts_the_notes_the_page_asks_for_not_the_notes_paired() -> None
     assert _trusted_by_pitch(_Confirmed(notes=28, paired=31, pitches=9, asked=32), CFG)
 
 
+def test_a_long_page_needs_less_of_its_chain_heard_as_a_last_resort() -> None:
+    """**Chance falls as a page grows, and the share was set where it is
+    highest.** A different tune in the same key reaches 0.62 of a 16-note page
+    but at most 0.50 of 64 notes and 0.45 of 256 (2026-11-14). URMP's K515
+    cello part, 360 notes with rubato, was refused as "same notes, different
+    times" with 242 of them heard at pitch: 0.67.
+
+    Only as a last resort — timing refused the take and no other reading of
+    it follows. Rescued on the first of its two readings, "He's a Pirate"'s
+    viola was kept from the second, which pairs it better; that half is held
+    by `test_a_take_refused_with_the_vibrato_filter_is_read_without_it`."""
+    k515 = _Confirmed(notes=242, paired=283, pitches=24, asked=360)
+    assert _trusted_by_pitch(k515, CFG, last_resort=True)
+    assert not _trusted_by_pitch(k515, CFG)
+    short = _Confirmed(notes=22, paired=24, pitches=8, asked=32)
+    assert not _trusted_by_pitch(short, CFG, last_resort=True)
+    below = _Confirmed(notes=230, paired=283, pitches=24, asked=360)
+    assert not _trusted_by_pitch(below, CFG, last_resort=True)
+
+
 def test_trust_needs_enough_notes_on_enough_pitches() -> None:
     assert not _trusted_by_pitch(_Confirmed(notes=6, paired=6, pitches=4, asked=6), CFG)
     assert not _trusted_by_pitch(_Confirmed(notes=16, paired=16, pitches=2, asked=16), CFG)

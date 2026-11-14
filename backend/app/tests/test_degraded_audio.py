@@ -354,25 +354,46 @@ def test_a_take_refused_with_the_vibrato_filter_is_read_without_it(monkeypatch):
     missing. So a refused take is read once more without it
     (`analysis.analyze`); with that second reading held off, the refusal
     stands.
+
+    **Only the reading no other follows is the last resort** (2026-11-14). A
+    long page timing refuses may be trusted on less of its chain heard at
+    pitch (`analysis._trusted_by_pitch`), and only there: rescued on the
+    first reading, "He's a Pirate"'s viola was never read without the filter,
+    which pairs it better — quality 0.32 against 0.57, and 16 more of its 131
+    labelled notes unheard. So the first reading is the last only when there
+    is no filter to drop.
     """
+    from app.services import analysis as analysis_module
     from app.services import audio as audio_module
     from app.services.analysis import analyze
     from app.services.audio_config import load_audio_config
 
     y, score = _bowed_page_take(20, 92.0, wet=0.45)
 
+    readings: list[bool] = []
+    take = analysis_module._analyze_take
+
+    def reading(*args, last_reading: bool = True, **kwargs):
+        readings.append(last_reading)
+        return take(*args, last_reading=last_reading, **kwargs)
+
+    monkeypatch.setattr(analysis_module, "_analyze_take", reading)
+
     trace: dict = {}
     read = analyze((y, SR), score, 92.0, double_bass=True, config=load_audio_config(), trace=trace)
     assert read.status == "ok"
     assert read.n_missed_notes == 0
     assert trace["vibrato_filter"] == "off: refused with it"
+    assert readings == [False, True]
 
+    readings.clear()
     monkeypatch.setattr(audio_module, "without_vibrato_filter", lambda config: None)
     refused = analyze((y, SR), score, 92.0, double_bass=True, config=load_audio_config())
     assert refused.status == "alignment_failed", (
         "the filter no longer costs this take; the second reading is measuring "
         "nothing here and the test should be re-based"
     )
+    assert readings == [True]
 
 
 @pytest.mark.parametrize("lead_in_s", [0.0, 2.0])

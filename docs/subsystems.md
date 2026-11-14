@@ -2217,6 +2217,15 @@ it taught, each lesson paid for with a wrong number first:
   (`pitch_evidence.octave_checked`), with a ratio per instrument: the
   violin's and viola's 0.2 moved 98 of the cello's correctly read notes
   down.
+- **A rescue on the first reading takes away the second.** A take refused
+  with the vibrato filter is read again without it, and that second reading
+  is the better one. A rule that turns a refusal into a reading therefore
+  belongs on the last reading only. Lowered where timing refuses, the long
+  page's share rescued K515's cello and cost five takes that were already
+  read, each of them on its first reading. The first explanation, that the
+  cost fell where timing had accepted, was wrong: narrowed to refusals, it
+  cost the same five, to the note. `analysis._analyze_take`'s `last_reading`
+  holds the rule.
 
 ### A take that could not be sent was kept only by the native build (2026-10-06)
 

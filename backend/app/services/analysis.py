@@ -1522,7 +1522,9 @@ def _confirmed(
     )
 
 
-def _trusted_by_pitch(confirmed: _Confirmed, config: AudioConfig) -> bool:
+def _trusted_by_pitch(
+    confirmed: _Confirmed, config: AudioConfig, *, last_resort: bool = False
+) -> bool:
     """Whether a pairing's pitches line up well enough to report its timing.
 
     **The chain decides, not each note** — the owner's rule (2026-09-25). A
@@ -1534,13 +1536,30 @@ def _trusted_by_pitch(confirmed: _Confirmed, config: AudioConfig) -> bool:
     pairing free to leave notes out can always pair only the ones that match,
     and a different tune in the same key matched 100% of the notes it paired.
     See `[pitch]` `confirmed_*` in config.toml for how far chance reaches.
+
+    `last_resort`: timing has refused the take and no other reading of it
+    follows (`analyze`), so the alternative to trusting the pairing is telling
+    the player they played the wrong piece. On a long page that needs less of
+    the chain heard (`confirmed_share_long`): chance falls as a page grows,
+    and the usual share was set where it is highest.
+
+    Not on a reading another follows: rescued on the lower share, the first
+    reading of a take keeps the second, without the vibrato filter, from
+    being read — and the second pairs better. "He's a Pirate"'s viola heard 95
+    of its 136 notes at pitch with the filter, just under 0.7; rescued there
+    it read at quality 0.32, and read without the filter at 0.57 with 121
+    (2026-11-14). Nor where timing accepted the take: there the usual share
+    decides whether the chain replaces timing's own pairing, which is an
+    answer, and nothing measured asked for less.
     """
     p = config.pitch
+    long = last_resort and confirmed.asked >= p.confirmed_long_notes
+    share = p.confirmed_share_long if long else p.confirmed_share
     return (
         confirmed.notes >= p.confirmed_min_notes
         and confirmed.pitches >= p.confirmed_min_pitches
         and confirmed.asked > 0
-        and confirmed.notes / confirmed.asked >= p.confirmed_share
+        and confirmed.notes / confirmed.asked >= share
     )
 
 
@@ -1642,10 +1661,13 @@ def _chain(
     origin: float = 0.0,
     *,
     passage: bool = False,
+    last_resort: bool = False,
 ) -> _Chained:
     """`reading` paired with `onsets` by `alignment.align_chain`. `origin` puts
     `onsets` on the recording's clock, which is where the pitch was read.
-    `passage`: the take is a stretch of the page (`align_chain`)."""
+    `passage`: the take is a stretch of the page (`align_chain`).
+    `last_resort`: timing refused the take and no other reading of it follows
+    (`_trusted_by_pitch`)."""
     onsets = np.asarray(onsets, dtype=float)
     anchored = align_chain(
         onsets,
@@ -1667,7 +1689,7 @@ def _chain(
         trusted=(
             _placed_by_pitch(confirmed, config)
             if passage
-            else _trusted_by_pitch(confirmed, config)
+            else _trusted_by_pitch(confirmed, config, last_resort=last_resort)
         ),
         first_s=first,
     )
@@ -1681,6 +1703,7 @@ def _by_chain(
     pitch: _Pitch,
     *,
     passage: bool = False,
+    last_resort: bool = False,
 ) -> _Chained | None:
     """The reading whose chain confirms the most notes, if any is trusted.
 
@@ -1690,7 +1713,15 @@ def _by_chain(
     """
     best: _Chained | None = None
     for reading in readings:
-        chained = _chain(onsets, reading, target_bpm, config, pitch, passage=passage)
+        chained = _chain(
+            onsets,
+            reading,
+            target_bpm,
+            config,
+            pitch,
+            passage=passage,
+            last_resort=last_resort,
+        )
         if chained.trusted and (
             best is None or chained.confirmed.notes > best.confirmed.notes
         ):
@@ -1987,6 +2018,8 @@ def _audited_by_chain(
     target_bpm: float,
     config: AudioConfig,
     pitch: _Pitch,
+    *,
+    last_reading: bool = True,
 ) -> _Chained | None:
     """The chain's pairing, if it should replace the timing pairing.
 
@@ -2024,6 +2057,9 @@ def _audited_by_chain(
             config,
             pitch,
             passage=passage,
+            # The lower share a refused long page is held to, only once no
+            # other reading of the take is left (`analyze`).
+            last_resort=not accepted and last_reading,
         )
     )
     if candidate is None:
@@ -2393,6 +2429,7 @@ def analyze(
     cfg = config or load_audio_config()
     if not isinstance(audio, tuple):
         audio = audio_svc.load_audio(audio, sr=cfg.onset.sr)
+    unfiltered = audio_svc.without_vibrato_filter(cfg)
     first = _analyze_take(
         audio,
         score,
@@ -2401,8 +2438,8 @@ def analyze(
         double_bass=double_bass,
         config=cfg,
         trace=trace,
+        last_reading=unfiltered is None,
     )
-    unfiltered = audio_svc.without_vibrato_filter(cfg)
     if first.status != "alignment_failed" or unfiltered is None:
         return first
     retried: dict[str, Any] | None = {} if trace is not None else None
@@ -2437,8 +2474,20 @@ def _analyze_take(
     double_bass: bool,
     config: AudioConfig,
     trace: dict[str, Any] | None,
+    last_reading: bool = True,
 ) -> AnalysisResult:
-    """`analyze`, with one setting of the detector. See `analyze`."""
+    """`analyze`, with one setting of the detector. See `analyze`.
+
+    `last_reading`: no other reading of the take follows this one if it is
+    refused, so a long page timing refuses may be trusted on the lower share
+    (`_trusted_by_pitch`). The first reading is not the last when the second
+    reads without the vibrato filter: rescued early, it kept "He's a Pirate"'s
+    viola from the second reading, which pairs it better. Where both are
+    refused the first refusal stands, as it always has, without asking the
+    first reading's chain again on the lower share: the unfiltered reading
+    hears more of a take (338 attacks to 261 on K515's cello, 130 to 104 on
+    that viola), so its chain is the one to ask. No take of the 252 measured
+    on 2026-11-14 is refused by both."""
     cfg = config
 
     # Step 1: decode the audio and find every note attack.
@@ -2511,7 +2560,7 @@ def _analyze_take(
     # pairing (`_audited_by_chain`).
     accepted_by_timing = not is_alignment_broken(anchored.alignment.quality, config=cfg)
     chained = _audited_by_chain(
-        onsets, reading, anchored, score, target_bpm, cfg, pitch
+        onsets, reading, anchored, score, target_bpm, cfg, pitch, last_reading=last_reading
     )
     if chained is not None:
         reading, anchored = chained.reading, chained.anchored
@@ -2614,7 +2663,9 @@ def _analyze_take(
     # asked about: so it is reported rather than refused. One note out of
     # tune, or one the scan misread, is one unconfirmed note in the chain.
     confirmed = _confirmed(anchored, reading, pitch, origin, cfg)
-    trusted = _trusted_by_pitch(confirmed, cfg)
+    trusted = _trusted_by_pitch(
+        confirmed, cfg, last_resort=not accepted_by_timing and last_reading
+    )
     # Heard at the page's pitches across the page, or a take timing accepted
     # and the chain re-paired by pitch: either way not a take to refuse, and
     # not one whose timing is in doubt.

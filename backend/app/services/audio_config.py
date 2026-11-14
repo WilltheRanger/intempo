@@ -148,6 +148,10 @@ class PitchConfig:
     confirmed_share: float = 0.7
     confirmed_min_notes: int = 8
     confirmed_min_pitches: int = 3
+    #: See `confirmed_share_long` in config.toml. The default is the short
+    #: share, so a remote-config row written before it keeps its old trust.
+    confirmed_share_long: float = 0.7
+    confirmed_long_notes: int = 64
 
 
 @dataclass(frozen=True)
@@ -359,6 +363,10 @@ def _pitch(row: dict) -> PitchConfig:
         low_instruments=tuple(row.get("low_instruments", default.low_instruments)),
         confirm_mismatch=float(row.get("confirm_mismatch", default.confirm_mismatch)),
         confirmed_share=float(row.get("confirmed_share", default.confirmed_share)),
+        confirmed_share_long=float(
+            row.get("confirmed_share_long", row.get("confirmed_share", default.confirmed_share_long))
+        ),
+        confirmed_long_notes=int(row.get("confirmed_long_notes", default.confirmed_long_notes)),
         confirmed_min_notes=int(row.get("confirmed_min_notes", default.confirmed_min_notes)),
         confirmed_min_pitches=int(
             row.get("confirmed_min_pitches", default.confirmed_min_pitches)
