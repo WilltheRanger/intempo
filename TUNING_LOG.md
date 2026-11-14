@@ -6,6 +6,46 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (the pulse's deviations) — `[tolerance.pulse] disturbance_deviations` 6 → 8
+
+**Why.** The re-anchor limit is the larger of `disturbance_deviations` times
+the take's spread (the median absolute deviation of its interval errors) and
+the floor of a sixth of a beat. `config.toml` called 6 a starting value that
+"needs real recordings and an ear". On real playing the spread is large,
+the limit sits above the floor, and the multiplier decides how readily a
+rubato player's own unevenness, or one attack placed wrong, re-anchors the
+take. Most of what the real takes colour differently from the labels is the
+app measuring from another level after a re-anchor the labels' reading does
+not make (`(a few notes out of place)`).
+
+**Swept**, the same rule read on the app and on the labels:
+
+| deviations | real colour | real verdict true | synthetic | synthetic verdict |
+|---|---|---|---|---|
+| 5 | 10,906 / 14,746 (73.96%) | 69 | | |
+| 6 (was) | 11,542 / 14,747 (78.27%) | 69 | 97.78% | 178 |
+| **8** | **12,358 (83.80%)** | **70** | **97.85%** | **178** |
+| 10 | | | 97.40% | 177 |
+| 11 | 12,745 (86.42%) | 70 | 97.67% | 177 |
+| 15 | 12,929 (87.67%) | 69 | | |
+
+Heard, placed, paired and bar tempo do not move: this is the pulse alone.
+8 is the value that moves both sets the right way. Past it the synthetic
+rushes and drags re-anchor at other notes than a perfect reading's
+(`cello/bowed/60/rush/clean/1096` loses 27 notes and 6 bars at 10), and at
+15 Pirates' saxophone's "Bars 33–51 ran ahead." becomes "Bars 3–52 fell
+behind.", false: a hesitation read as every bar after it.
+
+At 8 the sentence that becomes true is Jerusalem's saxophone, "Bars 25–38
+went at 68." → "Bars 3–29 fell behind.": the take carries a lag of about two
+beats from bar 14, which the labels' reading never re-anchored, and the
+app now does not either. Strings colour 86.62% (was 81.35%), saxophone
+64.43% (was 57.12%).
+
+**Synthetic** at 8: 97.78 → 97.85% (notes 96.37 → 96.50%, bars 96.67 →
+96.88%), over what the truth decides 98.37 → 98.43%.
+**Regression, all six clips:** identical.
+
 ## 2026-11-14 (the chain's placement) — `alignment.CHAIN_PLACEMENT_NOTES` 9 → 13
 
 Once `(the chain's time weight)` made an attack's distance from its note
