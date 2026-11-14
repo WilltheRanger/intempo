@@ -2193,6 +2193,16 @@ it taught, each lesson paid for with a wrong number first:
   two tempos at bar 1, ♩=100 then ♩=200. The importer read the second as a
   change, so every Pirates take was judged against twice its tempo. Two marks
   heading a page are now one tempo.
+- **Inside a run of one pitch, only the spacing says which attack is which.**
+  The chain's second pass placed each note from the pairings around it, and
+  inside a run of 64 E4s those were the run's own slid pairings. A missed
+  attack doubles an interval and an extra one halves it, and
+  `alignment._runs_by_spacing` reads that. Two things it had to learn:
+  - a run's pace must be local, or a passage speeding up reads as a run of
+    errors;
+  - the notes either side of a run are paired by pitch but can still be
+    mistimed, so they may not outvote the run's own spacing.
+  `TUNING_LOG.md` (2026-11-14, repeated notes) has both failures.
 
 ### A take that could not be sent was kept only by the native build (2026-10-06)
 

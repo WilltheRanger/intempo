@@ -2350,6 +2350,250 @@ def _first_attacks(
     return out
 
 
+#: The fewest notes of one repeated pitch that `_runs_by_spacing` re-pairs.
+#: Two are left to `_first_attacks` and the chain, as they always were.
+SPACED_RUN_NOTES = 3
+
+#: How many notes, or attacks, one step of `_runs_by_spacing` may pass over.
+#: One missed attack and one extra attack in a row are the cases it is for.
+SPACED_RUN_STEP = 3
+
+#: How much cheaper, in the chain's units, the spacing must make a run's
+#: pairing before `_runs_by_spacing` overrides the chain's: a quarter of the
+#: price of leaving one note out. Below that the two are a near tie, and the
+#: chain's own pairing stands.
+#:
+#: Not more. Between a missed attack and an extra one, a slide bends two
+#: intervals by a factor of two (0.69 each), while the right pairing leaves
+#: out one note and one attack (`CHAIN_SKIP` each): the repair is cheaper by
+#: under 0.2. On "In the Hall of the Mountain King"'s 64 repeated E4s it was
+#: made at a margin of 0.15 and not at 0.3.
+SPACED_RUN_GAIN = CHAIN_SKIP / 4
+
+
+def _runs_by_spacing(
+    path: list[tuple[int, int]],
+    detected: np.ndarray,
+    expected: np.ndarray,
+    pitch: np.ndarray,
+    heights: list[int | None] | None,
+    skip_note: np.ndarray,
+) -> list[tuple[int, int]]:
+    """Each run of one repeated written pitch re-paired by the spacing of its
+    attacks.
+
+    **Inside a run of one pitch, pitch cannot say which attack is which.**
+    With one attack missing, the chain paired every later note of the run with
+    the attack after its own, because leaving out the run's last note costs
+    what leaving out the missing one does. Its second pass reads where each
+    note falls from the pairings around it, and inside a long run those are
+    the slid pairings, so the slide stayed. On URMP's "In the Hall of the
+    Mountain King" (2026-11-14) the second violin's 64 repeated E4s lost one
+    attack, and the 31 E4s after it sat one note late.
+
+    The attacks themselves show where it happened: a missed attack leaves a
+    gap twice the written one, and an extra attack leaves one half as long.
+    So the run's notes are paired again with the attacks between the pairings
+    that bound it. Each step costs:
+    - how far the played interval is from the written one at the local pace,
+      as the absolute log of their ratio;
+    - `skip_note` for each note passed over, and `CHAIN_SKIP` for each attack;
+    - each attack's own pitch cost as the chain counts it, because an
+      out-of-tune note inside the run is still its note.
+
+    **The pace is local** (`_local_pace`), read from the intervals of the
+    chain's own pairing around each note. One pace for the whole run, from
+    bound to bound, read a passage speeding up as a run of small errors: in
+    "Mountain King" it broke a correct pairing of nine notes in bars 33–36,
+    which go from 160 to 175 BPM.
+
+    A run the take begins or ends inside is left as the chain paired it, and
+    so is a run whose new pairing is not cheaper by `SPACED_RUN_GAIN`.
+    """
+    if heights is None or len(heights) != expected.size or not path:
+        return path
+    by_note = {e: d for d, e in path}
+    runs: list[tuple[int, int]] = []
+    j = 0
+    while j < expected.size:
+        k = j
+        while k + 1 < expected.size and heights[j] is not None and heights[k + 1] == heights[j]:
+            k += 1
+        if heights[j] is not None and k - j + 1 >= SPACED_RUN_NOTES:
+            runs.append((j, k))
+        j = k + 1
+    for first, last in runs:
+        before = [e for e in by_note if e < first]
+        after = [e for e in by_note if e > last]
+        # Only between two pairings: where the take begins or ends inside the
+        # run, nothing says which of its notes the first or last attack is.
+        if not before or not after:
+            continue
+        bound_before, bound_after = max(before), min(after)
+        lo, hi = by_note[bound_before], by_note[bound_after]
+        attacks = np.arange(lo + 1, hi)
+        notes = np.arange(first, last + 1)
+        if attacks.size == 0:
+            continue
+        kept = [(by_note[int(e)], int(e)) for e in notes if int(e) in by_note]
+        steps = [(lo, bound_before), *kept, (hi, bound_after)]
+        pace = _local_pace(steps, detected, expected, notes)
+        if pace is None:
+            continue
+        at = detected[attacks]
+        written = expected[notes]
+        n, m = notes.size, attacks.size
+        # What pairing each attack with the run's pitch costs, as in the chain.
+        heard = pitch[attacks, first]
+        skipped = np.concatenate([[0.0], np.cumsum(skip_note[notes])])
+        cost = np.full((n, m), np.inf)
+        came = np.full((n, m, 2), -1, dtype=int)
+        reach = np.arange(m)
+        for k in range(n):
+            # Straight from the pairing before the run, past the notes and
+            # attacks this one leaves out.
+            if k < SPACED_RUN_STEP:
+                opening = (
+                    skipped[k]
+                    + CHAIN_SKIP * reach
+                    + heard
+                    + np.minimum(
+                        _spacing(at - detected[lo], written[k] - expected[bound_before], pace[k]),
+                        SPACED_RUN_BOUND_CAP,
+                    )
+                )
+                opening[reach >= SPACED_RUN_STEP] = np.inf
+                cost[k] = np.minimum(cost[k], opening)
+            for dk in range(1, min(SPACED_RUN_STEP, k) + 1):
+                passed = skipped[k] - skipped[k - dk + 1]
+                for dm in range(1, min(SPACED_RUN_STEP, m - 1) + 1):
+                    step = (
+                        cost[k - dk, : m - dm]
+                        + passed
+                        + CHAIN_SKIP * (dm - 1)
+                        + heard[dm:]
+                        + _spacing(at[dm:] - at[:-dm], written[k] - written[k - dk], pace[k])
+                    )
+                    better = step < cost[k, dm:]
+                    cost[k, dm:] = np.where(better, step, cost[k, dm:])
+                    came[k, dm:][better] = np.column_stack(
+                        [np.full(int(better.sum()), k - dk), reach[: m - dm][better]]
+                    )
+        # Close on the pairing after the run, past what is left out.
+        closing = (
+            cost
+            + (skipped[n] - skipped[1:])[:, None]
+            + CHAIN_SKIP * (m - 1 - reach)[None, :]
+            + np.minimum(
+                _spacing(
+                    detected[hi] - at[None, :],
+                    expected[bound_after] - written[:, None],
+                    pace[:, None],
+                ),
+                SPACED_RUN_BOUND_CAP,
+            )
+        )
+        closing[: max(0, n - SPACED_RUN_STEP)] = np.inf
+        closing[:, : max(0, m - SPACED_RUN_STEP)] = np.inf
+        if not np.isfinite(closing).any():
+            continue
+        k, a = (int(x) for x in np.unravel_index(int(np.argmin(closing)), closing.shape))
+        best = float(closing[k, a])
+        # What the chain's own pairing of the run costs in the same terms.
+        current = (
+            sum(float(skip_note[e]) for e in notes if int(e) not in by_note)
+            + CHAIN_SKIP * (m - len(kept))
+            + sum(float(pitch[d, first]) for d, _ in kept)
+            + sum(
+                min(
+                    float(
+                        _spacing(
+                            np.array([detected[d2] - detected[d1]]),
+                            float(expected[e2] - expected[e1]),
+                            pace[min(e2, last) - first],
+                        )[0]
+                    ),
+                    SPACED_RUN_BOUND_CAP if e1 == bound_before or e2 == bound_after else np.inf,
+                )
+                for (d1, e1), (d2, e2) in zip(steps[:-1], steps[1:], strict=True)
+            )
+        )
+        if best > current - SPACED_RUN_GAIN:
+            continue
+        pairs: list[tuple[int, int]] = []
+        while k >= 0:
+            pairs.append((int(attacks[a]), int(notes[k])))
+            k, a = (int(x) for x in came[k, a])
+        for e in notes:
+            by_note.pop(int(e), None)
+        for d, e in pairs:
+            by_note[e] = d
+    return sorted((d, e) for e, d in by_note.items())
+
+
+#: How many notes either side of a note `_local_pace` reads the pace from.
+SPACED_RUN_PACE_NOTES = 3
+
+#: The most the interval to either bound of a run may cost `_runs_by_spacing`.
+#:
+#: **A bound is paired by pitch, and its time can still be wrong.** After nine
+#: repeated C5s in "In the Hall of the Mountain King", the chain paired the
+#: next note, an A3, 645 ms early. Uncapped, the short last interval it left
+#: outweighed the run's own spacing, and the run was slid one note early to
+#: fit it: 9 notes right became 2. Capped, a bound still separates a missed
+#: first or last attack, which doubles that interval (0.69 uncapped).
+#: Measured on three URMP parts: at 0.35 the 64-E4 run was not repaired, and
+#: at 0.7 the C5s slid again.
+SPACED_RUN_BOUND_CAP = 0.5
+
+
+def _local_pace(
+    steps: list[tuple[int, int]],
+    detected: np.ndarray,
+    expected: np.ndarray,
+    notes: np.ndarray,
+) -> np.ndarray | None:
+    """The played seconds per written second around each note of a run.
+
+    Read from consecutive pairings (`steps`, the run's own and its two
+    bounds), each interval counted at the note it ends on, as the median of
+    those ending within `SPACED_RUN_PACE_NOTES` of the note. A median, so
+    the one doubled interval a missed attack leaves, or the halved one an
+    extra attack leaves, does not move it. Where fewer than three intervals
+    are near, the pace from bound to bound. None when that cannot be read.
+    """
+    (lo, bound_before), (hi, bound_after) = steps[0], steps[-1]
+    span = float(expected[bound_after] - expected[bound_before])
+    overall = float(detected[hi] - detected[lo]) / span if span > 0 else 0.0
+    if not np.isfinite(overall) or overall <= 0:
+        return None
+    ends, ratios = [], []
+    for (d1, e1), (d2, e2) in zip(steps[:-1], steps[1:], strict=True):
+        page = float(expected[e2] - expected[e1])
+        played = float(detected[d2] - detected[d1])
+        if page > 0 and played > 0:
+            ends.append(e2)
+            ratios.append(played / page)
+    ends_arr, ratio_arr = np.asarray(ends), np.asarray(ratios)
+    pace = np.full(notes.size, overall)
+    for k, e in enumerate(notes):
+        near = ratio_arr[np.abs(ends_arr - e) <= SPACED_RUN_PACE_NOTES] if ends else ratio_arr
+        if near.size >= 3:
+            pace[k] = float(np.median(near))
+    return pace
+
+
+def _spacing(played: np.ndarray, page: float | np.ndarray, pace: float | np.ndarray) -> np.ndarray:
+    """How far each played interval is from its written one at `pace`: the
+    absolute log of their ratio, infinite where either is not a forward step."""
+    ratio = np.asarray(played, dtype=float) / (
+        np.asarray(pace, dtype=float) * np.asarray(page, dtype=float)
+    )
+    with np.errstate(divide="ignore", invalid="ignore"):
+        out = np.abs(np.log(ratio))
+    return np.where(np.isfinite(out) & (ratio > 0), out, np.inf)
+
+
 def align_chain(
     detected: np.ndarray,
     expected: np.ndarray,
@@ -2360,6 +2604,7 @@ def align_chain(
     steady: np.ndarray | None = None,
     optional: np.ndarray | None = None,
     passage: bool = False,
+    heights: list[int | None] | None = None,
 ) -> AnchoredAlignment:
     """Pair attacks with written notes as a chain of pitches, in order.
 
@@ -2367,7 +2612,9 @@ def align_chain(
     once on pitch alone, and once more with where each attack falls against
     the notes the first pass heard at their written pitch
     (`CHAIN_TIME_WEIGHT`), which settles which of several equal pitches is
-    which.
+    which. After each pass, a run of one repeated pitch is paired again by
+    the spacing of its attacks (`_runs_by_spacing`), which needs `heights`:
+    each note's written pitch as a MIDI number.
 
     Scored exactly as `align_dtw` scores a pairing (`_scored_mapping`); the
     attacks before the first paired one and after the last are trimmed as
@@ -2411,12 +2658,19 @@ def align_chain(
     skip_note = np.where(skippable, CHAIN_SKIP_OPTIONAL, CHAIN_SKIP) - (
         CHAIN_LATE_SKIP_DISCOUNT * np.arange(expected.size) / max(expected.size - 1, 1)
     )
-    path = _first_attacks(
-        _chain_path(pitch, CHAIN_SKIP, skip_note, passage=passage),
+    path = _runs_by_spacing(
+        _first_attacks(
+            _chain_path(pitch, CHAIN_SKIP, skip_note, passage=passage),
+            detected,
+            expected,
+            pitch,
+            cfg.pitch.confirm_mismatch,
+        ),
         detected,
         expected,
         pitch,
-        cfg.pitch.confirm_mismatch,
+        heights,
+        skip_note,
     )
 
     heard = [(d, e) for d, e in path if pitch[d, e] <= cfg.pitch.confirm_mismatch]
@@ -2429,17 +2683,24 @@ def align_chain(
         played_gap = typical_gap(np.diff(np.array([detected[d] for d, _ in heard])))
         if played_gap > 0:
             away = np.abs(detected[:, None] - placed[None, :]) / played_gap
-            path = _first_attacks(
-                _chain_path(
-                    pitch + CHAIN_TIME_WEIGHT * np.minimum(away, 1.0),
-                    CHAIN_SKIP,
-                    skip_note,
-                    passage=passage,
+            path = _runs_by_spacing(
+                _first_attacks(
+                    _chain_path(
+                        pitch + CHAIN_TIME_WEIGHT * np.minimum(away, 1.0),
+                        CHAIN_SKIP,
+                        skip_note,
+                        passage=passage,
+                    ),
+                    detected,
+                    expected,
+                    pitch,
+                    cfg.pitch.confirm_mismatch,
                 ),
                 detected,
                 expected,
                 pitch,
-                cfg.pitch.confirm_mismatch,
+                heights,
+                skip_note,
             )
     if not path:
         return empty

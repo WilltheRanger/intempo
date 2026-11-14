@@ -6,6 +6,96 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (repeated notes) — A run of one pitch paired by its spacing: new `alignment.SPACED_RUN_NOTES = 3`, `SPACED_RUN_STEP = 3`, `SPACED_RUN_GAIN = 0.15`, `SPACED_RUN_PACE_NOTES = 3`, `SPACED_RUN_BOUND_CAP = 0.5`
+
+**Old behaviour:** inside a run of one repeated written pitch, pitch cannot
+say which attack is which. The chain kept whatever its walk back from the end
+chose. Its second pass placed each note from the pairings around it, and
+inside a long run those are the run's own. **New:** after each of the chain's
+passes, `_runs_by_spacing` pairs each run of three or more notes again, using
+the attacks between the two pairings that bound it. Each step costs:
+- how far the played interval is from the written one at the local pace
+  (`_local_pace`: the median of the chain's own intervals within three notes);
+- `CHAIN_SKIP` for each note or attack left out;
+- each attack's pitch cost, as in the chain, so an out-of-tune note inside a
+  run is still its note.
+
+An interval to either bound costs at most `SPACED_RUN_BOUND_CAP`. The chain's
+pairing is replaced only where the new one is cheaper by `SPACED_RUN_GAIN`. A
+run the take begins or ends inside is left alone.
+
+**Why.** Of the 893 notes paired more than 100 ms from their label, ten takes
+held 45%. The largest single pattern was a run of one pitch slid by one note:
+- "In the Hall of the Mountain King", second violin: 64 repeated E4s with one
+  attack missed and one extra. The 31 E4s between them were each paired with
+  the next note's attack, 329 ms late. A missed attack leaves a gap twice the
+  written one, and an extra attack leaves one half as long.
+- Vivaldi's "Spring", cello: runs of 8 to 15 repeated E3s slid by ±620 ms.
+- "He's a Pirate", viola: runs of 20.
+
+**Measured first, and not kept:**
+1. *Placing the second pass from pinned notes only* (notes whose pitch
+   differs from both neighbours). The cello gained, but where a whole passage
+   is runs (King's viola: E4×8, G3×8, E4×8 …) there is no pinned note, and the
+   second pass slid the passage. Overall: −93 notes paired.
+2. *One pace per run, bound to bound, with no cap and no margin.* A passage
+   speeding up (King, bars 33–36) read as a run of errors. The A3 after nine
+   C5s was paired 645 ms early, and its short interval outweighed the run's
+   own spacing: 9 right became 2. In "Hark! The Herald Angels Sing", a half
+   note paired 774 ms late let a slid pairing of three C4s win by 0.02.
+
+The cap was swept on the three parts above (correct pairings within 100 ms):
+
+| cap | King violin (169 without) | Spring cello (225) | Hark viola (60) |
+|---|---|---|---|
+| 0.35 | 178 | 233 | 60 |
+| **0.5** | **208** | **233** | **60** |
+| 0.7 | 192 | 233 | 60 |
+
+At 0.35 the 64-E4 run is not repaired; at 0.7 the C5s slide. That window was
+found on three parts, so what decides it is the 72 below. The margin made no
+difference to these three at 0 or 0.15. At 0.3 the King run stays slid: its
+repair is cheaper by under 0.2.
+
+### Real takes, 72 tracks, against the labels
+
+| | before | after |
+|---|---|---|
+| paired ≤ 100 ms | 13,500 (93.80%) | 13,670 (95.10%) |
+| placed ≤ 50 ms | 11,730 (81.50%) | 11,867 (82.55%) |
+| colour as the oracle's | 10,285 (71.46%) | 10,492 (72.99%) |
+| bar tempo | 2,683 (66.79%) | 2,712 (67.51%) |
+| verdict true | 48 | 50 |
+| heard | 14,393 | 14,375 |
+
+| | paired | placed | colour | bar tempo | verdict true |
+|---|---|---|---|---|---|
+| violin | 95.80 → 97.11% | 90.09 → 91.32% | 77.86 → 78.23% | 73.95 → 74.39% | 26 → 26 |
+| viola | 95.31 → 96.39% | 84.61 → 85.50% | 69.08 → 71.61% | 67.13 → 67.87% | 10 → 10 |
+| cello | 86.77 → 88.61% | 75.28 → 77.13% | 59.94 → 65.38% | 46.23 → 46.54% | 7 → 8 |
+| double bass | unchanged | | | | |
+| alto sax | 90.26 → 91.58% | 48.43 → 48.45% | 56.84 → 57.68% | 58.70 → 61.30% | 2 → 3 |
+
+- King's second violin gains 39 notes paired, in each of its two takes.
+- Pirates gains 27 (cello), 21 (saxophone) and 11 (viola, in each of its two
+  takes).
+- No take loses more than two paired notes.
+- **18 fewer notes are heard.** Where an attack was really missed, the note
+  is now reported missing rather than paired with its neighbour's attack.
+  That is the honest reading, and the labels count it as a miss.
+
+### Synthetic benchmark (180 takes)
+
+97.18% → 97.20%: one more note and one more bar.
+`double_bass/bowed/60/steady/phone/1125`. The first version, which paired a
+run only with attacks heard at its pitch, lost note 19 of
+`double_bass/bowed/60/steady/noise/1122`. Pricing pitch as the chain does
+restored it, and that is now a test.
+
+### Regression across the six fixtures
+
+All six are identical to the committed code, every note's deviation included.
+
 ## 2026-11-14 (verdicts) — The verdict scored by its bars, and by whether it is true. No thresholds changed.
 
 **Every verdict figure since the benchmark was built scored the direction

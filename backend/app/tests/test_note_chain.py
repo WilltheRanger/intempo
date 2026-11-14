@@ -168,6 +168,69 @@ def test_where_one_pitch_repeats_the_attack_on_time_takes_the_note() -> None:
     assert anchored.alignment.mapping == [(0, 0), (1, 1), (3, 2), (4, 3), (5, 4), (6, 5)]
 
 
+def _run_of_e4(detected: np.ndarray, extra: float | None = None) -> dict[int, float]:
+    """Twelve written E4s between C4 D4 and F4 G4, one second apart, paired
+    with `detected` (every attack heard at its own pitch, `extra` at E4 too)."""
+    written = ["C4", "D4", *["E4"] * 12, "F4", "G4"]
+    times = sorted([*detected, *([] if extra is None else [extra])])
+    heard = [
+        "C4" if t < 0.5 else "D4" if t < 1.5 else "F4" if 13.9 < t < 14.5 else "G4" if t > 14.5 else "E4"
+        for t in times
+    ]
+    anchored = align_chain(
+        np.array(times),
+        np.arange(len(written), dtype=float),
+        _same_pitch(heard, written),
+        target_bpm=60.0,
+        config=CFG,
+        heights=[midi(p) for p in written],
+    )
+    lead = anchored.trimmed_lead
+    return {e: times[d + lead] for d, e in anchored.alignment.mapping}
+
+
+def test_an_extra_attack_in_a_run_of_one_pitch_is_left_out_where_it_was() -> None:
+    """**Inside a run of one pitch, pitch cannot say which attack is extra.**
+    Twelve written E4s heard as thirteen attacks at E4, one a re-attack half
+    a second into the last. The chain left out the run's second attack
+    instead and paired every later E4 with the attack after its own. The
+    spacing says where the extra one is: it leaves a gap half the written
+    one (`alignment._runs_by_spacing`)."""
+    paired = _run_of_e4(np.arange(16.0), extra=13.5)
+    assert paired == {e: float(e) for e in range(16)}
+
+
+def test_an_out_of_tune_note_inside_a_run_of_one_pitch_is_still_its_note() -> None:
+    """The owner's rule for the chain holds inside a run too: the note that is
+    out of tune is still that note. The first version of the spacing repair
+    looked only at attacks heard at the run's pitch, and so left out a note
+    the chain had kept: one synthetic bass take in a noisy room lost note 19.
+    """
+    written = ["C4", "D4", *["E4"] * 12, "F4", "G4"]
+    heard = [*written[:7], "X", *written[8:]]
+    detected = np.arange(16.0)
+    anchored = align_chain(
+        detected,
+        np.arange(len(written), dtype=float),
+        _same_pitch(heard, written),
+        target_bpm=60.0,
+        config=CFG,
+        heights=[midi(p) for p in written],
+    )
+    assert sorted(anchored.alignment.mapping) == [(e, e) for e in range(16)]
+
+
+def test_a_missed_attack_in_a_run_of_one_pitch_leaves_out_its_own_note() -> None:
+    """**And the same for an attack the detector did not hear.** On URMP's
+    "In the Hall of the Mountain King" (2026-11-14) the second violin's 64
+    repeated E4s lost one attack, and the 31 E4s after it were each paired
+    with the attack of the note after: a slide of one note, 329 ms, to the
+    end of the run. The missing attack leaves a gap twice the written one,
+    and that is the note left out."""
+    paired = _run_of_e4(np.delete(np.arange(16.0), 7))
+    assert paired == {e: float(e) for e in range(16) if e != 7}
+
+
 def test_an_attack_the_chain_left_out_is_extra() -> None:
     """`align_dtw` gives every attack a note, so the cleanup only ever found
     extras among several attacks on one note. The chain leaves them out."""

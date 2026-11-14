@@ -1606,6 +1606,7 @@ def _chain(
         steady=reading.steady,
         optional=reading.optional,
         passage=passage,
+        heights=[pitch_evidence.midi(note.pitch) for note in reading.timeline.notes],
     )
     first = float(onsets[anchored.trimmed_lead]) + origin if onsets.size else origin
     confirmed = _confirmed(anchored, reading, pitch, first, config)
