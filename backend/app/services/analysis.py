@@ -71,6 +71,7 @@ from app.services.insights import (
 )
 from app.services.onset_recovery import (
     predict_audio_times,
+    recover_by_bow_change,
     recover_by_pitch,
     recover_onsets,
 )
@@ -1010,21 +1011,122 @@ def _recover_missed_onsets(
     found = _recover_attacks(
         heard, cleaned, onsets, expected, missed, min_gap_s=min_gap_s, config=config
     )
-    if pitch is None or notes is None:
+    if notes is None:
         return found
-    found = _not_the_note_before(found, cleaned, onsets, expected, missed, pitch, notes)
-    legato = _recover_legato(
-        heard,
-        cleaned,
-        onsets,
-        expected,
-        missed,
-        np.concatenate([onsets, found]),
-        pitch=pitch,
-        notes=notes,
-        config=config,
+    if pitch is not None:
+        found = _not_the_note_before(found, cleaned, onsets, expected, missed, pitch, notes)
+        legato = _recover_legato(
+            heard,
+            cleaned,
+            onsets,
+            expected,
+            missed,
+            np.concatenate([onsets, found]),
+            pitch=pitch,
+            notes=notes,
+            config=config,
+        )
+        if legato.size:
+            found = np.sort(np.concatenate([found, legato]))
+    bowed = _recover_bow_changes(
+        heard, cleaned, onsets, expected, missed, np.concatenate([onsets, found]),
+        notes=notes, config=config,
     )
-    return np.sort(np.concatenate([found, legato])) if legato.size else found
+    return np.sort(np.concatenate([found, bowed])) if bowed.size else found
+
+
+#: How far either side of where the take's pace puts a note the bow-change
+#: look searches, as a share of the shorter written gap to its neighbours.
+_BOW_REACH_SHARE = 0.4
+#: How near a bow change found may lie to an attack already there, as a share
+#: of the written gap on that side. Closer, it is that note's own bow change:
+#: on the synthetic set a cello take with a sixteenth left out "found" it in
+#: the stop before the next stroke, 40 ms ahead of that note's attack.
+_BOW_APART_SHARE = 0.5
+
+
+def _recover_bow_changes(
+    heard: Heard,
+    cleaned: CleanedAlignment,
+    onsets: np.ndarray,
+    expected: np.ndarray,
+    missed: list[int],
+    attacks: np.ndarray,
+    *,
+    notes: list[ExpectedNote],
+    config: AudioConfig,
+) -> np.ndarray:
+    """The bow-change look: a missed note at the pitch of the note before it,
+    found where the level dips and comes back (`onset_recovery.
+    recover_by_bow_change`).
+
+    **Where the take's own pace puts the note, not the take's line.** The
+    attack look predicts from one line through the whole take
+    (`predict_audio_times`), and on a long take with rubato that line sits
+    100–700 ms from the player, where a search of a quarter of a gap finds
+    nothing. Here the note is put on a line through the paired notes either
+    side of it. That was tried for the attack look and withdrawn (`TUNING_LOG.
+    md`, 2026-11-14): centred on the right place, it found a vibrato swell
+    inside the note before. A bow change is a dip of 8 dB or more, which a
+    held note's vibrato makes in the middle of one window in seven.
+
+    A dip found is kept only half a gap or more from every attack already
+    there, either side, so it is not the neighbouring notes' own bow changes;
+    and each one found counts as there for the next.
+    """
+    if not missed or not cleaned.matched:
+        return np.array([], dtype=float)
+    paired = {e: float(onsets[d]) for d, e in cleaned.matched}
+    taken = np.sort(np.asarray(attacks, dtype=float))
+    emphasised: np.ndarray | None = None
+    found: list[float] = []
+    for e in missed:
+        if not 0 < e < len(notes) or notes[e].pitch is None:
+            continue
+        if notes[e - 1].pitch != notes[e].pitch:
+            continue
+        before = max((k for k in paired if k < e), default=None)
+        after = min((k for k in paired if k > e), default=None)
+        if before is None or after is None or expected[after] <= expected[before]:
+            continue
+        pace = (paired[after] - paired[before]) / float(expected[after] - expected[before])
+        if pace <= 0:
+            continue
+        at = paired[before] + pace * float(expected[e] - expected[before])
+        gap_before = pace * float(expected[e] - expected[e - 1])
+        gap_after = pace * float(expected[e + 1] - expected[e]) if e + 1 < len(expected) else gap_before
+        if min(gap_before, gap_after) <= 0:
+            continue
+        (t,) = recover_by_bow_change(
+            heard.y,
+            heard.sr,
+            predicted_s=np.array([at]),
+            reach_s=np.array([_BOW_REACH_SHARE * min(gap_before, gap_after)]),
+            min_dip_db=config.onset.recovery_bow_change_min_dip_db,
+        )
+        if t is None:
+            continue
+        earlier, later = taken[taken < t], taken[taken > t]
+        if earlier.size and t - earlier[-1] < _BOW_APART_SHARE * gap_before:
+            continue
+        if later.size and later[0] - t < _BOW_APART_SHARE * gap_after:
+            continue
+        # On the attack clock, as the attack look's are (`_recover_attacks`),
+        # placed among the attacks already there so it moves at most half the
+        # way to either: alone, the fine look could take a neighbour's rise.
+        among = np.sort(np.append(taken, t))
+        if emphasised is None:
+            emphasised = audio_svc.pre_emphasis(heard.y, config=config)
+        t = float(
+            audio_svc.refine_onset_times(emphasised, heard.sr, among)[
+                int(np.searchsorted(among, t))
+            ]
+        )
+        found.append(t)
+        taken = np.sort(np.append(taken, t))
+    if found:
+        log.info("analysis: %d note(s) at the pitch before them found by a bow change", len(found))
+    return np.array(sorted(found), dtype=float)
 
 
 def _not_the_note_before(

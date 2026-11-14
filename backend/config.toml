@@ -214,6 +214,17 @@ pitch_lag_ms = 16.0
 # a labelled onset, like those above 10 dB; below 3 dB, 2 of 10. See
 # TUNING_LOG.md, 2026-11-14.
 pitch_min_level_db = 3.0
+# The bow-change look: a note at the pitch of the note before it, bowed again,
+# found where the level dips and comes back near where the take's own pace
+# puts it (`onset_recovery.recover_by_bow_change`). How deep the dip must be,
+# in dB. Swept on URMP's 72 takes (2026-11-14), where 121 played notes of this
+# kind were reported missing: 63 / 43 / 30 more heard at 6 / 8 / 10 dB, paired
+# within 100 ms of their labels 62 / 47 / 36 more, and colour 56 / 41 / 29
+# more. Searching the middle of 4,896 real held notes the same way, where a
+# repeated note a player left out and held through would be looked for, finds
+# a dip that deep 23% / 14% / 7% of the time. 8: most of the gain, at half
+# the false finds of 6. See TUNING_LOG.md, 2026-11-14.
+bow_change_min_dip_db = 8.0
 
 [onset.envelope]
 # What each frame of the onset envelope is compared with. See

@@ -135,6 +135,87 @@ def recover_onsets(
     return np.array(sorted(found), dtype=float)
 
 
+#: The level `recover_by_bow_change` reads: RMS over 23 ms windows, every
+#: 5.8 ms at 22,050 Hz. Finer than the take's own level (`audio._rms_db`,
+#: 93 ms windows), which smooths a bow change of 30–80 ms nearly flat.
+_BOW_LEVEL_WINDOW = 512
+_BOW_LEVEL_HOP = 128
+
+#: How far either side of a dip the level it dips from is read, in seconds.
+BOW_CHANGE_SIDE_S = 0.12
+
+
+def _level_db(y: np.ndarray, sr: int, start_s: float, end_s: float) -> tuple[np.ndarray, float]:
+    """The level from `start_s` to `end_s`, in dB, and the time of its first value."""
+    first = max(0, int(start_s * sr))
+    last = min(y.size, int(np.ceil(end_s * sr)))
+    piece = np.asarray(y[first:last], dtype=float)
+    if piece.size < _BOW_LEVEL_WINDOW:
+        return np.array([], dtype=float), first / sr
+    power = np.convolve(
+        piece**2, np.ones(_BOW_LEVEL_WINDOW) / _BOW_LEVEL_WINDOW, mode="same"
+    )[::_BOW_LEVEL_HOP]
+    return 10.0 * np.log10(np.maximum(power, 1e-20)), first / sr
+
+
+def recover_by_bow_change(
+    y: np.ndarray,
+    sr: int,
+    *,
+    predicted_s: np.ndarray,
+    reach_s: np.ndarray,
+    min_dip_db: float,
+    side_s: float = BOW_CHANGE_SIDE_S,
+) -> list[float | None]:
+    """Where the sound dips and comes back near each predicted time.
+
+    **For a note at the pitch of the note before it, bowed again.** Its pitch
+    does not change, so the legato look cannot hear it (`recover_by_pitch`),
+    and the bow change makes only a small rise in the onset envelope, which
+    the first pass often lets through: on URMP's 72 real takes (2026-11-14)
+    113 of the 288 played notes reported missing were such notes. What the
+    bow change does leave is a dip in the level as the bow stops and turns:
+    a median 8.5 dB at the labelled onsets of those 113, 11 dB at the
+    repeated notes the first pass did hear, and 1.4 dB in the middle of a
+    held note.
+
+    For each prediction, the deepest local minimum of the level within
+    `reach_s[i]` of it. Its depth is read against the quieter of the loudest
+    levels `side_s` before and after it, so the sound must come back: a note
+    ending is not a bow change. Kept if at least `min_dip_db` deep, at the time
+    the level has come halfway back up (in dB): on the URMP labels 12–41 ms
+    after the labelled onset. The caller moves it onto the attack clock
+    (`analysis._recover_bow_changes`). None where there is no such dip.
+    """
+    out: list[float | None] = []
+    for centre, reach in zip(np.asarray(predicted_s, float), np.asarray(reach_s, float), strict=True):
+        db, base = _level_db(y, sr, centre - reach - side_s - 0.2, centre + reach + side_s + 0.2)
+        if db.size < 3 or reach <= 0:
+            out.append(None)
+            continue
+
+        def frame(t: float) -> int:
+            return int(round((t - base) * sr / _BOW_LEVEL_HOP))
+
+        best: tuple[float, float] | None = None
+        for c in range(max(1, frame(centre - reach)), min(db.size - 1, frame(centre + reach) + 1)):
+            if not (db[c] <= db[c - 1] and db[c] <= db[c + 1]):
+                continue
+            t = base + c * _BOW_LEVEL_HOP / sr
+            before = float(db[max(0, frame(t - side_s)) : c].max())
+            after = float(db[c : frame(t + side_s) + 1].max())
+            depth = min(before, after) - float(db[c])
+            if depth < min_dip_db or (best is not None and depth <= best[0]):
+                continue
+            halfway = float(db[c]) + 0.5 * (after - float(db[c]))
+            rise = c
+            while rise < db.size - 1 and db[rise] < halfway:
+                rise += 1
+            best = (depth, base + rise * _BOW_LEVEL_HOP / sr)
+        out.append(None if best is None else best[1])
+    return out
+
+
 def recover_by_pitch(
     track: np.ndarray,
     *,

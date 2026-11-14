@@ -6,6 +6,104 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (bow changes) — A missed note at the pitch of the note before is looked for where the bow changes: new `onset_recovery.recover_by_bow_change`, `analysis._recover_bow_changes`, `[onset.recovery] bow_change_min_dip_db = 8.0`
+
+**The case.** Of the 288 played notes reported missing on URMP's 72 takes,
+113 were a note at the pitch of the note before it, bowed again with no rest
+between, and 62 had a neighbour under 100 ms away (written-out trills and
+turns, below the detector's resolution). The rest were spread. The repeated
+notes:
+
+- The legato look skips them: their pitch is sounding already.
+- The attack look predicts every missed note from one line through the whole
+  take (`predict_audio_times`) and searches a quarter of the closest written
+  gap around it, 39 ms on Spring's violin. On a long take with rubato that
+  line sat 95–700 ms from these notes, so the search never reached them.
+- A bow change does leave a dip in the level as the bow stops and turns. On
+  the labels: a median 8.5 dB at the 113, 11 dB at the 2,608 repeated notes
+  the first pass did hear, and 1.4 dB in the middle of a held note.
+
+**New:** for each missed note at the pitch of the note before it, a line
+through the paired notes either side puts it, and the deepest dip in the
+level (23 ms windows every 5.8 ms) within 0.4 of the shorter written gap
+there is taken if it is at least `bow_change_min_dip_db` deep against the
+quieter of the levels 120 ms either side. It must lie half a gap or more from
+every attack already there: on the synthetic set a cello take with a
+sixteenth left out "found" it in the stop before the next stroke, 40 ms ahead
+of that note's attack. A dip kept is placed on the attack clock by the fine
+look the attack look uses (`audio.refine_onset_times`), among the attacks
+already there.
+
+**The threshold.** On the real takes, against the head before this:
+
+| dip | heard | placed (50 ms) | paired (100 ms) | colour | bar tempo |
+|---|---|---|---|---|---|
+| 6 dB | +63 | +49 | +62 | +56 | +9 |
+| **8 dB** | **+43** | +37 | +47 | +41 | +6 |
+| 10 dB | +30 | +27 | +36 | +29 | +6 |
+
+All 72 sentences stay true at each. These recordings play every note, so
+they cannot show the other side: a repeated note left out, with the note
+before held through it. Searching the middle of 4,896 real held notes the
+same way, where such a note would be looked for, finds a dip that deep in
+23% / 14% / 7% of them. 8 dB takes most of the gain at half the false finds
+of 6. Today every one of the 121 played notes of this kind that are missed is
+reported missing. The synthetic set leaves out 8 such notes and none is
+found at any of the three.
+
+**Placed by the fine look.** Placed where the level is halfway back up, the
+real takes gain 12 more notes within 50 ms (above). But on the synthetic
+bowed note, a slow rise out of the stop, that point lies 47 ms before where
+the first pass places such an attack, so the note reads early in its own
+take. Refined, it is on the same clock as every other attack. The refine is
+given the attacks either side, as the first pass's is: given the time alone,
+it moved one onto a neighbour's rise in a run of fast repeated D's. The
+half-gap rule is applied to the dip, before the refine. Applied after, it
+let `1116`'s stop before the next stroke through.
+
+| | before | after |
+|---|---|---|
+| real, heard | 14,747 / 15,035 (98.08%) | 14,790 (**98.37%**) |
+| real, placed (50 ms) | 12,341 | 12,366 |
+| real, paired (100 ms) | 14,197 | 14,243 |
+| real, colour | 12,358 | 12,397 |
+| real, bar tempo | 2,924 | 2,928 |
+| real, verdict true | 71 of 72 | 71 of 72 |
+| synthetic | 97.93% | 97.93% (`1109`: missed 32 → 33 of 33) |
+
+**Regression, all six clips:** identical.
+
+Tests: `test_bow_changes.py`. A dip of 20 dB is found where the sound comes
+back. A held note's ±2 dB vibrato is not a bow change, a 5 dB dip is not at
+8 dB, and a note ending is not either. End to end: a page of repeated pairs
+whose first pass is made to miss two re-bowed attacks, with the attack look
+held off, reads with nothing missing and the two timed like their
+neighbours. Without the look they are reported missing, and a repeated note
+left out and held through is not found.
+
+**Also measured on the way, not kept:**
+
+- *A level guard on the first pass.* An attack in the room's silence started
+  `23_Rejouissance/2_sax`'s slide (below). But 35 of the 69 real first-pass
+  attacks within 3 dB of their take's floor are at a labelled note: an
+  attack is placed before the sound has risen. The loudest level in the
+  100 ms after an attack is no better (12 of 42).
+- *The chain's placement read as a median weighted by each note's written
+  length*, so a fast figure counts for the time it lasts. Synthetic 97.93 →
+  97.98%; real paired −120, colour −229.
+
+**Rejouissance's second saxophone, the one false sentence left.** Bar 8 is a
+nine-note E♭5/E5 trill. The first pass hears seven of its attacks, and one
+more at 19.498 s, in the silence after the held E♭5 that ends it (35 dB below
+the notes), whose chroma is that note's ring. In an alternating figure,
+sliding every note two along matches every pitch. The chain's first pass,
+on pitch alone, prefers that slide (one note left out, and the ring paired
+as the held E♭5, at 0.67) to the right pairing (two notes and the ring left
+out, at 1.8). The second pass's time cost should undo it. But it measures
+from a running median of the first pass's own placed notes, and 7 of the 13
+around the trill are the slid ones. The pulse then re-anchors after the
+trill, and every later bar reads about 18% earlier than the labels.
+
 ## 2026-11-14 (where the take settled) — After a spared entrance, a note banded again may lose its side but not change it: `classification._without_spared_ends`. No thresholds changed.
 
 **Old behaviour:** once the bar rule spares an entrance (a run wholly inside
