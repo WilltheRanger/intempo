@@ -481,13 +481,52 @@ def run_one(sc: Scenario) -> TakeScore:
     score, notes = make_page(rng, sc.instrument)
     end_s = place_notes(notes, sc, rng)
     y = render(notes, sc, end_s, rng)
-    truth = oracle(score, notes, sc.bpm)
+    return score_take(sc.name, (y, SR), score, notes, float(sc.bpm), sc.instrument)
+
+
+def score_take(
+    name: str,
+    audio: tuple[np.ndarray, int],
+    score: ScoreJson,
+    notes: list[TruthNote],
+    bpm: float,
+    instrument: str,
+    *,
+    unsure_bars: set[int] | frozenset[int] = frozenset(),
+    unsure_notes: set[int] | frozenset[int] = frozenset(),
+) -> TakeScore:
+    """Analyse one take and score the reading against the truth it was made
+    from — or, for a real recording, the truth it was labelled with
+    (`real_takes.py`). Every metric here is defined in the module docstring.
+
+    `unsure_bars` are bars whose truth cannot say whether a wrong note was
+    played — a labelled pitch between in tune and certainly another note — so
+    naming one, or not, is not scored. `unsure_notes` are written notes the
+    labels have no note for, which may be a note left out or a label the
+    annotator did not write (a double stop, an ornament): reporting one
+    missing, or not, is not scored. A synthesised take has neither."""
     trace: dict = {}
-    result = analyze(
-        (y, SR), score, float(sc.bpm), instrument=sc.instrument, trace=trace, config=config()
+    result = analyze(audio, score, bpm, instrument=instrument, trace=trace, config=config())
+    return score_result(
+        name, result, trace, score, notes, bpm,
+        unsure_bars=unsure_bars, unsure_notes=unsure_notes,
     )
 
-    out = TakeScore(scenario=sc.name, status=result.status)
+
+def score_result(
+    name: str,
+    result,
+    trace: dict,
+    score: ScoreJson,
+    notes: list[TruthNote],
+    bpm: float,
+    *,
+    unsure_bars: set[int] | frozenset[int] = frozenset(),
+    unsure_notes: set[int] | frozenset[int] = frozenset(),
+) -> TakeScore:
+    """`score_take`'s scoring, for a reading the caller already has."""
+    truth = oracle(score, notes, bpm)
+    out = TakeScore(scenario=name, status=result.status)
     out.attacks = attacks_against(notes, np.asarray(trace.get("detected_s") or [], dtype=float))
     counts: dict[str, list[int]] = defaultdict(lambda: [0, 0])
 
@@ -524,7 +563,7 @@ def run_one(sc: Scenario) -> TakeScore:
                 error <= NOTE_TOL_MS,
                 f"note {note.global_index} (bar {note.measure_number}) off by {error:.0f} ms",
             )
-        else:
+        elif note.global_index not in unsure_notes:
             tally(
                 "missed",
                 analysed and note.global_index not in heard,
@@ -533,7 +572,7 @@ def run_one(sc: Scenario) -> TakeScore:
     # A bar is what its chart shows: its average deviation and its tempo. Each
     # is right within what the note tolerance allows; a bar's sign alone is
     # noise when its average is a fraction of a percent either side of zero.
-    beat_ms = 60000.0 / sc.bpm
+    beat_ms = 60000.0 / bpm
     tol_pct = 100.0 * NOTE_TOL_MS / beat_ms
     for number, want in truth["measures"].items():
         mine = next((m for m in result.per_measure if m.measure_number == number), None)
@@ -569,7 +608,7 @@ def run_one(sc: Scenario) -> TakeScore:
             f"wrong note in bar {bar} not named",
         )
     for bar in named_bars:
-        if bar not in wrong_bars:
+        if bar not in wrong_bars and bar not in unsure_bars:
             tally("wrong notes", False, f"bar {bar} named wrong, was right")
     out.counts = {k: v for k, v in counts.items()}
     return out
