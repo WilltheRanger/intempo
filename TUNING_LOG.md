@@ -6,6 +6,44 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (ringing attacks) — A note's first attack heard as the note before: measured, not kept. No thresholds changed.
+
+**The case.** Synthetic `double_bass/bowed/60/rush/noise/1127`. Note 20's own
+attack came while note 19's A1 still rang in the room's 58 Hz mode, so the
+pitch track read A1 for 200 ms after it. The chain paired note 20 with a stray
+attack 0.35 s into the note, where D2 had taken over. `_first_attacks` moves a
+pairing back only over attacks heard at the note's own pitch, so it did not
+move. The false 0.35 s jump re-anchored the pulse, and bars 5–8, played a full
+beat ahead, read as on the beat: 17 notes and 4 bars wrong.
+
+**The rule tried.** Move such a pairing back to the attack just before it
+when that attack reads as the note before, comes after that note's own
+pairing, and is the nearer of the two to where the take's local pace puts the
+note, leaving the note itself out of the pace. Without the pace, the move is
+wrong 22 times in 24 on the synthetic set: the earlier attack is usually a
+stray one inside the note before.
+
+| | before | with the rule |
+|---|---|---|
+| synthetic, overall | 97.24% | 97.53% |
+| synthetic, notes / bars | 95.67% / 95.42% | 96.18% / 96.11% |
+| real, paired (100 ms) | 95.19% | 94.89% |
+| real, placed (50 ms) | 82.74% | 82.37% |
+| real, bar tempo | 71.45% | 70.85% |
+| real, band | 73.23% | 73.75% |
+| real, verdict true | 55 | 55 |
+
+On synthesis exactly the two takes with the pattern improve and none
+worsens. On real playing it moves about 25 takes' pairings, most of them
+wrongly by the labels: Jupiter's cello loses 4 paired notes and 4 bar tempi,
+and K515's first viola loses 4 and 7. Its band gain comes from a few moves
+that happened to stop a re-anchor, such as Rondeau's second violin, while
+placing the moved note worse. Real players' rubato makes the local pace a
+poor guide to which attack begins a note. Not kept, and nothing in the code
+changed. A cue that might hold on real playing is where the note's pitch
+takes over between the two attacks. A slurred note has that shape too,
+though, so it would need its own measurement.
+
 ## 2026-11-14 (quoted figures) — A run's tempo is quoted only when it is 2% or more off the target: new `[tolerance] quoted_min_pct = 2.0`
 
 **Old behaviour:** `classification._run_verdict` quoted a run's tempo ("Bars
