@@ -122,6 +122,10 @@ class ToleranceConfig:
     #: See `quoted_min_pct` in `[tolerance]`. 0, the old rule, for a
     #: remote-config row written before it.
     quoted_min_pct: float = 0.0
+    #: See `long_take_bars` in `[tolerance]`. 0 turns the rule off, which is
+    #: what a remote-config row written before it gets.
+    long_take_bars: int = 0
+    long_take_min_bars: int = 3
 
 
 @dataclass(frozen=True)
@@ -285,6 +289,8 @@ def _parse(raw: dict) -> AudioConfig:
             ),
             settling_bars=int(tol.get("settling_bars", 2)),
             quoted_min_pct=float(tol.get("quoted_min_pct", 0.0)),
+            long_take_bars=int(tol.get("long_take_bars", 0)),
+            long_take_min_bars=int(tol.get("long_take_min_bars", 3)),
         ),
         trend=TrendConfig(window=int(trend["window"])),
         alignment=AlignmentConfig(

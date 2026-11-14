@@ -377,6 +377,35 @@ def test_one_bar_is_named_only_when_it_is_clearly_out() -> None:
     assert verdict.text == "Bar 2 went at 85."
 
 
+def test_in_a_long_take_one_or_two_bars_off_are_named_only_when_severe() -> None:
+    """**A run of one or two bars is chance in a long take**
+    (`[tolerance] long_take_bars`). The run named is the longest over every
+    bar of the take, and the more bars there are, the more chances one or
+    two have to read past the band by their own tempo's error. On URMP's 72
+    real takes (2026-11-14, 12 to 215 bars) the sentence about one or two bars
+    was true 4 times in 16, and about three or more 45 times in 48. A short
+    take, a passage practised, keeps the rule it had: there, two bars are a
+    large part of what was played. Two bars severely out are named in a take
+    of any length — the owner's slowing to 80, in `_played` below."""
+    on_the_beat = [_delta(0.0, measure=1 + i // 4, idx=i) for i in range(80)]
+    steady = {m: 104.0 for m in range(1, 21)}
+    two = steady | {12: 97.0, 13: 97.0}  # 6.7% under
+    three = two | {14: 97.0}
+    severe = steady | {12: 80.0, 13: 80.0}  # 23% under
+
+    blip = generate_verdict(on_the_beat, 104.0, tempi=_tempi(two, across=97.0))
+    stretch = generate_verdict(on_the_beat, 104.0, tempi=_tempi(three, across=97.0))
+    slowing = generate_verdict(on_the_beat, 104.0, tempi=_tempi(severe, across=80.0))
+
+    assert blip.direction is Direction.on
+    assert stretch.text == "Bars 12–14 went at 97."
+    assert slowing.text == "Bars 12–13 went at 80."
+
+    short = {m: 104.0 for m in range(1, 11)} | {5: 97.0, 6: 97.0}
+    passage = generate_verdict(on_the_beat[:40], 104.0, tempi=_tempi(short, across=97.0))
+    assert passage.text == "Bars 5–6 went at 97."
+
+
 def test_a_bar_with_too_few_timed_notes_is_not_a_run() -> None:
     """One note is one note's timing, however far out its bar reads."""
     deltas = [_delta(0.0, measure=1 + i // 4, idx=i) for i in range(8)]

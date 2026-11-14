@@ -6,6 +6,55 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (short runs) — In a long take, a run of one or two bars is named only when severe: new `[tolerance] long_take_bars = 16`, `long_take_min_bars = 3`
+
+**Old behaviour:** the bar rule named the longest run of bars off the target
+the same way: a single bar when clearly out (past the mid band), two or more
+whenever they were off. **New:** in a take with at least `long_take_bars`
+(16) bars with a tempo, a run must cover `long_take_min_bars` (3) bars,
+unless every bar of it is severely out (past the outer band). A shorter run
+falls through to the note rule. A shorter take keeps the old rule. A
+remote-config row without the keys keeps the old rule everywhere.
+
+**Why.** The verdicts said on URMP's 72 real takes, by how many bars they
+named, and whether the labels hold them:
+
+| the sentence names | true |
+|---|---|
+| one bar | 1 of 2 |
+| two bars | 3 of 14 |
+| three or four bars | 19 of 21 |
+| five or more | 25 of 26 |
+| a side, no figure | 7 of 9 |
+
+The run named is a maximum over every bar of the take. A bar's measured
+tempo is good to a percent or two on real playing, and many bars of a long
+take sit near the band's edge. So the more bars there are, the likelier it
+is that one or two land past the edge by their own error, and the longest
+run is then that blip. Most of the false two-bar sentences quote bars the
+labels put 4–5% off. Making the band wider did not separate them, since true
+and false short runs both sit between 5% and 16% (measured: a run of two
+needing every bar past the mid band, as one bar already did, gave 60 true
+rather than 65). In a long take, one bar past the mid band was true once in
+six.
+
+A short take keeps its two-bar runs. There two bars are a large share of
+what was played, and there are few bars for chance to choose among. The
+owner's slowing to 80 over two bars of ten is still named, and so would it
+be in a long take, because it is severe.
+
+| real, 72 tracks | before | after |
+|---|---|---|
+| verdict true | 55 | 65 |
+| strings | 51 of 61 | 58 of 61 |
+| saxophone | 4 of 11 | 8 of 11 |
+
+Twelve sentences became true, mostly as the note rule's side over a long
+stretch ("Bars 5–63 fell behind."), which the labels hold note by note. One
+became false: Hark's viola, from "Bars 2–3 went at 111." to "Bars 13–18 went
+at 123.". The synthetic benchmark (8-bar takes, 97.31%) and the six fixtures
+are unchanged.
+
 ## 2026-11-14 (held notes) — The second look does not find a note the player left out inside the note before. No thresholds changed.
 
 **Old behaviour:** where the page writes a note and none was heard, the

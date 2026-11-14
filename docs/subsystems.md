@@ -2236,6 +2236,13 @@ it taught, each lesson paid for with a wrong number first:
   other parts of its piece is what found this. A rule that rescues refusals
   needs a test of the wrong takes it lets through, not only of the right
   ones it saves.
+- **The longest of many is mostly the luckiest.** The verdict names the
+  longest run of bars past the band. In a 200-bar take, one or two bars land
+  past it by their own measurement error. On real takes the sentence about
+  one or two bars was true 4 times in 16, and about three or more 45 in 48.
+  A long take's run must now cover three bars, unless it is severe
+  (`[tolerance] long_take_bars`). Before trusting the winner of a search,
+  ask how many it was chosen from.
 - **To ask what a sound is, listen to what it becomes.** The second look took
   a held note's vibrato swell for a note the player had left out.
   - On 2026-11-13 a guard compared the pitch on either side of the swell. It

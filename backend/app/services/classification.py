@@ -619,6 +619,14 @@ def _longest_bar_run(
         sign = 0 if band is Band.on else (1 if pct > 0 else -1)
         bars.append((bar, sign, band, timed[bar]))
 
+    # **In a long take, a run of one or two bars is chance until it is
+    # severe.** The longest run is a maximum over every bar of the take, and
+    # the more bars there are, the more chances a bar's measured tempo has to
+    # land past the band by its own error (`[tolerance] long_take_bars`).
+    tol = config.tolerance
+    long_take = tol.long_take_bars > 0 and len(bars) >= tol.long_take_bars
+    shortest = tol.long_take_min_bars if long_take else 0
+
     best: _BarRun | None = None
     best_key = (0, 0)
     spared: set[int] = set()
@@ -639,7 +647,9 @@ def _longest_bar_run(
             i = j + 1
             continue
         worth = notes >= MIN_VERDICT_RUN and (
-            len(run) >= 2 or run[0][2] in _CLEAR_BANDS
+            all(band is Band.severe for _, _, band, _ in run)
+            if len(run) < shortest
+            else len(run) >= 2 or run[0][2] in _CLEAR_BANDS
         )
         if worth and not _off_as_quoted(run[0][0], run[-1][0], sign, tempi, target_bpm, config):
             worth = False

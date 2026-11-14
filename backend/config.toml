@@ -281,6 +281,17 @@ settling_bars = 2
 # placement cannot resolve, and a quoted figure claims it can. 0 restores the
 # old rule, which quoted any difference that survived rounding to a whole BPM.
 quoted_min_pct = 2.0
+# In a take with at least `long_take_bars` bars with a tempo, a run of bars is
+# named only when it covers `long_take_min_bars` of them, or every bar of it
+# is severely out (past the outer band, the chart's red). A shorter take
+# keeps the old rule: a single bar named only when clearly out, two or more
+# whenever they are off. The run named is the longest over every bar of the
+# take, so the more bars there are, the more chances one or two have to land
+# past the band by their tempo's own error. On URMP's 72 real takes
+# (2026-11-14, 12 to 215 bars) the sentence about a run of one or two bars
+# was true 4 times in 16, and about three or more, 45 in 48. 0 turns it off.
+long_take_bars = 16
+long_take_min_bars = 3
 
 [tolerance.pulse]
 # When a musician breaks their pulse rather than drifting off it. Below these
