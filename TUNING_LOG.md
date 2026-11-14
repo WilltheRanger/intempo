@@ -6,6 +6,80 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (a tie between two attacks) — Where DTW gives one note two attacks, the one nearest where the take puts the note keeps it, not the one nearest the page's grid. No thresholds changed.
+
+**Old behaviour:** `apply_fuzzy_match` settled a many-to-one by keeping the
+attack closest to the note's written time, in seconds at the page's tempo. A
+take running fast or slow has left that grid behind, so the grid sat nearer
+whichever attack lay in the direction the player had come from.
+`double_bass/bowed/108/fast/phone/1140` is 10% fast and half a second ahead
+by its eleventh note. Extra attacks 0.28 s after note 10's own and 0.18 s
+after note 34's sat nearer the grid, kept those notes and left their own
+attacks over: 2 notes and 2 bars wrong, all decided by the truth. Matching
+was made tempo-invariant for exactly this reason (`align_dtw`); the tie-break
+was where absolute time had come back in.
+
+**New** (`apply_fuzzy_match`, `_where_the_take_puts`): the tie goes to the
+attack nearest where a line through the nearest singly paired notes either
+side puts the note. With paired notes on one side only it is a line through
+the two nearest there; with one, that note's place moved by the written gap;
+with none, the written time, as before. A constant offset no longer moves
+it either, which `test_alignment.py` had held as a defect; `to_timeline_base`
+stays for `align_take` and the chain.
+
+| | before (`f482e03`) | after |
+|---|---|---|
+| synthetic, overall | 97.81% | **97.84%** |
+| synthetic, notes / bars | 96.47% / 96.60% | 96.50% / 96.74% |
+| synthetic, over what the truth decides | 98.41% | 98.44% |
+| real, 72 takes | | identical, every card and sentence |
+
+Only `1140` moves on synthesis: notes 28 → 30 of 39, bars 6 → 8 of 8.
+
+**Regression, all six clips:** identical, status, verdicts and every per-note
+deviation.
+
+Tests: `test_a_tie_goes_to_where_the_take_puts_the_note_not_the_grid` (a take
+10% fast with an extra attack after the note's own, and 10% slow with one
+before it; both fail on the grid) and
+`test_a_tie_on_the_first_note_follows_the_notes_after_it`.
+`test_dtw_no_longer_needs_the_shift_but_fuzzy_matching_still_does` is now
+`test_neither_dtw_nor_fuzzy_matching_needs_the_shift`.
+
+**Also measured, not kept: the take's spread without its single displaced
+notes.** At `f482e03`, `double_bass/bowed/84/rush/phone/1130` held 37 of the
+synthetic set's 185 decided misses. Two pairings there are wrong: one note's
+own attack went unheard and an extra attack 130 ms before it was given to
+it, and another note was given an attack 400 ms after its own, which was
+heard. They make four intervals of 183–410 ms, and with a phone room's
+wider jitter they move the take's spread (the median absolute deviation of
+its intervals) from the truth's 12.5 ms to 31.7. So the re-anchor limit read
+190 ms against 119, and the rush's opening half note (166 ms short) was not
+a disturbance. Leaving the two intervals of each single displaced note (the
+pairs `(one note out of place)` already clears) out of the spread, found at
+the current limit and repeated until none is new, brings `1130` to the floor.
+Replayed on the captured pulse inputs:
+
+| | synthetic timing misses | real colour | real colour, over what the labels decide |
+|---|---|---|---|
+| `f482e03` | 209 | 75.59% | 78.46% |
+| iterated | 187 | 75.03% | 78.31% |
+| found once, at the floor | 187 | 74.34% | 77.56% |
+
+On real takes most of the loss is in notes the labels themselves do not
+decide. The hand labels have displaced notes of their own, those leave the
+labels' spread too, and a limit 4 ms lower flips a re-anchor either way
+(Pirates' first violin: 60 notes from one decision at 126 against 130 ms).
+Over what the labels decide it still loses 15 notes, mostly Jerusalem's
+viola and cello, so it is not kept.
+
+**What the labels decide** (a replay, the real-take counterpart of `(what
+the truth decides)`): each take's labelled offsets moved by N(0, 2 ms), 8
+draws, and a note whose labels' colour changes in any draw is undecided. On
+`f482e03` 1,327 of 14,723 notes are undecided, and the app reads 708 of them
+otherwise, about a coin toss. Over the 13,396 decided, colour agreement is
+78.46%. Not yet in `real_takes.py`.
+
 ## 2026-11-14 (one note out of place) — A single displaced note is not a disturbance of the pulse. No thresholds changed.
 
 **Old behaviour:** an interval past the disturbance limit began a run, and the

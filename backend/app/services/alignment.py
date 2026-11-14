@@ -2839,12 +2839,23 @@ def apply_fuzzy_match(
 
     matched: list[tuple[int, int]] = []
     extra: list[int] = []
+    # **Many-to-one: the onset nearest where the take puts the note wins** —
+    # not the one nearest the page's grid. A take that runs fast or slow has
+    # left that grid behind, by half a second on a bass take 10% fast by its
+    # eleventh note, so the grid favoured whichever attack lay in the
+    # direction the player had come from: an extra attack 0.28 s after the
+    # note's own, on `double_bass/bowed/108/fast/phone/1140`, kept the note
+    # and left its attack over. Matching was made tempo-invariant for this
+    # reason (`align_dtw`); this is where absolute time had come back in.
+    # The notes paired once say where the take is, so a line through the
+    # nearest of them either side puts the note (`_where_the_take_puts`).
+    alone = sorted((exp_i, dets[0]) for exp_i, dets in by_expected.items() if len(dets) == 1)
     for exp_i, det_indices in by_expected.items():
         if len(det_indices) == 1:
             matched.append((det_indices[0], exp_i))
             continue
-        # Many-to-one: the onset closest to the expected time wins.
-        closest = min(det_indices, key=lambda d: abs(detected[d] - expected[exp_i]))
+        at = _where_the_take_puts(exp_i, alone, detected, expected)
+        closest = min(det_indices, key=lambda d: abs(detected[d] - at))
         matched.append((closest, exp_i))
         extra.extend(d for d in det_indices if d != closest)
     # An attack paired with nothing. `align_dtw` gives every attack a note, so
@@ -2902,6 +2913,43 @@ def apply_fuzzy_match(
         extra_detected=extra,
         quality=alignment.quality,
     )
+
+
+def _where_the_take_puts(
+    exp_i: int,
+    alone: list[tuple[int, int]],
+    detected: np.ndarray,
+    expected: np.ndarray,
+) -> float:
+    """Where, on the detections' clock, the take itself puts written note `exp_i`.
+
+    `alone` is the (written, detected) pairs of the notes one attack settled,
+    by written index. A line through the nearest of them before and after the
+    note; with them on one side only, a line through the two nearest there;
+    with one, that note's place moved by the written gap. With none, the
+    written time, which is where the take starts.
+    """
+    written = [e for e, _ in alone]
+    split = int(np.searchsorted(written, exp_i))
+    before = alone[max(split - 2, 0) : split]
+    after = alone[split : split + 2]
+    if before and after:
+        points = [before[-1], after[0]]
+    elif len(before) == 2:
+        points = before
+    elif len(after) == 2:
+        points = after
+    elif before or after:
+        e, d = (before or after)[0]
+        return float(detected[d] + (expected[exp_i] - expected[e]))
+    else:
+        return float(expected[exp_i])
+    (e0, d0), (e1, d1) = points
+    span = float(expected[e1] - expected[e0])
+    if span <= 0:
+        return float(detected[d0] + (expected[exp_i] - expected[e0]))
+    pace = float(detected[d1] - detected[d0]) / span
+    return float(detected[d0] + pace * (expected[exp_i] - expected[e0]))
 
 
 def is_alignment_broken(quality: float, *, config: AudioConfig | None = None) -> bool:
