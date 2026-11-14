@@ -30,6 +30,12 @@ ones: "Bars 77–81 went at 233." (the labels 238) is now "Bars 77–80 went at
 **Synthetic:** identical to the 0.6 weight at 9 (97.78%).
 **Regression, all six clips:** identical.
 
+**`CHAIN_SKIP` swept with them, and left at 0.6.** With an attack's distance
+weighing twice as much, two gaps away now cost what leaving the attack and
+its note both out does, so the skip cost was tried either side (heard,
+paired, colour, verdict true): 0.5 gives 14,568, 13,930, 11,238, 66; 0.6
+gives 14,747, 14,197, 11,542, 69; 0.75 gives 14,739, 14,098, 11,497, 67.
+
 ## 2026-11-14 (the chain's time weight) — `alignment.CHAIN_TIME_WEIGHT` 0.3 → 0.6 a played gap
 
 **Why.** `b7e3103` took the saturation off the chain's time cost and left
