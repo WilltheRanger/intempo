@@ -95,6 +95,28 @@ def test_an_attack_heard_at_another_pitch_is_kept(heard: float, why: str) -> Non
     assert _second_look(PAGE, heard, heard).tolist() == [2.0], why
 
 
+@pytest.mark.parametrize(("early", "late"), [(71.0, 59.0), (83.0, 71.0)])
+def test_the_note_before_read_an_octave_off_is_still_the_note_before(
+    early: float, late: float
+) -> None:
+    """B4 held on, read an octave low halfway to the next note (or an octave
+    high just after the attack): the pitch track does that to a held note as
+    readily as to any other, and it is still B4, not the C5 the player left
+    out. A synthetic violin (`violin/bowed/108/missed/noise/1027`) had its
+    held D5 read as D4 halfway, and the A4 left out under it was "found"."""
+    assert _second_look(PAGE, early, late).size == 0
+
+
+@pytest.mark.parametrize(("heard", "kept"), [(71.0, False), (83.0, True)])
+def test_a_missed_note_an_octave_from_the_note_before_is_told_by_its_octave(
+    heard: float, kept: bool
+) -> None:
+    """B4 then B5: only the octave tells the note before going on from this
+    note, so there the reading must be B4 itself for the attack to go."""
+    octave_page = ["A4", "B4", "B5", "D5", "E5", "F5", "G5", "A5"]
+    assert (_second_look(octave_page, heard, heard).size == 1) is kept
+
+
 def test_a_note_that_begins_under_the_ring_of_the_one_before_is_kept() -> None:
     """B4 just after the attack and C5 by halfway: the note began while the one
     before still rang, as a plucked bass's does. A synthetic pizzicato take

@@ -1147,8 +1147,8 @@ def _not_the_note_before(
     the synthetic set (2026-11-14), eight notes the player left out were
     "recovered" that way, each inside the note before at its pitch, and with
     no rise in level (−1.0 to +0.3 dB). So an attack is dropped when the
-    pitch after it is still the note before's and the missed note is written
-    at another pitch. A missed note that sounded is heard at its own pitch, a
+    pitch after it is still the note before's, in any octave, and the missed
+    note is written at another pitch class. A missed note that sounded is heard at its own pitch, a
     wrong one at some other, and where the page repeats a pitch nothing here
     can tell, so nothing is dropped. On URMP's real takes most of what this
     drops had been placed 150–900 ms from the labelled note. That moved the
@@ -1184,13 +1184,26 @@ def _not_the_note_before(
         late = pitch.heights(np.array([0.5 * (float(t) + until), until]))
         readings = [after.get(round(float(t), 6)), None if late is None else late[0]]
         keep[i] = not all(
-            h is not None
-            and np.isfinite(h)
-            and round(float(h)) == before + pitch.transpose
-            and round(float(h)) != now + pitch.transpose
+            h is not None and np.isfinite(h) and _held_on(round(float(h)), before, now, pitch.transpose)
             for h in readings
         )
     return found[keep]
+
+
+def _held_on(heard: int, before: int, now: int, transpose: int) -> bool:
+    """Whether a pitch heard where `now` was written is `before` held on.
+
+    By pitch class where the two notes are of different classes: the pitch
+    track reads a held note an octave off as readily as anything else, and the
+    note before in another octave is still the note before. A synthetic violin
+    (`violin/bowed/108/missed/noise/1027`) had its held D5 read as D4 halfway
+    to the next note, and the A4 left out under it was "found". Where the
+    missed note is an octave from the note before, only the octave tells them
+    apart, so the reading must be the note before's own pitch.
+    """
+    if (now - before) % 12 == 0:
+        return heard == before + transpose and heard != now + transpose
+    return heard % 12 == (before + transpose) % 12
 
 
 #: How far after a recovered attack with nothing after it the note before is

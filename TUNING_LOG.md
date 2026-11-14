@@ -6,6 +6,34 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (the note before, an octave off) — `analysis._not_the_note_before` reads the note before by pitch class where the missed note is of another class: new `_held_on`. No thresholds changed.
+
+**The case.** `violin/bowed/108/missed/noise/1027` leaves out an A4 after a
+D5, and the player holds the D5 through it. The attack look took a rise in
+the held note for the A4, and the guard that drops such a find listens
+twice: just after it (74.09, the D5) and halfway to the next attack (62.27,
+the D5 read an octave low). It asked for the note before's exact pitch both
+times, so the octave error kept the find, and the A4 was reported played.
+
+**New:** where the missed note is of another pitch class than the note
+before, a reading of the note before's class in any octave is the note
+before held on. Where the missed note is an octave from the note before,
+only the octave tells them apart, and the rule is as it was: the reading
+must be the note before's own pitch.
+
+| | before | after |
+|---|---|---|
+| synthetic | 98.11% | 98.12% (missed 6,439 → 6,440; over what the truth decides 98.70%) |
+| real heard | 14,850 | 14,851 |
+| real colour | 12,672 | 12,674 |
+| real bar tempo | 2,950 | 2,952 |
+| real paired (100 ms) | 14,355 | 14,355 |
+| six clips | | identical |
+
+Only 1027 changes on the synthetic set and only K515's first violin on the
+real takes, where dropping a false find in a held note let a later look hear
+the note itself.
+
 ## 2026-11-14 (where pitch cannot choose) — The chain re-pairs a whole page where it pairs as many notes as timing, hears as many at pitch, and timing's own score prefers it: new `analysis._timing_prefers_the_chain`. No thresholds changed.
 
 **The case.** The chain replaces a pairing timing reads well only on
