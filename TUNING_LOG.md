@@ -6,6 +6,50 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (the first attack, on a saxophone) — Measured, not kept. No code or threshold changes.
+
+**The case.** Entertainer's second saxophone had 37 notes paired 100–176 ms
+before their labels. At each of them the first pass heard two attacks: one
+just after the label, where the note sounds, and one 100–176 ms before it,
+where the reed is stopped at the end of the note before. The chain paired
+the later one, and its first-attack rule (`alignment._first_attacks`) moved
+it back to the earlier one. That rule is for a cellist's swell or change of
+bow inside a held note, and the earlier attack's pitch window reaches into
+the new note, so the move looks like one.
+
+**What the rule does on the real takes**, every move of the pairing kept:
+
+| | moves | nearer the label | further from it |
+|---|---|---|---|
+| strings | 500 | 470 | 30 |
+| saxophone | 197 | 86 | 111 |
+
+The saxophone's bad moves cross a dip in level of 30–42 dB between the two
+attacks (median 35 dB), a near-silence before the note's own sound. The
+strings' good moves cross 2–14 dB (median 6.6). The level change at the
+earlier attack separates them less well.
+
+**Tried, none kept:**
+
+| | paired | colour | placed | bar tempo | verdict true |
+|---|---|---|---|---|---|
+| no move across a dip of 30 dB or more | +37 | +4 | +30 | +18 | 71 → 70 |
+| … 25 dB | +39 | +6 | +29 | +19 | 70 |
+| … 20 dB | +37 | +8 | +24 | +18 | 70 |
+| the rule off for the saxophone | +25 | +15 | −10 | +16 | 69 |
+
+The synthetic set has no saxophone and is unchanged in every row. The
+sentence lost each time is Entertainer's second saxophone. In its bars 17–20
+the reed stops with dips under 20 dB, too shallow to tell from a string's
+change of bow, so a guard leaves some notes at the stop and moves others to
+the sound. The step between the two re-anchors the pulse, and every later
+bar reads about 60% of a beat behind where the labels have it. Off for the
+saxophone, that take reads right but March's second saxophone loses 34
+placements within 50 ms and its sentence. March's labels sit at the reed
+stopping, Entertainer's at the note sounding. URMP's saxophone labels do not
+agree with each other on which of the two a tongued note starts at, so no
+one rule here can agree with both.
+
 ## 2026-11-14 (the scorer, inside a run of one pitch) — `tools/eval/real_takes.py`: the labels in a run of one written pitch go to the notes their rhythm fits (`respace_runs`). The measuring stick, not the app.
 
 **The case.** Spring's cello part writes an E3 eighth and then eight
