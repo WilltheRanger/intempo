@@ -123,6 +123,31 @@ def test_a_sound_paired_with_the_wrong_note_does_not_reset_the_ramp() -> None:
     )
 
 
+def test_one_note_out_of_place_where_a_rush_ends_moves_nothing_else() -> None:
+    """**A note out of place on its own is not the pulse moving**, even where
+    the line before it is a ramp that has just ended.
+
+    Six notes on the beat, six rushing 0.1 beat each, then steady where the
+    rush left the player, as `double_bass/bowed/60/rush/noise/1127` is. The
+    first note after the rush is heard 0.3 beat late, the step into it and the
+    step out of it both past the limit. Projected along the rush, the notes
+    after sit off its line, so the glitch read as the player moving and
+    re-anchored the take, and every later note lost the rush it carried. The
+    notes either side of it agree, so it is one note out of place: it reads
+    late, and nothing else changes.
+    """
+    played = list(np.cumsum([0.0] * 6 + [-0.1] * 6 + [0.0] * 10))
+    heard = list(played)
+    heard[12] += 0.3
+    clean, glitched = _deltas(played), _deltas(heard)
+
+    assert glitched[12] == pytest.approx(clean[12] + 300.0), "the note itself reads late"
+    others = [k for k in range(len(played)) if k != 12]
+    assert list(glitched[others]) == pytest.approx(list(clean[others])), (
+        "one note out of place moved the rest of the take"
+    )
+
+
 def test_a_pause_inside_a_ramp_still_re_anchors() -> None:
     """The other side of the check: the notes after a real pause sit off the
     line, by the pause, and start again from where the player is."""

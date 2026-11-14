@@ -6,6 +6,53 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (one note out of place) — A single displaced note is not a disturbance of the pulse. No thresholds changed.
+
+**Old behaviour:** an interval past the disturbance limit began a run, and the
+pulse re-anchored after the run unless the notes after it were back on the
+line the notes before it were on (`_level_moved`). A note out of place on its
+own makes two such intervals, into it and out of it, opposite ways. Where the
+line before was steady, the notes after were back on it and nothing moved.
+Where it was a ramp that had just ended, they were not.
+`double_bass/bowed/60/rush/noise/1127` paired the note after a rush with a
+stray attack 350 ms late. Projected along the rush, the notes after it sat
+off the line, so the glitch re-anchored the take. The truth never re-anchors
+there, because the rush's own intervals are 13% against a 16.7% limit, so the
+bars after it carry the rush. 16 notes and 4 bars were wrong, all of them
+decided (`(what the truth decides)`).
+
+**New** (`pulse_anchors`): two disturbed intervals in a row, opposite ways,
+whose sum is an ordinary interval (within the same limit) are one note out of
+place. They are not a disturbance. That note reads off, and nothing else
+moves. Whether the sound was paired with the wrong note or the player put one
+note late and carried on, the pulse is where it was. Every case in
+`test_pulse_anchor.py` keeps its reading: a pause, a slow bar and rushing that
+resumes all step one way and stay.
+
+**Measured.** Replayed offline first (sum within 0.5 / 1 / 1.5 limits:
+synthetic timing misses 221 / 209 / 209, real colour 75.70 / 75.59 /
+75.61%); 1 kept, the limit a single interval is judged by. End to end:
+
+| | before (`1740049`) | after |
+|---|---|---|
+| synthetic, overall | 97.71% | **97.81%** |
+| synthetic, notes / bars | 96.28% / 96.39% | 96.47% / 96.60% |
+| synthetic, over what the truth decides | 98.31% | 98.41% |
+| real, verdict true | 66 of 72 | **67 of 72** |
+| real, colour agreement | 11,113 / 14,723 | 11,129 / 14,723 |
+| real, heard / placed / paired / bar tempo | — | identical |
+
+On real playing the one changed sentence is Rejouissance's saxophone:
+"Bars 14–25 ran ahead.", false by the labels, is now "Bars 14–17 fell
+behind.", which holds. Colour moves in 24 takes, both ways, between −20
+(Pavane's cello) and +18 (K515's cello).
+
+**Regression, all six clips:** identical, status, verdicts and every
+per-note deviation (none has a disturbed interval).
+
+New test: `test_one_note_out_of_place_where_a_rush_ends_moves_nothing_else`.
+On the previous rule the note moved the rest of the take by up to 600 ms.
+
 ## 2026-11-14 (what the truth decides) — The benchmark says which misses no hearing could be sure of. The app is unchanged.
 
 **New, not scored:** `accuracy_bench.py` reads each take's truth again with

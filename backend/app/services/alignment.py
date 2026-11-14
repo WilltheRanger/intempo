@@ -986,6 +986,26 @@ def pulse_anchors(
         cfg.tolerance.disturbance_floor_beats * beat_s,
     )
     disturbed = np.abs(steps - centre) > limit
+    # **A note out of place on its own is not the pulse moving.** The step
+    # into it and the step out of it are both disturbed, opposite ways, and
+    # the two together are an ordinary step: the notes either side of it
+    # agree. Whether a sound was paired with the wrong note or the player
+    # placed one note late and carried on, the pulse is where it was, and
+    # that note alone reads off. `_level_moved` catches most such glitches
+    # by finding the notes after back on the line before, but not where that
+    # line was a ramp that has just ended: on the synthetic set's
+    # `double_bass/bowed/60/rush/noise/1127` a note paired 350 ms late at the
+    # end of a rush re-anchored the take, so the bars after it read on the
+    # beat where a perfect reading had them a beat ahead, and 16 notes and
+    # 4 bars were wrong.
+    for i in range(1, offsets.size - 1):
+        if (
+            disturbed[i]
+            and disturbed[i + 1]
+            and (steps[i] - centre) * (steps[i + 1] - centre) < 0
+            and abs(steps[i] + steps[i + 1] - 2.0 * centre) <= limit
+        ):
+            disturbed[i] = disturbed[i + 1] = False
 
     def next_break(after: int) -> int:
         """The first disturbed note after `after`, or the end of the take."""
