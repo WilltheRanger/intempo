@@ -2210,6 +2210,13 @@ it taught, each lesson paid for with a wrong number first:
   before it played. Making the lead-in free to leave out looked like the
   fix and broke replay detection. The fix was in the evidence: a flat
   profile is "nothing to compare" (`pitch_evidence._FLAT_CLASSES`).
+- **YIN's octave is not the note's octave.** At URMP's labelled notes it read
+  a viola an octave high at 7% of them, and a cello and a bass an octave low
+  at 3–4%. The chain charges an octave half a wrong note's price, so a stretch
+  of them re-routed the pairing. Partials decide which octave it is
+  (`pitch_evidence.octave_checked`), with a ratio per instrument: the
+  violin's and viola's 0.2 moved 98 of the cello's correctly read notes
+  down.
 
 ### A take that could not be sent was kept only by the native build (2026-10-06)
 

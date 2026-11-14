@@ -28,7 +28,7 @@ import logging
 import math
 from collections import defaultdict
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Literal
 
@@ -1337,6 +1337,49 @@ class _Pitch:
     track: np.ndarray | None = None
     #: Semitones from written to sounding: -12 for a double bass.
     transpose: int = 0
+    #: The waveform the track was read from, for `pitch_evidence.octave_checked`,
+    #: with the instrument's two ratios and its range. Without it, or with both
+    #: ratios 0, each pitch is the track's.
+    audio: np.ndarray | None = None
+    octave_below_ratio: float = 0.0
+    octave_above_ratio: float = 0.0
+    fmin: float = 0.0
+    fmax: float = math.inf
+    #: Each attack's pitch once read, by its time: the chain asks of the same
+    #: attacks for every reading of the page, and an octave check is an FFT.
+    _heights: dict[float, float] = field(default_factory=dict, compare=False, repr=False)
+
+    def heights(self, attacks_s: np.ndarray) -> np.ndarray | None:
+        """The pitch after each attack (`pitch_evidence.heights_at`), each moved
+        an octave where its partials say so (`pitch_evidence.octave_checked`)."""
+        if self.track is None:
+            return None
+        attacks_s = np.asarray(attacks_s, dtype=float)
+        read = pitch_evidence.heights_at(self.track, self.sr, attacks_s)
+        if self.audio is None or not (self.octave_below_ratio > 0 or self.octave_above_ratio > 0):
+            return read
+        keys = [round(float(t), 4) for t in attacks_s]
+        # The window an attack is read over depends on the gap to the next one,
+        # so a remembered pitch is only reused for the same attack before the
+        # same next attack.
+        keys = [
+            (k, keys[i + 1] if i + 1 < len(keys) else None) for i, k in enumerate(keys)
+        ]
+        todo = [i for i, k in enumerate(keys) if k not in self._heights]
+        if todo:
+            checked = pitch_evidence.octave_checked(
+                read,
+                self.audio,
+                self.sr,
+                attacks_s,
+                below_ratio=self.octave_below_ratio,
+                above_ratio=self.octave_above_ratio,
+                fmin=self.fmin,
+                fmax=self.fmax,
+            )
+            for i in todo:
+                self._heights[keys[i]] = float(checked[i])
+        return np.array([self._heights[k] for k in keys], dtype=float)
 
     def mismatch(self, attacks_s: np.ndarray, reading: Reading) -> np.ndarray:
         return pitch_evidence.mismatch(
@@ -1347,6 +1390,7 @@ class _Pitch:
             steady=self.steady,
             track=self.track,
             transpose=self.transpose,
+            heights=self.heights(attacks_s),
         )
 
 
@@ -1401,12 +1445,18 @@ def _pitch_of(
     )
     fmin, fmax = _SOUNDING_RANGE_HZ.get(instrument or "", _ANY_RANGE_HZ)
     source = heard.unfiltered if heard.unfiltered is not None else heard.y
+    settings = audio_svc.onset_settings_for(config, instrument)
     return _Pitch(
         frames=pitch_evidence.chroma(heard.y, heard.sr, low_register=low),
         sr=heard.sr,
         steady=config.pitch.steady,
         track=pitch_evidence.pitch_track(source, heard.sr, fmin=fmin, fmax=fmax),
         transpose=transpose,
+        audio=source,
+        octave_below_ratio=settings.octave_below_ratio,
+        octave_above_ratio=settings.octave_above_ratio,
+        fmin=fmin,
+        fmax=fmax,
     )
 
 

@@ -84,17 +84,31 @@ highpass_hz = 80.0
 # sound in the bottom two or three of 128 mel bands barely moves their mean.
 # It filters the waveform the tuning dashboard draws. See `audio.high_pass`.
 
+# `octave_below_ratio` and `octave_above_ratio`: when the pitch read after an
+# attack is moved an octave by its partials (`pitch_evidence.octave_checked`).
+# Below, where the odd partials of half the pitch reach this share of the
+# pitch's own; above, where the pitch's odd partials fall under this share of
+# its even ones. 0 is off. Swept at URMP's 15,212 labelled notes (2026-11-14,
+# TUNING_LOG.md): the viola read an octave high at 7.0% of them, and 0.2/0.15
+# put 133 right for 11 it put wrong. The cello's partials need the stricter
+# 0.5/0.25: at 0.2/0.15 it put 98 wrong for 19 right.
 [onset.instrument.violin]
 delta = 0.07
 highpass_hz = 0.0
+octave_below_ratio = 0.2
+octave_above_ratio = 0.15
 
 [onset.instrument.viola]
 delta = 0.07
 highpass_hz = 0.0
+octave_below_ratio = 0.2
+octave_above_ratio = 0.15
 
 [onset.instrument.cello]
 delta = 0.07
 highpass_hz = 0.0
+octave_below_ratio = 0.5
+octave_above_ratio = 0.25
 
 [onset.instrument.double_bass]
 delta = 0.05
@@ -108,6 +122,8 @@ highpass_hz = 80.0
 # (96.72% overall against 97.06%); 7 read the bass no better. TUNING_LOG.md,
 # 2026-11-13.
 vibrato_bands = 5
+octave_below_ratio = 0.5
+octave_above_ratio = 0.25
 
 # The saxophones start where the treble strings did, and for the same reason:
 # it is the path an unknown instrument already took, so adding them changed no
@@ -118,6 +134,8 @@ vibrato_bands = 5
 [onset.instrument.alto_sax]
 delta = 0.07
 highpass_hz = 0.0
+octave_below_ratio = 0.2
+octave_above_ratio = 0.15
 
 [onset.instrument.tenor_sax]
 delta = 0.07

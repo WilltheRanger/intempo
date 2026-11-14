@@ -61,6 +61,11 @@ class InstrumentOnset:
     delta: float
     highpass_hz: float
     vibrato_bands: int = 0
+    #: See `[onset.instrument]` in config.toml and
+    #: `pitch_evidence.octave_checked`. 0 means the pitch read after an attack
+    #: is never moved an octave, which is what an instrument not listed gets.
+    octave_below_ratio: float = 0.0
+    octave_above_ratio: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -239,6 +244,8 @@ def _parse(raw: dict) -> AudioConfig:
                     delta=float(row.get("delta", onset["delta"])),
                     highpass_hz=float(row.get("highpass_hz", 0.0)),
                     vibrato_bands=int(row.get("vibrato_bands", 0)),
+                    octave_below_ratio=float(row.get("octave_below_ratio", 0.0)),
+                    octave_above_ratio=float(row.get("octave_above_ratio", 0.0)),
                 )
                 for name, row in (onset.get("instrument") or {}).items()
                 if isinstance(row, dict)

@@ -361,3 +361,48 @@ def test_a_sound_with_no_pitch_class_standing_out_is_no_note_s_match() -> None:
     assert out[0].tolist() == [0.5, 0.5, 0.5]
     assert out[1, 0] == pytest.approx(0.0)
     assert out[1, 1] > 0.9
+
+
+def _partials_of(f0: float, amps: list[float], seconds: float = 0.4) -> np.ndarray:
+    t = np.arange(int(seconds * SR)) / SR
+    return sum(a * np.sin(2 * np.pi * f0 * (k + 1) * t) for k, a in enumerate(amps))
+
+
+@pytest.mark.parametrize(
+    ("f0", "amps", "read", "want"),
+    [
+        # A viola's F♯3 with a weak fundamental, read an octave up as F♯4.
+        (185.0, [0.05, 1.0, 0.8, 0.6, 0.4, 0.3], 66.0, 54.0),
+        # A real F♯4 stays F♯4: it has nothing at F♯3's odd partials.
+        (370.0, [1.0, 0.6, 0.4, 0.3, 0.2, 0.1], 66.0, 66.0),
+        # An F♯4 read an octave down as F♯3: F♯3's odd partials are empty.
+        (370.0, [1.0, 0.6, 0.4, 0.3, 0.2, 0.1], 54.0, 66.0),
+        # A real F♯3 stays F♯3.
+        (185.0, [1.0, 0.7, 0.5, 0.4, 0.3, 0.2], 54.0, 54.0),
+    ],
+)
+def test_a_pitch_read_an_octave_off_is_put_back_by_its_partials(f0, amps, read, want) -> None:
+    """**YIN reads a weak fundamental an octave up.** At URMP's labelled notes
+    (2026-11-14) a viola read an octave high at 6.5% of them, and four F♯3s
+    read as F♯4 took the first notes of a run of F♯4s in the note chain. A note
+    at f/2 has partials at the odd multiples of f/2, which a note at f never
+    has; a note at 2f has nothing at f's odd multiples."""
+    from app.services import pitch_evidence as pe
+
+    y = np.concatenate([np.zeros(int(0.1 * SR)), _partials_of(f0, amps)])
+    out = pe.octave_checked(
+        np.array([read]), y, SR, np.array([0.1]),
+        below_ratio=0.2, above_ratio=0.15, fmin=120.0, fmax=1500.0,
+    )
+    assert out[0] == want
+
+
+def test_the_octave_check_is_off_at_zero() -> None:
+    from app.services import pitch_evidence as pe
+
+    y = np.concatenate([np.zeros(int(0.1 * SR)), _partials_of(185.0, [0.05, 1.0, 0.8, 0.6, 0.4, 0.3])])
+    out = pe.octave_checked(
+        np.array([66.0]), y, SR, np.array([0.1]),
+        below_ratio=0.0, above_ratio=0.0, fmin=120.0, fmax=1500.0,
+    )
+    assert out[0] == 66.0

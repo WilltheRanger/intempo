@@ -6,6 +6,85 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (octaves) — A pitch read an octave off is put back by its partials: new `[onset.instrument.*] octave_below_ratio` and `octave_above_ratio`
+
+**Old behaviour:** each attack's pitch was the YIN track's median over the
+listening window (`pitch_evidence.heights_at`). **New:** that pitch is moved
+an octave where the window's spectrum says so (`pitch_evidence.octave_checked`):
+- **down an octave** where the odd partials of half the pitch reach
+  `octave_below_ratio` of the pitch's own first three. A note at f/2 has
+  partials there; a note at f has none.
+- **up an octave** where the pitch's odd partials fall under
+  `octave_above_ratio` of its even ones. A note at 2f has nothing at f's odd
+  multiples.
+
+Neither moves a pitch out of the instrument's range. Unlisted instruments, and
+the tenor saxophone, which no recording has measured, keep 0: off. The note
+chain reads the checked pitch (`analysis._Pitch.heights`), once per attack per
+take. Wrong-note naming compares pitch classes with the octave folded, so it
+is unaffected.
+
+**Why.** In the viola part of "He's a Pirate", four F♯3s were read as F♯4. The
+run of twenty F♯4s after them was short of attacks, so the chain gave the
+F♯3s' attacks to the first F♯4s and left the F♯3s out. The chain charges an
+octave half a wrong note's price. Across URMP, YIN at the labelled notes
+(read at the label, offline):
+
+| | notes | read right | octave high | octave low |
+|---|---|---|---|---|
+| violin | 7,606 | 7,397 | 61 | 52 |
+| viola | 2,948 | 2,628 | 206 | 41 |
+| cello | 2,341 | 2,047 | 16 | 102 |
+| double bass | 406 | 381 | 2 | 14 |
+| alto sax | 1,911 | 1,891 | 14 | 1 |
+
+### The sweep, at the labelled notes
+
+| | below / above | read right after | put right | put wrong |
+|---|---|---|---|---|
+| violin | **0.2 / 0.15** | 7,436 | 50 | 11 |
+| viola | **0.2 / 0.15** | 2,750 | 133 | 11 |
+| cello | 0.2 / 0.15 | 1,968 | 19 | 98 |
+| cello | **0.5 / 0.25** | 2,065 | 29 | 11 |
+| double bass | **0.5 / 0.25** | 385 | 6 | 2 |
+| alto sax | **0.2 / 0.15** | 1,894 | 3 | 0 |
+
+Ratios of 0.3–0.5 for `below` put right only 20–40 of the viola's octaves; at
+0.2 it is 133. Many of the cello's correctly read notes show partials at
+the odd multiples of half their pitch, which nothing here explains, so at 0.2
+the check moved 98 of them down; it takes 0.5.
+These were found on the same recordings they are measured on below: what
+generalises is the direction and the cello's difference, not the second
+decimal.
+
+### Real takes, 72 tracks, against the labels
+
+| | before | after |
+|---|---|---|
+| paired ≤ 100 ms | 13,699 (95.30%) | 13,732 (95.46%) |
+| placed ≤ 50 ms | 11,896 (82.76%) | 11,925 (82.90%) |
+| colour as the oracle's | 10,506 (73.09%) | 10,585 (73.58%) |
+| bar tempo | 2,739 (68.19%) | 2,752 (68.51%) |
+| verdict true | 51 | 52 |
+| heard | 14,374 | 14,385 |
+
+- The Pirates viola part gains 15 paired notes, in each of its two takes.
+- The fugue's viola part had read "Bars 30–50 fell behind." against the labels'
+  "Bars 45–76 ran ahead.", which looked like the re-anchor question. It had 30
+  octave errors; it now says "Bars 46–73 ran ahead.", which the labels hold.
+- 28 takes change. The largest losses are three paired notes
+  (`11_Maria/2_vc`, `26_King/3_va`, `44_K515/3_va`), and 40 colours on one
+  take whose pairing changed by one note (`12_Spring/2_vn`).
+
+### Synthetic benchmark (180 takes)
+
+97.21% → 97.24%: two more left-out notes reported, two more bars.
+
+### Regression across the six fixtures
+
+All six are identical to the committed code, every note's deviation included.
+
+
 ## 2026-11-14 (flat pitch classes) — A sound with no pitch class standing out matches no note: new `pitch_evidence._FLAT_CLASSES = 0.5`
 
 **Old behaviour:** where no pitch held after an attack, `pitch_evidence.mismatch`
