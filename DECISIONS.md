@@ -1,5 +1,48 @@
 # InTempo Decisions
 
+## 2026-11-13 — A missed note is also looked for in the pitch track, where its written pitch takes over
+
+**Context.** The first real recordings the pipeline has been measured on
+(URMP's 61 string tracks, `tools/eval/real_takes.py`) reported 5.3% of the
+notes played as missing. Three in four had no attack within 110 ms of their
+label, and five in six were a new pitch: notes changed under one bow, which a
+player does whether or not the page marks a slur. The second look
+(`analysis._recover_missed_onsets`) searched only the onset envelope, where a
+finger change makes no rise to find.
+
+**Decision.** After the attack look, a *legato look*
+(`onset_recovery.recover_by_pitch`, `analysis._recover_legato`) asks the
+pitch track the chain already computes. A missed note whose pitch differs from
+both written neighbours is found at the first stretch, inside its window,
+where its written pitch takes over and holds for 45 ms. That time is moved
+onto the attack's clock. The attack look is unchanged. `TUNING_LOG.md` has the
+numbers, and two changes to the attack look that were measured and withdrawn
+the same day.
+
+**Alternatives considered.**
+- *A more sensitive envelope.* Tried for quiet notes on 2026-09-19, when a
+  local threshold broke thirteen tests. The vibrato filter
+  (`[onset.envelope]`) exists to suppress flux from a partial that only moved
+  over, which is what a legato change is, so loosening it brings vibrato back
+  as attacks.
+- *A pitch-change detector in the first pass, for every note.* It would move
+  notes found today in every take, the six fixtures and calibration included.
+  It would also add attacks wherever a pitch moves without a written note: a
+  vibrato's swing, an ornament, a shift. In the second look it runs only where
+  the page writes a note and none was heard, which is the property that pass
+  was built around.
+- *Reading unmarked pitch changes as optional,* as a slur's interior notes
+  are. That hides notes genuinely left out, because an optional note unheard
+  is not reported missing.
+
+**Trade-offs accepted.**
+- A repeated pitch is not asked about, because a pitch the note before or
+  after also has would be found whether or not this note sounded. About a
+  third of the notes still missed are such repeats.
+- One lag (16 ms) serves every instrument. The measured offsets are 7–28 ms.
+- A note left out whose pitch the player passes through slowly can be found:
+  1.2% of such in-between pitches on the URMP sweep.
+
 ## 2026-11-13 — iPhone haptics ride on a hidden switch under the finger; pull to refresh reads Safari's rubber band
 
 **Context.** These are the "touch details" the owner approved. Each is a

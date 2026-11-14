@@ -1,0 +1,157 @@
+"""Notes changed under one bow, on a page that does not mark them slurred.
+
+A player slurs what the page leaves unmarked all the time, and an OCR pass can
+drop a slur that was printed. Either way every note is one the page requires,
+and one changed with the fingers alone has no attack for the detector to hear.
+On URMP's 61 real string tracks (2026-11-13) 5.3% of the notes played were
+reported missing, three in four with no attack within 110 ms of the labelled
+onset, five in six a different pitch from the note before. The legato look
+(`analysis._recover_legato`, `onset_recovery.recover_by_pitch`) finds them
+where their written pitch takes over; `TUNING_LOG.md` has the measurements.
+
+The take is `synth_legato_line`, the repository's model of a slurred line,
+with the slower finger change of a real one: its pitch glides over 50 ms, and
+the detector hears 26 of the 32 changes.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+import pytest
+
+from app.services import analysis
+from app.services.analysis import analyze
+from app.services.score_schema import Measure, Note, ScoreJson
+from app.tests.audio_helpers import synth_legato_line
+
+SR = 22050
+BPM = 80.0
+EIGHTH = 60.0 / BPM / 2
+_SCALE = [62, 64, 66, 67, 69, 71, 73, 74, 73, 71, 69, 67, 66, 64, 62, 64]
+_NAMES = {62: "D4", 64: "E4", 66: "F#4", 67: "G4", 69: "A4", 71: "B4", 73: "C#5", 74: "D5"}
+TIMES = [0.6 + i * EIGHTH for i in range(32)]
+
+
+def _page() -> ScoreJson:
+    """Four bars of eighths up and down a D major scale, with no slurs."""
+    return ScoreJson(
+        clef="treble",
+        time_signature="4/4",
+        ocr_confidence=0.9,
+        measures=[
+            Measure(
+                measure_number=m + 1,
+                notes=[
+                    Note(pitch=_NAMES[_SCALE[(m * 8 + i) % 16]], duration="eighth")
+                    for i in range(8)
+                ],
+                slurs=[],
+            )
+            for m in range(4)
+        ],
+    )
+
+
+def _hz(midi: float) -> float:
+    return 440.0 * 2 ** ((midi - 69) / 12)
+
+
+def _take(pitches: list[int], *, glide_s: float = 0.05) -> np.ndarray:
+    """The line slurred four notes to a bow, then a second of room tone: a
+    take with no silence in it has no floor to judge a note's level by."""
+    y = synth_legato_line(
+        TIMES, [_hz(p) for p in pitches], TIMES[::4], glide_s=glide_s, tail_s=0.4
+    )
+    room = np.random.default_rng(0).normal(0, 3e-4, SR)
+    return np.concatenate([y, room]).astype(np.float32)
+
+
+def _scale() -> list[int]:
+    return [_SCALE[i % 16] for i in range(32)]
+
+
+def test_slurred_notes_the_detector_did_not_hear_are_found_by_their_pitch() -> None:
+    trace: dict = {}
+    result = analyze((_take(_scale()), SR), _page(), BPM, instrument="violin", trace=trace)
+
+    detected = np.asarray(trace["detected_s"])
+    heard = sum(bool(np.any(np.abs(detected - t) < 0.06)) for t in TIMES)
+    assert heard < 32, "the first pass hears every change: this tests nothing"
+    assert trace["recovered"] > 0
+    assert result.status == "ok"
+    assert result.n_missed_notes == 0
+    assert len(result.per_note) == 32
+    assert result.verdict.startswith("Steady"), result.verdict
+
+
+def test_a_note_found_by_its_pitch_is_timed_like_its_neighbours() -> None:
+    """On the attack's clock: a played-on-time line reads on time, note by
+    note, whichever look found each note."""
+    result = analyze((_take(_scale()), SR), _page(), BPM, instrument="violin")
+
+    deltas = np.array([n.delta_ms for n in result.per_note])
+    assert np.max(np.abs(deltas - np.median(deltas))) < 40.0, deltas
+
+
+def _without_the_attack_look(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Hold the attack look off, so what is tested is the legato look alone."""
+    monkeypatch.setattr(
+        analysis, "_recover_attacks", lambda *a, **k: np.array([], dtype=float)
+    )
+
+
+def test_the_legato_look_does_not_find_a_note_left_out_of_a_slurred_line(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The note before held on through it: the left-out note's pitch never
+    sounds, so the legato look finds nothing there."""
+    _without_the_attack_look(monkeypatch)
+    pitches = _scale()
+    pitches[5] = pitches[4]  # B4 not played: A4 held on into C#5
+
+    result = analyze((_take(pitches), SR), _page(), BPM, instrument="violin")
+
+    assert result.status == "ok"
+    assert 5 not in {n.global_index for n in result.per_note}
+
+
+@pytest.mark.parametrize("left_out", [9, 21])
+def test_a_note_left_out_between_two_others_is_not_heard_in_the_shift(
+    monkeypatch: pytest.MonkeyPatch, left_out: int
+) -> None:
+    """Between a note and the one after the hole, the shift passes the
+    left-out note's pitch on its way — for a few milliseconds, not a note."""
+    _without_the_attack_look(monkeypatch)
+    pitches = _scale()
+    pitches[left_out] = pitches[left_out - 1]
+
+    result = analyze((_take(pitches, glide_s=0.03), SR), _page(), BPM, instrument="violin")
+
+    assert result.status == "ok"
+    assert left_out not in {n.global_index for n in result.per_note}
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="the attack look recovers a vibrato peak inside the held note; see the docstring",
+)
+def test_a_note_left_out_of_a_slurred_line_is_reported_missing() -> None:
+    """**Known to fail, and not because of the legato look.** The attack look
+    takes any local maximum of the envelope near where a missed note belongs,
+    above 1.5% of the take's peak, and the held note's vibrato makes one: the
+    left-out B4 is "recovered" at 2.48 s inside the A4 held through it.
+
+    A guard that dropped an attack whose pitch is the same either side of it
+    and not the missed note's fixed this take, and was withdrawn the same day
+    (2026-11-13, `TUNING_LOG.md`). In a live room a quiet note under a loud
+    note's tail has the tail's pitch either side of it as the pitch track hears
+    it, and the guard threw those notes away: `test_degraded_audio`'s
+    room-swallowed take went back to being refused. Telling the two apart
+    needs more than the pitch track's loudest pitch.
+    """
+    pitches = _scale()
+    pitches[5] = pitches[4]
+
+    result = analyze((_take(pitches), SR), _page(), BPM, instrument="violin")
+
+    assert result.n_missed_notes == 1

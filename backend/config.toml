@@ -166,6 +166,27 @@ min_level_db = 10.0
 # note 20 dB quieter. Twelve is a margin in that gap, not a tuned point. See
 # TUNING_LOG.md, 2026-11-13.
 max_fall_db = 12.0
+# The legato look: a note no attack marks, found where its written pitch takes
+# over in the pitch track (`onset_recovery.recover_by_pitch`). Under one bow a
+# player changes notes with the fingers alone, and on URMP's 61 real string
+# tracks 5.3% of the notes played were reported missing — three in four with
+# no attack within 110 ms, five in six a new pitch. See TUNING_LOG.md,
+# 2026-11-13, for every number below.
+#
+# How long the written pitch must hold, in ms. Four pitch frames. Swept on the
+# URMP labels: 35 ms finds 96.3% of the notes and finds a pitch that was never
+# played, between two that were, 1.8% of the time; 46 ms 95.4% and 1.2%;
+# 70 ms 93.5% and 0.6%.
+pitch_hold_ms = 45.0
+# How near the written pitch counts as it, in semitones: `pitch_evidence`'s
+# own "this is that note, played in or out of tune".
+pitch_tolerance_st = 0.6
+# How far after the pitch takes over an attack is placed, in ms, so a note
+# found this way sits on the same clock as every note found by its attack.
+# Measured against the URMP labels: attacks land a median 16.5 ms after the
+# labelled onset, pitch takeovers 0.3 ms after it (violin 14, viola and cello
+# 21, bass 28 ms apart).
+pitch_lag_ms = 16.0
 
 [onset.envelope]
 # What each frame of the onset envelope is compared with. See

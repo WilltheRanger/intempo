@@ -6,6 +6,142 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-13 (real recordings) — Slurred notes found by their pitch: new `[onset.recovery] pitch_hold_ms = 45.0`, `pitch_tolerance_st = 0.6`, `pitch_lag_ms = 16.0`
+
+**The first measurement against real recordings.** Every number above this
+entry, back to July, came from synthesis or click tracks. URMP's 61 string
+tracks — 34 violin, 13 viola, 11 cello, 3 double bass, each part recorded
+alone by a student player, with the score it was played from and a
+hand-checked onset and pitch for every note — are now read by
+`tools/eval/real_takes.py`, which scores each reading against the app's own
+rules applied to the labels (as `accuracy_bench.py` does) and against the
+labels directly.
+
+**Old values:** none; the three keys are new. They belong to a new part of the
+second look, the *legato look* (`onset_recovery.recover_by_pitch`,
+`analysis._recover_legato`). A missed note whose pitch differs from both
+written neighbours is looked for where its pitch takes over: after the note
+before it, and before both the next paired note and the next written note's
+place. It is kept if the pitch holds for `pitch_hold_ms` within
+`pitch_tolerance_st`. It is then moved `pitch_lag_ms` later, onto the
+attack's clock, and must pass the attack look's two level guards. The attack
+look itself is unchanged.
+
+**Why.** Before this, 683 of the 12,780 notes played in the analysed takes
+(5.3%) were reported missing. Three in four had no attack within 110 ms of
+their label, and five in six were a new pitch. These are notes changed under
+one bow, which no envelope threshold finds.
+
+The hold, swept on the labels directly (7,023 notes whose pitch differs from
+both neighbours; "false" is a pitch that was never played, between two that
+were, found anyway):
+
+| hold | found | vs label (median) | within 50 ms | false |
+|---|---|---|---|---|
+| 35 ms | 96.3% | +0.4 ms | 90.6% | 1.8% |
+| **46 ms** | **95.4%** | **+0.4 ms** | **90.8%** | **1.2%** |
+| 70 ms | 93.5% | +0.4 ms | 91.4% | 0.6% |
+
+**The lag.** On 5,748 notes found both ways, attacks land a median 16.5 ms
+after the label (MAD 15.1) and pitch takeovers 0.3 ms after it (MAD 17.1).
+The attack-minus-takeover median varies by instrument: violin 7, cello 16,
+viola 19 and bass 28 ms. One value for all of them is a few milliseconds off
+for each, well inside either method's own scatter.
+
+### Real takes, before → after (all 61 tracks, against the labels)
+
+| | heard | placed ≤ 50 ms | paired ≤ 100 ms | colour as the oracle's | bar tempo |
+|---|---|---|---|---|---|
+| before | 92.11% | 85.29% | 92.88% | 75.01% | 63.50% |
+| **after** | **94.81%** | **85.51%** | **93.15%** | **74.83%** | **64.41%** |
+| violin | 94.71 → 97.72% | 89.27 → 89.68% | 95.04 → 95.34% | 78.58 → 78.13% | 68.75 → 70.11% |
+| viola | 93.86 → 95.75% | 84.66 → 84.64% | 94.89 → 95.09% | 71.59 → 72.18% | 66.86 → 67.09% |
+| cello | 80.28 → 83.37% | 70.66 → 70.67% | 80.89 → 81.29% | 62.15 → 61.96% | 37.42 → 38.26% |
+| double bass | 99.50 → 100.00% | 87.28 → 87.34% | 97.01 → 97.02% | 95.26 → 95.29% | 89.73% |
+
+- Notes reported missing in the analysed takes fell from 683 to 329 (5.3% →
+  2.6%).
+- The other columns are shares of a larger base after. 330 more notes are
+  placed within 50 ms, and 243 more are coloured as the oracle colours them.
+- No take hears, pairs or places fewer notes than it did.
+- Five give fewer notes the oracle's colour. Two lose one note each. The
+  Rondeau's second violin part, which appears in three of URMP's pieces,
+  loses 22 in each (201 → 179). That loss is the re-anchor below.
+
+Against the oracle, as the synthetic benchmark scores, from status 60 of 61:
+
+| metric | before | after |
+|---|---|---|
+| missed | 92.11% | 94.81% |
+| verdict | 81.97% | 80.33% |
+| notes, 12 ms | 14.54% | 15.21% |
+| bars | 12.23% | 12.71% |
+| wrong notes | 19.35% | 19.35% |
+
+- One verdict went from right to wrong: `44_K515/1_vn`, a four-minute part.
+  With 94 more of its notes heard, the run of drift it names moved to other
+  bars.
+- At 12 ms the notes and bars rows measure the labels' own scatter more than
+  the reading.
+
+### Synthetic benchmark (180 takes)
+
+97.18% → 97.18%. Two takes changed, both with notes left out:
+- `cello/bowed/132/missed/reverb/1118` is right now: note 9 is found by its
+  pitch.
+- `double_bass/pizz/60/missed/dynamics/1179` has one more mistake. Its pairing
+  was already a note out. The legato look found note 18 late, because the
+  pitch track read the pluck's first frames an octave low, and the late note
+  went to the next one.
+
+### Regression across the six fixtures
+
+All six are identical to the committed code: status, quality, missed, extra,
+verdict and every per-note deviation.
+
+### Tried, measured and withdrawn the same day
+
+- **A guard against vibrato peaks in held notes.** When a note is left out,
+  the attack look takes a vibrato peak in the note before it. The guard
+  dropped an attack whose pitch was the same either side of it and was not
+  the missed note's. That cured it on the slurred line in
+  `test_legato_notes.py`. On `test_degraded_audio`'s room-swallowed take it
+  threw away genuine quiet notes: one more was missed with the single-line
+  prediction, and with the local one below the take was refused outright. In
+  a live room a quiet note under a loud note's tail has the tail's pitch on
+  both sides, as the pitch track hears it, so the guard dropped exactly the
+  notes the attack look exists to find. Telling the two apart
+  needs more than the loudest pitch. The case is held as a strict xfail.
+- **Predicting a missed note from the pace around it.** The attack look
+  fits one line through the whole take, and on a long take with rubato that
+  line is up to two seconds from the player. A line through the four paired
+  notes on either side follows the player instead. It found 13 more notes but
+  placed 53 fewer within 50 ms, cost five benchmark items, and broke
+  `24_Pirates/3_va` in both copies (placed 79 → 38 and 76 → 45). Centred on
+  where a left-out note belongs, the search finds a vibrato peak there. The
+  single line's inaccuracy had been protecting against that by accident.
+
+### What this does not fix
+
+- **The re-anchor rule on a player with rubato.** Per-note colours agree
+  with the oracle's:
+  - 90.6% on the 10 takes where neither the app nor the oracle re-anchors;
+  - 74.2% on the 50 where either does.
+
+  The two re-anchor at different notes, and every note up to the next
+  re-anchor moves with each one: the app 24 times against the oracle's 11 on
+  one viola take, never against twice on a violin take. This is not mainly
+  the detector's scatter, since the oracle's own spread is 15–59 ms, much
+  like the app's. Real players' timing sits that close to the threshold. What
+  a re-anchor should mean for a player who shapes every phrase is the owner's
+  call, not a threshold.
+- **The cello.** It is the weakest instrument on every measure, and one take
+  is refused: `44_K515/5_vc`, 3.6 minutes and 360 notes. Its first pass hears
+  56% of the notes, and it drifts ±1.5 s from any single tempo.
+- **The 329 notes still reported missing.** About a third are the same pitch
+  as the note before, so neither an attack nor a pitch change marks them.
+  About a third have an attack within 50 ms that the pairing gave elsewhere.
+
 ## 2026-11-13 (after the pulse) — The double bass's vibrato filter: new `[onset.instrument.double_bass] vibrato_bands = 5`
 
 **Old value:** every instrument compared each band above 600 Hz with the

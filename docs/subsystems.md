@@ -2136,6 +2136,42 @@ nothing else covers `backend/`. Named here rather than left to be found.
   on tempo in every bar and a beat behind by the end, and the title says so.
 - TUNING_LOG.md 2026-09-25 has every number.
 
+### Real recordings, measured at last (2026-11-13)
+
+`tools/eval/real_takes.py` reads URMP's 61 string tracks. Each part was
+recorded alone by a student player, with its score and a hand-checked onset
+and pitch for every note. Five things it taught, each of which cost a wrong
+number first:
+
+- **A dataset's truth needs the same scrutiny as the pipeline's output.**
+  - URMP's MIDI holds the double bass at sounding pitch, and the app reads a
+    bass part as written, an octave up. Converted as it stood, 18 of 162 notes
+    paired.
+  - A labelled pitch a semitone off the written one is not a wrong note. 78%
+    of them were 50–70 cents out: intonation, or a label averaged across a
+    shift.
+  - A written note with no label is not necessarily a note left out. K515's
+    second violin part has 92 written notes the labels have no note for, so
+    they are scored neither way.
+- **Players slur what the page does not mark.** Most notes reported missing
+  on real takes were changed under one bow. They have no attack, so no
+  threshold finds them. The pitch track does: see the legato look,
+  `DECISIONS.md` 2026-11-13.
+- **Nobody plays three minutes at one tempo.** One line through a long take
+  is up to two seconds from the player. Yet predicting the second look's
+  search from the pace around the note was worse, not better: centred on
+  where a left-out note belongs, the search finds a vibrato peak there. The
+  single line's inaccuracy had been protecting against that by accident.
+  `TUNING_LOG.md` has both measurements.
+- **The pulse re-anchor is the least stable rule on real playing.** On a take
+  with rubato the app and the oracle re-anchor at different notes, and every
+  later note's colour moves with each one. Colours agree 91% where neither
+  re-anchors and 74% where either does. It is open in `TUNING_LOG.md`.
+- **Never beside the test suite.** A three-minute take holds its
+  spectrogram, pitch track and envelope at once. Three such workers beside
+  `pytest` exhausted the 16 GB session container, which restarted without
+  warning. Alone, three are fine.
+
 ### A take that could not be sent was kept only by the native build (2026-10-06)
 
 The take queue (`lib/sync/`) keeps a take whose send failed and retries it on

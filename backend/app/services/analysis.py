@@ -51,6 +51,7 @@ from app.services.alignment import (
     apply_fuzzy_match,
     build_timeline,
     CleanedAlignment,
+    ExpectedNote,
     ExpectedTimeline,
     is_alignment_broken,
     closest_expected_gap,
@@ -68,7 +69,11 @@ from app.services.insights import (
     tempo_across_bars,
     tempo_by_bar,
 )
-from app.services.onset_recovery import predict_audio_times, recover_onsets
+from app.services.onset_recovery import (
+    predict_audio_times,
+    recover_by_pitch,
+    recover_onsets,
+)
 from app.services.classification import (
     skipped_notes,
     Band,
@@ -967,6 +972,8 @@ def _recover_missed_onsets(
     min_gap_s: float | None,
     config: AudioConfig,
     by_pitch: bool = False,
+    pitch: _Pitch | None = None,
+    notes: list[ExpectedNote] | None = None,
 ) -> np.ndarray:
     """A second look, only where the page writes a note and none was heard.
 
@@ -981,6 +988,11 @@ def _recover_missed_onsets(
     memory — and it buys leaving `detect_onsets`, `Heard` and both of their
     call sites exactly as they were. A signature change there would touch the
     calibration path too, which has no score and no use for any of this.
+
+    Two looks, in turn: for an attack the first pass was not confident
+    enough to report, and then — given the take's `pitch` and the page's
+    `notes` — for a note no attack marks, where its written pitch takes over
+    (`_recover_legato`).
     """
     if not cleaned.missed_expected or not cleaned.matched:
         return np.array([], dtype=float)
@@ -995,6 +1007,37 @@ def _recover_missed_onsets(
     if not missed:
         return np.array([], dtype=float)
 
+    found = _recover_attacks(
+        heard, cleaned, onsets, expected, missed, min_gap_s=min_gap_s, config=config
+    )
+    if pitch is None or notes is None:
+        return found
+    legato = _recover_legato(
+        heard,
+        cleaned,
+        onsets,
+        expected,
+        missed,
+        np.concatenate([onsets, found]),
+        pitch=pitch,
+        notes=notes,
+        config=config,
+    )
+    return np.sort(np.concatenate([found, legato])) if legato.size else found
+
+
+def _recover_attacks(
+    heard: Heard,
+    cleaned: CleanedAlignment,
+    onsets: np.ndarray,
+    expected: np.ndarray,
+    missed: list[int],
+    *,
+    min_gap_s: float | None,
+    config: AudioConfig,
+) -> np.ndarray:
+    """The attack look: a local maximum of the onset envelope near where each
+    missed note belongs (`onset_recovery.recover_onsets`)."""
     predicted = predict_audio_times(cleaned.matched, onsets, expected, missed)
     if predicted.size == 0:
         return np.array([], dtype=float)
@@ -1053,6 +1096,112 @@ def _recover_missed_onsets(
     # Placed on the same fine grid as everything the first pass reported, so a
     # recovered note is not the one note in the take still sitting on a frame.
     return audio_svc.refine_onset_times(emphasised, heard.sr, found)
+
+
+#: After the note before, how long its own pitch is left to settle before the
+#: next note's is looked for; and before the note after, how much of the gap is
+#: left to it. Both in seconds.
+_LEGATO_SETTLE_S = 0.04
+_LEGATO_MARGIN_S = 0.02
+
+
+def _recover_legato(
+    heard: Heard,
+    cleaned: CleanedAlignment,
+    onsets: np.ndarray,
+    expected: np.ndarray,
+    missed: list[int],
+    taken: np.ndarray,
+    *,
+    pitch: _Pitch,
+    notes: list[ExpectedNote],
+    config: AudioConfig,
+) -> np.ndarray:
+    """The legato look: missed notes found where their written pitch takes
+    over, on the recording's clock (`onsets`, `taken`) and the attack's.
+
+    Only a note whose sounding pitch differs from both written neighbours is
+    asked, since a pitch the note before or after also has would be found
+    whether this note sounded or not. Each is looked for after the note before
+    it — paired, or found here a moment ago, so a slurred run is found note by
+    note — and before the next paired note and the next written note's place
+    on the line through the take's own pace. See `onset_recovery.recover_by_pitch`
+    and `[onset.recovery]` in config.toml.
+    """
+    if pitch.track is None or not cleaned.matched:
+        return np.array([], dtype=float)
+    onset_cfg = config.onset
+    at = {e: float(onsets[d]) for d, e in cleaned.matched}
+    known = sorted(at)
+    det = np.array([at[e] for e in known], dtype=float)
+    exp = np.array([expected[e] for e in known], dtype=float)
+    rate, offset = (
+        np.polyfit(exp, det, 1) if len(known) >= 2 and float(np.ptp(exp)) > 0 else (1.0, 0.0)
+    )
+    end_of_take = heard.y.size / heard.sr if heard.sr else 0.0
+
+    def sounding(e: int) -> float | None:
+        m = pitch_evidence.midi(notes[e].pitch) if 0 <= e < len(notes) else None
+        return None if m is None else float(m + pitch.transpose)
+
+    def place(e: int) -> float:
+        """Where written note `e` belongs: between the paired notes around it,
+        or on the take's line past the last of them."""
+        before = [k for k in known if k <= e]
+        after = [k for k in known if k > e]
+        if before and after:
+            p, n = before[-1], after[0]
+            span = expected[n] - expected[p]
+            share = (expected[e] - expected[p]) / span if span > 0 else 0.0
+            return at[p] + share * (at[n] - at[p])
+        return float(rate * expected[e] + offset)
+
+    frame_s = pitch_evidence.HOP / pitch.sr
+    lag = onset_cfg.recovery_pitch_lag_ms / 1000.0
+    found: list[float] = []
+    previous: dict[int, float] = dict(at)
+    for e in sorted(missed):
+        target = sounding(e)
+        if target is None:
+            continue
+        neighbours = [sounding(k) for k in (e - 1, e + 1) if 0 <= k < len(notes)]
+        if any(n is not None and abs(n - target) < 1.0 for n in neighbours):
+            continue
+        before = [k for k in previous if k < e]
+        if not before:
+            continue
+        # On the pitch's clock, which runs `lag` ahead of the attack's.
+        start = previous[max(before)] - lag + _LEGATO_SETTLE_S
+        later = [k for k in known if k > e]
+        end = (at[later[0]] - lag - _LEGATO_MARGIN_S) if later else end_of_take
+        if e + 1 < len(notes):
+            end = min(end, place(e + 1) - lag)
+        (when,) = recover_by_pitch(
+            pitch.track,
+            frame_s=frame_s,
+            windows=[(start, end)],
+            targets=[target],
+            hold_s=onset_cfg.recovery_pitch_hold_ms / 1000.0,
+            tolerance_st=onset_cfg.recovery_pitch_tolerance_st,
+        )
+        if when is None:
+            continue
+        placed = when + lag
+        if np.any(np.abs(np.asarray(taken, dtype=float) - placed) < onset_cfg.wait_ms / 1000.0):
+            continue
+        previous[e] = placed
+        found.append(placed)
+    if not found:
+        return np.array([], dtype=float)
+    out = np.array(sorted(found), dtype=float)
+    # The same two guards as the attack look: sounding, and not a release.
+    loud = audio_svc.level_above_floor_db(heard.y, heard.sr, out) >= onset_cfg.recovery_min_level_db
+    out = out[loud]
+    if out.size:
+        out = out[
+            audio_svc.level_change_db(heard.y, heard.sr, out) >= -onset_cfg.recovery_max_fall_db
+        ]
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -2353,6 +2502,8 @@ def _analyze_take(
         min_gap_s=closest_expected_gap(expected, optional=reading.grace),
         config=cfg,
         by_pitch=chained is not None,
+        pitch=pitch,
+        notes=reading.timeline.notes,
     ) - origin
     _traced(trace, recovered=int(recovered.size))
     if recovered.size:

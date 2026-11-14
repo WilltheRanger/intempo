@@ -133,3 +133,65 @@ def recover_onsets(
         found.append(at)
 
     return np.array(sorted(found), dtype=float)
+
+
+def recover_by_pitch(
+    track: np.ndarray,
+    *,
+    frame_s: float,
+    windows: list[tuple[float, float]],
+    targets: list[float],
+    hold_s: float,
+    tolerance_st: float,
+) -> list[float | None]:
+    """Where each wanted note's pitch first takes over, inside its window.
+
+    **For the note no attack marks: a slurred one.** Under one bow a player
+    changes notes with the fingers alone, so nothing the onset envelope
+    measures has to rise — and on real bowed strings it often does not.
+    Measured on URMP's 61 string tracks (2026-11-13): 5.3% of the notes
+    played were reported missing, three in four of them with no attack within
+    110 ms, and five in six a different pitch from the note before. The pitch
+    track hears them: the written pitch arrives and stays.
+
+    So for each window — after the note before it, before the note after it —
+    this returns the start of the first stretch, at least `hold_s` long, in
+    which the sounding pitch (`pitch_evidence.pitch_track`, fractional MIDI,
+    one value per `frame_s`) stays within `tolerance_st` of `targets[i]`.
+    None where it never does, which is what a note that was not played leaves.
+
+    **A stretch that takes over, not one already under way.** One the window
+    opens inside belongs to whatever sounded before it — an earlier note at
+    this pitch, still ringing — so it counts only once something else, or
+    nothing, has sounded in between.
+
+    The caller chooses which notes may be asked — only one whose pitch differs
+    from both written neighbours, since a pitch the note before or after also
+    has would be found there whether this note sounded or not — and moves the
+    time onto the attack clock: a pitch takes over where the label puts the
+    note, an attack is placed a few tens of milliseconds into it.
+    """
+    out: list[float | None] = []
+    hold = max(1, int(np.ceil(hold_s / frame_s - 1e-9)))
+    for (start_s, end_s), target in zip(windows, targets, strict=True):
+        first = max(0, int(np.ceil(start_s / frame_s)))
+        last = min(track.size, int(np.floor(end_s / frame_s)) + 1)
+        if last - first < hold:
+            out.append(None)
+            continue
+        window = track[first:last]
+        near = np.isfinite(window) & (np.abs(window - target) <= tolerance_st)
+        found: float | None = None
+        armed = False
+        run = 0
+        for k in range(near.size):
+            if not near[k]:
+                armed, run = True, 0
+                continue
+            if armed:
+                run += 1
+                if run >= hold:
+                    found = (first + k - hold + 1) * frame_s
+                    break
+        out.append(found)
+    return out
