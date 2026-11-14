@@ -6,6 +6,33 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (the end of a take) — The room after the last note, paired as it: measured, not kept. No thresholds changed.
+
+**The case.** Jerusalem's saxophone ends on two written B4s, played as one.
+The chain paired the first with the played B4, and the second, the final
+three-beat note, with a breath 3.8 s after it. That breath read B4 and sat
+4.6 dB above the room. The last three bars read at 62 rather than the
+labels' 55. Pirates' second violin had its last note paired 1.9 s late, at
+2.2 dB above the room.
+
+**Two rules tried.**
+- **By the last interval.** Drop a final pairing that comes far later than
+  the take's pace puts it. On the 72 takes the ratio of the final interval
+  to its written length at the local pace did not separate the cases.
+  Jerusalem was 3.5, Pirates 7.1 and Jesus 3.2, all mispaired. The Miserere
+  saxophone's final note, played correctly after a long ritardando, was
+  4.6.
+- **By level.** Drop the pairings at the end whose sound is less than
+  `[onset.recovery] min_level_db` (10 dB) above the room, the floor a
+  recovered attack must clear. This dropped both bad pairings and kept the
+  Miserere's (23 dB). It also dropped real final notes in 14 takes, 1 to 4
+  each: pieces often end softly, near the room. Real heard fell from
+  97.83% to 97.69%. Verdict true was unchanged at 65, and Jerusalem's
+  sentence changed but stayed false.
+
+Neither is in. Telling a soft last note from the room after it needs more
+than its level or its time.
+
 ## 2026-11-14 (short runs) — In a long take, a run of one or two bars is named only when severe: new `[tolerance] long_take_bars = 16`, `long_take_min_bars = 3`
 
 **Old behaviour:** the bar rule named the longest run of bars off the target
