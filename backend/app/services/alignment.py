@@ -2336,7 +2336,21 @@ def _chain_path(
 #: A running median over this many, so one attack paired with the wrong note
 #: of a repeated pitch cannot move where its neighbours are expected — and
 #: short enough that a hesitation moves them within a bar or so.
-CHAIN_PLACEMENT_NOTES = 9
+#:
+#: **13, not 9** (2026-11-14), swept on the 72 real takes once the time cost
+#: weighed twice as much (`CHAIN_TIME_WEIGHT`), since that is what made the
+#: placement matter more (heard, paired, colour, bar tempo, verdict true):
+#:
+#:     5     14,728  14,086  11,181  2,901  65
+#:     9     14,745  14,163  11,455  2,918  68
+#:     13    14,747  14,197  11,542  2,924  69
+#:     17    14,738  14,179  11,530  2,913  69
+#:     25    14,735  14,176  11,557  2,917  69
+#:
+#: Fewer, a slide of a few notes moves the median it is measured against;
+#: more, a real change of pace takes longer to be followed. The synthetic set
+#: is identical at 9 and 13.
+CHAIN_PLACEMENT_NOTES = 13
 
 
 def _where_the_chain_puts(

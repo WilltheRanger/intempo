@@ -6,6 +6,30 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (the chain's placement) — `alignment.CHAIN_PLACEMENT_NOTES` 9 → 13
+
+Once `(the chain's time weight)` made an attack's distance from its note
+weigh twice as much, where the chain puts each note mattered more. It puts it
+at the take's pace from a running median of the placed notes' offsets, over
+`CHAIN_PLACEMENT_NOTES` of them. Swept on the 72 real takes at the new
+weight:
+
+| notes | heard | placed (50 ms) | paired (100 ms) | colour | bar tempo | verdict true |
+|---|---|---|---|---|---|---|
+| 5 | 14,728 | 12,248 | 14,086 | 11,181 | 2,901 | 65 |
+| 9 (was) | 14,745 | 12,315 | 14,163 | 11,455 | 2,918 | 68 |
+| **13** | **14,747** | **12,341** | **14,197** | 11,542 (78.27%) | **2,924** | **69** |
+| 17 | 14,738 | 12,328 | 14,179 | 11,530 | 2,913 | 69 |
+| 25 | 14,735 | 12,320 | 14,176 | 11,557 | 2,917 | 69 |
+
+13 is best or level on every row but colour, where 25 is 15 notes ahead. The
+sentence that becomes true is K515's second violin, one of the five false
+ones: "Bars 77–81 went at 233." (the labels 238) is now "Bars 77–80 went at
+225.", which the labels hold. Strings are now true in 60 of 61.
+
+**Synthetic:** identical to the 0.6 weight at 9 (97.78%).
+**Regression, all six clips:** identical.
+
 ## 2026-11-14 (the chain's time weight) — `alignment.CHAIN_TIME_WEIGHT` 0.3 → 0.6 a played gap
 
 **Why.** `b7e3103` took the saturation off the chain's time cost and left
