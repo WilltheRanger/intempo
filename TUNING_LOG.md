@@ -6,6 +6,59 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (pace runs) — Re-anchoring after a sustained change of pace, and a quarter-beat floor: measured, not kept. No thresholds changed.
+
+**The defect looked at.** The re-anchor limit is a fixed fraction of a beat per
+interval (`disturbance_floor_beats`, a sixth). The same 15% slowdown is
+0.30 beat on a half note and 0.15 on a quarter, so a slowdown re-anchors on
+its half notes and not its quarters, and a drag made only of quarters never
+re-anchors: every bar after it reads late, which is what the 2026-09 rule was
+written to stop. It is also the synthetic set's knife edge. Its drag and rush
+make every quarter 15% long or short, just under the floor, so a few tenths
+of a millisecond decide whole stretches.
+
+**Pace runs.** A run of intervals at least 4–5% off the take's usual pace,
+in one direction, whose drift adds up past the limit, is treated as a
+disturbed run. The whole drag then counts on its total of about a beat, far
+from any edge. Replayed offline on each take's captured offsets (synthetic:
+timing misses among paired notes; real: notes coloured as the labels' reading
+colours them, 14,723):
+
+| | synthetic misses | real colour |
+|---|---|---|
+| current rule | 221 | 75.48% |
+| pace runs, drift past 1 limit | 138 | 66.79% |
+| … past 3 limits | 138 | 74.50% |
+| … past 5 limits | 187 | 74.88% |
+| … past 8 limits | 221 | 74.93% |
+| pace smoothed over 1–2 beats (5–10%) | 139–162 | 66.25–72.06% |
+| floor 0.25 alone | 205 | 76.93% |
+| floor 0.5 alone | 161 | 79.89% |
+| **floor 0.25 + pace runs past 3 limits** | **157–158** | **75.89–76.26%** |
+
+Every pace-run version costs real colour except with the floor raised; even
+one that gains nothing on synthesis (8 limits) loses 0.55 points. On real
+rubato every extra re-anchor is another place for the app and the labels to
+split. The first version, run in full, also took real verdicts 66 → 64.
+
+**The quarter-beat floor with pace runs, run in full:** synthetic 97.71 →
+98.22% (notes 96.28 → 97.28%, bars 96.39 → 97.43%), and every test in
+`test_pulse_anchor.py` passes with it. But verdicts fell 178 → 174 of 180.
+Three steady takes, and one missing a note, were told "Bar 6 went at 203."
+(and alike). Each has two notes the app paired ~0.24 beat early, a hearing
+glitch the truth does not have. **The sixth-of-a-beat floor absorbs such a
+glitch:** it re-anchors around it, so those notes read on time and the
+sentence stays "Steady all the way through." A quarter-beat floor lets the
+glitch through to the note rule. Applying the change to the feedback
+reference alone, leaving alignment quality on the current rule, gives the same
+result, so it is not the pairing. Raising the floor would need glitches
+handled on their own first.
+
+Not kept. On these numbers the re-anchor's cliff stays, and with it most of
+the synthetic set's gap to 99%. A longer pace window for the level (10, 12 or
+16 notes) and a longer level (8 notes) were replayed too: within noise of the
+current 8 and 6 on both sets.
+
 ## 2026-11-14 (moving beat, third) — The moving local beat, measured on `1740049`: not switched. No thresholds changed.
 
 Measured a third time, on the head that reads a stretch's level from all six of
