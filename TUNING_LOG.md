@@ -164,6 +164,22 @@ out of place)`: in Spring's second violin, bar 18, note 146's own E5 attack
 went to note 148, the next E5, and `_beside_a_hole` only looks at the paired
 note nearest a hole on each side, which there read F-sharp 5 both.
 
+**And, after `191520b`, the wider window as a third look with the pitch as
+evidence**: the attack look left as it was, then each still-missing note
+searched in its own room, an attack kept only where the pitch after it is
+the note's own and not its neighbours'. Real heard 14,747 → 14,748, colour
+12,358 → 12,351, synthetic identical: the 15 notes the wider window had
+found do not carry their own pitch at the attack it found, so they were not
+the clean finds they looked. Not kept.
+
+**And the detector's minimum between attacks, 60 → 40 ms** (`[onset]
+wait_ms`), for the 65 fast notes. Real heard 14,747 → 14,756 (five in K515's
+first violin), colour +31, bar tempo −4, every sentence the same; synthetic
+97.85 → 97.84% (`violin/bowed/132/rush/reverb/1008` gains 4 notes,
+`double_bass/bowed/132/missed/noise/1147` loses 4 and 2 bars). The
+detector's 23 ms frames, not the guard, are what hold the turns back. Not
+kept.
+
 **Also measured: predicting a missed note from the paired notes either side**
 rather than the take's line (`predict_audio_times`). It refuses
 `test_degraded_audio`'s room-swallowed take again, at quality 0.000: there,
