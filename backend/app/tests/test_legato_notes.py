@@ -93,6 +93,30 @@ def test_a_note_found_by_its_pitch_is_timed_like_its_neighbours() -> None:
     assert np.max(np.abs(deltas - np.median(deltas))) < 40.0, deltas
 
 
+@pytest.mark.parametrize(("above_floor_db", "missed"), [(5.0, 0), (2.0, 4)])
+def test_a_note_found_by_its_pitch_need_only_sound_above_the_room(
+    monkeypatch: pytest.MonkeyPatch, above_floor_db: float, missed: int
+) -> None:
+    """**Not the attack look's 10 dB** (`[onset.recovery] pitch_min_level_db`).
+    The floor is the take's quietest 5%, which in a piece played without rests
+    lies inside the music: on a real Vivaldi violin part 14 of 35 notes found
+    by their pitch sat under 10 dB above it. A held pitch is already the
+    evidence of playing, so 3 dB is asked — and below that, nothing is kept.
+    Here every time is made to read the same level, so the attack look, which
+    asks 10, keeps nothing either way."""
+    from app.services import audio as audio_module
+
+    monkeypatch.setattr(
+        audio_module,
+        "level_above_floor_db",
+        lambda y, sr, times: np.full(np.size(times), above_floor_db),
+    )
+
+    result = analyze((_take(_scale()), SR), _page(), BPM, instrument="violin")
+
+    assert result.n_missed_notes == missed
+
+
 def _without_the_attack_look(monkeypatch: pytest.MonkeyPatch) -> None:
     """Hold the attack look off, so what is tested is the legato look alone."""
     monkeypatch.setattr(

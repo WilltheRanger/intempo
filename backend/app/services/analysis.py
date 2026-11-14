@@ -1194,8 +1194,13 @@ def _recover_legato(
     if not found:
         return np.array([], dtype=float)
     out = np.array(sorted(found), dtype=float)
-    # The same two guards as the attack look: sounding, and not a release.
-    loud = audio_svc.level_above_floor_db(heard.y, heard.sr, out) >= onset_cfg.recovery_min_level_db
+    # The attack look's two guards: sounding, and not a release. Sounding is
+    # asked more gently here (`[onset.recovery] pitch_min_level_db`): the pitch
+    # holding at the written note is already the evidence of playing.
+    loud = (
+        audio_svc.level_above_floor_db(heard.y, heard.sr, out)
+        >= onset_cfg.recovery_pitch_min_level_db
+    )
     out = out[loud]
     if out.size:
         out = out[

@@ -93,6 +93,7 @@ class OnsetConfig:
     recovery_pitch_hold_ms: float = 45.0
     recovery_pitch_tolerance_st: float = 0.6
     recovery_pitch_lag_ms: float = 16.0
+    recovery_pitch_min_level_db: float = 3.0
     #: See `[onset.envelope]` in config.toml. Defaulted for the same reason.
     envelope_floor_percentile: float = 10.0
     envelope_floor_margin_db: float = 6.0
@@ -249,6 +250,7 @@ def _parse(raw: dict) -> AudioConfig:
             recovery_pitch_hold_ms=float(rec.get("pitch_hold_ms", 45.0)),
             recovery_pitch_tolerance_st=float(rec.get("pitch_tolerance_st", 0.6)),
             recovery_pitch_lag_ms=float(rec.get("pitch_lag_ms", 16.0)),
+            recovery_pitch_min_level_db=float(rec.get("pitch_min_level_db", 3.0)),
             envelope_floor_percentile=float(env.get("floor_percentile", 10.0)),
             envelope_floor_margin_db=float(env.get("floor_margin_db", 6.0)),
             envelope_vibrato_from_hz=float(env.get("vibrato_from_hz", 600.0)),

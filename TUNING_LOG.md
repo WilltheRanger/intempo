@@ -6,6 +6,56 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (later) — The legato look's own level floor: new `[onset.recovery] pitch_min_level_db = 3.0`
+
+**Old value:** a note found by its pitch had to sound `min_level_db` (10 dB)
+above the take's floor, the attack look's guard. **New value:** 3 dB. The
+attack look keeps 10.
+
+**Why.** On `12_Spring/1_vn` the legato look found 35 notes where their pitch
+took over, and 14 of them were dropped as too quiet. The floor is the take's
+quietest 5% of frames, and in a piece played without rests that lies inside
+the music. Across all 61 takes, the 565 candidates by level above the floor
+(duplicates of an attack already there left out):
+
+| above the floor | candidates | at a labelled onset (60 ms) |
+|---|---|---|
+| 0–3 dB | 10 | 20.0% |
+| 3–6 dB | 22 | 95.5% |
+| 6–10 dB | 50 | 86.0% |
+| 10–20 dB | 288 | 87.2% |
+| 20 dB and more | 155 | 89.0% |
+
+Between 3 and 10 dB they are as often real as the louder ones, and below 3 dB
+mostly not. The 10 dB guard was set for the attack look, where it keeps out a
+flux wiggle in room tone. A pitch held at the written note for 45 ms is
+already evidence that the note was played, so the floor only has to keep out
+the room.
+
+### Real takes (all 61 tracks, against the labels)
+
+| | before | after |
+|---|---|---|
+| heard | 12,450 (94.80%) | 12,499 (95.17%) |
+| placed ≤ 50 ms | 10,770 | 10,817 |
+| paired ≤ 100 ms | 11,747 | 11,799 |
+| bar tempo | 2,181 (66.39%) | 2,185 (66.51%) |
+| colour as the oracle's | 9,244 | 9,245 |
+| oracle: notes, 12 ms / bars / verdict | 2,033 / 462 / 51 | 2,069 / 476 / 50 |
+
+- No take hears, places or pairs fewer notes.
+- One verdict went from right to wrong, `32_Fugue/3_va`: "Bars 30–50 fell
+  behind" against the oracle's "Bars 45–76 ran ahead". The pulse re-anchored
+  elsewhere; see the re-anchor entry below.
+
+### Synthetic benchmark (180 takes)
+
+97.20% → 97.20%, and no take changed.
+
+### Regression across the six fixtures
+
+All six are identical to the committed code.
+
 ## 2026-11-14 — The note chain pairs a held note at its first attack: new `alignment.HELD_NOTE_SPAN = 1.25`
 
 **Old behaviour:** `alignment.align_chain` kept the pairing `_chain_path` chose.

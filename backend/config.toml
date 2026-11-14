@@ -187,6 +187,15 @@ pitch_tolerance_st = 0.6
 # labelled onset, pitch takeovers 0.3 ms after it (violin 14, viola and cello
 # 21, bass 28 ms apart).
 pitch_lag_ms = 16.0
+# How far above the take's own floor a note found by its pitch must sound, in
+# dB. Lower than the attack look's `min_level_db`, because a pitch held at the
+# written note for 45 ms is already the evidence of playing that the level
+# stands in for there; the floor is only to keep out the room. And the floor
+# is the take's quietest 5%, which in a piece played without rests lies inside
+# the music. Measured on the URMP candidates: 3–10 dB above it, 86–95% are at
+# a labelled onset, like those above 10 dB; below 3 dB, 2 of 10. See
+# TUNING_LOG.md, 2026-11-14.
+pitch_min_level_db = 3.0
 
 [onset.envelope]
 # What each frame of the onset envelope is compared with. See
