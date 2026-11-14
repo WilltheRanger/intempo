@@ -563,6 +563,18 @@ def test_after_a_spared_entrance_drift_is_read_from_where_it_settled() -> None:
     assert verdict.start_measure == 3
 
 
+def test_a_note_still_ahead_of_the_beat_is_not_behind_where_the_take_settled() -> None:
+    """In fast, at 116, then on: every note after the entrance is ahead of the
+    beat, and bars 6–7 at 100 give back some of the lead. Measured from where
+    the take settled, those notes read as behind, and the note rule said
+    "Bars 6–12 fell behind." under a chart with every bar on tempo and every
+    note early (URMP's "Sonata", `_without_spared_ends`)."""
+    verdict = _played(12, lambda bar: {1: 116.0, 6: 100.0, 7: 100.0}.get(bar, 104.0))
+
+    assert verdict.direction is not Direction.drag
+    assert verdict.text == "Steady all the way through."
+
+
 def test_the_settled_level_is_read_after_the_whole_entrance() -> None:
     """On the beat in bar 1, slow in bar 2, then on: bar 1's notes come before
     the lag, so they cannot be where the take settled."""

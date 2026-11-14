@@ -6,6 +6,53 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (where the take settled) — After a spared entrance, a note banded again may lose its side but not change it: `classification._without_spared_ends`. No thresholds changed.
+
+**Old behaviour:** once the bar rule spares an entrance (a run wholly inside
+the first `settling_bars` bars), the note rule measures every later note of
+that stretch of pulse from where the take settled (the median of the first
+three notes after the entrance) and bands it again. That takes off the lag an
+entrance carries: in at 86 and 93, then on the beat, the notes after it all
+sit behind, and the note rule had said the whole take fell behind.
+
+**The case.** URMP's "Sonata" first violin rushed bar 1 (89.4 against 82.4,
+a run of one bar the edges spare) and stayed ahead of the beat to the end,
+notes at −5% to −18% of a beat. Bar 2 settled at −14.5%, so bars 9–11, at −2%
+to −10%, banded again at +5% to +12%: "Bars 9–11 fell behind.", under a chart
+with every note in them drawn early and the three bars at 79, 86 and 83. False
+by the labels, which have the same notes early. The labels' reading, through
+the same rule, said "Bars 13–14 fell behind." for the same reason.
+
+**New:** banded again, a note keeps the side the chart draws it on, or is
+on. What the settled level takes off is the entrance's lag. A note less far
+ahead than where the take settled is not behind, and a note less far behind
+is not ahead.
+
+| | before | after |
+|---|---|---|
+| real, verdict true | 70 of 72 | **71 of 72** |
+| real, every card | | identical |
+| synthetic | 97.93% | identical, every take |
+
+Only Sonata's first violin changes: "Bars 9–11 fell behind." → "Bars 15–16
+ran ahead.", true by the labels, whose own reading now says "Bars 15–16 went
+at 84.".
+
+**Also measured, not kept: sparing an entrance only when it would have been
+named.** Sonata's entrance, one bar in the slight band, is a run the sentence
+would never name, so not sparing it at all also makes the sentence true (71
+of 72, synthetic identical), and 11 other sentences change and stay true.
+But a take that starts a little slow for a bar and then keeps time would then
+be told every later bar fell behind, which is the settling in the owner
+asked to spare (2026-09-25). No take in either set has that shape, so
+neither set would have caught it.
+
+**Regression, all six clips:** identical.
+
+Test: `test_a_note_still_ahead_of_the_beat_is_not_behind_where_the_take_settled`
+(in at 116, then on, with bars 6–7 at 100: was "Bars 6–12 fell behind.",
+now "Steady all the way through.").
+
 ## 2026-11-14 (one note more) — The chain re-pairs a take timing reads well on one note more at pitch, where it leaves nothing to doubt: new `analysis._nothing_to_doubt`. No thresholds changed.
 
 **Old behaviour:** where timing read a take at or over `warn_quality`, the

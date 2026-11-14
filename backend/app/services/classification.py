@@ -738,6 +738,16 @@ def _without_spared_ends(
     The level the take settled at is taken off the notes that follow in the
     same stretch of pulse (a re-anchor has already done this for any later
     one), and they are banded again.
+
+    **Banded again, a note may lose its side but not change it.** What the
+    level takes off is the lag the entrance carried. A note the chart draws
+    ahead of the beat, or on it, is not behind because it is less far ahead
+    than where the take settled, and one drawn behind is not ahead. URMP's
+    "Sonata" first violin (2026-11-14) rushed into bar 2 and stayed ahead to
+    the end: measured from bar 2's level, a stretch less far ahead read as
+    "Bars 9–11 fell behind." under a chart with every note in them early. Such
+    a note is now on, and the sentence is "Bars 15–16 ran ahead.", where the
+    labels' own reading names the same bars.
     """
     kept = [d for d in timed if d.measure_number not in spared]
     entrance = spared & edges.start
@@ -757,13 +767,17 @@ def _without_spared_ends(
             continue
         pct = d.delta_pct - level_pct
         band = classify_band(pct, config=config)
+        direction = _direction(pct, band)
+        if direction is not Direction.on and direction is not d.direction:
+            # Off the other way from where the chart draws it: on.
+            band, direction = Band.on, Direction.on
         out.append(
             replace(
                 d,
                 delta_pct=pct,
                 delta_ms=d.delta_ms - level_ms,
                 band=band,
-                direction=_direction(pct, band),
+                direction=direction,
             )
         )
     return out
