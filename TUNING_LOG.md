@@ -138,7 +138,7 @@ be in a long take, because it is severe.
 | real, 72 tracks | before | after |
 |---|---|---|
 | verdict true | 55 | 65 |
-| strings | 51 of 61 | 58 of 61 |
+| strings | 51 of 61 | 57 of 61 |
 | saxophone | 4 of 11 | 8 of 11 |
 
 Twelve sentences became true, mostly as the note rule's side over a long
