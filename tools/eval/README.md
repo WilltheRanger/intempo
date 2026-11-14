@@ -91,16 +91,17 @@ disk unless `--json` is given.
 
 ## `real_takes.py`: the same scoring, on real recordings
 
-    tools/eval/real_takes.py DATA            # 61 tracks, a few minutes
+    tools/eval/real_takes.py DATA            # 72 tracks, a few minutes
     tools/eval/real_takes.py DATA --only Rondeau --json out.json
 
 What synthesis cannot tell you, this can begin to. URMP is 44 classical pieces
 with every part recorded alone by a student player, the score it was played
 from, and a hand-checked onset and pitch for every note; its violin, viola,
-cello and double bass tracks are read here. The docstring has the download (a
-683 MB archive from Zenodo, outside the repository) and the one-time
-conversion of its MIDI scores to MusicXML (`urmp_scores.py`, which needs
-`music21` in whatever Python runs it — the backend does not depend on it).
+cello, double bass and alto saxophone tracks are read here. The docstring has
+the download (a 683 MB archive from Zenodo, outside the repository) and the
+one-time conversion of its MIDI scores to MusicXML (`urmp_scores.py`, which
+needs `music21` in whatever Python runs it — the backend does not depend on
+it).
 **Neither the recordings nor the converted scores are ever committed**, for
 the reason above.
 

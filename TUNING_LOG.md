@@ -6,6 +6,50 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (saxophone) — The alto saxophone, measured on real recordings. No thresholds changed.
+
+`tools/eval/real_takes.py` now reads URMP's eleven saxophone tracks as well
+(1,911 notes). URMP does not name the saxophone, but the tracks sound between
+MIDI 50 and 81, an alto's range. `urmp_scores.py` writes them a major sixth
+up, where an alto player reads them.
+
+| alto saxophone, 11 tracks | |
+|---|---|
+| heard | 98.79% |
+| placed ≤ 50 ms | 48.43% |
+| paired ≤ 100 ms | 90.26% |
+| colour as the oracle's | 56.41% |
+| bar tempo | 60.39% |
+| verdicts right | 5 of 11 |
+
+**Placed ≤ 50 ms reads low for a reason that is mostly not the app.** Several
+takes sit at a steady offset from their labels. `22_Rejouissance` has a median
+of +59.6 ms with a MAD of 5.5 ms, so its attacks and its labels mark
+consistently different moments of the same note. That offset reaches none of
+the feedback, which is relative. Within takes, 39–94% of notes lie within
+50 ms of their take's own median.
+
+**What is the app's:** `16_Surprise/3_sax` pairs notes with attacks 100–200 ms
+before the note sounds. In the near-silence before a soft entry, a key click
+or a breath rose 7 dB from the room, and the onset envelope scored it at 46%
+of the take's peak. The note itself swelled 30 dB over 100 ms and scored 0.17
+at most. Log-spectral flux reads a small rise from silence as a large one.
+
+**A gate was tried and not kept.** It dropped first-pass attacks whose sound
+over the next 100 ms sits less than N dB above the take's floor.
+
+| gate | heard | placed | paired | colour | verdicts | attacks at no note |
+|---|---|---|---|---|---|---|
+| none | 95.63% | 81.56% | 93.86% | 71.67% | 55 of 72 | 2,662 |
+| 3 dB | 95.14% | 81.82% | 94.09% | 72.35% | 56 of 72 | 2,326 |
+| 6 dB | 91.33% | 81.21% | 93.15% | 69.84% | 55 of 72 | 2,331 |
+
+At 3 dB it removes 336 false attacks but loses about 70 real notes. The floor
+is the take's quietest 5%, which in a piece without rests lies inside the
+music: 1,525 attacks at labelled notes sound only 3–10 dB above it. A gate
+needs a floor that is the room's, not the music's quietest moment, and that is
+not this one.
+
 ## 2026-11-14 (last) — The re-anchor floor, measured for the owner. No thresholds changed.
 
 The pulse re-anchors after a run of intervals that departs from the take's

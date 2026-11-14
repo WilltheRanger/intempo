@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The accuracy benchmark's scoring, on real recordings: URMP's string tracks.
+"""The accuracy benchmark's scoring, on real recordings: URMP's strings and saxophone.
 
     tools/eval/real_takes.py DATA
     tools/eval/real_takes.py DATA --only Rondeau --json out.json
@@ -9,8 +9,9 @@
 IEEE Transactions on Multimedia 21(2), 2019) is 44 short classical pieces, each
 part recorded alone by a student of the Eastman School of Music, with the
 score it was played from and a hand-checked list of when every note started
-and at what pitch. Its 61 violin, viola, cello and double bass tracks are what
-this reads. YourMT3 redistributes it at 16 kHz, 683 MB unpacked:
+and at what pitch. Its 72 tracks the app has an instrument for are what this
+reads: 61 violin, viola, cello and double bass, and 11 alto saxophone. YourMT3
+redistributes it at 16 kHz, 683 MB unpacked:
 
     curl -L -o urmp.tar.gz \\
       'https://zenodo.org/records/8082232/files/urmp_yourmt3_16k.tar.gz?download=1'
@@ -71,9 +72,16 @@ from app.services.alignment import build_timeline, expand_repeats, read_ties
 from app.services.ocr.musicxml import score_json_from_musicxml
 from app.services.pitch_evidence import midi
 
-INSTRUMENT = {"vn": "violin", "va": "viola", "vc": "cello", "db": "double_bass"}
+INSTRUMENT = {
+    "vn": "violin",
+    "va": "viola",
+    "vc": "cello",
+    "db": "double_bass",
+    # URMP's saxophone is an alto: see `urmp_scores.WRITTEN_ABOVE`.
+    "sax": "alto_sax",
+}
 #: Written to sounding, in semitones: the labels are at sounding pitch.
-SOUNDING = {"double_bass": -12}
+SOUNDING = {"double_bass": -12, "alto_sax": -9}
 #: A labelled pitch this close to the written one is that note, in or out of
 #: tune; this far is certainly another note — `pitch_evidence`'s own
 #: `_IN_TUNE_ST` and `_OTHER_NOTE_ST`.
@@ -307,7 +315,9 @@ def _add(into: dict[str, list[int]], card: dict[str, list[int]]) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Score the analysis on URMP's string tracks.")
+    parser = argparse.ArgumentParser(
+        description="Score the analysis on URMP's string and saxophone tracks."
+    )
     parser.add_argument("data", type=Path, help="where urmp_yourmt3_16k.tar.gz was unpacked")
     parser.add_argument("--only", help="only tracks whose name contains this")
     parser.add_argument("--json", type=Path, help="write every row and the summary here")
