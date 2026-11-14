@@ -6,6 +6,56 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (skips) — A skip must move the notes after it: `classification.SKIP_CONFIRMED_BY = 3`
+
+**Old behaviour:** on a pairing made by pitch, `skipped_ahead` called a gap a
+skip when the take crossed it in nearer one played interval than the whole
+written span, and `compute_deltas` started the level afresh after it. A note
+whose attack was given to the note after it makes exactly that gap: the note
+after arrives one interval on, early by the note left over. On URMP's 72 real
+takes, every one played through, the app declared **83 skips in 28 takes**
+and the labels' reading none. Each restarted the level the rest of its
+stretch was measured from, so a player behind the beat read on it again.
+
+Sorted first, on the captured pulse inputs: of the 2,886 colour disagreements
+the labels themselves decide (`(a tie between two attacks)`), 2,543 are the
+two readings measuring from levels more than 5% of a beat apart, not a note
+placed differently (198) or one near a band's edge (145). Of those 2,543,
+1,874 sit after a re-anchor or a skip the app made and the labels did not.
+
+**New:** a skip must move the notes after it too. From the note before the
+gap to each of the next `SKIP_CONFIRMED_BY` paired notes must also read
+skipped, nearer one interval plus the notes as written after the gap than
+the whole written span. A real skip moves every later note; a mispaired one
+moves one or two. A real skip this misses is not lost: the pulse re-anchors
+after the one long interval it leaves.
+
+| | before (`c2279ac`) | the next note only | the next 3 (kept) |
+|---|---|---|---|
+| real, skips declared | 83 | 56 | |
+| real, heard | 14,749 / 15,035 | 14,758 | **14,760 (98.17%)** |
+| real, paired within 100 ms | 14,103 | 14,114 | 14,118 (95.65%) |
+| real, colour agreement | 11,177 (75.78%) | 11,217 (76.01%) | **11,250 (76.22%)** |
+| real, bar tempo within 2% | 2,897 | 2,899 | 2,901 (72.24%) |
+| real, verdict true | 67 of 72 | 67 | 67, every sentence the same |
+| synthetic | 97.84% | 97.84% | 97.83% |
+
+Over what the labels decide (the replay), colour agreement on the next-note
+version's capture is 78.76%, against 78.46% on the capture before `c2279ac`.
+The largest gains are the long takes with many false skips: K515's first
+violin 379 → 414 notes coloured as the labels' reading colours them, its
+first viola 258 → 306, its cello 226 → 263. Some give back: Rondeau's first
+violin −21 (in both mixes), Maria's cello −22, K515's second violin −8. On
+synthesis one note moves: `viola/bowed/132/missed/reverb/1088`, whose notes
+20–22 are paired with each other's attacks, reads note 21 113 ms off where
+the false skip had put it in a stretch of its own.
+
+**Regression, all six clips:** identical.
+
+Tests: `test_an_attack_given_to_the_note_after_is_not_a_skip` and
+`test_two_attacks_each_given_to_the_note_after_are_not_a_skip`
+(`test_playing_habits.py`); a skipped bar still reads as one.
+
 ## 2026-11-14 (measured, not kept) — The labels' pairing beside an equal note, and each instrument's pitch lag. No code or threshold changes.
 
 **The real-take scorer, a tie between two equal notes side by side.** K515's

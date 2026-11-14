@@ -207,6 +207,31 @@ def test_a_skip_is_told_from_a_note_played_and_not_heard() -> None:
     assert skipped_ahead(pairs, waited * 2, onsets) == []
 
 
+def test_an_attack_given_to_the_note_after_is_not_a_skip() -> None:
+    """Note 3's attack paired with note 4, and note 4's own unheard: the gap
+    after note 2 was played in one interval, as a skip's is, but note 5 is
+    where the page puts it. A skip would have moved it too. On URMP's real
+    takes, every one played through, the app declared 83 skips, each one
+    restarting the level the notes after it were measured from."""
+    onsets = np.arange(8, dtype=float)
+    detected = np.array([0, 1, 2, 3, 5, 6, 7], dtype=float)
+    pairs = [(0, 0), (1, 1), (2, 2), (3, 4), (4, 5), (5, 6), (6, 7)]
+
+    assert skipped_ahead(pairs, detected, onsets) == []
+    assert skipped_ahead(pairs, detected * 2, onsets) == []
+
+
+def test_two_attacks_each_given_to_the_note_after_are_not_a_skip() -> None:
+    """Notes 3 and 4 each paired with the attack before their own, and note
+    5's unheard: note 5 also arrives one interval early, but note 6 is back
+    where the page puts it (`classification.SKIP_CONFIRMED_BY`)."""
+    onsets = np.arange(10, dtype=float)
+    detected = np.array([0, 1, 2, 3, 4, 6, 7, 8, 9], dtype=float)
+    pairs = [(0, 0), (1, 1), (2, 2), (3, 4), (4, 5), (5, 6), (6, 7), (7, 8), (8, 9)]
+
+    assert skipped_ahead(pairs, detected, onsets) == []
+
+
 def _replayed(notes: list[int]) -> tuple[object, dict]:
     return _analyse(notes, 0.6 + np.arange(len(notes)) * BEAT)
 

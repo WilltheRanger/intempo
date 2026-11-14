@@ -208,6 +208,11 @@ def uneven_measures(
     return uneven
 
 
+#: How many paired notes past a skip must arrive where the skip puts them —
+#: early by the notes gone past — for it to be one. See `skipped_ahead`.
+SKIP_CONFIRMED_BY = 3
+
+
 def skipped_ahead(
     matched: list[tuple[int, int]],
     detected: np.ndarray,
@@ -230,6 +235,17 @@ def skipped_ahead(
     as `alignment._residuals` reads it), so practising at half speed does not
     turn every gap into a skip: at a gap, a skip is closer to one played
     interval than to the whole written span.
+
+    **And a skip moves the notes after it too.** A note whose attack was
+    given to the note after it makes the same gap: the note after arrives one
+    interval on, early by exactly the note that was left over. But the notes
+    after *that* are back where the page puts them, and after a real skip
+    they are not. So from the note before the gap to each of the next
+    `SKIP_CONFIRMED_BY` paired notes must read skipped as well. On URMP's 72
+    real takes, every one played through, the app declared 83 skips and the
+    labels none, and each restarted the level the rest of its stretch was
+    measured from. A real skip this misses is not lost: the pulse re-anchors
+    after the one long interval it leaves (`alignment.pulse_anchors`).
     """
     if len(matched) < 3:
         return []
@@ -252,7 +268,19 @@ def skipped_ahead(
         played = float(det[p] - det[p - 1]) / pace
         # Nearer to one interval than to the whole span: the notes between
         # were gone past, not waited through.
-        if played < (written + one) / 2:
+        if played >= (written + one) / 2:
+            continue
+        confirmed = True
+        for q in range(p + 1, min(p + 1 + SKIP_CONFIRMED_BY, len(matched))):
+            e3 = matched[q][1]
+            # From the note before the gap: as written, or with the notes in
+            # the gap gone past in one interval.
+            waited = float(onsets[e3] - onsets[e1])
+            gone_past = one + float(onsets[e3] - onsets[e2])
+            if float(det[q] - det[p - 1]) / pace >= (waited + gone_past) / 2:
+                confirmed = False
+                break
+        if confirmed:
             skips.append(p)
     return skips
 
