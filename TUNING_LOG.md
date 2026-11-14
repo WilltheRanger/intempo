@@ -6,6 +6,71 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (holes) — An attack beside a note reported missing is given to it by its pitch and its place: new `analysis._beside_a_hole`, `HOLE_MIN_GAP_S = 0.1`
+
+**Old behaviour:** the final pairing was timing's (or the chain's) as it came.
+Timing reads each interval against a written one and may read it across one
+note the player left out (`DROPPED_NOTE_CAPS`), not two. With two left out in
+a row, the sound after them was paired with the second, a beat early, and the
+note it was reported missing. A single hole after a long note can be read
+either way at near-equal cost too: the strict xfail in
+`test_notes_left_out.py`, which this does not touch because that test is
+timing alone.
+
+**New:** once the take is paired, the attack of the paired note nearest a run
+of missing notes moves to one of them when two independent things agree. The
+pitch track hears that note's pitch after the attack, and a line through the
+nearest paired notes either side puts the attack nearer that note's place
+than its current note's. It repeats until nothing moves, because a hole can
+shift a run along and each note given back frees the next one's place. It
+never moves inside an ornament, or between notes written closer than
+`HOLE_MIN_GAP_S` (0.1 s at the take's tempo).
+
+**Why.** Of the 36 errors in what the synthetic set reported missing, 20 were
+a played note reported missing beside a left-out one paired in its place.
+
+**Measured, version by version:**
+
+| | missed | notes | bars | wrong notes | overall |
+|---|---|---|---|---|---|
+| before (`e26640d`) | 6,418 / 6,454 | 6,152 | 1,386 | 40 / 58 | 97.61% |
+| neighbours only, by pitch | 6,426 | 6,155 | 1,389 | 40 / 58 | 97.70% |
+| + runs, repeated until still, + repeated pitches by place alone (3× nearer) | 6,430 | 6,158 | 1,390 | 40 / 57 | 97.76% |
+| **kept: runs, repeated until still, by pitch only, not within 0.1 s** | **6,426** | **6,156** | **1,388** | **40 / 57** | **97.71%** |
+
+**Two versions measured and narrowed on URMP's real takes:**
+- **Notes written too close.** In K515's second violin the pitch rule moved
+  the attack of a G4 in a fast turn onto the F♯4 written 0.08 s after it. A
+  line through the turn's neighbours made the two look 0.13 s apart. A note
+  there is closer than the detector separates attacks (60 ms) or the pitch
+  after one is read (up to 120 ms), so the written gap now has to be 0.1 s.
+  Sixteenths at 132 BPM are 0.11 s.
+- **Repeated pitches by place alone, not kept.** Where the page repeats a
+  pitch the pitch says nothing, and a version moved on the place alone at
+  three times nearer. It fixed one synthetic take, 1087. On the real takes it
+  moved five attacks. Against the labels: one onto its own note (K515's
+  fourth part, now 49 ms from its label), one further from both notes'
+  labels (King's saxophone), and three inside stretches already paired a
+  note or more off (Pirates, Jerusalem's cello, K515's third part). A line
+  through rubato neighbours is too loose to decide alone.
+
+**The kept version on the real takes:** every one of the 72 is identical,
+card and sentence, to `e26640d`. Each move it would make on them is one of
+the two versions above that were narrowed. On the synthetic set it gives the
+missed notes back in five takes (1056 and 1149 to no errors at all, 1057
+5 → 4, 1090 5 → 1, 1119 17 → 15), and none gets worse. One bar is no
+longer named for a wrong note it did not have.
+
+**Regression, all six clips:** identical. None has a note reported missing,
+so the rule returns before reading anything.
+
+New tests: `test_beside_a_hole.py`. Five rules with the pitch given: two
+left out in a row; notes written too close to tell apart; a wrong note at
+the hole's pitch staying where it was played; a shifted run given back in
+turn; a repeated pitch never moved. Then end to end on a synthetic bowed take
+with notes 4–5 and 9–10 left out, and the same take with the rule off,
+which reports note 6 in place of note 5.
+
 ## 2026-11-14 (the level) — A stretch's level is read from all six of its notes, not the middle two: new `alignment._middle_of`, `LEVEL_BOUND_DEVIATIONS = 1.0`
 
 **Old behaviour:** the level every note of a stretch is measured from was the

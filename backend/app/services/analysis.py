@@ -1095,6 +1095,136 @@ def _not_the_note_before(
 #: listened for a second time (`_not_the_note_before`), in seconds.
 _HELD_LISTEN_S = 0.5
 
+#: The least written time between two notes for `_beside_a_hole` to choose
+#: between them, in seconds at the take's tempo. Closer than this neither the
+#: detector (which separates attacks 60 ms apart) nor the pitch read after an
+#: attack (for up to 120 ms) belongs to one note. In K515's second violin it
+#: moved the attack of a G4 in a fast turn onto the F♯4 written 0.08 s after
+#: it, where a line through the turn's neighbours had made them look 0.13 s
+#: apart. Sixteenths at 132 BPM are 0.11 s.
+HOLE_MIN_GAP_S = 0.1
+
+
+def _beside_a_hole(
+    cleaned: CleanedAlignment,
+    attacks_s: np.ndarray,
+    timeline: ExpectedTimeline,
+    pitch: _Pitch,
+) -> CleanedAlignment:
+    """The pairing, with an attack beside a note reported missing given to that
+    note where its pitch and its place both say it is that note's.
+
+    **Timing alone can give the note after a hole the hole's place.** Each
+    interval is compared with a written one, and may be read across one note
+    the player left out (`alignment.DROPPED_NOTE_CAPS`) but not across two. With
+    two left out in a row the sound after them was paired with the second, a
+    beat early, and the note it was is reported missing. A single hole after a
+    long note can be read either way at near-equal cost too: that is the
+    strict xfail in `test_notes_left_out.py`. On the synthetic set (2026-11-14)
+    this is 20 of the 36 errors in what was reported missing.
+
+    So, once the take is paired, the attack of the paired note nearest a run
+    of missing notes moves to one of them when two independent things agree:
+    the pitch track hears that note's pitch after the attack, and a straight
+    line through the paired notes either side puts the attack nearer that
+    note's place than its current note's. A wrong note played at its
+    neighbour's pitch has the pitch but not the place. Repeated until nothing
+    moves, because a hole can slide a run of notes along and each one given
+    back frees the next one's place.
+
+    **Not on the place alone.** Where the page repeats a pitch, the pitch
+    cannot say which note sounded. Moving on the place alone, where it sat
+    three times nearer, fixed one synthetic take. On URMP's real takes it moved
+    five attacks: one onto its own note, one further from both notes' labels,
+    and three inside stretches already paired a note or more off. On real
+    playing, a line through the neighbours is too loose to decide alone.
+
+    Never inside an ornament, or between notes written closer than
+    `HOLE_MIN_GAP_S`: there an attack and the pitch after it do not belong to
+    one note.
+    """
+    missed = set(cleaned.missed_expected)
+    if not missed or len(cleaned.matched) < 3 or pitch.track is None:
+        return cleaned
+
+    def ornamental(note: ExpectedNote) -> bool:
+        """A note whose written time is an assumption, or not a time at all."""
+        return note.is_grace_note or note.after_grace_note or note.after_fermata
+
+    notes = timeline.notes
+    written = np.asarray(timeline.onsets, dtype=float)
+    attacks_s = np.asarray(attacks_s, dtype=float)
+    heights = pitch.heights(attacks_s)
+    if heights is None:
+        return cleaned
+    owner = {e: d for d, e in cleaned.matched}
+
+    def moved_one() -> bool:
+        for m in sorted(missed):
+            if ornamental(notes[m]):
+                continue
+            want = pitch_evidence.midi(notes[m].pitch)
+            if want is None:
+                continue
+            # The paired note nearest the hole on either side: every note
+            # between it and `m` is missing too.
+            sides = (
+                min((e for e in owner if e > m), default=None),
+                max((e for e in owner if e < m), default=None),
+            )
+            for n in sides:
+                if (
+                    n is None
+                    or ornamental(notes[n])
+                    or abs(written[m] - written[n]) < HOLE_MIN_GAP_S
+                ):
+                    continue
+                d = owner[n]
+                have = pitch_evidence.midi(notes[n].pitch)
+                heard = float(heights[d])
+                if (
+                    have is None
+                    or have == want
+                    or not np.isfinite(heard)
+                    or round(heard) != want + pitch.transpose
+                ):
+                    continue
+                before = max((e for e in owner if e < min(m, n)), default=None)
+                after = min((e for e in owner if e > max(m, n)), default=None)
+                if before is None or after is None or written[after] <= written[before]:
+                    continue
+                t0, t1 = attacks_s[owner[before]], attacks_s[owner[after]]
+                pace = (t1 - t0) / (written[after] - written[before])
+                at = attacks_s[d]
+                to_m = abs(at - (t0 + pace * (written[m] - written[before])))
+                to_n = abs(at - (t0 + pace * (written[n] - written[before])))
+                if to_m >= to_n:
+                    continue
+                del owner[n]
+                owner[m] = d
+                missed.discard(m)
+                missed.add(n)
+                return True
+        return False
+
+    # Again until nothing moves: a hole can shift a run of notes along, and
+    # each one given back leaves the next one's place free.
+    for _ in range(len(notes)):
+        if not moved_one():
+            break
+    if missed == set(cleaned.missed_expected):
+        return cleaned
+    log.info(
+        "analysis: %d attack(s) beside a note reported missing given to it by pitch and place",
+        len(set(cleaned.missed_expected) - missed),
+    )
+    return CleanedAlignment(
+        matched=sorted(((d, e) for e, d in owner.items()), key=lambda pair: pair[1]),
+        missed_expected=sorted(missed),
+        extra_detected=cleaned.extra_detected,
+        quality=cleaned.quality,
+    )
+
 
 def _recover_attacks(
     heard: Heard,
@@ -2875,6 +3005,8 @@ def _analyze_take(
     cleaned = apply_fuzzy_match(
         raw, onsets, expected, optional=optional, reclaimable=reclaimable
     )
+    # On the recording's clock (`origin`), where the pitch track was read.
+    cleaned = _beside_a_hole(cleaned, onsets + origin, timeline, pitch)
     unreached = _not_reached(cleaned, timeline)
     missed = [e for e in cleaned.missed_expected if e not in unreached]
     _traced(
