@@ -434,7 +434,11 @@ def config():
 # ------------------------------------------------------------- the oracle
 
 
-_BARS_NAMED = re.compile(r"\bbars? (\d+)(?:\s*[–-]\s*(\d+))?")
+#: The bars a verdict names. **Case-blind, and until 2026-11-14 it was not:**
+#: the run sentence opens on "Bars 4–5 went at 73.", a lower-case pattern
+#: matched none of them, and from this file's first commit the verdict was
+#: scored on its direction alone — see `TUNING_LOG.md` that day.
+_BARS_NAMED = re.compile(r"\bbars? (\d+)(?:\s*[–-]\s*(\d+))?", re.IGNORECASE)
 
 
 def bars_named(text: str) -> tuple[int, int] | None:
@@ -470,6 +474,9 @@ def oracle(score: ScoreJson, notes: list[TruthNote], bpm: float) -> dict:
         "direction": verdict.direction.value,
         "bars": bars_named(verdict.text),
         "text": verdict.text,
+        # Each bar's tempo and any run's, by the truth: what a verdict's
+        # figure can be checked against (`real_takes.verdict_holds`).
+        "tempi": pacing,
     }
 
 

@@ -6,6 +6,96 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (verdicts) — The verdict scored by its bars, and by whether it is true. No thresholds changed.
+
+**Every verdict figure since the benchmark was built scored the direction
+alone.** `accuracy_bench.bars_named` looked for "bars 4–5" in lower case, and
+the run sentence opens "Bars 4–5 went at 73." It matched none of them, so the
+bars a verdict named were compared as `None == None`. The pattern is now
+case-blind.
+
+| | as reported | bars scored |
+|---|---|---|
+| synthetic, 180 takes: verdict | 180 (100%) | 178 (98.89%) |
+| synthetic: overall | 97.20% | 97.18% |
+| real, 72 tracks: verdict | 55 (76.39%) | 12 (16.67%) |
+
+The two synthetic misses differ by one bar at a run's edge: "Bars 3–5 went at
+66." for "Bars 4–5 went at 63.", and "Bars 5–6" for "Bars 5–7".
+
+**On real playing, "the same bars" is the wrong question.** A verdict names
+one run, the longest. On a real take, two runs are often close to a tie, and
+one bar's tempo can sit at a band's edge. The labels' reading then names a
+different run: a different sentence, not a false one. "Bars 27–34 went at
+144." is true of the viola in "In the Hall of the Mountain King", which speeds
+from 106 to 178. The labels' reading names "Bars 1–12 went at 99." instead,
+because the app reads bars 4 and 9 a few BPM on the other side of the band's
+edge and so breaks that run.
+
+So `real_takes.py` now also asks whether the sentence is **true by the labels**
+(`verdict_holds`):
+- "Bars a–b went at N.": by the labels those bars went the same way, past the
+  inner band, at N within 2% (or 1.5 BPM).
+- "ran ahead" or "fell behind": most of the labels' timed notes in those bars
+  sit that way.
+- A sentence naming no run: the labels' reading names none either.
+
+**Verdict true: 46 of 72 (63.89%).**
+
+| | violin | viola | cello | bass | alto sax |
+|---|---|---|---|---|---|
+| true | 24 / 34 | 11 / 13 | 6 / 11 | 3 / 3 | 2 / 11 |
+
+### A fix this found: two tempo marks heading a page
+
+URMP's scores were converted from MIDI. Some state two tempos at the downbeat
+of bar 1:
+- "He's a Pirate": ♩=100, then ♩=200;
+- Vivaldi's "Spring": 100, then 120;
+- "Rejouissance": 100, then 96.
+
+The importer took the first as the piece's tempo and the second as a change at
+bar 1. The page therefore asked for twice the tempo the player set, from the
+first note to the last. In the eight Pirates takes, no bar tempo agreed with
+the labels. `ocr/musicxml.py` now reads every mark in the first bar as the
+piece's tempo, with the last one in force. A mark in a later bar is still a
+change.
+
+| real, 72 tracks | before | after |
+|---|---|---|
+| bar tempo | 2,432 / 3,694 (65.84%) | 2,683 / 4,017 (66.79%) |
+| verdict true | 46 (63.89%) | 48 (66.67%) |
+| heard | 14,378 | 14,393 |
+| placed ≤ 50 ms / paired ≤ 100 ms | 11,727 / 13,495 | 11,730 / 13,500 |
+| colour as the oracle's | 10,305 | 10,285 |
+
+The Pirates bar tempi went from 0 to between 23 and 40 bars each. Verdict
+true went from false to true for three Pirates takes, and from true to false
+for one (`24_Pirates/3_va`). The synthetic benchmark builds its pages without
+MusicXML and is unchanged. The six fixtures are unchanged.
+
+### What the false verdicts are, after the fix (24 of 72)
+
+By instrument: violin 8, viola 3, cello 4, alto saxophone 9. Examined so far:
+
+- **Placement noise on a short bar.** "Bar 26 went at 135." where the labels
+  put that bar of "The Entertainer" (saxophone) at 143. The notes of a 0.8 s
+  bar were placed +29, −54, +37, −13 and +39 ms from their labels.
+- **A sound read as a note where none began.** In the saxophone part of
+  "Jerusalem", a click or breath in the silence after a note was taken as an
+  attack, and the next note's soft entry was not heard. The end of the last
+  note was taken as an attack too, and that note was paired with it 3.8 s
+  late.
+- **A pairing that slides by one note.** In the cello part of "Spring", six
+  notes were each paired with the attack before them, about 620 ms early.
+- **The note rule after a different re-anchor.** "Bars 30–50 fell behind."
+  where the labels' reading has "Bars 45–76 ran ahead." (`32_Fugue/3_va`), and
+  the same flip in `22_Rejouissance/1_sax`. This is the open re-anchor
+  question.
+- **K515's cello part is refused.**
+
+None of these is fixed here.
+
 ## 2026-11-14 (saxophone) — The alto saxophone, measured on real recordings. No thresholds changed.
 
 `tools/eval/real_takes.py` now reads URMP's eleven saxophone tracks as well

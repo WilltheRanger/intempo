@@ -2138,10 +2138,10 @@ nothing else covers `backend/`. Named here rather than left to be found.
 
 ### Real recordings, measured at last (2026-11-13)
 
-`tools/eval/real_takes.py` reads URMP's 61 string tracks. Each part was
-recorded alone by a student player, with its score and a hand-checked onset
-and pitch for every note. Six things it taught, each of which cost a wrong
-number first:
+`tools/eval/real_takes.py` reads URMP's 61 string tracks, and its 11 alto
+saxophone tracks since 2026-11-14. Each part was recorded alone by a student
+player, with its score and a hand-checked onset and pitch for every note. What
+it taught, each lesson paid for with a wrong number first:
 
 - **A dataset's truth needs the same scrutiny as the pipeline's output.**
   - URMP's MIDI holds the double bass at sounding pitch, and the app reads a
@@ -2177,6 +2177,22 @@ number first:
   spectrogram, pitch track and envelope at once. Three such workers beside
   `pytest` exhausted the 16 GB session container, which restarted without
   warning. Alone, three are fine.
+- **Make each metric fail once before you believe it (2026-11-14).** The
+  verdict was "scored" on its direction and its bars. For its first two days
+  the bars were read with a lower-case pattern from sentences that open
+  "Bars 4–5", so both sides were always `None`. 180 of 180 synthetic verdicts
+  and 55 of 72 real ones were reported as right. With the bars read, it is
+  178 and 12.
+- **On real playing, ask whether a verdict is true, not whether it is the
+  labels' sentence.** The verdict names the longest run. On a real take two
+  runs are often near a tie, so the labels' reading names the other one.
+  `real_takes.verdict_holds` checks what was said against the labels; 48 of
+  72 hold. Report both numbers, because the second is only meaningful beside
+  the first.
+- **A converted score can carry its converter's habits.** URMP's MIDI states
+  two tempos at bar 1, ♩=100 then ♩=200. The importer read the second as a
+  change, so every Pirates take was judged against twice its tempo. Two marks
+  heading a page are now one tempo.
 
 ### A take that could not be sent was kept only by the native build (2026-10-06)
 

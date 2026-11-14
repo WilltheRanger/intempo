@@ -69,6 +69,7 @@ import librosa
 import numpy as np
 from app.services import analysis as an
 from app.services.alignment import build_timeline, expand_repeats, read_ties
+from app.services.classification import Band, classify_band
 from app.services.ocr.musicxml import score_json_from_musicxml
 from app.services.pitch_evidence import midi
 
@@ -227,6 +228,8 @@ def scorecard(result, placed: dict[int, float], truth, score, bpm: float) -> dic
     - *band*: its colour (on, a little early, ...) is the oracle's.
     - *bar tempo*: each bar's played tempo within 2% (or 1.5 BPM) of the
       oracle's — read from the notes' spacing, so no anchor can move it.
+    - *verdict true*: what the sentence says holds by the labels
+      (`verdict_holds`), whichever true thing it chose to say.
     """
     oracle = ab.oracle(score, truth, bpm)
     heard = {p.global_index: p for p in result.per_note}
@@ -259,7 +262,56 @@ def scorecard(result, placed: dict[int, float], truth, score, bpm: float) -> dic
             and mine.played_bpm is not None
             and abs(mine.played_bpm - want.played_bpm) <= max(1.5, 0.02 * want.played_bpm),
         )
+    tally("verdict true", verdict_holds(result, oracle, bpm))
     return card
+
+
+_WENT_AT = re.compile(r"went at (\d+)")
+
+
+def verdict_holds(result, oracle: dict, bpm: float) -> bool:
+    """Whether the sentence the app said is true of the take by its labels,
+    whichever true thing it chose to say.
+
+    `verdict` asks whether the reading names the bars the labels' reading
+    names. A verdict names one run, the longest, and on real playing two runs
+    are often near a tie, or one bar of a run sits at a band's edge, so the
+    labels' reading can name another: a different sentence, not a false one.
+    This asks whether what was said holds:
+
+    - "Bars a–b went at N.": by the labels those bars went the same way off
+      their target, past the inner band, and at N within 2% (or 1.5 BPM), the
+      bar-tempo card's tolerance.
+    - "Bars a–b ran ahead." or "fell behind.": most of the labels' timed notes
+      in those bars sit that way of the beat.
+    - A sentence naming no run: the labels' reading names none either.
+    """
+    if result.status != "ok":
+        return False
+    direction = result.verdict_direction.value
+    named = ab.bars_named(result.verdict)
+    if direction == "on" or named is None:
+        return oracle["direction"] == "on"
+    first, last = named
+    figure = _WENT_AT.search(result.verdict)
+    if figure:
+        played = oracle["tempi"].across(first, last)
+        if played is None:
+            return False
+        target = oracle["tempi"].target(first, bpm)
+        band = classify_band((1.0 - played / target) * 100.0, config=ab.config())
+        return (
+            band is not Band.on
+            and (played > target) == (direction == "rush")
+            and abs(int(figure.group(1)) - played) <= max(1.5, 0.02 * played)
+        )
+    notes = [
+        d
+        for d in oracle["deltas"].values()
+        if first <= d.measure_number <= last and d.timed and not d.is_slur_interior
+    ]
+    agree = sum(d.direction.value == direction for d in notes)
+    return bool(notes) and agree > len(notes) / 2
 
 
 def run(track) -> dict:
@@ -302,6 +354,9 @@ def run(track) -> dict:
             "instrument": instrument,
             **stats,
             "card": scorecard(result, seen.get("placed", {}), truth, score, bpm),
+            # Both sentences, so a verdict that is not true can be read.
+            "said": result.verdict,
+            "labels_say": ab.oracle(score, truth, bpm)["text"],
         }
     )
     return row

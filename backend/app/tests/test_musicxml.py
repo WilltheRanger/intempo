@@ -3753,6 +3753,30 @@ def test_the_piece_s_own_tempo_is_not_a_change() -> None:
     assert score.tempo_changes == []
 
 
+@pytest.mark.parametrize(
+    "heading",
+    [
+        _metronome(100) + _metronome(200),
+        # As music21 writes a MIDI file's tempo events: a mark and a `<sound>`.
+        _metronome(100).replace("</direction>", '<sound tempo="100"/></direction>')
+        + _metronome(200).replace("</direction>", '<sound tempo="200"/></direction>'),
+    ],
+)
+def test_two_tempo_marks_heading_a_piece_are_its_tempo_not_a_change(heading: str) -> None:
+    """URMP's scores, converted from MIDI, state ♩=100 then ♩=200 at the
+    downbeat of "He's a Pirate". The second was read as a change at bar 1, so
+    the page asked for twice the tempo the player set, from the first note on.
+    A later bar's mark is still a change."""
+    score = score_json_from_musicxml(
+        _part(_four(1, heading, _FOUR_FOUR) + _four(2) + _four(3, _metronome(160)))
+    )
+
+    assert score.bpm_hint == 200
+    assert [(c.measure_number, c.kind, c.bpm) for c in score.tempo_changes] == [
+        (3, "new_tempo", 160.0)
+    ]
+
+
 def test_a_tempo_change_keeps_its_bar_across_a_multi_bar_rest() -> None:
     """Mapped as the repeats are: a four-bar rest before it moves it by three."""
     score = score_json_from_musicxml(
