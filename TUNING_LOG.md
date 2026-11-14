@@ -6,6 +6,121 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (one note more) — The chain re-pairs a take timing reads well on one note more at pitch, where it leaves nothing to doubt: new `analysis._nothing_to_doubt`. No thresholds changed.
+
+**Old behaviour:** where timing read a take at or over `warn_quality`, the
+chain's pairing replaced timing's only if it heard `CHAIN_GAIN_NOTES` (2)
+more notes at their written pitch, because one note read differently may be
+a borderline pitch.
+
+**The case.** `violin/pizz/108/missed/noise/1057` leaves out the second and
+fourth of five D's in bar 4, before a G. Timing (quality 0.827) read the
+take a note early across both holes: the third D's sound on the second D,
+the G's on the third D, and the third D and the G reported missing. The
+chain paired every note at its own pitch, 37 of 37, and `_scored_mapping`
+scores its pairing 0.931, above timing's own. It heard one note more than
+timing's 36 and was refused for want of a second.
+
+**New:** one note more is enough when the chain's pairing hears every note
+it pairs at its written pitch and scores above timing's pairing by timing's
+own measure. Then there is no borderline note in it, and timing has no case
+against it. Otherwise the rule is unchanged.
+
+**A margin on the score alone does not separate the cases.** Measured with
+"scores above timing's" alone, four synthetic takes moved:
+
+| take | chain at pitch | timing at pitch | chain score | timing score | result |
+|---|---|---|---|---|---|
+| `1057` violin pizz | 37 of 37 | 36 of 37 | 0.931 | 0.827 | right |
+| `1116` cello bowed | 31 of 31 | 30 of 31 | 0.886 | 0.869 | right |
+| `1147` bass bowed | 30 of 39 | 29 of 38 | 0.925 | 0.890 | right |
+| `1119` cello bowed | 31 of 35 | 30 of 35 | 0.892 | 0.823 | 2 notes newly reported missing |
+
+The score gap of the one that went wrong (0.069) lies between those of the
+ones that went right, so no margin keeps the three and drops it. A margin of
+`MIN_READING_GAIN` (0.1) kept only `1057`. Requiring every paired note at
+pitch keeps `1057` and `1116`, drops `1119`, and gives up `1147`, whose bass
+the pitch track reads poorly.
+
+| | before | after |
+|---|---|---|
+| synthetic, overall | 97.85% | **97.93%** |
+| synthetic, notes / missed / bars | 96.50% / 99.57% / 96.88% | 96.56% / 99.64% / 97.01% |
+| synthetic, over what the truth decides | 98.43% | 98.50% |
+| real, 72 takes | | identical, every card and sentence |
+
+`1057`: missed 37 → 39 of 39, notes 36 → 37 of 37, bars 7 → 8 of 8.
+`1116`: missed 31 → 34 of 34, notes 28 → 31 of 32, bars 7 → 8 of 8.
+
+**Regression, all six clips:** identical.
+
+Tests: `test_one_note_more_is_enough_only_where_the_chain_leaves_nothing_to_doubt`
+and `test_two_notes_left_out_of_a_run_of_one_pitch_are_the_ones_reported`
+(the page and times of `1057`, plucked by `synth_plucked_take`; without the
+rule the third D and the G are reported missing). The chain now also re-pairs
+`test_beside_a_hole.py`'s bowed take with two notes left out in a row, which
+`(holes)` gave to `_beside_a_hole`. Its guard, which keeps that defect
+reproducible, failed for it. The guard and a new
+`test_this_rule_reports_them_without_the_chains_help` now switch the chain's
+rule off, so `_beside_a_hole` is still tested on its own.
+
+## 2026-11-14 (the attack look's recoveries) — Measured, not kept. No thresholds changed.
+
+The second look's attack look (`_recover_attacks`, after
+`_not_the_note_before`) kept 309 attacks on URMP's 72 takes. 147 lie within
+80 ms of a labelled onset and 162 do not: mostly 80–300 ms from one, inside a
+note, spread across violin (58), viola (45), cello (47) and saxophone (12).
+On the synthetic set it kept 11, of which 4 sat where the player left a note
+out: inside the note before (a held D5 under an A4, a repeated D4), with the
+level flat (−0.5 to −0.3 dB).
+
+Two ways to tell them apart, neither kept:
+
+- **The level change at the attack.** The right ones run from −3.6 dB (p10)
+  to +6.3 (p90) on the real takes, the wrong ones −1.7 to +3.1, medians both
+  +0.8. On synthesis, three right ones are quieter plucks under a ringing
+  note (−2.5, −1.6, −0.8 dB), below the four wrong ones.
+- **The missed note's own pitch after the attack**, where it differs from
+  the note before's (`_not_the_note_before` drops only an attack after which
+  the note before's pitch is heard at both readings). On the real takes:
+  heard 14,747 → 14,733, placed (50 ms) 12,341 → 12,330, paired (100 ms)
+  14,197 → 14,182, colour 12,358 → 12,360, sentences unchanged. A dropped
+  recovery leaves its note missing rather than placed better.
+
+## 2026-11-14 (the saxophone's onset threshold) — `[onset.instrument.alto_sax] delta` swept on URMP's 11 saxophone takes: measured, not kept. No thresholds changed.
+
+The saxophone's threshold was a starting value copied from the treble
+strings (2026-09-30) that had not met a saxophone recording. Swept alone on
+its 11 tracks:
+
+| delta | heard | colour | verdict true |
+|---|---|---|---|
+| 0.07 (is) | 98.58% | 64.43% | 10 of 11 |
+| 0.08 | 98.37% | 65.37% | 10 |
+| 0.091 | 97.84% | 70.12% | 11 |
+| 0.10 | 97.37% | 70.25% | 10 |
+| 0.11 | 96.90% | 71.08% | 9 |
+| 0.12 | 95.79% | 69.21% | 9 |
+
+The 11 of 11 is one value with 10 on either side, and nearly all of its
+colour gain is one take: Rejouissance's second saxophone re-anchors with the
+labels at 0.091 (38 → 141 of 215 notes) and not at 0.08. Each step up hears
+fewer notes. Not kept.
+
+**What it found instead.** Half the saxophone's notes are placed more than
+50 ms from their labels, against 8% of the violin's. In a tongued passage
+the first pass often reports two attacks about 90 ms apart at one note: one
+where the tongue stops the reed at the end of the note before, the other
+where the new note sounds. The pairing takes either. URMP's labels sit at
+the first, where the note before ends. A passage the app reads consistently
+at the second (Rejouissance's first saxophone: 60 ms after the labels, robust
+spread 8 ms) colours like the strings. Where it alternates (March's second
+saxophone: spread 43 ms), it cannot. Which of the two is the note's start is
+a question about the labels as much as the app, and the hand labels here
+cannot answer it.
+
+---
+
 ## 2026-11-14 (the pulse's deviations) — `[tolerance.pulse] disturbance_deviations` 6 → 8
 
 **Why.** The re-anchor limit is the larger of `disturbance_deviations` times

@@ -205,8 +205,26 @@ def _take(left_out: tuple[int, ...]) -> tuple[list[int], int]:
     return sorted(set(range(len(notes))) - timed), result.n_missed_notes
 
 
+def _without_the_chains_one_note_rule(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Since 2026-11-14 the chain re-pairs the first of these takes on its own
+    (`analysis._nothing_to_doubt`). Without that, the take still reaches this
+    rule the way it did before, so this rule is tested on its own."""
+    monkeypatch.setattr(analysis, "_nothing_to_doubt", lambda candidate, quality: False)
+
+
 @pytest.mark.parametrize("left_out", [(4, 5), (9, 10)])
 def test_two_notes_left_out_in_a_row_are_the_two_reported(left_out: tuple[int, ...]) -> None:
+    untimed, missed = _take(left_out)
+
+    assert untimed == list(left_out)
+    assert missed == 2
+
+
+@pytest.mark.parametrize("left_out", [(4, 5), (9, 10)])
+def test_this_rule_reports_them_without_the_chains_help(
+    left_out: tuple[int, ...], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _without_the_chains_one_note_rule(monkeypatch)
     untimed, missed = _take(left_out)
 
     assert untimed == list(left_out)
@@ -218,6 +236,7 @@ def test_without_the_rule_the_note_after_them_is_reported_instead(
 ) -> None:
     """The defect, kept reproducible: if this passes, the take above no longer
     needs the rule and is testing nothing."""
+    _without_the_chains_one_note_rule(monkeypatch)
     monkeypatch.setattr(analysis, "_beside_a_hole", lambda cleaned, *a, **k: cleaned)
     untimed, _ = _take((4, 5))
 

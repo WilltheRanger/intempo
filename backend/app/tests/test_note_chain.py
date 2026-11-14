@@ -14,6 +14,8 @@ See `alignment.align_chain`, `analysis._trusted_by_pitch` and `[pitch]`
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
@@ -24,11 +26,17 @@ from app.services.alignment import (
     align_chain,
     apply_fuzzy_match,
 )
-from app.services.analysis import _Confirmed, _heard_by_pitch, _trusted_by_pitch, analyze
+from app.services.analysis import (
+    _Confirmed,
+    _heard_by_pitch,
+    _nothing_to_doubt,
+    _trusted_by_pitch,
+    analyze,
+)
 from app.services.audio_config import load_audio_config
 from app.services.pitch_evidence import midi
 from app.services.score_schema import ScoreJson
-from app.tests.audio_helpers import synth_bowed_take
+from app.tests.audio_helpers import synth_bowed_take, synth_plucked_take
 
 CFG = load_audio_config()
 SR = 22050
@@ -434,6 +442,93 @@ def test_a_different_tune_in_the_same_key_is_never_paired_as_the_page(seed: int)
 
     assert trace.get("paired_by") != "chain"
     assert not trace.get("confirmed", {}).get("trusted")
+
+
+# ---- one note more ----------------------------------------------------------------
+
+
+def _candidate(notes: int, paired: int, quality: float) -> SimpleNamespace:
+    """What `_nothing_to_doubt` reads of a chained pairing, and nothing else."""
+    return SimpleNamespace(
+        confirmed=_Confirmed(notes=notes, paired=paired),
+        anchored=SimpleNamespace(alignment=SimpleNamespace(quality=quality)),
+    )
+
+
+def test_one_note_more_is_enough_only_where_the_chain_leaves_nothing_to_doubt() -> None:
+    assert _nothing_to_doubt(_candidate(37, 37, 0.931), 0.827)
+    assert not _nothing_to_doubt(_candidate(31, 35, 0.892), 0.823), "a note at another pitch"
+    assert not _nothing_to_doubt(_candidate(37, 37, 0.827), 0.827), "timing scores it as well"
+    assert not _nothing_to_doubt(_candidate(37, 37, 0.80), 0.827), "timing scores it better"
+    assert not _nothing_to_doubt(_candidate(0, 0, 0.9), 0.827), "nothing paired"
+
+
+#: Eight bars of a pizzicato violin part, the synthetic take that found this
+#: (`accuracy_bench.py`, `violin/pizz/108/missed/noise/1057`): bar 4 is four
+#: D's and then a G.
+_TWO_HOLES_BARS = [
+    ["F#5 q", "E5 q", "F#5 q", "D5 q"],
+    ["B4 q", "A4 e", "B4 e", "C5 q", "B4 q"],
+    ["D5 q", "A4 q", "F#4 e", "G4 e", "F#4 e", "D4 e"],
+    ["D4 q", "D4 q", "D4 e", "D4 e", "G4 e", "F#4 e"],
+    ["G4 q", "D4 e", "G4 e", "A4 q", "F#4 q"],
+    ["E4 e", "D4 e", "D4 e", "G4 e", "D4 q", "E4 q"],
+    ["D4 dq", "D4 e", "D4 q", "D4 q"],
+    ["D4 h", "D4 q", "F#4 q"],
+]
+_TWO_HOLES_AT = [
+    1.1, 1.646, 2.202, 2.755, 3.319, 3.88, 4.168, 4.427, 4.985, 5.546, 6.091, 6.657, 6.931,
+    7.216, 7.484, 7.773, 8.317, 8.873, 9.149, 9.426, 9.702, 9.99, 10.548, 10.814, 11.104,
+    11.656, 12.219, 12.483, 12.768, 13.044, 13.332, 13.875, 14.428, 15.272, 15.546, 16.106,
+    16.651, 17.764, 18.32,
+]
+
+
+def test_two_notes_left_out_of_a_run_of_one_pitch_are_the_ones_reported(monkeypatch) -> None:
+    """The second and fourth D's of bar 4 left out, at 108 BPM.
+
+    Timing read the take a note early across both holes: the third D's sound
+    on the second D, the G's on the third D, and the third D and the G
+    reported missing. The chain pairs every note at its own pitch and fits
+    the take's timing better by timing's own score, but hears only one note
+    more at pitch than timing's pairing, which `CHAIN_GAIN_NOTES` alone
+    refused (`_nothing_to_doubt`).
+    """
+    lengths = {"q": "quarter", "e": "eighth", "dq": "dotted_quarter", "h": "half"}
+    page = ScoreJson.model_validate(
+        {
+            "time_signature": "4/4",
+            "clef": "treble",
+            "repeats": [],
+            "ocr_confidence": 1.0,
+            "measures": [
+                {
+                    "measure_number": k + 1,
+                    "notes": [
+                        {"pitch": p, "duration": lengths[d]}
+                        for p, d in (note.split() for note in bar)
+                    ],
+                    "slurs": [],
+                }
+                for k, bar in enumerate(_TWO_HOLES_BARS)
+            ],
+        }
+    )
+    pitches = [midi(note.split()[0]) for bar in _TWO_HOLES_BARS for note in bar]
+    left_out = {16, 18}
+    played = [i for i in range(len(_TWO_HOLES_AT)) if i not in left_out]
+    y = synth_plucked_take(
+        [_TWO_HOLES_AT[i] for i in played], [_hz(pitches[i]) for i in played], sr=SR
+    )
+
+    def missing() -> set[int]:
+        result = analyze((y, SR), page, 108.0, instrument="violin")
+        assert result.status == "ok"
+        return set(range(len(_TWO_HOLES_AT))) - {p.global_index for p in result.per_note}
+
+    assert missing() == left_out
+    monkeypatch.setattr(analysis, "_nothing_to_doubt", lambda candidate, quality: False)
+    assert missing() == {17, 18}, "without the rule, timing's pairing stands"
 
 
 # ---- the octave ------------------------------------------------------------------

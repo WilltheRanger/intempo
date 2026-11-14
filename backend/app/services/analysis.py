@@ -1959,8 +1959,38 @@ def _by_chain(
 #: Pitch sees it at once — half the notes are heard at their neighbour's pitch.
 #:
 #: Two notes, not one: a single note read differently is a borderline pitch,
-#: and not a reason to re-pair a take that reads well.
+#: and not a reason to re-pair a take that reads well — unless the chain's
+#: pairing leaves nothing to doubt (`_nothing_to_doubt`).
 CHAIN_GAIN_NOTES = 2
+
+
+def _nothing_to_doubt(candidate: _Chained, timing_quality: float) -> bool:
+    """Whether the chain's pairing needs only one note more than timing's.
+
+    **When it hears every note it pairs at its written pitch, and timing's own
+    score prefers it.** `CHAIN_GAIN_NOTES` guards a take timing reads well
+    against being re-paired on one borderline pitch. A pairing in which no
+    note is heard at another pitch has no borderline note in it, and one that
+    `alignment._scored_mapping` scores above timing's own pairing is not one
+    timing has a case against: the one note it hears that timing does not is
+    then a note timing put in the wrong place, not a pitch in doubt.
+
+    On the synthetic set (2026-11-14) timing read a pizzicato violin with two
+    of five repeated D's left out a note early across both holes (quality
+    0.827): the D after the first hole on the first, the G after the second
+    on the second D, and the G reported missing. The chain paired every note
+    at its pitch at 0.931, one note more than timing's 36 of 37, and was
+    refused for want of a second. Where the chain itself hears notes at
+    another pitch the rule stays as it was: on a fast cello passage the chain
+    heard 31 of 35, timing 30 of 35, and the chain's pairing of the passage
+    was the worse one.
+    """
+    confirmed = candidate.confirmed
+    return (
+        confirmed.paired > 0
+        and confirmed.notes == confirmed.paired
+        and candidate.anchored.alignment.quality > timing_quality
+    )
 
 
 def _claimed_unheard(
@@ -2295,7 +2325,9 @@ def _audited_by_chain(
     timed = _confirmed(
         anchored, reading, pitch, float(onsets[anchored.trimmed_lead]), config
     )
-    needed = timed.notes + (CHAIN_GAIN_NOTES if readable else 1)
+    needed = timed.notes + (
+        CHAIN_GAIN_NOTES if readable and not _nothing_to_doubt(candidate, quality) else 1
+    )
     if _trusted_by_pitch(timed, config) and candidate.confirmed.notes < needed:
         return None
     # **Re-paired, never claiming more notes played and not heard.** A take
