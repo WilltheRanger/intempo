@@ -1320,9 +1320,11 @@ def _recover_legato(
     """The legato look: missed notes found where their written pitch takes
     over, on the recording's clock (`onsets`, `taken`) and the attack's.
 
-    Only a note whose sounding pitch differs from both written neighbours is
-    asked, since a pitch the note before or after also has would be found
-    whether this note sounded or not. Each is looked for after the note before
+    A note is not asked when the note before has its pitch, which is sounding
+    already, nor when the note after has it and that note's attack is not
+    paired: the next note's pitch would be found whether this note sounded or
+    not. Where that attack is paired the window ends before it, so the pitch
+    inside is this note's. Each is looked for after the note before
     it — paired, or found here a moment ago, so a slurred run is found note by
     note — and before the next paired note and the next written note's place
     on the line through the take's own pace. See `onset_recovery.recover_by_pitch`
@@ -1364,8 +1366,19 @@ def _recover_legato(
         target = sounding(e)
         if target is None:
             continue
-        neighbours = [sounding(k) for k in (e - 1, e + 1) if 0 <= k < len(notes)]
-        if any(n is not None and abs(n - target) < 1.0 for n in neighbours):
+        def shares(k: int) -> bool:
+            if not 0 <= k < len(notes):
+                return False
+            other = sounding(k)
+            return other is not None and abs(other - target) < 1.0
+
+        # **The note after at this pitch hides this one only while its own
+        # attack is unknown.** Both neighbours used to rule a note out. K515's
+        # first violin has six notes with no attack of their own before a
+        # note of the same pitch whose attack was paired (D4, a rest, D4; a
+        # long B-flat, then another), and none was asked: each was reported
+        # missing.
+        if shares(e - 1) or (shares(e + 1) and (e + 1) not in at):
             continue
         before = [k for k in previous if k < e]
         if not before:

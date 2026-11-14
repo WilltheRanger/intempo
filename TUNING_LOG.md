@@ -6,6 +6,45 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (the legato look's neighbours) — A note no attack marked is asked about by its pitch when the note after shares it, if that note's attack is paired. No thresholds changed.
+
+**Old behaviour:** the legato look (`_recover_legato`) asked only about a
+missed note whose pitch differed from both written neighbours, since a pitch
+the note before or after also has "would be found whether this note sounded
+or not". For the note before that holds: its pitch is sounding already. For
+the note after it holds only while that note's attack is unknown. Where it is
+paired, the window the look searches ends before it, so a pitch taking over
+inside the window is this note's. K515's first violin has six notes with no
+attack of their own before a note of their pitch whose attack was paired:
+D4, a rest, D4 (bars 5, 15), a long B-flat before another (bars 102, 127,
+170), and a B5 in bar 31. Each was reported missing. In bar 96 both D4s lack
+an attack, and that pair is still not asked.
+
+**New:** a note is not asked when the note before has its pitch, nor when the
+note after has it and that note's attack is not paired.
+
+| | before (`154e3f1`) | after |
+|---|---|---|
+| synthetic | 97.84% | identical, every take |
+| real, heard | 14,723 / 15,035 (97.92%) | **14,749 (98.10%)** |
+| real, placed within 50 ms | 12,237 | 12,263 (83.14%) |
+| real, paired within 100 ms | 14,071 (95.57%) | 14,103 (95.62%) |
+| real, colour agreement | 11,129 (75.59%) | 11,177 (75.78%) |
+| real, bar tempo within 2% | 2,889 / 4,016 (71.94%) | 2,897 (72.14%) |
+| real, verdict true | 67 of 72 | 67 of 72, every sentence the same |
+
+19 takes move. K515's first violin hears 561 of its 605 notes (was 554), and
+colours 379 as a perfect reading would (was 354). One take gives something
+back: Pirates' saxophone now hears note 78, paired 28 ms from its label, but
+the pitch look places a note through a lag measured on strings and its
+neighbours sit at the saxophone's steady +60–80 ms, so bars 25–26 lose their
+tempo agreement.
+
+**Regression, all six clips:** identical.
+
+Tests: `test_legato_neighbours.py`, four, with the pitch track given. The
+first, a D5 before a paired D5, fails on the old rule.
+
 ## 2026-11-14 (a tie between two attacks) — Where DTW gives one note two attacks, the one nearest where the take puts the note keeps it, not the one nearest the page's grid. No thresholds changed.
 
 **Old behaviour:** `apply_fuzzy_match` settled a many-to-one by keeping the

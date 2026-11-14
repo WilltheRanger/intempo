@@ -165,11 +165,12 @@ def recover_by_pitch(
     this pitch, still ringing — so it counts only once something else, or
     nothing, has sounded in between.
 
-    The caller chooses which notes may be asked — only one whose pitch differs
-    from both written neighbours, since a pitch the note before or after also
-    has would be found there whether this note sounded or not — and moves the
-    time onto the attack clock: a pitch takes over where the label puts the
-    note, an attack is placed a few tens of milliseconds into it.
+    The caller chooses which notes may be asked — not one whose note before
+    has its pitch, nor one whose note after has it while that note's attack is
+    unknown, since the pitch would be found there whether this note sounded or
+    not — and moves the time onto the attack clock: a pitch takes over where
+    the label puts the note, an attack is placed a few tens of milliseconds
+    into it.
     """
     out: list[float | None] = []
     hold = max(1, int(np.ceil(hold_s / frame_s - 1e-9)))
