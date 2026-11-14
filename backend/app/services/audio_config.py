@@ -183,6 +183,7 @@ class MistakesConfig:
 
     wrong_note_max_share: float = 0.25
     clear_note_semitones: float = 0.2
+    written_partials_floor: float = 0.05
     rest_entry_min_beats: float = 0.75
 
 
@@ -330,6 +331,9 @@ def _mistakes(row: dict) -> MistakesConfig:
         ),
         clear_note_semitones=float(
             row.get("clear_note_semitones", default.clear_note_semitones)
+        ),
+        written_partials_floor=float(
+            row.get("written_partials_floor", default.written_partials_floor)
         ),
         rest_entry_min_beats=float(
             row.get("rest_entry_min_beats", default.rest_entry_min_beats)

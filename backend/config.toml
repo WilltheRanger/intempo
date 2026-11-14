@@ -518,6 +518,17 @@ wrong_note_max_share = 0.25
 # the owner a B♭ played 72 cents sharp in a fast chromatic run was a B (28
 # cents from it): see TUNING_LOG, 2026-09-26.
 clear_note_semitones = 0.2
+# A note heard as another is still not named wrong where the written note's own
+# partials sound over the note at least as strongly as the other pitch's, and
+# at least this strongly against the strongest partial of either
+# (`pitch_evidence.own_partials`). What the readings then followed was one
+# partial of the written note, or a slide into it: a cello's B2 read from its
+# third partial as F#3, a viola's open C as the G above it. On URMP's 72 real
+# takes (2026-11-14) that was 6 of the 10 bars named wrong that the labels say
+# were right, and none of the 15 named wrong that were; on the synthetic set,
+# none of its 52 notes played wrong. The floor keeps a window too short to
+# read (a bass's partials a semitone apart) from deciding on two noise floors.
+written_partials_floor = 0.05
 # An entrance after a rest of a bar or more is named when it comes in at least
 # this many quarter beats early or late, at the take's own pace around the rest.
 # Under one so a whole beat measured at 0.98 is named; over a half so half a

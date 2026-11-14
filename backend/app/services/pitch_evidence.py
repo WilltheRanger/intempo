@@ -236,6 +236,19 @@ def _listening_window(attacks_s: np.ndarray, i: int) -> tuple[float, float]:
     return t + max(_SETTLE_S, 0.03), t + _SETTLE_S + min(_LISTEN_S, _LISTEN_SHARE_OF_GAP * gap)
 
 
+#: The longest stretch of a note `note_window` gives: enough of its body to
+#: outlast a slide or an ornament into it, and within one `_OCTAVE_FFT`.
+_NOTE_S = 0.6
+
+
+def note_window(attacks_s: np.ndarray, i: int) -> tuple[float, float]:
+    """Attack `i`'s note, in seconds: from where `_listening_window` starts
+    to the next attack, at most `_NOTE_S` after the attack."""
+    t = float(attacks_s[i])
+    end = float(attacks_s[i + 1]) if i + 1 < attacks_s.size else t + _NOTE_S
+    return t + max(_SETTLE_S, 0.03), min(end, t + _NOTE_S)
+
+
 def heights_at(track: np.ndarray, sr: int, attacks_s: np.ndarray) -> np.ndarray:
     """The pitch that sounded after each attack, as fractional MIDI.
 
@@ -337,6 +350,58 @@ def octave_checked(
         ):
             out[i] += 12.0
     return out
+
+
+#: The partials above the fundamental `own_partials` reads: the second to the
+#: sixth, the ones every bowed or blown note has.
+_OWN_PARTIALS = range(2, 7)
+
+
+def own_partials(
+    y: np.ndarray, sr: int, start_s: float, end_s: float, f_a: float, f_b: float
+) -> tuple[float | None, float | None]:
+    """How strongly each of two pitches sounds by the partials only it has.
+
+    **A pitch read from one partial is not a note.** A note is a series: its
+    fundamental and the partials above it. The pitch track and the chroma both
+    follow the strongest part of a sound, and that can be one partial of
+    another note — a viola's open C read as the G an octave and a fifth above
+    it, which is its third partial — or a room's resonance under it.
+
+    So each of `f_a` and `f_b` is asked of its own partials (`_OWN_PARTIALS`),
+    leaving out every one the other pitch has too, or has too close for the
+    window to tell apart: within `_PARTIAL_REACH` of it and the main lobe of
+    the window (two over its length, in Hz) besides. What is left is evidence
+    for one pitch and not the other. Each strength is the mean of those
+    partials' peaks (`_partials`), over the strongest partial of either
+    series; None where a pitch has no partial of its own to read — `f_b`
+    three times `f_a` has none, every one of its partials is one of `f_a`'s.
+    """
+    first = max(0, int(round(start_s * sr)))
+    piece = y[first : max(first + 256, int(round(end_s * sr)))]
+    if piece.size < 256 or not (f_a > 0 and f_b > 0):
+        return None, None
+    spectrum = np.abs(np.fft.rfft(piece * np.hanning(piece.size), n=_OCTAVE_FFT))
+    freqs = np.fft.rfftfreq(_OCTAVE_FFT, 1.0 / sr)
+    lobe = 2.0 * sr / piece.size
+    nyquist = 0.5 * sr * (1 - _PARTIAL_REACH)
+    top = max(_OWN_PARTIALS)
+    every = [k * f for f in (f_a, f_b) for k in range(1, top + 1) if k * f < nyquist]
+    strongest = max((_partials(spectrum, freqs, [f]) for f in every), default=0.0)
+    if strongest <= 0:
+        return None, None
+
+    def unique(f: float, other: float) -> float | None:
+        theirs = other * np.arange(1, int(np.ceil(top * f / other)) + 2)
+        mine = [
+            k * f
+            for k in _OWN_PARTIALS
+            if k * f < nyquist
+            and float(np.min(np.abs(theirs - k * f))) > _PARTIAL_REACH * k * f + lobe
+        ]
+        return _partials(spectrum, freqs, mine) / strongest if mine else None
+
+    return unique(f_a, f_b), unique(f_b, f_a)
 
 
 #: Within this many semitones of the written pitch, an attack *is* that note —

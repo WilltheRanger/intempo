@@ -3185,6 +3185,7 @@ def _analyze_take(
         min_relative=cfg.pitch.min_relative,
         clear_semitones=cfg.mistakes.clear_note_semitones,
         tuning_semitones=(in_tune.tuning_cents or 0.0) / 100.0,
+        written_partials_floor=cfg.mistakes.written_partials_floor,
     )
     rests = miscounted_rests(
         cleaned.matched,

@@ -6,6 +6,58 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (a wrong note's own partials) — `player_mistakes.wrong_notes`: a note heard as another is not named where the written note's own partials carry it: new `pitch_evidence.own_partials` and `note_window`, `[mistakes] written_partials_floor = 0.05` (new)
+
+**The case.** Of the 10 real notes still named wrong that the labels say
+were played right (after the scorer entry below), 6 were one partial of the
+written note read as a note. Pirates' cello plays B2, whose third partial
+(F♯4) outsounds its fundamental; both readings heard F♯, in bars 25, 36
+and 53. K515's second viola plays C3 (its open string) and C♯3, and both
+readings heard the G and G♯ an octave and a fifth up: the third partial,
+with the fundamental at 0.02 of it. A sixth, K515's cello in bar 203, slides into A3
+from A♯3: the first 120 ms are A♯, the note is A.
+
+**Measured first.** Each candidate's two pitches asked of the partials only
+each of them has (the second to the sixth, leaving out those the other pitch
+shares or has too close for the window to separate), over the whole note:
+from 30 ms after the attack to the next, at most 0.6 s.
+
+| | written | heard |
+|---|---|---|
+| Pirates' B2 read as F♯3 (6 notes) | 0.16–0.31 | 0.01–0.04 |
+| K515's C3 read as G4, C♯3 as G♯4 | 0.20, 0.27 | none of its own |
+| K515's A♯3 slide into A3 | 0.38 | 0.11 |
+| the real wrong notes it names (15 bars) | at most 0.39 | at least 1.3× the written |
+| the synthetic notes played wrong (52) | at most 0.09 | at least 1.4× the written |
+
+**New:** a note is not named where its written pitch's own partials are at
+least as strong as the other pitch's (none counts as 0), and at least
+`written_partials_floor` of the strongest partial of either. The floor keeps
+a window too short to read from deciding on two noise floors: a bass's
+partials a semitone apart need about 0.3 s to tell apart.
+
+| | before | after |
+|---|---|---|
+| real wrong notes (oracle) | 15 / 41 | **15 / 35** |
+| … named wrong, was right | 10 | 4 |
+| … wrong, named | 15 | 15 |
+| synthetic | 97.93% | 97.93%, identical in every take |
+| six fixture clips | | identical |
+
+Every other real figure is unchanged. **Not the neighbour rule's
+replacement:** over a whole note, 16 of the real notes it spares (the note
+before or after's pitch heard) still show that pitch stronger than their
+own, and they were played right; so a note heard as its neighbour is still
+never named, and the synthetic set's 9 such wrong notes stay unnamed. Left:
+King's first violin in bar 34 (both copies), where the whole note is A5's
+partials (0.04) and none of G♯5's, though the label says G♯5; K515's second
+violin bar 73, both series near nothing (0.045 against 0.052); and K515's
+second viola bar 177, where the app is likely right (a label of A3 for the
+written C4, a third of a beat early, outside the scorer's quarter beat). The
+synthetic set's one false naming (double bass 1140, bar 4) is the room's
+58 Hz mode under four notes, a semitone from them in a 70–110 ms note: no
+window that short can separate their partials, so the floor leaves it.
+
 ## 2026-11-14 (the scorer, a note played at another pitch) — `tools/eval/real_takes.py`: between two notes paired by pitch, as many labels as written notes are those notes in order, at whatever pitch (`played_otherwise`); the same letter an octave away is the note. The measuring stick, not the app.
 
 **The case.** Of the 17 real notes the app named wrong that the scorer

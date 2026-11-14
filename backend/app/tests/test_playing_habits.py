@@ -432,6 +432,58 @@ def test_the_note_before_heard_again_is_not_named() -> None:
     assert result.wrong_notes == []
 
 
+def _third_partial_loudest(freq_hz: float, seconds: float) -> np.ndarray:
+    """A note whose third partial outsounds its fundamental fifty to one and
+    its second twelve to one: the shares a real viola's open C had in K515
+    (URMP, 2026-11-14), where both readings heard the G above it."""
+    t = np.arange(int(seconds * SR)) / SR
+    shares = [0.02, 0.08, 1.0, 0.13, 0.09, 0.02]
+    y = sum(a * np.sin(2 * np.pi * freq_hz * (k + 1) * t) for k, a in enumerate(shares))
+    envelope = np.exp(-0.6 * t) * np.clip(t / 0.035, 0.0, 1.0)
+    return (0.4 * envelope * y / float(np.abs(y).max())).astype(np.float32)
+
+
+def _take_with_a_third_partial_note(k: int) -> np.ndarray:
+    others = [i for i in range(N) if i != k]
+    y = synth_bowed_take([float(GRID[i]) for i in others], freqs_hz=[_hz(TUNE[i]) for i in others], sr=SR)
+    note = _third_partial_loudest(_hz(TUNE[k]), 0.55)
+    start = int(GRID[k] * SR)
+    y[start : start + note.size] += note[: max(0, y.size - start)]
+    return y
+
+
+#: Bar 3's A4, between two G4s: its third partial, E6, is no neighbour's.
+THIRD_PARTIAL_NOTE = 8
+
+
+def test_a_note_heard_by_its_third_partial_is_not_named() -> None:
+    """Both readings follow the strongest partial, and here that is the
+    third: they hear E where the page has A. The A's own partials — its
+    second, fourth and fifth, which no E has — carry the note."""
+    y = _take_with_a_third_partial_note(THIRD_PARTIAL_NOTE)
+
+    result = analyze((y, SR), PAGE, BPM, instrument="violin")
+
+    assert result.status == "ok"
+    assert result.wrong_notes == []
+
+
+def test_without_asking_the_partials_that_note_is_named_wrong() -> None:
+    """The defect, kept reproducible: if this fails, the take above no longer
+    reads the third partial and is testing nothing."""
+    from dataclasses import replace
+
+    from app.services.audio_config import load_audio_config
+
+    cfg = load_audio_config()
+    off = replace(cfg, mistakes=replace(cfg.mistakes, written_partials_floor=0.0))
+    y = _take_with_a_third_partial_note(THIRD_PARTIAL_NOTE)
+
+    result = analyze((y, SR), PAGE, BPM, instrument="violin", config=off)
+
+    assert _wrong(result) == [(THIRD_PARTIAL_NOTE // 4 + 1, "E", "A")]
+
+
 def test_a_page_read_in_the_wrong_key_names_nothing() -> None:
     """Every note a tone high is not thirty-two mistakes; it is a page read in
     the wrong clef or key, and naming them would send the player the wrong way."""
