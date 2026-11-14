@@ -32,6 +32,15 @@ owner and not a detection one.
 - *wrong notes*: every note played at the wrong pitch is named, in its bar,
   and nothing else is.
 
+**What the truth itself cannot decide** (not scored). Where a rule has a
+cliff, a perfect reading of a note can turn on a fraction of a millisecond, and
+no hearing could be sure to agree with it. So each take's truth is read again
+with every onset moved by `TRUTH_JITTER_S` (2 ms, about what a detector
+resolves), `TRUTH_DRAWS` times, and a note, bar or verdict that reads otherwise
+in any draw is *undecided* (`undecided`). The summary says how many there are,
+how many of them the app reads otherwise, and the scores over what is decided.
+The scores above it count everything.
+
 **What it cannot tell you.** It is synthesis — the repository's own models of
 a bowed and a plucked string (`app/tests/audio_helpers.py`), with vibrato,
 uneven intonation, dynamics, a room, a microphone floor and the degradations
@@ -171,6 +180,9 @@ class TakeScore:
     #: played notes, and attacks near no played note. Separates a note the
     #: detector never heard from one it heard and the pairing misplaced.
     attacks: dict = field(default_factory=dict)
+    #: Diagnostic, not scored: notes, bars and the verdict tallied again over
+    #: only what the truth decides (`undecided`), and how many it does not.
+    decided: dict = field(default_factory=dict)
 
 
 #: Where an attack counts as one note's, from that note's true start. The
@@ -480,6 +492,60 @@ def oracle(score: ScoreJson, notes: list[TruthNote], bpm: float) -> dict:
     }
 
 
+#: How far each true onset is moved to ask whether the truth decides a
+#: reading, in seconds. About what any detector can resolve: the finer onset
+#: look works on a 2.9 ms grid, and `analyze` places a clean take's attacks
+#: within 1-4 ms of one another (robust spread, `TUNING_LOG.md` 2026-11-14).
+TRUTH_JITTER_S = 0.002
+#: How many times, each with its own seed.
+TRUTH_DRAWS = 8
+
+
+def undecided(score: ScoreJson, notes: list[TruthNote], bpm: float) -> dict:
+    """What the app's rules read differently when the truth moves by
+    `TRUTH_JITTER_S`: the notes, bars and verdict a perfect hearing with a
+    detector's resolution could not be sure of.
+
+    **Not a metric, a diagnostic.** Where a rule has a cliff, its reading of
+    a note can turn on a fraction of a millisecond: on `violin/bowed/60/drag/
+    clean/1011` one interval read 166.6 ms long by the truth and 166.9 as
+    heard, against a re-anchor limit of 166.7, and sixteen notes moved by
+    156 ms. No hearing could be sure to agree there. The strict scores count
+    every note; this counts which of their misses sit on such a cliff.
+    """
+    truth = oracle(score, notes, bpm)
+    beat_ms = 60000.0 / bpm
+    tol_pct = 100.0 * NOTE_TOL_MS / beat_ms
+    out = {"notes": set(), "bars": set(), "verdict": False}
+    for draw in range(TRUTH_DRAWS):
+        rng = np.random.default_rng(10_000 + draw)
+        moved = [
+            replace(n, onset_s=n.onset_s + float(rng.normal(0, TRUTH_JITTER_S)))
+            for n in notes
+        ]
+        other = oracle(score, moved, bpm)
+        for g, want in truth["deltas"].items():
+            mine = other["deltas"].get(g)
+            if mine is None or abs(mine.delta_ms - want.delta_ms) > NOTE_TOL_MS:
+                out["notes"].add(g)
+        for number, want in truth["measures"].items():
+            mine = other["measures"].get(number)
+            if (
+                mine is None
+                or abs(mine.avg_delta_pct - want.avg_delta_pct) > tol_pct
+                or (
+                    mine.played_bpm is not None
+                    and want.played_bpm is not None
+                    and abs(mine.played_bpm - want.played_bpm)
+                    > max(1.5, 0.02 * want.played_bpm)
+                )
+            ):
+                out["bars"].add(number)
+        if (other["direction"], other["bars"]) != (truth["direction"], truth["bars"]):
+            out["verdict"] = True
+    return out
+
+
 # ---------------------------------------------------------------- scoring
 
 
@@ -488,7 +554,10 @@ def run_one(sc: Scenario) -> TakeScore:
     score, notes = make_page(rng, sc.instrument)
     end_s = place_notes(notes, sc, rng)
     y = render(notes, sc, end_s, rng)
-    return score_take(sc.name, (y, SR), score, notes, float(sc.bpm), sc.instrument)
+    return score_take(
+        sc.name, (y, SR), score, notes, float(sc.bpm), sc.instrument,
+        undecided=undecided(score, notes, float(sc.bpm)),
+    )
 
 
 def score_take(
@@ -501,6 +570,7 @@ def score_take(
     *,
     unsure_bars: set[int] | frozenset[int] = frozenset(),
     unsure_notes: set[int] | frozenset[int] = frozenset(),
+    undecided: dict | None = None,
 ) -> TakeScore:
     """Analyse one take and score the reading against the truth it was made
     from — or, for a real recording, the truth it was labelled with
@@ -516,7 +586,7 @@ def score_take(
     result = analyze(audio, score, bpm, instrument=instrument, trace=trace, config=config())
     return score_result(
         name, result, trace, score, notes, bpm,
-        unsure_bars=unsure_bars, unsure_notes=unsure_notes,
+        unsure_bars=unsure_bars, unsure_notes=unsure_notes, undecided=undecided,
     )
 
 
@@ -530,18 +600,30 @@ def score_result(
     *,
     unsure_bars: set[int] | frozenset[int] = frozenset(),
     unsure_notes: set[int] | frozenset[int] = frozenset(),
+    undecided: dict | None = None,
 ) -> TakeScore:
     """`score_take`'s scoring, for a reading the caller already has."""
     truth = oracle(score, notes, bpm)
     out = TakeScore(scenario=name, status=result.status)
     out.attacks = attacks_against(notes, np.asarray(trace.get("detected_s") or [], dtype=float))
     counts: dict[str, list[int]] = defaultdict(lambda: [0, 0])
+    decided: dict[str, list[int]] = defaultdict(lambda: [0, 0])
 
-    def tally(metric: str, ok: bool, problem: str = "") -> None:
+    def tally(metric: str, ok: bool, problem: str = "", key: object = None) -> None:
         counts[metric][0] += int(ok)
         counts[metric][1] += 1
         if not ok and problem:
             out.problems.append(f"{metric}: {problem}")
+        if undecided is not None and metric in ("notes", "bars", "verdict"):
+            unsure = (
+                undecided["verdict"] if metric == "verdict" else key in undecided[metric]
+            )
+            if unsure:
+                decided[f"{metric} undecided"][1] += 1
+                decided[f"{metric} undecided"][0] += int(ok)
+            else:
+                decided[metric][0] += int(ok)
+                decided[metric][1] += 1
 
     analysed = result.status == "ok"
     tally("status", analysed, f"status {result.status}")
@@ -555,6 +637,7 @@ def score_result(
                     "notes",
                     False,
                     f"note {note.global_index} (bar {note.measure_number}) not timed",
+                    note.global_index,
                 )
                 tally(
                     "missed",
@@ -569,6 +652,7 @@ def score_result(
                 "notes",
                 error <= NOTE_TOL_MS,
                 f"note {note.global_index} (bar {note.measure_number}) off by {error:.0f} ms",
+                note.global_index,
             )
         elif note.global_index not in unsure_notes:
             tally(
@@ -584,7 +668,7 @@ def score_result(
     for number, want in truth["measures"].items():
         mine = next((m for m in result.per_measure if m.measure_number == number), None)
         if mine is None:
-            tally("bars", False, f"bar {number} absent")
+            tally("bars", False, f"bar {number} absent", number)
             continue
         off_pct = abs(mine.avg_delta_pct - want.avg_delta_pct)
         tempo_ok = (
@@ -598,6 +682,7 @@ def score_result(
             off_pct <= tol_pct and tempo_ok,
             f"bar {number} avg {mine.avg_delta_pct:+.1f}% vs {want.avg_delta_pct:+.1f}%, "
             f"tempo {mine.played_bpm} vs {want.played_bpm}",
+            number,
         )
     tally(
         "verdict",
@@ -618,6 +703,7 @@ def score_result(
         if bar not in wrong_bars and bar not in unsure_bars:
             tally("wrong notes", False, f"bar {bar} named wrong, was right")
     out.counts = {k: v for k, v in counts.items()}
+    out.decided = {k: v for k, v in decided.items()}
     return out
 
 
@@ -707,8 +793,24 @@ def summarise(results: list[TakeScore]) -> dict:
         else np.array([0.0])
     )
     attacks = {k: sum(r.attacks.get(k, 0) for r in results) for k in ("heard", "played", "extra")}
+    decided: dict[str, list[int]] = defaultdict(lambda: [0, 0])
+    for r in results:
+        for metric, (ok, n) in (r.decided or {}).items():
+            decided[metric][0] += ok
+            decided[metric][1] += n
+    # The overall again, with notes, bars and the verdict counted only where
+    # the truth decides them (`undecided`); the other metrics as they are.
+    kept = {k: v for k, v in totals.items() if k not in ("notes", "bars", "verdict")}
+    kept.update({k: v for k, v in decided.items() if k in ("notes", "bars", "verdict")})
+    decided_overall = (
+        100.0 * sum(v[0] for v in kept.values()) / max(1, sum(v[1] for v in kept.values()))
+        if decided
+        else None
+    )
     return {
         "attacks": attacks,
+        "decided": {k: {"ok": v[0], "n": v[1]} for k, v in decided.items()},
+        "decided_overall_pct": decided_overall,
         "totals": {
             k: {"ok": v[0], "n": v[1], "pct": 100.0 * v[0] / max(1, v[1])}
             for k, v in totals.items()
@@ -795,8 +897,22 @@ def main() -> int:
     at = summary["attacks"]
     print(
         f"first pass, not scored: {at['heard']} of {at['played']} played notes heard "
-        f"({100.0 * at['heard'] / max(1, at['played']):.2f}%), {at['extra']} attacks at no note\n"
+        f"({100.0 * at['heard'] / max(1, at['played']):.2f}%), {at['extra']} attacks at no note"
     )
+    dec = summary.get("decided") or {}
+    if dec:
+        print(
+            f"not scored: the truth moved {1000 * TRUTH_JITTER_S:.0f} ms, {TRUTH_DRAWS} times, "
+            "reads these differently, so no hearing could be sure of them:"
+        )
+        for metric in ("notes", "bars", "verdict"):
+            sure, unsure = dec.get(metric, {"ok": 0, "n": 0}), dec.get(f"{metric} undecided", {"ok": 0, "n": 0})
+            print(
+                f"  {metric:<10}{unsure['n']:>6} undecided ({unsure['n'] - unsure['ok']} read otherwise); "
+                f"of the {sure['n']} decided, {sure['ok']} right ({100.0 * sure['ok'] / max(1, sure['n']):.2f}%)"
+            )
+        print(f"  overall, over what the truth decides: {summary['decided_overall_pct']:.2f}%")
+    print()
     print("by dimension (overall, and its weakest metric)")
     for dim in sorted(summary["by_dimension"]):
         d = summary["by_dimension"][dim]

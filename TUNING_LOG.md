@@ -6,6 +6,44 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (what the truth decides) — The benchmark says which misses no hearing could be sure of. The app is unchanged.
+
+**New, not scored:** `accuracy_bench.py` reads each take's truth again with
+every true onset moved by 2 ms (`TRUTH_JITTER_S`, about what a detector
+resolves: the finer onset look works on a 2.9 ms grid, and a clean take's
+attacks are placed within 1–4 ms of one another), 8 times (`TRUTH_DRAWS`).
+A note, bar or verdict the rules read otherwise in any draw is *undecided*:
+a perfect hearing with a detector's resolution could not be sure of it. The
+strict scores still count everything.
+
+On `1740049`:
+
+| | undecided by the truth | of those, read otherwise | decided: right |
+|---|---|---|---|
+| notes | 190 | 71 | 6,037 of 6,204 (97.31%) |
+| bars | 54 | 20 | 1,354 of 1,386 (97.69%) |
+| verdicts | 1 | 1 | 178 of 179 (99.44%) |
+
+The overall over what the truth decides is 98.31%, against 97.71% strict.
+This corrects the earlier reading of the re-anchor's cliff as "most of the
+synthetic gap" (`(the level)`, `(moving beat, third)`, and PR #219). Sorted by
+whether the app's and the truth's re-anchors fall at the same notes, 112
+timing misses were re-anchor disagreements. Only 71 notes are the cliff
+itself. The rest are re-anchors the app makes and the truth does not,
+because of something the app heard wrong: a pairing glitch or noisy
+placement raising the limit (`double_bass/bowed/84/rush/phone/1130`). Those,
+with the level's and single notes' misses, are hearing, and they are what
+stands between 98.31% and 99%.
+
+Also measured, not kept: **re-pairing a run of one repeated pitch by its
+attacks' spacing after a timing pairing too** (the chain does it already,
+`3e1873e`). It fixes three synthetic takes, among them
+`cello/bowed/108/fast/dynamics/1109`, where one unheard attack in five
+repeated D4 sixteenths slid the run and set off a re-anchor 1.4 s out. But
+it breaks `cello/bowed/132/missed/clean/1116` (8 → 25), where the note after
+the run has no attack of its own to bound it. 97.71 → 97.67%, and the 72
+real takes are identical.
+
 ## 2026-11-14 (pace runs) — Re-anchoring after a sustained change of pace, and a quarter-beat floor: measured, not kept. No thresholds changed.
 
 **The defect looked at.** The re-anchor limit is a fixed fraction of a beat per
