@@ -6,6 +6,43 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (the labels' pairing) — The real-take scorer breaks a tie between equal pitches by timing. The app is unchanged.
+
+**What changed is the measuring stick, not the app.** `real_takes.py` pairs
+each hand label with a written note before anything is scored. It did that
+by an edit distance over pitch alone (`pair_by_pitch`), and where the page
+writes the same pitch twice close together, the two pairings cost the same.
+K515's second violin plays D5 on beat 2 of bar 80, exactly a beat after the
+B4 before it, and the page writes D5 again as a sixteenth in bar 81. The tie
+went to the sixteenth, 0.7 s from where the note was played. The labels'
+tempo for bars 77–81 then counted a sentence false that the recording
+supports.
+
+`pair_by_pitch_and_time` keeps the first pass, maps written beats to seconds
+from its pairings, and runs the edit distance again. This time a label's
+distance from where its paired neighbours put the note, never its own
+pairing, adds up to 0.4 at half a beat or more. A note left over costs 1.0,
+so the term settles ties and never outweighs a pitch. It changes 27 of the
+roughly 15,000 written notes' pairings, in 10 takes: 8 in Jesus's violin, 2
+or 3 in each K515 part, and the rest in Spring, the fugue's saxophone,
+Pirates' saxophone and Jerusalem's.
+
+| the same app, 72 real takes | old scorer | new scorer |
+|---|---|---|
+| heard | 97.83% | 97.84% |
+| placed (50 ms) | 82.78% | 82.83% |
+| paired (100 ms) | 95.25% | 95.27% |
+| band | 73.46% | 74.89% |
+| bar tempo | 71.37% | 71.39% |
+| verdict true | 65 | 66 |
+
+The band moves the most. A label given to the wrong note moved the oracle's
+pulse, so the app's colours were marked against a reading the recording did
+not support. That shows in violin, 77.74% → 81.10%. Jesus's violin, "Bars
+30–56 fell behind.", is true by the corrected labels. K515's second violin
+is still 2% off and still false. Figures in entries above this one were
+scored the old way, and comparisons within each entry are like for like.
+
 ## 2026-11-14 (moving beat, again) — The moving local beat, measured on the current code: not switched. No thresholds changed.
 
 The moving local beat measures each note against the median of the offsets

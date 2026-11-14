@@ -19,7 +19,8 @@ redistributes it at 16 kHz, 683 MB unpacked:
     tools/eval/urmp_scores.py DATA          # with music21, once
 
 **What a take is scored against.** The written notes are paired with the
-labelled ones by pitch, in order (`pair_by_pitch`); the tempo the take is
+labelled ones by pitch, in order, with where each label falls breaking ties
+between equal pitches (`pair_by_pitch_and_time`); the tempo the take is
 analysed at is the one it was played at, read from those pairs; and the
 reading is scored twice:
 
@@ -150,6 +151,99 @@ def pair_by_pitch(written: list[float | None], heard: list[float]) -> list[tuple
     return pairs[::-1]
 
 
+#: How much a labelled note's distance from where its neighbours put it adds
+#: to pairing it with a written note, at half a beat or more. Less than a
+#: note left over costs (1.0), so it decides only between pairings the
+#: pitches leave equal.
+TIME_TIE_COST = 0.4
+
+
+def pair_by_pitch_and_time(
+    written: list[float | None],
+    heard: list[float],
+    beats: np.ndarray,
+    times: np.ndarray,
+) -> list[tuple[int, int]]:
+    """`pair_by_pitch`, then once more with where each labelled note falls.
+
+    **Pitch alone cannot say which of two equal notes a label is.** K515's
+    second violin plays D5 on beat 2 of bar 80, and the page writes D5 again
+    as a sixteenth in bar 81. The edit distance tied the two and gave the
+    label to the sixteenth, 0.7 s from where it was played. That moved the
+    labels' tempo for bars 77–81 and called a verdict false that the
+    recording supports.
+
+    So the first pass's pairings make a map from written beats to seconds,
+    and each written note's place on it is read from its paired neighbours,
+    never from its own pairing. A label's distance from that place, up to
+    half a beat, then adds up to `TIME_TIE_COST` to pairing the two. That is
+    enough to settle a tie and too little to outweigh a pitch.
+    """
+    first = pair_by_pitch(written, heard)
+    if len(first) < 4:
+        return first
+    at_w = np.array([float(beats[i]) for i, _ in first])
+    at_t = np.array([float(times[j]) for _, j in first])
+    paired_index = {i: k for k, (i, _) in enumerate(first)}
+    n, m = len(written), len(heard)
+    place = np.full(n, np.nan)
+    pace = np.full(n, np.nan)
+    for i in range(n):
+        k = paired_index.get(i)
+        keep = np.ones(at_w.size, dtype=bool)
+        if k is not None:
+            keep[k] = False
+        w, t = at_w[keep], at_t[keep]
+        before = np.flatnonzero(w <= beats[i])
+        after = np.flatnonzero(w > beats[i])
+        if before.size and after.size:
+            a, b = before[-1], after[0]
+        elif before.size >= 2:
+            a, b = before[-2], before[-1]
+        elif after.size >= 2:
+            a, b = after[0], after[1]
+        else:
+            continue
+        if w[b] == w[a]:
+            continue
+        slope = (t[b] - t[a]) / (w[b] - w[a])
+        place[i] = t[a] + slope * (beats[i] - w[a])
+        pace[i] = slope
+    cost = np.full((n + 1, m + 1), np.inf)
+    cost[0, :] = np.arange(m + 1)
+    cost[:, 0] = np.arange(n + 1)
+    back = np.zeros((n + 1, m + 1), dtype=np.int8)
+    for i in range(1, n + 1):
+        w = written[i - 1]
+        for j in range(1, m + 1):
+            same = w is not None and abs(w - heard[j - 1]) < SAME_ST + 0.15
+            when = 0.0
+            if np.isfinite(place[i - 1]) and pace[i - 1] > 0:
+                off_beats = abs(times[j - 1] - place[i - 1]) / pace[i - 1]
+                when = TIME_TIE_COST * min(1.0, off_beats / 0.5)
+            options = (
+                cost[i - 1, j - 1] + (0.0 if same else 1.5) + when,
+                cost[i - 1, j] + 1.0,
+                cost[i, j - 1] + 1.0,
+            )
+            k = int(np.argmin(options))
+            cost[i, j] = options[k]
+            back[i, j] = k
+    pairs, i, j = [], n, m
+    while i > 0 and j > 0:
+        k = back[i, j]
+        if k == 0:
+            w = written[i - 1]
+            if w is not None and abs(w - heard[j - 1]) <= SUBSTITUTE_ST:
+                pairs.append((i - 1, j - 1))
+            i, j = i - 1, j - 1
+        elif k == 1:
+            i -= 1
+        else:
+            j -= 1
+    return pairs[::-1]
+
+
 def tracks(data: Path) -> list[tuple[str, Path, Path, Path, str]]:
     """(name, audio, labels, score, instrument) for every string track."""
     out = []
@@ -183,7 +277,9 @@ def build_truth(track):
         raise NotScored(f"{len(written)} pitches for {len(timeline.notes)} notes")
     shift = SOUNDING.get(instrument, 0)
     sounding = [None if w is None else w + shift for w in written]
-    pairs = pair_by_pitch(sounding, list(heard))
+    pairs = pair_by_pitch_and_time(
+        sounding, list(heard), np.asarray(timeline.onsets, dtype=float), onsets
+    )
     if len(pairs) < MIN_PAIRED_SHARE * len(written):
         raise NotScored(f"only {len(pairs)} of {len(written)} written notes in the labels")
     beats = np.array([timeline.onsets[i] for i, _ in pairs])
