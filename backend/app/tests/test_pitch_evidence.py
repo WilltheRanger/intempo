@@ -336,3 +336,28 @@ def test_the_bottom_of_the_bass_is_heard() -> None:
     y = synth_bowed_take(evenly_spaced(N, BPM, start_s=0.5), freqs_hz=freqs, sr=SR)
 
     assert _analyse(y, _page(names, clef="bass"), bass=True).status == "ok"
+
+
+def test_a_sound_with_no_pitch_class_standing_out_is_no_note_s_match() -> None:
+    """**A flat profile of pitch classes is no pitch, and it matched every
+    note.** Where no pitch held, the mismatch falls back on the classes, as
+    how far the written one is below the strongest; a breath or a click has
+    every class near the strongest, so it cost 0.01 to 0.37 against any note.
+    In the cello part of URMP's fugue (2026-11-14), five such sounds before the
+    cello came in took its first notes, 2 to 19 s early. A flat profile now
+    says nothing, as an attack with no window does (`_FLAT_CLASSES`)."""
+    from app.services import pitch_evidence as pe
+
+    rng = np.random.default_rng(1)
+    frames = 0.9 + 0.1 * rng.random((12, int(2.0 * SR / pe.HOP)))
+    held = int(1.5 * SR / pe.HOP)
+    frames[:, held:] = 0.05
+    frames[2, held:] = 1.0  # a D, held
+
+    out = pe.mismatch(
+        frames, SR, np.array([0.5, 1.5]), ["D4", "A4", "F4"], steady=load_audio_config().pitch.steady
+    )
+
+    assert out[0].tolist() == [0.5, 0.5, 0.5]
+    assert out[1, 0] == pytest.approx(0.0)
+    assert out[1, 1] > 0.9

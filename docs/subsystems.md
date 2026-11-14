@@ -2203,6 +2203,13 @@ it taught, each lesson paid for with a wrong number first:
   - the notes either side of a run are paired by pitch but can still be
     mistimed, so they may not outvote the run's own spacing.
   `TUNING_LOG.md` (2026-11-14, repeated notes) has both failures.
+- **A fallback can make a "no" into a "yes to everything".** Where no pitch
+  held, the mismatch read the pitch classes as `1 − relative`. A breath's
+  classes are all near the strongest, so it matched every note at 0.01–0.37,
+  and the fugue's resting cello had its first notes paired with sounds 19 s
+  before it played. Making the lead-in free to leave out looked like the
+  fix and broke replay detection. The fix was in the evidence: a flat
+  profile is "nothing to compare" (`pitch_evidence._FLAT_CLASSES`).
 
 ### A take that could not be sent was kept only by the native build (2026-10-06)
 

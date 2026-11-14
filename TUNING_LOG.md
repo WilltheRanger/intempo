@@ -6,6 +6,71 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (flat pitch classes) — A sound with no pitch class standing out matches no note: new `pitch_evidence._FLAT_CLASSES = 0.5`
+
+**Old behaviour:** where no pitch held after an attack, `pitch_evidence.mismatch`
+falls back on its twelve pitch classes. The mismatch is `1 − relative[c]`,
+how far the written class is below the strongest. **New:** if the median of
+the twelve relative strengths is at least `_FLAT_CLASSES`, the profile is
+flat, and the attack gets 0.5 for every note, "nothing to compare", as an
+attack with no window already did.
+
+**Why.** The cello part of URMP's fugue rests for eight bars. Its first six
+notes were paired with sounds from 2 to 19 s before the cello came in, and
+the verdict read bars 9–11 at 73 against 115. Those sounds had no pitch, and
+their profile was flat: every class near the strongest. So their mismatch
+was 0.01 to 0.37 against *every* written note, D3, A3, F3, C♯3 and E3 alike.
+Each was cheaper to pair than to leave out (`CHAIN_SKIP`, 0.6). Pairing five
+of them won by 7.28 to 7.8 over the right pairing, which had to leave them
+out. At 0.5 each, the right pairing wins.
+
+**Where the line is.** On six URMP parts (fugue cello, Jerusalem saxophone,
+Spring cello, Rondeau bass, Jupiter violin, Entertainer saxophone), the
+median class relative to the strongest:
+
+| attacks | count | p10 | p50 | p90 | ≥ 0.6 |
+|---|---|---|---|---|---|
+| at a labelled note, no class held | 40 | 0.06 | 0.11 | 0.31 | 0% |
+| at a labelled note, a class held | 982 | 0.00 | 0.05 | 0.14 | 0% |
+| at no note, no class held | 31 | 0.15 | 0.57 | 0.87 | 48% |
+| at no note, a class held | 213 | 0.01 | 0.07 | 0.25 | 3% |
+
+No attack at a note comes near 0.5. Only the fallback is gated: an attack
+with a held class and a pitch from the track is matched by its pitch, as
+before.
+
+**Tried first, and withdrawn: leaving out the attacks before the first note
+for nothing.** Lead-in noise had cost `CHAIN_SKIP` each to leave out, so
+making it free looked like the fix. It broke six tests on passages played
+twice and going back mid-take. The first playing of a passage is attacks
+before the page resumes, and made free it was dropped. Freeing the attacks
+after the last note as well broke the same tests. The chain was right to
+charge for them; it was being told a breath matched every note.
+
+### Real takes, 72 tracks, against the labels
+
+| | before | after |
+|---|---|---|
+| paired ≤ 100 ms | 13,670 (95.10%) | 13,699 (95.30%) |
+| placed ≤ 50 ms | 11,867 (82.55%) | 11,896 (82.76%) |
+| colour as the oracle's | 10,492 (72.99%) | 10,506 (73.09%) |
+| bar tempo | 2,712 (67.51%) | 2,739 (68.19%) |
+| verdict true | 50 | 51 |
+| heard | 14,375 | 14,374 |
+
+23 takes change, almost all by a note or two for the better. The fugue's
+cello now says "Bars 72–74 fell behind.", which the labels hold. The largest
+losses are two paired notes (`36_Rondeau/4_vc`) and 15 colours on one take
+whose pairing changed by one note (`20_Pavane/3_vc`).
+
+### Synthetic benchmark (180 takes)
+
+97.20% → 97.21%: one more note timed, one more left-out note reported.
+
+### Regression across the six fixtures
+
+All six are identical to the committed code, every note's deviation included.
+
 ## 2026-11-14 (repeated notes) — A run of one pitch paired by its spacing: new `alignment.SPACED_RUN_NOTES = 3`, `SPACED_RUN_STEP = 3`, `SPACED_RUN_GAIN = 0.15`, `SPACED_RUN_PACE_NOTES = 3`, `SPACED_RUN_BOUND_CAP = 0.5`
 
 **Old behaviour:** inside a run of one repeated written pitch, pitch cannot

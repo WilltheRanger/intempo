@@ -255,6 +255,21 @@ def heights_at(track: np.ndarray, sr: int, attacks_s: np.ndarray) -> np.ndarray:
 _IN_TUNE_ST = 0.6
 #: ...and by this many it is certainly another note.
 _OTHER_NOTE_ST = 1.4
+
+#: An attack's twelve pitch classes say nothing about its pitch when the
+#: middle of them is this close to the strongest: a flat profile, the sound of
+#: a breath, a click or a room rather than of a note.
+#:
+#: **Read flat, it matched every note.** `mismatch` falls back on the classes
+#: when no pitch held, as `1 - relative`, and a flat profile has every class
+#: near the strongest, so a breath cost 0.01 to 0.37 against whichever note
+#: came next: less than leaving it out. In the cello part of URMP's fugue
+#: (2026-11-14), which rests for eight bars, five such sounds before its entry
+#: took its first notes, 2 to 19 s early. Measured on six URMP parts, the
+#: middle class of an attack at a labelled note never reached 0.31 of the
+#: strongest (1,022 attacks); half of the attacks at no note whose pitch did
+#: not hold reached 0.57.
+_FLAT_CLASSES = 0.5
 #: What an attack an exact octave away costs: half. YIN slips an octave on a
 #: few notes in a hundred, and a real octave mistake is rare enough that the
 #: chain around it decides.
@@ -290,8 +305,9 @@ def mismatch(
     `_OCTAVE_AWAY` an octave off, 1 for another note. Without one, or for an
     attack the chroma says held no pitch, by pitch class: 0 where the written
     class was the strongest thing heard, rising towards 1 as it goes missing.
-    0.5 wherever there is nothing to compare — a written note with no pitch, or
-    an attack with no window to listen in. The class is the sounding one too:
+    0.5 wherever there is nothing to compare — a written note with no pitch, an
+    attack with no window to listen in, or one whose classes are a flat
+    profile (`_FLAT_CLASSES`). The class is the sounding one too:
     an octave's transposition leaves a class alone, a saxophone's does not.
 
     For the note chain (`alignment.align_chain`), which pairs attacks with
@@ -308,10 +324,13 @@ def mismatch(
         if not h.relative:
             continue
         pitched = heights is not None and h.pitch_class is not None and np.isfinite(heights[i])
+        # Nothing to compare, as for an attack with no window: a flat profile
+        # is no pitch at all (`_FLAT_CLASSES`).
+        flat = float(np.median(h.relative)) >= _FLAT_CLASSES
         for j, c in enumerate(classes):
             if pitched and sounding[j] is not None:
                 out[i, j] = _height_mismatch(float(heights[i]), float(sounding[j]))
-            elif c is not None:
+            elif c is not None and not flat:
                 out[i, j] = 1.0 - h.relative[c]
     return out
 
