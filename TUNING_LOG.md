@@ -6,6 +6,65 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (measured, not kept) — The labels' pairing beside an equal note, and each instrument's pitch lag. No code or threshold changes.
+
+**The real-take scorer, a tie between two equal notes side by side.** K515's
+first violin holds G5 from bar 39 into bar 40 and plays G5 again there (also
+bars 78–79). The one label is bar 39's, but `pair_by_pitch_and_time` gave it
+to bar 40's: each note's place is read from its paired neighbours' first-pass
+pairings, and bar 39's was drawn through bar 40's, the very pairing the tie is
+about, so both read three beats from the label and the tie stood. The app
+pairs the attack to bar 39's G5 and is marked down twice for it.
+
+Two versions, on the app at `c2279ac`:
+
+| | heard | placed (50 ms) | paired (100 ms) | colour | verdict true |
+|---|---|---|---|---|---|
+| scorer as it is | 14,749 / 15,035 | 12,263 | 14,103 | 11,177 | 67 |
+| no place from any pairing at the note's pitch | 14,759 / 15,029 | 12,296 | 14,144 | 11,392 | 68 |
+| none from the note beside it at its pitch | 14,758 / 15,031 | 12,284 | 14,125 | 11,170 | 67 |
+
+The first slides the labels of Pirates' cello part, which ends on twenty B2s,
+one note along the run: no place inside the run is drawn from anything near
+it, and 20 pairings that sat within 80 ms of the take's line move to 140–370
+ms. The second fixes every two-note tie it touches (K515 77/78 and 158/159,
+Pirates' first violin, March's and Jerusalem's saxophones), but in runs of
+three it can slide the other way: Jerusalem's second violin, notes 67–69,
+from 40 ms off the take's line to 500 ms. Neither is clearly better, and a
+measuring stick that is not clearly right moves every later comparison, so
+neither is kept.
+
+**Each instrument's lag from a pitch taking over to its attack.** The legato
+look places a note it finds by pitch 16 ms after the takeover
+(`[onset.recovery] pitch_lag_ms`), so it sits on the attacks' clock. Measured
+again on URMP at 9,340 labelled notes whose neighbours have other pitches, the
+heard attack lands after the takeover by a median of:
+
+| | notes | median | quartiles |
+|---|---|---|---|
+| violin | 5,040 | 10.3 ms | −9.8 .. 33.8 |
+| viola | 1,622 | 22.0 ms | −10.3 .. 42.0 |
+| cello | 1,287 | 15.9 ms | −18.6 .. 39.3 |
+| double bass | 312 | 33.6 ms | 10.7 .. 46.2 |
+| alto saxophone | 1,079 | 19.0 ms | −10.6 .. 68.0 |
+
+The saxophone does not need its own: the +60–80 ms its attacks sit from the
+labels on "He's a Pirate" is that take's, not the instrument's. Per
+instrument, a note found by its pitch would move by under 18 ms, inside the
+quartiles of every row, and the synthetic set barely uses the legato look.
+Not made per instrument.
+
+**Why sixteenths read later than quarters** (`cello/bowed/132/missed/
+dynamics/1119`, 12 notes and 3 bars of the synthetic set's decided misses).
+Refined onsets land +39–42 ms after the truth on quarters and +49–58 ms on
+the sixteenths after a 114 ms gap. Neither half of the refinement's walk back
+binds; the half-peak itself lands later on a note rising out of the last
+one's release (`0cd6c37`), and uneven dynamics widen its 6–7 ms to 10–16. The
+three sixteenths among the first eight notes tilt the pace a stretch's level
+is projected along (`_settled_level`), and the take reads 11.6 ms off. A
+refinement that hears the new note's own partials rise would remove it; the
+earlier trial read harmonics over a 93 ms window, and was judged on the bass.
+
 ## 2026-11-14 (the legato look's neighbours) — A note no attack marked is asked about by its pitch when the note after shares it, if that note's attack is paired. No thresholds changed.
 
 **Old behaviour:** the legato look (`_recover_legato`) asked only about a
