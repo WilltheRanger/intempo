@@ -6,6 +6,51 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (a few notes out of place) — Measured, not kept: a run of up to k notes out of place as no disturbance. No code or threshold changes.
+
+**Why real colour disagrees.** On the captured pulse inputs, of the 2,886
+colour disagreements the labels decide (`f482e03`'s head), 2,543 are the two
+readings measuring from levels more than 5% of a beat apart; 198 are a note
+placed differently and 145 sit near a band's edge. After `f657146` took out
+the false skips, the app still re-anchors 125 times where the labels'
+reading does not, at a step a median 1.23 times its limit where the labels'
+step at that note is 0.34 of theirs (under their limit 93% of the time), and
+each moves the level a median 332 ms. They are steps only the app hears: a
+fast figure's pairing slid a note along for a few notes (Spring's second
+violin, bar 18, alternating E5 and F-sharp 5), and each end of the slide
+re-anchors, which throws away the drift the take had built up.
+
+**Tried:** `f482e03`'s rule widened from one note to a run: a disturbed step
+out, ordinary steps, and a disturbed step back that the first cancels,
+within k notes, is not a disturbance.
+
+| k | synthetic timing misses (replay) | real colour (replay) | over what the labels decide |
+|---|---|---|---|
+| 1 (as now) | 209 | 76.01% | 78.76% |
+| 2 | 209 | 76.63% | 79.34% |
+| 3 | 210 | 76.70% | 79.34% |
+| 4 | 210 | 76.95% | 79.62% |
+| 6 | 210 | 76.63% | 79.30% |
+
+End to end the replay's gain holds and costs sentences:
+
+| | `f657146` | k = 2 | k = 4 |
+|---|---|---|---|
+| real colour | 11,250 / 14,760 | 11,365 | 11,403 (77.26%) |
+| real verdict true | 67 of 72 | 66 | 66 |
+| synthetic verdict | 178 of 180 | 175 | 174 |
+| synthetic overall | 97.83% | 97.80% | 97.78% |
+
+The sentences lost are all one shape: a steady take now naming one bar
+("Bar 6 went at 203."), because the notes of the slide inside it now read off
+the kept pulse where the two re-anchors had read them on a level of their
+own. On real playing Pirates' saxophone keeps its sentence, "Bars 33–51 ran
+ahead.", and the labels' own reading of those bars, under the same rule,
+stops holding it. Keeping the pulse and leaving the slid notes out of bar
+averages and sentences would keep both, but marks them untimed for a reason
+the app has no word for (`UntimedReason` is the page's tempo change, fermata
+and ornament), which is the owner's to decide. Not kept.
+
 ## 2026-11-14 (skips) — A skip must move the notes after it: `classification.SKIP_CONFIRMED_BY = 3`
 
 **Old behaviour:** on a pairing made by pitch, `skipped_ahead` called a gap a
