@@ -6,6 +6,32 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (the pitch track's frame) — Measured, not kept. No code or threshold changes.
+
+`pitch_evidence.pitch_track` runs YIN on frames of at least 2,048 samples
+(93 ms), librosa's default, whatever the instrument's range needs. Of the
+243 played notes the real takes still report missing, 74 are violin notes
+with a written neighbour under 0.1 s away, and in 52 of the 80 with a
+first-pass attack within 50 ms of the label, that attack was paired with the
+note before or after (32 and 20): one-note slides in sixteenth runs, 21 of
+them K515's first violin. A 93 ms frame reads an 80 ms note together with
+the notes either side, so the floor was lowered to 512 (23 ms; the range
+sets violin, viola and saxophone at 512, cello 1024, double bass 2048):
+
+| | before | floor 512 |
+|---|---|---|
+| synthetic | 98.12% | 98.18% |
+| real heard | 98.39% | 98.14% |
+| real colour | 85.34% | 84.03% |
+| real paired (100 ms) | 96.66% | 96.64% |
+| real verdict true | 71 of 72 | 69 of 72 |
+| cello heard / colour | 98.24% / 87.93% | 97.00% / 80.53% |
+| violin heard / colour / verdicts | 98.19% / 88.70% / 34 of 34 | 98.11% / 88.55% / 32 of 34 |
+
+The violin's placement and pairing improve a little and its sentences do
+not: a shorter frame follows the vibrato and the bow noise as closely as
+the note. Not kept; the slides need something other than a finer pitch.
+
 ## 2026-11-14 (the note before, an octave off) — `analysis._not_the_note_before` reads the note before by pitch class where the missed note is of another class: new `_held_on`. No thresholds changed.
 
 **The case.** `violin/bowed/108/missed/noise/1027` leaves out an A4 after a
