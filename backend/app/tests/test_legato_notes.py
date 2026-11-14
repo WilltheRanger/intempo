@@ -155,23 +155,21 @@ def test_a_note_left_out_between_two_others_is_not_heard_in_the_shift(
     assert left_out not in {n.global_index for n in result.per_note}
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="the attack look recovers a vibrato peak inside the held note; see the docstring",
-)
 def test_a_note_left_out_of_a_slurred_line_is_reported_missing() -> None:
-    """**Known to fail, and not because of the legato look.** The attack look
-    takes any local maximum of the envelope near where a missed note belongs,
-    above 1.5% of the take's peak, and the held note's vibrato makes one: the
-    left-out B4 is "recovered" at 2.48 s inside the A4 held through it.
+    """**Not because of the legato look.** The attack look takes any local
+    maximum of the envelope near where a missed note belongs, above 1.5% of
+    the take's peak, and the held note's vibrato makes one: the left-out B4
+    was "recovered" at 2.48 s inside the A4 held through it.
 
-    A guard that dropped an attack whose pitch is the same either side of it
-    and not the missed note's fixed this take, and was withdrawn the same day
-    (2026-11-13, `TUNING_LOG.md`). In a live room a quiet note under a loud
-    note's tail has the tail's pitch either side of it as the pitch track hears
-    it, and the guard threw those notes away: `test_degraded_audio`'s
-    room-swallowed take went back to being refused. Telling the two apart
-    needs more than the pitch track's loudest pitch.
+    Held as a strict xfail from 2026-11-13 to 2026-11-14. A guard that
+    dropped an attack whose pitch was the same either side of it fixed this
+    take, and was withdrawn the same day. In a live room a quiet note under a
+    loud note's tail has the tail's pitch on both sides, as the pitch track
+    hears it, so `test_degraded_audio`'s room-swallowed take was refused
+    again. `analysis._not_the_note_before` listens only after the attack:
+    just after it, and again halfway to the next attack. A quiet note under a
+    tail takes over within its own gap as the tail dies, and a note held on
+    does not. `TUNING_LOG.md` (2026-11-14, held notes) has the measurements.
     """
     pitches = _scale()
     pitches[5] = pitches[4]

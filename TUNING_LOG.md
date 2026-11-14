@@ -6,6 +6,59 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (held notes) — The second look does not find a note the player left out inside the note before. No thresholds changed.
+
+**Old behaviour:** where the page writes a note and none was heard, the
+second look's attack search (`analysis._recover_attacks`) took the onset
+envelope's nearest rise. It checked that rise for prominence, level above the
+room, and not being a release. **New:** an attack it finds is dropped when the
+pitch is still the note before's both just after it and halfway to the next
+attack, and the missed note is written at another pitch
+(`analysis._not_the_note_before`). A missed note that sounded is heard at its
+own pitch, and a wrong one at some other. Where the page repeats a pitch,
+nothing is dropped, because the rule cannot tell.
+
+**Why.** On the synthetic set, eight notes the player left out were
+"recovered" inside the note before: a vibrato swell, or a change of bow
+pressure, at the held note's pitch, with no rise in level (−1.0 to +0.3 dB).
+Viola take 1086 left out a G4 under a held B4, and the second look placed the
+G4 51 ms early in the B4. It is also the case `test_legato_notes.py` had held
+as a strict xfail since 2026-11-13, and the test now passes.
+
+**Why this guard holds where 2026-11-13's did not.** That one compared the
+pitch on both sides of the attack. A quiet note under a loud note's tail has
+the tail's pitch on both sides, so it was dropped, and
+`test_degraded_audio`'s room-swallowed take was refused again. This one listens
+only after the attack, and a note under a dying tail takes over within its own
+gap. Every `test_degraded_audio` test passes.
+
+**Heard twice, because once was not enough.** Read once, just after the
+attack, the rule also dropped two played notes of a plucked bass take (1175).
+The note before was still ringing there when the new pluck came. Read again
+halfway to the next attack, the new note has taken over, and only a note held
+on is still the note before at both readings.
+
+| | before | read once | read twice (kept) |
+|---|---|---|---|
+| synthetic, overall | 97.24% | 97.29% | 97.31% |
+| synthetic, missed | 99.33% | 99.44% | 99.44% |
+| synthetic, notes | 95.67% | 95.64% | 95.67% |
+| synthetic, bars | 95.42% | 95.62% | 95.62% |
+| real, heard | 97.85% | 97.81% | 97.83% |
+| real, paired (100 ms) | 95.19% | 95.19% | 95.25% |
+| real, band | 73.23% | 73.53% | 73.46% |
+| real, bar tempo | 71.45% | 71.42% | 71.37% |
+| real, verdict true | 55 | 55 | 55 |
+
+On synthesis, eight takes gain and one loses. The loss, bass take 1149,
+follows from a correct drop: two notes were left out a bar apart, and without
+the false attack, timing pairing slides the second hole onto the note after
+it. That is the timing pairing's weakness with notes left out, not this rule.
+On real playing, both Pavane cello parts gain 16 and 17 notes in their band:
+a recovery 250–500 ms from its labelled note had moved their pulse. K515's
+cello gives back 3 heard notes and Maria's cello 1. The six fixtures are
+unchanged.
+
 ## 2026-11-14 (ringing attacks) — A note's first attack heard as the note before: measured, not kept. No thresholds changed.
 
 **The case.** Synthetic `double_bass/bowed/60/rush/noise/1127`. Note 20's own

@@ -2236,6 +2236,14 @@ it taught, each lesson paid for with a wrong number first:
   other parts of its piece is what found this. A rule that rescues refusals
   needs a test of the wrong takes it lets through, not only of the right
   ones it saves.
+- **To ask what a sound is, listen to what it becomes.** The second look took
+  a held note's vibrato swell for a note the player had left out.
+  - On 2026-11-13 a guard compared the pitch on either side of the swell. It
+    could not tell a held note from a quiet note under a loud note's tail,
+    which has the tail's pitch on both sides, and it was withdrawn.
+  - Listening after the attack twice can tell them apart: just after it, and
+    halfway to the next attack (`analysis._not_the_note_before`). A note
+    under a dying tail takes over within its gap; a note held on does not.
 
 ### A take that could not be sent was kept only by the native build (2026-10-06)
 

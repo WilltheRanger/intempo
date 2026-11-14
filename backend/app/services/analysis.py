@@ -1012,6 +1012,7 @@ def _recover_missed_onsets(
     )
     if pitch is None or notes is None:
         return found
+    found = _not_the_note_before(found, cleaned, onsets, expected, missed, pitch, notes)
     legato = _recover_legato(
         heard,
         cleaned,
@@ -1024,6 +1025,75 @@ def _recover_missed_onsets(
         config=config,
     )
     return np.sort(np.concatenate([found, legato])) if legato.size else found
+
+
+def _not_the_note_before(
+    found: np.ndarray,
+    cleaned: CleanedAlignment,
+    onsets: np.ndarray,
+    expected: np.ndarray,
+    missed: list[int],
+    pitch: _Pitch,
+    notes: list[ExpectedNote],
+) -> np.ndarray:
+    """The attacks the attack look recovered, less those where the note before
+    simply goes on.
+
+    **A held note does not begin again.** The look takes the envelope's
+    rise nearest where a missed note belongs, and inside a note still being
+    held — a vibrato swell, a change of bow pressure — that is a rise too. On
+    the synthetic set (2026-11-14), eight notes the player left out were
+    "recovered" that way, each inside the note before at its pitch, and with
+    no rise in level (−1.0 to +0.3 dB). So an attack is dropped when the
+    pitch after it is still the note before's and the missed note is written
+    at another pitch. A missed note that sounded is heard at its own pitch, a
+    wrong one at some other, and where the page repeats a pitch nothing here
+    can tell, so nothing is dropped. On URMP's real takes most of what this
+    drops had been placed 150–900 ms from the labelled note. That moved the
+    pulse, and K515's cello had one note "recovered" 17 s from its own.
+
+    Read against every attack, so each pitch window ends at the next one.
+    """
+    if found.size == 0:
+        return found
+    predicted = predict_audio_times(cleaned.matched, onsets, expected, missed)
+    if predicted.size == 0:
+        return found
+    attacks = np.sort(np.concatenate([onsets, found]))
+    heights = pitch.heights(attacks)
+    if heights is None:
+        return found
+    after = dict(zip(np.round(attacks, 6), heights, strict=True))
+    keep = np.ones(found.size, dtype=bool)
+    for i, t in enumerate(found):
+        e = missed[int(np.argmin(np.abs(predicted - t)))]
+        if not 0 < e < len(notes):
+            continue
+        now = pitch_evidence.midi(notes[e].pitch)
+        before = pitch_evidence.midi(notes[e - 1].pitch)
+        if now is None or before is None or now == before:
+            continue
+        # Heard twice: just after the attack, and halfway to the next one. A
+        # note that began under the ring of the one before — a plucked bass,
+        # a low string in a live room — takes over within the gap, and only a
+        # note held on is still the note before at both.
+        later = attacks[attacks > t]
+        until = float(later[0]) if later.size else float(t) + _HELD_LISTEN_S
+        late = pitch.heights(np.array([0.5 * (float(t) + until), until]))
+        readings = [after.get(round(float(t), 6)), None if late is None else late[0]]
+        keep[i] = not all(
+            h is not None
+            and np.isfinite(h)
+            and round(float(h)) == before + pitch.transpose
+            and round(float(h)) != now + pitch.transpose
+            for h in readings
+        )
+    return found[keep]
+
+
+#: How far after a recovered attack with nothing after it the note before is
+#: listened for a second time (`_not_the_note_before`), in seconds.
+_HELD_LISTEN_S = 0.5
 
 
 def _recover_attacks(
