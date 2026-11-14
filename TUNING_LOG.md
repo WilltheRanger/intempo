@@ -6,6 +6,38 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (how far the labels can be agreed with) — Measured. No code or threshold changes.
+
+**The question.** Real colour agreement (each note's band by the app against
+the band the same rules give the hand labels) is 83.82%, strings 86.65%. How
+near 100% could any hearing get, given that a hand label is itself an
+estimate?
+
+**Measured:** the labels' own reading against itself, with every labelled
+onset moved by N(0, σ), three draws per take on all 72:
+
+| σ | colours agree | strings |
+|---|---|---|
+| 5 ms | 96.70% | 97.00% |
+| 10 ms | 93.86% | 94.38% |
+| 15 ms | 91.95% | 92.49% |
+| 20 ms | 90.03% | 90.61% |
+| 30 ms | 87.19% | 88.18% |
+
+A perfect hearing compared with labels that are off by σ agrees about this
+often. So 99% would need labels accurate to about 2 ms. A bowed or tongued
+attack takes 20–50 ms to rise, and URMP's labels are where a pitch tracker,
+corrected by hand, put each note. The app's attacks scatter 19–32 ms around
+the labels within a take (robust spread, median by string instrument), and
+some of that spread is the labels'. With labels good to 10–20 ms, the most
+any hearing could agree on is about 90–94%. The strings' 86.65% is within
+about four to eight points of that. The rest of the gap is the re-anchor rule
+and pairing, which the entries below go into.
+
+The same measure on the synthetic set is exact, because there the truth is
+the truth: `(what the truth decides)` sets aside notes whose colour moves
+with 2 ms.
+
 ## 2026-11-14 (bow changes) — A missed note at the pitch of the note before is looked for where the bow changes: new `onset_recovery.recover_by_bow_change`, `analysis._recover_bow_changes`, `[onset.recovery] bow_change_min_dip_db = 8.0`
 
 **The case.** Of the 288 played notes reported missing on URMP's 72 takes,
