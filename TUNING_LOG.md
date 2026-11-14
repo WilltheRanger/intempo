@@ -6,6 +6,91 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (the level) — A stretch's level is read from all six of its notes, not the middle two: new `alignment._middle_of`, `LEVEL_BOUND_DEVIATIONS = 1.0`
+
+**Old behaviour:** the level every note of a stretch is measured from was the
+median of its first six notes' offsets, projected back along the stretch's
+pace (`_settled_level`). A median of six is the mean of the two in the
+middle. **New:** the Hodges–Lehmann estimate of the six — the median of the
+means of every pair — held within one robust standard deviation (1.4826 × the
+median absolute deviation) of their median.
+
+**Why.** The timing misses on the synthetic set were sorted by kind, from each
+note's app-minus-truth deviation and both sides' re-anchor points: of 276, 118
+are a re-anchor at a different note from a perfect reading's (the owner's
+question below), 103 a level read off by a few milliseconds over a whole
+stretch, 35 single notes and 20 not timed. The level misses are not the
+detector placing notes badly. Its placement varies by 1–4 ms across a take
+(robust spread, by instrument and room; 4.4 ms for a bowed bass through a
+phone). The problem is which notes the median picks. On
+`double_bass/bowed/108/fast/phone/1140` the two middle notes of six were the
+two the detector placed earliest, 13 and 20 ms ahead of its usual, while across
+the six it was 2 ms early. The take's level read 17 ms early, putting 30 of its
+39 notes and 6 of its 8 bars outside a perfect reading's 12 ms.
+
+**Swept offline** on each take's captured offsets, replaying only the
+anchoring (timing misses among the paired notes, 6,316 of them):
+
+| level read as | misses |
+|---|---|
+| median of 6 (before) | 255 |
+| median of 8 | 248 |
+| trimmed mean of 6 | 233 |
+| Hodges–Lehmann of 8 | 237 |
+| Hodges–Lehmann of 6 | 225 |
+| HL of 6, within 0.75 / 1 / 1.5 / 2 robust deviations of the median | 225 / 221 / 218 / 219 |
+| HL of 6, within 2 / 5 / 12 ms of the median | 239 / 234 / 229 |
+| Huber, one step from the median, c = 1.345 / 2 | 239 / 231 |
+
+Hodges–Lehmann alone gives up the median's robustness. Two notes 40 ms late
+among six on time read 20 ms, where the median read 0. A bound in deviations
+of the notes themselves keeps that robustness. Where four of six agree
+exactly the bound is zero and the median stands, and where ordinary jitter
+spreads them the bound is that jitter. Every width from 0.75 to 2 deviations
+gives 218–227. 1 is kept as the plainest, with no floor (a floor of 1–4 ms
+moved it by at most 2 notes).
+
+**Measured end to end:**
+
+- Synthetic (180 takes): **97.31 → 97.61%**. Notes timed within 12 ms
+  95.67 → 96.22% (6,117 → 6,152), bars 95.62 → 96.25% (1,377 → 1,386),
+  everything else unchanged. Timing error against the oracle: p95 10.6 →
+  9.9 ms.
+- Real recordings (72 URMP tracks): heard, placed, paired, bar tempo and
+  verdict true (66 of 72) are identical. Colour agreement with the labels'
+  reading went 11,122 → 11,113 of 14,723 (75.54 → 75.48%), across 43 takes in
+  both directions (−11 to +13 each). Two sentences name a bar more or fewer
+  ("Bars 30–56" → "Bars 31–56 fell behind.", "Bars 3–21" → "Bars 7–20 ran
+  ahead.") and both are still true by the labels.
+- A soft re-anchor was tried alongside and is **not kept**. Its weight grew
+  from 0 at the disturbance threshold to 1 a ramp past it, to take the cliff
+  out of the 118 re-anchor misses. Ramps of 0.01–0.08 beat gave 315–350
+  misses against 255. In expectation a soft threshold moves the same
+  disagreement around rather than removing it: a drag's re-anchor moves the
+  level by over a second, so any difference in weight between the app and the
+  truth costs more than 12 ms. The knife edge itself is plain on
+  `violin/bowed/60/drag/clean/1011`: one interval read 166.9 ms long by the
+  app and 166.6 by the truth, against a 166.7 ms limit, moved 16 notes by
+  156 ms.
+
+**Regression, all six clips, before → after** (`_middle_of` against the median
+on the same build):
+
+| clip | status | verdict | per-note deviation moved | bands changed |
+|---|---|---|---|---|
+| 01_detache_clean | ok → ok | Steady → Steady | +0.20 ms (max 0.21) | 0 |
+| 02_detache_rushing | ok → ok | Bars 2–8 ran ahead. → same | 0 | 0 |
+| 03_detache_dragging | ok → ok | Bars 2–8 fell behind. → same | +0.36 ms (max 0.37); bars +7.5/17.1/23.5% → +7.6/17.2/23.6% | 0 |
+| 04_slurred | ok → ok | Steady → Steady | 0 | 0 |
+| 05_open_e_long | ok → ok | Steady → Steady | 0 | 0 |
+| 06_pizzicato | ok → ok | Steady → Steady | +0.20 ms (max 0.21) | 0 |
+
+New tests in `test_pulse_anchor.py`:
+`test_the_level_follows_all_six_notes_not_the_two_in_the_middle` (2 of 20
+notes within 12 ms of the truth on the median, 17 now) and
+`test_two_late_notes_among_six_do_not_move_the_level`, which plain
+Hodges–Lehmann fails at 20 ms.
+
 ## 2026-11-14 (the chain's time cost) — No longer saturated at one played gap: `alignment.CHAIN_TIME_WEIGHT × min(away, 1)` → `CHAIN_TIME_WEIGHT × away`
 
 **Old behaviour:** in the chain's second pass, an attack cost

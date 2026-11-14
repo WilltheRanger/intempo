@@ -807,9 +807,9 @@ def _clamp_ratio(ratio: float) -> float:
 
 #: How many notes the level a stretch of playing sits at is read from.
 #:
-#: See `_settled_level`. Six is enough for a median to shrug off two bad notes
-#: and short enough that projecting across it with a straight line stays
-#: faithful to a take that is changing pace.
+#: See `_settled_level`. Six is enough for the level to shrug off two bad notes
+#: (`_middle_of`) and short enough that projecting across it with a straight
+#: line stays faithful to a take that is changing pace.
 LEVEL_NOTES = 6
 
 #: The fewest notes a stretch needs before its level is read from more than
@@ -857,9 +857,10 @@ def _settled_level(
 
     So the level is read from the first `LEVEL_NOTES` usable notes of the
     stretch, each projected back to where the stretch starts along the
-    stretch's own pace, and the median taken. A straight ramp — steady
-    rushing — projects every note onto exactly the offset of the first, so it
-    reads exactly as it did; a single odd note is outvoted.
+    stretch's own pace, and where they agree taken — see `_middle_of`. A
+    straight ramp — steady rushing — projects every note onto exactly the
+    offset of the first, so it reads exactly as it did; a single odd note is
+    outvoted.
 
     The pace is a Theil–Sen slope — the median of the slopes between every
     pair — over up to `PACE_NOTES` notes, for the reason that constant gives.
@@ -876,7 +877,45 @@ def _settled_level(
     rate = _pace(at, level)
     near = slice(0, LEVEL_NOTES)
     projected = level[near] - rate * (at[near] - float(positions[start]))
-    return float(np.median(projected))
+    return _middle_of(projected)
+
+
+#: How far the level may sit from the median of its notes, in robust standard
+#: deviations of those notes (`1.4826 x` their median absolute deviation).
+#: See `_middle_of`.
+LEVEL_BOUND_DEVIATIONS = 1.0
+
+
+def _middle_of(values: np.ndarray) -> float:
+    """Where a handful of projected offsets agree, read from all of them.
+
+    **A median of six is the mean of the two in the middle, and which two that
+    is moves with a few milliseconds of jitter.** The level a take is measured
+    from was the median of six projected offsets, so it was whatever the two
+    middle notes said — and which notes those are is decided by the player's
+    own unevenness, while what each of them says carries the detector's. On a
+    bowed bass through a phone (`accuracy_bench.py`, `double_bass/bowed/108/
+    fast/phone/1140`) the two middle notes were the two the detector placed
+    earliest, 13 and 20 ms ahead of its usual: the take's level read 17 ms
+    early, and 30 of its 39 notes and 6 of its 8 bars sat outside the 12 ms a
+    perfect reading allows. The six notes' typical placement was right.
+
+    So the level is the Hodges–Lehmann estimate — the median of the means of
+    every pair — which every note moves a little rather than two notes moving
+    entirely. Alone it gives up the median's robustness: two notes 40 ms late
+    among six on time read 20 ms, where the median read 0. So it is held within
+    `LEVEL_BOUND_DEVIATIONS` robust deviations of the median: where most of the
+    notes agree closely, the bound is tight and the median stands; where they
+    are spread by ordinary jitter, the bound is that jitter and the pairs'
+    estimate is used. A late first note among five on time still reads exactly
+    0, as `test_pulse_anchor.py` holds.
+    """
+    values = np.asarray(values, dtype=float)
+    middle = float(np.median(values))
+    first, second = np.triu_indices(values.size)
+    pairs = float(np.median((values[first] + values[second]) / 2.0))
+    bound = LEVEL_BOUND_DEVIATIONS * 1.4826 * float(np.median(np.abs(values - middle)))
+    return middle + float(np.clip(pairs - middle, -bound, bound))
 
 
 def pulse_anchors(

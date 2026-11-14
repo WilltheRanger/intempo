@@ -197,6 +197,46 @@ def test_the_origin_reads_through_a_varied_rhythm() -> None:
     assert deltas[1:] == pytest.approx(-50.0 * written[1:], abs=1e-6)
 
 
+def test_the_level_follows_all_six_notes_not_the_two_in_the_middle() -> None:
+    """**A median of six is two notes, and the detector's jitter on those two
+    was the whole take's.**
+
+    A take played steadily fast, heard by a detector that places every attack
+    50 ms late give or take a few — a bowed bass through a phone, as
+    `accuracy_bench.py`'s `double_bass/bowed/108/fast/phone/1140` is. The two
+    notes in the middle of the six the level is read from are the two it placed
+    earliest, 13 and 20 ms ahead of its usual; across the six it was 2 ms
+    early. Read as their median the take's level was 17 ms off the truth and
+    2 of 20 notes landed within 12 ms of where a perfect hearing puts them;
+    read from all six, 17 do.
+    """
+    human = np.array([0, 14, -21, 7, 18, -12, 5, -4, 9, -6, 3, -8, 11, -2, 6, -10, 4, -5, 8, -3])
+    played = -0.04 * np.arange(20) + human / 1000.0
+    detector = np.array([-13, 8, 2, -20, 6, 5, 3, -2, 4, -1, 2, -4, 1, 3, -3, 2, 0, -2, 4, 1])
+    heard = played + 0.05 + detector / 1000.0
+
+    def deltas(offsets: np.ndarray) -> np.ndarray:
+        return (offsets - _pulse_anchors(offsets, 0.5)) * 1000.0
+
+    truth, reading = deltas(played), deltas(heard)
+    # What is left once each note's own placement error is taken out is the
+    # level's error alone, and it is the same on every note.
+    level_error = reading - truth - detector
+    assert np.all(np.abs(level_error) < 8.0), level_error[:3]
+    assert np.sum(np.abs(reading - truth) <= 12.0) >= 16
+
+
+def test_two_late_notes_among_six_do_not_move_the_level() -> None:
+    """The robustness the median had, kept. Two of the six notes 40 ms late and
+    four on time: the four agree, so the level is theirs. Read from every pair
+    of notes alone it would have been 20 ms, and four notes played on time
+    would have read early."""
+    deltas = _deltas([0.04, 0.04] + [0.0] * 18)
+
+    assert list(deltas[:2]) == pytest.approx([40.0, 40.0])
+    assert np.all(np.abs(deltas[2:]) < 1e-6)
+
+
 def test_an_empty_take_does_not_raise() -> None:
     assert _pulse_anchors(np.array([]), BEAT_S).size == 0
 
