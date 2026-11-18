@@ -83,6 +83,37 @@ async function clearFirstTakeGate(page) {
 }
 
 /**
+ * Start a take the way the first one on a device starts: through
+ * `MicrophoneIntro` when it shows.
+ *
+ * Since 2026-11-12 the first Start recording on a device explains the
+ * microphone before anything asks for it, and the explanation's Continue is
+ * what starts the take — so the request, and any refusal of it, come after that
+ * tap. Until this helper the refused check below clicked Start recording,
+ * waited, and read the explanation as if it were the answer to a refusal.
+ * Nothing noticed, because the job that runs this file is skipped on a draft
+ * pull request.
+ *
+ * The intro is skipped where the platform already reports the microphone
+ * allowed, so the granted browser never meets it, and `checkMicrophone` keeps
+ * its plain click: a take that stopped at the intro there would be the skip
+ * failing, and it should fail. `walk-app.mjs` asserts the intro itself, in its
+ * own `startFirstTake`; here it is only the way in.
+ */
+async function startFirstTake(page) {
+  await page.click('[aria-label="Start recording"]', { timeout: 10000 });
+  const explained = await page
+    .getByText('InTempo listens while you play', { exact: true })
+    .first()
+    .waitFor({ timeout: 5000 })
+    .then(() => true)
+    .catch(() => false);
+  if (explained) {
+    await page.getByRole('button', { name: 'Continue', exact: true }).first().click({ timeout: 10000 });
+  }
+}
+
+/**
  * Check the setup rows are on screen, above the record button.
  *
  * **They were behind a drag until 2026-09-23**, in a sheet that started
@@ -214,7 +245,7 @@ async function checkMicrophoneRefused(browser) {
   await page.goto(`${BASE}/pieces/${PIECE}/record`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(1200);
   await clearFirstTakeGate(page);
-  await page.click('[aria-label="Start recording"]').catch(() => {});
+  await startFirstTake(page).catch(() => {});
   await page.waitForTimeout(3000);
 
   const screen = await page.evaluate(() => document.body.innerText || '');
