@@ -131,6 +131,7 @@ export function CorrectionPrompt({
       </Text>
 
       <View style={styles.choices}>
+        <View pointerEvents="none" style={styles.well} />
         {[...CORRECTION_CHOICES, 'unsure' as const].map((choice) => {
           const isApps = choice === appVerdict;
           // Raised only once pressed: nothing starts chosen (`heardLine`).
@@ -157,23 +158,33 @@ export function CorrectionPrompt({
                   ? `${correctionWord(choice)}, what this app read`
                   : correctionWord(choice)
               }
-              style={({ pressed }) => [
-                styles.choice,
-                chosen && styles.choiceApps,
-                pressed && !busy && (chosen ? styles.raisedPressed : styles.choicePressed),
-              ]}
+              style={styles.choice}
             >
-              <Text
-                variant="metadata"
-                numberOfLines={1}
-                color={chosen ? 'textPrimary' : busy ? 'textTertiary' : 'textPrimary'}
-                // Raised and weighted, as `SegmentedControl` marks its current
-                // option: the tile and the weight say which, not colour alone.
-                style={[styles.choiceLabel, chosen && styles.appsChoice]}
-              >
-                {correctionWord(choice)}
-              </Text>
-              <HapticTap />
+              {({ pressed }) => (
+                <>
+                  {/* The tile holds the word: see `SegmentedControl`. */}
+                  <View
+                    style={[
+                      styles.tile,
+                      chosen && styles.choiceApps,
+                      pressed && !busy && (chosen ? styles.raisedPressed : styles.choicePressed),
+                    ]}
+                  >
+                    <Text
+                      variant="metadata"
+                      numberOfLines={1}
+                      color={chosen ? 'textPrimary' : busy ? 'textTertiary' : 'textPrimary'}
+                      // Raised and weighted, as `SegmentedControl` marks its
+                      // current option: the tile and the weight say which, not
+                      // colour alone.
+                      style={[styles.choiceLabel, chosen && styles.appsChoice]}
+                    >
+                      {correctionWord(choice)}
+                    </Text>
+                  </View>
+                  <HapticTap />
+                </>
+              )}
             </Pressable>
           );
         })}
@@ -193,6 +204,15 @@ export function CorrectionPrompt({
 
 /** The well's padding around its answers, as `SegmentedControl` draws it. */
 const TRACK_INSET = 3;
+/**
+ * Drawn at 34 inside 44pt answers, as `SegmentedControl` is (2026-11-18): the
+ * well and the chosen tile at the redesign's height, each answer still a 44pt
+ * box under the finger. Drawn at 52 it was the second-heaviest thing on the
+ * result, a bordered box nearly as tall as the Practice button below it.
+ */
+const WELL_HEIGHT = 34;
+const WELL_OUTSET = (MIN_TOUCH_TARGET - WELL_HEIGHT) / 2;
+const TILE_HEIGHT = WELL_HEIGHT - 2 * (BORDER_WIDTH + TRACK_INSET);
 
 const styles = StyleSheet.create({
   block: {
@@ -204,16 +224,27 @@ const styles = StyleSheet.create({
   /** `SegmentedControl`'s track: one well, the answers sharing its width. */
   choices: {
     flexDirection: 'row',
+    paddingHorizontal: BORDER_WIDTH + TRACK_INSET,
+    gap: spacing['2xs'],
+  },
+  well: {
+    position: 'absolute',
+    top: WELL_OUTSET,
+    bottom: WELL_OUTSET,
+    left: 0,
+    right: 0,
     backgroundColor: colors.surfacePressed,
     borderWidth: BORDER_WIDTH,
     borderColor: colors.border,
     borderRadius: radii.md,
-    padding: TRACK_INSET,
-    gap: spacing['2xs'],
   },
   choice: {
     flex: 1,
     minHeight: MIN_TOUCH_TARGET,
+    justifyContent: 'center',
+  },
+  tile: {
+    height: TILE_HEIGHT,
     alignItems: 'center',
     justifyContent: 'center',
     // Concentric with the well (`radii.ts`).
