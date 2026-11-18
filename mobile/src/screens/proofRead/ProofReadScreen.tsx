@@ -180,8 +180,9 @@ export function ProofReadScreen() {
         What it looked for, at the foot, so the absence of a proposal about a
         bar is not read as a clean bill of health. The app cannot see the page.
       */}
+      {/* A count, so a label: no full stop (`lib/insights/takeRows.ts`). */}
       <Text variant="metadataSmall" color="textTertiary" style={styles.scope}>
-        {answered === proposals.length ? 'All answered.' : `${proposals.length - answered} left.`}
+        {answered === proposals.length ? 'All answered' : `${proposals.length - answered} left`}
       </Text>
     </ScreenContainer>
   );
