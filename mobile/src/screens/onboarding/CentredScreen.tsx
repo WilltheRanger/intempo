@@ -2,8 +2,8 @@ import { useState, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { CONTENT_MAX_WIDTH, SCREEN_GUTTER } from '../../components/primitives/ScreenContainer';
-import { colors, spacing } from '../../design';
+import { SCREEN_GUTTER } from '../../components/primitives/ScreenContainer';
+import { colors, CONTENT_MAX_WIDTH, spacing } from '../../design';
 import { centringLift } from './centring';
 
 /**

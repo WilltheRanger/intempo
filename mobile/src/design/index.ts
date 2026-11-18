@@ -63,6 +63,21 @@ export const MIN_TOUCH_TARGET = 44;
 export const CONTROL_HEIGHT = 52;
 
 /**
+ * How wide the column of content is allowed to get.
+ *
+ * A reading measure. This is a phone product built to the web as well, and a
+ * laptop browser will happily set a piece title in 36pt serif across two
+ * thousand pixels if nothing stops it.
+ *
+ * **The chrome keeps the same measure as the content** (2026-11-18). Here
+ * rather than in `ScreenContainer`, which held it until then, because the
+ * navigation bar and the tab bar read it too and `ScreenContainer` imports the
+ * navigation bar: a constant read at module scope across that cycle would be
+ * read before it exists.
+ */
+export const CONTENT_MAX_WIDTH = 560;
+
+/**
  * Border width for cards, dividers, and controls.
  *
  * A flat 1pt rather than `StyleSheet.hairlineWidth`, which varies with screen

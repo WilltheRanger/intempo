@@ -6,6 +6,7 @@ import { Animated, Platform, Pressable, StyleSheet, View } from 'react-native';
 import {
   BORDER_WIDTH,
   colors,
+  CONTENT_MAX_WIDTH,
   EASE_OUT,
   ICON_SIZE,
   ICON_STROKE_WIDTH,
@@ -256,6 +257,16 @@ const styles = StyleSheet.create({
     // about 17pt from the edges, just outside the 24pt column of text — where
     // UIKit puts a bar's items against its title column.
     paddingHorizontal: spacing.sm,
+    // **Against the column, not the window** (2026-11-18). On a phone the two
+    // are one width. On a laptop the content keeps its 560pt measure and the
+    // bar's items went to the window's corners, 420pt from the title they
+    // belong to — and over a band, whose photograph is the column's width,
+    // the ivory back link and ••• landed on the ivory page beside it, where
+    // they could not be seen at all. The ground above still spans the window:
+    // the paper and hairline are the page, the items are the column's.
+    width: '100%',
+    maxWidth: CONTENT_MAX_WIDTH,
+    alignSelf: 'center',
   },
   leading: {
     flexDirection: 'row',

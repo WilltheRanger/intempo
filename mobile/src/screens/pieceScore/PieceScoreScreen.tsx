@@ -41,12 +41,13 @@ import {
 import {
   BORDER_WIDTH,
   colors,
+  CONTENT_MAX_WIDTH,
   MIN_TOUCH_TARGET,
   pressedOpacity,
   radii,
   spacing,
 } from '../../design';
-import { CONTENT_MAX_WIDTH, SCREEN_GUTTER } from '../../components/primitives/ScreenContainer';
+import { SCREEN_GUTTER } from '../../components/primitives/ScreenContainer';
 import { ROW_PADDING_VERTICAL } from '../../components/rowMetrics';
 import {
   describeOmissions,

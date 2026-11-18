@@ -31,7 +31,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { BORDER_WIDTH, colors, motion, spacing } from '../../design';
+import { BORDER_WIDTH, colors, CONTENT_MAX_WIDTH, motion, spacing } from '../../design';
 import {
   MIN_REFRESH_MS,
   REFRESH_HOLD,
@@ -667,14 +667,6 @@ function RefreshOnReturn({ onRefresh }: { onRefresh: () => Promise<void> }) {
  */
 export const SCREEN_GUTTER = spacing['2xl'];
 
-/**
- * How wide the column of content is allowed to get.
- *
- * A reading measure. This is a phone product built to the web as well, and a
- * laptop browser will happily set a piece title in 36pt serif across two
- * thousand pixels if nothing stops it.
- */
-export const CONTENT_MAX_WIDTH = 560;
 
 /** The held room opening and closing, on the app's ease. */
 const HOLD_MOTION = Platform.select({

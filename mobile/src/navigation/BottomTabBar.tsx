@@ -6,13 +6,22 @@ import {
   type LucideIcon,
 } from '../components/icons';
 import { useEffect, useRef, type ReactNode } from 'react';
-import { Animated, Platform, Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
+import {
+  Animated,
+  Platform,
+  Pressable,
+  StyleSheet,
+  useWindowDimensions,
+  View,
+  type ViewStyle,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { GlassSurface } from '../components/primitives/GlassSurface';
 import { Text } from '../components/primitives/Text';
 import {
   colors,
+  CONTENT_MAX_WIDTH,
   darkColors,
   ICON_SIZE,
   ICON_STROKE_WIDTH,
@@ -28,6 +37,7 @@ import {
   TAB_BAR_ROW_HEIGHT,
   tabBarFloatBottom,
 } from './tabBarMetrics';
+import { tabBarSide } from './tabBarSide';
 import { useChromeTone } from './ChromeToneContext';
 import { HapticTap } from '../components/motion/HapticTap';
 import { impact, ImpactFeedbackStyle } from '../lib/haptics';
@@ -150,8 +160,11 @@ export function BottomTabBar({
 }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
+  const { width: windowWidth } = useWindowDimensions();
 
   const bottomGap = tabBarFloatBottom(insets);
+  // In from the window's edges on a phone, from the column's on anything wider.
+  const side = tabBarSide(windowWidth, CONTENT_MAX_WIDTH, TAB_BAR_FLOAT_INSET);
   // **What is behind the capsule right now**, which the screen under it works
   // out and reports — not which screen it is. A route is a name; the tone is
   // about a rectangle, and a screen can be dark for only part of its height.
@@ -173,8 +186,8 @@ export function BottomTabBar({
       style={[
         styles.bar,
         {
-          left: TAB_BAR_FLOAT_INSET,
-          right: TAB_BAR_FLOAT_INSET,
+          left: side,
+          right: side,
           bottom: bottomGap,
         },
       ]}

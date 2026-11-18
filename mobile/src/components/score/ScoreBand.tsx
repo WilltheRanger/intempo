@@ -2,12 +2,11 @@ import { memo, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, useWindowDimensions, View, type LayoutChangeEvent } from 'react-native';
 
 import { Stave } from '../notation/Stave';
-import { BORDER_WIDTH, colors, spacing } from '../../design';
+import { BORDER_WIDTH, colors, CONTENT_MAX_WIDTH, spacing } from '../../design';
 import type { ScoreJson } from '../../data/types';
 import { bandOf, engraveBand, keptEngraving } from '../../lib/notation/bandEngraving';
 import { paginateSystems } from '../../lib/notation/pages';
 import { fullBleedMusicWidth } from '../../lib/score/musicWidth';
-import { CONTENT_MAX_WIDTH } from '../primitives/ScreenContainer';
 import { useEngravingTurn } from './useEngravingTurn';
 
 /**
