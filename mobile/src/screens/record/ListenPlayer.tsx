@@ -354,7 +354,10 @@ const styles = StyleSheet.create({
   },
   thumb: {
     position: 'absolute',
-    top: (20 - THUMB) / 2,
+    // Centred on the rail, which `hit` centres in its 44. It was centred on
+    // the 20 the strip used to be, so when the strip grew the thumb stayed
+    // behind and floated 12pt above the line it marks (2026-11-18).
+    top: (MIN_TOUCH_TARGET - THUMB) / 2,
     width: THUMB,
     height: THUMB,
     marginLeft: -THUMB / 2,
