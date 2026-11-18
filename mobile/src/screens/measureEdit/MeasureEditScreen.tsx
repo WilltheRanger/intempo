@@ -571,6 +571,17 @@ export function MeasureEditScreen() {
             </Pressable>
           );
         })}
+      </View>
+
+      {/*
+        **Rest and tie on a row of their own**, as the redesign draws them —
+        the two marks that change the timeline, under the two that change a
+        note's length. All four shared one wrapping row once the dot and the
+        triplet joined it, and "Tie to next" fell alone onto a third line (the
+        ui-forge-kit review, 2026-11-18). Two even rows of two keep one column
+        edge down the screen.
+      */}
+      <View style={styles.markRow}>
         <Pressable
           onPress={() =>
             change(
@@ -593,7 +604,6 @@ export function MeasureEditScreen() {
           style={({ pressed }) => [
             choiceTile.surface,
             styles.chip,
-            styles.restToggle,
             current?.pitch === 'rest' && choiceTile.chosen,
             pressed && choiceTile.pressed,
           ]}
@@ -636,7 +646,6 @@ export function MeasureEditScreen() {
             style={({ pressed }) => [
               choiceTile.surface,
               styles.chip,
-              styles.restToggle,
               current.tied_to_next && choiceTile.chosen,
               pressed && choiceTile.pressed,
             ]}
@@ -649,7 +658,11 @@ export function MeasureEditScreen() {
               Tie to next
             </Text>
           </Pressable>
-        ) : null}
+        ) : (
+          // A rest cannot be tied, so the tie is not offered — and its half of
+          // the row is kept, so Rest does not stretch across the screen.
+          <View style={styles.chipSpace} />
+        )}
       </View>
 
       {/*
@@ -679,6 +692,16 @@ export function MeasureEditScreen() {
             style={({ pressed }) => [styles.pitchName, pressed && styles.pressed]}
           >
             <Text style={styles.pitchText}>{printedPitch(current.pitch)}</Text>
+            {/*
+              **Said, because nothing else draws it** (the ui-forge-kit review,
+              2026-11-18). The name is the only way to a sharp or a flat, and
+              a bare "G3" between − and + gives a thumb no reason to try it —
+              while a misread accidental comes back as a wrong-note finding on
+              the result. One line under the name, inside its target.
+            */}
+            <Text variant="caption" color="textTertiary">
+              Tap for ♯ or ♭
+            </Text>
           </Pressable>
           <Pressable
             onPress={() => change({ pitch: stepPitch(current.pitch, 1) })}
@@ -720,9 +743,11 @@ export function MeasureEditScreen() {
         >
           <Text
             variant="body"
-            color="textTertiary"
-            // Faded, not drawn in a border colour: `borderStrong` as text was
-            // 1.3:1 and read as missing rather than unavailable (2026-11-12).
+            // **In ink while it works**, like Add note beside it: drawn in the
+            // tertiary grey it read as already unavailable (2026-11-18). Faded,
+            // not drawn in a border colour, when it is: `borderStrong` as text
+            // was 1.3:1 and read as missing rather than unavailable
+            // (2026-11-12).
             style={[styles.noteActionText, working.length <= 1 && styles.unavailable]}
           >
             Delete note
@@ -1062,9 +1087,7 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   valueChip: {
-    minWidth: 52,
-    alignItems: 'center',
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.xs,
   },
   unavailable: {
     opacity: disabledOpacity,
@@ -1170,26 +1193,29 @@ const styles = StyleSheet.create({
   footerError: {
     marginBottom: spacing.md,
   },
+  // **Every row of choices runs the column's full width** (2026-11-18): the
+  // five values stopped 36pt short of the right margin and the marks wrapped
+  // raggedly beneath them. Equal shares of one width line their edges up.
   durations: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: spacing.sm,
     marginTop: spacing.md,
   },
   chip: {
+    flex: 1,
     minHeight: 44,
+    alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.sm,
     borderRadius: radii.md,
   },
-  restToggle: {
-    alignSelf: 'flex-start',
+  chipSpace: {
+    flex: 1,
   },
   markRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: spacing.sm,
-    marginTop: spacing.md,
+    marginTop: spacing.sm,
   },
   pitchStepper: {
     flexDirection: 'row',
@@ -1211,6 +1237,7 @@ const styles = StyleSheet.create({
     minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: spacing.sm,
   },
   pitchText: {
     fontFamily: fontFamily.serifRegular,
