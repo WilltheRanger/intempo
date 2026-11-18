@@ -207,6 +207,31 @@ def test_a_skip_is_told_from_a_note_played_and_not_heard() -> None:
     assert skipped_ahead(pairs, waited * 2, onsets) == []
 
 
+def test_an_attack_given_to_the_note_after_is_not_a_skip() -> None:
+    """Note 3's attack paired with note 4, and note 4's own unheard: the gap
+    after note 2 was played in one interval, as a skip's is, but note 5 is
+    where the page puts it. A skip would have moved it too. On URMP's real
+    takes, every one played through, the app declared 83 skips, each one
+    restarting the level the notes after it were measured from."""
+    onsets = np.arange(8, dtype=float)
+    detected = np.array([0, 1, 2, 3, 5, 6, 7], dtype=float)
+    pairs = [(0, 0), (1, 1), (2, 2), (3, 4), (4, 5), (5, 6), (6, 7)]
+
+    assert skipped_ahead(pairs, detected, onsets) == []
+    assert skipped_ahead(pairs, detected * 2, onsets) == []
+
+
+def test_two_attacks_each_given_to_the_note_after_are_not_a_skip() -> None:
+    """Notes 3 and 4 each paired with the attack before their own, and note
+    5's unheard: note 5 also arrives one interval early, but note 6 is back
+    where the page puts it (`classification.SKIP_CONFIRMED_BY`)."""
+    onsets = np.arange(10, dtype=float)
+    detected = np.array([0, 1, 2, 3, 4, 6, 7, 8, 9], dtype=float)
+    pairs = [(0, 0), (1, 1), (2, 2), (3, 4), (4, 5), (5, 6), (6, 7), (7, 8), (8, 9)]
+
+    assert skipped_ahead(pairs, detected, onsets) == []
+
+
 def _replayed(notes: list[int]) -> tuple[object, dict]:
     return _analyse(notes, 0.6 + np.arange(len(notes)) * BEAT)
 
@@ -405,6 +430,58 @@ def test_the_note_before_heard_again_is_not_named() -> None:
     notes[k] = TUNE[k - 1]
     result, _ = _analyse(notes, GRID[:N])
     assert result.wrong_notes == []
+
+
+def _third_partial_loudest(freq_hz: float, seconds: float) -> np.ndarray:
+    """A note whose third partial outsounds its fundamental fifty to one and
+    its second twelve to one: the shares a real viola's open C had in K515
+    (URMP, 2026-11-14), where both readings heard the G above it."""
+    t = np.arange(int(seconds * SR)) / SR
+    shares = [0.02, 0.08, 1.0, 0.13, 0.09, 0.02]
+    y = sum(a * np.sin(2 * np.pi * freq_hz * (k + 1) * t) for k, a in enumerate(shares))
+    envelope = np.exp(-0.6 * t) * np.clip(t / 0.035, 0.0, 1.0)
+    return (0.4 * envelope * y / float(np.abs(y).max())).astype(np.float32)
+
+
+def _take_with_a_third_partial_note(k: int) -> np.ndarray:
+    others = [i for i in range(N) if i != k]
+    y = synth_bowed_take([float(GRID[i]) for i in others], freqs_hz=[_hz(TUNE[i]) for i in others], sr=SR)
+    note = _third_partial_loudest(_hz(TUNE[k]), 0.55)
+    start = int(GRID[k] * SR)
+    y[start : start + note.size] += note[: max(0, y.size - start)]
+    return y
+
+
+#: Bar 3's A4, between two G4s: its third partial, E6, is no neighbour's.
+THIRD_PARTIAL_NOTE = 8
+
+
+def test_a_note_heard_by_its_third_partial_is_not_named() -> None:
+    """Both readings follow the strongest partial, and here that is the
+    third: they hear E where the page has A. The A's own partials — its
+    second, fourth and fifth, which no E has — carry the note."""
+    y = _take_with_a_third_partial_note(THIRD_PARTIAL_NOTE)
+
+    result = analyze((y, SR), PAGE, BPM, instrument="violin")
+
+    assert result.status == "ok"
+    assert result.wrong_notes == []
+
+
+def test_without_asking_the_partials_that_note_is_named_wrong() -> None:
+    """The defect, kept reproducible: if this fails, the take above no longer
+    reads the third partial and is testing nothing."""
+    from dataclasses import replace
+
+    from app.services.audio_config import load_audio_config
+
+    cfg = load_audio_config()
+    off = replace(cfg, mistakes=replace(cfg.mistakes, written_partials_floor=0.0))
+    y = _take_with_a_third_partial_note(THIRD_PARTIAL_NOTE)
+
+    result = analyze((y, SR), PAGE, BPM, instrument="violin", config=off)
+
+    assert _wrong(result) == [(THIRD_PARTIAL_NOTE // 4 + 1, "E", "A")]
 
 
 def test_a_page_read_in_the_wrong_key_names_nothing() -> None:

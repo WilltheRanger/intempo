@@ -214,7 +214,7 @@ export async function submitTake({
     const message =
       cause instanceof Error
         ? cause.message
-        : 'Your recording could not be sent. Check your connection and try again.';
+        : 'Couldn’t send your recording. Check your connection and try again.';
     throw new TakeSubmissionError(message, state, cause);
   }
 }

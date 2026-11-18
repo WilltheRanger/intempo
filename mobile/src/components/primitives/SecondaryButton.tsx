@@ -19,6 +19,7 @@ import {
 } from '../../design';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import { PressableScale } from '../motion/PressableScale';
+import { HapticTap } from '../motion/HapticTap';
 import { Text } from './Text';
 
 export interface SecondaryButtonProps {
@@ -99,6 +100,8 @@ export function SecondaryButton({
           {label}
         </Text>
       </View>
+      {/* The finger's own haptic on an iPhone (`HapticTap`). */}
+      {!disabled ? <HapticTap /> : null}
     </PressableScale>
   );
 }

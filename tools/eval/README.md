@@ -71,3 +71,46 @@ ground_truth = build_ground_truth(Path("fixtures/scores/01_simple.json"), cfg)
 - Feeding the Telemann/Paganini MusicXML once the Scout task produces it —
   today this only consumes the `score` JSON shape, so that piece needs the
   same OCR-shaped conversion every other fixture went through first.
+
+## `accuracy_bench.py`: the same question, end to end, today
+
+    tools/eval/accuracy_bench.py              # 180 takes, about a minute
+    tools/eval/accuracy_bench.py --full       # every tempo for every combination
+    tools/eval/accuracy_bench.py --set onset.delta=0.06 --only double_bass/
+
+Where `synthetic_takes.py` is the plumbing a soundfont render will plug into,
+this needs no toolchain: it synthesises each take with the repository's own
+string models (`backend/app/tests/audio_helpers.py`'s, with vibrato and a
+plucked string added), puts it through a room — noise, reverb, a phone's
+clipping, uneven dynamics — runs `analyze()` on it, and scores the reading
+against the app's own rules applied to the truth. So it answers *does the app
+hear the take it was given*, not *are the app's rules about rushing right*.
+Its docstring says what each metric means and what synthesis cannot tell you;
+`TUNING_LOG.md` (2026-11-13) has the first numbers. Nothing is written to
+disk unless `--json` is given.
+
+## `real_takes.py`: the same scoring, on real recordings
+
+    tools/eval/real_takes.py DATA            # 72 tracks, a few minutes
+    tools/eval/real_takes.py DATA --only Rondeau --json out.json
+
+What synthesis cannot tell you, this can begin to. URMP is 44 classical pieces
+with every part recorded alone by a student player, the score it was played
+from, and a hand-checked onset and pitch for every note; its violin, viola,
+cello, double bass and alto saxophone tracks are read here. The docstring has
+the download (a 683 MB archive from Zenodo, outside the repository) and the
+one-time conversion of its MIDI scores to MusicXML (`urmp_scores.py`, which
+needs `music21` in whatever Python runs it — the backend does not depend on
+it).
+**Neither the recordings nor the converted scores are ever committed**, for
+the reason above.
+
+Each take is scored twice: against the app's own rules applied to the
+labelled onsets, as `accuracy_bench.py` scores a synthesised one, and against
+the labels directly — was each played note heard, was it placed within 50 ms,
+and is its colour the one a perfect reading would give. The second is the
+honest one on a real take: a hand label is good to a few tens of milliseconds
+on a bowed attack, so the oracle comparison's 12 ms note tolerance mostly
+measures the labels. `TUNING_LOG.md` (2026-11-13, real recordings) has the
+first numbers.
+

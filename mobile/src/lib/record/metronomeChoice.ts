@@ -60,6 +60,9 @@ const CHOICES: Record<MetronomeMode, Omit<MetronomeChoice, 'mode'>> = {
  */
 export const HEADPHONES_WARNING = 'Use headphones, or the click ends up in the recording.';
 
+/** Under a haptic metronome on a device that cannot tap on a beat. */
+export const DEVICE_CANNOT_TAP = 'A browser on iPhone can’t tap on the beat. Choose Visual or Audio.';
+
 /** The order the picker offers them in. */
 export const METRONOME_ORDER: MetronomeMode[] = [
   'off',
@@ -69,8 +72,38 @@ export const METRONOME_ORDER: MetronomeMode[] = [
 ];
 
 /** Every choice, ready to render. */
-export function metronomeChoices(): MetronomeChoice[] {
-  return METRONOME_ORDER.map((mode) => ({ mode, ...CHOICES[mode] }));
+/**
+ * The modes worth offering on this device.
+ *
+ * **Haptic only where the device can tap on a beat** (2026-11-13). A
+ * browser on an iPhone has no vibration API, and the one haptic Safari plays
+ * needs a finger on a switch, so a metronome there can buzz on no beat at all
+ * (`lib/hapticsSupport.ts`). Offered anyway, it was a setting that did
+ * nothing, which is the defect this list exists to prevent. `current` keeps
+ * a mode already chosen on the list, so the control still shows what is set
+ * and the screen can say why it is quiet.
+ */
+export function metronomeChoices({
+  canTapOnBeat = true,
+  current,
+}: { canTapOnBeat?: boolean; current?: MetronomeMode } = {}): MetronomeChoice[] {
+  return METRONOME_ORDER.filter(
+    (mode) => mode !== 'haptic' || canTapOnBeat || current === 'haptic',
+  ).map((mode) => ({ mode, ...CHOICES[mode] }));
+}
+
+/** Why a haptic metronome marks no beat on this device, or null when it can. */
+export function hapticMetronomeProblem({
+  canTapOnBeat,
+  hapticsOn,
+}: {
+  canTapOnBeat: boolean;
+  hapticsOn: boolean;
+}): 'device' | 'haptics-off' | null {
+  if (!canTapOnBeat) {
+    return 'device';
+  }
+  return hapticsOn ? null : 'haptics-off';
 }
 
 /**

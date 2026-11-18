@@ -13,7 +13,11 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from app.services.onset_recovery import predict_audio_times, recover_onsets
+from app.services.onset_recovery import (
+    predict_audio_times,
+    recover_by_pitch,
+    recover_onsets,
+)
 
 SR = 22050
 HOP = 512
@@ -159,3 +163,86 @@ class TestRecoverOnsets:
 
     def test_a_silent_take_recovers_nothing(self):
         assert _recover(np.zeros(400, dtype=np.float32), [], [1.0]).size == 0
+
+
+#: One pitch-track frame: `pitch_evidence.HOP` at 22050 Hz.
+FRAME_S = 256 / SR
+
+
+def _track(*stretches: tuple[float, float]) -> np.ndarray:
+    """A pitch track, stretch by stretch: (pitch in MIDI or NaN, seconds)."""
+    return np.concatenate(
+        [np.full(int(round(seconds / FRAME_S)), pitch) for pitch, seconds in stretches]
+    )
+
+
+def _by_pitch(track, window, target, *, hold_s=0.045):
+    (found,) = recover_by_pitch(
+        track,
+        frame_s=FRAME_S,
+        windows=[window],
+        targets=[target],
+        hold_s=hold_s,
+        tolerance_st=0.6,
+    )
+    return found
+
+
+class TestRecoverByPitch:
+    """The legato look: a note no attack marks, found where its pitch takes over."""
+
+    def test_a_slurred_note_is_found_where_its_pitch_takes_over(self):
+        track = _track((64.0, 1.0), (66.1, 0.5), (67.0, 0.5))
+
+        found = _by_pitch(track, (0.6, 1.45), 66.0)
+
+        assert found == pytest.approx(1.0, abs=FRAME_S)
+
+    def test_a_note_that_was_not_played_is_not_found(self):
+        """The note before held on into the next: the written pitch never sounds."""
+        track = _track((64.0, 1.5), (67.0, 0.5))
+
+        assert _by_pitch(track, (0.6, 1.45), 66.0) is None
+
+    def test_a_glide_through_the_pitch_is_not_the_note(self):
+        """A shift from E to G passes F sharp on the way, for a frame or two."""
+        track = _track((64.0, 1.0), (65.0, 0.012), (66.0, 0.024), (67.0, 1.0))
+
+        assert _by_pitch(track, (0.6, 1.9), 66.0) is None
+
+    def test_a_pitch_already_sounding_when_the_window_opens_is_not_taken(self):
+        """An earlier note at this pitch, still ringing, is not this note: only
+        a stretch that begins inside the window, after something else, is."""
+        track = _track((66.0, 1.2), (64.0, 0.3), (66.0, 0.5))
+
+        found = _by_pitch(track, (1.0, 1.9), 66.0)
+
+        assert found == pytest.approx(1.5, abs=FRAME_S)
+
+    def test_silence_between_counts_as_something_else(self):
+        track = _track((66.0, 1.0), (np.nan, 0.2), (66.0, 0.5))
+
+        found = _by_pitch(track, (0.5, 1.6), 66.0)
+
+        assert found == pytest.approx(1.2, abs=FRAME_S)
+
+    def test_a_window_too_short_to_hold_the_pitch_finds_nothing(self):
+        track = _track((64.0, 1.0), (66.0, 1.0))
+
+        assert _by_pitch(track, (0.99, 1.02), 66.0) is None
+
+    def test_each_window_is_answered_in_order(self):
+        track = _track((62.0, 0.5), (64.0, 0.5), (66.0, 0.5), (67.0, 0.5))
+
+        found = recover_by_pitch(
+            track,
+            frame_s=FRAME_S,
+            windows=[(0.2, 0.9), (0.6, 1.4), (0.2, 0.9)],
+            targets=[64.0, 66.0, 69.0],
+            hold_s=0.045,
+            tolerance_st=0.6,
+        )
+
+        assert found[0] == pytest.approx(0.5, abs=FRAME_S)
+        assert found[1] == pytest.approx(1.0, abs=FRAME_S)
+        assert found[2] is None

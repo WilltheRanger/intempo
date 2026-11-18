@@ -42,7 +42,7 @@ import {
  * reader is stubbed to a known answer and the branch is exercised through it.
  */
 const QUOTA_SENTENCE =
-  'You have used all three analyses this month. The count resets on 1 October.';
+  "That take wasn't analysed. You've used all 3 of your free takes this month. Your next free take is on October 1.";
 
 vi.mock('../tierLimit', () => ({
   describeTierLimit: (error: unknown) =>

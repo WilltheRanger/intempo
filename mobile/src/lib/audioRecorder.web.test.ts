@@ -283,7 +283,7 @@ describe('startRecording (web)', () => {
     vi.useFakeTimers();
     try {
       const started = startRecording();
-      const refused = expect(started).rejects.toThrow(/Audio could not start/);
+      const refused = expect(started).rejects.toThrow(/Couldn.t start audio/);
       await vi.advanceTimersByTimeAsync(6_000);
       await refused;
     } finally {

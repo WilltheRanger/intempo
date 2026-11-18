@@ -273,7 +273,7 @@ describe('when the page cannot be read', () => {
     const thrown = await uploadPage({ source: 'file:///gone.jpg' } as never).catch((e) => e);
 
     expect(thrown).toBeInstanceOf(ScanUploadError);
-    expect(thrown.message).toMatch(/could not be read/i);
+    expect(thrown.message).toMatch(/Couldn.t read that page/i);
     expect((thrown as ScanUploadError).cause).toBeInstanceOf(Error);
     expect(uploadToSignedUrl).not.toHaveBeenCalled();
   });
@@ -282,7 +282,7 @@ describe('when the page cannot be read', () => {
     respondWith(new Blob([new Uint8Array([1])]), false, 404);
 
     await expect(uploadPage({ source: 'blob:gone' } as never)).rejects.toThrow(
-      /could not be read/i,
+      /Couldn.t read that page/i,
     );
   });
 

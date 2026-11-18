@@ -3,12 +3,13 @@ import { useEffect, useRef, useState } from 'react';
 import { Animated, Pressable, StyleSheet, View } from 'react-native';
 
 import {
-  BackLink,
+  LargeTitle,
   EmptyState,
   LoadingState,
   PrimaryButton,
   ScreenContainer,
   Text,
+  choiceTile,
 } from '../../components/primitives';
 import { ListenButton } from '../../components/score/ListenButton';
 import { ScoreBand } from '../../components/score/ScoreBand';
@@ -35,8 +36,9 @@ import {
 import { bpmForMarking } from '../../lib/tempoMarking';
 import { useReducedMotion } from '../../lib/useReducedMotion';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
-import { useGoBack } from '../../navigation/useGoBack';
+import { useBackButton } from '../../navigation/useGoBack';
 import { TempoSlider } from './TempoSlider';
+import { HapticTap } from '../../components/motion/HapticTap';
 
 /**
  * Tempo, on its own screen (`redesign/Tempo.dc.html`, 2026-09-23).
@@ -63,7 +65,11 @@ export function TempoScreen() {
   // named, before its score opens for the first time.
   const setup = route.name === 'SetTempo';
   const navigation = useNavigation<RootNavigation>();
-  const goBack = useGoBack({ route: 'Record', params: { pieceId: params.pieceId } });
+  const back = useBackButton({ route: 'Record', params: { pieceId: params.pieceId } });
+  // Step 3 of adding a piece has no way back: the piece is saved, and back is
+  // the naming step it has already left (`RootNavigator`, `gestureEnabled`).
+  const navigationBar = setup ? {} : { back };
+  const goBack = back.onPress;
   const { data: piece, isError } = usePiece(params.pieceId);
   usePracticeTempos();
   const reduceMotion = useReducedMotion();
@@ -80,14 +86,14 @@ export function TempoScreen() {
 
   if (loadStateFor({ isError, hasData: piece !== undefined }) === 'loading') {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={navigationBar}>
         <LoadingState />
       </ScreenContainer>
     );
   }
   if (!piece) {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={navigationBar}>
         <EmptyState
           title="Couldn't open this piece"
           actionLabel="Back"
@@ -149,7 +155,7 @@ export function TempoScreen() {
   // horizontal drags (`TempoSlider`), so nothing here needed the page to hold
   // still.
   return (
-    <ScreenContainer
+    <ScreenContainer navigationBar={navigationBar}
       footer={
         setup ? (
           // The score is where a new piece goes next: its reading is checked
@@ -164,18 +170,17 @@ export function TempoScreen() {
       }
     >
       {setup ? (
-        <View style={styles.head}>
-          <Text variant="screenTitle" accessibilityRole="header" style={styles.title}>
+        <LargeTitle text="Set your tempo" style={styles.head}>
+          <Text variant="screenTitle" accessibilityRole="header">
             Set your tempo
           </Text>
-        </View>
+        </LargeTitle>
       ) : (
-        <View style={styles.head}>
-          <BackLink label="Back" onPress={goBack} />
-          <Text variant="screenTitle" accessibilityRole="header" style={styles.title}>
+        <LargeTitle text="Tempo" style={styles.head}>
+          <Text variant="screenTitle" accessibilityRole="header">
             Tempo
           </Text>
-        </View>
+        </LargeTitle>
       )}
 
       {/*
@@ -214,16 +219,16 @@ export function TempoScreen() {
             onPress={tap}
             accessibilityRole="button"
             accessibilityLabel={`${tapLabel(taps.length)}. Tap the beat to set the tempo`}
+            // While tapping it is the chosen way of setting the tempo, so it
+            // wears the chosen edge (`choiceTile`) — never Done's ink fill.
             style={({ pressed }) => [
+              choiceTile.surface,
               styles.tap,
-              tapping && styles.tapOn,
-              pressed && !tapping && styles.tapPressed,
+              tapping && choiceTile.chosen,
+              pressed && choiceTile.pressed,
             ]}
           >
-            <Text
-              variant="metadata"
-              style={[styles.tapLabel, tapping && styles.onLabel]}
-            >
+            <Text variant="metadata" style={styles.tapLabel}>
               {tapLabel(taps.length)}
             </Text>
           </Pressable>
@@ -251,18 +256,20 @@ export function TempoScreen() {
                 aria-checked={on}
                 accessibilityLabel={`${pick.label} ${unitLabel}`}
                 style={({ pressed }) => [
+                  choiceTile.surface,
                   styles.pick,
-                  on && styles.pickOn,
-                  pressed && !on && styles.pickPressed,
+                  on && choiceTile.chosen,
+                  pressed && choiceTile.pressed,
                 ]}
               >
                 <Text
                   variant="metadataSmall"
                   numberOfLines={1}
-                  style={[styles.pickLabel, on && styles.onLabel]}
+                  style={[styles.pickLabel, on && choiceTile.chosenLabel]}
                 >
                   {pick.label}
                 </Text>
+                <HapticTap />
               </Pressable>
             );
           })}
@@ -273,12 +280,15 @@ export function TempoScreen() {
         Hear the opening at the tempo on the screen, before committing to it —
         in setup only, and only once there is notation to play.
       */}
+      {/*
+        The button alone, under the quick picks it is heard at. "Hear bar 1"
+        stood beside it, a grey caption that read as a second control and
+        undersold the button, which plays on from bar 1 until it is stopped
+        (the UI review, 2026-11-12).
+      */}
       {setup && hasNotation && piece.score ? (
         <View style={styles.listen}>
           <ListenButton score={piece.score} bpm={quarter} />
-          <Text variant="metadata" color="textTertiary" style={styles.listenHint}>
-            Hear bar 1
-          </Text>
         </View>
       ) : null}
 
@@ -299,18 +309,17 @@ export function TempoScreen() {
 
 const styles = StyleSheet.create({
   head: {
-    paddingTop: spacing.md,
-  },
-  title: {
-    marginTop: 6,
+    paddingTop: spacing.sm,
   },
   readout: {
     flexDirection: 'row',
     alignItems: 'baseline',
     justifyContent: 'center',
-    gap: 10,
-    marginTop: 64,
-    marginBottom: 44,
+    gap: spacing.sm,
+    // The screen's one big number gets the most air on it: two of the largest
+    // steps above, one below, so it sits nearer the controls it reports.
+    marginTop: spacing['4xl'] + spacing['2xl'],
+    marginBottom: spacing['4xl'],
   },
   // The largest number in the app, and the only thing on the screen that
   // size: it is what the screen is for (§3 law 4).
@@ -330,50 +339,30 @@ const styles = StyleSheet.create({
   },
   tapRow: {
     alignItems: 'center',
-    marginTop: 28,
+    marginTop: spacing['3xl'],
   },
+  // An action, so a capsule (`radii.ts`).
   tap: {
     height: 48,
-    paddingHorizontal: 26,
-    borderRadius: 24,
-    borderWidth: BORDER_WIDTH,
-    borderColor: colors.borderStrong,
+    paddingHorizontal: spacing['2xl'],
+    borderRadius: radii.pill,
     justifyContent: 'center',
-  },
-  tapPressed: {
-    backgroundColor: colors.surfacePressed,
-  },
-  tapOn: {
-    backgroundColor: colors.actionBg,
-    borderColor: colors.actionBg,
   },
   tapLabel: {
     fontFamily: fontFamily.sansMedium,
     fontSize: 15,
   },
-  onLabel: {
-    color: colors.actionText,
-  },
   picks: {
     flexDirection: 'row',
     gap: spacing.sm,
-    marginTop: 36,
+    marginTop: spacing['3xl'],
   },
   pick: {
     flex: 1,
     height: 44,
     borderRadius: radii.md,
-    borderWidth: BORDER_WIDTH,
-    borderColor: colors.borderStrong,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  pickOn: {
-    backgroundColor: colors.actionBg,
-    borderColor: colors.actionBg,
-  },
-  pickPressed: {
-    backgroundColor: colors.surfacePressed,
   },
   pickLabel: {
     fontVariant: ['tabular-nums'],
@@ -390,12 +379,7 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
   },
   listen: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.lg,
-    marginTop: 36,
-  },
-  listenHint: {
-    flex: 1,
+    marginTop: spacing['3xl'],
   },
 });

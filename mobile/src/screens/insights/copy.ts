@@ -7,9 +7,13 @@
  * fine in review and ships "1 sessions".
  */
 
-/** "last 30 days", for the eyebrow. Lower case — it follows "Insights · ". */
+/**
+ * "Last 30 days", the kicker over the finding when there are not yet two takes
+ * to count. Capitalised here: it was lower case and set in caps by the old
+ * eyebrow style, which went for sentence case on 2026-11-12.
+ */
 export function windowLabel(days: number): string {
-  return days === 1 ? 'last day' : `last ${days} days`;
+  return days === 1 ? 'Last day' : `Last ${days} days`;
 }
 
 /**

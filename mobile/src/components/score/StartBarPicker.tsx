@@ -332,7 +332,7 @@ const styles = StyleSheet.create({
   },
   stepperReadout: {
     alignItems: 'center',
-    gap: 2,
+    gap: spacing['2xs'],
   },
   pressed: {
     opacity: 0.6,

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, StyleSheet, View } from 'react-native';
-import { useGoBack } from '../../navigation/useGoBack';
+import { useBackButton } from '../../navigation/useGoBack';
 
 import {
   Input,
@@ -24,7 +24,8 @@ import { describeAuthError, isEmail } from '../auth/authErrors';
  * happened and where to look.
  */
 export function ChangeEmailScreen() {
-  const goBack = useGoBack({ tab: 'Profile' });
+  const back = useBackButton({ tab: 'Profile' });
+  const goBack = back.onPress;
   const { data: musician } = useMe();
 
   const [email, setEmail] = useState('');
@@ -61,11 +62,9 @@ export function ChangeEmailScreen() {
 
   if (sentTo) {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ back }}>
         <PageHeader
           title="Confirm the change"
-          onBack={goBack}
-          backLabel="Back to profile"
         />
         <Text variant="body" color="textSecondary">
           We sent a link to {sentTo}. Your address stays as it is until you
@@ -85,11 +84,9 @@ export function ChangeEmailScreen() {
       style={styles.flex}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ back }}>
         <PageHeader
           title="Change email"
-          onBack={goBack}
-          backLabel="Back to profile"
         />
 
         <View>

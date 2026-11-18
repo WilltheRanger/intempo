@@ -228,6 +228,27 @@ def pitch_track(y: np.ndarray, sr: int, *, fmin: float, fmax: float) -> np.ndarr
     return librosa.hz_to_midi(f0)
 
 
+def _listening_window(attacks_s: np.ndarray, i: int) -> tuple[float, float]:
+    """Where `heights_at` reads attack `i`'s pitch, in seconds: from 30 ms in,
+    for `_LISTEN_S` or `_LISTEN_SHARE_OF_GAP` of the gap to the next attack."""
+    t = float(attacks_s[i])
+    gap = (float(attacks_s[i + 1]) - t) if i + 1 < attacks_s.size else _LISTEN_S * 2
+    return t + max(_SETTLE_S, 0.03), t + _SETTLE_S + min(_LISTEN_S, _LISTEN_SHARE_OF_GAP * gap)
+
+
+#: The longest stretch of a note `note_window` gives: enough of its body to
+#: outlast a slide or an ornament into it, and within one `_OCTAVE_FFT`.
+_NOTE_S = 0.6
+
+
+def note_window(attacks_s: np.ndarray, i: int) -> tuple[float, float]:
+    """Attack `i`'s note, in seconds: from where `_listening_window` starts
+    to the next attack, at most `_NOTE_S` after the attack."""
+    t = float(attacks_s[i])
+    end = float(attacks_s[i + 1]) if i + 1 < attacks_s.size else t + _NOTE_S
+    return t + max(_SETTLE_S, 0.03), min(end, t + _NOTE_S)
+
+
 def heights_at(track: np.ndarray, sr: int, attacks_s: np.ndarray) -> np.ndarray:
     """The pitch that sounded after each attack, as fractional MIDI.
 
@@ -237,10 +258,8 @@ def heights_at(track: np.ndarray, sr: int, attacks_s: np.ndarray) -> np.ndarray:
     """
     attacks_s = np.asarray(attacks_s, dtype=float)
     out = np.full(attacks_s.size, np.nan)
-    for i, t in enumerate(attacks_s):
-        gap = (attacks_s[i + 1] - t) if i + 1 < attacks_s.size else _LISTEN_S * 2
-        start = t + max(_SETTLE_S, 0.03)
-        end = t + _SETTLE_S + min(_LISTEN_S, _LISTEN_SHARE_OF_GAP * gap)
+    for i in range(attacks_s.size):
+        start, end = _listening_window(attacks_s, i)
         first = int(round(start * sr / HOP))
         last = max(first + 1, int(round(end * sr / HOP)))
         window = track[max(0, first) : min(track.size, last)]
@@ -250,11 +269,161 @@ def heights_at(track: np.ndarray, sr: int, attacks_s: np.ndarray) -> np.ndarray:
     return out
 
 
+#: The FFT length `octave_checked` reads a listening window with, zero-padded:
+#: 1.3 Hz a bin at 22,050 Hz, so ±3% of a bass's 21 Hz half-frequency still
+#: holds a bin.
+_OCTAVE_FFT = 16384
+
+#: How far either side of a partial's frequency its peak is looked for: a
+#: string's partials sit a little sharp, and vibrato moves them.
+_PARTIAL_REACH = 0.03
+
+
+def _partials(spectrum: np.ndarray, freqs: np.ndarray, at: list[float]) -> float:
+    """The mean of the strongest bin within `_PARTIAL_REACH` of each frequency."""
+    out = []
+    for f in at:
+        near = (freqs >= f * (1 - _PARTIAL_REACH)) & (freqs <= f * (1 + _PARTIAL_REACH))
+        out.append(float(spectrum[near].max()) if near.any() else 0.0)
+    return float(np.mean(out))
+
+
+def octave_checked(
+    heights: np.ndarray,
+    y: np.ndarray,
+    sr: int,
+    attacks_s: np.ndarray,
+    *,
+    below_ratio: float,
+    above_ratio: float,
+    fmin: float,
+    fmax: float,
+) -> np.ndarray:
+    """`heights_at`, each moved an octave where the window's partials say so.
+
+    **YIN reads a weak fundamental an octave up, and a strong second partial
+    an octave down.** Read at URMP's 15,212 labelled notes (2026-11-14): a
+    viola an octave high at 7.0% of them, a cello an octave low at 4.4% and a
+    double bass at 3.4%. The note chain gives an
+    octave half a wrong note's price, so a stretch of them was paired with
+    notes an octave away: four F♯3s read as F♯4 took the first notes of a run
+    of F♯4s, and the F♯3s were left out.
+
+    The partials tell the octaves apart. A pitch read at f whose real note is
+    f/2 has partials at the odd multiples of f/2 too, which a note at f never
+    has: where their mean reaches `below_ratio` of f's own first three, the
+    pitch is an octave lower. A pitch read at f whose real note is 2f has
+    almost nothing at f's odd multiples: where they fall under `above_ratio`
+    of its even ones, the pitch is an octave higher. Neither moves a pitch
+    out of the instrument's range (`fmin`, `fmax`); either ratio at 0 is off.
+    Read over the window `heights_at` reads.
+    """
+    out = np.asarray(heights, dtype=float).copy()
+    if y is None or y.size == 0 or not (below_ratio > 0 or above_ratio > 0):
+        return out
+    attacks_s = np.asarray(attacks_s, dtype=float)
+    freqs = np.fft.rfftfreq(_OCTAVE_FFT, 1.0 / sr)
+    for i, t in enumerate(attacks_s):
+        if not np.isfinite(out[i]):
+            continue
+        start, end = _listening_window(attacks_s, i)
+        first = int(round(start * sr))
+        piece = y[max(0, first) : max(first + 256, int(round(end * sr)))]
+        if piece.size < 256:
+            continue
+        spectrum = np.abs(np.fft.rfft(piece * np.hanning(piece.size), n=_OCTAVE_FFT))
+        f = float(440.0 * 2.0 ** ((out[i] - 69.0) / 12.0))
+        own = _partials(spectrum, freqs, [f, 2 * f, 3 * f])
+        if own <= 0:
+            continue
+        if (
+            below_ratio > 0
+            and f / 2 >= fmin
+            and _partials(spectrum, freqs, [f / 2, 3 * f / 2, 5 * f / 2]) >= below_ratio * own
+        ):
+            out[i] -= 12.0
+        elif (
+            above_ratio > 0
+            and 2 * f <= fmax
+            and _partials(spectrum, freqs, [f, 3 * f, 5 * f])
+            < above_ratio * _partials(spectrum, freqs, [2 * f, 4 * f, 6 * f])
+        ):
+            out[i] += 12.0
+    return out
+
+
+#: The partials above the fundamental `own_partials` reads: the second to the
+#: sixth, the ones every bowed or blown note has.
+_OWN_PARTIALS = range(2, 7)
+
+
+def own_partials(
+    y: np.ndarray, sr: int, start_s: float, end_s: float, f_a: float, f_b: float
+) -> tuple[float | None, float | None]:
+    """How strongly each of two pitches sounds by the partials only it has.
+
+    **A pitch read from one partial is not a note.** A note is a series: its
+    fundamental and the partials above it. The pitch track and the chroma both
+    follow the strongest part of a sound, and that can be one partial of
+    another note — a viola's open C read as the G an octave and a fifth above
+    it, which is its third partial — or a room's resonance under it.
+
+    So each of `f_a` and `f_b` is asked of its own partials (`_OWN_PARTIALS`),
+    leaving out every one the other pitch has too, or has too close for the
+    window to tell apart: within `_PARTIAL_REACH` of it and the main lobe of
+    the window (two over its length, in Hz) besides. What is left is evidence
+    for one pitch and not the other. Each strength is the mean of those
+    partials' peaks (`_partials`), over the strongest partial of either
+    series; None where a pitch has no partial of its own to read — `f_b`
+    three times `f_a` has none, every one of its partials is one of `f_a`'s.
+    """
+    first = max(0, int(round(start_s * sr)))
+    piece = y[first : max(first + 256, int(round(end_s * sr)))]
+    if piece.size < 256 or not (f_a > 0 and f_b > 0):
+        return None, None
+    spectrum = np.abs(np.fft.rfft(piece * np.hanning(piece.size), n=_OCTAVE_FFT))
+    freqs = np.fft.rfftfreq(_OCTAVE_FFT, 1.0 / sr)
+    lobe = 2.0 * sr / piece.size
+    nyquist = 0.5 * sr * (1 - _PARTIAL_REACH)
+    top = max(_OWN_PARTIALS)
+    every = [k * f for f in (f_a, f_b) for k in range(1, top + 1) if k * f < nyquist]
+    strongest = max((_partials(spectrum, freqs, [f]) for f in every), default=0.0)
+    if strongest <= 0:
+        return None, None
+
+    def unique(f: float, other: float) -> float | None:
+        theirs = other * np.arange(1, int(np.ceil(top * f / other)) + 2)
+        mine = [
+            k * f
+            for k in _OWN_PARTIALS
+            if k * f < nyquist
+            and float(np.min(np.abs(theirs - k * f))) > _PARTIAL_REACH * k * f + lobe
+        ]
+        return _partials(spectrum, freqs, mine) / strongest if mine else None
+
+    return unique(f_a, f_b), unique(f_b, f_a)
+
+
 #: Within this many semitones of the written pitch, an attack *is* that note —
 #: a player's intonation, not a different note.
 _IN_TUNE_ST = 0.6
 #: ...and by this many it is certainly another note.
 _OTHER_NOTE_ST = 1.4
+
+#: An attack's twelve pitch classes say nothing about its pitch when the
+#: middle of them is this close to the strongest: a flat profile, the sound of
+#: a breath, a click or a room rather than of a note.
+#:
+#: **Read flat, it matched every note.** `mismatch` falls back on the classes
+#: when no pitch held, as `1 - relative`, and a flat profile has every class
+#: near the strongest, so a breath cost 0.01 to 0.37 against whichever note
+#: came next: less than leaving it out. In the cello part of URMP's fugue
+#: (2026-11-14), which rests for eight bars, five such sounds before its entry
+#: took its first notes, 2 to 19 s early. Measured on six URMP parts, the
+#: middle class of an attack at a labelled note never reached 0.31 of the
+#: strongest (1,022 attacks); half of the attacks at no note whose pitch did
+#: not hold reached 0.57.
+_FLAT_CLASSES = 0.5
 #: What an attack an exact octave away costs: half. YIN slips an octave on a
 #: few notes in a hundred, and a real octave mistake is rare enough that the
 #: chain around it decides.
@@ -281,6 +450,7 @@ def mismatch(
     steady: float,
     track: np.ndarray | None = None,
     transpose: int = 0,
+    heights: np.ndarray | None = None,
 ) -> np.ndarray:
     """How unlike each written note each attack sounded: (attacks, notes), 0–1.
 
@@ -290,17 +460,22 @@ def mismatch(
     `_OCTAVE_AWAY` an octave off, 1 for another note. Without one, or for an
     attack the chroma says held no pitch, by pitch class: 0 where the written
     class was the strongest thing heard, rising towards 1 as it goes missing.
-    0.5 wherever there is nothing to compare — a written note with no pitch, or
-    an attack with no window to listen in. The class is the sounding one too:
+    0.5 wherever there is nothing to compare — a written note with no pitch, an
+    attack with no window to listen in, or one whose classes are a flat
+    profile (`_FLAT_CLASSES`). The class is the sounding one too:
     an octave's transposition leaves a class alone, a saxophone's does not.
 
     For the note chain (`alignment.align_chain`), which pairs attacks with
     notes by it, and for counting how many notes a pairing heard at their
     written pitch (`analysis._confirmed`).
+
+    `heights`, where given, is each attack's pitch already read off `track`
+    (`octave_checked` reads it so); otherwise it is read here.
     """
     attacks_s = np.asarray(attacks_s, dtype=float)
     heard = heard_after(frames, sr, attacks_s, steady=steady)
-    heights = heights_at(track, sr, attacks_s) if track is not None else None
+    if heights is None and track is not None:
+        heights = heights_at(track, sr, attacks_s)
     classes = [_sounding_class(p, transpose) for p in written]
     sounding = [None if m is None else m + transpose for m in (midi(p) for p in written)]
     out = np.full((len(heard), len(classes)), 0.5)
@@ -308,10 +483,13 @@ def mismatch(
         if not h.relative:
             continue
         pitched = heights is not None and h.pitch_class is not None and np.isfinite(heights[i])
+        # Nothing to compare, as for an attack with no window: a flat profile
+        # is no pitch at all (`_FLAT_CLASSES`).
+        flat = float(np.median(h.relative)) >= _FLAT_CLASSES
         for j, c in enumerate(classes):
             if pitched and sounding[j] is not None:
                 out[i, j] = _height_mismatch(float(heights[i]), float(sounding[j]))
-            elif c is not None:
+            elif c is not None and not flat:
                 out[i, j] = 1.0 - h.relative[c]
     return out
 

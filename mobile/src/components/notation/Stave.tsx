@@ -679,13 +679,24 @@ export function Stave({
             Precision is the stepper's job — `StartBarPicker` says so in its
             own comment — and this is the gesture for the bar you can see.
           */
-          style={{
-            position: 'absolute',
-            left: target.left,
-            top: target.top,
-            width: target.width,
-            height: target.height,
-          }}
+          /*
+            **The press shows, on the bar itself**, as the playhead's own wash
+            (the accent at 0.14, above). The target had a fixed style, so
+            pressing "Correct bar 2" or "Start at bar 2" changed nothing on
+            screen at 16, 50, 120 or 300ms (2026-11-12), and a tap that does
+            not answer reads as dead on anything that then takes a moment.
+            The target has no children, so the opacity reaches only the tint.
+          */
+          style={({ pressed }) => [
+            {
+              position: 'absolute',
+              left: target.left,
+              top: target.top,
+              width: target.width,
+              height: target.height,
+            },
+            pressed && { backgroundColor: colors.accent, opacity: 0.14 },
+          ]}
         />
       ))}
     </View>

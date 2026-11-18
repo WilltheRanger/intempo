@@ -304,19 +304,21 @@ def test_a_lead_in_does_not_break_alignment() -> None:
         assert result.quality == pytest.approx(1.0), f"lead-in {lead_in}s"
 
 
-def test_dtw_no_longer_needs_the_shift_but_fuzzy_matching_still_does() -> None:
-    """Where the lead-in still bites, now that matching is tempo-invariant.
+def test_neither_dtw_nor_fuzzy_matching_needs_the_shift() -> None:
+    """A lead-in moves neither the pairing nor the tie-break.
 
     This test used to assert that a five-second lead-in sank `align_dtw`, and
     it was written to fire the day that stopped being true. It fired: putting
     each sequence on its own unit span subtracts the origin, so DTW absorbs a
     constant offset by construction.
 
-    `apply_fuzzy_match` is a different matter, and it is why
-    `to_timeline_base` stays. It breaks a many-to-one tie by "closest in time"
-    against raw expected seconds, so a large constant offset swamps the
-    comparison and it stops choosing the closest candidate and starts choosing
-    the earliest — which on a re-attacked note is the wrong one.
+    It then held `apply_fuzzy_match` to the same question, and asserted the
+    opposite: a many-to-one tie went to the candidate closest to raw expected
+    seconds, so a large constant offset swamped the comparison and it chose the
+    earliest — on a re-attacked note, the wrong one. The tie now goes to the
+    candidate nearest where the take's own singly paired notes put the note,
+    which no constant offset moves. `to_timeline_base` stays for `align_take`
+    and the chain.
     """
     expected = np.arange(32, dtype=float)
     assert align_dtw(
@@ -341,8 +343,64 @@ def test_dtw_no_longer_needs_the_shift_but_fuzzy_matching_still_does() -> None:
         return {written: det for det, written in cleaned.matched}[3]
 
     assert note_three_from(played) == 4, "with no lead-in it picks the closest"
-    assert note_three_from(played + 5.0) == 3, "raw times pick the earliest instead"
+    assert note_three_from(played + 5.0) == 4, "and with one"
     assert note_three_from(to_timeline_base(played + 5.0)) == 4
+
+
+def _many_to_one(played: np.ndarray, note: int, stray: int) -> AlignmentResult:
+    """DTW's pairing of `played` to written notes one second apart, in order,
+    with detection `stray` an extra attack it gave to written note `note` too."""
+    mapping, written = [], 0
+    for det in range(played.size):
+        if det != stray:
+            written = det - (det > stray)
+        mapping.append((det, note if det == stray else written))
+    return AlignmentResult(
+        mapping=sorted(mapping),
+        cost=0.0,
+        quality=1.0,
+        n_detected=played.size,
+        n_expected=played.size - 1,
+    )
+
+
+@pytest.mark.parametrize(
+    "pace, bump",
+    [(0.9, +0.28), (1.1, -0.28)],
+    ids=["fast, a bump after the attack", "slow, a scrape before it"],
+)
+def test_a_tie_goes_to_where_the_take_puts_the_note_not_the_grid(
+    pace: float, bump: float
+) -> None:
+    """A take 10% off the page's tempo is a second off its grid by the
+    eleventh note, so the grid sat nearer an attack 0.28 s from the note's
+    own, in the direction the player had come from, and kept it.
+    `double_bass/bowed/108/fast/phone/1140` lost two notes so, each to an
+    extra attack 0.18-0.28 s after its own. The take's own pace puts the
+    note at its attack."""
+    exp = np.arange(16, dtype=float)
+    attacks = exp * pace
+    played = np.sort(np.append(attacks, attacks[10] + bump))
+    stray = int(np.flatnonzero(np.isclose(played, attacks[10] + bump))[0])
+    real = int(np.flatnonzero(np.isclose(played, attacks[10]))[0])
+
+    cleaned = apply_fuzzy_match(_many_to_one(played, 10, stray), played, exp)
+
+    assert {written: det for det, written in cleaned.matched}[10] == real
+    assert stray in cleaned.extra_detected
+
+
+def test_a_tie_on_the_first_note_follows_the_notes_after_it() -> None:
+    """Nothing is paired before the first note, so the two after it say where
+    it is. A scrape 0.3 s before a take that starts its clock on the scrape
+    sits on the grid's first note exactly; the line through notes 1 and 2
+    puts the note at the bow's real attack."""
+    exp = np.arange(8, dtype=float)
+    played = np.concatenate([[0.0], 0.3 + exp])
+    cleaned = apply_fuzzy_match(_many_to_one(played, 0, 0), played, exp)
+
+    assert {written: det for det, written in cleaned.matched}[0] == 1
+    assert cleaned.extra_detected == [0]
 
 
 # --- matching must not depend on how fast it was played --------------------

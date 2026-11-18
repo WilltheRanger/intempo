@@ -12,14 +12,14 @@ import { failureTitle, nothingUsableDetail, nothingUsableTitle } from './failure
 describe('failureTitle', () => {
   it('owns a failure that was ours', () => {
     expect(failureTitle({ recoverable: true, reason: 'internal_error' })).toBe(
-      'Something went wrong on our end',
+      'Our analysis failed',
     );
   });
 
   it('says what happened when it will not come back', () => {
     expect(
       failureTitle({ recoverable: false, reason: 'audio_unavailable' }),
-    ).toBe('This recording couldn’t be processed');
+    ).toBe('We can’t analyse this recording');
   });
 
   it('never blames the playing', () => {

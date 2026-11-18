@@ -1,5 +1,6 @@
 import type { Piece } from '../../data/types';
 import { splitTitle } from '../pieceTitle';
+import { practiceLabel, type Passage } from '../verdict/passage';
 
 /**
  * The line at the top of the Library that says what to play next.
@@ -27,9 +28,12 @@ export interface ContinueLine {
    * What the button promises, which is what the tap opens: the recorder for a
    * piece with notation, the piece itself for one without — a button saying
    * "Practice" over a screen that cannot record would be describing another
-   * screen.
+   * screen. "Practice bars 5–8" where the last take found a passage to work on
+   * (`practicePassage`), as the result screen's own button says.
    */
-  actionLabel: 'Practice' | 'Open';
+  actionLabel: string;
+  /** The bars the button practises, or null for the piece from the top. */
+  passage: Passage | null;
 }
 
 export interface ContinueInput {
@@ -39,6 +43,8 @@ export interface ContinueInput {
   status: string | null;
   /** Whether a search is narrowing the shelf. */
   searching: boolean;
+  /** The passage the piece's last take found (`practicePassage`), if any. */
+  passage?: Passage | null;
 }
 
 /**
@@ -50,7 +56,12 @@ export interface ContinueInput {
  * the musician naming a piece, and a suggestion above the answer would push
  * the answer down.
  */
-export function continueLineFor({ piece, status, searching }: ContinueInput): ContinueLine | null {
+export function continueLineFor({
+  piece,
+  status,
+  searching,
+  passage = null,
+}: ContinueInput): ContinueLine | null {
   if (!piece || searching) {
     return null;
   }
@@ -59,7 +70,8 @@ export function continueLineFor({ piece, status, searching }: ContinueInput): Co
   return {
     title: splitTitle(piece.title).name,
     detail: reading ? 'Reading your photo…' : status ?? piece.composer ?? null,
-    actionLabel: hasNotation(piece) ? 'Practice' : 'Open',
+    actionLabel: !hasNotation(piece) ? 'Open' : passage ? practiceLabel(passage) : 'Practice',
+    passage: hasNotation(piece) ? passage : null,
   };
 }
 

@@ -12,14 +12,16 @@ export const motion = {
   /** A whole screen settling after navigation. */
   scene: 180,
   /**
-   * A pushed screen arriving.
+   * A pushed screen sliding in across the whole width, and back out.
    *
-   * Longer than `scene` because it travels: `scene` settles a tab that was
-   * already laid out where it is, and this carries a screen across the
-   * viewport. Read the note on `EASE_OUT` below before changing it — the
-   * number is about twice the length of the movement anyone sees.
+   * On `SLIDE_EASE`, not `EASE_OUT` (2026-11-13). It was 320ms of a 32pt nudge
+   * on the steep curve below; it is now the iOS push, where the screen crosses
+   * the full width of the phone and the one it covers drifts a third of the
+   * way under it. Ionic and Vaul run iOS's curve for 500–540ms; at 460 the
+   * screen has crossed 90% of the width in about a third of that, which is the
+   * part anyone sees.
    */
-  push: 320,
+  push: 460,
   /**
    * A sheet rising from the bottom edge.
    *
@@ -64,6 +66,17 @@ export const motion = {
  * `motion.sheet`.
  */
 export const EASE_OUT = Easing.bezier(0.22, 1, 0.36, 1);
+
+/**
+ * The iOS slide, for the web build's CSS transitions: the curve UIKit's push,
+ * its sheets and their reference implementations share (Ionic's
+ * `swipe-back`, Vaul's drawer).
+ *
+ * Less steep than `EASE_OUT` at the start, so a surface that travels a whole
+ * screen is seen travelling rather than arriving, and just as soft at the end.
+ * For the movements that carry a whole screen.
+ */
+export const SLIDE_EASE_CSS = 'cubic-bezier(0.32, 0.72, 0, 1)';
 
 /**
  * The spring the control layer settles on.

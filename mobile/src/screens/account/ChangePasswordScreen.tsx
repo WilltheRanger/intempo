@@ -1,4 +1,4 @@
-import { useGoBack } from '../../navigation/useGoBack';
+import { useBackButton } from '../../navigation/useGoBack';
 import { useState } from 'react';
 import {
   KeyboardAvoidingView,
@@ -37,7 +37,8 @@ import {
  * their own account, which is not a trade worth one fewer field.
  */
 export function ChangePasswordScreen() {
-  const goBack = useGoBack({ tab: 'Profile' });
+  const back = useBackButton({ tab: 'Profile' });
+  const goBack = back.onPress;
 
   const [currentPassword, setCurrentPassword] = useState('');
   const [password, setPassword] = useState('');
@@ -85,11 +86,9 @@ export function ChangePasswordScreen() {
 
   if (done) {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ back }}>
         <PageHeader
           title="Password changed"
-          onBack={goBack}
-          backLabel="Back to profile"
         />
         <Text variant="body" color="textSecondary">
           Use the new one next time you sign in. Other devices stay signed in.
@@ -108,11 +107,9 @@ export function ChangePasswordScreen() {
       style={styles.flex}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ back }}>
         <PageHeader
           title="Change password"
-          onBack={goBack}
-          backLabel="Back to profile"
         />
 
         <View>

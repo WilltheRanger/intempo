@@ -14,7 +14,7 @@ import Svg, {
 } from 'react-native-svg';
 
 import { Text } from '../../components/primitives';
-import { colors, fontFamily } from '../../design';
+import { colors, fontFamily, spacing } from '../../design';
 import { useReducedMotion } from '../../lib/useReducedMotion';
 import { WELCOME_STAVES } from './welcomePage';
 
@@ -432,12 +432,12 @@ const styles = StyleSheet.create({
     right: -26,
     top: -16,
     height: 28,
-    paddingHorizontal: 11,
+    paddingHorizontal: spacing.md,
     borderRadius: 14,
     backgroundColor: colors.darkBg,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: spacing.xs,
   },
   foundTempo: {
     fontFamily: fontFamily.sansMedium,

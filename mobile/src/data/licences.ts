@@ -19,6 +19,7 @@ export const LICENCES: Licence[] = [
   { name: '@expo/metro-runtime', version: '57.0.10', licence: 'MIT' },
   { name: '@react-native-async-storage/async-storage', version: '3.1.1', licence: 'MIT' },
   { name: '@react-navigation/bottom-tabs', version: '7.18.16', licence: 'MIT' },
+  { name: '@react-navigation/elements', version: '2.9.38', licence: 'MIT' },
   { name: '@react-navigation/native', version: '7.3.16', licence: 'MIT' },
   { name: '@react-navigation/native-stack', version: '7.18.8', licence: 'MIT' },
   { name: '@sentry/react-native', version: '7.11.0', licence: 'MIT' },

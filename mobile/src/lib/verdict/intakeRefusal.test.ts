@@ -71,10 +71,10 @@ describe('intakeRefusal', () => {
 
   it('leaves the existing headings alone', () => {
     expect(failureTitle({ recoverable: true, reason: 'internal_error' })).toBe(
-      'Something went wrong on our end',
+      'Our analysis failed',
     );
     expect(failureTitle({ recoverable: false, reason: 'audio_unavailable' })).toBe(
-      'This recording couldn’t be processed',
+      'We can’t analyse this recording',
     );
   });
 });

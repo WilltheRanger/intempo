@@ -4,8 +4,10 @@ import type { UsageResponse } from '../data/types';
 import {
   analysisLimitReached,
   describeAnalysisCost,
+  describeFreeTakesLeft,
   describeLastFreeAnalysis,
   describeReachedAnalysisLimit,
+  nextFreeTake,
   usedThisMonth,
   whenAnalysisAllowanceResets,
 } from './analysisAllowance';
@@ -103,19 +105,39 @@ describe('describeReachedAnalysisLimit', () => {
         remaining: 0,
         resets_at: '2026-10-01T00:00:00.000Z',
       }),
-    ).toContain("You've used your free analysis this month.");
+    ).toContain("You've used your free take this month.");
   });
 
   it('counts in the plural otherwise', () => {
     expect(describeReachedAnalysisLimit(usage({ used: 3, remaining: 0 }))).toContain(
-      "You've used all 3 free analyses this month.",
+      "You've used all 3 of your free takes this month.",
     );
   });
 
   it('names what still works, since the app is not only the analysis', () => {
     expect(describeReachedAnalysisLimit(usage({ used: 3, remaining: 0 }))).toContain(
-      'listen to the score and practise with the metronome',
+      'You can still record and listen back.',
     );
+  });
+
+  it('says it is the next free take that waits, not recording (the owner, 2026-11-12)', () => {
+    const line = describeReachedAnalysisLimit(usage({ used: 3, remaining: 0 })) ?? '';
+    expect(line).toMatch(/Your next free take is on \w+ 1\.$/);
+    expect(line).not.toMatch(/Recording returns|record again on/i);
+  });
+
+  it('uses one name for the allowance, the one Record uses', () => {
+    // "free analyses" here, "free take" on Record and "Analyses" on Profile
+    // were one allowance under three names (the UI review, 2026-11-12).
+    const lines = [
+      describeReachedAnalysisLimit(usage({ used: 3, remaining: 0 })),
+      describeAnalysisCost(usage({ used: 0, remaining: 3 })),
+      describeLastFreeAnalysis(usage()),
+    ];
+    for (const line of lines) {
+      expect(line).toMatch(/free takes?/);
+      expect(line).not.toMatch(/analys[ie]s/i);
+    }
   });
 
   it('says nothing while there is allowance left', () => {
@@ -126,7 +148,7 @@ describe('describeReachedAnalysisLimit', () => {
 describe('describeAnalysisCost', () => {
   it('says what sending costs, in the allowance the account has', () => {
     expect(describeAnalysisCost(usage({ used: 0, remaining: 3 }))).toBe(
-      'This uses one of your 3 free analyses this month.',
+      'This uses one of your 3 free takes this month.',
     );
   });
 
@@ -152,11 +174,36 @@ describe('describeAnalysisCost', () => {
 
 describe('usedThisMonth', () => {
   it('names the free limit when the server sent one', () => {
-    expect(usedThisMonth(3, 3)).toBe('all 3 of your free analyses');
+    expect(usedThisMonth(3, 3)).toBe('all 3 of your free takes');
+    expect(usedThisMonth(1, 1)).toBe('your free take');
   });
 
   it('counts what was used otherwise, one in the singular', () => {
-    expect(usedThisMonth(1, null)).toBe('1 analysis');
-    expect(usedThisMonth(4, null)).toBe('4 analyses');
+    expect(usedThisMonth(1, null)).toBe('1 free take');
+    expect(usedThisMonth(4, null)).toBe('4 free takes');
+  });
+});
+
+describe('nextFreeTake', () => {
+  it('says the reset as what it gives back', () => {
+    expect(nextFreeTake('2026-10-15T12:00:00Z')).toBe('Your next free take is on October 15.');
+    expect(nextFreeTake(null)).toBe('Your next free take is next month.');
+  });
+});
+
+describe('describeFreeTakesLeft', () => {
+  it('counts what is left, as Record does', () => {
+    expect(describeFreeTakesLeft(usage({ used: 1, remaining: 2 }))).toBe('2 left this month');
+    expect(describeFreeTakesLeft(usage({ used: 3, remaining: 0 }))).toBe('None left this month');
+  });
+
+  it('works out what is left when the server sent only the count used', () => {
+    expect(describeFreeTakesLeft(usage({ used: 1, remaining: null }))).toBe('2 left this month');
+    expect(describeFreeTakesLeft(usage({ used: 5, remaining: null }))).toBe('None left this month');
+  });
+
+  it('says nothing for an unlimited plan or an unreported count', () => {
+    expect(describeFreeTakesLeft(usage({ limit: null, remaining: null }))).toBeNull();
+    expect(describeFreeTakesLeft(null)).toBeNull();
   });
 });

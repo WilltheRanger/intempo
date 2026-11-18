@@ -14,7 +14,7 @@ import { Pause, Play } from '../../components/icons';
 import { Text } from '../../components/primitives';
 import { usePreferences } from '../../data/preferences';
 import type { ScoreJson } from '../../data/types';
-import { colors, ICON_STROKE_WIDTH, MIN_TOUCH_TARGET, radii, ICON_SIZE } from '../../design';
+import { colors, ICON_STROKE_WIDTH, MIN_TOUCH_TARGET, radii, ICON_SIZE, spacing } from '../../design';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import {
   scheduleScore,
@@ -310,7 +310,7 @@ const styles = StyleSheet.create({
   player: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
+    gap: spacing.md,
   },
   button: {
     width: BUTTON,
@@ -333,10 +333,13 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
-  // A 20pt strip around a 4pt rail: the rail is what is drawn, the strip is
-  // what a finger has to find.
+  // A strip around a 4pt rail: the rail is what is drawn, the strip is what a
+  // finger has to find. **44, the touch floor**, where it was 20 (measured
+  // 284x20, 2026-11-12); the negative margin gives the extra back to the row,
+  // so the panel is laid out exactly as before and only the target grew.
   hit: {
-    height: 20,
+    height: MIN_TOUCH_TARGET,
+    marginVertical: -(MIN_TOUCH_TARGET - 20) / 2,
     justifyContent: 'center',
   },
   rail: {
@@ -351,7 +354,10 @@ const styles = StyleSheet.create({
   },
   thumb: {
     position: 'absolute',
-    top: (20 - THUMB) / 2,
+    // Centred on the rail, which `hit` centres in its 44. It was centred on
+    // the 20 the strip used to be, so when the strip grew the thumb stayed
+    // behind and floated 12pt above the line it marks (2026-11-18).
+    top: (MIN_TOUCH_TARGET - THUMB) / 2,
     width: THUMB,
     height: THUMB,
     marginLeft: -THUMB / 2,
@@ -363,7 +369,7 @@ const styles = StyleSheet.create({
   caption: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 1,
+    marginTop: spacing['2xs'],
   },
   clock: {
     fontVariant: ['tabular-nums'],

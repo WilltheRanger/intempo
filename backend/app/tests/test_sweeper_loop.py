@@ -27,7 +27,7 @@ from contextlib import asynccontextmanager, suppress
 import pytest
 
 from app import main
-from app.services import reading_rate
+from app.services import pending_uploads, reading_rate, score_archive, take_archive
 
 
 def _sweeper_tasks() -> list[asyncio.Task]:
@@ -60,6 +60,26 @@ async def _running_app():
                 await task
 
 
+@pytest.fixture
+def _no_other_sweeps(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The loop's other five sweeps, made no-ops.
+
+    Each is a Supabase call, and `conftest` points the client at a host that
+    cannot resolve (`test.supabase.invalid`), so every one is a DNS lookup that
+    has to fail: in milliseconds usually, and in seconds on a slow resolver.
+    The tests that use this are about the loop's own pace and containment, and
+    five lookups an iteration put their five-second deadline at the mercy of
+    the runner — CI timed `test_it_sweeps_through_the_contained_call` out on
+    2026-11-14 on a commit that changed only a Markdown file, and a resolver
+    that takes 1.5 s to fail does the same here.
+    """
+    monkeypatch.setattr(main, "sweep_stuck_transcriptions", lambda: None)
+    monkeypatch.setattr(pending_uploads, "sweep_unclaimed", lambda: None)
+    monkeypatch.setattr(take_archive, "sweep_unjudged_takes", lambda: None)
+    monkeypatch.setattr(take_archive, "sweep_judged_originals", lambda: None)
+    monkeypatch.setattr(score_archive, "sweep_unreadable_scans", lambda: None)
+
+
 async def _sweep_until(count: int, calls: list) -> None:
     """Run the loop until it has swept `count` times, then stop it."""
     task = asyncio.create_task(main._sweep_periodically())
@@ -73,7 +93,7 @@ async def _sweep_until(count: int, calls: list) -> None:
             await task
 
 
-def test_it_keeps_sweeping_for_as_long_as_the_server_is_up(monkeypatch) -> None:
+def test_it_keeps_sweeping_for_as_long_as_the_server_is_up(monkeypatch, _no_other_sweeps) -> None:
     calls: list[int] = []
     monkeypatch.setattr(main, "SWEEP_INTERVAL_SECONDS", 0.001)
     monkeypatch.setattr(main, "sweep_once", lambda: calls.append(1))
@@ -83,7 +103,7 @@ def test_it_keeps_sweeping_for_as_long_as_the_server_is_up(monkeypatch) -> None:
     assert len(calls) >= 3, "one sweep is the startup case; this is the other one"
 
 
-def test_it_sweeps_off_the_event_loop(monkeypatch) -> None:
+def test_it_sweeps_off_the_event_loop(monkeypatch, _no_other_sweeps) -> None:
     """The sweep is a synchronous Supabase call.
 
     Run on the loop it would stall **every request** for its duration — and it
@@ -102,7 +122,7 @@ def test_it_sweeps_off_the_event_loop(monkeypatch) -> None:
     asyncio.run(body())
 
 
-def test_it_sweeps_through_the_contained_call(monkeypatch) -> None:
+def test_it_sweeps_through_the_contained_call(monkeypatch, _no_other_sweeps) -> None:
     """`sweep_once`, not `sweep_stuck_analyses`.
 
     `sweep_once` swallows its own failure, which is the whole reason it exists:
@@ -461,7 +481,7 @@ def test_the_level_is_read_when_called_not_bound_at_import(monkeypatch) -> None:
 # ---- the rate limiter's memory ---------------------------------------------
 
 
-def test_the_sweep_forgets_accounts_that_stopped_scanning(monkeypatch) -> None:
+def test_the_sweep_forgets_accounts_that_stopped_scanning(monkeypatch, _no_other_sweeps) -> None:
     """The leak `forget_expired` was written to stop, and did not.
 
     The method existed for eleven days with a docstring saying "without this
@@ -479,8 +499,6 @@ def test_the_sweep_forgets_accounts_that_stopped_scanning(monkeypatch) -> None:
     calls: list[int] = []
     monkeypatch.setattr(main, "SWEEP_INTERVAL_SECONDS", 0.001)
     monkeypatch.setattr(main, "sweep_once", lambda: calls.append(1))
-    monkeypatch.setattr(main, "sweep_stuck_transcriptions", lambda: None)
-    monkeypatch.setattr(main.pending_uploads, "sweep_unclaimed", lambda: None)
 
     limiter = reading_rate.ReadingRate()
     # Long enough ago that nothing it holds can affect a decision, which is

@@ -64,6 +64,8 @@ export function ComposerField({
       // Off: the field's own suggestion is the repertoire, and the keyboard's
       // are a person's contacts.
       autoComplete="off"
+      // A proper name: the keyboard's corrections fight the completion above.
+      autoCorrect={false}
       ref={ref}
       returnKeyType={returnKeyType}
       onSubmitEditing={onSubmitEditing}

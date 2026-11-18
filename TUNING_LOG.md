@@ -6,6 +6,2813 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-11-14 (the pitch track's frame) — Measured, not kept. No code or threshold changes.
+
+`pitch_evidence.pitch_track` runs YIN on frames of at least 2,048 samples
+(93 ms), librosa's default, whatever the instrument's range needs. Of the
+243 played notes the real takes still report missing, 74 are violin notes
+with a written neighbour under 0.1 s away, and in 52 of the 80 with a
+first-pass attack within 50 ms of the label, that attack was paired with the
+note before or after (32 and 20): one-note slides in sixteenth runs, 21 of
+them K515's first violin. A 93 ms frame reads an 80 ms note together with
+the notes either side, so the floor was lowered to 512 (23 ms; the range
+sets violin, viola and saxophone at 512, cello 1024, double bass 2048):
+
+| | before | floor 512 |
+|---|---|---|
+| synthetic | 98.12% | 98.18% |
+| real heard | 98.39% | 98.14% |
+| real colour | 85.34% | 84.03% |
+| real paired (100 ms) | 96.66% | 96.64% |
+| real verdict true | 71 of 72 | 69 of 72 |
+| cello heard / colour | 98.24% / 87.93% | 97.00% / 80.53% |
+| violin heard / colour / verdicts | 98.19% / 88.70% / 34 of 34 | 98.11% / 88.55% / 32 of 34 |
+
+The violin's placement and pairing improve a little and its sentences do
+not: a shorter frame follows the vibrato and the bow noise as closely as
+the note. Not kept; the slides need something other than a finer pitch.
+
+## 2026-11-14 (the note before, an octave off) — `analysis._not_the_note_before` reads the note before by pitch class where the missed note is of another class: new `_held_on`. No thresholds changed.
+
+**The case.** `violin/bowed/108/missed/noise/1027` leaves out an A4 after a
+D5, and the player holds the D5 through it. The attack look took a rise in
+the held note for the A4, and the guard that drops such a find listens
+twice: just after it (74.09, the D5) and halfway to the next attack (62.27,
+the D5 read an octave low). It asked for the note before's exact pitch both
+times, so the octave error kept the find, and the A4 was reported played.
+
+**New:** where the missed note is of another pitch class than the note
+before, a reading of the note before's class in any octave is the note
+before held on. Where the missed note is an octave from the note before,
+only the octave tells them apart, and the rule is as it was: the reading
+must be the note before's own pitch.
+
+| | before | after |
+|---|---|---|
+| synthetic | 98.11% | 98.12% (missed 6,439 → 6,440; over what the truth decides 98.70%) |
+| real heard | 14,850 | 14,851 |
+| real colour | 12,672 | 12,674 |
+| real bar tempo | 2,950 | 2,952 |
+| real paired (100 ms) | 14,355 | 14,355 |
+| six clips | | identical |
+
+Only 1027 changes on the synthetic set and only K515's first violin on the
+real takes, where dropping a false find in a held note let a later look hear
+the note itself.
+
+## 2026-11-14 (where pitch cannot choose) — The chain re-pairs a whole page where it pairs as many notes as timing, hears as many at pitch, and timing's own score prefers it: new `analysis._timing_prefers_the_chain`. No thresholds changed.
+
+**The case.** The chain replaces a pairing timing reads well only on
+`CHAIN_GAIN_NOTES` more notes heard at pitch (or one, `_nothing_to_doubt`),
+and only where `_placed_by_pitch` holds (70% of its notes at pitch). Two
+kinds of take pitch cannot settle. `viola/bowed/132/missed/noise/1087`
+leaves out two of eight D5's in a row: both pairings hear all 39 notes at
+pitch, timing paired a note late across the second hole and reported the
+wrong D missing, and the chain paired it right at 0.922 against timing's
+0.892. `double_bass/pizz/60/missed/phone/1180` has half its notes read at
+another pitch both ways (the room's 58 Hz mode): timing slid six notes along
+across two left-out notes (0.814), the chain paired all 35 right (0.935),
+and with 18 at pitch to timing's 17 it failed `_placed_by_pitch`.
+
+**Measured first:** every audit of the chain on both sets, with each
+pairing's notes within 30 ms of the truth (synthetic) or 100 ms of the label
+(real). On the 72 real takes the chain already pairs 71, and the 72nd it
+scores lower than timing. On the synthetic set, the 14 takes where it was
+refused while scoring higher:
+
+| take | timing → chain score | at pitch (timing / chain) | right (timing / chain) |
+|---|---|---|---|
+| 1180 bass pizz phone | 0.814 → 0.935 | 17/35, 18/35 | 29, **35** |
+| 1057 violin pizz noise | 0.827 → 0.931 | 36/37, 37/37 | 35, **37** |
+| 1149 bass bowed dynamics | 0.828 → 0.932 | 31/33, 32/33 | 32, **33** |
+| 1056 violin pizz clean | 0.840 → 0.932 | 34/37, 35/37 | 36, **37** |
+| 1090 viola bowed phone | 0.842 → 0.922 | 38/40, 39/40 | 39, **40** |
+| 1119 cello bowed dynamics | 0.823 → 0.892 | 30/35, 31/35 | **34**, 33 |
+| 1034 violin pizz dynamics | 0.916 → 0.957 | 34/36, 34/36 | 34, **36** |
+| 1147 bass bowed noise | 0.890 → 0.925 | 29/38, 30/39 | 37, **39** |
+| 1087 viola bowed noise | 0.892 → 0.922 | 39/39, 39/39 | 38, **39** |
+| 1109 cello bowed dynamics | 0.921 → 0.947 | 32/32, 32/32 | 30, **32** |
+| 1178 bass pizz reverb | 0.917 → 0.942 | 14/38, 14/38 | 35, **38** |
+| 1175 bass pizz phone | 0.931 → 0.954 | 14/40, 15/41 | 40, **41** |
+| 1140 bass bowed phone | 0.913 → 0.932 | 27/39, 27/38 | 37, 37 |
+| 1116 cello bowed clean | 0.869 → 0.886 | 30/31, 31/31 | 29, **31** |
+
+(1057 and 1116 are the one-note rule's.) **A score alone is not enough:**
+taken on the score and pitch alone, 1140 went 20 notes and 5 bars worse; its
+chain pairs one note fewer than timing, the only one that does. And a lead
+the score cannot resolve is no lead: `test_varied_rhythm.py`'s 96-note bass
+take with one extra note scored the chain's pairing 0.002 higher, with one
+note on the extra note's attack 384 ms away. So the chain must pair at least
+as many notes as timing, hear at least as many at their written pitch, and
+score at least `CHAIN_PREFERRED_BY` (0.01) higher by
+`alignment._scored_mapping`, whose score is one minus the average misfit
+over half a beat: 0.01 is a hundredth of a beat on every note, about a fifth
+of a beat on one note of a 40-note page. The takes above lead by 0.023 to
+0.121. And only for a whole page timing accepted, never a stretch, which is
+what `_placed_by_pitch` guards. The one-note rule stays as it was.
+
+| synthetic, 180 takes | before | after |
+|---|---|---|
+| notes | 6,174 (96.56%) | 6,188 (96.78%) |
+| missed | 6,432 (99.66%) | 6,439 (99.77%) |
+| bars | 1,397 (97.01%) | 1,402 (97.36%) |
+| verdict | 178 | 178 |
+| wrong notes | 40 / 57 | 40 / 57 |
+| **overall** | **97.93%** | **98.11%** |
+| over what the truth decides | 98.51% | 98.69% |
+
+Seven takes change: 1180 (+4 missed, +3 notes, +2 bars), 1087 (+2, +1, +1),
+1178 (+2, +2), 1034 (+1, +3), 1147 (+1, +1), 1109 (−1 missed, +4 notes, +1
+bar) and 1119 (−2 missed, +1 bar), whose fast figure both pairings get
+wrong, the chain by one note more. The 72 real takes are identical on every
+card, and the six clips identical.
+
+## 2026-11-14 (a wrong note's own partials) — `player_mistakes.wrong_notes`: a note heard as another is not named where the written note's own partials carry it: new `pitch_evidence.own_partials` and `note_window`, `[mistakes] written_partials_floor = 0.05` (new)
+
+**The case.** Of the 10 real notes still named wrong that the labels say
+were played right (after the scorer entry below), 6 were one partial of the
+written note read as a note. Pirates' cello plays B2, whose third partial
+(F♯4) outsounds its fundamental; both readings heard F♯, in bars 25, 36
+and 53. K515's second viola plays C3 (its open string) and C♯3, and both
+readings heard the G and G♯ an octave and a fifth up: the third partial,
+with the fundamental at 0.02 of it. A sixth, K515's cello in bar 203, slides into A3
+from A♯3: the first 120 ms are A♯, the note is A.
+
+**Measured first.** Each candidate's two pitches asked of the partials only
+each of them has (the second to the sixth, leaving out those the other pitch
+shares or has too close for the window to separate), over the whole note:
+from 30 ms after the attack to the next, at most 0.6 s.
+
+| | written | heard |
+|---|---|---|
+| Pirates' B2 read as F♯3 (6 notes) | 0.16–0.31 | 0.01–0.04 |
+| K515's C3 read as G4, C♯3 as G♯4 | 0.20, 0.27 | none of its own |
+| K515's A♯3 slide into A3 | 0.38 | 0.11 |
+| the real wrong notes it names (15 bars) | at most 0.39 | at least 1.3× the written |
+| the synthetic notes played wrong (52) | at most 0.09 | at least 1.4× the written |
+
+**New:** a note is not named where its written pitch's own partials are at
+least as strong as the other pitch's (none counts as 0), and at least
+`written_partials_floor` of the strongest partial of either. The floor keeps
+a window too short to read from deciding on two noise floors: a bass's
+partials a semitone apart need about 0.3 s to tell apart.
+
+| | before | after |
+|---|---|---|
+| real wrong notes (oracle) | 15 / 41 | **15 / 35** |
+| … named wrong, was right | 10 | 4 |
+| … wrong, named | 15 | 15 |
+| synthetic | 97.93% | 97.93%, identical in every take |
+| six fixture clips | | identical |
+
+Every other real figure is unchanged. **Not the neighbour rule's
+replacement:** over a whole note, 16 of the real notes it spares (the note
+before or after's pitch heard) still show that pitch stronger than their
+own, and they were played right; so a note heard as its neighbour is still
+never named, and the synthetic set's 9 such wrong notes stay unnamed. Left:
+King's first violin in bar 34 (both copies), where the whole note is A5's
+partials (0.04) and none of G♯5's, though the label says G♯5; K515's second
+violin bar 73, both series near nothing (0.045 against 0.052); and K515's
+second viola bar 177, where the app is likely right (a label of A3 for the
+written C4, a third of a beat early, outside the scorer's quarter beat). The
+synthetic set's one false naming (double bass 1140, bar 4) is the room's
+58 Hz mode under four notes, a semitone from them in a 70–110 ms note: no
+window that short can separate their partials, so the floor leaves it.
+
+## 2026-11-14 (the scorer, a note played at another pitch) — `tools/eval/real_takes.py`: between two notes paired by pitch, as many labels as written notes are those notes in order, at whatever pitch (`played_otherwise`); the same letter an octave away is the note. The measuring stick, not the app.
+
+**The case.** Of the 17 real notes the app named wrong that the scorer
+called right, 7 were the app being right. The labels have, at the written
+note's place, exactly what the app heard: the Fugue's second violin plays G4
+G4 where this score writes E4 E4 (bar 35) and A4 G4 for F4 E4 (bar 69);
+Rondeau's first violin, in both copies, A4 for E5 (bar 60); K515's second
+viola D4 for B3 (bars 164 and 207); Spring's first violin E7 for C♯7 (bar
+43). The pairing drops a label more than `SUBSTITUTE_ST` (2.6 semitones)
+from its note, so the written note had no label, a note with no label is
+not wrong, and the app's naming it was scored a false alarm.
+
+**Not as the alignment set them.** Its edit distance sets 109 labels
+against written notes further than that: 92 an octave away (56 of them where
+K515's second violin plays passages an octave from this score) and 17 other
+notes. Every such label costs it the same, so through a passage played an
+octave off it can set them one note along: K515's bar 144 had D5 C5 B4 C5
+against D6 C6 B5 C6, with the D left over and every other label on the note
+after its own. A first version that kept the alignment's pairs scored that
+bar a wrong note.
+
+**New:** between two notes paired by pitch, where as many labels as written
+notes are unpaired, they are those notes, in order. Each is kept where its
+label sits within `IN_PLACE_BEATS` (0.25) of where the two pairs put the
+note, and nearer that place than either written neighbour's (in sixteenths,
+an eighth of a beat). Its pitch is then read against the nearest octave of
+the written one, as the app reads it: an octave away is the note played
+right, 1.4 semitones or more from every octave a wrong note. 59 labels are
+kept, 44 octaves and 15 other notes; bar 144 is left unscored.
+
+| real, 72 takes | before | after |
+|---|---|---|
+| notes scored | 15,035 | 15,094 |
+| heard | 14,793 (98.39%) | 14,850 (98.38%) |
+| placed (50 ms) | 12,414 (83.92%) | 12,461 (83.91%) |
+| paired (100 ms) | 14,300 (96.67%) | 14,355 (96.67%) |
+| colour | 12,612 (85.26%) | 12,672 (85.33%) |
+| bar tempo | 2,932 / 4,017 | 2,950 / 4,033 (73.15%) |
+| verdict true | 71 of 72 | 71 of 72 |
+| wrong notes (oracle) | 8 / 36 | 15 / 41 |
+
+The 7 above now count as named right, and 5 notes newly known to be played
+as another note are not named (Fugue bar 37, Jerusalem's bass bar 31, K515's
+second viola bars 174, 217 and 220). Jerusalem's bass is likely the labels'
+own error: its label is E2 where the page has A1, the note's own partials
+over its whole length are A1's (0.46 of the strongest against 0.03), and E2
+is A1's third partial. The app did not change, so the synthetic set and the
+six clips are untouched.
+
+## 2026-11-14 (the first attack, on a saxophone) — Measured, not kept. No code or threshold changes.
+
+**The case.** Entertainer's second saxophone had 37 notes paired 100–176 ms
+before their labels. At each of them the first pass heard two attacks: one
+just after the label, where the note sounds, and one 100–176 ms before it,
+where the reed is stopped at the end of the note before. The chain paired
+the later one, and its first-attack rule (`alignment._first_attacks`) moved
+it back to the earlier one. That rule is for a cellist's swell or change of
+bow inside a held note, and the earlier attack's pitch window reaches into
+the new note, so the move looks like one.
+
+**What the rule does on the real takes**, every move of the pairing kept:
+
+| | moves | nearer the label | further from it |
+|---|---|---|---|
+| strings | 500 | 470 | 30 |
+| saxophone | 197 | 86 | 111 |
+
+The saxophone's bad moves cross a dip in level of 30–42 dB between the two
+attacks (median 35 dB), a near-silence before the note's own sound. The
+strings' good moves cross 2–14 dB (median 6.6). The level change at the
+earlier attack separates them less well.
+
+**Tried, none kept:**
+
+| | paired | colour | placed | bar tempo | verdict true |
+|---|---|---|---|---|---|
+| no move across a dip of 30 dB or more | +37 | +4 | +30 | +18 | 71 → 70 |
+| … 25 dB | +39 | +6 | +29 | +19 | 70 |
+| … 20 dB | +37 | +8 | +24 | +18 | 70 |
+| the rule off for the saxophone | +25 | +15 | −10 | +16 | 69 |
+
+The synthetic set has no saxophone and is unchanged in every row. The
+sentence lost each time is Entertainer's second saxophone. In its bars 17–20
+the reed stops with dips under 20 dB, too shallow to tell from a string's
+change of bow, so a guard leaves some notes at the stop and moves others to
+the sound. The step between the two re-anchors the pulse, and every later
+bar reads about 60% of a beat behind where the labels have it. Off for the
+saxophone, that take reads right but March's second saxophone loses 34
+placements within 50 ms and its sentence. March's labels sit at the reed
+stopping, Entertainer's at the note sounding. URMP's saxophone labels do not
+agree with each other on which of the two a tongued note starts at, so no
+one rule here can agree with both.
+
+## 2026-11-14 (the scorer, inside a run of one pitch) — `tools/eval/real_takes.py`: the labels in a run of one written pitch go to the notes their rhythm fits (`respace_runs`). The measuring stick, not the app.
+
+**The case.** Spring's cello part writes an E3 eighth and then eight
+quarters, all E3. Its labels have one E3 fewer than the page. The app heard
+an attack at every note, and their gaps keep the written rhythm exactly
+(0.334 s for the eighth, then 0.604, 0.586, 0.598 … for the quarters at
+0.632). The scorer left out the eighth and gave its label to the first
+quarter. So that label's next one came half a beat after it where the page
+has a whole beat, and every later label sat one note off. The app's pairing
+then read as 300–660 ms late on eight notes, and on fifteen more in a later
+run of sixteen E3 eighths. There the gap from the B2 before the run is one
+eighth and to the B2 after it two, so it is the last E3 that has no label,
+not the first.
+
+**Why the scorer's tie-break could not see it.** `pair_by_pitch_and_time`
+reads each note's place from its paired neighbours. Inside a run of one
+pitch those neighbours are the run's own pairings, and where the first pass
+left out the wrong note, every place it reads is off by the same note and
+confirms it. That is the same flaw found in the app's chain the same day
+(`(bow changes)`, Rejouissance's trill).
+
+**New:** in a run of three or more notes of one written pitch with one or
+two fewer labels than notes, each choice of the notes left out is tried, and
+the one whose labels keep the written rhythm best is kept: the sum of
+|log(labelled gap / written gap)| between the paired notes either side, at
+their pace. A tie keeps the pairing as it was. Of 547 notes the app placed
+more than 100 ms from their labels, 82 were in a run of one pitch at a
+neighbour's label.
+
+| real, 72 takes | before | after |
+|---|---|---|
+| heard | 14,790 / 15,035 | 14,793 / 15,035 (98.39%) |
+| placed (50 ms) | 12,366 / 14,790 | 12,414 / 14,793 (83.92%) |
+| paired (100 ms) | 14,243 (96.30%) | 14,300 (**96.67%**) |
+| colour | 12,397 (83.82%) | 12,612 (**85.26%**) |
+| bar tempo | 2,928 / 4,016 | 2,932 / 4,017 |
+| verdict true | 71 of 72 | 71 of 72 |
+
+Strings: paired 97.30%, colour 88.30%. Ten takes change. Spring's cello
+colours 263 of 265 notes as the labels do (was 122). Jerusalem's second
+violin, in both its copies, colours 176 of 179 (was 146). Pirates' first
+violin and viola, in both copies, gain 6–9 paired notes. One goes the other
+way by a note: K515's second violin, where a run of three C5 sixteenths has
+one label, 54 ms after the D5 before it. A sixteenth there is 80 ms, so the
+label is the first C5's, and the app gave that attack to the second. The app
+did not change, so the synthetic set and the six clips are untouched.
+
+## 2026-11-14 (how far the labels can be agreed with) — Measured. No code or threshold changes.
+
+**The question.** Real colour agreement (each note's band by the app against
+the band the same rules give the hand labels) is 83.82%, strings 86.65%. How
+near 100% could any hearing get, given that a hand label is itself an
+estimate?
+
+**Measured:** the labels' own reading against itself, with every labelled
+onset moved by N(0, σ), three draws per take on all 72:
+
+| σ | colours agree | strings |
+|---|---|---|
+| 5 ms | 96.70% | 97.00% |
+| 10 ms | 93.86% | 94.38% |
+| 15 ms | 91.95% | 92.49% |
+| 20 ms | 90.03% | 90.61% |
+| 30 ms | 87.19% | 88.18% |
+
+A perfect hearing compared with labels that are off by σ agrees about this
+often. So 99% would need labels accurate to about 2 ms. A bowed or tongued
+attack takes 20–50 ms to rise, and URMP's labels are where a pitch tracker,
+corrected by hand, put each note. The app's attacks scatter 19–32 ms around
+the labels within a take (robust spread, median by string instrument), and
+some of that spread is the labels'. With labels good to 10–20 ms, the most
+any hearing could agree on is about 90–94%. The strings' 86.65% is within
+about four to eight points of that. The rest of the gap is the re-anchor rule
+and pairing, which the entries below go into.
+
+The same measure on the synthetic set is exact, because there the truth is
+the truth: `(what the truth decides)` sets aside notes whose colour moves
+with 2 ms.
+
+## 2026-11-14 (bow changes) — A missed note at the pitch of the note before is looked for where the bow changes: new `onset_recovery.recover_by_bow_change`, `analysis._recover_bow_changes`, `[onset.recovery] bow_change_min_dip_db = 8.0`
+
+**The case.** Of the 288 played notes reported missing on URMP's 72 takes,
+113 were a note at the pitch of the note before it, bowed again with no rest
+between, and 62 had a neighbour under 100 ms away (written-out trills and
+turns, below the detector's resolution). The rest were spread. The repeated
+notes:
+
+- The legato look skips them: their pitch is sounding already.
+- The attack look predicts every missed note from one line through the whole
+  take (`predict_audio_times`) and searches a quarter of the closest written
+  gap around it, 39 ms on Spring's violin. On a long take with rubato that
+  line sat 95–700 ms from these notes, so the search never reached them.
+- A bow change does leave a dip in the level as the bow stops and turns. On
+  the labels: a median 8.5 dB at the 113, 11 dB at the 2,608 repeated notes
+  the first pass did hear, and 1.4 dB in the middle of a held note.
+
+**New:** for each missed note at the pitch of the note before it, a line
+through the paired notes either side puts it, and the deepest dip in the
+level (23 ms windows every 5.8 ms) within 0.4 of the shorter written gap
+there is taken if it is at least `bow_change_min_dip_db` deep against the
+quieter of the levels 120 ms either side. It must lie half a gap or more from
+every attack already there: on the synthetic set a cello take with a
+sixteenth left out "found" it in the stop before the next stroke, 40 ms ahead
+of that note's attack. A dip kept is placed on the attack clock by the fine
+look the attack look uses (`audio.refine_onset_times`), among the attacks
+already there.
+
+**The threshold.** On the real takes, against the head before this:
+
+| dip | heard | placed (50 ms) | paired (100 ms) | colour | bar tempo |
+|---|---|---|---|---|---|
+| 6 dB | +63 | +49 | +62 | +56 | +9 |
+| **8 dB** | **+43** | +37 | +47 | +41 | +6 |
+| 10 dB | +30 | +27 | +36 | +29 | +6 |
+
+All 72 sentences stay true at each. These recordings play every note, so
+they cannot show the other side: a repeated note left out, with the note
+before held through it. Searching the middle of 4,896 real held notes the
+same way, where such a note would be looked for, finds a dip that deep in
+23% / 14% / 7% of them. 8 dB takes most of the gain at half the false finds
+of 6. Today every one of the 121 played notes of this kind that are missed is
+reported missing. The synthetic set leaves out 8 such notes and none is
+found at any of the three.
+
+**Placed by the fine look.** Placed where the level is halfway back up, the
+real takes gain 12 more notes within 50 ms (above). But on the synthetic
+bowed note, a slow rise out of the stop, that point lies 47 ms before where
+the first pass places such an attack, so the note reads early in its own
+take. Refined, it is on the same clock as every other attack. The refine is
+given the attacks either side, as the first pass's is: given the time alone,
+it moved one onto a neighbour's rise in a run of fast repeated D's. The
+half-gap rule is applied to the dip, before the refine. Applied after, it
+let `1116`'s stop before the next stroke through.
+
+| | before | after |
+|---|---|---|
+| real, heard | 14,747 / 15,035 (98.08%) | 14,790 (**98.37%**) |
+| real, placed (50 ms) | 12,341 | 12,366 |
+| real, paired (100 ms) | 14,197 | 14,243 |
+| real, colour | 12,358 | 12,397 |
+| real, bar tempo | 2,924 | 2,928 |
+| real, verdict true | 71 of 72 | 71 of 72 |
+| synthetic | 97.93% | 97.93% (`1109`: missed 32 → 33 of 33) |
+
+**Regression, all six clips:** identical.
+
+Tests: `test_bow_changes.py`. A dip of 20 dB is found where the sound comes
+back. A held note's ±2 dB vibrato is not a bow change, a 5 dB dip is not at
+8 dB, and a note ending is not either. End to end: a page of repeated pairs
+whose first pass is made to miss two re-bowed attacks, with the attack look
+held off, reads with nothing missing and the two timed like their
+neighbours. Without the look they are reported missing, and a repeated note
+left out and held through is not found.
+
+**Also measured on the way, not kept:**
+
+- *A level guard on the first pass.* An attack in the room's silence started
+  `23_Rejouissance/2_sax`'s slide (below). But 35 of the 69 real first-pass
+  attacks within 3 dB of their take's floor are at a labelled note: an
+  attack is placed before the sound has risen. The loudest level in the
+  100 ms after an attack is no better (12 of 42).
+- *The chain's placement read as a median weighted by each note's written
+  length*, so a fast figure counts for the time it lasts. Synthetic 97.93 →
+  97.98%; real paired −120, colour −229.
+
+**Rejouissance's second saxophone, the one false sentence left.** Bar 8 is a
+nine-note E♭5/E5 trill. The first pass hears seven of its attacks, and one
+more at 19.498 s, in the silence after the held E♭5 that ends it (35 dB below
+the notes), whose chroma is that note's ring. In an alternating figure,
+sliding every note two along matches every pitch. The chain's first pass,
+on pitch alone, prefers that slide (one note left out, and the ring paired
+as the held E♭5, at 0.67) to the right pairing (two notes and the ring left
+out, at 1.8). The second pass's time cost should undo it. But it measures
+from a running median of the first pass's own placed notes, and 7 of the 13
+around the trill are the slid ones. The pulse then re-anchors after the
+trill, and every later bar reads about 18% earlier than the labels.
+
+## 2026-11-14 (where the take settled) — After a spared entrance, a note banded again may lose its side but not change it: `classification._without_spared_ends`. No thresholds changed.
+
+**Old behaviour:** once the bar rule spares an entrance (a run wholly inside
+the first `settling_bars` bars), the note rule measures every later note of
+that stretch of pulse from where the take settled (the median of the first
+three notes after the entrance) and bands it again. That takes off the lag an
+entrance carries: in at 86 and 93, then on the beat, the notes after it all
+sit behind, and the note rule had said the whole take fell behind.
+
+**The case.** URMP's "Sonata" first violin rushed bar 1 (89.4 against 82.4,
+a run of one bar the edges spare) and stayed ahead of the beat to the end,
+notes at −5% to −18% of a beat. Bar 2 settled at −14.5%, so bars 9–11, at −2%
+to −10%, banded again at +5% to +12%: "Bars 9–11 fell behind.", under a chart
+with every note in them drawn early and the three bars at 79, 86 and 83. False
+by the labels, which have the same notes early. The labels' reading, through
+the same rule, said "Bars 13–14 fell behind." for the same reason.
+
+**New:** banded again, a note keeps the side the chart draws it on, or is
+on. What the settled level takes off is the entrance's lag. A note less far
+ahead than where the take settled is not behind, and a note less far behind
+is not ahead.
+
+| | before | after |
+|---|---|---|
+| real, verdict true | 70 of 72 | **71 of 72** |
+| real, every card | | identical |
+| synthetic | 97.93% | identical, every take |
+
+Only Sonata's first violin changes: "Bars 9–11 fell behind." → "Bars 15–16
+ran ahead.", true by the labels, whose own reading now says "Bars 15–16 went
+at 84.".
+
+**Also measured, not kept: sparing an entrance only when it would have been
+named.** Sonata's entrance, one bar in the slight band, is a run the sentence
+would never name, so not sparing it at all also makes the sentence true (71
+of 72, synthetic identical), and 11 other sentences change and stay true.
+But a take that starts a little slow for a bar and then keeps time would then
+be told every later bar fell behind, which is the settling in the owner
+asked to spare (2026-09-25). No take in either set has that shape, so
+neither set would have caught it.
+
+**Regression, all six clips:** identical.
+
+Test: `test_a_note_still_ahead_of_the_beat_is_not_behind_where_the_take_settled`
+(in at 116, then on, with bars 6–7 at 100: was "Bars 6–12 fell behind.",
+now "Steady all the way through.").
+
+## 2026-11-14 (one note more) — The chain re-pairs a take timing reads well on one note more at pitch, where it leaves nothing to doubt: new `analysis._nothing_to_doubt`. No thresholds changed.
+
+**Old behaviour:** where timing read a take at or over `warn_quality`, the
+chain's pairing replaced timing's only if it heard `CHAIN_GAIN_NOTES` (2)
+more notes at their written pitch, because one note read differently may be
+a borderline pitch.
+
+**The case.** `violin/pizz/108/missed/noise/1057` leaves out the second and
+fourth of five D's in bar 4, before a G. Timing (quality 0.827) read the
+take a note early across both holes: the third D's sound on the second D,
+the G's on the third D, and the third D and the G reported missing. The
+chain paired every note at its own pitch, 37 of 37, and `_scored_mapping`
+scores its pairing 0.931, above timing's own. It heard one note more than
+timing's 36 and was refused for want of a second.
+
+**New:** one note more is enough when the chain's pairing hears every note
+it pairs at its written pitch and scores above timing's pairing by timing's
+own measure. Then there is no borderline note in it, and timing has no case
+against it. Otherwise the rule is unchanged.
+
+**A margin on the score alone does not separate the cases.** Measured with
+"scores above timing's" alone, four synthetic takes moved:
+
+| take | chain at pitch | timing at pitch | chain score | timing score | result |
+|---|---|---|---|---|---|
+| `1057` violin pizz | 37 of 37 | 36 of 37 | 0.931 | 0.827 | right |
+| `1116` cello bowed | 31 of 31 | 30 of 31 | 0.886 | 0.869 | right |
+| `1147` bass bowed | 30 of 39 | 29 of 38 | 0.925 | 0.890 | right |
+| `1119` cello bowed | 31 of 35 | 30 of 35 | 0.892 | 0.823 | 2 notes newly reported missing |
+
+The score gap of the one that went wrong (0.069) lies between those of the
+ones that went right, so no margin keeps the three and drops it. A margin of
+`MIN_READING_GAIN` (0.1) kept only `1057`. Requiring every paired note at
+pitch keeps `1057` and `1116`, drops `1119`, and gives up `1147`, whose bass
+the pitch track reads poorly.
+
+| | before | after |
+|---|---|---|
+| synthetic, overall | 97.85% | **97.93%** |
+| synthetic, notes / missed / bars | 96.50% / 99.57% / 96.88% | 96.56% / 99.64% / 97.01% |
+| synthetic, over what the truth decides | 98.43% | 98.50% |
+| real, 72 takes | | identical, every card and sentence |
+
+`1057`: missed 37 → 39 of 39, notes 36 → 37 of 37, bars 7 → 8 of 8.
+`1116`: missed 31 → 34 of 34, notes 28 → 31 of 32, bars 7 → 8 of 8.
+
+**Regression, all six clips:** identical.
+
+Tests: `test_one_note_more_is_enough_only_where_the_chain_leaves_nothing_to_doubt`
+and `test_two_notes_left_out_of_a_run_of_one_pitch_are_the_ones_reported`
+(the page and times of `1057`, plucked by `synth_plucked_take`; without the
+rule the third D and the G are reported missing). The chain now also re-pairs
+`test_beside_a_hole.py`'s bowed take with two notes left out in a row, which
+`(holes)` gave to `_beside_a_hole`. Its guard, which keeps that defect
+reproducible, failed for it. The guard and a new
+`test_this_rule_reports_them_without_the_chains_help` now switch the chain's
+rule off, so `_beside_a_hole` is still tested on its own.
+
+## 2026-11-14 (the attack look's recoveries) — Measured, not kept. No thresholds changed.
+
+The second look's attack look (`_recover_attacks`, after
+`_not_the_note_before`) kept 309 attacks on URMP's 72 takes. 147 lie within
+80 ms of a labelled onset and 162 do not: mostly 80–300 ms from one, inside a
+note, spread across violin (58), viola (45), cello (47) and saxophone (12).
+On the synthetic set it kept 11, of which 4 sat where the player left a note
+out: inside the note before (a held D5 under an A4, a repeated D4), with the
+level flat (−0.5 to −0.3 dB).
+
+Two ways to tell them apart, neither kept:
+
+- **The level change at the attack.** The right ones run from −3.6 dB (p10)
+  to +6.3 (p90) on the real takes, the wrong ones −1.7 to +3.1, medians both
+  +0.8. On synthesis, three right ones are quieter plucks under a ringing
+  note (−2.5, −1.6, −0.8 dB), below the four wrong ones.
+- **The missed note's own pitch after the attack**, where it differs from
+  the note before's (`_not_the_note_before` drops only an attack after which
+  the note before's pitch is heard at both readings). On the real takes:
+  heard 14,747 → 14,733, placed (50 ms) 12,341 → 12,330, paired (100 ms)
+  14,197 → 14,182, colour 12,358 → 12,360, sentences unchanged. A dropped
+  recovery leaves its note missing rather than placed better.
+
+## 2026-11-14 (the saxophone's onset threshold) — `[onset.instrument.alto_sax] delta` swept on URMP's 11 saxophone takes: measured, not kept. No thresholds changed.
+
+The saxophone's threshold was a starting value copied from the treble
+strings (2026-09-30) that had not met a saxophone recording. Swept alone on
+its 11 tracks:
+
+| delta | heard | colour | verdict true |
+|---|---|---|---|
+| 0.07 (is) | 98.58% | 64.43% | 10 of 11 |
+| 0.08 | 98.37% | 65.37% | 10 |
+| 0.091 | 97.84% | 70.12% | 11 |
+| 0.10 | 97.37% | 70.25% | 10 |
+| 0.11 | 96.90% | 71.08% | 9 |
+| 0.12 | 95.79% | 69.21% | 9 |
+
+The 11 of 11 is one value with 10 on either side, and nearly all of its
+colour gain is one take: Rejouissance's second saxophone re-anchors with the
+labels at 0.091 (38 → 141 of 215 notes) and not at 0.08. Each step up hears
+fewer notes. Not kept.
+
+**What it found instead.** Half the saxophone's notes are placed more than
+50 ms from their labels, against 8% of the violin's. In a tongued passage
+the first pass often reports two attacks about 90 ms apart at one note: one
+where the tongue stops the reed at the end of the note before, the other
+where the new note sounds. The pairing takes either. URMP's labels sit at
+the first, where the note before ends. A passage the app reads consistently
+at the second (Rejouissance's first saxophone: 60 ms after the labels, robust
+spread 8 ms) colours like the strings. Where it alternates (March's second
+saxophone: spread 43 ms), it cannot. Which of the two is the note's start is
+a question about the labels as much as the app, and the hand labels here
+cannot answer it.
+
+---
+
+## 2026-11-14 (the pulse's deviations) — `[tolerance.pulse] disturbance_deviations` 6 → 8
+
+**Why.** The re-anchor limit is the larger of `disturbance_deviations` times
+the take's spread (the median absolute deviation of its interval errors) and
+the floor of a sixth of a beat. `config.toml` called 6 a starting value that
+"needs real recordings and an ear". On real playing the spread is large,
+the limit sits above the floor, and the multiplier decides how readily a
+rubato player's own unevenness, or one attack placed wrong, re-anchors the
+take. Most of what the real takes colour differently from the labels is the
+app measuring from another level after a re-anchor the labels' reading does
+not make (`(a few notes out of place)`).
+
+**Swept**, the same rule read on the app and on the labels:
+
+| deviations | real colour | real verdict true | synthetic | synthetic verdict |
+|---|---|---|---|---|
+| 5 | 10,906 / 14,746 (73.96%) | 69 | | |
+| 6 (was) | 11,542 / 14,747 (78.27%) | 69 | 97.78% | 178 |
+| **8** | **12,358 (83.80%)** | **70** | **97.85%** | **178** |
+| 10 | | | 97.40% | 177 |
+| 11 | 12,745 (86.42%) | 70 | 97.67% | 177 |
+| 15 | 12,929 (87.67%) | 69 | | |
+
+Heard, placed, paired and bar tempo do not move: this is the pulse alone.
+8 is the value that moves both sets the right way. Past it the synthetic
+rushes and drags re-anchor at other notes than a perfect reading's
+(`cello/bowed/60/rush/clean/1096` loses 27 notes and 6 bars at 10), and at
+15 Pirates' saxophone's "Bars 33–51 ran ahead." becomes "Bars 3–52 fell
+behind.", false: a hesitation read as every bar after it.
+
+At 8 the sentence that becomes true is Jerusalem's saxophone, "Bars 25–38
+went at 68." → "Bars 3–29 fell behind.": the take carries a lag of about two
+beats from bar 14, which the labels' reading never re-anchored, and the
+app now does not either. Strings colour 86.62% (was 81.35%), saxophone
+64.43% (was 57.12%).
+
+**Synthetic** at 8: 97.78 → 97.85% (notes 96.37 → 96.50%, bars 96.67 →
+96.88%), over what the truth decides 98.37 → 98.43%.
+**Regression, all six clips:** identical.
+
+## 2026-11-14 (the chain's placement) — `alignment.CHAIN_PLACEMENT_NOTES` 9 → 13
+
+Once `(the chain's time weight)` made an attack's distance from its note
+weigh twice as much, where the chain puts each note mattered more. It puts it
+at the take's pace from a running median of the placed notes' offsets, over
+`CHAIN_PLACEMENT_NOTES` of them. Swept on the 72 real takes at the new
+weight:
+
+| notes | heard | placed (50 ms) | paired (100 ms) | colour | bar tempo | verdict true |
+|---|---|---|---|---|---|---|
+| 5 | 14,728 | 12,248 | 14,086 | 11,181 | 2,901 | 65 |
+| 9 (was) | 14,745 | 12,315 | 14,163 | 11,455 | 2,918 | 68 |
+| **13** | **14,747** | **12,341** | **14,197** | 11,542 (78.27%) | **2,924** | **69** |
+| 17 | 14,738 | 12,328 | 14,179 | 11,530 | 2,913 | 69 |
+| 25 | 14,735 | 12,320 | 14,176 | 11,557 | 2,917 | 69 |
+
+13 is best or level on every row but colour, where 25 is 15 notes ahead. The
+sentence that becomes true is K515's second violin, one of the five false
+ones: "Bars 77–81 went at 233." (the labels 238) is now "Bars 77–80 went at
+225.", which the labels hold. Strings are now true in 60 of 61.
+
+**Synthetic:** identical to the 0.6 weight at 9 (97.78%).
+**Regression, all six clips:** identical.
+
+**`CHAIN_SKIP` swept with them, and left at 0.6.** With an attack's distance
+weighing twice as much, two gaps away now cost what leaving the attack and
+its note both out does, so the skip cost was tried either side (heard,
+paired, colour, verdict true): 0.5 gives 14,568, 13,930, 11,238, 66; 0.6
+gives 14,747, 14,197, 11,542, 69; 0.75 gives 14,739, 14,098, 11,497, 67.
+
+## 2026-11-14 (the chain's time weight) — `alignment.CHAIN_TIME_WEIGHT` 0.3 → 0.6 a played gap
+
+**Why.** `b7e3103` took the saturation off the chain's time cost and left
+its weight where it was. Most of what the real takes still colour
+differently from the labels is the app measuring from another level after a
+re-anchor the labels' reading does not make (`(a few notes out of place)`),
+and many of those follow a slide: in a fast figure one attack goes unheard
+and pitch alone lets the chain pair the notes after it a note or two along.
+In Spring's second violin, bar 18 (E5 and F-sharp 5 alternating), notes
+147–153 were paired 230–430 ms early. Each slid note sits a gap or two from
+its place, which cost 0.3–0.6 against the pitch it matches.
+
+**Swept** on the 72 real takes (`f657146`'s head):
+
+| weight | heard | placed (50 ms) | paired (100 ms) | colour | bar tempo | verdict true |
+|---|---|---|---|---|---|---|
+| 0.3 (was) | 14,760 | 12,274 | 14,118 | 11,250 | 2,901 | 67 |
+| 0.45 | 14,745 | 12,295 | 14,140 | 11,323 | 2,912 | 68 |
+| **0.6** | 14,745 | 12,315 | **14,163** | **11,455 (77.69%)** | **2,918** | **68** |
+| 0.75 | 14,736 | 12,312 | 14,158 | 11,356 | 2,910 | 68 |
+| 0.9 | 14,717 | 12,305 | 14,147 | 11,373 | 2,899 | 68 |
+
+The sentence that becomes true at every weight from 0.45 is Hark's viola,
+one of the five false ones: "Bars 13–18 went at 123." becomes "Bars 1–18
+fell behind.", which the labels hold. At 0.6 colour gains most in Maria's
+cello (+128), Rondeau's first violin and cello (+72, +25) and Hark's viola
+(+19), and gives back in K515's cello (−41), the Fugue's second violin (−25)
+and K515's first violin (−22). The 15 notes no longer heard are spread one
+or two a take: an attack far from where its note belongs, which the chain
+now leaves out rather than pairs.
+
+**Synthetic**, at 0.45 identical; at 0.6 one take moves, 97.83 → 97.78%
+(98.43 → 98.37% over what the truth decides).
+`double_bass/bowed/84/drag/noise/1132` pairs its run of six G2s nearer the
+truth (notes 18–20 now 120 ms short of it each, where they were −228 to
++605 ms off), and so no
+longer re-anchors where the drag ends, and its last bars carry the drag's
+730 ms: 7 notes and a bar. That is the re-anchor's edge, not the pairing.
+
+**Regression, all six clips:** identical.
+
+## 2026-11-14 (the second look's window) — Measured, not kept: each missed note searched by its own spacing. No code or threshold changes.
+
+**Where the real takes' notes reported missing come from** (after `f657146`):
+275 of 15,035 labelled notes. 167 have no attack within 50 ms that the
+first pass heard; 65 have a written neighbour under 100 ms away (35 of them
+in K515's first violin); 37 have an attack within 50 ms that went unpaired;
+6 had their attack given to another note.
+
+**The attack look's window** is a quarter of the page's closest written
+gap (`closest_expected_gap`, the number the detector's peak window is sized
+from), and it needs three envelope frames, so a page whose closest gap is
+under 93 ms at its tempo searches nothing for any note. On the real takes
+seven pages are so (K515's two violins and first viola, King's first
+violin in both mixes, Rondeau's first violin in two), holding 16 of the 167. Sized instead
+by each missed note's own nearest written neighbours, never narrower than
+before:
+
+| | before (`f657146`) | per-note window |
+|---|---|---|
+| real, heard | 14,760 / 15,035 | 14,775 (98.27%) |
+| real, paired within 100 ms | 14,118 | 14,131 |
+| real, colour | 11,250 | 11,236 |
+| real, bar tempo | 2,901 | 2,909 |
+| real, verdict true | 67 | 67 (four sentences change, none in truth) |
+| synthetic, notes left out and reported | 6,426 / 6,454 | 6,424 |
+| synthetic, bars | 1,393 | 1,390 |
+| synthetic, overall | 97.83% | 97.80% |
+
+The two synthetic losses are notes the player left out, now "found": the
+note before is held through the gap, its vibrato swells every ~180 ms, and a
+±114 ms window always holds one, where ±28 ms did not. Only the pitch check
+(`_not_the_note_before`) stands between, and it cannot act where the page
+repeats a pitch. Asking for the missed note's own pitch instead would drop
+the quiet notes a live room swallows, which `test_degraded_audio.py`
+holds. Not kept.
+
+**And a rule for the 37 with an unheard attack beside them, which found
+nothing to do.** That count compared the first pass's detections with the
+final pairs' times, which refinement and trimming move by a hair, so most of
+those attacks were paired after all, to another note. At the pairing's own
+stage, Maria's cello and Spring's first violin have no attack left over
+between any missed note's paired neighbours, and K515's first violin one, at
+the wrong pitch. An attack given away is the slide problem of `(a few notes
+out of place)`: in Spring's second violin, bar 18, note 146's own E5 attack
+went to note 148, the next E5, and `_beside_a_hole` only looks at the paired
+note nearest a hole on each side, which there read F-sharp 5 both.
+
+**And, after `191520b`, the wider window as a third look with the pitch as
+evidence**: the attack look left as it was, then each still-missing note
+searched in its own room, an attack kept only where the pitch after it is
+the note's own and not its neighbours'. Real heard 14,747 → 14,748, colour
+12,358 → 12,351, synthetic identical: the 15 notes the wider window had
+found do not carry their own pitch at the attack it found, so they were not
+the clean finds they looked. Not kept.
+
+**And the detector's minimum between attacks, 60 → 40 ms** (`[onset]
+wait_ms`), for the 65 fast notes. Real heard 14,747 → 14,756 (five in K515's
+first violin), colour +31, bar tempo −4, every sentence the same; synthetic
+97.85 → 97.84% (`violin/bowed/132/rush/reverb/1008` gains 4 notes,
+`double_bass/bowed/132/missed/noise/1147` loses 4 and 2 bars). The
+detector's 23 ms frames, not the guard, are what hold the turns back. Not
+kept.
+
+**Also measured: predicting a missed note from the paired notes either side**
+rather than the take's line (`predict_audio_times`). It refuses
+`test_degraded_audio`'s room-swallowed take again, at quality 0.000: there,
+the pairs either side are the unreliable ones, and the take's line is what
+survives them. Not kept.
+
+## 2026-11-14 (a few notes out of place) — Measured, not kept: a run of up to k notes out of place as no disturbance. No code or threshold changes.
+
+**Why real colour disagrees.** On the captured pulse inputs, of the 2,886
+colour disagreements the labels decide (`f482e03`'s head), 2,543 are the two
+readings measuring from levels more than 5% of a beat apart; 198 are a note
+placed differently and 145 sit near a band's edge. After `f657146` took out
+the false skips, the app still re-anchors 125 times where the labels'
+reading does not, at a step a median 1.23 times its limit where the labels'
+step at that note is 0.34 of theirs (under their limit 93% of the time), and
+each moves the level a median 332 ms. They are steps only the app hears: a
+fast figure's pairing slid a note along for a few notes (Spring's second
+violin, bar 18, alternating E5 and F-sharp 5), and each end of the slide
+re-anchors, which throws away the drift the take had built up.
+
+**Tried:** `f482e03`'s rule widened from one note to a run: a disturbed step
+out, ordinary steps, and a disturbed step back that the first cancels,
+within k notes, is not a disturbance.
+
+| k | synthetic timing misses (replay) | real colour (replay) | over what the labels decide |
+|---|---|---|---|
+| 1 (as now) | 209 | 76.01% | 78.76% |
+| 2 | 209 | 76.63% | 79.34% |
+| 3 | 210 | 76.70% | 79.34% |
+| 4 | 210 | 76.95% | 79.62% |
+| 6 | 210 | 76.63% | 79.30% |
+
+End to end the replay's gain holds and costs sentences:
+
+| | `f657146` | k = 2 | k = 4 |
+|---|---|---|---|
+| real colour | 11,250 / 14,760 | 11,365 | 11,403 (77.26%) |
+| real verdict true | 67 of 72 | 66 | 66 |
+| synthetic verdict | 178 of 180 | 175 | 174 |
+| synthetic overall | 97.83% | 97.80% | 97.78% |
+
+The sentences lost are all one shape: a steady take now naming one bar
+("Bar 6 went at 203."), because the notes of the slide inside it now read off
+the kept pulse where the two re-anchors had read them on a level of their
+own. On real playing Pirates' saxophone keeps its sentence, "Bars 33–51 ran
+ahead.", and the labels' own reading of those bars, under the same rule,
+stops holding it. Keeping the pulse and leaving the slid notes out of bar
+averages and sentences would keep both, but marks them untimed for a reason
+the app has no word for (`UntimedReason` is the page's tempo change, fermata
+and ornament), which is the owner's to decide. Not kept.
+
+## 2026-11-14 (skips) — A skip must move the notes after it: `classification.SKIP_CONFIRMED_BY = 3`
+
+**Old behaviour:** on a pairing made by pitch, `skipped_ahead` called a gap a
+skip when the take crossed it in nearer one played interval than the whole
+written span, and `compute_deltas` started the level afresh after it. A note
+whose attack was given to the note after it makes exactly that gap: the note
+after arrives one interval on, early by the note left over. On URMP's 72 real
+takes, every one played through, the app declared **83 skips in 28 takes**
+and the labels' reading none. Each restarted the level the rest of its
+stretch was measured from, so a player behind the beat read on it again.
+
+Sorted first, on the captured pulse inputs: of the 2,886 colour disagreements
+the labels themselves decide (`(a tie between two attacks)`), 2,543 are the
+two readings measuring from levels more than 5% of a beat apart, not a note
+placed differently (198) or one near a band's edge (145). Of those 2,543,
+1,874 sit after a re-anchor or a skip the app made and the labels did not.
+
+**New:** a skip must move the notes after it too. From the note before the
+gap to each of the next `SKIP_CONFIRMED_BY` paired notes must also read
+skipped, nearer one interval plus the notes as written after the gap than
+the whole written span. A real skip moves every later note; a mispaired one
+moves one or two. A real skip this misses is not lost: the pulse re-anchors
+after the one long interval it leaves.
+
+| | before (`c2279ac`) | the next note only | the next 3 (kept) |
+|---|---|---|---|
+| real, skips declared | 83 | 56 | |
+| real, heard | 14,749 / 15,035 | 14,758 | **14,760 (98.17%)** |
+| real, paired within 100 ms | 14,103 | 14,114 | 14,118 (95.65%) |
+| real, colour agreement | 11,177 (75.78%) | 11,217 (76.01%) | **11,250 (76.22%)** |
+| real, bar tempo within 2% | 2,897 | 2,899 | 2,901 (72.24%) |
+| real, verdict true | 67 of 72 | 67 | 67, every sentence the same |
+| synthetic | 97.84% | 97.84% | 97.83% |
+
+Over what the labels decide (the replay), colour agreement on the next-note
+version's capture is 78.76%, against 78.46% on the capture before `c2279ac`.
+The largest gains are the long takes with many false skips: K515's first
+violin 379 → 414 notes coloured as the labels' reading colours them, its
+first viola 258 → 306, its cello 226 → 263. Some give back: Rondeau's first
+violin −21 (in both mixes), Maria's cello −22, K515's second violin −8. On
+synthesis one note moves: `viola/bowed/132/missed/reverb/1088`, whose notes
+20–22 are paired with each other's attacks, reads note 21 113 ms off where
+the false skip had put it in a stretch of its own.
+
+**Regression, all six clips:** identical.
+
+Tests: `test_an_attack_given_to_the_note_after_is_not_a_skip` and
+`test_two_attacks_each_given_to_the_note_after_are_not_a_skip`
+(`test_playing_habits.py`); a skipped bar still reads as one.
+
+## 2026-11-14 (measured, not kept) — The labels' pairing beside an equal note, and each instrument's pitch lag. No code or threshold changes.
+
+**The real-take scorer, a tie between two equal notes side by side.** K515's
+first violin holds G5 from bar 39 into bar 40 and plays G5 again there (also
+bars 78–79). The one label is bar 39's, but `pair_by_pitch_and_time` gave it
+to bar 40's: each note's place is read from its paired neighbours' first-pass
+pairings, and bar 39's was drawn through bar 40's, the very pairing the tie is
+about, so both read three beats from the label and the tie stood. The app
+pairs the attack to bar 39's G5 and is marked down twice for it.
+
+Two versions, on the app at `c2279ac`:
+
+| | heard | placed (50 ms) | paired (100 ms) | colour | verdict true |
+|---|---|---|---|---|---|
+| scorer as it is | 14,749 / 15,035 | 12,263 | 14,103 | 11,177 | 67 |
+| no place from any pairing at the note's pitch | 14,759 / 15,029 | 12,296 | 14,144 | 11,392 | 68 |
+| none from the note beside it at its pitch | 14,758 / 15,031 | 12,284 | 14,125 | 11,170 | 67 |
+
+The first slides the labels of Pirates' cello part, which ends on twenty B2s,
+one note along the run: no place inside the run is drawn from anything near
+it, and 20 pairings that sat within 80 ms of the take's line move to 140–370
+ms. The second fixes every two-note tie it touches (K515 77/78 and 158/159,
+Pirates' first violin, March's and Jerusalem's saxophones), but in runs of
+three it can slide the other way: Jerusalem's second violin, notes 67–69,
+from 40 ms off the take's line to 500 ms. Neither is clearly better, and a
+measuring stick that is not clearly right moves every later comparison, so
+neither is kept.
+
+**Each instrument's lag from a pitch taking over to its attack.** The legato
+look places a note it finds by pitch 16 ms after the takeover
+(`[onset.recovery] pitch_lag_ms`), so it sits on the attacks' clock. Measured
+again on URMP at 9,340 labelled notes whose neighbours have other pitches, the
+heard attack lands after the takeover by a median of:
+
+| | notes | median | quartiles |
+|---|---|---|---|
+| violin | 5,040 | 10.3 ms | −9.8 .. 33.8 |
+| viola | 1,622 | 22.0 ms | −10.3 .. 42.0 |
+| cello | 1,287 | 15.9 ms | −18.6 .. 39.3 |
+| double bass | 312 | 33.6 ms | 10.7 .. 46.2 |
+| alto saxophone | 1,079 | 19.0 ms | −10.6 .. 68.0 |
+
+The saxophone does not need its own: the +60–80 ms its attacks sit from the
+labels on "He's a Pirate" is that take's, not the instrument's. Per
+instrument, a note found by its pitch would move by under 18 ms, inside the
+quartiles of every row, and the synthetic set barely uses the legato look.
+Not made per instrument.
+
+**Why sixteenths read later than quarters** (`cello/bowed/132/missed/
+dynamics/1119`, 12 notes and 3 bars of the synthetic set's decided misses).
+Refined onsets land +39–42 ms after the truth on quarters and +49–58 ms on
+the sixteenths after a 114 ms gap. Neither half of the refinement's walk back
+binds; the half-peak itself lands later on a note rising out of the last
+one's release (`0cd6c37`), and uneven dynamics widen its 6–7 ms to 10–16. The
+three sixteenths among the first eight notes tilt the pace a stretch's level
+is projected along (`_settled_level`), and the take reads 11.6 ms off. A
+refinement that hears the new note's own partials rise would remove it; the
+earlier trial read harmonics over a 93 ms window, and was judged on the bass.
+
+## 2026-11-14 (the legato look's neighbours) — A note no attack marked is asked about by its pitch when the note after shares it, if that note's attack is paired. No thresholds changed.
+
+**Old behaviour:** the legato look (`_recover_legato`) asked only about a
+missed note whose pitch differed from both written neighbours, since a pitch
+the note before or after also has "would be found whether this note sounded
+or not". For the note before that holds: its pitch is sounding already. For
+the note after it holds only while that note's attack is unknown. Where it is
+paired, the window the look searches ends before it, so a pitch taking over
+inside the window is this note's. K515's first violin has six notes with no
+attack of their own before a note of their pitch whose attack was paired:
+D4, a rest, D4 (bars 5, 15), a long B-flat before another (bars 102, 127,
+170), and a B5 in bar 31. Each was reported missing. In bar 96 both D4s lack
+an attack, and that pair is still not asked.
+
+**New:** a note is not asked when the note before has its pitch, nor when the
+note after has it and that note's attack is not paired.
+
+| | before (`154e3f1`) | after |
+|---|---|---|
+| synthetic | 97.84% | identical, every take |
+| real, heard | 14,723 / 15,035 (97.92%) | **14,749 (98.10%)** |
+| real, placed within 50 ms | 12,237 | 12,263 (83.14%) |
+| real, paired within 100 ms | 14,071 (95.57%) | 14,103 (95.62%) |
+| real, colour agreement | 11,129 (75.59%) | 11,177 (75.78%) |
+| real, bar tempo within 2% | 2,889 / 4,016 (71.94%) | 2,897 (72.14%) |
+| real, verdict true | 67 of 72 | 67 of 72, every sentence the same |
+
+19 takes move. K515's first violin hears 561 of its 605 notes (was 554), and
+colours 379 as a perfect reading would (was 354). One take gives something
+back: Pirates' saxophone now hears note 78, paired 28 ms from its label, but
+the pitch look places a note through a lag measured on strings and its
+neighbours sit at the saxophone's steady +60–80 ms, so bars 25–26 lose their
+tempo agreement.
+
+**Regression, all six clips:** identical.
+
+Tests: `test_legato_neighbours.py`, four, with the pitch track given. The
+first, a D5 before a paired D5, fails on the old rule.
+
+## 2026-11-14 (a tie between two attacks) — Where DTW gives one note two attacks, the one nearest where the take puts the note keeps it, not the one nearest the page's grid. No thresholds changed.
+
+**Old behaviour:** `apply_fuzzy_match` settled a many-to-one by keeping the
+attack closest to the note's written time, in seconds at the page's tempo. A
+take running fast or slow has left that grid behind, so the grid sat nearer
+whichever attack lay in the direction the player had come from.
+`double_bass/bowed/108/fast/phone/1140` is 10% fast and half a second ahead
+by its eleventh note. Extra attacks 0.28 s after note 10's own and 0.18 s
+after note 34's sat nearer the grid, kept those notes and left their own
+attacks over: 2 notes and 2 bars wrong, all decided by the truth. Matching
+was made tempo-invariant for exactly this reason (`align_dtw`); the tie-break
+was where absolute time had come back in.
+
+**New** (`apply_fuzzy_match`, `_where_the_take_puts`): the tie goes to the
+attack nearest where a line through the nearest singly paired notes either
+side puts the note. With paired notes on one side only it is a line through
+the two nearest there; with one, that note's place moved by the written gap;
+with none, the written time, as before. A constant offset no longer moves
+it either, which `test_alignment.py` had held as a defect; `to_timeline_base`
+stays for `align_take` and the chain.
+
+| | before (`f482e03`) | after |
+|---|---|---|
+| synthetic, overall | 97.81% | **97.84%** |
+| synthetic, notes / bars | 96.47% / 96.60% | 96.50% / 96.74% |
+| synthetic, over what the truth decides | 98.41% | 98.44% |
+| real, 72 takes | | identical, every card and sentence |
+
+Only `1140` moves on synthesis: notes 28 → 30 of 39, bars 6 → 8 of 8.
+
+**Regression, all six clips:** identical, status, verdicts and every per-note
+deviation.
+
+Tests: `test_a_tie_goes_to_where_the_take_puts_the_note_not_the_grid` (a take
+10% fast with an extra attack after the note's own, and 10% slow with one
+before it; both fail on the grid) and
+`test_a_tie_on_the_first_note_follows_the_notes_after_it`.
+`test_dtw_no_longer_needs_the_shift_but_fuzzy_matching_still_does` is now
+`test_neither_dtw_nor_fuzzy_matching_needs_the_shift`.
+
+**Also measured, not kept: the take's spread without its single displaced
+notes.** At `f482e03`, `double_bass/bowed/84/rush/phone/1130` held 37 of the
+synthetic set's 185 decided misses. Two pairings there are wrong: one note's
+own attack went unheard and an extra attack 130 ms before it was given to
+it, and another note was given an attack 400 ms after its own, which was
+heard. They make four intervals of 183–410 ms, and with a phone room's
+wider jitter they move the take's spread (the median absolute deviation of
+its intervals) from the truth's 12.5 ms to 31.7. So the re-anchor limit read
+190 ms against 119, and the rush's opening half note (166 ms short) was not
+a disturbance. Leaving the two intervals of each single displaced note (the
+pairs `(one note out of place)` already clears) out of the spread, found at
+the current limit and repeated until none is new, brings `1130` to the floor.
+Replayed on the captured pulse inputs:
+
+| | synthetic timing misses | real colour | real colour, over what the labels decide |
+|---|---|---|---|
+| `f482e03` | 209 | 75.59% | 78.46% |
+| iterated | 187 | 75.03% | 78.31% |
+| found once, at the floor | 187 | 74.34% | 77.56% |
+
+On real takes most of the loss is in notes the labels themselves do not
+decide. The hand labels have displaced notes of their own, those leave the
+labels' spread too, and a limit 4 ms lower flips a re-anchor either way
+(Pirates' first violin: 60 notes from one decision at 126 against 130 ms).
+Over what the labels decide it still loses 15 notes, mostly Jerusalem's
+viola and cello, so it is not kept.
+
+**What the labels decide** (a replay, the real-take counterpart of `(what
+the truth decides)`): each take's labelled offsets moved by N(0, 2 ms), 8
+draws, and a note whose labels' colour changes in any draw is undecided. On
+`f482e03` 1,327 of 14,723 notes are undecided, and the app reads 708 of them
+otherwise, about a coin toss. Over the 13,396 decided, colour agreement is
+78.46%. Not yet in `real_takes.py`.
+
+## 2026-11-14 (one note out of place) — A single displaced note is not a disturbance of the pulse. No thresholds changed.
+
+**Old behaviour:** an interval past the disturbance limit began a run, and the
+pulse re-anchored after the run unless the notes after it were back on the
+line the notes before it were on (`_level_moved`). A note out of place on its
+own makes two such intervals, into it and out of it, opposite ways. Where the
+line before was steady, the notes after were back on it and nothing moved.
+Where it was a ramp that had just ended, they were not.
+`double_bass/bowed/60/rush/noise/1127` paired the note after a rush with a
+stray attack 350 ms late. Projected along the rush, the notes after it sat
+off the line, so the glitch re-anchored the take. The truth never re-anchors
+there, because the rush's own intervals are 13% against a 16.7% limit, so the
+bars after it carry the rush. 16 notes and 4 bars were wrong, all of them
+decided (`(what the truth decides)`).
+
+**New** (`pulse_anchors`): two disturbed intervals in a row, opposite ways,
+whose sum is an ordinary interval (within the same limit) are one note out of
+place. They are not a disturbance. That note reads off, and nothing else
+moves. Whether the sound was paired with the wrong note or the player put one
+note late and carried on, the pulse is where it was. Every case in
+`test_pulse_anchor.py` keeps its reading: a pause, a slow bar and rushing that
+resumes all step one way and stay.
+
+**Measured.** Replayed offline first (sum within 0.5 / 1 / 1.5 limits:
+synthetic timing misses 221 / 209 / 209, real colour 75.70 / 75.59 /
+75.61%); 1 kept, the limit a single interval is judged by. End to end:
+
+| | before (`1740049`) | after |
+|---|---|---|
+| synthetic, overall | 97.71% | **97.81%** |
+| synthetic, notes / bars | 96.28% / 96.39% | 96.47% / 96.60% |
+| synthetic, over what the truth decides | 98.31% | 98.41% |
+| real, verdict true | 66 of 72 | **67 of 72** |
+| real, colour agreement | 11,113 / 14,723 | 11,129 / 14,723 |
+| real, heard / placed / paired / bar tempo | — | identical |
+
+On real playing the one changed sentence is Rejouissance's saxophone:
+"Bars 14–25 ran ahead.", false by the labels, is now "Bars 14–17 fell
+behind.", which holds. Colour moves in 24 takes, both ways, between −20
+(Pavane's cello) and +18 (K515's cello).
+
+**Regression, all six clips:** identical, status, verdicts and every
+per-note deviation (none has a disturbed interval).
+
+New test: `test_one_note_out_of_place_where_a_rush_ends_moves_nothing_else`.
+On the previous rule the note moved the rest of the take by up to 600 ms.
+
+## 2026-11-14 (what the truth decides) — The benchmark says which misses no hearing could be sure of. The app is unchanged.
+
+**New, not scored:** `accuracy_bench.py` reads each take's truth again with
+every true onset moved by 2 ms (`TRUTH_JITTER_S`, about what a detector
+resolves: the finer onset look works on a 2.9 ms grid, and a clean take's
+attacks are placed within 1–4 ms of one another), 8 times (`TRUTH_DRAWS`).
+A note, bar or verdict the rules read otherwise in any draw is *undecided*:
+a perfect hearing with a detector's resolution could not be sure of it. The
+strict scores still count everything.
+
+On `1740049`:
+
+| | undecided by the truth | of those, read otherwise | decided: right |
+|---|---|---|---|
+| notes | 190 | 71 | 6,037 of 6,204 (97.31%) |
+| bars | 54 | 20 | 1,354 of 1,386 (97.69%) |
+| verdicts | 1 | 1 | 178 of 179 (99.44%) |
+
+The overall over what the truth decides is 98.31%, against 97.71% strict.
+This corrects the earlier reading of the re-anchor's cliff as "most of the
+synthetic gap" (`(the level)`, `(moving beat, third)`, and PR #219). Sorted by
+whether the app's and the truth's re-anchors fall at the same notes, 112
+timing misses were re-anchor disagreements. Only 71 notes are the cliff
+itself. The rest are re-anchors the app makes and the truth does not,
+because of something the app heard wrong: a pairing glitch or noisy
+placement raising the limit (`double_bass/bowed/84/rush/phone/1130`). Those,
+with the level's and single notes' misses, are hearing, and they are what
+stands between 98.31% and 99%.
+
+Also measured, not kept: **re-pairing a run of one repeated pitch by its
+attacks' spacing after a timing pairing too** (the chain does it already,
+`3e1873e`). It fixes three synthetic takes, among them
+`cello/bowed/108/fast/dynamics/1109`, where one unheard attack in five
+repeated D4 sixteenths slid the run and set off a re-anchor 1.4 s out. But
+it breaks `cello/bowed/132/missed/clean/1116` (8 → 25), where the note after
+the run has no attack of its own to bound it. 97.71 → 97.67%, and the 72
+real takes are identical.
+
+## 2026-11-14 (pace runs) — Re-anchoring after a sustained change of pace, and a quarter-beat floor: measured, not kept. No thresholds changed.
+
+**The defect looked at.** The re-anchor limit is a fixed fraction of a beat per
+interval (`disturbance_floor_beats`, a sixth). The same 15% slowdown is
+0.30 beat on a half note and 0.15 on a quarter, so a slowdown re-anchors on
+its half notes and not its quarters, and a drag made only of quarters never
+re-anchors: every bar after it reads late, which is what the 2026-09 rule was
+written to stop. It is also the synthetic set's knife edge. Its drag and rush
+make every quarter 15% long or short, just under the floor, so a few tenths
+of a millisecond decide whole stretches.
+
+**Pace runs.** A run of intervals at least 4–5% off the take's usual pace,
+in one direction, whose drift adds up past the limit, is treated as a
+disturbed run. The whole drag then counts on its total of about a beat, far
+from any edge. Replayed offline on each take's captured offsets (synthetic:
+timing misses among paired notes; real: notes coloured as the labels' reading
+colours them, 14,723):
+
+| | synthetic misses | real colour |
+|---|---|---|
+| current rule | 221 | 75.48% |
+| pace runs, drift past 1 limit | 138 | 66.79% |
+| … past 3 limits | 138 | 74.50% |
+| … past 5 limits | 187 | 74.88% |
+| … past 8 limits | 221 | 74.93% |
+| pace smoothed over 1–2 beats (5–10%) | 139–162 | 66.25–72.06% |
+| floor 0.25 alone | 205 | 76.93% |
+| floor 0.5 alone | 161 | 79.89% |
+| **floor 0.25 + pace runs past 3 limits** | **157–158** | **75.89–76.26%** |
+
+Every pace-run version costs real colour except with the floor raised; even
+one that gains nothing on synthesis (8 limits) loses 0.55 points. On real
+rubato every extra re-anchor is another place for the app and the labels to
+split. The first version, run in full, also took real verdicts 66 → 64.
+
+**The quarter-beat floor with pace runs, run in full:** synthetic 97.71 →
+98.22% (notes 96.28 → 97.28%, bars 96.39 → 97.43%), and every test in
+`test_pulse_anchor.py` passes with it. But verdicts fell 178 → 174 of 180.
+Three steady takes, and one missing a note, were told "Bar 6 went at 203."
+(and alike). Each has two notes the app paired ~0.24 beat early, a hearing
+glitch the truth does not have. **The sixth-of-a-beat floor absorbs such a
+glitch:** it re-anchors around it, so those notes read on time and the
+sentence stays "Steady all the way through." A quarter-beat floor lets the
+glitch through to the note rule. Applying the change to the feedback
+reference alone, leaving alignment quality on the current rule, gives the same
+result, so it is not the pairing. Raising the floor would need glitches
+handled on their own first.
+
+Not kept. On these numbers the re-anchor's cliff stays, and with it most of
+the synthetic set's gap to 99%. A longer pace window for the level (10, 12 or
+16 notes) and a longer level (8 notes) were replayed too: within noise of the
+current 8 and 6 on both sets.
+
+## 2026-11-14 (moving beat, third) — The moving local beat, measured on `1740049`: not switched. No thresholds changed.
+
+Measured a third time, on the head that reads a stretch's level from all six of
+its notes (`e26640d`) and gives an attack beside a hole to its note
+(`1740049`). Neither of those depends on the re-anchor. The level is not read
+at all under a moving beat, and the hole repair works on the pairing either
+way. So this asks whether, with them, the moving beat now clears 99% on
+synthesis without the cost on real playing:
+
+| | re-anchored pulse (`1740049`) | moving local beat |
+|---|---|---|
+| synthetic, overall | 97.71% | 98.96% |
+| synthetic, notes | 96.28% | 98.80% |
+| synthetic, bars | 96.39% | 98.19% |
+| synthetic, verdict | 178 of 180 | 175 of 180 |
+| real, colour agreement | 75.48% | 68.25% |
+| real, verdict true | 66 of 72 | 54 of 72 |
+
+It does neither. Synthesis stops just short of 99%. On real playing,
+true sentences fall from 66 to 54 of 72 and colour agreement by 7 points, as
+before. By instrument the saxophone falls 8 → 3 of 11, violin 32 → 26 of 34
+and cello 11 → 9 of 11, while the viola rises 12 → 13 of 13. The re-anchored
+pulse stays, and the question stays the owner's.
+
+On synthesis, most of what is left under the re-anchored pulse is the
+re-anchor's cliff (`(the level)` below): 8 of the 9 takes it touches sit at
+the limit's floor in both readings, where one interval a few tenths of a
+millisecond either side decides a whole stretch.
+
+## 2026-11-14 (holes) — An attack beside a note reported missing is given to it by its pitch and its place: new `analysis._beside_a_hole`, `HOLE_MIN_GAP_S = 0.1`
+
+**Old behaviour:** the final pairing was timing's (or the chain's) as it came.
+Timing reads each interval against a written one and may read it across one
+note the player left out (`DROPPED_NOTE_CAPS`), not two. With two left out in
+a row, the sound after them was paired with the second, a beat early, and the
+note it was reported missing. A single hole after a long note can be read
+either way at near-equal cost too: the strict xfail in
+`test_notes_left_out.py`, which this does not touch because that test is
+timing alone.
+
+**New:** once the take is paired, the attack of the paired note nearest a run
+of missing notes moves to one of them when two independent things agree. The
+pitch track hears that note's pitch after the attack, and a line through the
+nearest paired notes either side puts the attack nearer that note's place
+than its current note's. It repeats until nothing moves, because a hole can
+shift a run along and each note given back frees the next one's place. It
+never moves inside an ornament, or between notes written closer than
+`HOLE_MIN_GAP_S` (0.1 s at the take's tempo).
+
+**Why.** Of the 36 errors in what the synthetic set reported missing, 20 were
+a played note reported missing beside a left-out one paired in its place.
+
+**Measured, version by version:**
+
+| | missed | notes | bars | wrong notes | overall |
+|---|---|---|---|---|---|
+| before (`e26640d`) | 6,418 / 6,454 | 6,152 | 1,386 | 40 / 58 | 97.61% |
+| neighbours only, by pitch | 6,426 | 6,155 | 1,389 | 40 / 58 | 97.70% |
+| + runs, repeated until still, + repeated pitches by place alone (3× nearer) | 6,430 | 6,158 | 1,390 | 40 / 57 | 97.76% |
+| **kept: runs, repeated until still, by pitch only, not within 0.1 s** | **6,426** | **6,156** | **1,388** | **40 / 57** | **97.71%** |
+
+**Two versions measured and narrowed on URMP's real takes:**
+- **Notes written too close.** In K515's second violin the pitch rule moved
+  the attack of a G4 in a fast turn onto the F♯4 written 0.08 s after it. A
+  line through the turn's neighbours made the two look 0.13 s apart. A note
+  there is closer than the detector separates attacks (60 ms) or the pitch
+  after one is read (up to 120 ms), so the written gap now has to be 0.1 s.
+  Sixteenths at 132 BPM are 0.11 s.
+- **Repeated pitches by place alone, not kept.** Where the page repeats a
+  pitch the pitch says nothing, and a version moved on the place alone at
+  three times nearer. It fixed one synthetic take, 1087. On the real takes it
+  moved five attacks. Against the labels: one onto its own note (K515's
+  fourth part, now 49 ms from its label), one further from both notes'
+  labels (King's saxophone), and three inside stretches already paired a
+  note or more off (Pirates, Jerusalem's cello, K515's third part). A line
+  through rubato neighbours is too loose to decide alone.
+
+**The kept version on the real takes:** every one of the 72 is identical,
+card and sentence, to `e26640d`. Each move it would make on them is one of
+the two versions above that were narrowed. On the synthetic set it gives the
+missed notes back in five takes (1056 and 1149 to no errors at all, 1057
+5 → 4, 1090 5 → 1, 1119 17 → 15), and none gets worse. One bar is no
+longer named for a wrong note it did not have.
+
+**Regression, all six clips:** identical. None has a note reported missing,
+so the rule returns before reading anything.
+
+New tests: `test_beside_a_hole.py`. Five rules with the pitch given: two
+left out in a row; notes written too close to tell apart; a wrong note at
+the hole's pitch staying where it was played; a shifted run given back in
+turn; a repeated pitch never moved. Then end to end on a synthetic bowed take
+with notes 4–5 and 9–10 left out, and the same take with the rule off,
+which reports note 6 in place of note 5.
+
+## 2026-11-14 (the level) — A stretch's level is read from all six of its notes, not the middle two: new `alignment._middle_of`, `LEVEL_BOUND_DEVIATIONS = 1.0`
+
+**Old behaviour:** the level every note of a stretch is measured from was the
+median of its first six notes' offsets, projected back along the stretch's
+pace (`_settled_level`). A median of six is the mean of the two in the
+middle. **New:** the Hodges–Lehmann estimate of the six — the median of the
+means of every pair — held within one robust standard deviation (1.4826 × the
+median absolute deviation) of their median.
+
+**Why.** The timing misses on the synthetic set were sorted by kind, from each
+note's app-minus-truth deviation and both sides' re-anchor points: of 276, 118
+are a re-anchor at a different note from a perfect reading's (the owner's
+question below), 103 a level read off by a few milliseconds over a whole
+stretch, 35 single notes and 20 not timed. The level misses are not the
+detector placing notes badly. Its placement varies by 1–4 ms across a take
+(robust spread, by instrument and room; 4.4 ms for a bowed bass through a
+phone). The problem is which notes the median picks. On
+`double_bass/bowed/108/fast/phone/1140` the two middle notes of six were the
+two the detector placed earliest, 13 and 20 ms ahead of its usual, while across
+the six it was 2 ms early. The take's level read 17 ms early, putting 30 of its
+39 notes and 6 of its 8 bars outside a perfect reading's 12 ms.
+
+**Swept offline** on each take's captured offsets, replaying only the
+anchoring (timing misses among the paired notes, 6,316 of them):
+
+| level read as | misses |
+|---|---|
+| median of 6 (before) | 255 |
+| median of 8 | 248 |
+| trimmed mean of 6 | 233 |
+| Hodges–Lehmann of 8 | 237 |
+| Hodges–Lehmann of 6 | 225 |
+| HL of 6, within 0.75 / 1 / 1.5 / 2 robust deviations of the median | 225 / 221 / 218 / 219 |
+| HL of 6, within 2 / 5 / 12 ms of the median | 239 / 234 / 229 |
+| Huber, one step from the median, c = 1.345 / 2 | 239 / 231 |
+
+Hodges–Lehmann alone gives up the median's robustness. Two notes 40 ms late
+among six on time read 20 ms, where the median read 0. A bound in deviations
+of the notes themselves keeps that robustness. Where four of six agree
+exactly the bound is zero and the median stands, and where ordinary jitter
+spreads them the bound is that jitter. Every width from 0.75 to 2 deviations
+gives 218–227. 1 is kept as the plainest, with no floor (a floor of 1–4 ms
+moved it by at most 2 notes).
+
+**Measured end to end:**
+
+- Synthetic (180 takes): **97.31 → 97.61%**. Notes timed within 12 ms
+  95.67 → 96.22% (6,117 → 6,152), bars 95.62 → 96.25% (1,377 → 1,386),
+  everything else unchanged. Timing error against the oracle: p95 10.6 →
+  9.9 ms.
+- Real recordings (72 URMP tracks): heard, placed, paired, bar tempo and
+  verdict true (66 of 72) are identical. Colour agreement with the labels'
+  reading went 11,122 → 11,113 of 14,723 (75.54 → 75.48%), across 43 takes in
+  both directions (−11 to +13 each). Two sentences name a bar more or fewer
+  ("Bars 30–56" → "Bars 31–56 fell behind.", "Bars 3–21" → "Bars 7–20 ran
+  ahead.") and both are still true by the labels.
+- A soft re-anchor was tried alongside and is **not kept**. Its weight grew
+  from 0 at the disturbance threshold to 1 a ramp past it, to take the cliff
+  out of the 118 re-anchor misses. Ramps of 0.01–0.08 beat gave 315–350
+  misses against 255. In expectation a soft threshold moves the same
+  disagreement around rather than removing it: a drag's re-anchor moves the
+  level by over a second, so any difference in weight between the app and the
+  truth costs more than 12 ms. The knife edge itself is plain on
+  `violin/bowed/60/drag/clean/1011`: one interval read 166.9 ms long by the
+  app and 166.6 by the truth, against a 166.7 ms limit, moved 16 notes by
+  156 ms.
+
+**Regression, all six clips, before → after** (`_middle_of` against the median
+on the same build):
+
+| clip | status | verdict | per-note deviation moved | bands changed |
+|---|---|---|---|---|
+| 01_detache_clean | ok → ok | Steady → Steady | +0.20 ms (max 0.21) | 0 |
+| 02_detache_rushing | ok → ok | Bars 2–8 ran ahead. → same | 0 | 0 |
+| 03_detache_dragging | ok → ok | Bars 2–8 fell behind. → same | +0.36 ms (max 0.37); bars +7.5/17.1/23.5% → +7.6/17.2/23.6% | 0 |
+| 04_slurred | ok → ok | Steady → Steady | 0 | 0 |
+| 05_open_e_long | ok → ok | Steady → Steady | 0 | 0 |
+| 06_pizzicato | ok → ok | Steady → Steady | +0.20 ms (max 0.21) | 0 |
+
+New tests in `test_pulse_anchor.py`:
+`test_the_level_follows_all_six_notes_not_the_two_in_the_middle` (2 of 20
+notes within 12 ms of the truth on the median, 17 now) and
+`test_two_late_notes_among_six_do_not_move_the_level`, which plain
+Hodges–Lehmann fails at 20 ms.
+
+## 2026-11-14 (the chain's time cost) — No longer saturated at one played gap: `alignment.CHAIN_TIME_WEIGHT × min(away, 1)` → `CHAIN_TIME_WEIGHT × away`
+
+**Old behaviour:** in the chain's second pass, an attack cost
+`CHAIN_TIME_WEIGHT` (0.3) per played gap it sat from where the chain puts its
+note, on top of its pitch, saturated at one gap. An attack four gaps out
+cost no more than one a gap out, so the right pitch anywhere paired. **New:**
+not saturated. At four gaps an attack costs what leaving it and the note both
+unpaired does (2 × `CHAIN_SKIP` = 1.2), and further away it costs more. Where
+the chain puts a note is read from the take's pace and a running median of
+the paired notes' offsets (`_where_the_chain_puts`), so one far pairing
+cannot move it.
+
+**Swept on the 72 real takes** (scored with the timing-aware label pairing),
+by where the cost stops growing:
+
+| saturated at | heard | placed (50 ms) | paired (100 ms) | band | bar tempo | verdict true |
+|---|---|---|---|---|---|---|
+| 1 gap (before) | 97.84% | 82.83% | 95.27% | 74.89% | 71.39% | 66 |
+| 2 gaps | 97.90% | 82.95% | 95.38% | 75.18% | 71.91% | 66 |
+| 3 gaps | 97.90% | 83.10% | 95.56% | 75.50% | 71.89% | 66 |
+| 5 gaps | 97.92% | 83.11% | 95.57% | 75.54% | 71.94% | 66 |
+| never (kept) | 97.92% | 83.11% | 95.57% | 75.54% | 71.94% | 66 |
+
+The gain is smooth in the cap and stops by five gaps, so it is not one lucky
+value. Most of it is in K515's cello part, 276 → 297 notes paired within
+100 ms of their labels and 6 more heard, and Maria's cello, 325 → 332. A few
+takes give a note back where the right pitch really was played far from its
+place, such as Rejouissance's saxophone, 3 fewer paired. Every verdict is
+the same; three sentences are reworded and still true.
+
+It does not fix Jerusalem's saxophone. The breath paired as its last B4 is
+about three gaps from where that note belongs, under the four at which
+leaving both out becomes cheaper.
+
+The synthetic benchmark (97.31%) and the six fixtures are unchanged at every
+cap. `test_the_right_pitch_far_from_its_place_is_not_its_note`
+(`test_note_chain.py`) fails on the saturated cost.
+
+## 2026-11-14 (the labels' pairing) — The real-take scorer breaks a tie between equal pitches by timing. The app is unchanged.
+
+**What changed is the measuring stick, not the app.** `real_takes.py` pairs
+each hand label with a written note before anything is scored. It did that
+by an edit distance over pitch alone (`pair_by_pitch`), and where the page
+writes the same pitch twice close together, the two pairings cost the same.
+K515's second violin plays D5 on beat 2 of bar 80, exactly a beat after the
+B4 before it, and the page writes D5 again as a sixteenth in bar 81. The tie
+went to the sixteenth, 0.7 s from where the note was played. The labels'
+tempo for bars 77–81 then counted a sentence false that the recording
+supports.
+
+`pair_by_pitch_and_time` keeps the first pass, maps written beats to seconds
+from its pairings, and runs the edit distance again. This time a label's
+distance from where its paired neighbours put the note, never its own
+pairing, adds up to 0.4 at half a beat or more. A note left over costs 1.0,
+so the term settles ties and never outweighs a pitch. It changes 27 of the
+roughly 15,000 written notes' pairings, in 10 takes: 8 in Jesus's violin, 2
+or 3 in each K515 part, and the rest in Spring, the fugue's saxophone,
+Pirates' saxophone and Jerusalem's.
+
+| the same app, 72 real takes | old scorer | new scorer |
+|---|---|---|
+| heard | 97.83% | 97.84% |
+| placed (50 ms) | 82.78% | 82.83% |
+| paired (100 ms) | 95.25% | 95.27% |
+| band | 73.46% | 74.89% |
+| bar tempo | 71.37% | 71.39% |
+| verdict true | 65 | 66 |
+
+The band moves the most. A label given to the wrong note moved the oracle's
+pulse, so the app's colours were marked against a reading the recording did
+not support. That shows in violin, 77.74% → 81.10%. Jesus's violin, "Bars
+30–56 fell behind.", is true by the corrected labels. K515's second violin
+is still 2% off and still false. Figures in entries above this one were
+scored the old way, and comparisons within each entry are like for like.
+
+## 2026-11-14 (moving beat, again) — The moving local beat, measured on the current code: not switched. No thresholds changed.
+
+The moving local beat measures each note against the median of the offsets
+within ±2 beats, in place of the re-anchored pulse, for the app and the
+perfect reading alike (`scratchpad` prototype, as before). It was measured
+once early on 2026-11-14 and left as the owner's question. Since then the
+pairing, the trust rule and the verdict rules have all changed, so it was
+measured again on this branch's head:
+
+| | re-anchored pulse (today) | moving local beat |
+|---|---|---|
+| synthetic, overall | 97.31% | 98.82% |
+| synthetic, notes | 95.67% | 98.70% |
+| synthetic, bars | 95.62% | 97.92% |
+| synthetic, verdict | 178 of 180 | 174 of 180 |
+| real, band | 73.46% | 67.98% |
+| real, verdict true | 65 of 72 | 54 of 72 |
+
+On synthesis it nearly closes the gap to 99%, because most of what is left
+there is the re-anchor flipping on a hesitation at its threshold. On real
+playing it is worse on both of the measures a player reads. Measured against
+a beat that follows them, a rubato player's notes all sit near zero, and so
+near the inner band's edge, where a few milliseconds change a note's colour
+and the note rule's run with it. Eleven true sentences become false. The
+re-anchored pulse stays. What a note's colour should mean for a player who
+shapes every phrase is still the owner's question; these are the numbers
+for it.
+
+## 2026-11-14 (the end of a take) — The room after the last note, paired as it: measured, not kept. No thresholds changed.
+
+**The case.** Jerusalem's saxophone ends on two written B4s, played as one.
+The chain paired the first with the played B4, and the second, the final
+three-beat note, with a breath 3.8 s after it. That breath read B4 and sat
+4.6 dB above the room. The last three bars read at 62 rather than the
+labels' 55. Pirates' second violin had its last note paired 1.9 s late, at
+2.2 dB above the room.
+
+**Two rules tried.**
+- **By the last interval.** Drop a final pairing that comes far later than
+  the take's pace puts it. On the 72 takes the ratio of the final interval
+  to its written length at the local pace did not separate the cases.
+  Jerusalem was 3.5, Pirates 7.1 and Jesus 3.2, all mispaired. The Miserere
+  saxophone's final note, played correctly after a long ritardando, was
+  4.6.
+- **By level.** Drop the pairings at the end whose sound is less than
+  `[onset.recovery] min_level_db` (10 dB) above the room, the floor a
+  recovered attack must clear. This dropped both bad pairings and kept the
+  Miserere's (23 dB). It also dropped real final notes in 14 takes, 1 to 4
+  each: pieces often end softly, near the room. Real heard fell from
+  97.83% to 97.69%. Verdict true was unchanged at 65, and Jerusalem's
+  sentence changed but stayed false.
+
+Neither is in. Telling a soft last note from the room after it needs more
+than its level or its time.
+
+## 2026-11-14 (short runs) — In a long take, a run of one or two bars is named only when severe: new `[tolerance] long_take_bars = 16`, `long_take_min_bars = 3`
+
+**Old behaviour:** the bar rule named the longest run of bars off the target
+the same way: a single bar when clearly out (past the mid band), two or more
+whenever they were off. **New:** in a take with at least `long_take_bars`
+(16) bars with a tempo, a run must cover `long_take_min_bars` (3) bars,
+unless every bar of it is severely out (past the outer band). A shorter run
+falls through to the note rule. A shorter take keeps the old rule. A
+remote-config row without the keys keeps the old rule everywhere.
+
+**Why.** The verdicts said on URMP's 72 real takes, by how many bars they
+named, and whether the labels hold them:
+
+| the sentence names | true |
+|---|---|
+| one bar | 1 of 2 |
+| two bars | 3 of 14 |
+| three or four bars | 19 of 21 |
+| five or more | 25 of 26 |
+| a side, no figure | 7 of 9 |
+
+The run named is a maximum over every bar of the take. A bar's measured
+tempo is good to a percent or two on real playing, and many bars of a long
+take sit near the band's edge. So the more bars there are, the likelier it
+is that one or two land past the edge by their own error, and the longest
+run is then that blip. Most of the false two-bar sentences quote bars the
+labels put 4–5% off. Making the band wider did not separate them, since true
+and false short runs both sit between 5% and 16% (measured: a run of two
+needing every bar past the mid band, as one bar already did, gave 60 true
+rather than 65). In a long take, one bar past the mid band was true once in
+six.
+
+A short take keeps its two-bar runs. There two bars are a large share of
+what was played, and there are few bars for chance to choose among. The
+owner's slowing to 80 over two bars of ten is still named, and so would it
+be in a long take, because it is severe.
+
+| real, 72 tracks | before | after |
+|---|---|---|
+| verdict true | 55 | 65 |
+| strings | 51 of 61 | 57 of 61 |
+| saxophone | 4 of 11 | 8 of 11 |
+
+Twelve sentences became true, mostly as the note rule's side over a long
+stretch ("Bars 5–63 fell behind."), which the labels hold note by note. One
+became false: Hark's viola, from "Bars 2–3 went at 111." to "Bars 13–18 went
+at 123.". The synthetic benchmark (8-bar takes, 97.31%) and the six fixtures
+are unchanged.
+
+## 2026-11-14 (held notes) — The second look does not find a note the player left out inside the note before. No thresholds changed.
+
+**Old behaviour:** where the page writes a note and none was heard, the
+second look's attack search (`analysis._recover_attacks`) took the onset
+envelope's nearest rise. It checked that rise for prominence, level above the
+room, and not being a release. **New:** an attack it finds is dropped when the
+pitch is still the note before's both just after it and halfway to the next
+attack, and the missed note is written at another pitch
+(`analysis._not_the_note_before`). A missed note that sounded is heard at its
+own pitch, and a wrong one at some other. Where the page repeats a pitch,
+nothing is dropped, because the rule cannot tell.
+
+**Why.** On the synthetic set, eight notes the player left out were
+"recovered" inside the note before: a vibrato swell, or a change of bow
+pressure, at the held note's pitch, with no rise in level (−1.0 to +0.3 dB).
+Viola take 1086 left out a G4 under a held B4, and the second look placed the
+G4 51 ms early in the B4. It is also the case `test_legato_notes.py` had held
+as a strict xfail since 2026-11-13, and the test now passes.
+
+**Why this guard holds where 2026-11-13's did not.** That one compared the
+pitch on both sides of the attack. A quiet note under a loud note's tail has
+the tail's pitch on both sides, so it was dropped, and
+`test_degraded_audio`'s room-swallowed take was refused again. This one listens
+only after the attack, and a note under a dying tail takes over within its own
+gap. Every `test_degraded_audio` test passes.
+
+**Heard twice, because once was not enough.** Read once, just after the
+attack, the rule also dropped two played notes of a plucked bass take (1175).
+The note before was still ringing there when the new pluck came. Read again
+halfway to the next attack, the new note has taken over, and only a note held
+on is still the note before at both readings.
+
+| | before | read once | read twice (kept) |
+|---|---|---|---|
+| synthetic, overall | 97.24% | 97.29% | 97.31% |
+| synthetic, missed | 99.33% | 99.44% | 99.44% |
+| synthetic, notes | 95.67% | 95.64% | 95.67% |
+| synthetic, bars | 95.42% | 95.62% | 95.62% |
+| real, heard | 97.85% | 97.81% | 97.83% |
+| real, paired (100 ms) | 95.19% | 95.19% | 95.25% |
+| real, band | 73.23% | 73.53% | 73.46% |
+| real, bar tempo | 71.45% | 71.42% | 71.37% |
+| real, verdict true | 55 | 55 | 55 |
+
+On synthesis, eight takes gain and one loses. The loss, bass take 1149,
+follows from a correct drop: two notes were left out a bar apart, and without
+the false attack, timing pairing slides the second hole onto the note after
+it. That is the timing pairing's weakness with notes left out, not this rule.
+On real playing, both Pavane cello parts gain 16 and 17 notes in their band:
+a recovery 250–500 ms from its labelled note had moved their pulse. K515's
+cello gives back 3 heard notes and Maria's cello 1. The six fixtures are
+unchanged.
+
+## 2026-11-14 (ringing attacks) — A note's first attack heard as the note before: measured, not kept. No thresholds changed.
+
+**The case.** Synthetic `double_bass/bowed/60/rush/noise/1127`. Note 20's own
+attack came while note 19's A1 still rang in the room's 58 Hz mode, so the
+pitch track read A1 for 200 ms after it. The chain paired note 20 with a stray
+attack 0.35 s into the note, where D2 had taken over. `_first_attacks` moves a
+pairing back only over attacks heard at the note's own pitch, so it did not
+move. The false 0.35 s jump re-anchored the pulse, and bars 5–8, played a full
+beat ahead, read as on the beat: 17 notes and 4 bars wrong.
+
+**The rule tried.** Move such a pairing back to the attack just before it
+when that attack reads as the note before, comes after that note's own
+pairing, and is the nearer of the two to where the take's local pace puts the
+note, leaving the note itself out of the pace. Without the pace, the move is
+wrong 22 times in 24 on the synthetic set: the earlier attack is usually a
+stray one inside the note before.
+
+| | before | with the rule |
+|---|---|---|
+| synthetic, overall | 97.24% | 97.53% |
+| synthetic, notes / bars | 95.67% / 95.42% | 96.18% / 96.11% |
+| real, paired (100 ms) | 95.19% | 94.89% |
+| real, placed (50 ms) | 82.74% | 82.37% |
+| real, bar tempo | 71.45% | 70.85% |
+| real, band | 73.23% | 73.75% |
+| real, verdict true | 55 | 55 |
+
+On synthesis exactly the two takes with the pattern improve and none
+worsens. On real playing it moves about 25 takes' pairings, most of them
+wrongly by the labels: Jupiter's cello loses 4 paired notes and 4 bar tempi,
+and K515's first viola loses 4 and 7. Its band gain comes from a few moves
+that happened to stop a re-anchor, such as Rondeau's second violin, while
+placing the moved note worse. Real players' rubato makes the local pace a
+poor guide to which attack begins a note. Not kept, and nothing in the code
+changed. A cue that might hold on real playing is where the note's pitch
+takes over between the two attacks. A slurred note has that shape too,
+though, so it would need its own measurement.
+
+## 2026-11-14 (quoted figures) — A run's tempo is quoted only when it is 2% or more off the target: new `[tolerance] quoted_min_pct = 2.0`
+
+**Old behaviour:** `classification._run_verdict` quoted a run's tempo ("Bars
+1–6 went at 100.") whenever it agreed with the direction and differed from the
+target by a whole BPM after rounding. **New:** it must also differ by at least
+`quoted_min_pct` (2%) of the target. Nearer than that, the run is told by its
+side ("Bars 10–20 ran ahead."), as a run at exactly the tempo always was. A
+remote-config row without the key keeps 0, the old rule.
+
+**Why.** URMP's "Spring" violin ran ahead of the beat through bars 4–25, at
+the tempo, and was told "Bars 10–20 went at 207." against 206. That is a
+difference of 0.5%, which the take's own placement cannot resolve, and the
+sentence quoted it as a tempo. The labels' reading of the same take said "Bars
+4–25 ran ahead.", with no figure, because its difference rounded to nothing.
+Rounding was deciding which of the two forms a take got.
+
+The bar rule is not affected: since `7ca736f` it names only stretches whose
+quoted tempo is past the inner band (5%). The note rule exists for takes a few
+percent off that every bar calls on tempo, and its figures there are worth
+saying: 3.8% under in `test_classification.py` ("Bars 1–6 went at 100."
+against 104), and 3% over in `test_readings.py`. Two real sentences quoted a
+figure inside 5% of the target: Spring at +0.5%, and Rejouissance's second
+saxophone at +2.3%. The labels read the saxophone take the other way, so no
+wording rule fixes it.
+
+| real, 72 tracks | before | after |
+|---|---|---|
+| verdict true | 54 | 55 |
+
+`08_Spring/2_vn` went from "Bars 10–20 went at 207." to "Bars 10–20 ran
+ahead.", which the labels hold. Nothing else moves. The synthetic benchmark
+(97.24%, no take differs) and the six fixtures are unchanged.
+
+## 2026-11-14 (wrong parts) — The long-page share lets the chain pair a take; the usual share reports it. No thresholds changed.
+
+**Old behaviour (the entry below, `28cc9c3`):** as a last resort, a long page
+was trusted on `confirmed_share_long` (0.65) of its chain heard at pitch,
+both to be paired by the chain and to be reported. **New:** 0.65 only lets
+the chain pair the take (`_audited_by_chain`). The take is reported only if,
+after the second look, it is heard at `confirmed_share` (0.7), the September
+rule (`_analyze_take`).
+
+**Why: the wrong part opened.** Every URMP recording was read against the page
+of each other part of the same piece, 168 pairs, because the realistic
+mistake on a long page is opening the wrong part. Under `28cc9c3`, two pairs
+that the old rule refused were given a verdict. Both are "Jerusalem", where
+the double bass doubles the cello an octave down:
+
+| take, on the page of | heard at pitch, chain | after the second look | `28cc9c3` said | now |
+|---|---|---|---|---|
+| double bass, on the cello's | 92 of 139 (0.66) | 93 (0.67) | "Bars 1–4 went at 61." | refused |
+| cello, on the double bass's | 84 of 122 (0.69) | 84 (0.69) | "Bars 34–38 went at 46." | refused |
+| K515's cello, on its own | 242 of 360 (0.67) | 291 (0.81) | "Bars 15–23 went at 200." | the same |
+
+The chain cannot tell a part that doubles the page from a take of the page
+with rubato: both hear about two thirds of it. The second look can. It
+searches where each unheard note belongs. The notes a take of the page
+missed are there to be found, and the notes a different part lacks are not.
+
+Synthesis agrees. A 96-note page played with every fourth note a step away,
+and timing refused, was paired on the lower share at 0.69. The second look
+took it to 0.73, which is the page played with wrong notes, and it is
+reported. With nothing for the second look to find, it is refused.
+`test_a_long_page_paired_on_the_lower_share_is_reported_only_at_the_usual_one`
+holds both halves. With three notes in ten a step away, no seed of eight
+reached the lower share at all (0.55–0.64).
+
+One pair of the 168 is still given a verdict, under either rule: "Hark the
+Herald"'s first violin on the second violin's page, "Bars 12–13 went at
+125.", with 4 of 73 notes at pitch. The two parts move together, so timing
+accepted it at quality 0.47, and the chain played no part. That is older than
+this rule, like the synthetic pages of quarter notes that timing accepts out
+of order (the entry below), and is not changed here.
+
+Everything else is as `28cc9c3` left it, measured again: K515's cello is the
+only real take of 72 that moves from before both changes, with the same
+figures, and the synthetic benchmark (97.24%) and the six fixtures do not
+move.
+
+## 2026-11-14 (long pages) — As a last resort, a long page needs less of its chain heard at pitch: new `[pitch] confirmed_share_long = 0.65`, `confirmed_long_notes = 64`
+
+**Old behaviour:** a pairing was trusted by pitch (`analysis._trusted_by_pitch`)
+when at least `confirmed_share` (0.7) of the notes the page asks for were heard
+at their written pitch, however long the page. **New:** a page asking for at
+least `confirmed_long_notes` (64) needs `confirmed_share_long` (0.65), but only
+as a last resort: timing has refused the take and no other reading of it
+follows. A take refused with the vibrato filter is read once more without it
+(`analyze`), so the first reading is the last only when there is no filter to
+drop. A remote-config row without the new keys keeps 0.7 everywhere.
+
+**Why.** 0.7 was set where chance is highest. On 2026-09-25 a different tune in
+the same key reached 0.62 of a 16-note page, 0.47 of 32 and 0.42 of 64. URMP's
+K515 cello part plays 360 notes over 3.6 minutes with rubato. Timing refused
+both of its readings, and on the unfiltered one the pitch chain heard 242 of
+the 360 at pitch: 0.67. So it was told "Same notes, different times. Check
+you're on the right piece and the tempo.", and every one of its 353 played
+notes counted as unheard: 353 of the 389 unheard cello notes in the set.
+
+**Chance on long pages, measured on the chain itself.** This is the chain's
+best share for something other than the page, which is the measure the trust
+rule reads. The pages were synthesised the way `test_note_chain.py` builds
+them. Each cell gives the median, then the most:
+
+| page | seeds | a different tune, same key | the page reversed | the page's notes shuffled |
+|---|---|---|---|---|
+| 64 notes | 10 | 0.38, 0.50 | 0.37, 0.59 | 0.38, 0.47 |
+| 128 notes | 10 | 0.38, 0.42 | 0.39, 0.56 | 0.37, 0.46 |
+| 256 notes | 8 | 0.36, 0.45 | 0.40, 0.46 | 0.31, 0.36 |
+
+The different tune was played with every gap within ±30% of a beat, and the
+other two within ±50%, as in the 2026-09-25 table. 0.65 clears the different
+tune by 0.15, and the page reversed by 0.06. That second margin is thin, but
+the 0.7 share has run thinner since September: it clears the page's notes
+shuffled on a 32-note page by 0.01. A short page keeps 0.7, which is what the
+16-note case needs.
+
+Three of these pages were given a verdict, two reversed and one shuffled, all
+of 64 notes. All three were read the same way under the old rule: timing
+accepted them (quality 0.41–0.44), and the chain played no part. On a page of
+quarter notes, timing cannot tell which order the notes came in. That is
+older than this change and is not changed by it.
+
+**Narrowed twice before it was kept.** Lowered wherever a long page's chain is
+asked, it rescued K515's cello and cost five takes that were already read.
+Lowered only where timing refused the take, it cost **the same five, to the
+note**, so the cost was not, as first supposed, where timing accepted a take.
+
+Each of the five is refused by timing with the vibrato filter and read without
+it. Rescued on the lower share, the first reading became final, and the second
+reading, which pairs better, was never made. "He's a Pirate"'s viola heard 95
+of its 136 notes at pitch with the filter, just under 0.7. Rescued there, it
+read at quality 0.32; read without the filter, it reads at 0.57 with 121.
+
+| take, before → rescued on its first reading | heard | paired within 100 ms | sentence |
+|---|---|---|---|
+| `24_Pirates/3_va` | 124 → 108 of 131 | 111 → 87 | "Bars 33–34 went at 214." → "Bars 5–6 went at 169." |
+| `25_Pirates/3_va` | 124 → 110 of 131 | 111 → 99 | the same |
+| `24_Pirates/4_vc` | 178 → 166 of 178 | 178 → 166 | unchanged |
+| `44_K515/3_va` | 446 → 428 of 459 | 436 → 375 | "Bars 118–122 went at 197." → "Bars 118–123 went at 198." |
+| `44_K515/4_va` | 500 → 462 of 508 | 484 → 428 | "Bars 68–71 went at 199." → "Bars 119–121 went at 199." |
+
+Lowered only on the last reading, the rule rescues K515's cello on its
+unfiltered reading and **nothing else moves**. Its filtered reading heard 88
+of 360 at pitch and stays refused. Where both readings are refused, the first
+refusal stands, as it always has. The first reading's chain is not asked again
+on the lower share, because the unfiltered reading hears more of a take (338
+attacks to 261 on that cello, 130 to 104 on the Pirates viola). After this
+change, no take of the 252 measured is refused by both readings.
+
+| real, 72 tracks | before | after |
+|---|---|---|
+| status, against the oracle | 71 | 72 |
+| heard | 95.68% | 97.85% |
+| placed (50 ms) | 82.90% | 82.74% |
+| paired (100 ms) | 95.46% | 95.19% |
+| band | 73.58% | 73.23% |
+| bar tempo | 68.51% | 71.45% |
+| verdict true | 53 | 54 |
+| cello: heard | 83.28% | 97.34% |
+| cello: bar tempo | 47.48% | 66.04% |
+
+K515's cello is the whole of the change. It now says "Bars 15–23 went at 200.",
+which the labels hold. 327 of its 353 played notes are heard: 273 paired
+within 100 ms, 248 within 50 ms, and 188 in their band. Placed, paired and band
+are shares of the notes heard, so they fall a little as 327 notes played with
+rubato join them. Unheard notes across the set fall from 650 to 323. The
+synthetic benchmark is unchanged (97.24%, no take differs), and so are the six
+fixtures.
+
+## 2026-11-14 (quoted tempo) — A stretch of bars is named only when the tempo it is quoted at is off. No thresholds changed.
+
+**Old behaviour:** the verdict named the longest run of bars each banded off
+the target the same way (`_longest_bar_run`), and quoted the tempo of the run
+taken together (`BarTempi.across`). **New:** a run is named only if that quoted
+tempo is itself past the inner band, on the same side (`_off_as_quoted`).
+Otherwise the next run is tried, and then the note rule. A run with no tempo of
+its own to quote is judged by its bars, as before.
+
+**Why.** A bar's tempo is read downbeat to downbeat. A player who hurries
+inside each bar and takes the time back at the bar line reads fast in every
+bar, while the stretch as a whole keeps the tempo. The sentence then quoted
+the stretch, for example "Bars 10–20 went at 207." against 206, under a title
+saying the take rushed. Six real sentences quoted a tempo inside the ±5%
+inner band, and the labels held none of them.
+
+| real, 72 tracks | before | after |
+|---|---|---|
+| verdict true | 52 | 53 |
+
+| take | before | after | labels |
+|---|---|---|---|
+| `30_Fugue/4_sax` | "Bars 41–43 went at 116." | "Bar 47 went at 97." | true |
+| `10_March/2_sax` | "Bars 22–23 went at 164." | "Bars 4–5 went at 140." | the labels' run is bars 4–6; still false |
+| `24`/`25_Pirates/3_va` | "Bars 16–17 went at 208." | "Bars 33–34 went at 214." | still false |
+
+No true sentence became false. The other measures do not move, because the
+rule changes only the sentence. The synthetic benchmark is unchanged
+(97.24%, no take differs), and so are the six fixtures.
+
+## 2026-11-14 (octaves) — A pitch read an octave off is put back by its partials: new `[onset.instrument.*] octave_below_ratio` and `octave_above_ratio`
+
+**Old behaviour:** each attack's pitch was the YIN track's median over the
+listening window (`pitch_evidence.heights_at`). **New:** that pitch is moved
+an octave where the window's spectrum says so (`pitch_evidence.octave_checked`):
+- **down an octave** where the odd partials of half the pitch reach
+  `octave_below_ratio` of the pitch's own first three. A note at f/2 has
+  partials there; a note at f has none.
+- **up an octave** where the pitch's odd partials fall under
+  `octave_above_ratio` of its even ones. A note at 2f has nothing at f's odd
+  multiples.
+
+Neither moves a pitch out of the instrument's range. Unlisted instruments, and
+the tenor saxophone, which no recording has measured, keep 0: off. The note
+chain reads the checked pitch (`analysis._Pitch.heights`), once per attack per
+take. Wrong-note naming compares pitch classes with the octave folded, so it
+is unaffected.
+
+**Why.** In the viola part of "He's a Pirate", four F♯3s were read as F♯4. The
+run of twenty F♯4s after them was short of attacks, so the chain gave the
+F♯3s' attacks to the first F♯4s and left the F♯3s out. The chain charges an
+octave half a wrong note's price. Across URMP, YIN at the labelled notes
+(read at the label, offline):
+
+| | notes | read right | octave high | octave low |
+|---|---|---|---|---|
+| violin | 7,606 | 7,397 | 61 | 52 |
+| viola | 2,948 | 2,628 | 206 | 41 |
+| cello | 2,341 | 2,047 | 16 | 102 |
+| double bass | 406 | 381 | 2 | 14 |
+| alto sax | 1,911 | 1,891 | 14 | 1 |
+
+### The sweep, at the labelled notes
+
+| | below / above | read right after | put right | put wrong |
+|---|---|---|---|---|
+| violin | **0.2 / 0.15** | 7,436 | 50 | 11 |
+| viola | **0.2 / 0.15** | 2,750 | 133 | 11 |
+| cello | 0.2 / 0.15 | 1,968 | 19 | 98 |
+| cello | **0.5 / 0.25** | 2,065 | 29 | 11 |
+| double bass | **0.5 / 0.25** | 385 | 6 | 2 |
+| alto sax | **0.2 / 0.15** | 1,894 | 3 | 0 |
+
+Ratios of 0.3–0.5 for `below` put right only 20–40 of the viola's octaves; at
+0.2 it is 133. Many of the cello's correctly read notes show partials at
+the odd multiples of half their pitch, which nothing here explains, so at 0.2
+the check moved 98 of them down; it takes 0.5.
+These were found on the same recordings they are measured on below: what
+generalises is the direction and the cello's difference, not the second
+decimal.
+
+### Real takes, 72 tracks, against the labels
+
+| | before | after |
+|---|---|---|
+| paired ≤ 100 ms | 13,699 (95.30%) | 13,732 (95.46%) |
+| placed ≤ 50 ms | 11,896 (82.76%) | 11,925 (82.90%) |
+| colour as the oracle's | 10,506 (73.09%) | 10,585 (73.58%) |
+| bar tempo | 2,739 (68.19%) | 2,752 (68.51%) |
+| verdict true | 51 | 52 |
+| heard | 14,374 | 14,385 |
+
+- The Pirates viola part gains 15 paired notes, in each of its two takes.
+- The fugue's viola part had read "Bars 30–50 fell behind." against the labels'
+  "Bars 45–76 ran ahead.", which looked like the re-anchor question. It had 30
+  octave errors; it now says "Bars 46–73 ran ahead.", which the labels hold.
+- 28 takes change. The largest losses are three paired notes
+  (`11_Maria/2_vc`, `26_King/3_va`, `44_K515/3_va`), and 40 colours on one
+  take whose pairing changed by one note (`12_Spring/2_vn`).
+
+### Synthetic benchmark (180 takes)
+
+97.21% → 97.24%: two more left-out notes reported, two more bars.
+
+### Regression across the six fixtures
+
+All six are identical to the committed code, every note's deviation included.
+
+
+## 2026-11-14 (flat pitch classes) — A sound with no pitch class standing out matches no note: new `pitch_evidence._FLAT_CLASSES = 0.5`
+
+**Old behaviour:** where no pitch held after an attack, `pitch_evidence.mismatch`
+falls back on its twelve pitch classes. The mismatch is `1 − relative[c]`,
+how far the written class is below the strongest. **New:** if the median of
+the twelve relative strengths is at least `_FLAT_CLASSES`, the profile is
+flat, and the attack gets 0.5 for every note, "nothing to compare", as an
+attack with no window already did.
+
+**Why.** The cello part of URMP's fugue rests for eight bars. Its first six
+notes were paired with sounds from 2 to 19 s before the cello came in, and
+the verdict read bars 9–11 at 73 against 115. Those sounds had no pitch, and
+their profile was flat: every class near the strongest. So their mismatch
+was 0.01 to 0.37 against *every* written note, D3, A3, F3, C♯3 and E3 alike.
+Each was cheaper to pair than to leave out (`CHAIN_SKIP`, 0.6). Pairing five
+of them won by 7.28 to 7.8 over the right pairing, which had to leave them
+out. At 0.5 each, the right pairing wins.
+
+**Where the line is.** On six URMP parts (fugue cello, Jerusalem saxophone,
+Spring cello, Rondeau bass, Jupiter violin, Entertainer saxophone), the
+median class relative to the strongest:
+
+| attacks | count | p10 | p50 | p90 | ≥ 0.6 |
+|---|---|---|---|---|---|
+| at a labelled note, no class held | 40 | 0.06 | 0.11 | 0.31 | 0% |
+| at a labelled note, a class held | 982 | 0.00 | 0.05 | 0.14 | 0% |
+| at no note, no class held | 31 | 0.15 | 0.57 | 0.87 | 48% |
+| at no note, a class held | 213 | 0.01 | 0.07 | 0.25 | 3% |
+
+No attack at a note comes near 0.5. Only the fallback is gated: an attack
+with a held class and a pitch from the track is matched by its pitch, as
+before.
+
+**Tried first, and withdrawn: leaving out the attacks before the first note
+for nothing.** Lead-in noise had cost `CHAIN_SKIP` each to leave out, so
+making it free looked like the fix. It broke six tests on passages played
+twice and going back mid-take. The first playing of a passage is attacks
+before the page resumes, and made free it was dropped. Freeing the attacks
+after the last note as well broke the same tests. The chain was right to
+charge for them; it was being told a breath matched every note.
+
+### Real takes, 72 tracks, against the labels
+
+| | before | after |
+|---|---|---|
+| paired ≤ 100 ms | 13,670 (95.10%) | 13,699 (95.30%) |
+| placed ≤ 50 ms | 11,867 (82.55%) | 11,896 (82.76%) |
+| colour as the oracle's | 10,492 (72.99%) | 10,506 (73.09%) |
+| bar tempo | 2,712 (67.51%) | 2,739 (68.19%) |
+| verdict true | 50 | 51 |
+| heard | 14,375 | 14,374 |
+
+23 takes change, almost all by a note or two for the better. The fugue's
+cello now says "Bars 72–74 fell behind.", which the labels hold. The largest
+losses are two paired notes (`36_Rondeau/4_vc`) and 15 colours on one take
+whose pairing changed by one note (`20_Pavane/3_vc`).
+
+### Synthetic benchmark (180 takes)
+
+97.20% → 97.21%: one more note timed, one more left-out note reported.
+
+### Regression across the six fixtures
+
+All six are identical to the committed code, every note's deviation included.
+
+## 2026-11-14 (repeated notes) — A run of one pitch paired by its spacing: new `alignment.SPACED_RUN_NOTES = 3`, `SPACED_RUN_STEP = 3`, `SPACED_RUN_GAIN = 0.15`, `SPACED_RUN_PACE_NOTES = 3`, `SPACED_RUN_BOUND_CAP = 0.5`
+
+**Old behaviour:** inside a run of one repeated written pitch, pitch cannot
+say which attack is which. The chain kept whatever its walk back from the end
+chose. Its second pass placed each note from the pairings around it, and
+inside a long run those are the run's own. **New:** after each of the chain's
+passes, `_runs_by_spacing` pairs each run of three or more notes again, using
+the attacks between the two pairings that bound it. Each step costs:
+- how far the played interval is from the written one at the local pace
+  (`_local_pace`: the median of the chain's own intervals within three notes);
+- `CHAIN_SKIP` for each note or attack left out;
+- each attack's pitch cost, as in the chain, so an out-of-tune note inside a
+  run is still its note.
+
+An interval to either bound costs at most `SPACED_RUN_BOUND_CAP`. The chain's
+pairing is replaced only where the new one is cheaper by `SPACED_RUN_GAIN`. A
+run the take begins or ends inside is left alone.
+
+**Why.** Of the 893 notes paired more than 100 ms from their label, ten takes
+held 45%. The largest single pattern was a run of one pitch slid by one note:
+- "In the Hall of the Mountain King", second violin: 64 repeated E4s with one
+  attack missed and one extra. The 31 E4s between them were each paired with
+  the next note's attack, 329 ms late. A missed attack leaves a gap twice the
+  written one, and an extra attack leaves one half as long.
+- Vivaldi's "Spring", cello: runs of 8 to 15 repeated E3s slid by ±620 ms.
+- "He's a Pirate", viola: runs of 20.
+
+**Measured first, and not kept:**
+1. *Placing the second pass from pinned notes only* (notes whose pitch
+   differs from both neighbours). The cello gained, but where a whole passage
+   is runs (King's viola: E4×8, G3×8, E4×8 …) there is no pinned note, and the
+   second pass slid the passage. Overall: −93 notes paired.
+2. *One pace per run, bound to bound, with no cap and no margin.* A passage
+   speeding up (King, bars 33–36) read as a run of errors. The A3 after nine
+   C5s was paired 645 ms early, and its short interval outweighed the run's
+   own spacing: 9 right became 2. In "Hark! The Herald Angels Sing", a half
+   note paired 774 ms late let a slid pairing of three C4s win by 0.02.
+
+The cap was swept on the three parts above (correct pairings within 100 ms):
+
+| cap | King violin (169 without) | Spring cello (225) | Hark viola (60) |
+|---|---|---|---|
+| 0.35 | 178 | 233 | 60 |
+| **0.5** | **208** | **233** | **60** |
+| 0.7 | 192 | 233 | 60 |
+
+At 0.35 the 64-E4 run is not repaired; at 0.7 the C5s slide. That window was
+found on three parts, so what decides it is the 72 below. The margin made no
+difference to these three at 0 or 0.15. At 0.3 the King run stays slid: its
+repair is cheaper by under 0.2.
+
+### Real takes, 72 tracks, against the labels
+
+| | before | after |
+|---|---|---|
+| paired ≤ 100 ms | 13,500 (93.80%) | 13,670 (95.10%) |
+| placed ≤ 50 ms | 11,730 (81.50%) | 11,867 (82.55%) |
+| colour as the oracle's | 10,285 (71.46%) | 10,492 (72.99%) |
+| bar tempo | 2,683 (66.79%) | 2,712 (67.51%) |
+| verdict true | 48 | 50 |
+| heard | 14,393 | 14,375 |
+
+| | paired | placed | colour | bar tempo | verdict true |
+|---|---|---|---|---|---|
+| violin | 95.80 → 97.11% | 90.09 → 91.32% | 77.86 → 78.23% | 73.95 → 74.39% | 26 → 26 |
+| viola | 95.31 → 96.39% | 84.61 → 85.50% | 69.08 → 71.61% | 67.13 → 67.87% | 10 → 10 |
+| cello | 86.77 → 88.61% | 75.28 → 77.13% | 59.94 → 65.38% | 46.23 → 46.54% | 7 → 8 |
+| double bass | unchanged | | | | |
+| alto sax | 90.26 → 91.58% | 48.43 → 48.45% | 56.84 → 57.68% | 58.70 → 61.30% | 2 → 3 |
+
+- King's second violin gains 39 notes paired, in each of its two takes.
+- Pirates gains 27 (cello), 21 (saxophone) and 11 (viola, in each of its two
+  takes).
+- No take loses more than two paired notes.
+- **18 fewer notes are heard.** Where an attack was really missed, the note
+  is now reported missing rather than paired with its neighbour's attack.
+  That is the honest reading, and the labels count it as a miss.
+
+### Synthetic benchmark (180 takes)
+
+97.18% → 97.20%: one more note and one more bar.
+`double_bass/bowed/60/steady/phone/1125`. The first version, which paired a
+run only with attacks heard at its pitch, lost note 19 of
+`double_bass/bowed/60/steady/noise/1122`. Pricing pitch as the chain does
+restored it, and that is now a test.
+
+### Regression across the six fixtures
+
+All six are identical to the committed code, every note's deviation included.
+
+### Measured after, and not kept: the release guard on the first pass
+
+In "Jerusalem" the end of the saxophone's last note was taken as an attack.
+The second look already refuses a sound that falls by more than
+`recovery_max_fall_db` (12 dB) across it. The same guard was tried on the
+first pass:
+
+| real, 72 tracks | without | with |
+|---|---|---|
+| first-pass attacks at a labelled note | 12,954 | 12,728 |
+| first-pass attacks at no note | 2,670 | 2,572 |
+| paired ≤ 100 ms | 95.10% | 94.67% |
+| verdict true | 50 | 49 |
+
+It drops 226 real attacks to remove 98 false ones. A note starting just as
+a louder one ends also reads as a fall. The synthetic benchmark was
+unchanged.
+
+## 2026-11-14 (verdicts) — The verdict scored by its bars, and by whether it is true. No thresholds changed.
+
+**Every verdict figure since the benchmark was built scored the direction
+alone.** `accuracy_bench.bars_named` looked for "bars 4–5" in lower case, and
+the run sentence opens "Bars 4–5 went at 73." It matched none of them, so the
+bars a verdict named were compared as `None == None`. The pattern is now
+case-blind.
+
+| | as reported | bars scored |
+|---|---|---|
+| synthetic, 180 takes: verdict | 180 (100%) | 178 (98.89%) |
+| synthetic: overall | 97.20% | 97.18% |
+| real, 72 tracks: verdict | 55 (76.39%) | 12 (16.67%) |
+
+The two synthetic misses differ by one bar at a run's edge: "Bars 3–5 went at
+66." for "Bars 4–5 went at 63.", and "Bars 5–6" for "Bars 5–7".
+
+**On real playing, "the same bars" is the wrong question.** A verdict names
+one run, the longest. On a real take, two runs are often close to a tie, and
+one bar's tempo can sit at a band's edge. The labels' reading then names a
+different run: a different sentence, not a false one. "Bars 27–34 went at
+144." is true of the viola in "In the Hall of the Mountain King", which speeds
+from 106 to 178. The labels' reading names "Bars 1–12 went at 99." instead,
+because the app reads bars 4 and 9 a few BPM on the other side of the band's
+edge and so breaks that run.
+
+So `real_takes.py` now also asks whether the sentence is **true by the labels**
+(`verdict_holds`):
+- "Bars a–b went at N.": by the labels those bars went the same way, past the
+  inner band, at N within 2% (or 1.5 BPM).
+- "ran ahead" or "fell behind": most of the labels' timed notes in those bars
+  sit that way.
+- A sentence naming no run: the labels' reading names none either.
+
+**Verdict true: 46 of 72 (63.89%).**
+
+| | violin | viola | cello | bass | alto sax |
+|---|---|---|---|---|---|
+| true | 24 / 34 | 11 / 13 | 6 / 11 | 3 / 3 | 2 / 11 |
+
+### A fix this found: two tempo marks heading a page
+
+URMP's scores were converted from MIDI. Some state two tempos at the downbeat
+of bar 1:
+- "He's a Pirate": ♩=100, then ♩=200;
+- Vivaldi's "Spring": 100, then 120;
+- "Rejouissance": 100, then 96.
+
+The importer took the first as the piece's tempo and the second as a change at
+bar 1. The page therefore asked for twice the tempo the player set, from the
+first note to the last. In the eight Pirates takes, no bar tempo agreed with
+the labels. `ocr/musicxml.py` now reads every mark in the first bar as the
+piece's tempo, with the last one in force. A mark in a later bar is still a
+change.
+
+| real, 72 tracks | before | after |
+|---|---|---|
+| bar tempo | 2,432 / 3,694 (65.84%) | 2,683 / 4,017 (66.79%) |
+| verdict true | 46 (63.89%) | 48 (66.67%) |
+| heard | 14,378 | 14,393 |
+| placed ≤ 50 ms / paired ≤ 100 ms | 11,727 / 13,495 | 11,730 / 13,500 |
+| colour as the oracle's | 10,305 | 10,285 |
+
+The Pirates bar tempi went from 0 to between 23 and 40 bars each. Verdict
+true went from false to true for three Pirates takes, and from true to false
+for one (`24_Pirates/3_va`). The synthetic benchmark builds its pages without
+MusicXML and is unchanged. The six fixtures are unchanged.
+
+### What the false verdicts are, after the fix (24 of 72)
+
+By instrument: violin 8, viola 3, cello 4, alto saxophone 9. Examined so far:
+
+- **Placement noise on a short bar.** "Bar 26 went at 135." where the labels
+  put that bar of "The Entertainer" (saxophone) at 143. The notes of a 0.8 s
+  bar were placed +29, −54, +37, −13 and +39 ms from their labels.
+- **A sound read as a note where none began.** In the saxophone part of
+  "Jerusalem", a click or breath in the silence after a note was taken as an
+  attack, and the next note's soft entry was not heard. The end of the last
+  note was taken as an attack too, and that note was paired with it 3.8 s
+  late.
+- **A pairing that slides by one note.** In the cello part of "Spring", six
+  notes were each paired with the attack before them, about 620 ms early.
+- **The note rule after a different re-anchor.** "Bars 30–50 fell behind."
+  where the labels' reading has "Bars 45–76 ran ahead." (`32_Fugue/3_va`), and
+  the same flip in `22_Rejouissance/1_sax`. This is the open re-anchor
+  question.
+- **K515's cello part is refused.**
+
+None of these is fixed here.
+
+## 2026-11-14 (saxophone) — The alto saxophone, measured on real recordings. No thresholds changed.
+
+`tools/eval/real_takes.py` now reads URMP's eleven saxophone tracks as well
+(1,911 notes). URMP does not name the saxophone, but the tracks sound between
+MIDI 50 and 81, an alto's range. `urmp_scores.py` writes them a major sixth
+up, where an alto player reads them.
+
+| alto saxophone, 11 tracks | |
+|---|---|
+| heard | 98.79% |
+| placed ≤ 50 ms | 48.43% |
+| paired ≤ 100 ms | 90.26% |
+| colour as the oracle's | 56.41% |
+| bar tempo | 60.39% |
+| verdicts right | 5 of 11 |
+
+**Placed ≤ 50 ms reads low for a reason that is mostly not the app.** Several
+takes sit at a steady offset from their labels. `22_Rejouissance` has a median
+of +59.6 ms with a MAD of 5.5 ms, so its attacks and its labels mark
+consistently different moments of the same note. That offset reaches none of
+the feedback, which is relative. Within takes, 39–94% of notes lie within
+50 ms of their take's own median.
+
+**What is the app's:** `16_Surprise/3_sax` pairs notes with attacks 100–200 ms
+before the note sounds. In the near-silence before a soft entry, a key click
+or a breath rose 7 dB from the room, and the onset envelope scored it at 46%
+of the take's peak. The note itself swelled 30 dB over 100 ms and scored 0.17
+at most. Log-spectral flux reads a small rise from silence as a large one.
+
+**A gate was tried and not kept.** It dropped first-pass attacks whose sound
+over the next 100 ms sits less than N dB above the take's floor.
+
+| gate | heard | placed | paired | colour | verdicts | attacks at no note |
+|---|---|---|---|---|---|---|
+| none | 95.63% | 81.56% | 93.86% | 71.67% | 55 of 72 | 2,662 |
+| 3 dB | 95.14% | 81.82% | 94.09% | 72.35% | 56 of 72 | 2,326 |
+| 6 dB | 91.33% | 81.21% | 93.15% | 69.84% | 55 of 72 | 2,331 |
+
+At 3 dB it removes 336 false attacks but loses about 70 real notes. The floor
+is the take's quietest 5%, which in a piece without rests lies inside the
+music: 1,525 attacks at labelled notes sound only 3–10 dB above it. A gate
+needs a floor that is the room's, not the music's quietest moment, and that is
+not this one.
+
+## 2026-11-14 (last) — The re-anchor floor, measured for the owner. No thresholds changed.
+
+The pulse re-anchors after a run of intervals that departs from the take's
+habit by more than `[tolerance.pulse] disturbance_floor_beats` (or six robust
+deviations, whichever is larger). On real playing with rubato that threshold
+is where the app and the oracle most often part company. Measured with
+`--set tolerance.disturbance_floor_beats=…`, nothing else changed:
+
+| floor | real: colour as the oracle's | real: verdicts | synthetic overall | synthetic verdicts |
+|---|---|---|---|---|
+| **0.1667 (now)** | **73.97%** | **50 of 61** | **97.20%** | **180 of 180** |
+| 0.25 | 74.97% | 50 of 61 | 97.27% | 176 of 180 |
+| 0.5 | 80.87% | 50 of 61 | 97.51% | 175 of 180 |
+
+At half a beat, the colours on real takes agree with a perfect reading's
+seven points more often, and per-note timing on synthesis improves. But a
+hesitation under half a beat no longer resets the beat, so the notes after it
+read as late, and five synthetic verdicts go wrong.
+
+That is the trade the 2026-09 rule was written to settle ("hesitating is a
+*step*… reporting it as 'every bar after this one dragged' is false"), and
+real phrasing sits close to its line. Which way to move it is the owner's
+call. The numbers above are for that decision; nothing is changed here.
+
+## 2026-11-14 (later) — The legato look's own level floor: new `[onset.recovery] pitch_min_level_db = 3.0`
+
+**Old value:** a note found by its pitch had to sound `min_level_db` (10 dB)
+above the take's floor, the attack look's guard. **New value:** 3 dB. The
+attack look keeps 10.
+
+**Why.** On `12_Spring/1_vn` the legato look found 35 notes where their pitch
+took over, and 14 of them were dropped as too quiet. The floor is the take's
+quietest 5% of frames, and in a piece played without rests that lies inside
+the music. Across all 61 takes, the 565 candidates by level above the floor
+(duplicates of an attack already there left out):
+
+| above the floor | candidates | at a labelled onset (60 ms) |
+|---|---|---|
+| 0–3 dB | 10 | 20.0% |
+| 3–6 dB | 22 | 95.5% |
+| 6–10 dB | 50 | 86.0% |
+| 10–20 dB | 288 | 87.2% |
+| 20 dB and more | 155 | 89.0% |
+
+Between 3 and 10 dB they are as often real as the louder ones, and below 3 dB
+mostly not. The 10 dB guard was set for the attack look, where it keeps out a
+flux wiggle in room tone. A pitch held at the written note for 45 ms is
+already evidence that the note was played, so the floor only has to keep out
+the room.
+
+### Real takes (all 61 tracks, against the labels)
+
+| | before | after |
+|---|---|---|
+| heard | 12,450 (94.80%) | 12,499 (95.17%) |
+| placed ≤ 50 ms | 10,770 | 10,817 |
+| paired ≤ 100 ms | 11,747 | 11,799 |
+| bar tempo | 2,181 (66.39%) | 2,185 (66.51%) |
+| colour as the oracle's | 9,244 | 9,245 |
+| oracle: notes, 12 ms / bars / verdict | 2,033 / 462 / 51 | 2,069 / 476 / 50 |
+
+- No take hears, places or pairs fewer notes.
+- One verdict went from right to wrong, `32_Fugue/3_va`: "Bars 30–50 fell
+  behind" against the oracle's "Bars 45–76 ran ahead". The pulse re-anchored
+  elsewhere; see the re-anchor entry below.
+
+### Synthetic benchmark (180 takes)
+
+97.20% → 97.20%, and no take changed.
+
+### Regression across the six fixtures
+
+All six are identical to the committed code.
+
+## 2026-11-14 — The note chain pairs a held note at its first attack: new `alignment.HELD_NOTE_SPAN = 1.25`
+
+**Old behaviour:** `alignment.align_chain` kept the pairing `_chain_path` chose.
+Where several attacks matched a note's pitch, each choice cost the same, and
+the walk back from the end paired the *last* of them. **New:**
+`_first_attacks` moves each pairing back along the unbroken run of attacks
+before it that are heard at the note's pitch, and stops at the first of them.
+It goes no further than the previous pairing and no further than
+`HELD_NOTE_SPAN` of the note's written length at the take's pace. It does not
+move where the note before has the same pitch. It runs after both of the
+chain's passes, so the second pass reads the take's pace from where the notes
+began.
+
+**Why.** On the real URMP takes the cello was the weakest instrument by far,
+and four cello parts held most of the gross errors. Jupiter's cello had 49 of
+54 notes paired more than 100 ms from their label, and the app reported the
+take as read. The player holds each note and swells it or changes bow inside
+it, so each note carries two to four attacks at its own pitch: 126 attacks
+for 54 notes. A note begins at its first attack at its pitch.
+
+**Two narrower versions were measured first.**
+- *Breaking `_chain_path`'s tie toward the earlier attack.* It gained nearly
+  as much, but it also took a passage played again at its first playing,
+  which hides the replay that `analysis._replay_break` looks for.
+  `test_the_last_bars_played_again_are_read_as_played_again` failed.
+- *Moving back without the repeated-pitch condition.* That cost the violin
+  parts more than it gained: 89.68 → 89.45% placed. On a repeated pitch, the
+  earlier attack is often the note before, bowed again.
+
+### Real takes (all 61 tracks, against the labels)
+
+| | before | after |
+|---|---|---|
+| placed ≤ 50 ms | 10,647 (85.51%) | 10,770 (86.51%) |
+| paired ≤ 100 ms | 11,598 (93.15%) | 11,747 (94.35%) |
+| bar tempo | 2,116 (64.41%) | 2,181 (66.39%) |
+| colour as the oracle's | 9,317 (74.83%) | 9,244 (74.25%) |
+| oracle: notes, 12 ms / bars / verdict | 1,998 / 452 / 49 | 2,033 / 462 / 51 |
+
+| | placed | paired | bar tempo |
+|---|---|---|---|
+| violin | 89.68 → 90.09% | 95.34 → 95.79% | 70.11 → 71.72% |
+| viola | 84.64 → 84.90% | 95.09 → 95.53% | 67.09 → 67.56% |
+| cello | 70.67 → 75.13% | 81.29 → 86.69% | 38.26 → 43.96% |
+| double bass | unchanged | unchanged | unchanged |
+
+- Jupiter's cello part now places 33 of 54 notes within 50 ms (was 4), and
+  colours 52 as the oracle does (was 41).
+- Three takes place fewer notes, by one to three each.
+- Two verdicts went from wrong to right, both K515 parts.
+
+**Colour fell while placement rose.** It fell by 34 on `32_Fugue/4_vc`, whose
+placement went 108 → 125, and by 20 on `36_Rondeau/4_vc`, whose placement
+went 79 → 95. A take paired differently re-anchors its pulse at different
+notes, and every later note's colour moves with each re-anchor. That is the
+open re-anchor question below, not this change.
+
+### Synthetic benchmark (180 takes)
+
+97.18% → 97.20%. `double_bass/bowed/84/drag/noise/1132` gained two notes and a
+bar. Two other bass takes changed only in how far off notes that were already
+wrong are.
+
+### Regression across the six fixtures
+
+All six are identical to the committed code.
+
+## 2026-11-13 (real recordings) — Slurred notes found by their pitch: new `[onset.recovery] pitch_hold_ms = 45.0`, `pitch_tolerance_st = 0.6`, `pitch_lag_ms = 16.0`
+
+**The first measurement against real recordings.** Every number above this
+entry, back to July, came from synthesis or click tracks. URMP's 61 string
+tracks — 34 violin, 13 viola, 11 cello, 3 double bass, each part recorded
+alone by a student player, with the score it was played from and a
+hand-checked onset and pitch for every note — are now read by
+`tools/eval/real_takes.py`, which scores each reading against the app's own
+rules applied to the labels (as `accuracy_bench.py` does) and against the
+labels directly.
+
+**Old values:** none; the three keys are new. They belong to a new part of the
+second look, the *legato look* (`onset_recovery.recover_by_pitch`,
+`analysis._recover_legato`). A missed note whose pitch differs from both
+written neighbours is looked for where its pitch takes over: after the note
+before it, and before both the next paired note and the next written note's
+place. It is kept if the pitch holds for `pitch_hold_ms` within
+`pitch_tolerance_st`. It is then moved `pitch_lag_ms` later, onto the
+attack's clock, and must pass the attack look's two level guards. The attack
+look itself is unchanged.
+
+**Why.** Before this, 683 of the 12,780 notes played in the analysed takes
+(5.3%) were reported missing. Three in four had no attack within 110 ms of
+their label, and five in six were a new pitch. These are notes changed under
+one bow, which no envelope threshold finds.
+
+The hold, swept on the labels directly (7,023 notes whose pitch differs from
+both neighbours; "false" is a pitch that was never played, between two that
+were, found anyway):
+
+| hold | found | vs label (median) | within 50 ms | false |
+|---|---|---|---|---|
+| 35 ms | 96.3% | +0.4 ms | 90.6% | 1.8% |
+| **46 ms** | **95.4%** | **+0.4 ms** | **90.8%** | **1.2%** |
+| 70 ms | 93.5% | +0.4 ms | 91.4% | 0.6% |
+
+**The lag.** On 5,748 notes found both ways, attacks land a median 16.5 ms
+after the label (MAD 15.1) and pitch takeovers 0.3 ms after it (MAD 17.1).
+The attack-minus-takeover median varies by instrument: violin 7, cello 16,
+viola 19 and bass 28 ms. One value for all of them is a few milliseconds off
+for each, well inside either method's own scatter.
+
+### Real takes, before → after (all 61 tracks, against the labels)
+
+| | heard | placed ≤ 50 ms | paired ≤ 100 ms | colour as the oracle's | bar tempo |
+|---|---|---|---|---|---|
+| before | 92.11% | 85.29% | 92.88% | 75.01% | 63.50% |
+| **after** | **94.81%** | **85.51%** | **93.15%** | **74.83%** | **64.41%** |
+| violin | 94.71 → 97.72% | 89.27 → 89.68% | 95.04 → 95.34% | 78.58 → 78.13% | 68.75 → 70.11% |
+| viola | 93.86 → 95.75% | 84.66 → 84.64% | 94.89 → 95.09% | 71.59 → 72.18% | 66.86 → 67.09% |
+| cello | 80.28 → 83.37% | 70.66 → 70.67% | 80.89 → 81.29% | 62.15 → 61.96% | 37.42 → 38.26% |
+| double bass | 99.50 → 100.00% | 87.28 → 87.34% | 97.01 → 97.02% | 95.26 → 95.29% | 89.73% |
+
+- Notes reported missing in the analysed takes fell from 683 to 329 (5.3% →
+  2.6%).
+- The other columns are shares of a larger base after. 330 more notes are
+  placed within 50 ms, and 243 more are coloured as the oracle colours them.
+- No take hears, pairs or places fewer notes than it did.
+- Five give fewer notes the oracle's colour. Two lose one note each. The
+  Rondeau's second violin part, which appears in three of URMP's pieces,
+  loses 22 in each (201 → 179). That loss is the re-anchor below.
+
+Against the oracle, as the synthetic benchmark scores, from status 60 of 61:
+
+| metric | before | after |
+|---|---|---|
+| missed | 92.11% | 94.81% |
+| verdict | 81.97% | 80.33% |
+| notes, 12 ms | 14.54% | 15.21% |
+| bars | 12.23% | 12.71% |
+| wrong notes | 19.35% | 19.35% |
+
+- One verdict went from right to wrong: `44_K515/1_vn`, a four-minute part.
+  With 94 more of its notes heard, the run of drift it names moved to other
+  bars.
+- At 12 ms the notes and bars rows measure the labels' own scatter more than
+  the reading.
+
+### Synthetic benchmark (180 takes)
+
+97.18% → 97.18%. Two takes changed, both with notes left out:
+- `cello/bowed/132/missed/reverb/1118` is right now: note 9 is found by its
+  pitch.
+- `double_bass/pizz/60/missed/dynamics/1179` has one more mistake. Its pairing
+  was already a note out. The legato look found note 18 late, because the
+  pitch track read the pluck's first frames an octave low, and the late note
+  went to the next one.
+
+### Regression across the six fixtures
+
+All six are identical to the committed code: status, quality, missed, extra,
+verdict and every per-note deviation.
+
+### Tried, measured and withdrawn the same day
+
+- **A guard against vibrato peaks in held notes.** When a note is left out,
+  the attack look takes a vibrato peak in the note before it. The guard
+  dropped an attack whose pitch was the same either side of it and was not
+  the missed note's. That cured it on the slurred line in
+  `test_legato_notes.py`. On `test_degraded_audio`'s room-swallowed take it
+  threw away genuine quiet notes: one more was missed with the single-line
+  prediction, and with the local one below the take was refused outright. In
+  a live room a quiet note under a loud note's tail has the tail's pitch on
+  both sides, as the pitch track hears it, so the guard dropped exactly the
+  notes the attack look exists to find. Telling the two apart
+  needs more than the loudest pitch. The case is held as a strict xfail.
+- **Predicting a missed note from the pace around it.** The attack look
+  fits one line through the whole take, and on a long take with rubato that
+  line is up to two seconds from the player. A line through the four paired
+  notes on either side follows the player instead. It found 13 more notes but
+  placed 53 fewer within 50 ms, cost five benchmark items, and broke
+  `24_Pirates/3_va` in both copies (placed 79 → 38 and 76 → 45). Centred on
+  where a left-out note belongs, the search finds a vibrato peak there. The
+  single line's inaccuracy had been protecting against that by accident.
+
+### What this does not fix
+
+- **The re-anchor rule on a player with rubato.** Per-note colours agree
+  with the oracle's:
+  - 90.6% on the 10 takes where neither the app nor the oracle re-anchors;
+  - 74.2% on the 50 where either does.
+
+  The two re-anchor at different notes, and every note up to the next
+  re-anchor moves with each one: the app 24 times against the oracle's 11 on
+  one viola take, never against twice on a violin take. This is not mainly
+  the detector's scatter, since the oracle's own spread is 15–59 ms, much
+  like the app's. Real players' timing sits that close to the threshold. What
+  a re-anchor should mean for a player who shapes every phrase is the owner's
+  call, not a threshold.
+- **The cello.** It is the weakest instrument on every measure, and one take
+  is refused: `44_K515/5_vc`, 3.6 minutes and 360 notes. Its first pass hears
+  56% of the notes, and it drifts ±1.5 s from any single tempo.
+- **The 329 notes still reported missing.** About a third are the same pitch
+  as the note before, so neither an attack nor a pitch change marks them.
+  About a third have an attack within 50 ms that the pairing gave elsewhere.
+
+## 2026-11-13 (after the pulse) — The double bass's vibrato filter: new `[onset.instrument.double_bass] vibrato_bands = 5`
+
+**Old value:** every instrument compared each band above 600 Hz with the
+loudest of 3 neighbours (`[onset.envelope] vibrato_bands = 3`). **New value:**
+the double bass with 5; every other instrument unchanged. `InstrumentOnset`
+gains `vibrato_bands`, 0 meaning the envelope's own, and
+`audio.envelope_config` resolves it for both the first pass and the second
+look (`Heard` now carries the instrument it was heard as).
+
+**Why.** Bowed bass was the weakest instrument on the accuracy benchmark
+(92.1%) and carried 60 of its 69 attacks at no note, almost all vibrato in
+noise. How many neighbours a vibrato needs depends on how close an
+instrument's partials are: a violin's are hundreds of hertz apart and three
+bands hold each one's swing, a bass's are 41–150 Hz apart and above 600 Hz its
+swing reaches further.
+
+| `vibrato_bands` | bass bowed | bass plucked | overall | attacks at no note |
+|---|---|---|---|---|
+| 3 everywhere (before) | 92.12% | 98.17% | 97.06% | 69 |
+| 5 everywhere | 92.87% | 98.17% | 96.72% | 53 |
+| 7 everywhere | 92.70% | 98.17% | 96.62% | 49 |
+| **5 for the bass only** | **92.87%** | **98.17%** | **97.18%** | **55** |
+
+Plucked bass has no vibrato and reads the same at every width. Given to every
+instrument, 5 bands cost violin bowed 98.43 → 97.51%, cello 95.68 → 94.70%,
+viola 98.65 → 98.31% and violin plucked 99.20 → 98.64%: the wider maximum
+starts to hide their steps to the next note. Verdicts now read 100% (180 of
+180).
+
+### Regression across the six fixtures
+
+All six are bass takes, and all six are identical with and without it —
+status, quality, missed, extra, verdict and every per-note deviation. The
+bass tests that pinned what a wider filter costs (`test_varied_rhythm`'s note
+played over a sounding one, `test_degraded_audio`'s rooms and quiet notes,
+`test_bass_onsets`) pass unchanged.
+
+## 2026-11-13 (last) — The pulse re-anchors only where the player moved. No thresholds changed.
+
+`alignment.pulse_anchors` re-anchors after a run of disturbed intervals so
+that a hesitation is named where it happened and not blamed on every bar
+after it. **A sound paired with the wrong note is a run too** — out and back
+— and re-anchoring after it reset the drift the take was measuring: on the
+accuracy benchmark's worst take, a bowed bass played a steady 10% fast, a
+sixteenth the detector did not hear restarted the ramp twice, and from each
+restart to the end every note read hundreds of milliseconds off what it had
+been played at (44 wrong readings in one take).
+
+**The rule now** (`alignment._level_moved`): the line the stretch was on —
+level and Theil–Sen pace, from up to `PACE_NOTES` usable notes before the run
+— is carried across it, and the first `LEVEL_NOTES` notes after it are
+compared with where that line puts them. Within `limit`, the disturbance's own
+threshold, the reference stays; past it, it re-anchors exactly as before.
+Fewer than `MIN_LEVEL_NOTES` on either side and it re-anchors as before. The
+`limit` is the existing `[tolerance.pulse]` one; nothing new is tuned.
+
+Accuracy benchmark, quick set: 96.80% → 97.06%; notes within 12 ms
+95.01 → 95.50%, bars 94.31 → 94.86%; rushed takes 96.87 → 97.37%, takes with
+notes left out 93.74 → 94.73%, steady 99.37 → 99.50%; nothing worse. On the
+worst take it removes the second reset and not the first: there the pairing
+around the unheard note genuinely shifts the notes after it, which is a
+pairing fault and still open.
+
+### Regression across the six fixtures
+
+Identical — status, quality, missed, extra, verdict and every per-note
+deviation — on all six: none has a run that leaves the line.
+
+## 2026-11-13 (later still) — Pairing: an interval may be read across one note left out, `alignment.DROPPED_NOTE_CAPS = 3.0`
+
+**Old value:** none. `align_dtw`'s cost compared the interval into each
+detection with the written interval into one note, except across optional
+notes (ornaments, unheard slurred notes). **New value:** any interval may also
+be compared with the two written gaps across one note, at 3 position caps more
+— the price of a step off the diagonal (`STEP_PENALTY_CAPS`). A module
+constant beside `POSITION_CAP_GAPS` and `STEP_PENALTY_CAPS`, as they are.
+
+**Why.** With detection hearing 99.8% of played notes, the worst way of
+playing on the accuracy benchmark was leaving notes out (89.9%), and the worst
+single take was a steady plucked bass page with two notes left out a beat
+apart, every note heard, refused at quality 0.000. After a note not played, the
+true interval spans two written gaps; compared with one, the correct pairing
+paid a whole interval at the note after the hole, so sliding every later note
+one place along was cheaper — five notes paired one off, and the take refused.
+
+| `DROPPED_NOTE_CAPS` | overall | notes left out | rushed | analysed |
+|---|---|---|---|---|
+| none (before) | 96.16% | 89.91% | 96.87% | 99.44% |
+| 0.5 | 96.61% | 94.03% | 95.43% | 100% |
+| 1, 2 | 96.57%, 96.56% | 93.78%, 93.74% | 95.43% | 100% |
+| **3** | **96.80%** | **93.74%** | **96.87%** | **100%** |
+| 4 | 96.76% | 93.53% | 96.87% | 100% |
+
+Below 3 a rushed cello take with one false attack mid-note paired four notes
+one place along — the false attack taken for a note and a real one dropped
+later to catch up, because a cheap dropped interval made that slide cheap —
+and 36 of its readings went wrong where one had.
+
+**Timing alone, on one page.** The refused take's page with every pair of its
+inner notes left out in turn, 276 takes, onsets exact but for 3 ms of jitter
+(`test_notes_left_out.py`): the old pairing refused 11 and attributed 467
+sounds to the wrong note; 3 caps refuse none and attribute 313.
+
+**Two neighbours measured and rejected.**
+
+- *An interval read across one detection*, for an attack that was no note, at
+  0.5 caps: no gain on the benchmark beside the dropped interval (96.78%), and
+  on the 276 takes it refused 39 — it lets any short interval explain itself
+  as a long one interrupted.
+- *A skipped note's cell charged nothing* (`weights_mul` 0 on the vertical
+  step). DTW pays for skipping a note the cell it skips with, which is the
+  previous detection's interval against the skipped note's — a number that
+  says nothing — and that cell is why the note after a hole is sometimes given
+  the hole's place. Free, it read every such case right (169 wrong on the 276,
+  96.95% on the benchmark) and broke seven tests, among them the one telling
+  détaché against written slurs from a wrong piece and a hurried bar's
+  attribution. Kept as a strict xfail in `test_notes_left_out.py` instead.
+
+### Regression across the six fixtures
+
+Identical, clip by clip — status, quality, attacks, missed, extra, verdict, and
+the mean and spread of the timed deviations: none of the six has a note left
+out.
+
+## 2026-11-13 (later) — Onset placement: the fine spectrum floored 50 dB down, not 80
+
+**Old value:** `audio._REFINE_TOP_DB` did not exist; `refine_onset_times`
+floored its 1024-point spectrum at `_TOP_DB`, 80 dB under the segment's
+loudest moment. **New value:** 50 dB. A module constant beside the other
+four `_REFINE_*` values rather than a `config.toml` key, as they are:
+`refine_onset_times` takes no config, and splitting one of five placement
+constants into the file would leave the other four looking like the
+untunable ones.
+
+**Why.** With the envelope no longer hearing notes that were not there (the
+entry below), the largest share of what the accuracy benchmark still got
+wrong was notes placed 13–30 ms from where the truth put them: 181 of 670
+wrong items. The detection was right; *where on the attack* it was placed
+depended on what came before the note. Floored 80 dB down, a note rising out
+of silence climbs from the floor and reaches half its flux peak early in the
+attack; a note rising out of the last one's release — a run of sixteenths,
+5–15 ms of bow change between strokes — climbs from a level the 46 ms window
+still holds, and is placed later. Bowed notes after gaps of 5 ms to 300 ms,
+25–50 ms rises, three of each:
+
+| floor | 5 ms | 14 ms | 30 ms | 50 ms | 100 ms | 300 ms | 5 vs 120 ms attack |
+|---|---|---|---|---|---|---|---|
+| 80 dB | 58.5 | 55.5 | 48.4 | 42.2 | 42.3 | 42.2 | 12.6 ms apart |
+| 60 dB | 58.5 | 55.0 | 48.7 | 47.4 | 46.9 | 47.0 | 13.1 |
+| **50 dB** | **58.3** | **55.4** | **52.1** | **51.1** | **51.9** | **52.0** | **16.9** |
+| 45 dB | 59.3 | 56.3 | 53.2 | 53.4 | 53.5 | 53.3 | 20.1 |
+| 40 dB | 59.3 | 56.3 | 55.3 | 55.0 | 54.9 | 55.1 | 24.9 |
+| 30 dB | 60.1 | 59.2 | 59.2 | 59.2 | 58.8 | 59.1 | 33.4 |
+
+Milliseconds late, mean of each column. A 16 ms spread with the gap is a run
+of sixteenths read as dragging against the quarters beside it — on every
+take, from the detector rather than the player. The shallower the floor, the
+less the gap matters and the more the stroke does, because the half-peak was
+what made a 120 ms bow start and a 5 ms one land close together
+(`test_onset_placement.py` holds them under 20 ms). 50 dB is the floor that
+halves the first (16 → 7 ms) and keeps the second inside its limit; 45 dB
+crossed it.
+
+Accuracy benchmark, quick set: 95.44% → 96.16% (notes within 12 ms
+93.12 → 94.43%, bars 92.01 → 93.40%; p95 timing error 13.8 → 11.6 ms).
+30 dB scored 96.68% and is rejected for the stroke.
+
+### Regression across the six fixtures
+
+Readings unchanged — status, quality, attacks, missed, extra and verdict on
+all six — and the mean timed deviation moves by at most 0.6 ms
+(`01_detache_clean` −0.4 → −1.0 ms, `04_slurred` +0.5 → −0.1, `06_pizzicato`
+−0.5 → −1.0; the rushing and dragging clips by 0.1).
+
+### One test re-based
+
+`test_degraded_audio.py`'s lag-and-jitter test asserted the degraded take
+lags the clean one by at least 10 ms. It now lags by 5.1 (55.8 against 50.7;
+was 43.5 clean): the clean take's notes, rising from silence, are no longer
+placed early on their climb. The room still delays the attack, which is
+asserted; the jitter that survives the offset fit is unchanged at 0.97 and
+2.52 ms.
+
+## 2026-11-13 — The onset envelope: new `[onset.envelope]`, and `[onset.recovery] max_fall_db = 12.0`
+
+**Old values:** none. Every frame of the onset envelope was compared band by
+band with the frame before, as `librosa.onset.onset_strength` does, and the
+second look took any interior maximum loud enough above the room.
+**New values**, all new keys, none changed:
+
+- `[onset.envelope] floor_percentile = 10.0`, `floor_margin_db = 6.0` — each
+  mel band is held at its own 10th percentile across the take plus 6 dB
+  (`audio._band_floor`).
+- `[onset.envelope] vibrato_from_hz = 600.0`, `vibrato_bands = 3` — above
+  600 Hz a band is compared with the loudest of three neighbouring bands a
+  frame earlier, SuperFlux's maximum filter (Böck & Widmer, DAFx 2013;
+  `audio._vibrato_bands`).
+- `[onset.recovery] max_fall_db = 12.0` — a recovered note may not sit where
+  the level falls by more than this (`audio.level_change_db`).
+- Not a threshold, but a decision: a take refused with the vibrato filter is
+  read once more without it, and the second reading is kept only if it is not
+  refused too (`analysis.analyze`).
+
+**Measured on the new accuracy benchmark** (`tools/eval/accuracy_bench.py`,
+the quick set of 180 synthesised takes: four instruments, bowed and plucked,
+six ways of playing, five rooms). Synthesis, not recordings — see its
+docstring — so these say the detector now hears these models correctly, not
+that it hears a phone in a practice room correctly.
+
+| | before | after |
+|---|---|---|
+| analysed at all | 97.78% | 99.44% |
+| each note timed within 12 ms of the truth | 81.94% | 93.12% |
+| left-out notes reported, played notes not | 96.84% | 98.56% |
+| each bar's average and tempo | 77.78% | 92.01% |
+| the verdict's direction and bars | 89.44% | 98.33% |
+| wrong notes named, and nothing else | 62.07% | 68.97% |
+| **overall** | **88.28%** | **95.44%** |
+| room: 20 dB of noise | 74.36% | 96.16% |
+| room: a phone (reverb, 25 dB noise, clipping, dynamics) | 82.93% | 94.56% |
+| violin, bowed with 10–24 cents of vibrato | 86.12% | 97.23% |
+| double bass, plucked | 78.67% | 94.98% |
+| double bass, bowed | 82.17% | 89.14% |
+| violin, plucked | 99.24% | 99.00% |
+
+p95 timing error against the truth fell from 456 ms to 14 ms: the long tail
+was notes paired with the wrong attack, because there were attacks that were
+not notes.
+
+### Why each
+
+**The floor.** Log-spectral flux is level-blind by design, and the room's
+noise flickers a few decibels in every band, every frame. A band the
+instrument never reaches contributes that flicker and nothing else: on a
+plucked bass take at 20 dB SNR the bands above 2 kHz flickered as much
+between the notes as at them (mean flux 0.76 at the attacks, 0.75 elsewhere),
+and the take was heard as 101 attacks for 32 notes. Swept: the 5th, 10th and
+20th percentiles land within 0.2 points of each other (95.42, 95.44, 95.56%);
+a 3 dB margin lets the flicker through (94.29%), 6 and 10 dB do not.
+
+**The filter.** Vibrato swings every partial a quarter of a semitone each way
+five or six times a second, and each swing is a rise in the band it swings
+into. With noise on top, a violin take was heard as 62 attacks for 35 notes.
+Below 1 kHz the mel bands are 26 Hz apart, more than a semitone under 450 Hz,
+and three of them hide the step to the next note. Applied to every band, on
+its own, the filter cost three notes in four on a double bass line in a
+2-second room — the floor wins those back — and, floor or not, the note played
+over a sounding one in `test_varied_rhythm`. With the floor, starting at
+400 Hz or below still lost that note, and from 500 Hz it was kept. 600 is
+chosen for the margin: 95.44% against 95.68% from 500, inside what this
+benchmark can tell apart, and 94.87% from 1000.
+
+**The retry, and the cost it pays back.** A quiet bass note under a loud one's
+tail looks to the filter like the loud note's partials moving. On
+`test_degraded_audio`'s page with every other note 20 dB down in a 0.9-second
+room, the first pass now finds 12 of 24 notes where it found 16, and at 45%
+wet the take was refused. A starting frequency for the bass alone could not
+fix it: the bass's vibrato gain is all below 1.5 kHz (89.1% bowed from 600 Hz,
+83.6% from 1500, 82.5% from 3000) and the room take needs 2.5 kHz or more. Up
+to 16 dB of alternating dynamics, with and without the filter read that page
+identically; only at 20 dB does it cost — one note missed at 30% wet, and the
+refusal at 45%, which without the filter reads at quality 0.97 with nothing
+missed. So the refusal is retried. Two other routes were measured and
+rejected: the second look reading the unfiltered envelope (95.51%, and the
+refused take stays refused — its first alignment is too broken to predict
+from), and requiring a rise to last 90 ms instead of filtering (87.09%).
+
+**The fall.** With the bands held at their floors, the envelope between notes
+is flat, and the little spray of a note's release is left standing alone: a
+page with bars 1–4 played twice had a note recovered off the end of its last
+note, 1.6% of the envelope peak and 42 dB above the room, where the level fell
+by 29 dB. Every note the second look recovers on the room takes sits between
+−8.6 and +2.5 dB; the two releases fell 29 and 30 dB.
+
+### Regression across the six fixtures
+
+Unchanged, clip by clip — status, quality, attacks heard, notes missed and
+extra, and the verdict:
+
+| clip | before and after |
+|---|---|
+| `01_detache_clean` | ok, 0.999, 32 heard, 0 missed, 0 extra, "Steady all the way through." |
+| `02_detache_rushing` | ok, 0.999, 32, 0, 0, "Bars 2–8 ran ahead." |
+| `03_detache_dragging` | ok, 0.999, 32, 0, 0, "Bars 2–8 fell behind." |
+| `04_slurred` | ok, 0.998, 8, 0, 0, "Steady all the way through." |
+| `05_open_e_long` | ok, 1.000, 1, 0, 0, "Steady all the way through." |
+| `06_pizzicato` | ok, 0.999, 16, 0, 0, "Steady all the way through." |
+
+All six are still the synthetic stand-ins; none is a recording yet.
+
+### Tests re-based, and why each was right to be
+
+- `test_audio.py`'s envelope-against-librosa check runs with the floor and the
+  filter off. With them on the envelope is not librosa's, by design; that the
+  floors are as global as the peak is `test_onset_envelope.py`'s, with a
+  mutation check that per-block floors fail it.
+- `test_degraded_audio.py`: the room take the second look exists for moved
+  from 45% wet to 50%, because the 45% take now reads without it. The
+  ceilings on quiet notes lost under reverb came *down*, 0.75 → 0.50 and
+  0.60 → 0.50: the first pass got worse there on purpose, and a ceiling left
+  above it could not see that, or see it come back.
+- `test_note_chain.py`'s loose-timing take moved from seed 0 to seed 1: on
+  seed 0 timing alone now pairs 26 attacks as bars 1–3 at 69 BPM at quality
+  0.411, a hair over `broken_quality`. The chain reads it, and timing alone
+  still refuses the other 11 of the 12 seeds surveyed.
+
 ## 2026-10-23 — Intonation: new `[intonation] note_trim_cents = 150.0`
 
 **Old value:** none — `note_cents` read the straight median of every voiced

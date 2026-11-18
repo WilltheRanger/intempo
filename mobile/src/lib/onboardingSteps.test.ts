@@ -11,27 +11,22 @@ import {
   type StepAnswers,
 } from './onboardingSteps';
 
-const EMPTY: StepAnswers = { name: '', instrument: null, role: null, source: null };
+const EMPTY: StepAnswers = { name: '', instrument: null, role: null };
 
 describe('the onboarding steps', () => {
-  it('are the six questions the Welcome promises, in order', () => {
-    expect(ONBOARDING_STEPS).toEqual([
-      'name',
-      'instrument',
-      'role',
-      'microphone',
-      'source',
-      'photo',
-    ]);
+  it('are the three questions the Welcome promises, in order', () => {
+    // Six until 2026-11-12: the microphone moved to the first take, and "how
+    // did you find us" and the photo went (the owner's call).
+    expect(ONBOARDING_STEPS).toEqual(['name', 'instrument', 'role']);
   });
 
   it('fill the progress bar one segment a step', () => {
-    expect(ONBOARDING_STEPS.map(stepNumber)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(ONBOARDING_STEPS.map(stepNumber)).toEqual([1, 2, 3]);
   });
 
   it('walk forward to the end and back to the start', () => {
     expect(nextStep('name')).toBe('instrument');
-    expect(nextStep('photo')).toBeNull();
+    expect(nextStep('role')).toBeNull();
     expect(previousStep('instrument')).toBe('name');
     expect(previousStep('name')).toBeNull();
   });
@@ -51,11 +46,6 @@ describe('when Next is open', () => {
     expect(canContinue('role', { ...EMPTY, role: 'learning' })).toBe(true);
   });
 
-  it('never holds the optional steps shut', () => {
-    for (const step of ['microphone', 'source', 'photo'] as const) {
-      expect(canContinue(step, EMPTY)).toBe(true);
-    }
-  });
 });
 
 describe('the choices', () => {

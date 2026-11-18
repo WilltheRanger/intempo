@@ -183,7 +183,7 @@ export async function uploadPage(
 ): Promise<string> {
   let uri = uriFor(page);
   if (!uri) {
-    throw new ScanUploadError('That page could not be read from the device.');
+    throw new ScanUploadError('Couldn’t read that page from your device.');
   }
 
   // `fetch` on a local URI is how bytes are obtained on both platforms: web
@@ -213,7 +213,7 @@ export async function uploadPage(
     if (options.signal?.aborted) {
       throw new UploadError(CANCELLED);
     }
-    throw new ScanUploadError('That page could not be read from the device.', cause);
+    throw new ScanUploadError('Couldn’t read that page from your device.', cause);
   }
 
   if (bytes.size === 0) {

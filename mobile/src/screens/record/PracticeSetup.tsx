@@ -7,13 +7,23 @@ import {
   Text,
 } from '../../components/primitives';
 import { ROW_PADDING_VERTICAL, rowDivided } from '../../components/rowMetrics';
-import { BORDER_WIDTH, colors, spacing } from '../../design';
+import { Check, CircleAlert } from '../../components/icons';
+import {
+  BORDER_WIDTH,
+  colors,
+  ICON_SIZE,
+  ICON_STROKE_WIDTH,
+  spacing,
+  typography,
+} from '../../design';
 import type { PreflightCheck } from '../../lib/record/preflight';
+import type { BackButton } from '../../navigation/useGoBack';
 
 interface PracticeSetupProps {
   /** What the app can actually tell about this take, warnings first. */
   checks: PreflightCheck[];
-  onBack: () => void;
+  /** The bar's back button: the piece, or Record's own controls once these checks were seen. */
+  back: BackButton;
   onContinue: () => void;
   /** Resolve a check from here — the entry bar, or the metronome mode. */
   onResolve: (to: 'startBar' | 'metronome') => void;
@@ -44,12 +54,13 @@ interface PracticeSetupProps {
  */
 export function PracticeSetup({
   checks,
-  onBack,
+  back,
   onContinue,
   onResolve,
 }: PracticeSetupProps) {
   return (
     <ScreenContainer
+      navigationBar={{ back }}
       footer={
         <View>
           <PrimaryButton label="Set tempo & record" onPress={onContinue} />
@@ -62,11 +73,7 @@ export function PracticeSetup({
         — and then the piece as a grey line over the title, which the owner
         cut with every other one (2026-09-23). The back link names it.
       */}
-      <PageHeader
-        title="Ready when you are"
-        onBack={onBack}
-        backLabel="Back to the piece"
-      />
+      <PageHeader title="Ready when you are" />
 
       <View style={styles.checks}>
         {checks.map((check, index) => (
@@ -109,16 +116,20 @@ function CheckRow({
   onResolve: (to: 'startBar' | 'metronome') => void;
 }) {
   const warn = check.tone === 'warn';
+  // **Drawn from the app's one icon set**, where they were the characters "!"
+  // and "✓" in the label's own type (the ui-forge-kit review, 2026-11-18):
+  // a typed mark takes whatever shape the font gives it, and these two were
+  // the only status marks in the app not drawn like every other one.
+  const Mark = warn ? CircleAlert : Check;
   return (
     <View style={[styles.check, divided && styles.ruled]}>
-      <Text
-        variant="button"
-        color={warn ? 'textPrimary' : 'textTertiary'}
-        style={styles.mark}
-        aria-hidden
-      >
-        {warn ? '!' : '✓'}
-      </Text>
+      <View style={styles.mark} aria-hidden>
+        <Mark
+          size={ICON_SIZE.md}
+          strokeWidth={ICON_STROKE_WIDTH}
+          color={warn ? colors.textPrimary : colors.textTertiary}
+        />
+      </View>
       <View style={styles.checkCopy}>
         <Text variant="button" color={warn ? 'textPrimary' : 'textSecondary'}>
           {check.title}
@@ -159,9 +170,10 @@ const styles = StyleSheet.create({
     borderTopWidth: BORDER_WIDTH,
     borderTopColor: colors.border,
   },
+  // Centred on the title's first line, which `button` sets.
   mark: {
-    width: spacing.lg,
-    textAlign: 'center',
+    width: ICON_SIZE.md,
+    marginTop: (typography.button.lineHeight - ICON_SIZE.md) / 2,
   },
   checkCopy: {
     flex: 1,

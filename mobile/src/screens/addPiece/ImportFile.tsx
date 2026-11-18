@@ -2,7 +2,7 @@ import { useNavigation } from '@react-navigation/native';
 import * as DocumentPicker from 'expo-document-picker';
 import { File as FSFile } from 'expo-file-system';
 import { FileMusic } from '../../components/icons';
-import { useGoBack } from '../../navigation/useGoBack';
+import { useBackButton } from '../../navigation/useGoBack';
 import { ComposerField } from '../../components/pieces/ComposerField';
 import { TitleField } from '../../components/pieces/TitleField';
 import { useRef, useState } from 'react';
@@ -15,6 +15,7 @@ import {
   SecondaryButton,
   Text,
 } from '../../components/primitives';
+import { TextAction } from '../../components/primitives/TextAction';
 import { useImportPiece } from '../../data/hooks/usePieces';
 import { BORDER_WIDTH, colors, MIN_TOUCH_TARGET, spacing } from '../../design';
 import {
@@ -85,7 +86,7 @@ interface Chosen {
 export function ImportFileScreen() {
   const navigation = useNavigation<RootNavigation>();
   const photograph = usePageCamera();
-  const goBack = useGoBack({ tab: 'Library' });
+  const back = useBackButton({ tab: 'Library' });
   const importPiece = useImportPiece();
 
   const [busy, setBusy] = useState(false);
@@ -150,7 +151,7 @@ export function ImportFileScreen() {
           ? cause.message
           : cause instanceof Error
             ? cause.message
-            : "That file couldn't be opened.",
+            : 'Couldn’t open that file.',
       );
     } finally {
       setBusy(false);
@@ -194,11 +195,9 @@ export function ImportFileScreen() {
   const chosenPart = chosen?.parts.find((entry) => entry.id === part) ?? null;
 
   return (
-    <ScreenContainer>
+    <ScreenContainer navigationBar={{ back }}>
       <PageHeader
         title="Open a score file"
-        onBack={goBack}
-        backLabel="Back"
       />
 
       {chosen === null ? (
@@ -245,14 +244,7 @@ export function ImportFileScreen() {
             {chosenPart ? `${chosen.fileName} · ${chosenPart.name}` : chosen.fileName}
           </Text>
           {chosen.parts.length > 1 && !choosingPart ? (
-            <Pressable
-              onPress={() => setPart(null)}
-              accessibilityRole="button"
-              accessibilityLabel="Change part"
-              style={({ pressed }) => [styles.change, pressed && styles.pressed]}
-            >
-              <Text variant="sectionAction">Change part</Text>
-            </Pressable>
+            <TextAction label="Change part" size="small" onPress={() => setPart(null)} />
           ) : null}
         </View>
       )}
@@ -339,10 +331,6 @@ const styles = StyleSheet.create({
   },
   fileName: {
     flex: 1,
-  },
-  change: {
-    justifyContent: 'center',
-    minHeight: MIN_TOUCH_TARGET,
   },
   action: {
     marginTop: spacing['2xl'],

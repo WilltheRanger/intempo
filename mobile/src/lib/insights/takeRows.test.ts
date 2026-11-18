@@ -36,7 +36,7 @@ describe('takeRowWords', () => {
   it('is what went wrong with a run that failed', () => {
     expect(
       takeRowWords(take({ failure: { recoverable: true, reason: null } })),
-    ).toBe('Something went wrong on our end');
+    ).toBe('Our analysis failed');
     expect(
       takeRowWords(take({ failure: { recoverable: false, reason: 'audio_too_long' } })),
     ).toBe('That recording is too long');
@@ -82,6 +82,10 @@ describe('takeRowTitle', () => {
 
   it('says a refusal the way the row always did', () => {
     expect(takeRowTitle(take({ status: 'not_played' }))).toBe('We didn’t hear you play');
+  });
+
+  it('says a take too hard to hear in the words its result opens with', () => {
+    expect(takeRowTitle(take({ lowConfidence: true }))).toBe('Hard to hear this take');
   });
 });
 

@@ -24,9 +24,7 @@ describe('failed transcription recovery', () => {
   });
 
   it('does not promise practice features before the piece has notes', () => {
-    expect(manualPiece).toContain(
-      'Photograph the music to listen, record, and get timing',
-    );
+    expect(manualPiece).toContain('You can listen and record once you add the sheet music.');
     expect(manualPiece).not.toContain('your practice history');
   });
 });

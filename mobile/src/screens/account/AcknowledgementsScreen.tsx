@@ -1,5 +1,5 @@
 import { StyleSheet, View } from 'react-native';
-import { useGoBack } from '../../navigation/useGoBack';
+import { useBackButton } from '../../navigation/useGoBack';
 
 import {
   MetadataRow,
@@ -22,10 +22,10 @@ import { BORDER_WIDTH, colors, spacing } from '../../design';
  * and a list nobody can read attributes nothing to anyone.
  */
 export function AcknowledgementsScreen() {
-  const goBack = useGoBack({ tab: 'Profile' });
+  const back = useBackButton({ tab: 'Profile' });
 
   return (
-    <ScreenContainer>
+    <ScreenContainer navigationBar={{ back }}>
       {/*
         **Two words, and that is the load-bearing part.** "Acknowledgements" is
         sixteen characters with nowhere to break, and a page title has to wrap
@@ -35,8 +35,6 @@ export function AcknowledgementsScreen() {
       */}
       <PageHeader
         title="Open source"
-        onBack={goBack}
-        backLabel="Back to profile"
       />
 
       <Text variant="body" color="textSecondary" style={styles.lede}>

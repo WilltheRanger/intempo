@@ -45,6 +45,13 @@ class _PitchReading(Protocol):
     steady: float
     track: np.ndarray | None
     transpose: int
+    #: The waveform, for `pitch_evidence.own_partials`; None asks nothing of it.
+    audio: np.ndarray | None
+
+
+def _hz(midi: float) -> float:
+    """A fractional MIDI pitch in Hz, at A = 440."""
+    return 440.0 * 2.0 ** ((midi - 69.0) / 12.0)
 
 
 @dataclass(frozen=True)
@@ -137,6 +144,7 @@ def wrong_notes(
     min_relative: float,
     clear_semitones: float,
     tuning_semitones: float = 0.0,
+    written_partials_floor: float = 0.0,
 ) -> list[WrongNote]:
     """The paired notes clearly heard as a different note, in page order.
 
@@ -155,6 +163,18 @@ def wrong_notes(
 
     Not named where the written note was sounding beside it — a double stop,
     or a written note ringing under an open string.
+
+    **Nor where the other pitch is one partial of the written note.** Both
+    readings follow the strongest part of a sound, and that can be a single
+    partial: a cello's B2 whose third partial outsounds its fundamental was
+    read as F♯3 by both, in four bars of one real take, and a viola's open C
+    as the G an octave and a fifth above it. A note is a series, so the two
+    pitches are asked of the partials only each of them has, over the whole
+    note (`pitch_evidence.own_partials`, `note_window`): where the written
+    note's are at least as strong as the other pitch's, and at least
+    `written_partials_floor` of the strongest partial of either, the written
+    note was played, and what the readings heard was part of it — or the
+    start of it, a slide or an ornament into the note. 0 asks nothing.
     """
     if pitch.track is None or not matched:
         return []
@@ -175,9 +195,27 @@ def wrong_notes(
     heights_sorted = pitch_evidence.heights_at(pitch.track, pitch.sr, times[order])
     heard: list = [None] * len(kept)
     heights = np.full(len(kept), np.nan)
+    rank_of = np.empty(len(kept), dtype=int)
     for rank, index in enumerate(order):
         heard[index] = heard_sorted[rank]
         heights[index] = heights_sorted[rank]
+        rank_of[index] = rank
+    in_order = times[order]
+    audio = getattr(pitch, "audio", None)
+
+    def written_partials_sound(k: int, written_hz: float, heard_hz: float) -> bool:
+        """Whether the written note's own partials carry note `k` (see above)."""
+        if audio is None or written_partials_floor <= 0:
+            return False
+        start, end = pitch_evidence.note_window(in_order, int(rank_of[k]))
+        written, other = pitch_evidence.own_partials(
+            audio, pitch.sr, start, end, written_hz, heard_hz
+        )
+        return (
+            written is not None
+            and written >= written_partials_floor
+            and written >= (other or 0.0)
+        )
 
     key_of = _keys_by_measure(score)
 
@@ -188,7 +226,7 @@ def wrong_notes(
         return None if m is None else (m + pitch.transpose) % 12
 
     found: list[WrongNote] = []
-    for (_, e), h, height in zip(kept, heard, heights, strict=True):
+    for k, ((_, e), h, height) in enumerate(zip(kept, heard, heights, strict=True)):
         note = timeline.notes[e]
         written_midi = pitch_evidence.midi(note.pitch)
         if written_midi is None or h is None or h.pitch_class is None or not np.isfinite(height):
@@ -212,6 +250,10 @@ def wrong_notes(
         # agree on that pitch, so agreement alone would accuse every one.
         if h.pitch_class in (sounding_class(e - 1), sounding_class(e + 1)):
             continue
+        if written_partials_sound(
+            k, _hz(sounding + tuning_semitones), _hz(nearest + tuning_semitones)
+        ):
+            continue  # one partial of the written note, or the way into it
         found.append(
             WrongNote(
                 measure_number=note.measure_number,

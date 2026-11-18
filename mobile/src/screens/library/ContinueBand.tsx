@@ -3,6 +3,7 @@ import { Animated, StyleSheet, View } from 'react-native';
 
 import { PressableScale } from '../../components/motion';
 import { PhotoBand, type PhotoBandScrim } from '../../components/pieces/PhotoBand';
+import { PieceHeading } from '../../components/pieces/PieceHeading';
 import { PrimaryButton } from '../../components/primitives/PrimaryButton';
 import { SCREEN_GUTTER } from '../../components/primitives/ScreenContainer';
 import { Text } from '../../components/primitives/Text';
@@ -90,9 +91,20 @@ export function ContinueBand({
               <Text variant="sectionLabel" color="onDarkSecondary">
                 Continue
               </Text>
-              <Text variant="displayTitle" color="onDark" numberOfLines={3} style={styles.title}>
-                {line.title}
-              </Text>
+              {/*
+                **Broken where a musician would break it.** A plain `Text` here
+                set "Sonata No. 1 in G / minor" on the first screen, the break
+                `PieceHeading` exists to prevent (the owner, 2026-09-29); the
+                band came later and missed it.
+              */}
+              <PieceHeading
+                title={line.title}
+                variant="displayTitle"
+                color="onDark"
+                numberOfLines={3}
+                catalogue="hidden"
+                containerStyle={styles.title}
+              />
             </PressableScale>
             <PrimaryButton
               label={line.actionLabel}

@@ -8,6 +8,7 @@ import { AddPieceSheet } from '../../components/pieces/AddPieceSheet';
 import {
   EmptyState,
   PageHeader,
+  RuledHeading,
   ScreenContainer,
   SecondaryButton,
   Text,
@@ -17,10 +18,11 @@ import { useInsights } from '../../data/hooks/useInsights';
 import { useLibrary } from '../../data/hooks/usePieces';
 import { useRecentTakes } from '../../data/hooks/useLatestTake';
 import { describeLoadError } from '../../data/describeLoadError';
-import { colors, fontFamily, spacing, ICON_SIZE, ICON_STROKE_WIDTH } from '../../design';
+import { colors, spacing, ICON_SIZE, ICON_STROKE_WIDTH } from '../../design';
 import { readTendency } from '../../lib/insights/tendency';
 import { axisLabels, sessionTrendData, sessionTrendFrom } from '../../lib/insights/sessionTrend';
-import { barsLabel, worthALook } from '../../lib/insights/passageTempo';
+import { worthALook } from '../../lib/insights/passageTempo';
+import { practiceLabel, practicePassage, type Passage } from '../../lib/verdict/passage';
 import type { TabScreenNavigation } from '../../navigation/types';
 import { TrendPlot } from '../../components/charts/TrendPlot';
 import { PieceHeading } from '../../components/pieces/PieceHeading';
@@ -49,8 +51,8 @@ import { loadStateFor } from '../../lib/loadState';
  * boxes in fact, stacked on the page ground, each carrying the same visual
  * weight: from three feet away the screen read as a column of white rectangles
  * with no first thing to look at (§3 laws 3, 4 and 8). The screen name moved
- * into the eyebrow, where a screen the tab bar already names belongs, and the
- * verdict took the title.
+ * into the kicker over the title, where a screen the tab bar already names
+ * belongs, and the verdict took the title.
  *
  * **Nothing here is a card any more.** The tendency, its bar and its two end
  * labels are one thought, and typography groups them — a border around them
@@ -82,7 +84,7 @@ export function InsightsScreen() {
 
   if (load === 'loading') {
     return (
-      <ScreenContainer>
+      <ScreenContainer navigationBar={{ title: 'Insights' }}>
         <PageHeader title="Insights" />
         <InsightsSkeleton />
       </ScreenContainer>
@@ -91,7 +93,7 @@ export function InsightsScreen() {
 
   if (load === 'unavailable') {
     return (
-      <ScreenContainer onRefresh={refresh}>
+      <ScreenContainer navigationBar={{ title: 'Insights' }} onRefresh={refresh}>
         <PageHeader title="Insights" />
         <EmptyState
           fill
@@ -109,7 +111,7 @@ export function InsightsScreen() {
     // Which way out this offers depends on the library — see `firstStep`.
     const step = firstStep(library.data?.length ?? 0);
     return (
-      <ScreenContainer onRefresh={refresh}>
+      <ScreenContainer navigationBar={{ title: 'Insights' }} onRefresh={refresh}>
         <PageHeader title="Insights" />
         <EmptyState
           fill
@@ -139,7 +141,7 @@ export function InsightsScreen() {
   const progress = insightsProgress(recentTakes.data, insights.sessions);
   if (!progress.ready) {
     return (
-      <ScreenContainer onRefresh={refresh}>
+      <ScreenContainer navigationBar={{ title: 'Insights' }} onRefresh={refresh}>
         <PageHeader title="Insights" />
         <EmptyState
           fill
@@ -190,8 +192,15 @@ export function InsightsScreen() {
   const lastLine = lastTake
     ? tempoTrend(lastTake.measures, lastTake.targetBpm, lastTake.tempoBeatUnit, lastTake.tolerance)
     : null;
+  /*
+    **The result screen's passage, from the take this chart draws.** Insights
+    worked out a passage of its own, averaged over five takes, and offered
+    "Practice bars 5–6" under a chart captioned "Your last take" whose verdict
+    had said bars 5–8 (the reviews of 2026-11-12). Its own reading stays, for a
+    last take that named no bars.
+  */
+  const practice: Passage | null = practicePassage(lastTake) ?? passages?.practice ?? null;
   const practiceSpan = (() => {
-    const practice = passages?.practice;
     if (!lastTake || !practice) return null;
     const bars = lastTake.measures.map((m) => m.measure);
     const along = (bar: number) => {
@@ -203,19 +212,27 @@ export function InsightsScreen() {
     return from === null || to === null ? null : { from, to };
   })();
 
-  function practise(pieceId: string, startAt?: number) {
-    navigation.navigate('Record', startAt === undefined ? { pieceId } : { pieceId, startAt });
+  function practise(pieceId: string, passage?: Passage | null) {
+    navigation.navigate(
+      'Record',
+      passage ? { pieceId, startAt: passage.from, endAt: passage.to } : { pieceId },
+    );
   }
 
   return (
-    <ScreenContainer onRefresh={refresh}>
+    <ScreenContainer navigationBar={{ title: 'Insights' }} onRefresh={refresh}>
       {/*
         The redesign's composition (`redesign/Insights.dc.html`): how many takes
         this is about, then what they say, then the takes themselves. No screen
         title — the tab bar already says Insights — so the finding is the
         heading.
       */}
-      <Text variant="eyebrow" color="textTertiary" style={styles.eyebrow}>
+      {/*
+        The count the finding is about, over it in the label register. It was
+        a caps eyebrow, one of three label styles; the app has one now,
+        sentence case (the UI review, 2026-11-12).
+      */}
+      <Text variant="sectionLabel" color="textTertiary" style={styles.kicker}>
         {sessionTrend
           ? `Last ${sessionTrend.points.length} takes`
           : windowLabel(insights.windowDays)}
@@ -255,10 +272,12 @@ export function InsightsScreen() {
       */}
       {pitchLine ? (
         <View style={styles.pitch}>
-          <Text variant="eyebrow" color="textTertiary" style={styles.eyebrowCaps}>
-            In tune
-          </Text>
-          <Text variant="metadata" color="textSecondary" style={styles.pitchSentence}>
+          <RuledHeading label="In tune" />
+          {/*
+            In ink: the finding is the section's content, and its heading the
+            label over it. Both grey, the two read as one register.
+          */}
+          <Text variant="metadata" style={styles.pitchSentence}>
             {pitchLine}
           </Text>
           {pitchTrend && pitchData ? (
@@ -282,10 +301,8 @@ export function InsightsScreen() {
       */}
       {notesHabit ? (
         <View style={styles.pitch}>
-          <Text variant="eyebrow" color="textTertiary" style={styles.eyebrowCaps}>
-            By note
-          </Text>
-          <Text variant="metadata" color="textSecondary" style={styles.pitchSentence}>
+          <RuledHeading label="By note" />
+          <Text variant="metadata" style={styles.pitchSentence}>
             {notesHabit.line}
           </Text>
           <View style={styles.pitchChart}>
@@ -314,9 +331,7 @@ export function InsightsScreen() {
             button: still the thing to do next, no longer the first thing seen.
           */}
           <View style={styles.worth}>
-            <Text variant="eyebrow" color="textTertiary" style={styles.eyebrowCaps}>
-              Worth a look
-            </Text>
+            <RuledHeading label="Worth a look" />
             <PieceHeading
               title={focus.title}
               variant="heroTitle"
@@ -343,18 +358,16 @@ export function InsightsScreen() {
                   </View>
                 ) : null}
                 {/* The button names the bars; the sentence is said only when it would not. */}
-                {passages.practice ? null : (
+                {practice ? null : (
                   <Text variant="metadata" color="textSecondary" style={styles.sentence}>
                     {passages.sentence}
                   </Text>
                 )}
                 <SecondaryButton
                   label={
-                    passages.practice
-                      ? `Practice ${barsLabel(passages.practice).toLowerCase()}`
-                      : 'Practice it again'
+                    practice ? practiceLabel(practice) : 'Practice it again'
                   }
-                  onPress={() => practise(focus.pieceId, passages.practice?.from)}
+                  onPress={() => practise(focus.pieceId, practice)}
                   style={styles.worthAction}
                 />
               </>
@@ -388,7 +401,7 @@ export function InsightsScreen() {
             aria-expanded={showAll}
             style={({ pressed }) => [styles.toggle, pressed && styles.togglePressed]}
           >
-            <Text variant="metadata" color="accentText" style={styles.toggleLabel}>
+            <Text variant="metadata" color="accentText">
               {showAll ? 'Show less' : `See all ${others.length} pieces`}
             </Text>
             {/* Turned on a wrapper: a transform on the icon itself is lost on web. */}
@@ -398,14 +411,13 @@ export function InsightsScreen() {
           </Pressable>
           {showAll ? (
             <View style={styles.list}>
-              <Text variant="eyebrow" color="textTertiary" style={styles.eyebrowCaps}>
-                Your pieces
-              </Text>
+              <RuledHeading label="Your pieces" />
               <View style={styles.rows}>
-                {others.map((piece) => (
+                {others.map((piece, index) => (
                   <PieceInsightRow
                     key={piece.pieceId}
                     insight={piece}
+                    divided={index > 0}
                     onPress={() => navigation.navigate('PieceDetail', { pieceId: piece.pieceId })}
                   />
                 ))}
@@ -435,31 +447,27 @@ export function InsightsScreen() {
 }
 
 const styles = StyleSheet.create({
-  eyebrow: {
-    textTransform: 'uppercase',
+  kicker: {
     marginTop: spacing.xl,
-    marginBottom: 6,
-  },
-  eyebrowCaps: {
-    textTransform: 'uppercase',
+    marginBottom: spacing.xs,
   },
   detail: {
     marginTop: spacing.md,
   },
   chart: {
-    marginTop: 22,
+    marginTop: spacing['2xl'],
   },
   worth: {
     marginTop: spacing['2xl'],
   },
   worthTitle: {
-    marginTop: 7,
+    marginTop: spacing.sm,
   },
   passages: {
     marginTop: spacing.lg,
   },
   lastTake: {
-    marginTop: 2,
+    marginTop: spacing['2xs'],
   },
   sentence: {
     marginTop: spacing.md,
@@ -471,33 +479,30 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    gap: 6,
+    gap: spacing.xs,
     minHeight: 44,
-    marginTop: 10,
+    marginTop: spacing.sm,
   },
   togglePressed: {
     opacity: 0.55,
-  },
-  toggleLabel: {
-    fontFamily: fontFamily.sansMedium,
   },
   chevronOpen: {
     transform: [{ rotate: '180deg' }],
   },
   list: {
-    marginTop: 14,
+    marginTop: spacing.md,
   },
   pitch: {
     marginTop: spacing['2xl'],
   },
   pitchSentence: {
-    marginTop: 6,
+    marginTop: spacing.sm,
   },
   pitchChart: {
     marginTop: spacing.md,
   },
   rows: {
-    marginTop: 7,
+    marginTop: spacing.sm,
   },
   retry: {
     marginTop: spacing.md,

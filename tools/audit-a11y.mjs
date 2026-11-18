@@ -374,9 +374,12 @@ const audit = () => {
     return (label || '(no name)').slice(0, 60).replace(/\s+/g, ' ');
   };
 
+  // Sliders too (react-native-web writes `adjustable` as `role="slider"`).
+  // They were missing, so the listening scrubber shipped at 284x20 and the
+  // tempo slider at 34pt tall with nothing here to measure them (2026-11-12).
   const INTERACTIVE =
     'button,a[href],input,select,textarea,[role="button"],[role="link"],' +
-    '[role="switch"],[role="tab"],[role="checkbox"],[role="radio"]';
+    '[role="switch"],[role="tab"],[role="checkbox"],[role="radio"],[role="slider"]';
 
   const unnamed = [];
   const small = [];

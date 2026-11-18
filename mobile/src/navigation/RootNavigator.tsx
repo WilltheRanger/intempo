@@ -1,6 +1,6 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { useIsFocused } from '@react-navigation/native';
+import { getFocusedRouteNameFromRoute, useIsFocused } from '@react-navigation/native';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { Animated, Platform, StyleSheet, View, type ViewStyle } from 'react-native';
@@ -45,6 +45,7 @@ import { TranscribeScreen } from '../screens/transcribe/TranscribeScreen';
 import { TranscriptionReviewScreen } from '../screens/transcriptionReview/TranscriptionReviewScreen';
 import { VerdictScreen } from '../screens/verdict/VerdictScreen';
 import { BottomTabBar } from './BottomTabBar';
+import { ROUTE_TITLES, tabsTitle } from './routeTitles';
 import { StackScene } from './StackScene';
 import type { RootStackParamList, TabParamList } from './types';
 
@@ -185,9 +186,10 @@ function TabNavigator() {
 /**
  * Tabs at the root, with full-screen flows pushed above them.
  *
- * Headers are off everywhere — screens supply their own `PageHeader` so the
- * type scale stays under the design system's control rather than the
- * navigator's defaults.
+ * The navigator's own headers are off everywhere. Every screen draws the
+ * app's `NavigationBar` through `ScreenContainer` instead, which keeps the bar
+ * in the design system's materials and type, and lets it see its own screen's
+ * scroll — which the navigator's header cannot (`DECISIONS.md`, 2026-11-13).
  *
  * Signed out, the whole tree is replaced rather than covered: there is nothing
  * behind the sign-in screen to go back to, and unmounting the tabs means a
@@ -292,14 +294,33 @@ function SignedInApp() {
 
   // "Welcome to InTempo", once, the first time the account is through — held
   // in front of the app like the gate before it, so it is not a route anybody
-  // can come back to. "Start practicing" moves `arrival` on and the Library fades in.
+  // can come back to. "Add your first piece" moves `arrival` on and the Library
+  // opens its add sheet.
   if (arrived === 'welcome') {
     return <OnboardingDone />;
   }
 
   return (
     <Stack.Navigator
-      screenOptions={{ headerShown: false }}
+      /*
+        **Every route has a title from the first frame** (`routeTitles.ts`):
+        the back button of the screen above it says that title, and React
+        Navigation's own default is the route's code name. A screen whose
+        title is data replaces its own once it is drawn (`ScreenContainer`).
+      */
+      screenOptions={({ route }) => ({
+        headerShown: false,
+        title: ROUTE_TITLES[route.name],
+        /*
+          **On the web, so the screen being left stays drawn.** The web
+          navigator hides every screen but the focused one, except under a
+          screen presented this way — so the iOS slide has a screen to cross
+          and one to reveal (`sceneMotion.ts`). It changes nothing else there;
+          `StackScene` hides what is not being seen. A phone keeps the
+          platform's own push.
+        */
+        presentation: Platform.OS === 'web' ? 'containedTransparentModal' : 'card',
+      })}
       /*
         **Every pushed screen arrives, on the build that draws no transition
         of its own.** `native-stack` is the platform's own navigation
@@ -310,7 +331,15 @@ function SignedInApp() {
       */
       screenLayout={({ children }) => <StackScene>{children}</StackScene>}
     >
-      <Stack.Screen name="Tabs" component={TabNavigator} />
+      {/*
+        The tabs are one route to this stack, so their title is the tab
+        showing: "‹ Insights" over a screen opened from Insights.
+      */}
+      <Stack.Screen
+        name="Tabs"
+        component={TabNavigator}
+        options={({ route }) => ({ title: tabsTitle(getFocusedRouteNameFromRoute(route)) })}
+      />
       <Stack.Screen name="AddPiece" component={AddPieceScreen} />
       {/*
         The scan screen: where `/scan` lands and where a camera that gave no

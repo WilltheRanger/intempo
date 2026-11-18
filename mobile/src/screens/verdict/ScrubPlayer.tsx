@@ -4,7 +4,16 @@ import { PanResponder, Platform, Pressable, StyleSheet, View, type LayoutChangeE
 
 import { Pause, Play } from '../../components/icons';
 import { Text } from '../../components/primitives';
-import { BORDER_WIDTH, ICON_SIZE, ICON_STROKE_WIDTH, MIN_TOUCH_TARGET, colors, radii, spacing } from '../../design';
+import {
+  BORDER_WIDTH,
+  ICON_SIZE,
+  ICON_STROKE_WIDTH,
+  MIN_TOUCH_TARGET,
+  colors,
+  radii,
+  spacing,
+  typography,
+} from '../../design';
 import { sliderMove } from '../../lib/sliderKeys';
 import { SCRUB_BIG_STEPS, SCRUB_STEP_S, scrubFraction, scrubSeconds, scrubStep } from '../../lib/verdict/scrub';
 import { formatPlaybackTime } from './playbackTime';
@@ -172,6 +181,9 @@ export function ScrubPlayer({ uri }: ScrubPlayerProps) {
 }
 
 const PLAY = 48;
+/** The rail's drawn height, and the target that reaches above and below it. */
+const TRACK_HEIGHT = 6;
+const TRACK_OUTSET = (MIN_TOUCH_TARGET - TRACK_HEIGHT) / 2;
 
 const styles = StyleSheet.create({
   row: {
@@ -198,16 +210,17 @@ const styles = StyleSheet.create({
   rail: {
     flex: 1,
     // The time row sits under the rail; lift the pair so the rail, not the
-    // pair, lines up with the button's centre.
-    marginTop: 18,
+    // pair, lines up with the button's centre. Centred, the pair moves by half
+    // of this, so a margin the height of the time row balances it.
+    marginTop: typography.metadataSmall.lineHeight,
   },
   trackTarget: {
-    // 44pt of target around a 6pt rail.
-    paddingVertical: 19,
-    marginVertical: -19,
+    // 44pt of target around the rail, taken back out of the layout.
+    paddingVertical: TRACK_OUTSET,
+    marginVertical: -TRACK_OUTSET,
   },
   track: {
-    height: 6,
+    height: TRACK_HEIGHT,
     overflow: 'hidden',
     borderRadius: radii.pill,
     backgroundColor: colors.surfacePressed,

@@ -44,7 +44,8 @@ export function microphonePermissionRecovery(os: string): MicrophoneRecovery {
     const steps: [string, string, string] = [
       'Open the site controls beside the address',
       'Allow Microphone',
-      'Press Start again',
+      // The button by the name it carries (the UI review, 2026-11-12).
+      'Tap Start recording again',
     ];
     return {
       headline,
@@ -58,7 +59,7 @@ export function microphonePermissionRecovery(os: string): MicrophoneRecovery {
   const steps: [string, string, string] = [
     'Open Settings',
     'Allow Microphone for InTempo',
-    'Return and press Start again',
+    'Come back and tap Start recording',
   ];
   return {
     headline,

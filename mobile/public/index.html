@@ -11,7 +11,7 @@
     -->
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover"
+      content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover, interactive-widget=resizes-content"
     />
     <title>InTempo</title>
 
@@ -72,6 +72,16 @@
        */
       html {
         color-scheme: light;
+        /*
+         * **The page root, not only `body`.** Chromium and WebKit apply the
+         * root's overscroll value to the viewport, and `body` alone left
+         * `html` at `auto`, so a drag that began on the tab bar, a sheet or
+         * most of the Record screen (anywhere outside a contained scroller)
+         * could still bounce the whole app, and a double tap there could zoom
+         * the page (measured 2026-11-12). `manipulation` keeps pinch-zoom.
+         */
+        overscroll-behavior: none;
+        touch-action: manipulation;
       }
 
       /* These styles make the body full-height */
@@ -101,6 +111,27 @@
         overflow: hidden;
         overscroll-behavior: none;
         -webkit-tap-highlight-color: transparent;
+        /*
+         * **A long press does what it does in an app, not on a web page**
+         * (2026-11-13). It selected the words under the finger — a title,
+         * a row's label — with the loupe and the handles, and on a photograph
+         * it opened Safari's menu to save or share the image. Nothing in an
+         * iPhone app's own interface does either. Controls were already
+         * excluded (below); now the page is, and the places a musician may
+         * want to copy words from say so: a field, and text drawn
+         * `selectable` (the legal documents, an error worth reporting).
+         */
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-touch-callout: none;
+      }
+
+      input,
+      textarea,
+      [contenteditable='true'] {
+        -webkit-user-select: text;
+        user-select: text;
+        -webkit-touch-callout: default;
       }
 
       /*

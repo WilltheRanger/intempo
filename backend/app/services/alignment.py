@@ -777,6 +777,28 @@ POSITION_CAP_GAPS = 0.15
 #: that flat region, not a tuned point. See `TUNING_LOG.md`, 2026-09-22.
 STEP_PENALTY_CAPS = 3.0
 
+#: What reading an interval across one written note costs, beyond its
+#: mismatch, in the same units — see `_cost_matrix`'s note on notes left out.
+#:
+#: **The price of a step off the diagonal, and no cheaper.** Swept on the
+#: accuracy benchmark (`tools/eval/accuracy_bench.py`): from 0.5 to 2 caps a
+#: rushed cello take with one false attack mid-note paired four notes one
+#: place along — the false attack taken for a note, a real one dropped later
+#: to catch up, because a cheap dropped interval made that slide cheap — and
+#: 36 of its readings went wrong where one had. From 3 caps it paired every
+#: note, and the takes with notes left out read 89.9% → 93.7%; at 4 they read
+#: 93.5%. On one bass page with every pair of its notes left out in turn
+#: (276 takes, timing only), 3 caps refused none where the old pairing
+#: refused 11, and attributed 313 sounds to the wrong note where it had 467.
+#: What is left is mostly one note beside a hole: see
+#: `test_notes_left_out.py`.
+#:
+#: **Not for the other side.** Reading an interval across one *detection*,
+#: for an attack that was no note, was tried beside it: no gain on the
+#: benchmark, and on those 276 takes it refused 39. See `TUNING_LOG.md`,
+#: 2026-11-13.
+DROPPED_NOTE_CAPS = 3.0
+
 
 def _clamp_ratio(ratio: float) -> float:
     """Hold a tempo rescale inside what a musician plausibly did."""
@@ -785,9 +807,9 @@ def _clamp_ratio(ratio: float) -> float:
 
 #: How many notes the level a stretch of playing sits at is read from.
 #:
-#: See `_settled_level`. Six is enough for a median to shrug off two bad notes
-#: and short enough that projecting across it with a straight line stays
-#: faithful to a take that is changing pace.
+#: See `_settled_level`. Six is enough for the level to shrug off two bad notes
+#: (`_middle_of`) and short enough that projecting across it with a straight
+#: line stays faithful to a take that is changing pace.
 LEVEL_NOTES = 6
 
 #: The fewest notes a stretch needs before its level is read from more than
@@ -835,9 +857,10 @@ def _settled_level(
 
     So the level is read from the first `LEVEL_NOTES` usable notes of the
     stretch, each projected back to where the stretch starts along the
-    stretch's own pace, and the median taken. A straight ramp — steady
-    rushing — projects every note onto exactly the offset of the first, so it
-    reads exactly as it did; a single odd note is outvoted.
+    stretch's own pace, and where they agree taken — see `_middle_of`. A
+    straight ramp — steady rushing — projects every note onto exactly the
+    offset of the first, so it reads exactly as it did; a single odd note is
+    outvoted.
 
     The pace is a Theil–Sen slope — the median of the slopes between every
     pair — over up to `PACE_NOTES` notes, for the reason that constant gives.
@@ -851,17 +874,48 @@ def _settled_level(
         return float(offsets[start])
     at = np.asarray(positions[stretch], dtype=float)
     level = np.asarray(offsets[stretch], dtype=float)
-    first, second = np.triu_indices(at.size, k=1)
-    spans = at[second] - at[first]
-    ok = spans > 0
-    rate = (
-        float(np.median((level[second] - level[first])[ok] / spans[ok]))
-        if ok.any()
-        else 0.0
-    )
+    rate = _pace(at, level)
     near = slice(0, LEVEL_NOTES)
     projected = level[near] - rate * (at[near] - float(positions[start]))
-    return float(np.median(projected))
+    return _middle_of(projected)
+
+
+#: How far the level may sit from the median of its notes, in robust standard
+#: deviations of those notes (`1.4826 x` their median absolute deviation).
+#: See `_middle_of`.
+LEVEL_BOUND_DEVIATIONS = 1.0
+
+
+def _middle_of(values: np.ndarray) -> float:
+    """Where a handful of projected offsets agree, read from all of them.
+
+    **A median of six is the mean of the two in the middle, and which two that
+    is moves with a few milliseconds of jitter.** The level a take is measured
+    from was the median of six projected offsets, so it was whatever the two
+    middle notes said — and which notes those are is decided by the player's
+    own unevenness, while what each of them says carries the detector's. On a
+    bowed bass through a phone (`accuracy_bench.py`, `double_bass/bowed/108/
+    fast/phone/1140`) the two middle notes were the two the detector placed
+    earliest, 13 and 20 ms ahead of its usual: the take's level read 17 ms
+    early, and 30 of its 39 notes and 6 of its 8 bars sat outside the 12 ms a
+    perfect reading allows. The six notes' typical placement was right.
+
+    So the level is the Hodges–Lehmann estimate — the median of the means of
+    every pair — which every note moves a little rather than two notes moving
+    entirely. Alone it gives up the median's robustness: two notes 40 ms late
+    among six on time read 20 ms, where the median read 0. So it is held within
+    `LEVEL_BOUND_DEVIATIONS` robust deviations of the median: where most of the
+    notes agree closely, the bound is tight and the median stands; where they
+    are spread by ordinary jitter, the bound is that jitter and the pairs'
+    estimate is used. A late first note among five on time still reads exactly
+    0, as `test_pulse_anchor.py` holds.
+    """
+    values = np.asarray(values, dtype=float)
+    middle = float(np.median(values))
+    first, second = np.triu_indices(values.size)
+    pairs = float(np.median((values[first] + values[second]) / 2.0))
+    bound = LEVEL_BOUND_DEVIATIONS * 1.4826 * float(np.median(np.abs(values - middle)))
+    return middle + float(np.clip(pairs - middle, -bound, bound))
 
 
 def pulse_anchors(
@@ -895,6 +949,11 @@ def pulse_anchors(
     stretched intervals in a row, not one. Absorbing them individually would
     report the bar as clean, which is the opposite mistake.
 
+    **And only if the player has moved.** A sound paired with the wrong note
+    is a run too, out and back, and re-anchoring after it reset a steady ramp
+    for the rest of the take; a run that leaves the notes after it on the line
+    the notes before it were on re-anchors nothing (`_level_moved`).
+
     The two thresholds live in `[tolerance.pulse]`. They are far apart from
     what they have to separate — the rushing fixture drifts 8 ms a beat, note
     after note, while a bar held a quarter longer moves an interval by 208 ms —
@@ -927,6 +986,26 @@ def pulse_anchors(
         cfg.tolerance.disturbance_floor_beats * beat_s,
     )
     disturbed = np.abs(steps - centre) > limit
+    # **A note out of place on its own is not the pulse moving.** The step
+    # into it and the step out of it are both disturbed, opposite ways, and
+    # the two together are an ordinary step: the notes either side of it
+    # agree. Whether a sound was paired with the wrong note or the player
+    # placed one note late and carried on, the pulse is where it was, and
+    # that note alone reads off. `_level_moved` catches most such glitches
+    # by finding the notes after back on the line before, but not where that
+    # line was a ramp that has just ended: on the synthetic set's
+    # `double_bass/bowed/60/rush/noise/1127` a note paired 350 ms late at the
+    # end of a rush re-anchored the take, so the bars after it read on the
+    # beat where a perfect reading had them a beat ahead, and 16 notes and
+    # 4 bars were wrong.
+    for i in range(1, offsets.size - 1):
+        if (
+            disturbed[i]
+            and disturbed[i + 1]
+            and (steps[i] - centre) * (steps[i + 1] - centre) < 0
+            and abs(steps[i] + steps[i + 1] - 2.0 * centre) <= limit
+        ):
+            disturbed[i] = disturbed[i + 1] = False
 
     def next_break(after: int) -> int:
         """The first disturbed note after `after`, or the end of the take."""
@@ -936,13 +1015,86 @@ def pulse_anchors(
         return offsets.size
 
     anchor = _settled_level(offsets, positions, usable, 0, next_break(0))
+    stretch_start = 0
+    run_start: int | None = None
     for i in range(offsets.size):
         anchors[i] = anchor
+        if disturbed[i] and run_start is None:
+            run_start = i
         # Re-anchor once the run ends, so the last note of the disturbance
-        # still carries it and the next note starts from where the player is.
+        # still carries it and the next note starts from where the player is
+        # — **if the player has moved.** See `_level_moved`.
         if disturbed[i] and (i + 1 >= offsets.size or not disturbed[i + 1]):
-            anchor = _settled_level(offsets, positions, usable, i, next_break(i))
+            assert run_start is not None
+            resume = min(i + 1, offsets.size)
+            if _level_moved(
+                offsets,
+                positions,
+                usable,
+                stretch_start,
+                run_start,
+                resume,
+                next_break(i + 1) if resume < offsets.size else offsets.size,
+                limit,
+            ):
+                anchor = _settled_level(offsets, positions, usable, i, next_break(i))
+                stretch_start = i
+            run_start = None
     return anchors
+
+
+def _level_moved(
+    offsets: np.ndarray,
+    positions: np.ndarray,
+    usable: np.ndarray,
+    start: int,
+    run_start: int,
+    resume: int,
+    stop: int,
+    limit: float,
+) -> bool:
+    """Whether the notes after a disturbance sit off the line the notes before
+    it were on — a hesitation, which re-anchors — or back on it — a glitch,
+    which must not.
+
+    **A re-anchor resets the drift, and a glitch was resetting it.** A
+    disturbance is any run of intervals that departs from the take's habit,
+    and a hesitation is one; so is a sound paired with the wrong note, which
+    departs one way going in and the other coming out. Re-anchored after it,
+    every later note was measured from where the glitch left off: on a take
+    played a steady 10% fast, one sixteenth the detector did not hear reset
+    the ramp the whole take is about, and from there to the end each note read
+    half a second off what it had been played at.
+
+    So the line the stretch was on — its level and its pace, a Theil–Sen
+    slope as `_settled_level` reads one — is carried across the disturbance,
+    and the first notes after it are compared with where that line puts them.
+    Within `limit`, the disturbance's own threshold, the player is where they
+    were and the reference stays. Too few notes on either side to read a line
+    from, and it re-anchors as it always did.
+    """
+    before = [j for j in range(start, run_start) if usable[j]][-PACE_NOTES:]
+    after = [j for j in range(resume, stop) if usable[j]][:LEVEL_NOTES]
+    if len(before) < MIN_LEVEL_NOTES or len(after) < MIN_LEVEL_NOTES:
+        return True
+    at = np.asarray(positions[before], dtype=float)
+    level = np.asarray(offsets[before], dtype=float)
+    rate = _pace(at, level)
+    intercept = float(np.median(level - rate * at))
+    predicted = intercept + rate * np.asarray(positions[after], dtype=float)
+    shift = float(np.median(np.asarray(offsets[after], dtype=float) - predicted))
+    return abs(shift) >= limit
+
+
+def _pace(at: np.ndarray, level: np.ndarray) -> float:
+    """Seconds of drift per second of page: the median slope between every
+    pair of notes (Theil–Sen), so a few bad notes cannot tilt it."""
+    first, second = np.triu_indices(at.size, k=1)
+    spans = at[second] - at[first]
+    ok = spans > 0
+    if not ok.any():
+        return 0.0
+    return float(np.median((level[second] - level[first])[ok] / spans[ok]))
 
 
 def _residuals(
@@ -1823,6 +1975,22 @@ def align_dtw(
                 step[back:] = skippable[:-back]
                 reach &= step
                 back += 1
+        # **A note left out ends no interval either** — the same repair as the
+        # optional notes above, for any note. After a written note the musician
+        # did not play, the interval into the next one spans two written gaps,
+        # and compared with the single gap the correct pairing paid a whole
+        # interval's mismatch at the note after the hole, so sliding every
+        # later note one place along was the cheaper answer: a steady plucked
+        # bass take with two notes left out a beat apart was paired one note
+        # off for five notes and refused at quality 0.000. So each interval may
+        # also be read across one written note, at `DROPPED_NOTE_CAPS`.
+        across = np.full(written.size, np.inf)
+        across[2:] = written[2:] - written[:-2]
+        interval = np.minimum(
+            interval,
+            np.abs(played_gaps[:, None] - across[None, :])
+            + DROPPED_NOTE_CAPS * POSITION_WEIGHT * POSITION_CAP_GAPS * gap,
+        )
         return interval + (
             POSITION_WEIGHT * np.minimum(position, POSITION_CAP_GAPS * gap)
         )
@@ -2069,11 +2237,40 @@ CHAIN_SKIP = 0.6
 #: under one bow. Skipping one says nothing about the take.
 CHAIN_SKIP_OPTIONAL = 0.05
 
-#: What an attack a whole played gap from where the chain puts its note costs,
-#: on top of its pitch; saturated there. Only breaks ties the pitch cannot — a
-#: run of one repeated pitch with a note missed or doubled in it — so it is a
-#: fraction of `CHAIN_SKIP`: the right pitch in the wrong place still pairs.
-CHAIN_TIME_WEIGHT = 0.3
+#: What an attack costs, on top of its pitch, for each played gap it sits from
+#: where the chain puts its note. Within a gap or so it only breaks ties the
+#: pitch cannot — a run of one repeated pitch with a note missed or doubled in
+#: it — so it is a fraction of `CHAIN_SKIP`, and the right pitch a little out
+#: of place still pairs.
+#:
+#: **Not saturated** (2026-11-14). It was held at one gap's worth, so an
+#: attack four gaps away cost no more than one a gap away, and the right pitch
+#: anywhere paired. Unsaturated, an attack four gaps away costs what leaving it
+#: and the note both unpaired does (2 × `CHAIN_SKIP`), and further away it is
+#: worse. On the 72 real takes, paired went 95.27 → 95.57%, placed
+#: 82.83 → 83.11% and band 74.89 → 75.54%. Most of the gain was in K515's cello
+#: part, 276 → 297 notes paired within 100 ms of their labels, and Maria's,
+#: 325 → 332. The synthetic set and the six fixtures did not move. A cap at
+#: two gaps gave half that, and a cap at five gave the same. A breath 3.8 s
+#: after Jerusalem's last B4, about three gaps from where that note belongs,
+#: is still paired as it.
+#:
+#: **0.6 a gap, not 0.3** (2026-11-14). The weight itself had not been swept.
+#: In a fast figure where one attack goes unheard, pitch alone lets the chain
+#: slide a note or two along (Spring's second violin, bar 18, alternating E5
+#: and F-sharp 5, paired two notes early for seven notes); each slid note sits
+#: a gap or two from its place, which cost 0.3-0.6 and now costs twice that.
+#: On the 72 real takes (heard, paired, colour, bar tempo, verdict true):
+#:
+#:     0.3    14,760  14,118  11,250  2,901  67
+#:     0.45   14,745  14,140  11,323  2,912  68
+#:     0.6    14,745  14,163  11,455  2,918  68
+#:     0.75   14,736  14,158  11,356  2,910  68
+#:     0.9    14,717  14,147  11,373  2,899  68
+#:
+#: The synthetic set moves in one take, a dragging bass whose run of six G2s
+#: now pairs nearer the truth and so no longer re-anchors where the drag ends.
+CHAIN_TIME_WEIGHT = 0.6
 
 #: How much less leaving out the last written note costs than the first,
 #: spread evenly between them — only ever a tie-break.
@@ -2139,7 +2336,21 @@ def _chain_path(
 #: A running median over this many, so one attack paired with the wrong note
 #: of a repeated pitch cannot move where its neighbours are expected — and
 #: short enough that a hesitation moves them within a bar or so.
-CHAIN_PLACEMENT_NOTES = 9
+#:
+#: **13, not 9** (2026-11-14), swept on the 72 real takes once the time cost
+#: weighed twice as much (`CHAIN_TIME_WEIGHT`), since that is what made the
+#: placement matter more (heard, paired, colour, bar tempo, verdict true):
+#:
+#:     5     14,728  14,086  11,181  2,901  65
+#:     9     14,745  14,163  11,455  2,918  68
+#:     13    14,747  14,197  11,542  2,924  69
+#:     17    14,738  14,179  11,530  2,913  69
+#:     25    14,735  14,176  11,557  2,917  69
+#:
+#: Fewer, a slide of a few notes moves the median it is measured against;
+#: more, a real change of pace takes longer to be followed. The synthetic set
+#: is identical at 9 and 13.
+CHAIN_PLACEMENT_NOTES = 13
 
 
 def _where_the_chain_puts(
@@ -2174,6 +2385,317 @@ def _where_the_chain_puts(
     return pace * expected + np.interp(expected, written, level)
 
 
+#: How far before the attack the chain paired a note with an earlier one at
+#: the note's own pitch may lie and still be where that note began: this many
+#: of the note's written lengths, at the take's pace.
+HELD_NOTE_SPAN = 1.25
+
+
+def _first_attacks(
+    path: list[tuple[int, int]],
+    detected: np.ndarray,
+    expected: np.ndarray,
+    pitch: np.ndarray,
+    heard_at: float,
+) -> list[tuple[int, int]]:
+    """Each pairing moved back to the first attack of its own note.
+
+    **A note begins once.** A cellist holding a note swells it or changes bow
+    inside it, and each is an attack at the note's own pitch. Pitch cannot say
+    which of them is the note, they all cost the chain the same, and
+    `_chain_path` walks back from the end, so it paired the last: on URMP's
+    Jupiter cello part (2026-11-13), 126 attacks for 54 notes, every note was
+    paired near its end and 49 of the 54 sat more than 100 ms from their label.
+
+    So a pairing heard at its pitch (`heard_at`) moves back along the unbroken
+    run of attacks before it that are heard at the same pitch, as far as
+    `HELD_NOTE_SPAN` of the note's written length at the take's pace, and no
+    further than the previous pairing. That is inside the note. Where the page
+    repeats a pitch it does not move: an earlier attack at that pitch may be
+    the note before, bowed again — measured, sliding there cost the violin
+    parts more placements than it gained. A passage played again begins a
+    whole passage earlier, so its pairing stays where the chain put it, and
+    `analysis._replay_break` finds it there.
+    """
+    if len(path) < 2:
+        return path
+    played = np.diff([float(detected[d]) for d, _ in path])
+    written = np.diff([float(expected[e]) for _, e in path])
+    usable = written > 0
+    pace = float(np.median(played[usable] / written[usable])) if usable.any() else 1.0
+    if not np.isfinite(pace) or pace <= 0:
+        pace = 1.0
+    out: list[tuple[int, int]] = []
+    previous = -1
+    for d, e in path:
+        first = d
+        if pitch[d, e] <= heard_at:
+            if e + 1 < expected.size:
+                length = float(expected[e + 1] - expected[e])
+            else:
+                length = float(expected[e] - expected[e - 1]) if e > 0 else 0.0
+            reach = HELD_NOTE_SPAN * pace * max(length, 0.0)
+            c = d - 1
+            while (
+                c > previous
+                and pitch[c, e] <= heard_at
+                # Not an attack the note before could have made: where the
+                # page repeats a pitch, an earlier attack at it may be that
+                # note bowed again rather than this one beginning.
+                and (e == 0 or pitch[c, e - 1] > heard_at)
+                and float(detected[d] - detected[c]) <= reach
+            ):
+                first = c
+                c -= 1
+        out.append((first, e))
+        previous = d
+    return out
+
+
+#: The fewest notes of one repeated pitch that `_runs_by_spacing` re-pairs.
+#: Two are left to `_first_attacks` and the chain, as they always were.
+SPACED_RUN_NOTES = 3
+
+#: How many notes, or attacks, one step of `_runs_by_spacing` may pass over.
+#: One missed attack and one extra attack in a row are the cases it is for.
+SPACED_RUN_STEP = 3
+
+#: How much cheaper, in the chain's units, the spacing must make a run's
+#: pairing before `_runs_by_spacing` overrides the chain's: a quarter of the
+#: price of leaving one note out. Below that the two are a near tie, and the
+#: chain's own pairing stands.
+#:
+#: Not more. Between a missed attack and an extra one, a slide bends two
+#: intervals by a factor of two (0.69 each), while the right pairing leaves
+#: out one note and one attack (`CHAIN_SKIP` each): the repair is cheaper by
+#: under 0.2. On "In the Hall of the Mountain King"'s 64 repeated E4s it was
+#: made at a margin of 0.15 and not at 0.3.
+SPACED_RUN_GAIN = CHAIN_SKIP / 4
+
+
+def _runs_by_spacing(
+    path: list[tuple[int, int]],
+    detected: np.ndarray,
+    expected: np.ndarray,
+    pitch: np.ndarray,
+    heights: list[int | None] | None,
+    skip_note: np.ndarray,
+) -> list[tuple[int, int]]:
+    """Each run of one repeated written pitch re-paired by the spacing of its
+    attacks.
+
+    **Inside a run of one pitch, pitch cannot say which attack is which.**
+    With one attack missing, the chain paired every later note of the run with
+    the attack after its own, because leaving out the run's last note costs
+    what leaving out the missing one does. Its second pass reads where each
+    note falls from the pairings around it, and inside a long run those are
+    the slid pairings, so the slide stayed. On URMP's "In the Hall of the
+    Mountain King" (2026-11-14) the second violin's 64 repeated E4s lost one
+    attack, and the 31 E4s after it sat one note late.
+
+    The attacks themselves show where it happened: a missed attack leaves a
+    gap twice the written one, and an extra attack leaves one half as long.
+    So the run's notes are paired again with the attacks between the pairings
+    that bound it. Each step costs:
+    - how far the played interval is from the written one at the local pace,
+      as the absolute log of their ratio;
+    - `skip_note` for each note passed over, and `CHAIN_SKIP` for each attack;
+    - each attack's own pitch cost as the chain counts it, because an
+      out-of-tune note inside the run is still its note.
+
+    **The pace is local** (`_local_pace`), read from the intervals of the
+    chain's own pairing around each note. One pace for the whole run, from
+    bound to bound, read a passage speeding up as a run of small errors: in
+    "Mountain King" it broke a correct pairing of nine notes in bars 33–36,
+    which go from 160 to 175 BPM.
+
+    A run the take begins or ends inside is left as the chain paired it, and
+    so is a run whose new pairing is not cheaper by `SPACED_RUN_GAIN`.
+    """
+    if heights is None or len(heights) != expected.size or not path:
+        return path
+    by_note = {e: d for d, e in path}
+    runs: list[tuple[int, int]] = []
+    j = 0
+    while j < expected.size:
+        k = j
+        while k + 1 < expected.size and heights[j] is not None and heights[k + 1] == heights[j]:
+            k += 1
+        if heights[j] is not None and k - j + 1 >= SPACED_RUN_NOTES:
+            runs.append((j, k))
+        j = k + 1
+    for first, last in runs:
+        before = [e for e in by_note if e < first]
+        after = [e for e in by_note if e > last]
+        # Only between two pairings: where the take begins or ends inside the
+        # run, nothing says which of its notes the first or last attack is.
+        if not before or not after:
+            continue
+        bound_before, bound_after = max(before), min(after)
+        lo, hi = by_note[bound_before], by_note[bound_after]
+        attacks = np.arange(lo + 1, hi)
+        notes = np.arange(first, last + 1)
+        if attacks.size == 0:
+            continue
+        kept = [(by_note[int(e)], int(e)) for e in notes if int(e) in by_note]
+        steps = [(lo, bound_before), *kept, (hi, bound_after)]
+        pace = _local_pace(steps, detected, expected, notes)
+        if pace is None:
+            continue
+        at = detected[attacks]
+        written = expected[notes]
+        n, m = notes.size, attacks.size
+        # What pairing each attack with the run's pitch costs, as in the chain.
+        heard = pitch[attacks, first]
+        skipped = np.concatenate([[0.0], np.cumsum(skip_note[notes])])
+        cost = np.full((n, m), np.inf)
+        came = np.full((n, m, 2), -1, dtype=int)
+        reach = np.arange(m)
+        for k in range(n):
+            # Straight from the pairing before the run, past the notes and
+            # attacks this one leaves out.
+            if k < SPACED_RUN_STEP:
+                opening = (
+                    skipped[k]
+                    + CHAIN_SKIP * reach
+                    + heard
+                    + np.minimum(
+                        _spacing(at - detected[lo], written[k] - expected[bound_before], pace[k]),
+                        SPACED_RUN_BOUND_CAP,
+                    )
+                )
+                opening[reach >= SPACED_RUN_STEP] = np.inf
+                cost[k] = np.minimum(cost[k], opening)
+            for dk in range(1, min(SPACED_RUN_STEP, k) + 1):
+                passed = skipped[k] - skipped[k - dk + 1]
+                for dm in range(1, min(SPACED_RUN_STEP, m - 1) + 1):
+                    step = (
+                        cost[k - dk, : m - dm]
+                        + passed
+                        + CHAIN_SKIP * (dm - 1)
+                        + heard[dm:]
+                        + _spacing(at[dm:] - at[:-dm], written[k] - written[k - dk], pace[k])
+                    )
+                    better = step < cost[k, dm:]
+                    cost[k, dm:] = np.where(better, step, cost[k, dm:])
+                    came[k, dm:][better] = np.column_stack(
+                        [np.full(int(better.sum()), k - dk), reach[: m - dm][better]]
+                    )
+        # Close on the pairing after the run, past what is left out.
+        closing = (
+            cost
+            + (skipped[n] - skipped[1:])[:, None]
+            + CHAIN_SKIP * (m - 1 - reach)[None, :]
+            + np.minimum(
+                _spacing(
+                    detected[hi] - at[None, :],
+                    expected[bound_after] - written[:, None],
+                    pace[:, None],
+                ),
+                SPACED_RUN_BOUND_CAP,
+            )
+        )
+        closing[: max(0, n - SPACED_RUN_STEP)] = np.inf
+        closing[:, : max(0, m - SPACED_RUN_STEP)] = np.inf
+        if not np.isfinite(closing).any():
+            continue
+        k, a = (int(x) for x in np.unravel_index(int(np.argmin(closing)), closing.shape))
+        best = float(closing[k, a])
+        # What the chain's own pairing of the run costs in the same terms.
+        current = (
+            sum(float(skip_note[e]) for e in notes if int(e) not in by_note)
+            + CHAIN_SKIP * (m - len(kept))
+            + sum(float(pitch[d, first]) for d, _ in kept)
+            + sum(
+                min(
+                    float(
+                        _spacing(
+                            np.array([detected[d2] - detected[d1]]),
+                            float(expected[e2] - expected[e1]),
+                            pace[min(e2, last) - first],
+                        )[0]
+                    ),
+                    SPACED_RUN_BOUND_CAP if e1 == bound_before or e2 == bound_after else np.inf,
+                )
+                for (d1, e1), (d2, e2) in zip(steps[:-1], steps[1:], strict=True)
+            )
+        )
+        if best > current - SPACED_RUN_GAIN:
+            continue
+        pairs: list[tuple[int, int]] = []
+        while k >= 0:
+            pairs.append((int(attacks[a]), int(notes[k])))
+            k, a = (int(x) for x in came[k, a])
+        for e in notes:
+            by_note.pop(int(e), None)
+        for d, e in pairs:
+            by_note[e] = d
+    return sorted((d, e) for e, d in by_note.items())
+
+
+#: How many notes either side of a note `_local_pace` reads the pace from.
+SPACED_RUN_PACE_NOTES = 3
+
+#: The most the interval to either bound of a run may cost `_runs_by_spacing`.
+#:
+#: **A bound is paired by pitch, and its time can still be wrong.** After nine
+#: repeated C5s in "In the Hall of the Mountain King", the chain paired the
+#: next note, an A3, 645 ms early. Uncapped, the short last interval it left
+#: outweighed the run's own spacing, and the run was slid one note early to
+#: fit it: 9 notes right became 2. Capped, a bound still separates a missed
+#: first or last attack, which doubles that interval (0.69 uncapped).
+#: Measured on three URMP parts: at 0.35 the 64-E4 run was not repaired, and
+#: at 0.7 the C5s slid again.
+SPACED_RUN_BOUND_CAP = 0.5
+
+
+def _local_pace(
+    steps: list[tuple[int, int]],
+    detected: np.ndarray,
+    expected: np.ndarray,
+    notes: np.ndarray,
+) -> np.ndarray | None:
+    """The played seconds per written second around each note of a run.
+
+    Read from consecutive pairings (`steps`, the run's own and its two
+    bounds), each interval counted at the note it ends on, as the median of
+    those ending within `SPACED_RUN_PACE_NOTES` of the note. A median, so
+    the one doubled interval a missed attack leaves, or the halved one an
+    extra attack leaves, does not move it. Where fewer than three intervals
+    are near, the pace from bound to bound. None when that cannot be read.
+    """
+    (lo, bound_before), (hi, bound_after) = steps[0], steps[-1]
+    span = float(expected[bound_after] - expected[bound_before])
+    overall = float(detected[hi] - detected[lo]) / span if span > 0 else 0.0
+    if not np.isfinite(overall) or overall <= 0:
+        return None
+    ends, ratios = [], []
+    for (d1, e1), (d2, e2) in zip(steps[:-1], steps[1:], strict=True):
+        page = float(expected[e2] - expected[e1])
+        played = float(detected[d2] - detected[d1])
+        if page > 0 and played > 0:
+            ends.append(e2)
+            ratios.append(played / page)
+    ends_arr, ratio_arr = np.asarray(ends), np.asarray(ratios)
+    pace = np.full(notes.size, overall)
+    for k, e in enumerate(notes):
+        near = ratio_arr[np.abs(ends_arr - e) <= SPACED_RUN_PACE_NOTES] if ends else ratio_arr
+        if near.size >= 3:
+            pace[k] = float(np.median(near))
+    return pace
+
+
+def _spacing(played: np.ndarray, page: float | np.ndarray, pace: float | np.ndarray) -> np.ndarray:
+    """How far each played interval is from its written one at `pace`: the
+    absolute log of their ratio, infinite where either is not a forward step."""
+    ratio = np.asarray(played, dtype=float) / (
+        np.asarray(pace, dtype=float) * np.asarray(page, dtype=float)
+    )
+    with np.errstate(divide="ignore", invalid="ignore"):
+        out = np.abs(np.log(ratio))
+    return np.where(np.isfinite(out) & (ratio > 0), out, np.inf)
+
+
 def align_chain(
     detected: np.ndarray,
     expected: np.ndarray,
@@ -2184,6 +2706,7 @@ def align_chain(
     steady: np.ndarray | None = None,
     optional: np.ndarray | None = None,
     passage: bool = False,
+    heights: list[int | None] | None = None,
 ) -> AnchoredAlignment:
     """Pair attacks with written notes as a chain of pitches, in order.
 
@@ -2191,7 +2714,9 @@ def align_chain(
     once on pitch alone, and once more with where each attack falls against
     the notes the first pass heard at their written pitch
     (`CHAIN_TIME_WEIGHT`), which settles which of several equal pitches is
-    which.
+    which. After each pass, a run of one repeated pitch is paired again by
+    the spacing of its attacks (`_runs_by_spacing`), which needs `heights`:
+    each note's written pitch as a MIDI number.
 
     Scored exactly as `align_dtw` scores a pairing (`_scored_mapping`); the
     attacks before the first paired one and after the last are trimmed as
@@ -2235,7 +2760,20 @@ def align_chain(
     skip_note = np.where(skippable, CHAIN_SKIP_OPTIONAL, CHAIN_SKIP) - (
         CHAIN_LATE_SKIP_DISCOUNT * np.arange(expected.size) / max(expected.size - 1, 1)
     )
-    path = _chain_path(pitch, CHAIN_SKIP, skip_note, passage=passage)
+    path = _runs_by_spacing(
+        _first_attacks(
+            _chain_path(pitch, CHAIN_SKIP, skip_note, passage=passage),
+            detected,
+            expected,
+            pitch,
+            cfg.pitch.confirm_mismatch,
+        ),
+        detected,
+        expected,
+        pitch,
+        heights,
+        skip_note,
+    )
 
     heard = [(d, e) for d, e in path if pitch[d, e] <= cfg.pitch.confirm_mismatch]
     if len(heard) >= 2:
@@ -2247,11 +2785,24 @@ def align_chain(
         played_gap = typical_gap(np.diff(np.array([detected[d] for d, _ in heard])))
         if played_gap > 0:
             away = np.abs(detected[:, None] - placed[None, :]) / played_gap
-            path = _chain_path(
-                pitch + CHAIN_TIME_WEIGHT * np.minimum(away, 1.0),
-                CHAIN_SKIP,
+            path = _runs_by_spacing(
+                _first_attacks(
+                    _chain_path(
+                        pitch + CHAIN_TIME_WEIGHT * away,
+                        CHAIN_SKIP,
+                        skip_note,
+                        passage=passage,
+                    ),
+                    detected,
+                    expected,
+                    pitch,
+                    cfg.pitch.confirm_mismatch,
+                ),
+                detected,
+                expected,
+                pitch,
+                heights,
                 skip_note,
-                passage=passage,
             )
     if not path:
         return empty
@@ -2318,12 +2869,23 @@ def apply_fuzzy_match(
 
     matched: list[tuple[int, int]] = []
     extra: list[int] = []
+    # **Many-to-one: the onset nearest where the take puts the note wins** —
+    # not the one nearest the page's grid. A take that runs fast or slow has
+    # left that grid behind, by half a second on a bass take 10% fast by its
+    # eleventh note, so the grid favoured whichever attack lay in the
+    # direction the player had come from: an extra attack 0.28 s after the
+    # note's own, on `double_bass/bowed/108/fast/phone/1140`, kept the note
+    # and left its attack over. Matching was made tempo-invariant for this
+    # reason (`align_dtw`); this is where absolute time had come back in.
+    # The notes paired once say where the take is, so a line through the
+    # nearest of them either side puts the note (`_where_the_take_puts`).
+    alone = sorted((exp_i, dets[0]) for exp_i, dets in by_expected.items() if len(dets) == 1)
     for exp_i, det_indices in by_expected.items():
         if len(det_indices) == 1:
             matched.append((det_indices[0], exp_i))
             continue
-        # Many-to-one: the onset closest to the expected time wins.
-        closest = min(det_indices, key=lambda d: abs(detected[d] - expected[exp_i]))
+        at = _where_the_take_puts(exp_i, alone, detected, expected)
+        closest = min(det_indices, key=lambda d: abs(detected[d] - at))
         matched.append((closest, exp_i))
         extra.extend(d for d in det_indices if d != closest)
     # An attack paired with nothing. `align_dtw` gives every attack a note, so
@@ -2381,6 +2943,43 @@ def apply_fuzzy_match(
         extra_detected=extra,
         quality=alignment.quality,
     )
+
+
+def _where_the_take_puts(
+    exp_i: int,
+    alone: list[tuple[int, int]],
+    detected: np.ndarray,
+    expected: np.ndarray,
+) -> float:
+    """Where, on the detections' clock, the take itself puts written note `exp_i`.
+
+    `alone` is the (written, detected) pairs of the notes one attack settled,
+    by written index. A line through the nearest of them before and after the
+    note; with them on one side only, a line through the two nearest there;
+    with one, that note's place moved by the written gap. With none, the
+    written time, which is where the take starts.
+    """
+    written = [e for e, _ in alone]
+    split = int(np.searchsorted(written, exp_i))
+    before = alone[max(split - 2, 0) : split]
+    after = alone[split : split + 2]
+    if before and after:
+        points = [before[-1], after[0]]
+    elif len(before) == 2:
+        points = before
+    elif len(after) == 2:
+        points = after
+    elif before or after:
+        e, d = (before or after)[0]
+        return float(detected[d] + (expected[exp_i] - expected[e]))
+    else:
+        return float(expected[exp_i])
+    (e0, d0), (e1, d1) = points
+    span = float(expected[e1] - expected[e0])
+    if span <= 0:
+        return float(detected[d0] + (expected[exp_i] - expected[e0]))
+    pace = float(detected[d1] - detected[d0]) / span
+    return float(detected[d0] + pace * (expected[exp_i] - expected[e0]))
 
 
 def is_alignment_broken(quality: float, *, config: AudioConfig | None = None) -> bool:

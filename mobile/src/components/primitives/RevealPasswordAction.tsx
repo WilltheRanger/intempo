@@ -1,7 +1,4 @@
-import { Pressable, StyleSheet } from 'react-native';
-
-import { MIN_TOUCH_TARGET } from '../../design';
-import { Text } from './Text';
+import { TextAction } from './TextAction';
 
 export interface RevealPasswordActionProps {
   revealed: boolean;
@@ -28,40 +25,11 @@ export function RevealPasswordAction({
   onPress,
 }: RevealPasswordActionProps) {
   return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
+    <TextAction
+      label={revealed ? 'Hide' : 'Show'}
+      size="small"
       accessibilityLabel={revealed ? 'Hide password' : 'Show password'}
-      style={({ pressed }) => [styles.target, pressed && styles.pressed]}
-    >
-      <Text variant="sectionLabel" color="accentText">
-        {revealed ? 'Hide' : 'Show'}
-      </Text>
-    </Pressable>
+      onPress={onPress}
+    />
   );
 }
-
-const styles = StyleSheet.create({
-  /**
-   * Padded to a real touch target, not `hitSlop`-ed to one.
-   *
-   * `hitSlop` does nothing on the web build — measured in Chromium on this very
-   * control: a click 8pt above it, inside its 12pt slop, did not activate it
-   * while a click on its visible 18pt box did.
-   */
-  target: {
-    minHeight: MIN_TOUCH_TARGET,
-    // **Both dimensions, and only one of them was set.** The height was padded
-    // to the floor and the width was left at whatever the word measures —
-    // 35pt for "Show", on a control that only appears on the two screens a
-    // fixtures build cannot reach, so nothing had looked at it. The box grows
-    // leftward into the gap beside the label; the word does not move enough to
-    // see (4.5pt) and the target reaches 44.
-    minWidth: MIN_TOUCH_TARGET,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pressed: {
-    opacity: 0.6,
-  },
-});

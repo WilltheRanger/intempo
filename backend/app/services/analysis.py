@@ -28,7 +28,7 @@ import logging
 import math
 from collections import defaultdict
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Literal
 
@@ -51,6 +51,7 @@ from app.services.alignment import (
     apply_fuzzy_match,
     build_timeline,
     CleanedAlignment,
+    ExpectedNote,
     ExpectedTimeline,
     is_alignment_broken,
     closest_expected_gap,
@@ -68,7 +69,12 @@ from app.services.insights import (
     tempo_across_bars,
     tempo_by_bar,
 )
-from app.services.onset_recovery import predict_audio_times, recover_onsets
+from app.services.onset_recovery import (
+    predict_audio_times,
+    recover_by_bow_change,
+    recover_by_pitch,
+    recover_onsets,
+)
 from app.services.classification import (
     skipped_notes,
     Band,
@@ -858,6 +864,9 @@ class Heard:
     #: The waveform before any high-pass, for reading pitch: a bass's filter
     #: removes its bottom octave's fundamentals. None where nothing kept it.
     unfiltered: np.ndarray | None = None
+    #: Which instrument it was heard as (`onset_settings_for`), so the second
+    #: look listens the way the first did.
+    instrument: str | None = None
 
 
 def prepare_for_alignment(
@@ -947,6 +956,7 @@ def prepare_for_alignment(
         grace=grace,
         onsets=onsets,
         unfiltered=unfiltered,
+        instrument=named,
     )
 
 
@@ -963,6 +973,8 @@ def _recover_missed_onsets(
     min_gap_s: float | None,
     config: AudioConfig,
     by_pitch: bool = False,
+    pitch: _Pitch | None = None,
+    notes: list[ExpectedNote] | None = None,
 ) -> np.ndarray:
     """A second look, only where the page writes a note and none was heard.
 
@@ -977,6 +989,11 @@ def _recover_missed_onsets(
     memory — and it buys leaving `detect_onsets`, `Heard` and both of their
     call sites exactly as they were. A signature change there would touch the
     calibration path too, which has no score and no use for any of this.
+
+    Two looks, in turn: for an attack the first pass was not confident
+    enough to report, and then — given the take's `pitch` and the page's
+    `notes` — for a note no attack marks, where its written pitch takes over
+    (`_recover_legato`).
     """
     if not cleaned.missed_expected or not cleaned.matched:
         return np.array([], dtype=float)
@@ -991,12 +1008,359 @@ def _recover_missed_onsets(
     if not missed:
         return np.array([], dtype=float)
 
+    found = _recover_attacks(
+        heard, cleaned, onsets, expected, missed, min_gap_s=min_gap_s, config=config
+    )
+    if notes is None:
+        return found
+    if pitch is not None:
+        found = _not_the_note_before(found, cleaned, onsets, expected, missed, pitch, notes)
+        legato = _recover_legato(
+            heard,
+            cleaned,
+            onsets,
+            expected,
+            missed,
+            np.concatenate([onsets, found]),
+            pitch=pitch,
+            notes=notes,
+            config=config,
+        )
+        if legato.size:
+            found = np.sort(np.concatenate([found, legato]))
+    bowed = _recover_bow_changes(
+        heard, cleaned, onsets, expected, missed, np.concatenate([onsets, found]),
+        notes=notes, config=config,
+    )
+    return np.sort(np.concatenate([found, bowed])) if bowed.size else found
+
+
+#: How far either side of where the take's pace puts a note the bow-change
+#: look searches, as a share of the shorter written gap to its neighbours.
+_BOW_REACH_SHARE = 0.4
+#: How near a bow change found may lie to an attack already there, as a share
+#: of the written gap on that side. Closer, it is that note's own bow change:
+#: on the synthetic set a cello take with a sixteenth left out "found" it in
+#: the stop before the next stroke, 40 ms ahead of that note's attack.
+_BOW_APART_SHARE = 0.5
+
+
+def _recover_bow_changes(
+    heard: Heard,
+    cleaned: CleanedAlignment,
+    onsets: np.ndarray,
+    expected: np.ndarray,
+    missed: list[int],
+    attacks: np.ndarray,
+    *,
+    notes: list[ExpectedNote],
+    config: AudioConfig,
+) -> np.ndarray:
+    """The bow-change look: a missed note at the pitch of the note before it,
+    found where the level dips and comes back (`onset_recovery.
+    recover_by_bow_change`).
+
+    **Where the take's own pace puts the note, not the take's line.** The
+    attack look predicts from one line through the whole take
+    (`predict_audio_times`), and on a long take with rubato that line sits
+    100–700 ms from the player, where a search of a quarter of a gap finds
+    nothing. Here the note is put on a line through the paired notes either
+    side of it. That was tried for the attack look and withdrawn (`TUNING_LOG.
+    md`, 2026-11-14): centred on the right place, it found a vibrato swell
+    inside the note before. A bow change is a dip of 8 dB or more, which a
+    held note's vibrato makes in the middle of one window in seven.
+
+    A dip found is kept only half a gap or more from every attack already
+    there, either side, so it is not the neighbouring notes' own bow changes;
+    and each one found counts as there for the next.
+    """
+    if not missed or not cleaned.matched:
+        return np.array([], dtype=float)
+    paired = {e: float(onsets[d]) for d, e in cleaned.matched}
+    taken = np.sort(np.asarray(attacks, dtype=float))
+    emphasised: np.ndarray | None = None
+    found: list[float] = []
+    for e in missed:
+        if not 0 < e < len(notes) or notes[e].pitch is None:
+            continue
+        if notes[e - 1].pitch != notes[e].pitch:
+            continue
+        before = max((k for k in paired if k < e), default=None)
+        after = min((k for k in paired if k > e), default=None)
+        if before is None or after is None or expected[after] <= expected[before]:
+            continue
+        pace = (paired[after] - paired[before]) / float(expected[after] - expected[before])
+        if pace <= 0:
+            continue
+        at = paired[before] + pace * float(expected[e] - expected[before])
+        gap_before = pace * float(expected[e] - expected[e - 1])
+        gap_after = pace * float(expected[e + 1] - expected[e]) if e + 1 < len(expected) else gap_before
+        if min(gap_before, gap_after) <= 0:
+            continue
+        (t,) = recover_by_bow_change(
+            heard.y,
+            heard.sr,
+            predicted_s=np.array([at]),
+            reach_s=np.array([_BOW_REACH_SHARE * min(gap_before, gap_after)]),
+            min_dip_db=config.onset.recovery_bow_change_min_dip_db,
+        )
+        if t is None:
+            continue
+        earlier, later = taken[taken < t], taken[taken > t]
+        if earlier.size and t - earlier[-1] < _BOW_APART_SHARE * gap_before:
+            continue
+        if later.size and later[0] - t < _BOW_APART_SHARE * gap_after:
+            continue
+        # On the attack clock, as the attack look's are (`_recover_attacks`),
+        # placed among the attacks already there so it moves at most half the
+        # way to either: alone, the fine look could take a neighbour's rise.
+        among = np.sort(np.append(taken, t))
+        if emphasised is None:
+            emphasised = audio_svc.pre_emphasis(heard.y, config=config)
+        t = float(
+            audio_svc.refine_onset_times(emphasised, heard.sr, among)[
+                int(np.searchsorted(among, t))
+            ]
+        )
+        found.append(t)
+        taken = np.sort(np.append(taken, t))
+    if found:
+        log.info("analysis: %d note(s) at the pitch before them found by a bow change", len(found))
+    return np.array(sorted(found), dtype=float)
+
+
+def _not_the_note_before(
+    found: np.ndarray,
+    cleaned: CleanedAlignment,
+    onsets: np.ndarray,
+    expected: np.ndarray,
+    missed: list[int],
+    pitch: _Pitch,
+    notes: list[ExpectedNote],
+) -> np.ndarray:
+    """The attacks the attack look recovered, less those where the note before
+    simply goes on.
+
+    **A held note does not begin again.** The look takes the envelope's
+    rise nearest where a missed note belongs, and inside a note still being
+    held — a vibrato swell, a change of bow pressure — that is a rise too. On
+    the synthetic set (2026-11-14), eight notes the player left out were
+    "recovered" that way, each inside the note before at its pitch, and with
+    no rise in level (−1.0 to +0.3 dB). So an attack is dropped when the
+    pitch after it is still the note before's, in any octave, and the missed
+    note is written at another pitch class. A missed note that sounded is heard at its own pitch, a
+    wrong one at some other, and where the page repeats a pitch nothing here
+    can tell, so nothing is dropped. On URMP's real takes most of what this
+    drops had been placed 150–900 ms from the labelled note. That moved the
+    pulse, and K515's cello had one note "recovered" 17 s from its own.
+
+    Read against every attack, so each pitch window ends at the next one.
+    """
+    if found.size == 0:
+        return found
+    predicted = predict_audio_times(cleaned.matched, onsets, expected, missed)
+    if predicted.size == 0:
+        return found
+    attacks = np.sort(np.concatenate([onsets, found]))
+    heights = pitch.heights(attacks)
+    if heights is None:
+        return found
+    after = dict(zip(np.round(attacks, 6), heights, strict=True))
+    keep = np.ones(found.size, dtype=bool)
+    for i, t in enumerate(found):
+        e = missed[int(np.argmin(np.abs(predicted - t)))]
+        if not 0 < e < len(notes):
+            continue
+        now = pitch_evidence.midi(notes[e].pitch)
+        before = pitch_evidence.midi(notes[e - 1].pitch)
+        if now is None or before is None or now == before:
+            continue
+        # Heard twice: just after the attack, and halfway to the next one. A
+        # note that began under the ring of the one before — a plucked bass,
+        # a low string in a live room — takes over within the gap, and only a
+        # note held on is still the note before at both.
+        later = attacks[attacks > t]
+        until = float(later[0]) if later.size else float(t) + _HELD_LISTEN_S
+        late = pitch.heights(np.array([0.5 * (float(t) + until), until]))
+        readings = [after.get(round(float(t), 6)), None if late is None else late[0]]
+        keep[i] = not all(
+            h is not None and np.isfinite(h) and _held_on(round(float(h)), before, now, pitch.transpose)
+            for h in readings
+        )
+    return found[keep]
+
+
+def _held_on(heard: int, before: int, now: int, transpose: int) -> bool:
+    """Whether a pitch heard where `now` was written is `before` held on.
+
+    By pitch class where the two notes are of different classes: the pitch
+    track reads a held note an octave off as readily as anything else, and the
+    note before in another octave is still the note before. A synthetic violin
+    (`violin/bowed/108/missed/noise/1027`) had its held D5 read as D4 halfway
+    to the next note, and the A4 left out under it was "found". Where the
+    missed note is an octave from the note before, only the octave tells them
+    apart, so the reading must be the note before's own pitch.
+    """
+    if (now - before) % 12 == 0:
+        return heard == before + transpose and heard != now + transpose
+    return heard % 12 == (before + transpose) % 12
+
+
+#: How far after a recovered attack with nothing after it the note before is
+#: listened for a second time (`_not_the_note_before`), in seconds.
+_HELD_LISTEN_S = 0.5
+
+#: The least written time between two notes for `_beside_a_hole` to choose
+#: between them, in seconds at the take's tempo. Closer than this neither the
+#: detector (which separates attacks 60 ms apart) nor the pitch read after an
+#: attack (for up to 120 ms) belongs to one note. In K515's second violin it
+#: moved the attack of a G4 in a fast turn onto the F♯4 written 0.08 s after
+#: it, where a line through the turn's neighbours had made them look 0.13 s
+#: apart. Sixteenths at 132 BPM are 0.11 s.
+HOLE_MIN_GAP_S = 0.1
+
+
+def _beside_a_hole(
+    cleaned: CleanedAlignment,
+    attacks_s: np.ndarray,
+    timeline: ExpectedTimeline,
+    pitch: _Pitch,
+) -> CleanedAlignment:
+    """The pairing, with an attack beside a note reported missing given to that
+    note where its pitch and its place both say it is that note's.
+
+    **Timing alone can give the note after a hole the hole's place.** Each
+    interval is compared with a written one, and may be read across one note
+    the player left out (`alignment.DROPPED_NOTE_CAPS`) but not across two. With
+    two left out in a row the sound after them was paired with the second, a
+    beat early, and the note it was is reported missing. A single hole after a
+    long note can be read either way at near-equal cost too: that is the
+    strict xfail in `test_notes_left_out.py`. On the synthetic set (2026-11-14)
+    this is 20 of the 36 errors in what was reported missing.
+
+    So, once the take is paired, the attack of the paired note nearest a run
+    of missing notes moves to one of them when two independent things agree:
+    the pitch track hears that note's pitch after the attack, and a straight
+    line through the paired notes either side puts the attack nearer that
+    note's place than its current note's. A wrong note played at its
+    neighbour's pitch has the pitch but not the place. Repeated until nothing
+    moves, because a hole can slide a run of notes along and each one given
+    back frees the next one's place.
+
+    **Not on the place alone.** Where the page repeats a pitch, the pitch
+    cannot say which note sounded. Moving on the place alone, where it sat
+    three times nearer, fixed one synthetic take. On URMP's real takes it moved
+    five attacks: one onto its own note, one further from both notes' labels,
+    and three inside stretches already paired a note or more off. On real
+    playing, a line through the neighbours is too loose to decide alone.
+
+    Never inside an ornament, or between notes written closer than
+    `HOLE_MIN_GAP_S`: there an attack and the pitch after it do not belong to
+    one note.
+    """
+    missed = set(cleaned.missed_expected)
+    if not missed or len(cleaned.matched) < 3 or pitch.track is None:
+        return cleaned
+
+    def ornamental(note: ExpectedNote) -> bool:
+        """A note whose written time is an assumption, or not a time at all."""
+        return note.is_grace_note or note.after_grace_note or note.after_fermata
+
+    notes = timeline.notes
+    written = np.asarray(timeline.onsets, dtype=float)
+    attacks_s = np.asarray(attacks_s, dtype=float)
+    heights = pitch.heights(attacks_s)
+    if heights is None:
+        return cleaned
+    owner = {e: d for d, e in cleaned.matched}
+
+    def moved_one() -> bool:
+        for m in sorted(missed):
+            if ornamental(notes[m]):
+                continue
+            want = pitch_evidence.midi(notes[m].pitch)
+            if want is None:
+                continue
+            # The paired note nearest the hole on either side: every note
+            # between it and `m` is missing too.
+            sides = (
+                min((e for e in owner if e > m), default=None),
+                max((e for e in owner if e < m), default=None),
+            )
+            for n in sides:
+                if (
+                    n is None
+                    or ornamental(notes[n])
+                    or abs(written[m] - written[n]) < HOLE_MIN_GAP_S
+                ):
+                    continue
+                d = owner[n]
+                have = pitch_evidence.midi(notes[n].pitch)
+                heard = float(heights[d])
+                if (
+                    have is None
+                    or have == want
+                    or not np.isfinite(heard)
+                    or round(heard) != want + pitch.transpose
+                ):
+                    continue
+                before = max((e for e in owner if e < min(m, n)), default=None)
+                after = min((e for e in owner if e > max(m, n)), default=None)
+                if before is None or after is None or written[after] <= written[before]:
+                    continue
+                t0, t1 = attacks_s[owner[before]], attacks_s[owner[after]]
+                pace = (t1 - t0) / (written[after] - written[before])
+                at = attacks_s[d]
+                to_m = abs(at - (t0 + pace * (written[m] - written[before])))
+                to_n = abs(at - (t0 + pace * (written[n] - written[before])))
+                if to_m >= to_n:
+                    continue
+                del owner[n]
+                owner[m] = d
+                missed.discard(m)
+                missed.add(n)
+                return True
+        return False
+
+    # Again until nothing moves: a hole can shift a run of notes along, and
+    # each one given back leaves the next one's place free.
+    for _ in range(len(notes)):
+        if not moved_one():
+            break
+    if missed == set(cleaned.missed_expected):
+        return cleaned
+    log.info(
+        "analysis: %d attack(s) beside a note reported missing given to it by pitch and place",
+        len(set(cleaned.missed_expected) - missed),
+    )
+    return CleanedAlignment(
+        matched=sorted(((d, e) for e, d in owner.items()), key=lambda pair: pair[1]),
+        missed_expected=sorted(missed),
+        extra_detected=cleaned.extra_detected,
+        quality=cleaned.quality,
+    )
+
+
+def _recover_attacks(
+    heard: Heard,
+    cleaned: CleanedAlignment,
+    onsets: np.ndarray,
+    expected: np.ndarray,
+    missed: list[int],
+    *,
+    min_gap_s: float | None,
+    config: AudioConfig,
+) -> np.ndarray:
+    """The attack look: a local maximum of the onset envelope near where each
+    missed note belongs (`onset_recovery.recover_onsets`)."""
     predicted = predict_audio_times(cleaned.matched, onsets, expected, missed)
     if predicted.size == 0:
         return np.array([], dtype=float)
 
     emphasised = audio_svc.pre_emphasis(heard.y, config=config)
-    strength = audio_svc.onset_envelope(emphasised, heard.sr)
+    strength = audio_svc.onset_envelope(
+        emphasised, heard.sr, config=audio_svc.envelope_config(config, heard.instrument)
+    )
     search = (min_gap_s or 0.0) * config.onset.recovery_search_share
     if search <= 0:
         return np.array([], dtype=float)
@@ -1030,9 +1394,147 @@ def _recover_missed_onsets(
             >= config.onset.recovery_min_level_db
         )
         found = found[loud_enough]
+    # **And not where the sound is ending.** Each band of the envelope is held
+    # at its own noise floor (`audio._band_floor`), so between notes it is
+    # flat, and the little spray of a note's release is left standing alone as
+    # an interior maximum: a page whose bars 1–4 were played twice had a note
+    # "recovered" off the end of its last note, 1.6% of the envelope peak and
+    # 42 dB above the room, as the level there fell by 29 dB. An attack is
+    # never that — under a louder note's tail it adds to the level. See
+    # `[onset.recovery]` in config.toml.
+    if found.size:
+        not_ending = (
+            audio_svc.level_change_db(heard.y, heard.sr, found)
+            >= -config.onset.recovery_max_fall_db
+        )
+        found = found[not_ending]
     # Placed on the same fine grid as everything the first pass reported, so a
     # recovered note is not the one note in the take still sitting on a frame.
     return audio_svc.refine_onset_times(emphasised, heard.sr, found)
+
+
+#: After the note before, how long its own pitch is left to settle before the
+#: next note's is looked for; and before the note after, how much of the gap is
+#: left to it. Both in seconds.
+_LEGATO_SETTLE_S = 0.04
+_LEGATO_MARGIN_S = 0.02
+
+
+def _recover_legato(
+    heard: Heard,
+    cleaned: CleanedAlignment,
+    onsets: np.ndarray,
+    expected: np.ndarray,
+    missed: list[int],
+    taken: np.ndarray,
+    *,
+    pitch: _Pitch,
+    notes: list[ExpectedNote],
+    config: AudioConfig,
+) -> np.ndarray:
+    """The legato look: missed notes found where their written pitch takes
+    over, on the recording's clock (`onsets`, `taken`) and the attack's.
+
+    A note is not asked when the note before has its pitch, which is sounding
+    already, nor when the note after has it and that note's attack is not
+    paired: the next note's pitch would be found whether this note sounded or
+    not. Where that attack is paired the window ends before it, so the pitch
+    inside is this note's. Each is looked for after the note before
+    it — paired, or found here a moment ago, so a slurred run is found note by
+    note — and before the next paired note and the next written note's place
+    on the line through the take's own pace. See `onset_recovery.recover_by_pitch`
+    and `[onset.recovery]` in config.toml.
+    """
+    if pitch.track is None or not cleaned.matched:
+        return np.array([], dtype=float)
+    onset_cfg = config.onset
+    at = {e: float(onsets[d]) for d, e in cleaned.matched}
+    known = sorted(at)
+    det = np.array([at[e] for e in known], dtype=float)
+    exp = np.array([expected[e] for e in known], dtype=float)
+    rate, offset = (
+        np.polyfit(exp, det, 1) if len(known) >= 2 and float(np.ptp(exp)) > 0 else (1.0, 0.0)
+    )
+    end_of_take = heard.y.size / heard.sr if heard.sr else 0.0
+
+    def sounding(e: int) -> float | None:
+        m = pitch_evidence.midi(notes[e].pitch) if 0 <= e < len(notes) else None
+        return None if m is None else float(m + pitch.transpose)
+
+    def place(e: int) -> float:
+        """Where written note `e` belongs: between the paired notes around it,
+        or on the take's line past the last of them."""
+        before = [k for k in known if k <= e]
+        after = [k for k in known if k > e]
+        if before and after:
+            p, n = before[-1], after[0]
+            span = expected[n] - expected[p]
+            share = (expected[e] - expected[p]) / span if span > 0 else 0.0
+            return at[p] + share * (at[n] - at[p])
+        return float(rate * expected[e] + offset)
+
+    frame_s = pitch_evidence.HOP / pitch.sr
+    lag = onset_cfg.recovery_pitch_lag_ms / 1000.0
+    found: list[float] = []
+    previous: dict[int, float] = dict(at)
+    for e in sorted(missed):
+        target = sounding(e)
+        if target is None:
+            continue
+        def shares(k: int) -> bool:
+            if not 0 <= k < len(notes):
+                return False
+            other = sounding(k)
+            return other is not None and abs(other - target) < 1.0
+
+        # **The note after at this pitch hides this one only while its own
+        # attack is unknown.** Both neighbours used to rule a note out. K515's
+        # first violin has six notes with no attack of their own before a
+        # note of the same pitch whose attack was paired (D4, a rest, D4; a
+        # long B-flat, then another), and none was asked: each was reported
+        # missing.
+        if shares(e - 1) or (shares(e + 1) and (e + 1) not in at):
+            continue
+        before = [k for k in previous if k < e]
+        if not before:
+            continue
+        # On the pitch's clock, which runs `lag` ahead of the attack's.
+        start = previous[max(before)] - lag + _LEGATO_SETTLE_S
+        later = [k for k in known if k > e]
+        end = (at[later[0]] - lag - _LEGATO_MARGIN_S) if later else end_of_take
+        if e + 1 < len(notes):
+            end = min(end, place(e + 1) - lag)
+        (when,) = recover_by_pitch(
+            pitch.track,
+            frame_s=frame_s,
+            windows=[(start, end)],
+            targets=[target],
+            hold_s=onset_cfg.recovery_pitch_hold_ms / 1000.0,
+            tolerance_st=onset_cfg.recovery_pitch_tolerance_st,
+        )
+        if when is None:
+            continue
+        placed = when + lag
+        if np.any(np.abs(np.asarray(taken, dtype=float) - placed) < onset_cfg.wait_ms / 1000.0):
+            continue
+        previous[e] = placed
+        found.append(placed)
+    if not found:
+        return np.array([], dtype=float)
+    out = np.array(sorted(found), dtype=float)
+    # The attack look's two guards: sounding, and not a release. Sounding is
+    # asked more gently here (`[onset.recovery] pitch_min_level_db`): the pitch
+    # holding at the written note is already the evidence of playing.
+    loud = (
+        audio_svc.level_above_floor_db(heard.y, heard.sr, out)
+        >= onset_cfg.recovery_pitch_min_level_db
+    )
+    out = out[loud]
+    if out.size:
+        out = out[
+            audio_svc.level_change_db(heard.y, heard.sr, out) >= -onset_cfg.recovery_max_fall_db
+        ]
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -1163,6 +1665,49 @@ class _Pitch:
     track: np.ndarray | None = None
     #: Semitones from written to sounding: -12 for a double bass.
     transpose: int = 0
+    #: The waveform the track was read from, for `pitch_evidence.octave_checked`,
+    #: with the instrument's two ratios and its range. Without it, or with both
+    #: ratios 0, each pitch is the track's.
+    audio: np.ndarray | None = None
+    octave_below_ratio: float = 0.0
+    octave_above_ratio: float = 0.0
+    fmin: float = 0.0
+    fmax: float = math.inf
+    #: Each attack's pitch once read, by its time: the chain asks of the same
+    #: attacks for every reading of the page, and an octave check is an FFT.
+    _heights: dict[float, float] = field(default_factory=dict, compare=False, repr=False)
+
+    def heights(self, attacks_s: np.ndarray) -> np.ndarray | None:
+        """The pitch after each attack (`pitch_evidence.heights_at`), each moved
+        an octave where its partials say so (`pitch_evidence.octave_checked`)."""
+        if self.track is None:
+            return None
+        attacks_s = np.asarray(attacks_s, dtype=float)
+        read = pitch_evidence.heights_at(self.track, self.sr, attacks_s)
+        if self.audio is None or not (self.octave_below_ratio > 0 or self.octave_above_ratio > 0):
+            return read
+        keys = [round(float(t), 4) for t in attacks_s]
+        # The window an attack is read over depends on the gap to the next one,
+        # so a remembered pitch is only reused for the same attack before the
+        # same next attack.
+        keys = [
+            (k, keys[i + 1] if i + 1 < len(keys) else None) for i, k in enumerate(keys)
+        ]
+        todo = [i for i, k in enumerate(keys) if k not in self._heights]
+        if todo:
+            checked = pitch_evidence.octave_checked(
+                read,
+                self.audio,
+                self.sr,
+                attacks_s,
+                below_ratio=self.octave_below_ratio,
+                above_ratio=self.octave_above_ratio,
+                fmin=self.fmin,
+                fmax=self.fmax,
+            )
+            for i in todo:
+                self._heights[keys[i]] = float(checked[i])
+        return np.array([self._heights[k] for k in keys], dtype=float)
 
     def mismatch(self, attacks_s: np.ndarray, reading: Reading) -> np.ndarray:
         return pitch_evidence.mismatch(
@@ -1173,6 +1718,7 @@ class _Pitch:
             steady=self.steady,
             track=self.track,
             transpose=self.transpose,
+            heights=self.heights(attacks_s),
         )
 
 
@@ -1227,12 +1773,18 @@ def _pitch_of(
     )
     fmin, fmax = _SOUNDING_RANGE_HZ.get(instrument or "", _ANY_RANGE_HZ)
     source = heard.unfiltered if heard.unfiltered is not None else heard.y
+    settings = audio_svc.onset_settings_for(config, instrument)
     return _Pitch(
         frames=pitch_evidence.chroma(heard.y, heard.sr, low_register=low),
         sr=heard.sr,
         steady=config.pitch.steady,
         track=pitch_evidence.pitch_track(source, heard.sr, fmin=fmin, fmax=fmax),
         transpose=transpose,
+        audio=source,
+        octave_below_ratio=settings.octave_below_ratio,
+        octave_above_ratio=settings.octave_above_ratio,
+        fmin=fmin,
+        fmax=fmax,
     )
 
 
@@ -1298,7 +1850,9 @@ def _confirmed(
     )
 
 
-def _trusted_by_pitch(confirmed: _Confirmed, config: AudioConfig) -> bool:
+def _trusted_by_pitch(
+    confirmed: _Confirmed, config: AudioConfig, *, last_resort: bool = False
+) -> bool:
     """Whether a pairing's pitches line up well enough to report its timing.
 
     **The chain decides, not each note** — the owner's rule (2026-09-25). A
@@ -1310,13 +1864,35 @@ def _trusted_by_pitch(confirmed: _Confirmed, config: AudioConfig) -> bool:
     pairing free to leave notes out can always pair only the ones that match,
     and a different tune in the same key matched 100% of the notes it paired.
     See `[pitch]` `confirmed_*` in config.toml for how far chance reaches.
+
+    `last_resort`: timing has refused the take and no other reading of it
+    follows (`analyze`), so the alternative to the chain's pairing is telling
+    the player they played the wrong piece. On a long page that needs less of
+    the chain heard (`confirmed_share_long`): chance falls as a page grows,
+    and the usual share was set where it is highest. **Only to be paired by
+    the chain, not to be reported:** the second look then searches where the
+    page's notes belong, and `_analyze_take` reports the take only if it is
+    heard at the usual share after it. A different part that doubles the
+    page passes the lower share too, and the second look finds nothing it
+    lacks (2026-11-14, Jerusalem's double bass on the cello's page).
+
+    Not on a reading another follows: rescued on the lower share, the first
+    reading of a take keeps the second, without the vibrato filter, from
+    being read — and the second pairs better. "He's a Pirate"'s viola heard 95
+    of its 136 notes at pitch with the filter, just under 0.7; rescued there
+    it read at quality 0.32, and read without the filter at 0.57 with 121
+    (2026-11-14). Nor where timing accepted the take: there the usual share
+    decides whether the chain replaces timing's own pairing, which is an
+    answer, and nothing measured asked for less.
     """
     p = config.pitch
+    long = last_resort and confirmed.asked >= p.confirmed_long_notes
+    share = p.confirmed_share_long if long else p.confirmed_share
     return (
         confirmed.notes >= p.confirmed_min_notes
         and confirmed.pitches >= p.confirmed_min_pitches
         and confirmed.asked > 0
-        and confirmed.notes / confirmed.asked >= p.confirmed_share
+        and confirmed.notes / confirmed.asked >= share
     )
 
 
@@ -1418,10 +1994,13 @@ def _chain(
     origin: float = 0.0,
     *,
     passage: bool = False,
+    last_resort: bool = False,
 ) -> _Chained:
     """`reading` paired with `onsets` by `alignment.align_chain`. `origin` puts
     `onsets` on the recording's clock, which is where the pitch was read.
-    `passage`: the take is a stretch of the page (`align_chain`)."""
+    `passage`: the take is a stretch of the page (`align_chain`).
+    `last_resort`: timing refused the take and no other reading of it follows
+    (`_trusted_by_pitch`)."""
     onsets = np.asarray(onsets, dtype=float)
     anchored = align_chain(
         onsets,
@@ -1432,6 +2011,7 @@ def _chain(
         steady=reading.steady,
         optional=reading.optional,
         passage=passage,
+        heights=[pitch_evidence.midi(note.pitch) for note in reading.timeline.notes],
     )
     first = float(onsets[anchored.trimmed_lead]) + origin if onsets.size else origin
     confirmed = _confirmed(anchored, reading, pitch, first, config)
@@ -1442,7 +2022,7 @@ def _chain(
         trusted=(
             _placed_by_pitch(confirmed, config)
             if passage
-            else _trusted_by_pitch(confirmed, config)
+            else _trusted_by_pitch(confirmed, config, last_resort=last_resort)
         ),
         first_s=first,
     )
@@ -1456,6 +2036,7 @@ def _by_chain(
     pitch: _Pitch,
     *,
     passage: bool = False,
+    last_resort: bool = False,
 ) -> _Chained | None:
     """The reading whose chain confirms the most notes, if any is trusted.
 
@@ -1465,7 +2046,15 @@ def _by_chain(
     """
     best: _Chained | None = None
     for reading in readings:
-        chained = _chain(onsets, reading, target_bpm, config, pitch, passage=passage)
+        chained = _chain(
+            onsets,
+            reading,
+            target_bpm,
+            config,
+            pitch,
+            passage=passage,
+            last_resort=last_resort,
+        )
         if chained.trusted and (
             best is None or chained.confirmed.notes > best.confirmed.notes
         ):
@@ -1485,8 +2074,94 @@ def _by_chain(
 #: Pitch sees it at once — half the notes are heard at their neighbour's pitch.
 #:
 #: Two notes, not one: a single note read differently is a borderline pitch,
-#: and not a reason to re-pair a take that reads well.
+#: and not a reason to re-pair a take that reads well — unless the chain's
+#: pairing leaves nothing to doubt (`_nothing_to_doubt`).
 CHAIN_GAIN_NOTES = 2
+
+#: How much higher than timing's own pairing `alignment._scored_mapping` must
+#: score the chain's for `_timing_prefers_the_chain`. The score is one minus
+#: the average misfit over half a beat, so 0.01 is a hundredth of a beat of
+#: misfit on every note: about a fifth of a beat on one note of a 40-note page.
+#: Under it the score cannot tell two pairings apart. A 96-note bass take with
+#: an extra note (`test_varied_rhythm.py`) scored the chain's pairing 0.002
+#: higher with one note on the extra note's attack, 384 ms away; the takes the
+#: rule is for led by 0.023 to 0.121 (`TUNING_LOG.md`, 2026-11-14).
+CHAIN_PREFERRED_BY = 0.01
+
+
+def _nothing_to_doubt(candidate: _Chained, timing_quality: float) -> bool:
+    """Whether the chain's pairing needs only one note more than timing's.
+
+    **When it hears every note it pairs at its written pitch, and timing's own
+    score prefers it.** `CHAIN_GAIN_NOTES` guards a take timing reads well
+    against being re-paired on one borderline pitch. A pairing in which no
+    note is heard at another pitch has no borderline note in it, and one that
+    `alignment._scored_mapping` scores above timing's own pairing is not one
+    timing has a case against: the one note it hears that timing does not is
+    then a note timing put in the wrong place, not a pitch in doubt.
+
+    On the synthetic set (2026-11-14) timing read a pizzicato violin with two
+    of five repeated D's left out a note early across both holes (quality
+    0.827): the D after the first hole on the first, the G after the second
+    on the second D, and the G reported missing. The chain paired every note
+    at its pitch at 0.931, one note more than timing's 36 of 37, and was
+    refused for want of a second. Where the chain itself hears notes at
+    another pitch the rule stays as it was: on a fast cello passage the chain
+    heard 31 of 35, timing 30 of 35, and the chain's pairing of the passage
+    was the worse one.
+    """
+    confirmed = candidate.confirmed
+    return (
+        confirmed.paired > 0
+        and confirmed.notes == confirmed.paired
+        and candidate.anchored.alignment.quality > timing_quality
+    )
+
+
+def _timing_prefers_the_chain(
+    candidate: _Chained, timed: _Confirmed, timing_quality: float
+) -> bool:
+    """Whether the chain re-pairs a whole page with no note at pitch to spare.
+
+    **Where the chain's pairing is as good as timing's on every count pitch
+    can make, and better by timing's own.** The chain replaces a pairing
+    timing reads well only on pitch — `CHAIN_GAIN_NOTES` more notes heard at
+    their written pitch — because that is evidence timing does not have. But
+    where the chain pairs at least as many notes as timing does, hears at
+    least as many of them at their written pitch, and `alignment.
+    _scored_mapping` scores its pairing higher, timing has no case left: pitch
+    does not prefer timing's pairing, and by timing's own measure the take's
+    rhythm reads better the chain's way — by `CHAIN_PREFERRED_BY` or more,
+    since under it the score cannot tell two pairings apart.
+
+    Two kinds of take need it. Where a note is left out of a run of one
+    pitch, pitch hears both pairings alike: a viola with one of two repeated
+    notes left out (`viola/bowed/132/missed/noise/1087`) was paired a note
+    late across the hole, the chain right at 0.922 against 0.892 with 39 at
+    pitch each. And where pitch is barely heard at all: a bass plucked in the
+    benchmark's phone room has half its notes read at another pitch, both
+    ways, and timing slid six notes along across two left-out notes
+    (`double_bass/pizz/60/missed/phone/1180`, 0.814), where the chain paired
+    every note right (0.935) with 18 at pitch to timing's 17.
+
+    **As many notes paired, not fewer.** A bowed bass through the phone room
+    (`1140`) is paired 0.019 better by the chain, with as many at pitch, but
+    one note fewer; its result was 20 notes and 5 bars worse.
+
+    Measured on the synthetic set (2026-11-14), every take the chain was
+    refused on while scoring higher: in 13 of 14 its pairing was the righter
+    or as right; the fourteenth, a fast cello figure with a note left out
+    (`1119`), both pairings get wrong, the chain by one note more. On the 72
+    real takes the chain pairs 71 already, and the one it does not, it scores
+    lower.
+    """
+    confirmed = candidate.confirmed
+    return (
+        confirmed.paired > 0
+        and confirmed.paired >= timed.paired
+        and confirmed.notes >= timed.notes
+        and candidate.anchored.alignment.quality >= timing_quality + CHAIN_PREFERRED_BY
+    )
 
 
 def _claimed_unheard(
@@ -1762,6 +2437,8 @@ def _audited_by_chain(
     target_bpm: float,
     config: AudioConfig,
     pitch: _Pitch,
+    *,
+    last_reading: bool = True,
 ) -> _Chained | None:
     """The chain's pairing, if it should replace the timing pairing.
 
@@ -1775,7 +2452,9 @@ def _audited_by_chain(
     **For a take timing accepts**, the chain may re-pair it where it is placed
     by pitch (`_placed_by_pitch`) and claims no more notes played-and-unheard
     than timing did (`_claimed_unheard`). It hears `CHAIN_GAIN_NOTES` more
-    notes at pitch where timing read the take well, any more where it did not.
+    notes at pitch where timing read the take well, any more where it did not
+    — or, for a whole page, as many where timing's own score prefers it
+    (`_timing_prefers_the_chain`).
 
     Either way, a passage played again is looked for (`_replayed_by_pitch`),
     and a take timing found to be a stretch of the page is chained as one.
@@ -1799,6 +2478,10 @@ def _audited_by_chain(
             config,
             pitch,
             passage=passage,
+            # The lower share a refused long page is paired on, only once no
+            # other reading of the take is left (`analyze`). It is reported
+            # only at the usual share, after the second look (`_analyze_take`).
+            last_resort=not accepted and last_reading,
         )
     )
     if candidate is None:
@@ -1807,15 +2490,26 @@ def _audited_by_chain(
     # A refusal is only ever overridden by a whole page heard at pitch.
     if accepted or replayed.trusted:
         candidate = replayed
-    if not (
-        candidate.trusted
-        or (accepted and _placed_by_pitch(candidate.confirmed, config))
-    ):
-        return None
     timed = _confirmed(
         anchored, reading, pitch, float(onsets[anchored.trimmed_lead]), config
     )
-    needed = timed.notes + (CHAIN_GAIN_NOTES if readable else 1)
+    # Where pitch cannot choose between the two, timing's own score may: for
+    # a whole page timing has accepted, never for which stretch a take was,
+    # which is what `_placed_by_pitch` guards.
+    preferred = accepted and not passage and _timing_prefers_the_chain(candidate, timed, quality)
+    if not (
+        candidate.trusted
+        or (accepted and _placed_by_pitch(candidate.confirmed, config))
+        or preferred
+    ):
+        return None
+    needed = timed.notes + (
+        0
+        if preferred
+        else CHAIN_GAIN_NOTES
+        if readable and not _nothing_to_doubt(candidate, quality)
+        else 1
+    )
     if _trusted_by_pitch(timed, config) and candidate.confirmed.notes < needed:
         return None
     # **Re-paired, never claiming more notes played and not heard.** A take
@@ -2152,8 +2846,83 @@ def analyze(
         An `AnalysisResult`. It never raises on untrustworthy input: it
         returns a status of `no_onsets`, `alignment_failed` or `not_played`,
         which the app turns into a clear message for the musician.
+
+    **A take refused with the vibrato filter is read once more without it.**
+    The filter (`audio._vibrato_bands`) is what keeps a held note's vibrato
+    from being heard as new notes, and it has one cost: a quiet note that
+    starts under the tail of a loud one on a low instrument looks to it like
+    the loud note's partials moving. Measured on a double bass page with every
+    other note 20 dB down, in a 0.9-second room, the take was refused outright
+    with the filter and read at quality 0.97 without it; at 16 dB and below
+    the two read identically. So a refusal is not the last word until the
+    take has been heard the more sensitive way, and only a reading that is
+    not itself refused replaces it — the first refusal, and its sentence,
+    stand otherwise.
     """
     cfg = config or load_audio_config()
+    if not isinstance(audio, tuple):
+        audio = audio_svc.load_audio(audio, sr=cfg.onset.sr)
+    unfiltered = audio_svc.without_vibrato_filter(cfg)
+    first = _analyze_take(
+        audio,
+        score,
+        target_bpm,
+        instrument=instrument,
+        double_bass=double_bass,
+        config=cfg,
+        trace=trace,
+        last_reading=unfiltered is None,
+    )
+    if first.status != "alignment_failed" or unfiltered is None:
+        return first
+    retried: dict[str, Any] | None = {} if trace is not None else None
+    second = _analyze_take(
+        audio,
+        score,
+        target_bpm,
+        instrument=instrument,
+        double_bass=double_bass,
+        config=unfiltered,
+        trace=retried,
+    )
+    if second.status == "alignment_failed":
+        return first
+    log.info(
+        "analysis: refused with the vibrato filter, read without it at quality %.3f",
+        second.quality,
+    )
+    if trace is not None and retried is not None:
+        trace.clear()
+        trace.update(retried)
+        _traced(trace, vibrato_filter="off: refused with it")
+    return second
+
+
+def _analyze_take(
+    audio: tuple[np.ndarray, int],
+    score: ScoreJson,
+    target_bpm: float,
+    *,
+    instrument: str | None,
+    double_bass: bool,
+    config: AudioConfig,
+    trace: dict[str, Any] | None,
+    last_reading: bool = True,
+) -> AnalysisResult:
+    """`analyze`, with one setting of the detector. See `analyze`.
+
+    `last_reading`: no other reading of the take follows this one if it is
+    refused, so a long page timing refuses may be paired by its chain on the
+    lower share (`_trusted_by_pitch`), and reported if the second look then
+    hears it at the usual one. The first reading is not the last when the second
+    reads without the vibrato filter: rescued early, it kept "He's a Pirate"'s
+    viola from the second reading, which pairs it better. Where both are
+    refused the first refusal stands, as it always has, without asking the
+    first reading's chain again on the lower share: the unfiltered reading
+    hears more of a take (338 attacks to 261 on K515's cello, 130 to 104 on
+    that viola), so its chain is the one to ask. No take of the 252 measured
+    on 2026-11-14 is refused by both."""
+    cfg = config
 
     # Step 1: decode the audio and find every note attack.
     heard = prepare_for_alignment(
@@ -2225,7 +2994,7 @@ def analyze(
     # pairing (`_audited_by_chain`).
     accepted_by_timing = not is_alignment_broken(anchored.alignment.quality, config=cfg)
     chained = _audited_by_chain(
-        onsets, reading, anchored, score, target_bpm, cfg, pitch
+        onsets, reading, anchored, score, target_bpm, cfg, pitch, last_reading=last_reading
     )
     if chained is not None:
         reading, anchored = chained.reading, chained.anchored
@@ -2272,6 +3041,8 @@ def analyze(
         min_gap_s=closest_expected_gap(expected, optional=reading.grace),
         config=cfg,
         by_pitch=chained is not None,
+        pitch=pitch,
+        notes=reading.timeline.notes,
     ) - origin
     _traced(trace, recovered=int(recovered.size))
     if recovered.size:
@@ -2326,6 +3097,14 @@ def analyze(
     # asked about: so it is reported rather than refused. One note out of
     # tune, or one the scan misread, is one unconfirmed note in the chain.
     confirmed = _confirmed(anchored, reading, pitch, origin, cfg)
+    # **At the usual share, whatever let the chain's pairing in.** A long page
+    # timing refused may be paired by its chain on less of it heard
+    # (`_audited_by_chain`), so the second look can search where its notes
+    # belong. It is reported only if, after that look, it is heard at the
+    # usual share. The notes a take of the page missed are there to be found,
+    # and the notes a different part lacks are not: K515's cello rose from
+    # 0.67 of its page to 0.81, and Jerusalem's double bass, read against the
+    # cello's page it doubles, from 0.66 to 0.67 (2026-11-14).
     trusted = _trusted_by_pitch(confirmed, cfg)
     # Heard at the page's pitches across the page, or a take timing accepted
     # and the chain re-paired by pitch: either way not a take to refuse, and
@@ -2453,6 +3232,8 @@ def analyze(
     cleaned = apply_fuzzy_match(
         raw, onsets, expected, optional=optional, reclaimable=reclaimable
     )
+    # On the recording's clock (`origin`), where the pitch track was read.
+    cleaned = _beside_a_hole(cleaned, onsets + origin, timeline, pitch)
     unreached = _not_reached(cleaned, timeline)
     missed = [e for e in cleaned.missed_expected if e not in unreached]
     _traced(
@@ -2484,6 +3265,7 @@ def analyze(
         min_relative=cfg.pitch.min_relative,
         clear_semitones=cfg.mistakes.clear_note_semitones,
         tuning_semitones=(in_tune.tuning_cents or 0.0) / 100.0,
+        written_partials_floor=cfg.mistakes.written_partials_floor,
     )
     rests = miscounted_rests(
         cleaned.matched,

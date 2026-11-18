@@ -270,7 +270,7 @@ export function uploadToSignedUrl(
       settle(() =>
         reject(
           new UploadError(
-            `${thing[0].toUpperCase()}${thing.slice(1)} could not be sent. Check your connection and try again.`,
+            `Couldn’t send ${thing}. Check your connection and try again.`,
           ),
         ),
       );

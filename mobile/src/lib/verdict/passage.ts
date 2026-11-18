@@ -41,3 +41,43 @@ export function practiceLabel(passage: Passage): string {
     ? `Practice bar ${passage.from}`
     : `Practice bars ${passage.from}–${passage.to}`;
 }
+
+/**
+ * **The passage to practise next, for every Practice button.**
+ *
+ * The verdict found the weak bars and offered "Practice bars 5–8", and nothing
+ * else in the app knew it: the Library's band and the piece screen opened
+ * Record at the start, and Insights worked out a passage of its own and
+ * offered bars 5–6 for the same piece under a chart of the same take (the
+ * reviews of 2026-11-12). One rule now, read from the newest take the analysis
+ * could judge, so the band, the piece, Insights and the result name the same
+ * bars.
+ *
+ * Null when that take failed, was too uncertain to trust, or names no bars;
+ * the button is then plain "Practice" from the top.
+ */
+export function practicePassage(
+  take: { headline: string | null; lowConfidence: boolean; failure: unknown } | null | undefined,
+): Passage | null {
+  if (!take || take.failure !== null || take.lowConfidence) {
+    return null;
+  }
+  return headlinePassage(take.headline);
+}
+
+/**
+ * The line Record shows while a take still starts where a Practice button
+ * sent it: "Practicing bars 5–8". The buttons name a passage; without this the
+ * screen they opened never mentioned it. Gone once the musician moves the
+ * start, because then they are practising something else.
+ */
+export function practicingLine(
+  opened: { startAt?: number; endAt?: number },
+  startFrom: number | null,
+): string | null {
+  const { startAt, endAt } = opened;
+  if (startAt === undefined || endAt === undefined || startFrom !== startAt || endAt < startAt) {
+    return null;
+  }
+  return startAt === endAt ? `Practicing bar ${startAt}` : `Practicing bars ${startAt}–${endAt}`;
+}

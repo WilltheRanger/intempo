@@ -1164,6 +1164,42 @@ After: the settled Library's main thread is busy 5 ms a second rather than
 the reset moved it 16. Under Reduce Motion the band is pixel-identical to
 before.
 
+### What the browser does not give the web build on an iPhone (2026-11-13)
+
+Four things that work in the phone app and silently did nothing, or the wrong
+thing, in Safari. Each looked fine in Chromium, where every check here runs.
+
+**Haptics need the finger.** `expo-haptics` on the web clicks a hidden
+`<input type="checkbox" switch>` from code. Current WebKit plays the switch's
+haptic only for a trusted click during a user's gesture, so all 29 of the
+app's haptic calls were most likely silent on a current iPhone. A label laid
+over the control, wired to a hidden switch, gets the finger's own trusted tap
+(`HapticTap`).
+
+The trap is the second click. A label's activation clicks its control, and
+that click bubbles too. react-native-web fires `onPress` on `click`, not on
+pointer-up, so unstopped it presses the control **twice**. `HapticTap` stops
+the switch's click at the switch. Nothing that is not a tap can make an
+iPhone browser tap the finger: not a timer (so no haptic metronome there),
+not a refresh, not a drag.
+
+**`RefreshControl` is a plain view.** react-native-web keeps the prop and
+throws `onRefresh` away. The pull is read from the scroller instead: on iOS
+its `scrollTop` goes below zero while it is rubber-banded, as long as
+`overscroll-behavior` is not `none` (it is `contain` here). Chromium never
+reports a negative offset, so the walk cannot pull. Check it by redefining
+the scroller's `scrollTop` and dispatching `scroll`, or on a phone.
+
+**The screen under a pushed one is hidden.** The web `NativeStackView` gives
+every unfocused route `display: none`, except the one under a route presented
+as `transparentModal` or `containedTransparentModal`. That exception is what
+the iOS slide is built on (`sceneMotion.ts`, `DECISIONS.md` 2026-11-13).
+
+**A long press is a web page's.** It selects words and offers to save a
+photograph unless the page says otherwise. `index.html` makes the page
+unselectable and turns the image callout off. A field, or text drawn
+`selectable`, opts back in.
+
 ## `npm audit fix --force` would take this app back to SDK 46 (2026-09-09)
 
 `npm audit --omit=dev` reports **24 advisories, 7 of them high**, and closes
@@ -2099,6 +2135,122 @@ nothing else covers `backend/`. Named here rather than left to be found.
   note rule is its fallback, and must stay one: a take a few percent slow is
   on tempo in every bar and a beat behind by the end, and the title says so.
 - TUNING_LOG.md 2026-09-25 has every number.
+
+### Real recordings, measured at last (2026-11-13)
+
+`tools/eval/real_takes.py` reads URMP's 61 string tracks, and its 11 alto
+saxophone tracks since 2026-11-14. Each part was recorded alone by a student
+player, with its score and a hand-checked onset and pitch for every note. What
+it taught, each lesson paid for with a wrong number first:
+
+- **A dataset's truth needs the same scrutiny as the pipeline's output.**
+  - URMP's MIDI holds the double bass at sounding pitch, and the app reads a
+    bass part as written, an octave up. Converted as it stood, 18 of 162 notes
+    paired.
+  - A labelled pitch a semitone off the written one is not a wrong note. 78%
+    of them were 50–70 cents out: intonation, or a label averaged across a
+    shift.
+  - A written note with no label is not necessarily a note left out. K515's
+    second violin part has 92 written notes the labels have no note for, so
+    they are scored neither way.
+- **Players slur what the page does not mark.** Most notes reported missing
+  on real takes were changed under one bow. They have no attack, so no
+  threshold finds them. The pitch track does: see the legato look,
+  `DECISIONS.md` 2026-11-13.
+- **Nobody plays three minutes at one tempo.** One line through a long take
+  is up to two seconds from the player. Yet predicting the second look's
+  search from the pace around the note was worse, not better: centred on
+  where a left-out note belongs, the search finds a vibrato peak there. The
+  single line's inaccuracy had been protecting against that by accident.
+  `TUNING_LOG.md` has both measurements.
+- **A held note is not one attack.** A cellist swells a long note or
+  changes bow inside it, which gives two to four attacks at its pitch. The
+  pitch chain took the last of them, and one cello part had 49 of 54 notes
+  paired near their ends. `alignment._first_attacks` moves each pairing back
+  to the first. It does not touch a repeated pitch or a passage played
+  again, because there an earlier attack can belong to something else.
+- **The pulse re-anchor is the least stable rule on real playing.** On a take
+  with rubato the app and the oracle re-anchor at different notes, and every
+  later note's colour moves with each one. Colours agree 91% where neither
+  re-anchors and 74% where either does. It is open in `TUNING_LOG.md`.
+- **Never beside the test suite.** A three-minute take holds its
+  spectrogram, pitch track and envelope at once. Three such workers beside
+  `pytest` exhausted the 16 GB session container, which restarted without
+  warning. Alone, three are fine.
+- **Make each metric fail once before you believe it (2026-11-14).** The
+  verdict was "scored" on its direction and its bars. For its first two days
+  the bars were read with a lower-case pattern from sentences that open
+  "Bars 4–5", so both sides were always `None`. 180 of 180 synthetic verdicts
+  and 55 of 72 real ones were reported as right. With the bars read, it is
+  178 and 12.
+- **On real playing, ask whether a verdict is true, not whether it is the
+  labels' sentence.** The verdict names the longest run. On a real take two
+  runs are often near a tie, so the labels' reading names the other one.
+  `real_takes.verdict_holds` checks what was said against the labels; 48 of
+  72 hold. Report both numbers, because the second is only meaningful beside
+  the first.
+- **A converted score can carry its converter's habits.** URMP's MIDI states
+  two tempos at bar 1, ♩=100 then ♩=200. The importer read the second as a
+  change, so every Pirates take was judged against twice its tempo. Two marks
+  heading a page are now one tempo.
+- **Inside a run of one pitch, only the spacing says which attack is which.**
+  The chain's second pass placed each note from the pairings around it, and
+  inside a run of 64 E4s those were the run's own slid pairings. A missed
+  attack doubles an interval and an extra one halves it, and
+  `alignment._runs_by_spacing` reads that. Two things it had to learn:
+  - a run's pace must be local, or a passage speeding up reads as a run of
+    errors;
+  - the notes either side of a run are paired by pitch but can still be
+    mistimed, so they may not outvote the run's own spacing.
+  `TUNING_LOG.md` (2026-11-14, repeated notes) has both failures.
+- **A fallback can make a "no" into a "yes to everything".** Where no pitch
+  held, the mismatch read the pitch classes as `1 − relative`. A breath's
+  classes are all near the strongest, so it matched every note at 0.01–0.37,
+  and the fugue's resting cello had its first notes paired with sounds 19 s
+  before it played. Making the lead-in free to leave out looked like the
+  fix and broke replay detection. The fix was in the evidence: a flat
+  profile is "nothing to compare" (`pitch_evidence._FLAT_CLASSES`).
+- **YIN's octave is not the note's octave.** At URMP's labelled notes it read
+  a viola an octave high at 7% of them, and a cello and a bass an octave low
+  at 3–4%. The chain charges an octave half a wrong note's price, so a stretch
+  of them re-routed the pairing. Partials decide which octave it is
+  (`pitch_evidence.octave_checked`), with a ratio per instrument: the
+  violin's and viola's 0.2 moved 98 of the cello's correctly read notes
+  down.
+- **A rescue on the first reading takes away the second.** A take refused
+  with the vibrato filter is read again without it, and that second reading
+  is the better one. A rule that turns a refusal into a reading therefore
+  belongs on the last reading only. Lowered where timing refuses, the long
+  page's share rescued K515's cello and cost five takes that were already
+  read, each of them on its first reading. The first explanation, that the
+  cost fell where timing had accepted, was wrong: narrowed to refusals, it
+  cost the same five, to the note. `analysis._analyze_take`'s `last_reading`
+  holds the rule.
+- **A lower bar is a way in, not a verdict.** The long page's lower share
+  rescued K515's cello, and it also gave a verdict to Jerusalem's double bass
+  read against the cello part it doubles. The chain cannot tell those apart,
+  since both hear about two thirds of the page. The second look can: the
+  notes a take of the page missed are there to be found, and the notes a
+  different part lacks are not. So the lower share only lets the chain pair a
+  take, and the usual share reports it. Reading every recording against the
+  other parts of its piece is what found this. A rule that rescues refusals
+  needs a test of the wrong takes it lets through, not only of the right
+  ones it saves.
+- **The longest of many is mostly the luckiest.** The verdict names the
+  longest run of bars past the band. In a 200-bar take, one or two bars land
+  past it by their own measurement error. On real takes the sentence about
+  one or two bars was true 4 times in 16, and about three or more 45 in 48.
+  A long take's run must now cover three bars, unless it is severe
+  (`[tolerance] long_take_bars`). Before trusting the winner of a search,
+  ask how many it was chosen from.
+- **To ask what a sound is, listen to what it becomes.** The second look took
+  a held note's vibrato swell for a note the player had left out.
+  - On 2026-11-13 a guard compared the pitch on either side of the swell. It
+    could not tell a held note from a quiet note under a loud note's tail,
+    which has the tail's pitch on both sides, and it was withdrawn.
+  - Listening after the attack twice can tell them apart: just after it, and
+    halfway to the next attack (`analysis._not_the_note_before`). A note
+    under a dying tail takes over within its gap; a note held on does not.
 
 ### A take that could not be sent was kept only by the native build (2026-10-06)
 

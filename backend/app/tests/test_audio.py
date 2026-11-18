@@ -227,10 +227,28 @@ class TestBlockingKeepsTheResultAndDropsTheMemory:
         below the maximum of whatever it was handed. Taken per block, every
         block lands on its own scale — which showed up as a 0.13 difference on
         an envelope whose maximum is 14, and would have moved onsets.
+
+        **With the band floors and the vibrato filter turned off**, since
+        2026-11-13: with them on, the envelope is no longer librosa's, by
+        design. That they are global too is `test_onset_envelope.py`'s.
         """
+        import dataclasses
+
         import librosa
         import numpy as np
 
+        from app.services.audio_config import load_audio_config
+
+        cfg = load_audio_config()
+        plain = dataclasses.replace(
+            cfg,
+            onset=dataclasses.replace(
+                cfg.onset,
+                envelope_floor_percentile=0.0,
+                envelope_floor_margin_db=0.0,
+                envelope_vibrato_from_hz=float("inf"),
+            ),
+        )
         y, sr = self._clip()
         theirs = librosa.onset.onset_strength(y=y, sr=sr, hop_length=512)
 
@@ -239,7 +257,7 @@ class TestBlockingKeepsTheResultAndDropsTheMemory:
         # is what a mutation check found: taking the fixed reference back out
         # left this green.
         monkeypatch.setattr(audio_svc, "_ENVELOPE_BLOCK_FRAMES", 64)
-        ours = audio_svc.onset_envelope(y, sr)
+        ours = audio_svc.onset_envelope(y, sr, config=plain)
 
         assert ours.shape == theirs.shape
         assert float(np.abs(ours - theirs).max()) < 1e-4

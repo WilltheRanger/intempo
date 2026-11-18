@@ -2,7 +2,7 @@ import { useId, useState } from 'react';
 import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import Svg, { Circle, ClipPath, Defs, G, Line, Path, Rect } from 'react-native-svg';
 
-import { BORDER_WIDTH, colors } from '../../design';
+import { BORDER_WIDTH, colors, spacing } from '../../design';
 import {
   bandEdgesAt,
   centreLabelTop,
@@ -339,6 +339,6 @@ const styles = StyleSheet.create({
     bottom: -2,
   },
   rail: {
-    marginTop: 10,
+    marginTop: spacing.sm,
   },
 });

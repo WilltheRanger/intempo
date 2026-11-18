@@ -48,6 +48,8 @@ vi.mock('../../design', () => ({
   colors: {},
   radii: {},
   spacing: {},
+  // The rail's offset is the time row's line height (`ScrubPlayer`'s styles).
+  typography: { metadataSmall: { lineHeight: 18 } },
 }));
 vi.mock('../../lib/audio/session', () => ({ prepareForPlayback: mock.prepare }));
 import { ScrubPlayer } from './ScrubPlayer';

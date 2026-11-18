@@ -30,7 +30,7 @@ export async function checkAppConnection(
       message:
         cause instanceof Error
           ? cause.message
-          : 'The practice service could not be reached.',
+          : 'Couldn’t reach the practice service.',
     };
   }
 
@@ -61,7 +61,7 @@ export async function checkAppConnection(
         kind: 'service_unreachable',
         message: cause instanceof Error
           ? cause.message
-          : 'The practice service could not be reached.',
+          : 'Couldn’t reach the practice service.',
       };
     }
     return {
@@ -86,7 +86,7 @@ export async function checkAppConnection(
       message:
         cause instanceof Error
           ? cause.message
-          : 'Your account could not be opened.',
+          : 'Couldn’t open your account.',
     };
   }
 

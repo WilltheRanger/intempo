@@ -959,7 +959,7 @@ export const apiTakeSubmissionSource: TakeSubmissionSource = {
       const message =
         cause instanceof Error
           ? cause.message
-          : 'The analysis could not be checked. Try again.';
+          : 'Couldn’t check on the analysis. Try again.';
       throw new TakeSubmissionError(message, submitted, cause);
     }
   },

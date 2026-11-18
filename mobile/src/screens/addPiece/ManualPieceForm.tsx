@@ -1,7 +1,7 @@
 import { useNavigation } from '@react-navigation/native';
 import { useRef, useState } from 'react';
 import { StyleSheet } from 'react-native';
-import { useGoBack } from '../../navigation/useGoBack';
+import { useBackButton } from '../../navigation/useGoBack';
 
 import {
   Input,
@@ -58,7 +58,7 @@ const MAX_BPM = 300;
  */
 export function ManualPieceForm() {
   const navigation = useNavigation<RootNavigation>();
-  const goBack = useGoBack({ tab: 'Library' });
+  const back = useBackButton({ tab: 'Library' });
   const { instrument } = usePreferences();
   const createPiece = useCreatePiece();
 
@@ -136,11 +136,9 @@ export function ManualPieceForm() {
   }
 
   return (
-    <ScreenContainer>
+    <ScreenContainer navigationBar={{ back }}>
       <PageHeader
         title="Add manually"
-        onBack={goBack}
-        backLabel="Back"
       />
 
       <TitleField
@@ -162,7 +160,7 @@ export function ManualPieceForm() {
         optional
         value={movement}
         onChangeText={setMovement}
-        placeholder="I. Adagio"
+        placeholder="e.g. I. Adagio"
         autoCapitalize="words"
         {...field(2)}
         style={styles.field}
@@ -173,7 +171,7 @@ export function ManualPieceForm() {
         optional
         value={timeSignature}
         onChangeText={setTimeSignature}
-        placeholder="4/4"
+        placeholder="e.g. 4/4"
         autoCapitalize="none"
         {...field(3)}
         style={styles.field}
@@ -206,11 +204,13 @@ export function ManualPieceForm() {
       {/*
         The same correction as the failed-read screen: this promised metronome
         practice, and the piece screen gates its practice button on having
-        notation. Photographing the music is the actual next step, and it is
-        the one this now names.
+        notation. Adding the music is the actual next step, and it is the one
+        this now names — as a fact about the piece, where "Photograph the
+        music to…" read as an order to someone who had no photo to hand (the
+        UI review, 2026-11-12).
       */}
       <Text variant="metadataSmall" color="textTertiary" style={styles.caveat}>
-        Photograph the music to listen, record, and get timing.
+        You can listen and record once you add the sheet music.
       </Text>
     </ScreenContainer>
   );

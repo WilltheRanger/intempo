@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { usePreferences } from '../../data/preferences';
 import type { MetronomeMode } from '../../data/types';
 import { impact, ImpactFeedbackStyle } from '../haptics';
+import { DEVICE_TAPS_ON_BEAT } from '../hapticsSupport';
 import { metronomePulse, type Beat } from './beats';
 import { countInOutputs, metronomeRuns, takeOutputs } from './countIn';
 import { startBeatClock, startPlannedBeatClock } from './clock';
@@ -193,6 +194,8 @@ export function useMetronome({
     // which is always audible; this is the take, where "haptic" with the
     // profile switch off is a metronome that is on and does nothing — the
     // exact bug this feature originally was.
-    silent: active && !countingIn && mode === 'haptic' && !haptics,
+    // And a device that cannot tap on a beat at all — a browser on an iPhone
+    // (`lib/hapticsSupport.ts`) — is the same metronome, for a different reason.
+    silent: active && !countingIn && mode === 'haptic' && (!haptics || !DEVICE_TAPS_ON_BEAT),
   };
 }

@@ -178,7 +178,7 @@ export function microphoneFailure(
   // Unrecognised. Say so, and say which — a report of this is the only way the
   // list above grows.
   return new MicrophoneUnavailableError(
-    `The microphone could not be started.${said(error)}`.trim()
+    `Couldn’t start the microphone.${said(error)}`.trim()
       + homeScreenAdvice(standalone),
   );
 }

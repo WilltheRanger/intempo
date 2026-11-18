@@ -6,17 +6,17 @@ import type { Instrument } from '../data/types';
  * offer. A rules module because a rule in a `.tsx` is a rule nothing checks.
  *
  * "How InTempo works" and Welcome come before the first step and Done after
- * the last; none is a question, so none is on the progress bar — which is why the bar has six
- * segments and the Welcome says "six quick questions".
+ * the last; none is a question, so none is on the progress bar, and the
+ * Welcome counts these to say how many questions there are.
+ *
+ * **Three, where there were six** (the owner, 2026-11-12, reversing
+ * 2026-09-23). The microphone moved to the first take, where it is used and
+ * where its explanation can come straight before the system's question
+ * (`MicrophoneIntro`); "how did you find us" and the profile photo went, as
+ * two answers nothing in the app reads. Name and instrument are what the
+ * account needs, and the role is kept for the teacher tier.
  */
-export const ONBOARDING_STEPS = [
-  'name',
-  'instrument',
-  'role',
-  'microphone',
-  'source',
-  'photo',
-] as const;
+export const ONBOARDING_STEPS = ['name', 'instrument', 'role'] as const;
 
 export type OnboardingStep = (typeof ONBOARDING_STEPS)[number];
 
@@ -30,14 +30,16 @@ export type OnboardingStep = (typeof ONBOARDING_STEPS)[number];
  */
 export type PracticeRole = 'learning' | 'teaching';
 
-/** Where the musician heard of the app. Kept on the device; nothing reads it yet. */
+/**
+ * Where the musician heard of the app. Asked in onboarding until 2026-11-12;
+ * an answer already on a device is still read and kept (`preferences`).
+ */
 export type FoundVia = 'teacher' | 'friend' | 'youtube' | 'appStore' | 'reddit' | 'elsewhere';
 
 export interface StepAnswers {
   name: string;
   instrument: Instrument | null;
   role: PracticeRole | null;
-  source: FoundVia | null;
 }
 
 /**
@@ -63,10 +65,8 @@ export const FOUND_VIA_CHOICES: ReadonlyArray<{ value: FoundVia; label: string }
  * Whether Next is open on a step.
  *
  * The name and the instrument are the two answers onboarding requires
- * (`missingFromOnboarding`), so their steps wait for them. The role is a choice
- * between two, and one is always made. The microphone has its own two buttons,
- * "how did you find us" can be skipped, and the photo is optional — so those
- * never hold Next shut.
+ * (`missingFromOnboarding`), so their steps wait for them, and the role waits
+ * for one of its two answers (nothing is chosen for the musician, 2026-09-29).
  */
 export function canContinue(step: OnboardingStep, answers: StepAnswers): boolean {
   switch (step) {
@@ -81,7 +81,7 @@ export function canContinue(step: OnboardingStep, answers: StepAnswers): boolean
   }
 }
 
-/** 1 to 6: how many segments of the progress bar are filled on this step. */
+/** 1 to 3: how many segments of the progress bar are filled on this step. */
 export function stepNumber(step: OnboardingStep): number {
   return ONBOARDING_STEPS.indexOf(step) + 1;
 }

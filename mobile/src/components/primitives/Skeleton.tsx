@@ -46,6 +46,31 @@ export interface SkeletonProps {
  * as a placeholder, not mistaken for content.
  */
 export function Skeleton({ width = '100%', height = 16, radius, style }: SkeletonProps) {
+  const pulse = usePulse();
+
+  return (
+    <Animated.View
+      // Placeholders are not content. A screen reader should skip them
+      // entirely rather than announce a dozen unlabelled boxes.
+      aria-hidden
+      style={[
+        styles.block,
+        { width, height, borderRadius: radius ?? radii.sm },
+        pulse,
+        style,
+      ]}
+    />
+  );
+}
+
+/**
+ * The skeleton's pulse, as a style for an `Animated.View`, for a placeholder
+ * that is not a block: the Library's page being read draws staves
+ * (`ReadingPage`). One pulse, so everything in the app that is waiting
+ * breathes at the same rate — a CSS animation on the web, a native loop on a
+ * phone, and still at its quieter end when motion is reduced.
+ */
+export function usePulse() {
   const reduceMotion = useReducedMotion();
   const pulse = useRef(new Animated.Value(SKELETON_PULSE.from)).current;
 
@@ -71,21 +96,8 @@ export function Skeleton({ width = '100%', height = 16, radius, style }: Skeleto
     return () => loop.stop();
   }, [pulse, reduceMotion]);
 
-  return (
-    <Animated.View
-      // Placeholders are not content. A screen reader should skip them
-      // entirely rather than announce a dozen unlabelled boxes.
-      aria-hidden
-      style={[
-        styles.block,
-        { width, height, borderRadius: radius ?? radii.sm },
-        reduceMotion
-          ? { opacity: SKELETON_PULSE.to }
-          : (webPulse?.pulsing ?? { opacity: pulse }),
-        style,
-      ]}
-    />
-  );
+  if (reduceMotion) return { opacity: SKELETON_PULSE.to };
+  return webPulse?.pulsing ?? { opacity: pulse };
 }
 
 export interface SkeletonTextProps {

@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Platform,
   ScrollView,
   StyleSheet,
   View,
   type LayoutChangeEvent,
+  type ViewStyle,
 } from 'react-native';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
@@ -58,6 +60,11 @@ export interface ScoreScrollProps {
   /** Bars stop being choosable once a take is running. */
   disabled?: boolean;
 }
+
+const SCROLL_CONTAINED_WEB = Platform.select({
+  web: { overscrollBehavior: 'contain' } as unknown as ViewStyle,
+  default: undefined,
+});
 
 export function ScoreScroll({
   score,
@@ -133,6 +140,9 @@ export function ScoreScroll({
     <View style={styles.band} onLayout={handleLayout}>
       <ScrollView
         ref={scroller}
+        // Its own overscroll stays its own: a fling past the last system
+        // bounced the Record screen around it (2026-11-12).
+        style={SCROLL_CONTAINED_WEB}
         contentContainerStyle={styles.music}
         showsVerticalScrollIndicator={false}
       >

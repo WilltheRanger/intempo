@@ -4,7 +4,6 @@ import { Linking, Platform } from 'react-native';
 
 import { Camera } from '../../components/icons';
 import { EmptyState } from '../../components/primitives/EmptyState';
-import { PageHeader } from '../../components/primitives/PageHeader';
 import { ScreenContainer } from '../../components/primitives/ScreenContainer';
 import {
   intentFromParams,
@@ -13,7 +12,7 @@ import {
   type LauncherRoute,
 } from '../../lib/scan/pagePhoto';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
-import { useGoBack } from '../../navigation/useGoBack';
+import { useBackButton } from '../../navigation/useGoBack';
 import { usePageCamera } from '../../navigation/usePageCamera';
 
 /**
@@ -33,7 +32,7 @@ import { usePageCamera } from '../../navigation/usePageCamera';
  */
 export function ScannerScreen() {
   const navigation = useNavigation<RootNavigation>();
-  const goBack = useGoBack({ tab: 'Library' });
+  const back = useBackButton({ tab: 'Library' });
   const route = useRoute<RouteProp<RootStackParamList, 'Scanner'>>();
   const photograph = usePageCamera();
   const [problem, setProblem] = useState<CameraProblem | null>(
@@ -63,8 +62,7 @@ export function ScannerScreen() {
   }
 
   return (
-    <ScreenContainer>
-      <PageHeader onBack={goBack} backLabel="Back" />
+    <ScreenContainer navigationBar={{ back }}>
       <EmptyState
         fill
         icon={Camera}

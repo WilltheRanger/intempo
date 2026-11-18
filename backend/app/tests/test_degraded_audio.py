@@ -150,6 +150,15 @@ def test_the_lag_grows_with_degradation_but_the_jitter_does_not(clean_take):
     a baseline near zero measures nothing, so the claim is held in the units a
     tolerance band is written in: a few milliseconds, far inside the 5% of a
     beat — 33 ms here — that the inner band allows.
+
+    **Re-based again 2026-11-13, when the fine spectrum's floor came up to
+    50 dB under its peak** (`audio._REFINE_TOP_DB`). The room still delays
+    the attack — 55.8 ms degraded — but the clean take now lands at 50.7 ms
+    where it landed at 43.5, because a note rising out of silence is no longer
+    placed early on its climb from 80 dB down. This asserted at least 10 ms
+    between the two: the shape it described was the placement's sensitivity
+    to where an attack starts from, which is the thing that changed. Jitter,
+    the number that survives the fit, is unchanged at 0.97 and 2.52 ms.
     """
     y, truth = clean_take
     worst = apply_clipping(
@@ -159,7 +168,7 @@ def test_the_lag_grows_with_degradation_but_the_jitter_does_not(clean_take):
     clean, degraded = _scores(y, truth), _scores(worst, truth)
 
     assert degraded["recall"] == 1.0
-    assert degraded["mean_error_ms"] > clean["mean_error_ms"] + 10, "expected more lag"
+    assert degraded["mean_error_ms"] > clean["mean_error_ms"], "expected more lag"
     # The number that survives the fit.
     assert clean["jitter_ms"] < 2.0
     assert degraded["jitter_ms"] < 4.0
@@ -205,8 +214,16 @@ def test_dynamics_alone_are_fine(span_db):
         # a target: the assertion is `<=`, so the day this is fixed these
         # tests fail and have to be raised deliberately rather than silently
         # passing a pipeline that got better.
-        (20, 0.75),
-        (30, 0.60),
+        #
+        # **Lowered 2026-11-13, because the first pass got worse here on
+        # purpose.** The vibrato filter (`audio._vibrato_bands`) compares each
+        # band with the loudest of its neighbours, and a quiet bass note under
+        # a loud one's tail looks to it like the loud note's partials moving:
+        # 16 of 24 became 12 at 20 dB. Left at 0.75 the ceiling could not see
+        # that, or see it come back. End to end the take is still read — once
+        # more without the filter when it is refused (`analysis.analyze`).
+        (20, 0.50),
+        (30, 0.50),
     ],
 )
 def test_dynamics_under_reverb_silently_lose_the_quiet_notes(span_db, found_at_most):
@@ -215,8 +232,9 @@ def test_dynamics_under_reverb_silently_lose_the_quiet_notes(span_db, found_at_m
     The tail of a loud note raises the floor under the attack of the quiet one
     that follows, and the onset envelope is normalised against the take's
     global maximum — so the quiet attack never clears `delta`. At 20 dB of
-    range in a 0.9-second room, 16 of 24 notes are found; at 30 dB, 12 of 24.
-    Exactly the quiet ones.
+    range in a 0.9-second room, 16 of 24 notes were found; at 30 dB, 12 of 24.
+    Exactly the quiet ones. Since 2026-11-13 it is 12 at both — see the
+    ceilings above.
 
     **Precision stays at 1.00.** Nothing spurious is reported and nothing is
     mistimed. The notes are simply gone, which is the worst shape this failure
@@ -303,8 +321,16 @@ def test_a_take_the_room_swallowed_is_read_instead_of_refused():
     Asserted as a *status* change rather than a quality number, because the
     number will move as this is tuned and the thing that must not regress is
     that the take is readable at all.
+
+    **Re-based 2026-11-13, from a 45% wet room to 50%**, when the defect
+    stopped reproducing in the first: with each band held at its own noise
+    floor and a refused take read once more without the vibrato filter
+    (`analysis.analyze`), the 45% take reads at quality 0.97 with no note
+    missing, recovery or not. At 50% it is refused without the second pass
+    and reads with it (0.51, two notes missed) — the shape this test was
+    written to hold.
     """
-    y, score = _bowed_page_take(20, 92.0, wet=0.45)
+    y, score = _bowed_page_take(20, 92.0, wet=0.5)
 
     without = _analyze(y, score, 92.0, recovery=False)
     with_recovery = _analyze(y, score, 92.0, recovery=True)
@@ -315,6 +341,59 @@ def test_a_take_the_room_swallowed_is_read_instead_of_refused():
     )
     assert with_recovery.status == "ok"
     assert with_recovery.quality > without.quality
+
+
+def test_a_take_refused_with_the_vibrato_filter_is_read_without_it(monkeypatch):
+    """**What the vibrato filter costs, and how the analysis pays it back.**
+
+    The filter (`audio._vibrato_bands`) compares each band with the loudest of
+    its neighbours a frame earlier, and a quiet bass note under the tail of a
+    loud one looks to it like the loud note's partials moving. On this page —
+    every other note 20 dB down, a 0.9-second room, 45% wet — the take is
+    refused with the filter, and read without it at quality 0.97 with nothing
+    missing. So a refused take is read once more without it
+    (`analysis.analyze`); with that second reading held off, the refusal
+    stands.
+
+    **Only the reading no other follows is the last resort** (2026-11-14). A
+    long page timing refuses may be trusted on less of its chain heard at
+    pitch (`analysis._trusted_by_pitch`), and only there: rescued on the
+    first reading, "He's a Pirate"'s viola was never read without the filter,
+    which pairs it better — quality 0.32 against 0.57, and 16 more of its 131
+    labelled notes unheard. So the first reading is the last only when there
+    is no filter to drop.
+    """
+    from app.services import analysis as analysis_module
+    from app.services import audio as audio_module
+    from app.services.analysis import analyze
+    from app.services.audio_config import load_audio_config
+
+    y, score = _bowed_page_take(20, 92.0, wet=0.45)
+
+    readings: list[bool] = []
+    take = analysis_module._analyze_take
+
+    def reading(*args, last_reading: bool = True, **kwargs):
+        readings.append(last_reading)
+        return take(*args, last_reading=last_reading, **kwargs)
+
+    monkeypatch.setattr(analysis_module, "_analyze_take", reading)
+
+    trace: dict = {}
+    read = analyze((y, SR), score, 92.0, double_bass=True, config=load_audio_config(), trace=trace)
+    assert read.status == "ok"
+    assert read.n_missed_notes == 0
+    assert trace["vibrato_filter"] == "off: refused with it"
+    assert readings == [False, True]
+
+    readings.clear()
+    monkeypatch.setattr(audio_module, "without_vibrato_filter", lambda config: None)
+    refused = analyze((y, SR), score, 92.0, double_bass=True, config=load_audio_config())
+    assert refused.status == "alignment_failed", (
+        "the filter no longer costs this take; the second reading is measuring "
+        "nothing here and the test should be re-based"
+    )
+    assert readings == [True]
 
 
 @pytest.mark.parametrize("lead_in_s", [0.0, 2.0])

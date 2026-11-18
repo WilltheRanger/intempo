@@ -8,6 +8,7 @@ import type { Instrument } from '../../data/types';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import { INSTRUMENT_GROUPS } from '../../lib/instrumentGroups';
 import { INSTRUMENT_LABELS } from '../../lib/warmup';
+import { HapticTap } from '../motion/HapticTap';
 
 export interface InstrumentSheetProps {
   visible: boolean;
@@ -67,6 +68,7 @@ export function InstrumentSheet({ visible, value, onChange, onClose }: Instrumen
                     {INSTRUMENT_LABELS[instrument]}
                   </Text>
                   {on ? <Check size={ICON_SIZE.md} strokeWidth={2} color={colors.accent} /> : null}
+                  <HapticTap />
                 </Pressable>
               );
             })}
